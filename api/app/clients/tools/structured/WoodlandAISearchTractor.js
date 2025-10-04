@@ -4,9 +4,13 @@ const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 const { logger } = require('~/config');
 
+const DEFAULT_EXTRACTIVE = String(process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE ?? 'false')
+  .toLowerCase()
+  .trim() === 'true';
+
 class WoodlandAISearchTractor extends Tool {
   static DEFAULT_API_VERSION = '2024-07-01';
-  static DEFAULT_TOP = 9;
+  static DEFAULT_TOP = 5;
   static DEFAULT_SELECT = 'id,title,content,url';
 
   _env(v, fallback) {
@@ -108,6 +112,16 @@ class WoodlandAISearchTractor extends Tool {
       apiVersion: this.apiVersion,
     });
 
+    const extractiveEnabled = String(
+      this._env(fields.WOODLAND_SEARCH_ENABLE_EXTRACTIVE, process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE) ??
+        DEFAULT_EXTRACTIVE,
+    )
+      .toLowerCase()
+      .trim() === 'true';
+
+    this.defaultAnswerMode = extractiveEnabled ? 'extractive' : 'none';
+    this.defaultCaptionMode = extractiveEnabled ? 'extractive' : 'none';
+
     logger.info('[woodland-ai-search-tractor] Initialized', {
       endpoint: this.serviceEndpoint,
       apiVersion: this.apiVersion,
@@ -117,6 +131,8 @@ class WoodlandAISearchTractor extends Tool {
       semanticConfiguration: this.semanticConfiguration,
       queryLanguage: this.queryLanguage,
       scoringProfile: this.scoringProfile,
+      defaultAnswerMode: this.defaultAnswerMode,
+      defaultCaptionMode: this.defaultCaptionMode,
     });
   }
 
@@ -576,11 +592,15 @@ class WoodlandAISearchTractor extends Tool {
           configurationName: this.semanticConfiguration,
           queryLanguage: this.queryLanguage,
         },
-        answers: 'extractive',
-        captions: 'extractive',
         speller: 'lexicon',
         select: this.returnAllFields ? undefined : this.select,
       };
+      if (this.defaultAnswerMode === 'extractive') {
+        baseOptions.answers = 'extractive';
+      }
+      if (this.defaultCaptionMode === 'extractive') {
+        baseOptions.captions = 'extractive';
+      }
       if (this.scoringProfile) baseOptions.scoringProfile = this.scoringProfile;
 
       // If a vector embedding is provided, enable hybrid semantic + vector search

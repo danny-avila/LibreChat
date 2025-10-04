@@ -4,11 +4,15 @@ const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 const { logger } = require('~/config');
 
+const DEFAULT_EXTRACTIVE = String(process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE ?? 'false')
+  .toLowerCase()
+  .trim() === 'true';
+
 class WoodlandAISearchWebsite extends Tool {
   static DEFAULT_API_VERSION = '2024-07-01';
-  static DEFAULT_TOP = 8;
+  static DEFAULT_TOP = 5;
   static DEFAULT_SELECT = 'id,title,content,url,parent_id,parent_url,site,page_type,breadcrumb,tags,headings,images_alt,content_length,author,last_published,last_updated,last_crawled,allowlist_match,reviewed';
-  static DEFAULT_VECTOR_K = 40;
+  static DEFAULT_VECTOR_K = 15;
   static DEFAULT_VECTOR_FIELDS = '';
 
   _env(v, fallback) {
@@ -162,6 +166,16 @@ class WoodlandAISearchWebsite extends Tool {
       .toLowerCase()
       .trim() === 'true';
 
+    const extractiveEnabled = String(
+      this._env(fields.WOODLAND_SEARCH_ENABLE_EXTRACTIVE, process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE) ??
+        DEFAULT_EXTRACTIVE,
+    )
+      .toLowerCase()
+      .trim() === 'true';
+
+    this.defaultAnswerMode = extractiveEnabled ? 'extractive' : 'none';
+    this.defaultCaptionMode = extractiveEnabled ? 'extractive' : 'none';
+
     // Client
     const credential = new AzureKeyCredential(this.apiKey);
     this.client = new SearchClient(this.serviceEndpoint, this.indexName, credential, {
@@ -183,6 +197,8 @@ class WoodlandAISearchWebsite extends Tool {
       baseUrl: this.baseUrl,
       vectorizeQueryEnabled: this.vectorizeQueryEnabled,
       returnAllFields: this.returnAllFields,
+      defaultAnswerMode: this.defaultAnswerMode,
+      defaultCaptionMode: this.defaultCaptionMode,
     });
   }
 
@@ -348,6 +364,11 @@ class WoodlandAISearchWebsite extends Tool {
     const embedding = Array.isArray(data?.embedding) ? data.embedding : undefined;
     const vectorK = Number.isFinite(data?.vectorK) ? Number(data.vectorK) : this.vectorK;
 
+    const resolveMode = (raw, fallback) =>
+      raw === 'extractive' || raw === 'none' ? raw : fallback;
+    const answersMode = resolveMode(perCallAnswers, this.defaultAnswerMode);
+    const captionsMode = resolveMode(perCallCaptions, this.defaultCaptionMode);
+
     try {
       const inferredMode = (() => {
         const q = (query || '').toString();
@@ -367,8 +388,12 @@ class WoodlandAISearchWebsite extends Tool {
           configurationName: this.semanticConfiguration,
           queryLanguage: perCallQueryLanguage || this.queryLanguage,
         };
-        options.answers = perCallAnswers || 'extractive';
-        options.captions = perCallCaptions || 'extractive';
+        if (answersMode === 'extractive') {
+          options.answers = 'extractive';
+        }
+        if (captionsMode === 'extractive') {
+          options.captions = 'extractive';
+        }
         options.speller = perCallSpeller || 'lexicon';
       } else {
         options.queryType = 'simple';

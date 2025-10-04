@@ -1,14 +1,22 @@
 // woodland-ai-search-catalog.js (single-index)
+const crypto = require('node:crypto');
 const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 const { logger } = require('~/config');
+const TTLCache = require('../util/ttlCache');
+
+const DEFAULT_CACHE_TTL_MS = Number(process.env.WOODLAND_SEARCH_CACHE_TTL_MS ?? 10_000);
+const DEFAULT_CACHE_MAX = Number(process.env.WOODLAND_SEARCH_CACHE_MAX_ENTRIES ?? 200);
+const DEFAULT_EXTRACTIVE = String(process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE ?? 'false')
+  .toLowerCase()
+  .trim() === 'true';
 
 class WoodlandAISearchCatalog extends Tool {
   static DEFAULT_API_VERSION = '2024-07-01';
-  static DEFAULT_TOP = 9;
+  static DEFAULT_TOP = 5;
   static DEFAULT_SELECT ="*";
-  static DEFAULT_VECTOR_K = 40;
+  static DEFAULT_VECTOR_K = 15;
   static DEFAULT_VECTOR_FIELDS = ''; // e.g., "contentVector,titleVector"
 
   _env(v, fallback) {
@@ -99,6 +107,7 @@ class WoodlandAISearchCatalog extends Tool {
       speller: z.enum(['lexicon', 'simple', 'none']).optional(),
       queryLanguage: z.string().optional(),
       searchFields: z.string().optional().describe('Comma-separated search fields override'),
+      disableCache: z.boolean().optional().describe('Skips shared result caching when true'),
     });
 
     // Shared endpoint + key
@@ -202,6 +211,31 @@ class WoodlandAISearchCatalog extends Tool {
         WoodlandAISearchCatalog.DEFAULT_VECTOR_K,
     );
 
+    const ttlSetting = Number(
+      this._env(fields.WOODLAND_SEARCH_CACHE_TTL_MS, process.env.WOODLAND_SEARCH_CACHE_TTL_MS) ||
+        DEFAULT_CACHE_TTL_MS,
+    );
+    const maxSetting = Number(
+      this._env(
+        fields.WOODLAND_SEARCH_CACHE_MAX_ENTRIES,
+        process.env.WOODLAND_SEARCH_CACHE_MAX_ENTRIES,
+      ) || DEFAULT_CACHE_MAX,
+    );
+
+    const ttlMs = Number.isFinite(ttlSetting) && ttlSetting > 0 ? ttlSetting : 0;
+    const maxEntries = Number.isFinite(maxSetting) && maxSetting > 0 ? maxSetting : 0;
+    this.cache = ttlMs > 0 && maxEntries > 0 ? new TTLCache({ ttlMs, maxEntries }) : null;
+
+    const extractiveEnabled = String(
+      this._env(fields.WOODLAND_SEARCH_ENABLE_EXTRACTIVE, process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE) ??
+        DEFAULT_EXTRACTIVE,
+    )
+      .toLowerCase()
+      .trim() === 'true';
+
+    this.defaultAnswerMode = extractiveEnabled ? 'extractive' : 'none';
+    this.defaultCaptionMode = extractiveEnabled ? 'extractive' : 'none';
+
     // Client
     const credential = new AzureKeyCredential(this.apiKey);
     this.client = new SearchClient(this.serviceEndpoint, this.indexName, credential, {
@@ -220,6 +254,11 @@ class WoodlandAISearchCatalog extends Tool {
       vectorFields: this.vectorFields,
       vectorK: this.vectorK,
       baseUrl: this.baseUrl,
+      cacheEnabled: Boolean(this.cache),
+      cacheTtlMs: this.cache?.ttlMs,
+      cacheMaxEntries: this.cache?.maxEntries,
+      defaultAnswerMode: this.defaultAnswerMode,
+      defaultCaptionMode: this.defaultCaptionMode,
     });
   }
 
@@ -349,6 +388,7 @@ class WoodlandAISearchCatalog extends Tool {
     const filter = typeof data?.filter === 'string' && data.filter.trim() ? data.filter.trim() : undefined;
     const embedding = Array.isArray(data?.embedding) ? data.embedding : undefined;
     const vectorK = Number.isFinite(data?.vectorK) ? Number(data.vectorK) : this.vectorK;
+    const disableCache = data?.disableCache === true;
 
     try {
       const inferredMode = (() => {
@@ -366,10 +406,25 @@ class WoodlandAISearchCatalog extends Tool {
           configurationName: this.semanticConfiguration,
           queryLanguage: perCallQueryLanguage || this.queryLanguage,
         },
-        answers: perCallAnswers || 'extractive',
-        captions: perCallCaptions || 'extractive',
         speller: perCallSpeller || 'lexicon',
       };
+
+      const answersMode =
+        perCallAnswers === 'extractive' || perCallAnswers === 'none'
+          ? perCallAnswers
+          : this.defaultAnswerMode;
+      const captionsMode =
+        perCallCaptions === 'extractive' || perCallCaptions === 'none'
+          ? perCallCaptions
+          : this.defaultCaptionMode;
+
+      if (answersMode === 'extractive') {
+        options.answers = 'extractive';
+      }
+
+      if (captionsMode === 'extractive') {
+        options.captions = 'extractive';
+      }
 
       if (!this.returnAllFields) {
         options.select = perCallSelect || this.select;
@@ -392,6 +447,30 @@ class WoodlandAISearchCatalog extends Tool {
 
       if (options.orderBy) delete options.orderBy;
 
+      let cacheKey;
+      if (this.cache && !disableCache && !embedding) {
+        const descriptor = {
+          query,
+          top: finalTop,
+          filter,
+          select: (perCallSelect || (!this.returnAllFields ? this.select : undefined))?.slice().sort(),
+          searchFields: (perCallSearchFields || this.searchFields)?.slice().sort(),
+          answers: answersMode,
+          captions: captionsMode,
+          speller: perCallSpeller || 'lexicon',
+          queryLanguage: perCallQueryLanguage || this.queryLanguage,
+        };
+        cacheKey = crypto.createHash('sha1').update(JSON.stringify(descriptor)).digest('hex');
+        const cached = this.cache.get(cacheKey);
+        if (cached) {
+          logger.debug('[woodland-ai-search-catalog] Returning cached response', {
+            query,
+            top: finalTop,
+          });
+          return cached;
+        }
+      }
+
       const docs = await this._safeSearch(query, options);
       let payload = docs.docs || [];
       if (Array.isArray(payload)) {
@@ -402,7 +481,11 @@ class WoodlandAISearchCatalog extends Tool {
         vectorUsed: Array.isArray(options.vectorQueries) && options.vectorQueries.length > 0,
         top: finalTop,
       });
-      return JSON.stringify(payload);
+      const serialized = JSON.stringify(payload);
+      if (cacheKey && this.cache) {
+        this.cache.set(cacheKey, serialized);
+      }
+      return serialized;
     } catch (error) {
       logger.error('[woodland-ai-search-catalog] Azure AI Search request failed', {
         error: error?.message || String(error),
@@ -414,4 +497,3 @@ class WoodlandAISearchCatalog extends Tool {
 }
 
 module.exports = WoodlandAISearchCatalog;
-

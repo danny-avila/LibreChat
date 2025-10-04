@@ -9,7 +9,7 @@ const {
   VOICE_GUIDELINES,
   WOODLAND_PROMPT_VERSION,
 } = require('~/app/clients/agents/Woodland/constants');
-const { EModelEndpoint, SystemRoles } = require('librechat-data-provider');
+const { AgentCapabilities, EModelEndpoint, SystemRoles } = require('librechat-data-provider');
 
 const DEFAULT_PROVIDER =
   process.env.WOODLAND_AGENT_PROVIDER || EModelEndpoint.azureOpenAI;
@@ -26,12 +26,14 @@ const WOODLAND_AGENTS = [
     name: 'Woodland Supervisor',
     description: 'Routes Woodland requests to the correct domain (Parts / Support / Sales / Tractor Fitment / Cases).',
     instructionsKey: 'SupervisorRouter',
-    tools: [
-      'woodland-ai-search-catalog',
-      'woodland-ai-search-cyclopedia',
-      'woodland-ai-search-website',
-      'woodland-ai-search-tractor',
-      'woodland-ai-search-cases',
+    tools: undefined,
+    capabilities: [AgentCapabilities.chain],
+    agent_ids: [
+      'agent_woodland_catalog',
+      'agent_woodland_support',
+      'agent_woodland_sales',
+      'agent_woodland_tractor',
+      'agent_woodland_cases',
     ],
     hide_sequential_outputs: true,
     conversation_starters: [
@@ -391,73 +393,105 @@ async function resolveAuthor() {
 
 async function ensureAgent(agentConfig) {
   const existing = await Agent.findOne({ id: agentConfig.id }).lean();
-  const payload = {
-    id: agentConfig.id,
-    name: agentConfig.name,
-    description: agentConfig.description,
-    provider: agentConfig.provider || DEFAULT_PROVIDER,
-    instructions: BASE_INSTRUCTIONS[agentConfig.instructionsKey] || '',
-    tools: agentConfig.tools || [],
-    capabilities: agentConfig.capabilities || [],
-    model: agentConfig.model || DEFAULT_MODEL,
-    model_parameters: {
-      model: agentConfig.model || DEFAULT_MODEL,
-      temperature:
-        typeof agentConfig.temperature === 'number' ? agentConfig.temperature : 0,
-      prompt_version: WOODLAND_PROMPT_VERSION,
-    },
-    author: agentConfig.author ? new mongoose.Types.ObjectId(agentConfig.author) : undefined,
-    authorName: agentConfig.authorName,
-    hide_sequential_outputs: Boolean(agentConfig.hide_sequential_outputs),
-    conversation_starters: agentConfig.conversation_starters || [],
-  };
+  const authorId = agentConfig.author ? new mongoose.Types.ObjectId(agentConfig.author) : null;
 
-  if (!payload.author) {
+  if (!authorId) {
     throw new Error(`Missing author while seeding agent ${agentConfig.id}`);
   }
 
-  payload.agent_ids = agentConfig.agent_ids ?? [];
+  const instructions = BASE_INSTRUCTIONS[agentConfig.instructionsKey] || '';
+  const model = agentConfig.model || DEFAULT_MODEL;
+  const temperature = typeof agentConfig.temperature === 'number' ? agentConfig.temperature : 0;
+
+  const modelParameters = {
+    model,
+    temperature,
+    prompt_version: WOODLAND_PROMPT_VERSION,
+  };
+
+  const provider = agentConfig.provider || DEFAULT_PROVIDER;
+  if (provider === EModelEndpoint.azureOpenAI) {
+    modelParameters.azureOpenAIApiDeploymentName = agentConfig.deploymentName || model;
+  }
+
+  const updateFields = {
+    name: agentConfig.name,
+    description: agentConfig.description,
+    provider,
+    instructions,
+    tools: agentConfig.tools || [],
+    capabilities: agentConfig.capabilities || [],
+    model,
+    model_parameters: modelParameters,
+    author: authorId,
+    authorName: agentConfig.authorName,
+    hide_sequential_outputs: Boolean(agentConfig.hide_sequential_outputs),
+    conversation_starters: agentConfig.conversation_starters || [],
+    agent_ids: agentConfig.agent_ids ?? [],
+    category: agentConfig.category || existing?.category || 'general',
+  };
 
   if (agentConfig.tool_resources) {
-    payload.tool_resources = agentConfig.tool_resources;
+    updateFields.tool_resources = agentConfig.tool_resources;
   }
 
-  if (payload.provider === EModelEndpoint.azureOpenAI) {
-    payload.model_parameters.azureOpenAIApiDeploymentName = agentConfig.deploymentName || payload.model;
-  }
+  const timestamp = new Date();
 
   if (!existing) {
-    const timestamp = new Date();
     const versionEntry = {
-      ...payload,
+      ...updateFields,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
     delete versionEntry.author;
     delete versionEntry.authorName;
 
-    const createPayload = {
-      ...payload,
-      category: agentConfig.category || 'general',
+    await Agent.create({
+      id: agentConfig.id,
+      ...updateFields,
       versions: [versionEntry],
-    };
-
-    await Agent.create(createPayload);
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
     return;
   }
 
-  await Agent.updateOne({ _id: existing._id }, payload);
+  const shouldAddVersion =
+    existing.instructions !== instructions ||
+    existing.name !== updateFields.name ||
+    existing.description !== updateFields.description ||
+    existing.model !== model ||
+    JSON.stringify(existing.tools || []) !== JSON.stringify(updateFields.tools) ||
+    JSON.stringify(existing.capabilities || []) !== JSON.stringify(updateFields.capabilities) ||
+    JSON.stringify(existing.conversation_starters || []) !==
+      JSON.stringify(updateFields.conversation_starters || []) ||
+    JSON.stringify(existing.agent_ids || []) !== JSON.stringify(updateFields.agent_ids || []);
+
+  const updateQuery = {
+    $set: {
+      ...updateFields,
+      updatedAt: timestamp,
+    },
+  };
+
+  if (shouldAddVersion) {
+    const versionEntry = {
+      ...updateFields,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    delete versionEntry.author;
+    delete versionEntry.authorName;
+    if (!updateQuery.$push) {
+      updateQuery.$push = {};
+    }
+    updateQuery.$push.versions = versionEntry;
+  }
+
+  await Agent.updateOne({ _id: existing._id }, updateQuery);
 }
 
 async function seedWoodlandAgents() {
-  const agentIds = WOODLAND_AGENTS.map((agent) => agent.id);
-  try {
-    const result = await Agent.deleteMany({ id: { $in: agentIds } });
-    console.log('[WoodlandAgentSeed] Purged existing agents:', result.deletedCount);
-  } catch (error) {
-    console.error('[WoodlandAgentSeed] Failed to purge existing agents:', error);
-  }
-
   const authorInfo = await resolveAuthor();
   if (!authorInfo) {
     console.error('[WoodlandAgentSeed] Skipping agent seeding; no user available to assign as author.');
@@ -470,6 +504,13 @@ async function seedWoodlandAgents() {
     } catch (error) {
       console.error('[WoodlandAgentSeed] Failed to seed agent', agent.id, error);
     }
+  }
+
+  try {
+    const { migrateAgentPermissionsEnhanced } = require('../../config/migrate-agent-permissions');
+    await migrateAgentPermissionsEnhanced({ dryRun: false });
+  } catch (error) {
+    console.error('[WoodlandAgentSeed] Agent permissions migration failed', error);
   }
 }
 

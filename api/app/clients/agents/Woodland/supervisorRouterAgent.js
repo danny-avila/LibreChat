@@ -1,3 +1,5 @@
+const { z } = require('zod');
+const { tool } = require('@langchain/core/tools');
 const {
   OUTPUT_TEMPLATE,
   COMMON_GUARDRAILS,
@@ -6,6 +8,78 @@ const {
 } = require('./constants');
 const createWoodlandFunctionsAgent = require('./createWoodlandFunctionsAgent');
 const createIntentClassifier = require('./intentClassifier');
+const initializeCatalogPartsAgent = require('./catalogPartsAgent');
+const initializeCyclopediaSupportAgent = require('./cyclopediaSupportAgent');
+const initializeSalesSupportAgent = require('./salesSupportAgent');
+const initializeTractorFitmentAgent = require('./tractorFitmentAgent');
+const initializeCasesReferenceAgent = require('./casesReferenceAgent');
+
+const DOMAIN_AGENT_CONFIGS = [
+  {
+    name: 'CatalogPartsAgent',
+    description: 'Consult for Woodland catalog SKU, selector, and part lookups.',
+    initializer: initializeCatalogPartsAgent,
+  },
+  {
+    name: 'CyclopediaSupportAgent',
+    description: 'Consult for policies, SOPs, warranty guidance, and shipping steps.',
+    initializer: initializeCyclopediaSupportAgent,
+  },
+  {
+    name: 'SalesSupportAgent',
+    description: 'Consult for Commander vs Classic vs Commercial comparisons and upgrade advice.',
+    initializer: initializeSalesSupportAgent,
+  },
+  {
+    name: 'TractorFitmentAgent',
+    description: 'Consult for tractor compatibility, installation requirements, and missing anchors.',
+    initializer: initializeTractorFitmentAgent,
+  },
+  {
+    name: 'CasesReferenceAgent',
+    description: 'Consult for internal case summaries when explicitly requested.',
+    initializer: initializeCasesReferenceAgent,
+  },
+];
+
+const INTENT_TOOL_PRIORITIES = {
+  sales: ['SalesSupportAgent', 'CatalogPartsAgent'],
+  parts: ['CatalogPartsAgent', 'CyclopediaSupportAgent'],
+  support: ['CyclopediaSupportAgent', 'CasesReferenceAgent'],
+  tractor_fitment: ['TractorFitmentAgent', 'CatalogPartsAgent'],
+  cases: ['CasesReferenceAgent', 'CyclopediaSupportAgent'],
+  unknown: ['CatalogPartsAgent', 'CyclopediaSupportAgent', 'SalesSupportAgent'],
+};
+
+const MAX_DOMAIN_TOOLS = 3;
+
+const resolveDomainTools = (primaryIntent, secondaryIntents = []) => {
+  const prioritized = new Set();
+  const appendTools = (intent) => {
+    const candidates = INTENT_TOOL_PRIORITIES[intent] || [];
+    for (const toolName of candidates) {
+      if (prioritized.size >= MAX_DOMAIN_TOOLS) {
+        break;
+      }
+      prioritized.add(toolName);
+    }
+  };
+
+  appendTools(primaryIntent || 'unknown');
+
+  for (const intent of secondaryIntents) {
+    if (prioritized.size >= MAX_DOMAIN_TOOLS) {
+      break;
+    }
+    appendTools(intent);
+  }
+
+  if (prioritized.size === 0) {
+    appendTools('unknown');
+  }
+
+  return Array.from(prioritized);
+};
 
 const INSTRUCTIONS = `Prompt version ${WOODLAND_PROMPT_VERSION}
 
@@ -21,6 +95,13 @@ You are the Woodland SupervisorRouter. Your job:
 3. Call the correct Woodland tools with precise queries.
 4. Assemble a single customer-ready response using catalog → cyclopedia → website → tractor DB in that citation priority. Use "needs human review." when sources conflict.
 
+Available domain agents:
+- CatalogPartsAgent - authoritative for catalog SKUs, selectors, and pricing snapshots.
+- CyclopediaSupportAgent - policies, SOPs, warranty, and shipping rules.
+- SalesSupportAgent - comparative recommendations, bundles, and upgrade guidance.
+- TractorFitmentAgent - tractor anchors, installation steps, and fitment validation.
+- CasesReferenceAgent - internal case summaries when the user explicitly asks.
+
 Critical rules:
 - Catalog is the authority for SKUs. If it disagrees with other sources, stop and escalate.
 - Cyclopedia governs policies/SOP/warranty/shipping. Never cite external shipping links.
@@ -33,6 +114,7 @@ Critical rules:
 - Recognize abbreviations ("CR" ➜ "Cyclone Rake").
 - Citations must be tool-provided URLs only, ordered Catalog → Cyclopedia → Website → Tractor. If no URLs returned, write "None".
 - State clear next steps (order, verify, install, escalate, or request missing info).
+- Activate only the smallest set of domain agents that covers the detected intents; avoid calling every agent by default.
 
 Use the intent block (enclosed in '[Intent Classification] ... [/Intent Classification]') to decide routing, follow-up questions, and which domain agent to consult first. Deliver the answer with current data and state assumptions. Treat 'clarifying_question' (if present) as optional guidance the user may answer, not a prerequisite.
 
@@ -44,21 +126,108 @@ Response formatting:
 - "Citations" must be the deduplicated space-separated list of all citations already referenced in Details.
 - Never echo raw tool outputs or headings like "Catalog Parts Agent"; provide a unified customer-ready summary instead.`;
 
-const SUPERVISOR_TOOLS = [
-  'woodland-ai-search-catalog',
-  'woodland-ai-search-cyclopedia',
-  'woodland-ai-search-website',
-  'woodland-ai-search-tractor',
-  'woodland-ai-search-cases',
-];
-
 module.exports = async function initializeSupervisorRouterAgent(params) {
   const classifier = await createIntentClassifier(params);
-  const executor = await createWoodlandFunctionsAgent(params, {
+  const baseTools = Array.isArray(params?.tools) ? params.tools : [];
+  const baseToolNames = baseTools
+    .map((tool) => tool?.name)
+    .filter((name) => typeof name === 'string' && name.length > 0);
+
+  const domainAgentEntries = DOMAIN_AGENT_CONFIGS.map(({ name, description, initializer }) => {
+    let agentPromise;
+    const ensureAgent = () => {
+      if (!agentPromise) {
+        agentPromise = initializer(params);
+      }
+      return agentPromise;
+    };
+
+    const wrappedTool = tool(
+      async ({ input }) => {
+        const agent = await ensureAgent();
+        const payload = typeof input === 'string' ? input : JSON.stringify(input);
+        const result = await agent.invoke({ input: payload });
+        if (typeof result === 'string') {
+          return result;
+        }
+        if (result && typeof result.output === 'string') {
+          return result.output;
+        }
+        if (result && typeof result.text === 'string') {
+          return result.text;
+        }
+        if (result && typeof result === 'object') {
+          const returnValueOutput = result?.returnValues?.output;
+          if (typeof returnValueOutput === 'string') {
+            return returnValueOutput;
+          }
+          return JSON.stringify(result);
+        }
+        return '';
+      },
+      {
+        name,
+        description,
+        schema: z.object({
+          input: z
+            .string()
+            .min(1)
+            .describe('The fully-formed customer request (including any assumptions) to pass to the domain agent'),
+        }),
+      },
+    );
+
+    return { name, tool: wrappedTool };
+  });
+
+  const domainAgentTools = domainAgentEntries.map(({ tool: domainTool }) => domainTool);
+  const domainToolMap = new Map(domainAgentEntries.map(({ name, tool: domainTool }) => [name, domainTool]));
+
+  const supervisorParams = {
+    ...params,
+    tools: [...baseTools, ...domainAgentTools],
+  };
+
+  const executor = await createWoodlandFunctionsAgent(supervisorParams, {
     agentName: 'SupervisorRouter',
     instructions: INSTRUCTIONS,
-    allowedTools: SUPERVISOR_TOOLS,
+    allowedTools: Array.from(
+      new Set([
+        ...baseToolNames,
+        ...domainAgentTools
+          .map((domainTool) => domainTool?.name)
+          .filter((name) => typeof name === 'string' && name.length > 0),
+      ]),
+    ),
   });
+
+  const allDomainToolNames = Array.from(domainToolMap.keys());
+
+  const reconcileToolObject = (name) => {
+    if (domainToolMap.has(name)) {
+      return domainToolMap.get(name);
+    }
+    return baseTools.find((tool) => tool.name === name);
+  };
+
+  const setActiveTools = (toolNames) => {
+    const selectedNames = Array.isArray(toolNames) && toolNames.length > 0 ? toolNames : allDomainToolNames;
+    const uniqueNames = Array.from(new Set([...baseToolNames, ...selectedNames]));
+    const nextTools = uniqueNames.map(reconcileToolObject).filter(Boolean);
+
+    executor.tools = nextTools;
+
+    if (executor.agent) {
+      if (typeof executor.agent._allowedTools !== 'undefined') {
+        executor.agent._allowedTools = nextTools.map((tool) => tool.name);
+      }
+      if (Array.isArray(executor.agent.tools)) {
+        executor.agent.tools = nextTools;
+      }
+    }
+  };
+
+  setActiveTools(allDomainToolNames);
 
   const injectIntentMetadata = async (input) => {
     if (!input || typeof input !== 'object') {
@@ -81,6 +250,7 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
       ? metadata.missing_anchors
       : [];
     const clarifyingQuestion = metadata.clarifying_question || null;
+    const recommendedTools = resolveDomainTools(primaryIntent, secondaryIntents);
 
     const intentHeaderLines = [
       `[Intent Classification]`,
@@ -97,6 +267,14 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
     return {
       ...input,
       input: intentHeaderLines.join('\n'),
+      intentMetadata: {
+        primaryIntent,
+        secondaryIntents,
+        confidence,
+        missingAnchors,
+        clarifyingQuestion,
+        recommendedTools,
+      },
     };
   };
 
@@ -104,7 +282,19 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
     const originalMethod = executor[methodName].bind(executor);
     executor[methodName] = async (input, ...args) => {
       const augmented = await injectIntentMetadata(input);
-      return originalMethod(augmented, ...args);
+      const recommended = augmented?.intentMetadata?.recommendedTools;
+      if (recommended) {
+        setActiveTools(recommended);
+      } else {
+        setActiveTools(allDomainToolNames);
+      }
+      let sanitized = augmented;
+      if (augmented && typeof augmented === 'object') {
+        // Remove helper metadata before handing off to the executor.
+        const { intentMetadata: _ignored, ...rest } = augmented;
+        sanitized = rest;
+      }
+      return originalMethod(sanitized, ...args);
     };
   };
 
