@@ -1,4 +1,4 @@
-const { FileSources, EModelEndpoint, getConfigDefaults } = require('librechat-data-provider');
+const { EModelEndpoint, getConfigDefaults } = require('librechat-data-provider');
 const {
   isEnabled,
   loadOCRConfig,
@@ -7,19 +7,11 @@ const {
   loadWebSearchConfig,
   loadDefaultInterface,
 } = require('@librechat/api');
-const {
-  checkWebSearchConfig,
-  checkVariables,
-  checkHealth,
-  checkConfig,
-} = require('./start/checks');
-const { initializeAzureBlobService } = require('./Files/Azure/initialize');
-const { initializeFirebase } = require('./Files/Firebase/initialize');
+const { checkWebSearchConfig, checkConfig } = require('./start/checks');
 const handleRateLimits = require('./Config/handleRateLimits');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const { loadTurnstileConfig } = require('./start/turnstile');
 const { processModelSpecs } = require('./start/modelSpecs');
-const { initializeS3 } = require('./Files/S3/initialize');
 const { loadAndFormatTools } = require('./start/tools');
 const { loadEndpoints } = require('./start/endpoints');
 const paths = require('~/config/paths');
@@ -49,17 +41,6 @@ const AppService = async () => {
   const imageOutputType = config?.imageOutputType ?? configDefaults.imageOutputType;
 
   process.env.CDN_PROVIDER = fileStrategy;
-
-  checkVariables();
-  await checkHealth();
-
-  if (fileStrategy === FileSources.firebase) {
-    initializeFirebase();
-  } else if (fileStrategy === FileSources.azure_blob) {
-    initializeAzureBlobService();
-  } else if (fileStrategy === FileSources.s3) {
-    initializeS3();
-  }
 
   /** @type {Record<string, FunctionTool>} */
   const availableTools = loadAndFormatTools({

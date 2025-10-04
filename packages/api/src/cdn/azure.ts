@@ -1,7 +1,9 @@
-const { logger } = require('@librechat/data-schemas');
-const { BlobServiceClient } = require('@azure/storage-blob');
+import { logger } from '@librechat/data-schemas';
+import { BlobServiceClient } from '@azure/storage-blob';
+import { DefaultAzureCredential } from '@azure/identity';
+import type { ContainerClient } from '@azure/storage-blob';
 
-let blobServiceClient = null;
+let blobServiceClient: BlobServiceClient | null = null;
 let azureWarningLogged = false;
 
 /**
@@ -9,9 +11,9 @@ let azureWarningLogged = false;
  * This function establishes a connection by checking if a connection string is provided.
  * If available, the connection string is used; otherwise, Managed Identity (via DefaultAzureCredential) is utilized.
  * Note: Container creation (and its public access settings) is handled later in the CRUD functions.
- * @returns {BlobServiceClient|null} The initialized client, or null if the required configuration is missing.
+ * @returns The initialized client, or null if the required configuration is missing.
  */
-const initializeAzureBlobService = () => {
+export const initializeAzureBlobService = (): BlobServiceClient | null => {
   if (blobServiceClient) {
     return blobServiceClient;
   }
@@ -20,7 +22,6 @@ const initializeAzureBlobService = () => {
     blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
     logger.info('Azure Blob Service initialized using connection string');
   } else {
-    const { DefaultAzureCredential } = require('@azure/identity');
     const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
     if (!accountName) {
       if (!azureWarningLogged) {
@@ -41,15 +42,12 @@ const initializeAzureBlobService = () => {
 
 /**
  * Retrieves the Azure ContainerClient for the given container name.
- * @param {string} [containerName=process.env.AZURE_CONTAINER_NAME || 'files'] - The container name.
- * @returns {ContainerClient|null} The Azure ContainerClient.
+ * @param [containerName=process.env.AZURE_CONTAINER_NAME || 'files'] - The container name.
+ * @returns The Azure ContainerClient.
  */
-const getAzureContainerClient = (containerName = process.env.AZURE_CONTAINER_NAME || 'files') => {
+export const getAzureContainerClient = (
+  containerName = process.env.AZURE_CONTAINER_NAME || 'files',
+): ContainerClient | null => {
   const serviceClient = initializeAzureBlobService();
   return serviceClient ? serviceClient.getContainerClient(containerName) : null;
-};
-
-module.exports = {
-  initializeAzureBlobService,
-  getAzureContainerClient,
 };
