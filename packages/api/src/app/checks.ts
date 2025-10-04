@@ -243,7 +243,7 @@ export async function performStartupChecks(appConfig?: AppConfig) {
  * Performs basic checks on the loaded config object.
  * @param config - The loaded custom configuration.
  */
-export function checkConfig(config: TCustomConfig) {
+export function checkConfig(config: Partial<TCustomConfig>) {
   if (config.version !== Constants.CONFIG_VERSION) {
     logger.info(
       `\nOutdated Config version: ${config.version}
