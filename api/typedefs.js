@@ -1109,7 +1109,7 @@
 
 /**
  * @exports JsonSchemaType
- * @typedef {import('@librechat/api').JsonSchemaType} JsonSchemaType
+ * @typedef {import('@librechat/data-schemas').JsonSchemaType} JsonSchemaType
  * @memberof typedefs
  */
 
