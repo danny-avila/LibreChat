@@ -1,5 +1,6 @@
 const fs = require('fs');
 const fetch = require('node-fetch');
+const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
 const {
   PutObjectCommand,
@@ -9,7 +10,6 @@ const {
 } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { initializeS3 } = require('./initialize');
-const { logger } = require('~/config');
 
 const bucketName = process.env.AWS_BUCKET_NAME;
 const defaultBasePath = 'images';

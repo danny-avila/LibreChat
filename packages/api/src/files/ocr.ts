@@ -1,7 +1,8 @@
-import type { TCustomConfig } from '../src/config';
-import { OCRStrategy } from '../src/config';
+import { OCRStrategy } from 'librechat-data-provider';
+import type { TCustomConfig } from 'librechat-data-provider';
 
-export function loadOCRConfig(config: TCustomConfig['ocr']): TCustomConfig['ocr'] {
+export function loadOCRConfig(config?: TCustomConfig['ocr']): TCustomConfig['ocr'] | undefined {
+  if (!config) return;
   const baseURL = config?.baseURL ?? '';
   const apiKey = config?.apiKey ?? '';
   const mistralModel = config?.mistralModel ?? '';

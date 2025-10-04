@@ -552,7 +552,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       throw new Error('File search is not enabled for Agents');
     }
     // Note: File search processing continues to dual storage logic below
-  } else if (tool_resource === EToolResources.ocr) {
+  } else if (tool_resource === EToolResources.context) {
     const { file_id, temp_file_id = null } = metadata;
 
     /**
@@ -594,10 +594,9 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
 
-    const shouldUseOCR = fileConfig.checkType(
-      file.mimetype,
-      fileConfig.ocr?.supportedMimeTypes || [],
-    );
+    const shouldUseOCR =
+      appConfig?.ocr != null &&
+      fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
 
     if (shouldUseOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
       throw new Error('OCR capability is not enabled for Agents');
@@ -626,7 +625,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     );
 
     if (!shouldUseText) {
-      throw new Error(`File type ${file.mimetype} is not supported for OCR or text parsing`);
+      throw new Error(`File type ${file.mimetype} is not supported for text parsing.`);
     }
 
     const { text, bytes } = await parseText({ req, file, file_id });

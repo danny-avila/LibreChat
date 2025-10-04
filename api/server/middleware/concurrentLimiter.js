@@ -1,7 +1,7 @@
+const { isEnabled } = require('@librechat/api');
 const { Time, CacheKeys, ViolationTypes } = require('librechat-data-provider');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const { logViolation, getLogStores } = require('~/cache');
-const { isEnabled } = require('~/server/utils');
 const denyRequest = require('./denyRequest');
 
 const {
