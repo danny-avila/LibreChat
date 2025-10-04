@@ -169,6 +169,9 @@ actions:
 #     # type: sse # type can optionally be omitted
 #     url: http://localhost:3001/sse
 #     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+#     # clientSideSchemaValidation: false  # Disable client-side JSON Schema validation (default: true)
+#     # When false, allows server-side validation to take precedence. Useful when client-side
+#     # validation is too restrictive and prevents valid tool calls.
 #   puppeteer:
 #     type: stdio
 #     command: npx
