@@ -28,6 +28,12 @@ const BaseOptionsSchema = z.object({
    */
   requiresOAuth: z.boolean().optional(),
   /**
+   * Controls whether client-side JSON Schema validation is performed on tool parameters.
+   * - true (default): Validates tool parameters against JSON Schema before calling MCP server
+   * - false: Skips client-side validation, allowing server-side validation to take precedence
+   */
+  clientSideSchemaValidation: z.boolean().optional(),
+  /**
    * OAuth configuration for SSE and Streamable HTTP transports
    * - Optional: OAuth can be auto-discovered on 401 responses
    * - Pre-configured values will skip discovery steps
