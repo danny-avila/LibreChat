@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import type { AppConfig } from '~/types';
+import type { AppConfig } from '@librechat/data-schemas';
 
 /**
  * Default retention period for temporary chats in hours

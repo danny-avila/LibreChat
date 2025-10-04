@@ -1,7 +1,6 @@
 import { logger } from '@librechat/data-schemas';
-import { BlobServiceClient } from '@azure/storage-blob';
 import { DefaultAzureCredential } from '@azure/identity';
-import type { ContainerClient } from '@azure/storage-blob';
+import type { ContainerClient, BlobServiceClient } from '@azure/storage-blob';
 
 let blobServiceClient: BlobServiceClient | null = null;
 let azureWarningLogged = false;
@@ -13,12 +12,13 @@ let azureWarningLogged = false;
  * Note: Container creation (and its public access settings) is handled later in the CRUD functions.
  * @returns The initialized client, or null if the required configuration is missing.
  */
-export const initializeAzureBlobService = (): BlobServiceClient | null => {
+export const initializeAzureBlobService = async (): Promise<BlobServiceClient | null> => {
   if (blobServiceClient) {
     return blobServiceClient;
   }
   const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
   if (connectionString) {
+    const { BlobServiceClient } = await import('@azure/storage-blob');
     blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
     logger.info('Azure Blob Service initialized using connection string');
   } else {
@@ -34,6 +34,7 @@ export const initializeAzureBlobService = (): BlobServiceClient | null => {
     }
     const url = `https://${accountName}.blob.core.windows.net`;
     const credential = new DefaultAzureCredential();
+    const { BlobServiceClient } = await import('@azure/storage-blob');
     blobServiceClient = new BlobServiceClient(url, credential);
     logger.info('Azure Blob Service initialized using Managed Identity');
   }
@@ -45,9 +46,9 @@ export const initializeAzureBlobService = (): BlobServiceClient | null => {
  * @param [containerName=process.env.AZURE_CONTAINER_NAME || 'files'] - The container name.
  * @returns The Azure ContainerClient.
  */
-export const getAzureContainerClient = (
+export const getAzureContainerClient = async (
   containerName = process.env.AZURE_CONTAINER_NAME || 'files',
-): ContainerClient | null => {
-  const serviceClient = initializeAzureBlobService();
+): Promise<ContainerClient | null> => {
+  const serviceClient = await initializeAzureBlobService();
   return serviceClient ? serviceClient.getContainerClient(containerName) : null;
 };

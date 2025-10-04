@@ -1,8 +1,7 @@
-import { logger } from '@librechat/data-schemas';
 import { removeNullishValues } from 'librechat-data-provider';
 import type { TCustomConfig, TConfigDefaults } from 'librechat-data-provider';
-import type { AppConfig } from '~/types/config';
-import { isMemoryEnabled } from '~/memory/config';
+import type { AppConfig } from '~/types/app';
+import { isMemoryEnabled } from './memory';
 
 /**
  * Loads the default interface object.
@@ -57,52 +56,6 @@ export async function loadDefaultInterface({
     peoplePicker: interfaceConfig?.peoplePicker,
     marketplace: interfaceConfig?.marketplace,
   });
-
-  let i = 0;
-  const logSettings = () => {
-    // log interface object and model specs object (without list) for reference
-    logger.warn(`\`interface\` settings:\n${JSON.stringify(loadedInterface, null, 2)}`);
-    logger.warn(
-      `\`modelSpecs\` settings:\n${JSON.stringify(
-        { ...(config?.modelSpecs ?? {}), list: undefined },
-        null,
-        2,
-      )}`,
-    );
-  };
-
-  // warn about config.modelSpecs.prioritize if true and presets are enabled, that default presets will conflict with prioritizing model specs.
-  if (config?.modelSpecs?.prioritize && loadedInterface.presets) {
-    logger.warn(
-      "Note: Prioritizing model specs can conflict with default presets if a default preset is set. It's recommended to disable presets from the interface or disable use of a default preset.",
-    );
-    if (i === 0) i++;
-  }
-
-  // warn about config.modelSpecs.enforce if true and if any of these, endpointsMenu, modelSelect, presets, or parameters are enabled, that enforcing model specs can conflict with these options.
-  if (
-    config?.modelSpecs?.enforce &&
-    (loadedInterface.endpointsMenu ||
-      loadedInterface.modelSelect ||
-      loadedInterface.presets ||
-      loadedInterface.parameters)
-  ) {
-    logger.warn(
-      "Note: Enforcing model specs can conflict with the interface options: endpointsMenu, modelSelect, presets, and parameters. It's recommended to disable these options from the interface or disable enforcing model specs.",
-    );
-    if (i === 0) i++;
-  }
-  // warn if enforce is true and prioritize is not, that enforcing model specs without prioritizing them can lead to unexpected behavior.
-  if (config?.modelSpecs?.enforce && !config?.modelSpecs?.prioritize) {
-    logger.warn(
-      "Note: Enforcing model specs without prioritizing them can lead to unexpected behavior. It's recommended to enable prioritizing model specs if enforcing them.",
-    );
-    if (i === 0) i++;
-  }
-
-  if (i > 0) {
-    logSettings();
-  }
 
   return loadedInterface;
 }

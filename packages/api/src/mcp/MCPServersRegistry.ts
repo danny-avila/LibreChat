@@ -1,8 +1,8 @@
 import mapValues from 'lodash/mapValues';
 import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
+import type { JsonSchemaType } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
-import type { JsonSchemaType } from '~/types';
 import type * as t from '~/mcp/types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { detectOAuthRequirement } from '~/mcp/oauth';
