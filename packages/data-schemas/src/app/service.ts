@@ -1,6 +1,6 @@
 import { EModelEndpoint, getConfigDefaults } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
-import type { FunctionTool } from '~/types/app';
+import type { TCustomConfig, FileSources } from 'librechat-data-provider';
+import type { AppConfig, FunctionTool } from '~/types/app';
 import { loadDefaultInterface } from './interface';
 import { loadTurnstileConfig } from './turnstile';
 import { agentsConfigSetup } from './agents';
@@ -32,7 +32,7 @@ export const AppService = async (params?: {
   config: Partial<TCustomConfig>;
   paths?: Paths;
   systemTools?: Record<string, FunctionTool>;
-}) => {
+}): Promise<AppConfig> => {
   const { config, paths, systemTools } = params || {};
   if (!config) {
     throw new Error('Config is required');
@@ -44,7 +44,11 @@ export const AppService = async (params?: {
   const memory = loadMemoryConfig(config.memory);
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
-  const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
+  const fileStrategy = (config.fileStrategy ?? configDefaults.fileStrategy) as
+    | FileSources.local
+    | FileSources.s3
+    | FileSources.firebase
+    | FileSources.azure_blob;
   const startBalance = process.env.START_BALANCE;
   const balance = config.balance ?? {
     enabled: process.env.CHECK_BALANCE?.toLowerCase().trim() === 'true',

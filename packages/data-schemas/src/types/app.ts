@@ -41,11 +41,11 @@ export interface FunctionTool {
  */
 export interface AppConfig {
   /** The main custom configuration */
-  config: TCustomConfig;
+  config: Partial<TCustomConfig>;
   /** OCR configuration */
   ocr?: TCustomConfig['ocr'];
   /** File paths configuration */
-  paths: {
+  paths?: {
     uploads: string;
     imageOutput: string;
     publicPath: string;
@@ -58,7 +58,7 @@ export interface AppConfig {
   /** File storage strategy ('local', 's3', 'firebase', 'azure_blob') */
   fileStrategy: FileSources.local | FileSources.s3 | FileSources.firebase | FileSources.azure_blob;
   /** File strategies configuration */
-  fileStrategies: TCustomConfig['fileStrategies'];
+  fileStrategies?: TCustomConfig['fileStrategies'];
   /** Registration configurations */
   registration?: TCustomConfig['registration'];
   /** Actions configurations */
@@ -72,9 +72,9 @@ export interface AppConfig {
   /** Interface configuration */
   interfaceConfig?: TCustomConfig['interface'];
   /** Turnstile configuration */
-  turnstileConfig?: TCustomConfig['turnstile'];
+  turnstileConfig?: Partial<TCustomConfig['turnstile']>;
   /** Balance configuration */
-  balance?: TCustomConfig['balance'];
+  balance?: Partial<TCustomConfig['balance']>;
   /** Transactions configuration */
   transactions?: TCustomConfig['transactions'];
   /** Speech configuration */
