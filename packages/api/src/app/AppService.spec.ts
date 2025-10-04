@@ -1,4 +1,5 @@
 import {
+  OCRStrategy,
   FileSources,
   EModelEndpoint,
   EImageOutputType,
@@ -7,6 +8,7 @@ import {
   validateAzureGroups,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
+import type { TCustomConfig } from 'librechat-data-provider';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -54,7 +56,7 @@ const azureGroups = [
     models: {
       'gpt-4-turbo': true,
     },
-  },
+  } as const,
 ];
 
 describe('AppService', () => {
@@ -81,9 +83,9 @@ describe('AppService', () => {
   });
 
   it('should correctly assign process.env and initialize app config based on custom config', async () => {
-    const config = {
+    const config: Partial<TCustomConfig> = {
       registration: { socialLogins: ['testLogin'] },
-      fileStrategy: 'testStrategy',
+      fileStrategy: 'testStrategy' as FileSources,
       balance: {
         enabled: true,
       },
@@ -203,7 +205,7 @@ describe('AppService', () => {
   });
 
   it('should correctly configure Assistants endpoint based on custom config', async () => {
-    const config = {
+    const config: Partial<TCustomConfig> = {
       endpoints: {
         [EModelEndpoint.assistants]: {
           disableBuilder: true,
@@ -233,7 +235,7 @@ describe('AppService', () => {
   });
 
   it('should correctly configure Agents endpoint based on custom config', async () => {
-    const config = {
+    const config: Partial<TCustomConfig> = {
       endpoints: {
         [EModelEndpoint.agents]: {
           disableBuilder: true,
@@ -339,7 +341,7 @@ describe('AppService', () => {
   });
 
   it('should correctly configure Azure OpenAI endpoint based on custom config', async () => {
-    const config = {
+    const config: Partial<TCustomConfig> = {
       endpoints: {
         [EModelEndpoint.azureOpenAI]: {
           groups: azureGroups,
@@ -387,13 +389,13 @@ describe('AppService', () => {
 
   it('should correctly set FILE_UPLOAD environment variables based on rate limits', async () => {
     // Define and mock a custom configuration with rate limits
-    const config = {
+    const config: Partial<TCustomConfig> = {
       rateLimits: {
         fileUploads: {
-          ipMax: '100',
-          ipWindowInMinutes: '60',
-          userMax: '50',
-          userWindowInMinutes: '30',
+          ipMax: 100,
+          ipWindowInMinutes: 60,
+          userMax: 50,
+          userWindowInMinutes: 30,
         },
       },
     };
@@ -445,13 +447,13 @@ describe('AppService', () => {
 
   it('should correctly set IMPORT environment variables based on rate limits', async () => {
     // Define and mock a custom configuration with rate limits
-    const config = {
+    const config: Partial<TCustomConfig> = {
       rateLimits: {
         conversationsImport: {
-          ipMax: '150',
-          ipWindowInMinutes: '60',
-          userMax: '50',
-          userWindowInMinutes: '30',
+          ipMax: 150,
+          ipWindowInMinutes: 60,
+          userMax: 50,
+          userWindowInMinutes: 30,
         },
       },
     };
@@ -483,7 +485,7 @@ describe('AppService', () => {
   });
 
   it('should correctly configure endpoint with titlePrompt, titleMethod, and titlePromptTemplate', async () => {
-    const config = {
+    const config: Partial<TCustomConfig> = {
       endpoints: {
         [EModelEndpoint.openAI]: {
           titleConvo: true,
@@ -541,7 +543,7 @@ describe('AppService', () => {
   });
 
   it('should configure Agent endpoint with title generation settings', async () => {
-    const config = {
+    const config: Partial<TCustomConfig> = {
       endpoints: {
         [EModelEndpoint.agents]: {
           disableBuilder: false,
@@ -552,6 +554,9 @@ describe('AppService', () => {
           titlePromptTemplate: 'Agent conversation summary: {{content}}',
           recursionLimit: 15,
           capabilities: [AgentCapabilities.tools, AgentCapabilities.actions],
+          maxCitations: 30,
+          maxCitationsPerFile: 7,
+          minRelevanceScore: 0.45,
         },
       },
     };
@@ -608,7 +613,7 @@ describe('AppService', () => {
   });
 
   it('should correctly configure titleEndpoint when specified', async () => {
-    const config = {
+    const config: Partial<TCustomConfig> = {
       endpoints: {
         [EModelEndpoint.openAI]: {
           titleConvo: true,
@@ -617,6 +622,11 @@ describe('AppService', () => {
           titlePrompt: 'Generate a concise title',
         },
         [EModelEndpoint.agents]: {
+          disableBuilder: false,
+          capabilities: [AgentCapabilities.tools],
+          maxCitations: 30,
+          maxCitationsPerFile: 7,
+          minRelevanceScore: 0.45,
           titleEndpoint: 'custom-provider',
           titleMethod: 'structured',
         },
@@ -646,7 +656,7 @@ describe('AppService', () => {
   });
 
   it('should correctly configure all endpoint when specified', async () => {
-    const config = {
+    const config: Partial<TCustomConfig> = {
       endpoints: {
         all: {
           titleConvo: true,
@@ -691,7 +701,7 @@ describe('AppService', () => {
 });
 
 describe('AppService updating app config and issuing warnings', () => {
-  let initialEnv;
+  let initialEnv: NodeJS.ProcessEnv;
 
   beforeEach(() => {
     // Store initial environment variables to restore them after each test
@@ -728,8 +738,8 @@ describe('AppService updating app config and issuing warnings', () => {
 
   it('should initialize app config with values from config', async () => {
     // Mock loadCustomConfig to return a specific config object with a complete balance config
-    const config = {
-      fileStrategy: 'firebase',
+    const config: Partial<TCustomConfig> = {
+      fileStrategy: FileSources.firebase,
       registration: { socialLogins: ['testLogin'] },
       balance: {
         enabled: false,
@@ -748,7 +758,7 @@ describe('AppService updating app config and issuing warnings', () => {
         config,
         fileStrategy: config.fileStrategy,
         registration: expect.objectContaining({
-          socialLogins: config.registration.socialLogins,
+          socialLogins: config.registration?.socialLogins,
         }),
         balance: config.balance,
       }),
@@ -756,9 +766,12 @@ describe('AppService updating app config and issuing warnings', () => {
   });
 
   it('should apply the assistants endpoint configuration correctly to app config', async () => {
-    const config = {
+    const config: Partial<TCustomConfig> = {
       endpoints: {
         assistants: {
+          version: 'v2',
+          retrievalModels: ['gpt-4', 'gpt-3.5-turbo'],
+          capabilities: [],
           disableBuilder: true,
           pollIntervalMs: 5000,
           timeoutMs: 30000,
@@ -788,11 +801,11 @@ describe('AppService updating app config and issuing warnings', () => {
 
   it('should not parse environment variable references in OCR config', async () => {
     // Mock custom configuration with env variable references in OCR config
-    const config = {
+    const config: Partial<TCustomConfig> = {
       ocr: {
         apiKey: '${OCR_API_KEY_CUSTOM_VAR_NAME}',
         baseURL: '${OCR_BASEURL_CUSTOM_VAR_NAME}',
-        strategy: 'mistral_ocr',
+        strategy: OCRStrategy.MISTRAL_OCR,
         mistralModel: 'mistral-medium',
       },
     };

@@ -1,5 +1,5 @@
 import { EModelEndpoint, getConfigDefaults } from 'librechat-data-provider';
-import type { TCustomConfig, FileSources } from 'librechat-data-provider';
+import type { TCustomConfig, FileSources, DeepPartial } from 'librechat-data-provider';
 import type { AppConfig, FunctionTool } from '~/types/app';
 import { loadDefaultInterface } from './interface';
 import { loadTurnstileConfig } from './turnstile';
@@ -29,7 +29,7 @@ export type Paths = {
  * @function AppService
  */
 export const AppService = async (params?: {
-  config: Partial<TCustomConfig>;
+  config: DeepPartial<TCustomConfig>;
   paths?: Paths;
   systemTools?: Record<string, FunctionTool>;
 }): Promise<AppConfig> => {

@@ -44,8 +44,12 @@ export function processModelSpecs(
     );
   }
 
+  if (!list || list.length === 0) {
+    return undefined;
+  }
+
   for (const spec of list) {
-    const currentEndpoint = spec.preset.endpoint as EModelEndpoint | undefined;
+    const currentEndpoint = spec.preset?.endpoint as EModelEndpoint | undefined;
     if (!currentEndpoint) {
       logger.warn(
         'A model spec is missing the `endpoint` field within its `preset`. Skipping model spec...',

@@ -91,15 +91,15 @@ export interface AppConfig {
   availableTools?: Record<string, FunctionTool>;
   endpoints?: {
     /** OpenAI endpoint configuration */
-    openAI?: TEndpoint;
+    openAI?: Partial<TEndpoint>;
     /** Google endpoint configuration */
-    google?: TEndpoint;
+    google?: Partial<TEndpoint>;
     /** Bedrock endpoint configuration */
-    bedrock?: TEndpoint;
+    bedrock?: Partial<TEndpoint>;
     /** Anthropic endpoint configuration */
-    anthropic?: TEndpoint;
+    anthropic?: Partial<TEndpoint>;
     /** GPT plugins endpoint configuration */
-    gptPlugins?: TEndpoint;
+    gptPlugins?: Partial<TEndpoint>;
     /** Azure OpenAI endpoint configuration */
     azureOpenAI?: TAzureConfig;
     /** Assistants endpoint configuration */
