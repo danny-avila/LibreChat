@@ -18,7 +18,7 @@ const InfoHoverCard = ({ side, text }: InfoHoverCardProps) => {
         className="inline-flex cursor-help items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary focus-visible:ring-offset-2"
         onFocus={() => setIsOpen(true)}
         onBlur={() => setIsOpen(false)}
-        aria-label="More information"
+        aria-label={text}
       >
         <CircleHelpIcon className="h-5 w-5 text-text-tertiary" aria-hidden="true" />
       </HoverCardTrigger>
