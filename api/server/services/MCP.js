@@ -294,12 +294,16 @@ async function createMCPTool({
     return;
   }
 
+  const mcpManager = getMCPManager(user?.id);
+  const serverConfig = mcpManager.getRawConfig(serverName);
+
   return createToolInstance({
     res,
     provider,
     toolName,
     serverName,
     toolDefinition,
+    serverConfig,
   });
 }
 
