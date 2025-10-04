@@ -1103,7 +1103,7 @@
 
 /**
  * @exports AppConfig
- * @typedef {import('@librechat/api').AppConfig} AppConfig
+ * @typedef {import('@librechat/data-schemas').AppConfig} AppConfig
  * @memberof typedefs
  */
 
