@@ -1,7 +1,7 @@
-const socialLogin = require('./socialLogin');
-const { Strategy: AppleStrategy } = require('passport-apple');
-const { logger } = require('~/config');
 const jwt = require('jsonwebtoken');
+const { logger } = require('@librechat/data-schemas');
+const { Strategy: AppleStrategy } = require('passport-apple');
+const socialLogin = require('./socialLogin');
 
 /**
  * Extract profile details from the decoded idToken

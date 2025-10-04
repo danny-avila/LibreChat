@@ -180,6 +180,7 @@ export enum AgentCapabilities {
   web_search = 'web_search',
   artifacts = 'artifacts',
   actions = 'actions',
+  context = 'context',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -253,6 +254,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.web_search,
   AgentCapabilities.artifacts,
   AgentCapabilities.actions,
+  AgentCapabilities.context,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
@@ -887,6 +889,7 @@ export enum KnownEndpoints {
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
   unify = 'unify',
+  vercel = 'vercel',
   xai = 'xai',
 }
 
@@ -923,9 +926,17 @@ export const alternateName = {
   [KnownEndpoints.ollama]: 'Ollama',
   [KnownEndpoints.deepseek]: 'DeepSeek',
   [KnownEndpoints.xai]: 'xAI',
+  [KnownEndpoints.vercel]: 'Vercel',
 };
 
 const sharedOpenAIModels = [
+  'gpt-5',
+  'gpt-5-mini',
+  'gpt-5-nano',
+  'gpt-5-chat-latest',
+  'gpt-4.1',
+  'gpt-4.1-mini',
+  'gpt-4.1-nano',
   'gpt-4o-mini',
   'gpt-4o',
   'gpt-4.5-preview',
@@ -948,10 +959,14 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-sonnet-4-5',
+  'claude-sonnet-4-5-20250929',
+  'claude-opus-4-1',
+  'claude-opus-4-1-20250805',
   'claude-sonnet-4-20250514',
-  'claude-sonnet-4-latest',
+  'claude-sonnet-4-0',
   'claude-opus-4-20250514',
-  'claude-opus-4-latest',
+  'claude-opus-4-0',
   'claude-3-7-sonnet-latest',
   'claude-3-7-sonnet-20250219',
   'claude-3-5-haiku-20241022',
@@ -1009,18 +1024,13 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 2.5 Models
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
     // Gemini 2.0 Models
     'gemini-2.0-flash-001',
-    'gemini-2.0-flash-exp',
     'gemini-2.0-flash-lite',
-    'gemini-2.0-pro-exp-02-05',
-    // Gemini 1.5 Models
-    'gemini-1.5-flash-001',
-    'gemini-1.5-flash-002',
-    'gemini-1.5-pro-001',
-    'gemini-1.5-pro-002',
-    // Gemini 1.0 Models
-    'gemini-1.0-pro-001',
   ],
   [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
@@ -1103,6 +1113,7 @@ export const visionModels = [
   'gemini-exp',
   'gemini-1.5',
   'gemini-2',
+  'gemini-2.5',
   'gemini-3',
   'moondream',
   'llama3.2-vision',
@@ -1526,9 +1537,9 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.8.0-rc4',
+  VERSION = 'v0.8.0',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.9',
+  CONFIG_VERSION = '1.3.0',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */

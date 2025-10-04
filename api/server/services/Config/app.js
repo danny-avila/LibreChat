@@ -36,7 +36,7 @@ async function getAppConfig(options = {}) {
     }
 
     if (baseConfig.availableTools) {
-      await setCachedTools(baseConfig.availableTools, { isGlobal: true });
+      await setCachedTools(baseConfig.availableTools);
     }
 
     await cache.set(BASE_CONFIG_KEY, baseConfig);
