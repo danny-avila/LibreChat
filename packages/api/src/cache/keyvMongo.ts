@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 import { EventEmitter } from 'events';
+import { GridFSBucket } from 'mongodb';
 import { logger } from '@librechat/data-schemas';
-import { GridFSBucket, type Db, type ReadPreference, type Collection } from 'mongodb';
+import type { Db, ReadPreference, Collection } from 'mongodb';
 
 interface KeyvMongoOptions {
   url?: string;
@@ -103,7 +104,7 @@ class KeyvMongoCustom extends EventEmitter {
       const stream = client.bucket.openDownloadStreamByName(key);
 
       return new Promise((resolve) => {
-        const resp: Buffer[] = [];
+        const resp: Uint8Array[] = [];
         stream.on('error', () => {
           resolve(undefined);
         });
@@ -113,7 +114,7 @@ class KeyvMongoCustom extends EventEmitter {
           resolve(data);
         });
 
-        stream.on('data', (chunk: Buffer) => {
+        stream.on('data', (chunk: Uint8Array) => {
           resp.push(chunk);
         });
       });
