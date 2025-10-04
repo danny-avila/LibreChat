@@ -10,8 +10,8 @@ import type { TCustomConfig, TAgentsEndpoint } from 'librechat-data-provider';
  * @returns The Agents endpoint configuration.
  */
 export function agentsConfigSetup(
-  config: TCustomConfig,
-  defaultConfig: Partial<TAgentsEndpoint>,
+  config: Partial<TCustomConfig>,
+  defaultConfig?: Partial<TAgentsEndpoint>,
 ): Partial<TAgentsEndpoint> {
   const agentsConfig = config?.endpoints?.[EModelEndpoint.agents];
 

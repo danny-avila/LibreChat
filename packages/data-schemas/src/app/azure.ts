@@ -1,18 +1,22 @@
-const { logger } = require('@librechat/data-schemas');
-const {
+import logger from '~/config/winston';
+import {
   EModelEndpoint,
   validateAzureGroups,
   mapModelToAzureConfig,
-} = require('librechat-data-provider');
+} from 'librechat-data-provider';
+import type { TCustomConfig, TAzureConfig } from 'librechat-data-provider';
 
 /**
  * Sets up the Azure OpenAI configuration from the config (`librechat.yaml`) file.
- * @param {TCustomConfig} config - The loaded custom configuration.
- * @returns {TAzureConfig} The Azure OpenAI configuration.
+ * @param config - The loaded custom configuration.
+ * @returns The Azure OpenAI configuration.
  */
-function azureConfigSetup(config) {
-  const { groups, ...azureConfiguration } = config.endpoints[EModelEndpoint.azureOpenAI];
-  /** @type {TAzureConfigValidationResult} */
+export function azureConfigSetup(config: Partial<TCustomConfig>): TAzureConfig {
+  const azureConfig = config.endpoints?.[EModelEndpoint.azureOpenAI];
+  if (!azureConfig) {
+    throw new Error('Azure OpenAI configuration is missing.');
+  }
+  const { groups, ...azureConfiguration } = azureConfig;
   const { isValid, modelNames, modelGroupMap, groupMap, errors } = validateAzureGroups(groups);
 
   if (!isValid) {
@@ -22,16 +26,18 @@ function azureConfigSetup(config) {
     throw new Error(errorMessage);
   }
 
-  const assistantModels = [];
-  const assistantGroups = new Set();
+  const assistantModels: string[] = [];
+  const assistantGroups = new Set<string>();
   for (const modelName of modelNames) {
     mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
     const groupName = modelGroupMap?.[modelName]?.group;
     const modelGroup = groupMap?.[groupName];
-    let supportsAssistants = modelGroup?.assistants || modelGroup?.[modelName]?.assistants;
+    const supportsAssistants = modelGroup?.assistants || modelGroup?.[modelName]?.assistants;
     if (supportsAssistants) {
       assistantModels.push(modelName);
-      !assistantGroups.has(groupName) && assistantGroups.add(groupName);
+      if (!assistantGroups.has(groupName)) {
+        assistantGroups.add(groupName);
+      }
     }
   }
 
@@ -53,13 +59,13 @@ function azureConfigSetup(config) {
   }
 
   return {
+    errors,
+    isValid,
+    groupMap,
     modelNames,
     modelGroupMap,
-    groupMap,
     assistantModels,
     assistantGroups: Array.from(assistantGroups),
     ...azureConfiguration,
   };
 }
-
-module.exports = { azureConfigSetup };

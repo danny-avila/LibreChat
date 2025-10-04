@@ -1,3 +1,5 @@
+import { webSearchAuth } from '@librechat/data-schemas';
+import { SafeSearchTypes, AuthType } from 'librechat-data-provider';
 import type {
   ScraperTypes,
   TCustomConfig,
@@ -5,8 +7,7 @@ import type {
   SearchProviders,
   TWebSearchConfig,
 } from 'librechat-data-provider';
-import { webSearchAuth, loadWebSearchAuth, extractWebSearchEnvVars } from './web';
-import { SafeSearchTypes, AuthType } from 'librechat-data-provider';
+import { loadWebSearchAuth, extractWebSearchEnvVars } from './web';
 
 // Mock the extractVariableName function
 jest.mock('../utils', () => ({

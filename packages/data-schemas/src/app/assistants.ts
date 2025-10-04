@@ -1,15 +1,20 @@
-const { logger } = require('@librechat/data-schemas');
-const {
+import logger from '~/config/winston';
+import {
   Capabilities,
+  EModelEndpoint,
   assistantEndpointSchema,
   defaultAssistantsVersion,
-} = require('librechat-data-provider');
+} from 'librechat-data-provider';
+import type { TCustomConfig, TAssistantEndpoint } from 'librechat-data-provider';
 
 /**
  * Sets up the minimum, default Assistants configuration if Azure OpenAI Assistants option is enabled.
- * @returns {Partial<TAssistantEndpoint>} The Assistants endpoint configuration.
+ * @returns The Assistants endpoint configuration.
  */
-function azureAssistantsDefaults() {
+export function azureAssistantsDefaults(): {
+  capabilities: TAssistantEndpoint['capabilities'];
+  version: TAssistantEndpoint['version'];
+} {
   return {
     capabilities: [Capabilities.tools, Capabilities.actions, Capabilities.code_interpreter],
     version: defaultAssistantsVersion.azureAssistants,
@@ -18,22 +23,26 @@ function azureAssistantsDefaults() {
 
 /**
  * Sets up the Assistants configuration from the config (`librechat.yaml`) file.
- * @param {TCustomConfig} config - The loaded custom configuration.
- * @param {EModelEndpoint.assistants|EModelEndpoint.azureAssistants} assistantsEndpoint - The Assistants endpoint name.
+ * @param config - The loaded custom configuration.
+ * @param assistantsEndpoint - The Assistants endpoint name.
  * - The previously loaded assistants configuration from Azure OpenAI Assistants option.
- * @param {Partial<TAssistantEndpoint>} [prevConfig]
- * @returns {Partial<TAssistantEndpoint>} The Assistants endpoint configuration.
+ * @param [prevConfig]
+ * @returns The Assistants endpoint configuration.
  */
-function assistantsConfigSetup(config, assistantsEndpoint, prevConfig = {}) {
-  const assistantsConfig = config.endpoints[assistantsEndpoint];
+export function assistantsConfigSetup(
+  config: Partial<TCustomConfig>,
+  assistantsEndpoint: EModelEndpoint.assistants | EModelEndpoint.azureAssistants,
+  prevConfig: Partial<TAssistantEndpoint> = {},
+): Partial<TAssistantEndpoint> {
+  const assistantsConfig = config.endpoints?.[assistantsEndpoint];
   const parsedConfig = assistantEndpointSchema.parse(assistantsConfig);
-  if (assistantsConfig.supportedIds?.length && assistantsConfig.excludedIds?.length) {
+  if (assistantsConfig?.supportedIds?.length && assistantsConfig.excludedIds?.length) {
     logger.warn(
       `Configuration conflict: The '${assistantsEndpoint}' endpoint has both 'supportedIds' and 'excludedIds' defined. The 'excludedIds' will be ignored.`,
     );
   }
   if (
-    assistantsConfig.privateAssistants &&
+    assistantsConfig?.privateAssistants &&
     (assistantsConfig.supportedIds?.length || assistantsConfig.excludedIds?.length)
   ) {
     logger.warn(
@@ -59,5 +68,3 @@ function assistantsConfigSetup(config, assistantsEndpoint, prevConfig = {}) {
     titlePromptTemplate: parsedConfig.titlePromptTemplate,
   };
 }
-
-module.exports = { azureAssistantsDefaults, assistantsConfigSetup };

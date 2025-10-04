@@ -1,6 +1,5 @@
 import type { Request } from 'express';
-import type { IUser } from '@librechat/data-schemas';
-import type { AppConfig } from './config';
+import type { IUser, AppConfig } from '@librechat/data-schemas';
 
 /**
  * LibreChat-specific request body type that extends Express Request body

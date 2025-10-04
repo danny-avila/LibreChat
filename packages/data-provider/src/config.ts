@@ -155,8 +155,10 @@ export type TAzureGroupMap = Record<
 
 export type TValidatedAzureConfig = {
   modelNames: string[];
-  modelGroupMap: TAzureModelGroupMap;
   groupMap: TAzureGroupMap;
+  assistantModels?: string[];
+  assistantGroups?: string[];
+  modelGroupMap: TAzureModelGroupMap;
 };
 
 export type TAzureConfigValidationResult = TValidatedAzureConfig & {

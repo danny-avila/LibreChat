@@ -1,22 +1,24 @@
-const { agentsConfigSetup } = require('@librechat/api');
-const { EModelEndpoint } = require('librechat-data-provider');
-const { azureAssistantsDefaults, assistantsConfigSetup } = require('./assistants');
-const { azureConfigSetup } = require('./azureOpenAI');
-const { checkAzureVariables } = require('./checks');
+import { EModelEndpoint } from 'librechat-data-provider';
+import type { TCustomConfig, TAgentsEndpoint } from 'librechat-data-provider';
+import type { AppConfig } from '~/types';
+import { azureAssistantsDefaults, assistantsConfigSetup } from './assistants';
+import { agentsConfigSetup } from './agents';
+import { azureConfigSetup } from './azure';
 
 /**
  * Loads custom config endpoints
- * @param {TCustomConfig} [config]
- * @param {TCustomConfig['endpoints']['agents']} [agentsDefaults]
+ * @param [config]
+ * @param [agentsDefaults]
  */
-const loadEndpoints = (config, agentsDefaults) => {
-  /** @type {AppConfig['endpoints']} */
-  const loadedEndpoints = {};
+export const loadEndpoints = (
+  config: Partial<TCustomConfig>,
+  agentsDefaults?: Partial<TAgentsEndpoint>,
+) => {
+  const loadedEndpoints: AppConfig['endpoints'] = {};
   const endpoints = config?.endpoints;
 
   if (endpoints?.[EModelEndpoint.azureOpenAI]) {
     loadedEndpoints[EModelEndpoint.azureOpenAI] = azureConfigSetup(config);
-    checkAzureVariables();
   }
 
   if (endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
@@ -50,8 +52,9 @@ const loadEndpoints = (config, agentsDefaults) => {
   ];
 
   endpointKeys.forEach((key) => {
-    if (endpoints?.[key]) {
-      loadedEndpoints[key] = endpoints[key];
+    const currentKey = key as keyof typeof endpoints;
+    if (endpoints?.[currentKey]) {
+      loadedEndpoints[currentKey] = endpoints[currentKey];
     }
   });
 
@@ -60,8 +63,4 @@ const loadEndpoints = (config, agentsDefaults) => {
   }
 
   return loadedEndpoints;
-};
-
-module.exports = {
-  loadEndpoints,
 };

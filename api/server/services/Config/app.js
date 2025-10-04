@@ -1,10 +1,24 @@
-const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
-const AppService = require('~/server/services/AppService');
+const { logger, AppService } = require('@librechat/data-schemas');
+const { loadAndFormatTools } = require('~/server/services/start/tools');
+const loadCustomConfig = require('./loadCustomConfig');
 const { setCachedTools } = require('./getCachedTools');
 const getLogStores = require('~/cache/getLogStores');
+const paths = require('~/config/paths');
 
 const BASE_CONFIG_KEY = '_BASE_';
+
+const loadBaseConfig = async () => {
+  /** @type {TCustomConfig} */
+  const config = (await loadCustomConfig()) ?? {};
+  /** @type {Record<string, FunctionTool>} */
+  const systemTools = loadAndFormatTools({
+    adminFilter: config.filteredTools,
+    adminIncluded: config.includedTools,
+    directory: paths.structuredTools,
+  });
+  return AppService({ config, paths, systemTools });
+};
 
 /**
  * Get the app configuration based on user context
@@ -29,7 +43,7 @@ async function getAppConfig(options = {}) {
   let baseConfig = await cache.get(BASE_CONFIG_KEY);
   if (!baseConfig) {
     logger.info('[getAppConfig] App configuration not initialized. Initializing AppService...');
-    baseConfig = await AppService();
+    baseConfig = await loadBaseConfig();
 
     if (!baseConfig) {
       throw new Error('Failed to initialize app configuration through AppService.');

@@ -11,12 +11,14 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-const { checkWebSearchConfig } = require('./checks');
-const { logger } = require('@librechat/data-schemas');
-const { extractVariableName } = require('librechat-data-provider');
+import { checkWebSearchConfig } from './checks';
+import { logger } from '@librechat/data-schemas';
+import { extractVariableName as extract } from 'librechat-data-provider';
+
+const extractVariableName = extract as jest.MockedFunction<typeof extract>;
 
 describe('checkWebSearchConfig', () => {
-  let originalEnv;
+  let originalEnv: NodeJS.ProcessEnv;
 
   beforeEach(() => {
     // Clear all mocks
@@ -178,6 +180,8 @@ describe('checkWebSearchConfig', () => {
         anotherKey: '${SOME_VAR}',
       };
 
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      /** @ts-expect-error */
       checkWebSearchConfig(config);
 
       expect(extractVariableName).not.toHaveBeenCalled();

@@ -9,7 +9,31 @@ import type {
   TCustomEndpoints,
   TAssistantEndpoint,
 } from 'librechat-data-provider';
-import type { FunctionTool } from './tools';
+
+export type JsonSchemaType = {
+  type: 'string' | 'number' | 'integer' | 'float' | 'boolean' | 'array' | 'object';
+  enum?: string[];
+  items?: JsonSchemaType;
+  properties?: Record<string, JsonSchemaType>;
+  required?: string[];
+  description?: string;
+  additionalProperties?: boolean | JsonSchemaType;
+};
+
+export type ConvertJsonSchemaToZodOptions = {
+  allowEmptyObject?: boolean;
+  dropFields?: string[];
+  transformOneOfAnyOf?: boolean;
+};
+
+export interface FunctionTool {
+  type: 'function';
+  function: {
+    description: string;
+    name: string;
+    parameters: JsonSchemaType;
+  };
+}
 
 /**
  * Application configuration object
@@ -79,14 +103,14 @@ export interface AppConfig {
     /** Azure OpenAI endpoint configuration */
     azureOpenAI?: TAzureConfig;
     /** Assistants endpoint configuration */
-    assistants?: TAssistantEndpoint;
+    assistants?: Partial<TAssistantEndpoint>;
     /** Azure assistants endpoint configuration */
-    azureAssistants?: TAssistantEndpoint;
+    azureAssistants?: Partial<TAssistantEndpoint>;
     /** Agents endpoint configuration */
-    [EModelEndpoint.agents]?: TAgentsEndpoint;
+    [EModelEndpoint.agents]?: Partial<TAgentsEndpoint>;
     /** Custom endpoints configuration */
     [EModelEndpoint.custom]?: TCustomEndpoints;
     /** Global endpoint configuration */
-    all?: TEndpoint;
+    all?: Partial<TEndpoint>;
   };
 }

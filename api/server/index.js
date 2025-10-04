@@ -54,9 +54,9 @@ const startServer = async () => {
   app.set('trust proxy', trusted_proxy);
 
   await seedDatabase();
-  await performStartupChecks();
   const appConfig = await getAppConfig();
   initializeFileStorage(appConfig);
+  await performStartupChecks(appConfig);
   await updateInterfacePermissions(appConfig);
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
