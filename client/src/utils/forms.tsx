@@ -4,6 +4,8 @@ import {
   alternateName,
   EModelEndpoint,
   EToolResources,
+  LocalStorageKeys,
+  defaultAgentFormValues,
 } from 'librechat-data-provider';
 import type { Agent, TFile } from 'librechat-data-provider';
 import type { DropdownValueSetter, TAgentOption, ExtendedFile } from '~/common';
@@ -42,25 +44,37 @@ export const createProviderOption = (provider: string) => ({
   value: provider,
 });
 
+/**
+ * Gets default agent form values with localStorage values for model and provider.
+ * This is used to initialize agent forms with the last used model and provider.
+ **/
+export const getDefaultAgentFormValues = () => ({
+  ...defaultAgentFormValues,
+  model: localStorage.getItem(LocalStorageKeys.LAST_AGENT_MODEL) ?? '',
+  provider: createProviderOption(localStorage.getItem(LocalStorageKeys.LAST_AGENT_PROVIDER) ?? ''),
+});
+
 export const processAgentOption = ({
   agent: _agent,
   fileMap,
-  instanceProjectId,
 }: {
   agent?: Agent;
   fileMap?: Record<string, TFile | undefined>;
-  instanceProjectId?: string;
 }): TAgentOption => {
-  const isGlobal =
-    (instanceProjectId != null && _agent?.projectIds?.includes(instanceProjectId)) ?? false;
+  const isGlobal = _agent?.isPublic ?? false;
+
+  const context_files = _agent?.tool_resources?.context?.file_ids ?? [];
+  if (_agent?.tool_resources?.ocr?.file_ids) {
+    /** Backwards-compatibility */
+    context_files.push(..._agent.tool_resources.ocr.file_ids);
+  }
+
   const agent: TAgentOption = {
     ...(_agent ?? ({} as Agent)),
     label: _agent?.name ?? '',
     value: _agent?.id ?? '',
     icon: isGlobal ? <EarthIcon className="icon-md text-green-400" /> : null,
-    context_files: _agent?.tool_resources?.ocr?.file_ids
-      ? ([] as Array<[string, ExtendedFile]>)
-      : undefined,
+    context_files: context_files.length > 0 ? ([] as Array<[string, ExtendedFile]>) : undefined,
     knowledge_files: _agent?.tool_resources?.file_search?.file_ids
       ? ([] as Array<[string, ExtendedFile]>)
       : undefined,
@@ -121,12 +135,12 @@ export const processAgentOption = ({
     }
   };
 
-  if (agent.context_files && _agent?.tool_resources?.ocr?.file_ids) {
-    _agent.tool_resources.ocr.file_ids.forEach((file_id) =>
+  if (agent.context_files && context_files.length > 0) {
+    context_files.forEach((file_id) =>
       handleFile({
         file_id,
         list: agent.context_files,
-        tool_resource: EToolResources.ocr,
+        tool_resource: EToolResources.context,
       }),
     );
   }

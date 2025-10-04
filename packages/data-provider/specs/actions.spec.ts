@@ -1,6 +1,8 @@
-import axios from 'axios';
 import { z } from 'zod';
-import { OpenAPIV3 } from 'openapi-types';
+import axios from 'axios';
+import type { OpenAPIV3 } from 'openapi-types';
+import type { ParametersSchema } from '../src/actions';
+import type { FlowchartSchema } from './openapiSpecs';
 import {
   createURL,
   resolveRef,
@@ -13,11 +15,10 @@ import {
   getWeatherOpenapiSpec,
   whimsicalOpenapiSpec,
   scholarAIOpenapiSpec,
+  formOpenAPISpec,
   swapidev,
 } from './openapiSpecs';
-import { AuthorizationTypeEnum, AuthTypeEnum } from '../src/types/assistants';
-import type { FlowchartSchema } from './openapiSpecs';
-import type { ParametersSchema } from '../src/actions';
+import { AuthorizationTypeEnum, AuthTypeEnum } from '../src/types/agents';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -275,8 +276,7 @@ describe('ActionRequest', () => {
       expect(config?.headers).toEqual({
         'some-header': 'header-var',
       });
-      expect(config?.params).toEqual({
-      });
+      expect(config?.params).toEqual({});
       expect(response.data.success).toBe(true);
     });
 
@@ -285,13 +285,13 @@ describe('ActionRequest', () => {
 
       const data: Record<string, unknown> = {
         'api-version': '2025-01-01',
-        'message': 'a body parameter',
+        message: 'a body parameter',
         'some-header': 'header-var',
       };
 
       const loc: Record<string, 'query' | 'path' | 'header' | 'body'> = {
         'api-version': 'query',
-        'message': 'body',
+        message: 'body',
         'some-header': 'header',
       };
 
@@ -326,13 +326,13 @@ describe('ActionRequest', () => {
 
       const data: Record<string, unknown> = {
         'api-version': '2025-01-01',
-        'message': 'a body parameter',
+        message: 'a body parameter',
         'some-header': 'header-var',
       };
 
       const loc: Record<string, 'query' | 'path' | 'header' | 'body'> = {
         'api-version': 'query',
-        'message': 'body',
+        message: 'body',
         'some-header': 'header',
       };
 
@@ -367,13 +367,13 @@ describe('ActionRequest', () => {
 
       const data: Record<string, unknown> = {
         'api-version': '2025-01-01',
-        'message': 'a body parameter',
+        message: 'a body parameter',
         'some-header': 'header-var',
       };
 
       const loc: Record<string, 'query' | 'path' | 'header' | 'body'> = {
         'api-version': 'query',
-        'message': 'body',
+        message: 'body',
         'some-header': 'header',
       };
 
@@ -443,7 +443,6 @@ describe('ActionRequest', () => {
       });
       expect(response.data.success).toBe(true);
     });
-
   });
 
   it('throws an error for unsupported HTTP method', async () => {
@@ -962,6 +961,34 @@ describe('openapiToFunction', () => {
 
     expect(requestBuilders).toHaveProperty('GetCurrentWeather');
     expect(requestBuilders.GetCurrentWeather).toBeInstanceOf(ActionRequest);
+    expect(requestBuilders.GetCurrentWeather.contentType).toBe('application/json');
+  });
+
+  it('preserves OpenAPI spec content-type', () => {
+    const { functionSignatures, requestBuilders } = openapiToFunction(formOpenAPISpec);
+    expect(functionSignatures.length).toBe(1);
+    expect(functionSignatures[0].name).toBe('SubmitForm');
+
+    const parameters = functionSignatures[0].parameters as ParametersSchema & {
+      properties: {
+        'entry.123': {
+          type: 'string';
+        };
+        'entry.456': {
+          type: 'string';
+        };
+      };
+    };
+
+    expect(parameters).toBeDefined();
+    expect(parameters.properties['entry.123']).toBeDefined();
+    expect(parameters.properties['entry.123'].type).toBe('string');
+    expect(parameters.properties['entry.456']).toBeDefined();
+    expect(parameters.properties['entry.456'].type).toBe('string');
+
+    expect(requestBuilders).toHaveProperty('SubmitForm');
+    expect(requestBuilders.SubmitForm).toBeInstanceOf(ActionRequest);
+    expect(requestBuilders.SubmitForm.contentType).toBe('application/x-www-form-urlencoded');
   });
 
   describe('openapiToFunction with $ref resolution', () => {

@@ -50,6 +50,7 @@ export const AgentAvatarRender = ({
           width="80"
           height="80"
           style={{ opacity: progress < 1 ? 0.4 : 1 }}
+          key={url || 'default-key'}
         />
         {progress < 1 && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/5 text-white">
@@ -105,7 +106,7 @@ export function AvatarMenu({
       >
         <div
           role="menuitem"
-          className="group m-1.5 flex cursor-pointer gap-2 rounded p-2.5 text-sm hover:bg-gray-100 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:bg-white/5"
+          className="group m-1.5 flex cursor-pointer gap-2 rounded-lg p-2.5 text-sm hover:bg-gray-100 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:bg-white/5"
           tabIndex={-1}
           data-orientation="vertical"
           onClick={onItemClick}

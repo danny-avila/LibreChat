@@ -1,7 +1,8 @@
+const { logger } = require('@librechat/data-schemas');
+const { encrypt, decrypt } = require('@librechat/api');
 const { ErrorTypes } = require('librechat-data-provider');
-const { encrypt, decrypt } = require('~/server/utils');
-const { updateUser, Key } = require('~/models');
-const { logger } = require('~/config');
+const { updateUser } = require('~/models');
+const { Key } = require('~/db/models');
 
 /**
  * Updates the plugins for a user based on the action specified (install/uninstall).
@@ -69,6 +70,7 @@ const getUserKeyValues = async ({ userId, name }) => {
   try {
     userValues = JSON.parse(userValues);
   } catch (e) {
+    logger.error('[getUserKeyValues]', e);
     throw new Error(
       JSON.stringify({
         type: ErrorTypes.INVALID_USER_KEY,

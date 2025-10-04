@@ -1,4 +1,7 @@
 const { v4 } = require('uuid');
+const { sleep } = require('@librechat/agents');
+const { logger } = require('@librechat/data-schemas');
+const { sendEvent, getBalanceConfig, getModelMaxTokens } = require('@librechat/api');
 const {
   Time,
   Constants,
@@ -22,26 +25,25 @@ const { createErrorHandler } = require('~/server/controllers/assistants/errors')
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
-const { sendMessage, sleep, countTokens } = require('~/server/utils');
 const { createRunBody } = require('~/server/services/createRunBody');
 const { getTransactions } = require('~/models/Transaction');
 const { checkBalance } = require('~/models/balanceMethods');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
-const { getModelMaxTokens } = require('~/utils');
+const { countTokens } = require('~/server/utils');
 const { getOpenAIClient } = require('./helpers');
-const { logger } = require('~/config');
 
 /**
  * @route POST /
  * @desc Chat with an assistant
  * @access Public
- * @param {Express.Request} req - The request object, containing the request data.
+ * @param {ServerRequest} req - The request object, containing the request data.
  * @param {Express.Response} res - The response object, used to send back a response.
  * @returns {void}
  */
 const chatV2 = async (req, res) => {
   logger.debug('[/assistants/chat/] req.body', req.body);
+  const appConfig = req.config;
 
   /** @type {{files: MongoFile[]}} */
   const {
@@ -124,8 +126,8 @@ const chatV2 = async (req, res) => {
     }
 
     const checkBalanceBeforeRun = async () => {
-      const balance = req.app?.locals?.balance;
-      if (!balance?.enabled) {
+      const balanceConfig = getBalanceConfig(appConfig);
+      if (!balanceConfig?.enabled) {
         return;
       }
       const transactions =
@@ -309,7 +311,7 @@ const chatV2 = async (req, res) => {
     await Promise.all(promises);
 
     const sendInitialResponse = () => {
-      sendMessage(res, {
+      sendEvent(res, {
         sync: true,
         conversationId,
         // messages: previousMessages,
@@ -372,9 +374,9 @@ const chatV2 = async (req, res) => {
       };
 
       /** @type {undefined | TAssistantEndpoint} */
-      const config = req.app.locals[endpoint] ?? {};
+      const config = appConfig.endpoints?.[endpoint] ?? {};
       /** @type {undefined | TBaseEndpoint} */
-      const allConfig = req.app.locals.all;
+      const allConfig = appConfig.endpoints?.all;
 
       const streamRunManager = new StreamRunManager({
         req,
@@ -432,7 +434,7 @@ const chatV2 = async (req, res) => {
       iconURL: endpointOption.iconURL,
     };
 
-    sendMessage(res, {
+    sendEvent(res, {
       final: true,
       conversation,
       requestMessage: {
@@ -465,7 +467,7 @@ const chatV2 = async (req, res) => {
 
     if (!response.run.usage) {
       await sleep(3000);
-      completedRun = await openai.beta.threads.runs.retrieve(thread_id, response.run.id);
+      completedRun = await openai.beta.threads.runs.retrieve(response.run.id, { thread_id });
       if (completedRun.usage) {
         await recordUsage({
           ...completedRun.usage,

@@ -23,7 +23,11 @@ export const ephemeralAgentByConvoId = atomFamily<TEphemeralAgent | null, string
 export function useApplyNewAgentTemplate() {
   const applyTemplate = useRecoilCallback(
     ({ snapshot, set }) =>
-      async (targetId: string, _sourceId: string | null = Constants.NEW_CONVO) => {
+      async (
+        targetId: string,
+        _sourceId: string | null = Constants.NEW_CONVO,
+        ephemeralAgentState?: TEphemeralAgent | null,
+      ) => {
         const sourceId = _sourceId || Constants.NEW_CONVO;
         logger.log('agents', `Attempting to apply template from "${sourceId}" to "${targetId}"`);
 
@@ -35,7 +39,8 @@ export function useApplyNewAgentTemplate() {
         try {
           // 1. Get the current agent state from the "new" conversation template using snapshot
           // getPromise reads the value without subscribing
-          const agentTemplate = await snapshot.getPromise(ephemeralAgentByConvoId(sourceId));
+          const agentTemplate =
+            ephemeralAgentState ?? (await snapshot.getPromise(ephemeralAgentByConvoId(sourceId)));
 
           // 2. Check if a template state actually exists
           if (agentTemplate) {

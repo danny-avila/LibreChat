@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ListFilter } from 'lucide-react';
+import { useSetRecoilState } from 'recoil';
 import {
   flexRender,
   getCoreRowModel,
@@ -15,8 +16,6 @@ import type {
   ColumnFiltersState,
 } from '@tanstack/react-table';
 import { FileContext } from 'librechat-data-provider';
-import type { AugmentedColumnDef } from '~/common';
-import type { TFile } from 'librechat-data-provider';
 import {
   Button,
   Input,
@@ -30,12 +29,16 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from '~/components/ui';
+  TrashIcon,
+  Spinner,
+  useMediaQuery,
+} from '@librechat/client';
+import type { TFile } from 'librechat-data-provider';
+import type { AugmentedColumnDef } from '~/common';
 import { useDeleteFilesFromTable } from '~/hooks/Files';
-import { TrashIcon, Spinner } from '~/components/svg';
-import useLocalize from '~/hooks/useLocalize';
-import { useMediaQuery } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import store from '~/store';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -60,12 +63,14 @@ type Style = {
 export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
   const localize = useLocalize();
   const [isDeleting, setIsDeleting] = useState(false);
+  const setFiles = useSetRecoilState(store.filesByIndex(0));
+  const { deleteFiles } = useDeleteFilesFromTable(() => setIsDeleting(false));
+
   const [rowSelection, setRowSelection] = useState({});
   const [sorting, setSorting] = useState<SortingState>([]);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const { deleteFiles } = useDeleteFilesFromTable(() => setIsDeleting(false));
 
   const table = useReactTable({
     data,
@@ -96,7 +101,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             const filesToDelete = table
               .getFilteredSelectedRowModel()
               .rows.map((row) => row.original);
-            deleteFiles({ files: filesToDelete as TFile[] });
+            deleteFiles({ files: filesToDelete as TFile[], setFiles });
             setRowSelection({});
           }}
           disabled={!table.getFilteredSelectedRowModel().rows.length || isDeleting}
@@ -218,13 +223,10 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
       <div className="flex items-center justify-end gap-2 py-4">
         <div className="ml-2 flex-1 truncate text-xs text-muted-foreground sm:ml-4 sm:text-sm">
           <span className="hidden sm:inline">
-            {localize(
-              'com_files_number_selected',
-              {
-                0: `${table.getFilteredSelectedRowModel().rows.length}`,
-                1: `${table.getFilteredRowModel().rows.length}`,
-              },
-            )}
+            {localize('com_files_number_selected', {
+              0: `${table.getFilteredSelectedRowModel().rows.length}`,
+              1: `${table.getFilteredRowModel().rows.length}`,
+            })}
           </span>
           <span className="sm:hidden">
             {`${table.getFilteredSelectedRowModel().rows.length}/${

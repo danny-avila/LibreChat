@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
+const { logger } = require('@librechat/data-schemas');
 const { getEnvironmentVariable } = require('@langchain/core/utils/env');
-const { logger } = require('~/config');
 
 /**
  * Tool for the Traversaal AI search API, Ares.
@@ -21,7 +21,7 @@ class TraversaalSearch extends Tool {
       query: z
         .string()
         .describe(
-          'A properly written sentence to be interpreted by an AI to search the web according to the user\'s request.',
+          "A properly written sentence to be interpreted by an AI to search the web according to the user's request.",
         ),
     });
 
@@ -38,7 +38,6 @@ class TraversaalSearch extends Tool {
     return apiKey;
   }
 
-  // eslint-disable-next-line no-unused-vars
   async _call({ query }, _runManager) {
     const body = {
       query: [query],

@@ -1,6 +1,6 @@
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
 
-// WeakMap to hold temporary data associated with requests
+/** WeakMap to hold temporary data associated with requests */
 const requestDataMap = new WeakMap();
 
 const FinalizationRegistry = global.FinalizationRegistry || null;
@@ -16,17 +16,17 @@ const FinalizationRegistry = global.FinalizationRegistry || null;
  */
 const clientRegistry = FinalizationRegistry
   ? new FinalizationRegistry((heldValue) => {
-    try {
-      // This will run when the client is garbage collected
-      if (heldValue && heldValue.userId) {
-        logger.debug(`[FinalizationRegistry] Cleaning up client for user ${heldValue.userId}`);
-      } else {
-        logger.debug('[FinalizationRegistry] Cleaning up client');
+      try {
+        // This will run when the client is garbage collected
+        if (heldValue && heldValue.userId) {
+          logger.debug(`[FinalizationRegistry] Cleaning up client for user ${heldValue.userId}`);
+        } else {
+          logger.debug('[FinalizationRegistry] Cleaning up client');
+        }
+      } catch {
+        // Ignore errors
       }
-    } catch (e) {
-      // Ignore errors
-    }
-  })
+    })
   : null;
 
 /**
@@ -54,6 +54,9 @@ function disposeClient(client) {
     }
     if (client.responseMessageId) {
       client.responseMessageId = null;
+    }
+    if (client.parentMessageId) {
+      client.parentMessageId = null;
     }
     if (client.message_file_map) {
       client.message_file_map = null;
@@ -134,14 +137,11 @@ function disposeClient(client) {
     if (client.message_delta) {
       client.message_delta = null;
     }
-    if (client.isClaude3 !== undefined) {
-      client.isClaude3 = null;
+    if (client.isClaudeLatest !== undefined) {
+      client.isClaudeLatest = null;
     }
     if (client.useMessages !== undefined) {
       client.useMessages = null;
-    }
-    if (client.isLegacyOutput !== undefined) {
-      client.isLegacyOutput = null;
     }
     if (client.supportsCacheControl !== undefined) {
       client.supportsCacheControl = null;
@@ -172,9 +172,6 @@ function disposeClient(client) {
       client.isGenerativeModel = null;
     }
     // Properties specific to OpenAIClient
-    if (client.ChatGPTClient) {
-      client.ChatGPTClient = null;
-    }
     if (client.completionsUrl) {
       client.completionsUrl = null;
     }
@@ -222,6 +219,9 @@ function disposeClient(client) {
     }
     if (client.maxResponseTokens) {
       client.maxResponseTokens = null;
+    }
+    if (client.processMemory) {
+      client.processMemory = null;
     }
     if (client.run) {
       // Break circular references in run
@@ -337,7 +337,7 @@ function disposeClient(client) {
       }
     }
     client.options = null;
-  } catch (e) {
+  } catch {
     // Ignore errors during disposal
   }
 }

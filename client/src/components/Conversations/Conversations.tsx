@@ -1,11 +1,10 @@
 import { useMemo, memo, type FC, useCallback } from 'react';
 import throttle from 'lodash/throttle';
-import { parseISO, isToday } from 'date-fns';
+import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
-import { useLocalize, TranslationKeys, useMediaQuery } from '~/hooks';
 import { TConversation } from 'librechat-data-provider';
+import { useLocalize, TranslationKeys } from '~/hooks';
 import { groupConversationsByDate } from '~/utils';
-import { Spinner } from '~/components/svg';
 import Convo from './Convo';
 
 interface ConversationsProps {
@@ -23,7 +22,7 @@ const LoadingSpinner = memo(() => {
 
   return (
     <div className="mx-auto mt-2 flex items-center justify-center gap-2">
-      <Spinner className="h-4 w-4 text-text-primary" />
+      <Spinner className="text-text-primary" />
       <span className="animate-pulse text-text-primary">{localize('com_ui_loading')}</span>
     </div>
   );
@@ -50,27 +49,17 @@ const MemoizedConvo = memo(
     conversation,
     retainView,
     toggleNav,
-    isLatestConvo,
   }: {
     conversation: TConversation;
     retainView: () => void;
     toggleNav: () => void;
-    isLatestConvo: boolean;
   }) => {
-    return (
-      <Convo
-        conversation={conversation}
-        retainView={retainView}
-        toggleNav={toggleNav}
-        isLatestConvo={isLatestConvo}
-      />
-    );
+    return <Convo conversation={conversation} retainView={retainView} toggleNav={toggleNav} />;
   },
   (prevProps, nextProps) => {
     return (
       prevProps.conversation.conversationId === nextProps.conversation.conversationId &&
       prevProps.conversation.title === nextProps.conversation.title &&
-      prevProps.isLatestConvo === nextProps.isLatestConvo &&
       prevProps.conversation.endpoint === nextProps.conversation.endpoint
     );
   },
@@ -95,13 +84,6 @@ const Conversations: FC<ConversationsProps> = ({
 
   const groupedConversations = useMemo(
     () => groupConversationsByDate(filteredConversations),
-    [filteredConversations],
-  );
-
-  const firstTodayConvoId = useMemo(
-    () =>
-      filteredConversations.find((convo) => convo.updatedAt && isToday(parseISO(convo.updatedAt)))
-        ?.conversationId ?? undefined,
     [filteredConversations],
   );
 
@@ -154,26 +136,25 @@ const Conversations: FC<ConversationsProps> = ({
           </CellMeasurer>
         );
       }
+      let rendering: JSX.Element;
+      if (item.type === 'header') {
+        rendering = <DateLabel groupName={item.groupName} />;
+      } else if (item.type === 'convo') {
+        rendering = (
+          <MemoizedConvo conversation={item.convo} retainView={moveToTop} toggleNav={toggleNav} />
+        );
+      }
       return (
         <CellMeasurer cache={cache} columnIndex={0} key={key} parent={parent} rowIndex={index}>
           {({ registerChild }) => (
             <div ref={registerChild} style={style}>
-              {item.type === 'header' ? (
-                <DateLabel groupName={item.groupName} />
-              ) : item.type === 'convo' ? (
-                <MemoizedConvo
-                  conversation={item.convo}
-                  retainView={moveToTop}
-                  toggleNav={toggleNav}
-                  isLatestConvo={item.convo.conversationId === firstTodayConvoId}
-                />
-              ) : null}
+              {rendering}
             </div>
           )}
         </CellMeasurer>
       );
     },
-    [cache, flattenedItems, firstTodayConvoId, moveToTop, toggleNav],
+    [cache, flattenedItems, moveToTop, toggleNav],
   );
 
   const getRowHeight = useCallback(

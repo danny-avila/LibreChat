@@ -1,16 +1,21 @@
 const multer = require('multer');
 const express = require('express');
+const { sleep } = require('@librechat/agents');
+const { isEnabled } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
+const {
+  createImportLimiters,
+  createForkLimiters,
+  configMiddleware,
+} = require('~/server/middleware');
 const { getConvosByCursor, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
-const { createImportLimiters } = require('~/server/middleware');
 const { deleteToolCalls } = require('~/models/ToolCall');
-const { isEnabled, sleep } = require('~/server/utils');
 const getLogStores = require('~/cache/getLogStores');
-const { logger } = require('~/config');
 
 const assistantClients = {
   [EModelEndpoint.azureAssistants]: require('~/server/services/Endpoints/azureAssistants'),
@@ -43,6 +48,7 @@ router.get('/', async (req, res) => {
     });
     res.status(200).json(result);
   } catch (error) {
+    logger.error('Error fetching conversations', error);
     res.status(500).json({ error: 'Error fetching conversations' });
   }
 });
@@ -65,8 +71,14 @@ router.post('/gen_title', async (req, res) => {
   let title = await titleCache.get(key);
 
   if (!title) {
-    await sleep(2500);
-    title = await titleCache.get(key);
+    // Retry every 1s for up to 20s
+    for (let i = 0; i < 20; i++) {
+      await sleep(1000);
+      title = await titleCache.get(key);
+      if (title) {
+        break;
+      }
+    }
   }
 
   if (title) {
@@ -74,7 +86,7 @@ router.post('/gen_title', async (req, res) => {
     res.status(200).json({ title });
   } else {
     res.status(404).json({
-      message: 'Title not found or method not implemented for the conversation\'s endpoint',
+      message: "Title not found or method not implemented for the conversation's endpoint",
     });
   }
 });
@@ -103,7 +115,7 @@ router.delete('/', async (req, res) => {
     /** @type {{ openai: OpenAI }} */
     const { openai } = await assistantClients[endpoint].initializeClient({ req, res });
     try {
-      const response = await openai.beta.threads.del(thread_id);
+      const response = await openai.beta.threads.delete(thread_id);
       logger.debug('Deleted OpenAI thread:', response);
     } catch (error) {
       logger.error('Error deleting OpenAI thread:', error);
@@ -150,6 +162,7 @@ router.post('/update', async (req, res) => {
 });
 
 const { importIpLimiter, importUserLimiter } = createImportLimiters();
+const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
 const upload = multer({ storage: storage, fileFilter: importFileFilter });
 
 /**
@@ -162,6 +175,7 @@ router.post(
   '/import',
   importIpLimiter,
   importUserLimiter,
+  configMiddleware,
   upload.single('file'),
   async (req, res) => {
     try {
@@ -183,7 +197,7 @@ router.post(
  * @param {express.Response<TForkConvoResponse>} res - Express response object.
  * @returns {Promise<void>} - The response after forking the conversation.
  */
-router.post('/fork', async (req, res) => {
+router.post('/fork', forkIpLimiter, forkUserLimiter, async (req, res) => {
   try {
     /** @type {TForkConvoRequest} */
     const { conversationId, messageId, option, splitAtTarget, latestMessageId } = req.body;

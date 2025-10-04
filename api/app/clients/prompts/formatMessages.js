@@ -237,41 +237,9 @@ const formatAgentMessages = (payload) => {
   return messages;
 };
 
-/**
- * Formats an array of messages for LangChain, making sure all content fields are strings
- * @param {Array<(HumanMessage|AIMessage|SystemMessage|ToolMessage)>} payload - The array of messages to format.
- * @returns {Array<(HumanMessage|AIMessage|SystemMessage|ToolMessage)>} - The array of formatted LangChain messages, including ToolMessages for tool calls.
- */
-const formatContentStrings = (payload) => {
-  const messages = [];
-
-  for (const message of payload) {
-    if (typeof message.content === 'string') {
-      continue;
-    }
-
-    if (!Array.isArray(message.content)) {
-      continue;
-    }
-
-    // Reduce text types to a single string, ignore all other types
-    const content = message.content.reduce((acc, curr) => {
-      if (curr.type === ContentTypes.TEXT) {
-        return `${acc}${curr[ContentTypes.TEXT]}\n`;
-      }
-      return acc;
-    }, '');
-
-    message.content = content.trim();
-  }
-
-  return messages;
-};
-
 module.exports = {
   formatMessage,
   formatFromLangChain,
   formatAgentMessages,
-  formatContentStrings,
   formatLangChainMessages,
 };

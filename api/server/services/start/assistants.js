@@ -1,9 +1,9 @@
+const { logger } = require('@librechat/data-schemas');
 const {
   Capabilities,
   assistantEndpointSchema,
   defaultAssistantsVersion,
 } = require('librechat-data-provider');
-const { logger } = require('~/config');
 
 /**
  * Sets up the minimum, default Assistants configuration if Azure OpenAI Assistants option is enabled.
@@ -52,6 +52,11 @@ function assistantsConfigSetup(config, assistantsEndpoint, prevConfig = {}) {
     privateAssistants: parsedConfig.privateAssistants,
     timeoutMs: parsedConfig.timeoutMs,
     streamRate: parsedConfig.streamRate,
+    titlePrompt: parsedConfig.titlePrompt,
+    titleMethod: parsedConfig.titleMethod,
+    titleModel: parsedConfig.titleModel,
+    titleEndpoint: parsedConfig.titleEndpoint,
+    titlePromptTemplate: parsedConfig.titlePromptTemplate,
   };
 }
 

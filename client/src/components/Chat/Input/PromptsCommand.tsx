@@ -1,16 +1,14 @@
 import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
 import { AutoSizer, List } from 'react-virtualized';
+import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
-import { removeCharIfLast, mapPromptGroups, detectVariables } from '~/utils';
+import { removeCharIfLast, detectVariables } from '~/utils';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
-import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
-import { useLocalize, useCombobox, useHasAccess } from '~/hooks';
-import { useGetAllPromptGroups } from '~/data-provider';
-import { Spinner } from '~/components/svg';
+import { usePromptGroupsContext } from '~/Providers';
 import MentionItem from './MentionItem';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 const commandChar = '/';
@@ -55,35 +53,8 @@ function PromptsCommand({
   submitPrompt: (textPrompt: string) => void;
 }) {
   const localize = useLocalize();
-  const hasAccess = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.USE,
-  });
-
-  const { data, isLoading } = useGetAllPromptGroups(undefined, {
-    enabled: hasAccess,
-    select: (data) => {
-      const mappedArray = data.map((group) => ({
-        id: group._id,
-        value: group.command ?? group.name,
-        label: `${group.command != null && group.command ? `/${group.command} - ` : ''}${
-          group.name
-        }: ${
-          (group.oneliner?.length ?? 0) > 0
-            ? group.oneliner
-            : (group.productionPrompt?.prompt ?? '')
-        }`,
-        icon: <CategoryIcon category={group.category ?? ''} className="h-5 w-5" />,
-      }));
-
-      const promptsMap = mapPromptGroups(data);
-
-      return {
-        promptsMap,
-        promptGroups: mappedArray,
-      };
-    },
-  });
+  const { allPromptGroups, hasAccess } = usePromptGroupsContext();
+  const { data, isLoading } = allPromptGroups;
 
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);

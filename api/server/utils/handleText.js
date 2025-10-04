@@ -1,17 +1,14 @@
-const path = require('path');
-const crypto = require('crypto');
 const {
   Capabilities,
   EModelEndpoint,
   isAgentsEndpoint,
-  AgentCapabilities,
   isAssistantsEndpoint,
   defaultRetrievalModels,
   defaultAssistantsVersion,
+  defaultAgentCapabilities,
 } = require('librechat-data-provider');
-const { Providers } = require('@librechat/agents');
+const { sendEvent } = require('@librechat/api');
 const partialRight = require('lodash/partialRight');
-const { sendMessage } = require('./streamResponse');
 
 /** Helper function to escape special characters in regex
  * @param {string} string - The string to escape.
@@ -39,7 +36,7 @@ const createOnProgress = (
     basePayload.text = basePayload.text + chunk;
 
     const payload = Object.assign({}, basePayload, rest);
-    sendMessage(res, payload);
+    sendEvent(res, payload);
     if (_onProgress) {
       _onProgress(payload);
     }
@@ -52,7 +49,7 @@ const createOnProgress = (
   const sendIntermediateMessage = (res, payload, extraTokens = '') => {
     basePayload.text = basePayload.text + extraTokens;
     const message = Object.assign({}, basePayload, payload);
-    sendMessage(res, message);
+    sendEvent(res, message);
     if (i === 0) {
       basePayload.initial = false;
     }
@@ -129,34 +126,6 @@ function formatAction(action) {
 }
 
 /**
- * Checks if the given value is truthy by being either the boolean `true` or a string
- * that case-insensitively matches 'true'.
- *
- * @function
- * @param {string|boolean|null|undefined} value - The value to check.
- * @returns {boolean} Returns `true` if the value is the boolean `true` or a case-insensitive
- *                    match for the string 'true', otherwise returns `false`.
- * @example
- *
- * isEnabled("True");  // returns true
- * isEnabled("TRUE");  // returns true
- * isEnabled(true);    // returns true
- * isEnabled("false"); // returns false
- * isEnabled(false);   // returns false
- * isEnabled(null);    // returns false
- * isEnabled();        // returns false
- */
-function isEnabled(value) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    return value.toLowerCase().trim() === 'true';
-  }
-  return false;
-}
-
-/**
  * Checks if the provided value is 'user_provided'.
  *
  * @param {string} value - The value to check.
@@ -197,15 +166,7 @@ function generateConfig(key, baseURL, endpoint) {
   }
 
   if (agents) {
-    config.capabilities = [
-      AgentCapabilities.execute_code,
-      AgentCapabilities.file_search,
-      AgentCapabilities.artifacts,
-      AgentCapabilities.actions,
-      AgentCapabilities.tools,
-      AgentCapabilities.ocr,
-      AgentCapabilities.chain,
-    ];
+    config.capabilities = defaultAgentCapabilities;
   }
 
   if (assistants && endpoint === EModelEndpoint.azureAssistants) {
@@ -217,49 +178,7 @@ function generateConfig(key, baseURL, endpoint) {
   return config;
 }
 
-/**
- * Normalize the endpoint name to system-expected value.
- * @param {string} name
- * @returns {string}
- */
-function normalizeEndpointName(name = '') {
-  return name.toLowerCase() === Providers.OLLAMA ? Providers.OLLAMA : name;
-}
-
-/**
- * Sanitize a filename by removing any directory components, replacing non-alphanumeric characters
- * @param {string} inputName
- * @returns {string}
- */
-function sanitizeFilename(inputName) {
-  // Remove any directory components
-  let name = path.basename(inputName);
-
-  // Replace any non-alphanumeric characters except for '.' and '-'
-  name = name.replace(/[^a-zA-Z0-9.-]/g, '_');
-
-  // Ensure the name doesn't start with a dot (hidden file in Unix-like systems)
-  if (name.startsWith('.') || name === '') {
-    name = '_' + name;
-  }
-
-  // Limit the length of the filename
-  const MAX_LENGTH = 255;
-  if (name.length > MAX_LENGTH) {
-    const ext = path.extname(name);
-    const nameWithoutExt = path.basename(name, ext);
-    name =
-      nameWithoutExt.slice(0, MAX_LENGTH - ext.length - 7) +
-      '-' +
-      crypto.randomBytes(3).toString('hex') +
-      ext;
-  }
-
-  return name;
-}
-
 module.exports = {
-  isEnabled,
   handleText,
   formatSteps,
   escapeRegExp,
@@ -268,6 +187,4 @@ module.exports = {
   generateConfig,
   addSpaceIfNeeded,
   createOnProgress,
-  sanitizeFilename,
-  normalizeEndpointName,
 };

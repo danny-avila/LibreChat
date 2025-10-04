@@ -1,20 +1,26 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useSearchParams } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { QueryClient, useQueryClient } from '@tanstack/react-query';
 import {
   QueryKeys,
   EModelEndpoint,
   isAgentsEndpoint,
   tQueryParamsSchema,
   isAssistantsEndpoint,
+  PermissionBits,
 } from 'librechat-data-provider';
-import type { TPreset, TEndpointsConfig, TStartupConfig } from 'librechat-data-provider';
+import type {
+  TPreset,
+  TEndpointsConfig,
+  TStartupConfig,
+  AgentListResponse,
+} from 'librechat-data-provider';
 import type { ZodAny } from 'zod';
 import { getConvoSwitchLogic, getModelSpecIconURL, removeUnavailableTools, logger } from '~/utils';
-import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
+import { useAuthContext, useAgentsMap, useDefaultConvo, useSubmitMessage } from '~/hooks';
 import { useChatContext, useChatFormContext } from '~/Providers';
-import useSubmitMessage from '~/hooks/Messages/useSubmitMessage';
+import { useGetAgentByIdQuery } from '~/data-provider';
 import store from '~/store';
 
 /**
@@ -73,6 +79,21 @@ const processValidSettings = (queryParams: Record<string, string>) => {
   return validSettings;
 };
 
+const injectAgentIntoAgentsMap = (queryClient: QueryClient, agent: any) => {
+  const editCacheKey = [QueryKeys.agents, { requiredPermission: PermissionBits.EDIT }];
+  const editCache = queryClient.getQueryData<AgentListResponse>(editCacheKey);
+
+  if (editCache?.data && !editCache.data.some((cachedAgent) => cachedAgent.id === agent.id)) {
+    // Inject agent into EDIT cache so dropdown can display it
+    const updatedCache = {
+      ...editCache,
+      data: [agent, ...editCache.data],
+    };
+    queryClient.setQueryData(editCacheKey, updatedCache);
+    logger.log('agent', 'Injected URL agent into cache:', agent);
+  }
+};
+
 /**
  * Hook that processes URL query parameters to initialize chat with specified settings and prompt.
  * Handles model switching, prompt auto-filling, and optional auto-submission with race condition protection.
@@ -103,6 +124,9 @@ export default function useQueryParams({
 
   const queryClient = useQueryClient();
   const { conversation, newConversation } = useChatContext();
+
+  const urlAgentId = searchParams.get('agent_id') || '';
+  const { data: urlAgent } = useGetAgentByIdQuery(urlAgentId);
 
   /**
    * Applies settings from URL query parameters to create a new conversation.
@@ -259,35 +283,6 @@ export default function useQueryParams({
   }, [methods, submitMessage, conversation]);
 
   useEffect(() => {
-    // Only proceed if we've already processed URL parameters but haven't yet handled submission
-    if (
-      !processedRef.current ||
-      submissionHandledRef.current ||
-      settingsAppliedRef.current ||
-      !validSettingsRef.current ||
-      !conversation
-    ) {
-      return;
-    }
-
-    const allSettingsApplied = areSettingsApplied();
-
-    if (allSettingsApplied) {
-      settingsAppliedRef.current = true;
-
-      if (pendingSubmitRef.current) {
-        if (settingsTimeoutRef.current) {
-          clearTimeout(settingsTimeoutRef.current);
-          settingsTimeoutRef.current = null;
-        }
-
-        console.log('Settings fully applied, processing submission');
-        processSubmission();
-      }
-    }
-  }, [conversation, processSubmission, areSettingsApplied]);
-
-  useEffect(() => {
     const processQueryParams = () => {
       const queryParams: Record<string, string> = {};
       searchParams.forEach((value, key) => {
@@ -332,14 +327,15 @@ export default function useQueryParams({
 
       /** Mark processing as complete and clean up as needed */
       const success = () => {
-        const currentParams = new URLSearchParams(searchParams.toString());
+        const paramString = searchParams.toString();
+        const currentParams = new URLSearchParams(paramString);
         currentParams.delete('prompt');
         currentParams.delete('q');
         currentParams.delete('submit');
 
         setSearchParams(currentParams, { replace: true });
         processedRef.current = true;
-        console.log('Parameters processed successfully');
+        console.log('Parameters processed successfully', paramString);
         clearInterval(intervalId);
 
         // Only clean URL if there's no pending submission
@@ -417,4 +413,41 @@ export default function useQueryParams({
     queryClient,
     processSubmission,
   ]);
+
+  useEffect(() => {
+    // Only proceed if we've already processed URL parameters but haven't yet handled submission
+    if (
+      !processedRef.current ||
+      submissionHandledRef.current ||
+      settingsAppliedRef.current ||
+      !validSettingsRef.current ||
+      !conversation
+    ) {
+      return;
+    }
+
+    const allSettingsApplied = areSettingsApplied();
+
+    if (allSettingsApplied) {
+      settingsAppliedRef.current = true;
+
+      if (pendingSubmitRef.current) {
+        if (settingsTimeoutRef.current) {
+          clearTimeout(settingsTimeoutRef.current);
+          settingsTimeoutRef.current = null;
+        }
+
+        console.log('Settings fully applied, processing submission');
+        processSubmission();
+      }
+    }
+  }, [conversation, processSubmission, areSettingsApplied]);
+
+  const { isAuthenticated } = useAuthContext();
+  const agentsMap = useAgentsMap({ isAuthenticated });
+  useEffect(() => {
+    if (urlAgent) {
+      injectAgentIntoAgentsMap(queryClient, urlAgent);
+    }
+  }, [urlAgent, queryClient, agentsMap]);
 }

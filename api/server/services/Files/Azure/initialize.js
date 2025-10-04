@@ -1,5 +1,5 @@
+const { logger } = require('@librechat/data-schemas');
 const { BlobServiceClient } = require('@azure/storage-blob');
-const { logger } = require('~/config');
 
 let blobServiceClient = null;
 let azureWarningLogged = false;

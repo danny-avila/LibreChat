@@ -1,25 +1,28 @@
 import { memo } from 'react';
+import { CustomMinimalIcon, XAIcon } from '@librechat/client';
 import { EModelEndpoint, KnownEndpoints } from 'librechat-data-provider';
-import { CustomMinimalIcon, XAIcon } from '~/components/svg';
 import { IconContext } from '~/common';
 import { cn } from '~/utils';
 
 const knownEndpointAssets = {
-  [KnownEndpoints.anyscale]: '/assets/anyscale.png',
-  [KnownEndpoints.apipie]: '/assets/apipie.png',
-  [KnownEndpoints.cohere]: '/assets/cohere.png',
-  [KnownEndpoints.deepseek]: '/assets/deepseek.svg',
-  [KnownEndpoints.fireworks]: '/assets/fireworks.png',
-  [KnownEndpoints.groq]: '/assets/groq.png',
-  [KnownEndpoints.huggingface]: '/assets/huggingface.svg',
-  [KnownEndpoints.mistral]: '/assets/mistral.png',
-  [KnownEndpoints.mlx]: '/assets/mlx.png',
-  [KnownEndpoints.ollama]: '/assets/ollama.png',
-  [KnownEndpoints.openrouter]: '/assets/openrouter.png',
-  [KnownEndpoints.perplexity]: '/assets/perplexity.png',
-  [KnownEndpoints.shuttleai]: '/assets/shuttleai.png',
-  [KnownEndpoints['together.ai']]: '/assets/together.png',
-  [KnownEndpoints.unify]: '/assets/unify.webp',
+  [KnownEndpoints.anyscale]: 'assets/anyscale.png',
+  [KnownEndpoints.apipie]: 'assets/apipie.png',
+  [KnownEndpoints.cohere]: 'assets/cohere.png',
+  [KnownEndpoints.deepseek]: 'assets/deepseek.svg',
+  [KnownEndpoints.fireworks]: 'assets/fireworks.png',
+  [KnownEndpoints.google]: 'assets/google.svg',
+  [KnownEndpoints.groq]: 'assets/groq.png',
+  [KnownEndpoints.huggingface]: 'assets/huggingface.svg',
+  [KnownEndpoints.mistral]: 'assets/mistral.png',
+  [KnownEndpoints.mlx]: 'assets/mlx.png',
+  [KnownEndpoints.ollama]: 'assets/ollama.png',
+  [KnownEndpoints.openai]: 'assets/openai.svg',
+  [KnownEndpoints.openrouter]: 'assets/openrouter.png',
+  [KnownEndpoints.perplexity]: 'assets/perplexity.png',
+  [KnownEndpoints.qwen]: 'assets/qwen.svg',
+  [KnownEndpoints.shuttleai]: 'assets/shuttleai.png',
+  [KnownEndpoints['together.ai']]: 'assets/together.png',
+  [KnownEndpoints.unify]: 'assets/unify.webp',
 };
 
 const knownEndpointClasses = {

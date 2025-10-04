@@ -5,7 +5,7 @@ const moduleAlias = require('module-alias');
 const basePath = path.resolve(__dirname, '..', 'api');
 moduleAlias.addAlias('~', basePath);
 
-const connectDb = require('~/lib/db/connectDb');
+const { connectDb } = require('~/db/connect');
 require('./helpers');
 
 async function connect() {

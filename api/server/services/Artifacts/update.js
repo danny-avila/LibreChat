@@ -60,7 +60,14 @@ const replaceArtifactContent = (originalText, artifact, original, updated) => {
 
   // Find boundaries between ARTIFACT_START and ARTIFACT_END
   const contentStart = artifactContent.indexOf('\n', artifactContent.indexOf(ARTIFACT_START)) + 1;
-  const contentEnd = artifactContent.lastIndexOf(ARTIFACT_END);
+  let contentEnd = artifactContent.lastIndexOf(ARTIFACT_END);
+
+  // Special case: if contentEnd is 0, it means the only ::: found is at the start of :::artifact
+  // This indicates an incomplete artifact (no closing :::)
+  // We need to check that it's exactly at position 0 (the beginning of artifactContent)
+  if (contentEnd === 0 && artifactContent.indexOf(ARTIFACT_START) === 0) {
+    contentEnd = artifactContent.length;
+  }
 
   if (contentStart === -1 || contentEnd === -1) {
     return null;
@@ -72,12 +79,20 @@ const replaceArtifactContent = (originalText, artifact, original, updated) => {
 
   // Determine where to look for the original content
   let searchStart, searchEnd;
-  if (codeBlockStart !== -1 && codeBlockEnd !== -1) {
-    // If code blocks exist, search between them
+  if (codeBlockStart !== -1) {
+    // Code block starts
     searchStart = codeBlockStart + 4; // after ```\n
-    searchEnd = codeBlockEnd;
+
+    if (codeBlockEnd !== -1 && codeBlockEnd > codeBlockStart) {
+      // Code block has proper ending
+      searchEnd = codeBlockEnd;
+    } else {
+      // No closing backticks found or they're before the opening (shouldn't happen)
+      // This might be an incomplete artifact - search to contentEnd
+      searchEnd = contentEnd;
+    }
   } else {
-    // Otherwise search in the whole artifact content
+    // No code blocks at all
     searchStart = contentStart;
     searchEnd = contentEnd;
   }

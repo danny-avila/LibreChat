@@ -1,70 +1,18 @@
-const { z } = require('zod');
 const axios = require('axios');
 const { v4 } = require('uuid');
 const OpenAI = require('openai');
 const FormData = require('form-data');
+const { ProxyAgent } = require('undici');
 const { tool } = require('@langchain/core/tools');
-const { HttpsProxyAgent } = require('https-proxy-agent');
+const { logger } = require('@librechat/data-schemas');
+const { logAxiosError, oaiToolkit } = require('@librechat/api');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { logAxiosError, extractBaseURL } = require('~/utils');
+const extractBaseURL = require('~/utils/extractBaseURL');
 const { getFiles } = require('~/models/File');
-const { logger } = require('~/config');
-
-/** Default descriptions for image generation tool  */
-const DEFAULT_IMAGE_GEN_DESCRIPTION = `
-Generates high-quality, original images based solely on text, not using any uploaded reference images.
-
-When to use \`image_gen_oai\`:
-- To create entirely new images from detailed text descriptions that do NOT reference any image files.
-
-When NOT to use \`image_gen_oai\`:
-- If the user has uploaded any images and requests modifications, enhancements, or remixing based on those uploads → use \`image_edit_oai\` instead.
-
-Generated image IDs will be returned in the response, so you can refer to them in future requests made to \`image_edit_oai\`.
-`.trim();
-
-/** Default description for image editing tool  */
-const DEFAULT_IMAGE_EDIT_DESCRIPTION =
-  `Generates high-quality, original images based on text and one or more uploaded/referenced images.
-
-When to use \`image_edit_oai\`:
-- The user wants to modify, extend, or remix one **or more** uploaded images, either:
-  - Previously generated, or in the current request (both to be included in the \`image_ids\` array).
-- Always when the user refers to uploaded images for editing, enhancement, remixing, style transfer, or combining elements.
-- Any current or existing images are to be used as visual guides.
-- If there are any files in the current request, they are more likely than not expected as references for image edit requests.
-
-When NOT to use \`image_edit_oai\`:
-- Brand-new generations that do not rely on an existing image → use \`image_gen_oai\` instead.
-
-Both generated and referenced image IDs will be returned in the response, so you can refer to them in future requests made to \`image_edit_oai\`.
-`.trim();
-
-/** Default prompt descriptions  */
-const DEFAULT_IMAGE_GEN_PROMPT_DESCRIPTION = `Describe the image you want in detail. 
-      Be highly specific—break your idea into layers: 
-      (1) main concept and subject,
-      (2) composition and position,
-      (3) lighting and mood,
-      (4) style, medium, or camera details,
-      (5) important features (age, expression, clothing, etc.),
-      (6) background.
-      Use positive, descriptive language and specify what should be included, not what to avoid. 
-      List number and characteristics of people/objects, and mention style/technical requirements (e.g., "DSLR photo, 85mm lens, golden hour").
-      Do not reference any uploaded images—use for new image creation from text only.`;
-
-const DEFAULT_IMAGE_EDIT_PROMPT_DESCRIPTION = `Describe the changes, enhancements, or new ideas to apply to the uploaded image(s).
-      Be highly specific—break your request into layers: 
-      (1) main concept or transformation,
-      (2) specific edits/replacements or composition guidance,
-      (3) desired style, mood, or technique,
-      (4) features/items to keep, change, or add (such as objects, people, clothing, lighting, etc.).
-      Use positive, descriptive language and clarify what should be included or changed, not what to avoid.
-      Always base this prompt on the most recently uploaded reference images.`;
 
 const displayMessage =
-  'The tool displayed an image. All generated images are already plainly visible, so don\'t repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.';
+  "The tool displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
 
 /**
  * Replaces unwanted characters from the input string
@@ -90,21 +38,11 @@ function returnValue(value) {
   return value;
 }
 
-const getImageGenDescription = () => {
-  return process.env.IMAGE_GEN_OAI_DESCRIPTION || DEFAULT_IMAGE_GEN_DESCRIPTION;
-};
-
-const getImageEditDescription = () => {
-  return process.env.IMAGE_EDIT_OAI_DESCRIPTION || DEFAULT_IMAGE_EDIT_DESCRIPTION;
-};
-
-const getImageGenPromptDescription = () => {
-  return process.env.IMAGE_GEN_OAI_PROMPT_DESCRIPTION || DEFAULT_IMAGE_GEN_PROMPT_DESCRIPTION;
-};
-
-const getImageEditPromptDescription = () => {
-  return process.env.IMAGE_EDIT_OAI_PROMPT_DESCRIPTION || DEFAULT_IMAGE_EDIT_PROMPT_DESCRIPTION;
-};
+function createAbortHandler() {
+  return function () {
+    logger.debug('[ImageGenOAI] Image generation aborted');
+  };
+}
 
 /**
  * Creates OpenAI Image tools (generation and editing)
@@ -114,7 +52,9 @@ const getImageEditPromptDescription = () => {
  * @param {string} fields.IMAGE_GEN_OAI_API_KEY - The OpenAI API key
  * @param {boolean} [fields.override] - Whether to override the API key check, necessary for app initialization
  * @param {MongoFile[]} [fields.imageFiles] - The images to be used for editing
- * @returns {Array} - Array of image tools
+ * @param {string} [fields.imageOutputType] - The image output type configuration
+ * @param {string} [fields.fileStrategy] - The file storage strategy
+ * @returns {Array<ReturnType<tool>>} - Array of image tools
  */
 function createOpenAIImageTools(fields = {}) {
   /** @type {boolean} Used to initialize the Tool without necessary variables. */
@@ -124,8 +64,8 @@ function createOpenAIImageTools(fields = {}) {
     throw new Error('This tool is only available for agents.');
   }
   const { req } = fields;
-  const imageOutputType = req?.app.locals.imageOutputType || EImageOutputType.PNG;
-  const appFileStrategy = req?.app.locals.fileStrategy;
+  const imageOutputType = fields.imageOutputType || EImageOutputType.PNG;
+  const appFileStrategy = fields.fileStrategy;
 
   const getApiKey = () => {
     const apiKey = process.env.IMAGE_GEN_OAI_API_KEY ?? '';
@@ -182,7 +122,10 @@ function createOpenAIImageTools(fields = {}) {
       }
       const clientConfig = { ...closureConfig };
       if (process.env.PROXY) {
-        clientConfig.httpAgent = new HttpsProxyAgent(process.env.PROXY);
+        const proxyAgent = new ProxyAgent(process.env.PROXY);
+        clientConfig.fetchOptions = {
+          dispatcher: proxyAgent,
+        };
       }
 
       /** @type {OpenAI} */
@@ -200,10 +143,18 @@ function createOpenAIImageTools(fields = {}) {
       }
 
       let resp;
+      /** @type {AbortSignal} */
+      let derivedSignal = null;
+      /** @type {() => void} */
+      let abortHandler = null;
+
       try {
-        const derivedSignal = runnableConfig?.signal
-          ? AbortSignal.any([runnableConfig.signal])
-          : undefined;
+        if (runnableConfig?.signal) {
+          derivedSignal = AbortSignal.any([runnableConfig.signal]);
+          abortHandler = createAbortHandler();
+          derivedSignal.addEventListener('abort', abortHandler, { once: true });
+        }
+
         resp = await openai.images.generate(
           {
             model: 'gpt-image-1',
@@ -227,6 +178,10 @@ function createOpenAIImageTools(fields = {}) {
         logAxiosError({ error, message });
         return returnValue(`Something went wrong when trying to generate the image. The OpenAI API may be unavailable:
 Error Message: ${error.message}`);
+      } finally {
+        if (abortHandler && derivedSignal) {
+          derivedSignal.removeEventListener('abort', abortHandler);
+        }
       }
 
       if (!resp) {
@@ -263,46 +218,7 @@ Error Message: ${error.message}`);
       ];
       return [response, { content, file_ids }];
     },
-    {
-      name: 'image_gen_oai',
-      description: getImageGenDescription(),
-      schema: z.object({
-        prompt: z.string().max(32000).describe(getImageGenPromptDescription()),
-        background: z
-          .enum(['transparent', 'opaque', 'auto'])
-          .optional()
-          .describe(
-            'Sets transparency for the background. Must be one of transparent, opaque or auto (default). When transparent, the output format should be png or webp.',
-          ),
-        /*
-        n: z
-          .number()
-          .int()
-          .min(1)
-          .max(10)
-          .optional()
-          .describe('The number of images to generate. Must be between 1 and 10.'),
-        output_compression: z
-          .number()
-          .int()
-          .min(0)
-          .max(100)
-          .optional()
-          .describe('The compression level (0-100%) for webp or jpeg formats. Defaults to 100.'),
-           */
-        quality: z
-          .enum(['auto', 'high', 'medium', 'low'])
-          .optional()
-          .describe('The quality of the image. One of auto (default), high, medium, or low.'),
-        size: z
-          .enum(['auto', '1024x1024', '1536x1024', '1024x1536'])
-          .optional()
-          .describe(
-            'The size of the generated image. One of 1024x1024, 1536x1024 (landscape), 1024x1536 (portrait), or auto (default).',
-          ),
-      }),
-      responseFormat: 'content_and_artifact',
-    },
+    oaiToolkit.image_gen_oai,
   );
 
   /**
@@ -316,7 +232,10 @@ Error Message: ${error.message}`);
 
       const clientConfig = { ...closureConfig };
       if (process.env.PROXY) {
-        clientConfig.httpAgent = new HttpsProxyAgent(process.env.PROXY);
+        const proxyAgent = new ProxyAgent(process.env.PROXY);
+        clientConfig.fetchOptions = {
+          dispatcher: proxyAgent,
+        };
       }
 
       const formData = new FormData();
@@ -408,10 +327,17 @@ Error Message: ${error.message}`);
         headers['Authorization'] = `Bearer ${apiKey}`;
       }
 
+      /** @type {AbortSignal} */
+      let derivedSignal = null;
+      /** @type {() => void} */
+      let abortHandler = null;
+
       try {
-        const derivedSignal = runnableConfig?.signal
-          ? AbortSignal.any([runnableConfig.signal])
-          : undefined;
+        if (runnableConfig?.signal) {
+          derivedSignal = AbortSignal.any([runnableConfig.signal]);
+          abortHandler = createAbortHandler();
+          derivedSignal.addEventListener('abort', abortHandler, { once: true });
+        }
 
         /** @type {import('axios').AxiosRequestConfig} */
         const axiosConfig = {
@@ -420,6 +346,19 @@ Error Message: ${error.message}`);
           signal: derivedSignal,
           baseURL,
         };
+
+        if (process.env.PROXY) {
+          try {
+            const url = new URL(process.env.PROXY);
+            axiosConfig.proxy = {
+              host: url.hostname.replace(/^\[|\]$/g, ''),
+              port: url.port ? parseInt(url.port, 10) : undefined,
+              protocol: url.protocol.replace(':', ''),
+            };
+          } catch (error) {
+            logger.error('Error parsing proxy URL:', error);
+          }
+        }
 
         if (process.env.IMAGE_GEN_OAI_AZURE_API_VERSION && process.env.IMAGE_GEN_OAI_BASEURL) {
           axiosConfig.params = {
@@ -466,50 +405,13 @@ Error Message: ${error.message}`);
         logAxiosError({ error, message });
         return returnValue(`Something went wrong when trying to edit the image. The OpenAI API may be unavailable:
 Error Message: ${error.message || 'Unknown error'}`);
+      } finally {
+        if (abortHandler && derivedSignal) {
+          derivedSignal.removeEventListener('abort', abortHandler);
+        }
       }
     },
-    {
-      name: 'image_edit_oai',
-      description: getImageEditDescription(),
-      schema: z.object({
-        image_ids: z
-          .array(z.string())
-          .min(1)
-          .describe(
-            `
-IDs (image ID strings) of previously generated or uploaded images that should guide the edit.
-
-Guidelines:
-- If the user's request depends on any prior image(s), copy their image IDs into the \`image_ids\` array (in the same order the user refers to them).  
-- Never invent or hallucinate IDs; only use IDs that are still visible in the conversation context.
-- If no earlier image is relevant, omit the field entirely.
-`.trim(),
-          ),
-        prompt: z.string().max(32000).describe(getImageEditPromptDescription()),
-        /*
-        n: z
-          .number()
-          .int()
-          .min(1)
-          .max(10)
-          .optional()
-          .describe('The number of images to generate. Must be between 1 and 10. Defaults to 1.'),
-        */
-        quality: z
-          .enum(['auto', 'high', 'medium', 'low'])
-          .optional()
-          .describe(
-            'The quality of the image. One of auto (default), high, medium, or low. High/medium/low only supported for gpt-image-1.',
-          ),
-        size: z
-          .enum(['auto', '1024x1024', '1536x1024', '1024x1536', '256x256', '512x512'])
-          .optional()
-          .describe(
-            'The size of the generated images. For gpt-image-1: auto (default), 1024x1024, 1536x1024, 1024x1536. For dall-e-2: 256x256, 512x512, 1024x1024.',
-          ),
-      }),
-      responseFormat: 'content_and_artifact',
-    },
+    oaiToolkit.image_edit_oai,
   );
 
   return [imageGenTool, imageEditTool];

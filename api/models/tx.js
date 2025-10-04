@@ -1,4 +1,4 @@
-const { matchModelName } = require('../utils');
+const { matchModelName } = require('@librechat/api');
 const defaultRate = 6;
 
 /**
@@ -78,7 +78,7 @@ const tokenValues = Object.assign(
     'gpt-3.5-turbo-1106': { prompt: 1, completion: 2 },
     'o4-mini': { prompt: 1.1, completion: 4.4 },
     'o3-mini': { prompt: 1.1, completion: 4.4 },
-    o3: { prompt: 10, completion: 40 },
+    o3: { prompt: 2, completion: 8 },
     'o1-mini': { prompt: 1.1, completion: 4.4 },
     'o1-preview': { prompt: 15, completion: 60 },
     o1: { prompt: 15, completion: 60 },
@@ -87,6 +87,9 @@ const tokenValues = Object.assign(
     'gpt-4.1': { prompt: 2, completion: 8 },
     'gpt-4.5': { prompt: 75, completion: 150 },
     'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
+    'gpt-5': { prompt: 1.25, completion: 10 },
+    'gpt-5-mini': { prompt: 0.25, completion: 2 },
+    'gpt-5-nano': { prompt: 0.05, completion: 0.4 },
     'gpt-4o': { prompt: 2.5, completion: 10 },
     'gpt-4o-2024-05-13': { prompt: 5, completion: 15 },
     'gpt-4-1106': { prompt: 10, completion: 30 },
@@ -100,14 +103,16 @@ const tokenValues = Object.assign(
     'claude-3-5-haiku': { prompt: 0.8, completion: 4 },
     'claude-3.5-haiku': { prompt: 0.8, completion: 4 },
     'claude-3-haiku': { prompt: 0.25, completion: 1.25 },
+    'claude-sonnet-4': { prompt: 3, completion: 15 },
+    'claude-opus-4': { prompt: 15, completion: 75 },
     'claude-2.1': { prompt: 8, completion: 24 },
     'claude-2': { prompt: 8, completion: 24 },
     'claude-instant': { prompt: 0.8, completion: 2.4 },
     'claude-': { prompt: 0.8, completion: 2.4 },
     'command-r-plus': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
-    'deepseek-reasoner': { prompt: 0.55, completion: 2.19 },
-    deepseek: { prompt: 0.14, completion: 0.28 },
+    'deepseek-reasoner': { prompt: 0.28, completion: 0.42 },
+    deepseek: { prompt: 0.28, completion: 0.42 },
     /* cohere doesn't have rates for the older command models,
   so this was from https://artificialanalysis.ai/models/command-light/providers */
     command: { prompt: 0.38, completion: 0.38 },
@@ -119,7 +124,8 @@ const tokenValues = Object.assign(
     'gemini-2.0-flash': { prompt: 0.1, completion: 0.4 },
     'gemini-2.0': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
     'gemini-2.5-pro': { prompt: 1.25, completion: 10 },
-    'gemini-2.5-flash': { prompt: 0.15, completion: 3.5 },
+    'gemini-2.5-flash': { prompt: 0.3, completion: 2.5 },
+    'gemini-2.5-flash-lite': { prompt: 0.075, completion: 0.4 },
     'gemini-2.5': { prompt: 0, completion: 0 }, // Free for a period of time
     'gemini-1.5-flash-8b': { prompt: 0.075, completion: 0.3 },
     'gemini-1.5-flash': { prompt: 0.15, completion: 0.6 },
@@ -133,10 +139,11 @@ const tokenValues = Object.assign(
     'grok-2-1212': { prompt: 2.0, completion: 10.0 },
     'grok-2-latest': { prompt: 2.0, completion: 10.0 },
     'grok-2': { prompt: 2.0, completion: 10.0 },
-    'grok-3-mini-fast': { prompt: 0.4, completion: 4 },
+    'grok-3-mini-fast': { prompt: 0.6, completion: 4 },
     'grok-3-mini': { prompt: 0.3, completion: 0.5 },
     'grok-3-fast': { prompt: 5.0, completion: 25.0 },
     'grok-3': { prompt: 3.0, completion: 15.0 },
+    'grok-4': { prompt: 3.0, completion: 15.0 },
     'grok-beta': { prompt: 5.0, completion: 15.0 },
     'mistral-large': { prompt: 2.0, completion: 6.0 },
     'pixtral-large': { prompt: 2.0, completion: 6.0 },
@@ -144,6 +151,9 @@ const tokenValues = Object.assign(
     codestral: { prompt: 0.3, completion: 0.9 },
     'ministral-8b': { prompt: 0.1, completion: 0.1 },
     'ministral-3b': { prompt: 0.04, completion: 0.04 },
+    // GPT-OSS models
+    'gpt-oss-20b': { prompt: 0.05, completion: 0.2 },
+    'gpt-oss-120b': { prompt: 0.15, completion: 0.6 },
   },
   bedrockValues,
 );
@@ -162,6 +172,8 @@ const cacheTokenValues = {
   'claude-3.5-haiku': { write: 1, read: 0.08 },
   'claude-3-5-haiku': { write: 1, read: 0.08 },
   'claude-3-haiku': { write: 0.3, read: 0.03 },
+  'claude-sonnet-4': { write: 3.75, read: 0.3 },
+  'claude-opus-4': { write: 18.75, read: 1.5 },
 };
 
 /**
@@ -209,6 +221,12 @@ const getValueKey = (model, endpoint) => {
     return 'gpt-4.1';
   } else if (modelName.includes('gpt-4o-2024-05-13')) {
     return 'gpt-4o-2024-05-13';
+  } else if (modelName.includes('gpt-5-nano')) {
+    return 'gpt-5-nano';
+  } else if (modelName.includes('gpt-5-mini')) {
+    return 'gpt-5-mini';
+  } else if (modelName.includes('gpt-5')) {
+    return 'gpt-5';
   } else if (modelName.includes('gpt-4o-mini')) {
     return 'gpt-4o-mini';
   } else if (modelName.includes('gpt-4o')) {

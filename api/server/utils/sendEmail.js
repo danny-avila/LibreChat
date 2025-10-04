@@ -1,9 +1,67 @@
-const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
+const FormData = require('form-data');
 const nodemailer = require('nodemailer');
 const handlebars = require('handlebars');
-const { isEnabled } = require('~/server/utils/handleText');
-const logger = require('~/config/winston');
+const { logger } = require('@librechat/data-schemas');
+const { logAxiosError, isEnabled, readFileAsString } = require('@librechat/api');
+
+/**
+ * Sends an email using Mailgun API.
+ *
+ * @async
+ * @function sendEmailViaMailgun
+ * @param {Object} params - The parameters for sending the email.
+ * @param {string} params.to - The recipient's email address.
+ * @param {string} params.from - The sender's email address.
+ * @param {string} params.subject - The subject of the email.
+ * @param {string} params.html - The HTML content of the email.
+ * @returns {Promise<Object>} - A promise that resolves to the response from Mailgun API.
+ */
+const sendEmailViaMailgun = async ({ to, from, subject, html }) => {
+  const mailgunApiKey = process.env.MAILGUN_API_KEY;
+  const mailgunDomain = process.env.MAILGUN_DOMAIN;
+  const mailgunHost = process.env.MAILGUN_HOST || 'https://api.mailgun.net';
+
+  if (!mailgunApiKey || !mailgunDomain) {
+    throw new Error('Mailgun API key and domain are required');
+  }
+
+  const formData = new FormData();
+  formData.append('from', from);
+  formData.append('to', to);
+  formData.append('subject', subject);
+  formData.append('html', html);
+  formData.append('o:tracking-clicks', 'no');
+
+  try {
+    const response = await axios.post(`${mailgunHost}/v3/${mailgunDomain}/messages`, formData, {
+      headers: {
+        ...formData.getHeaders(),
+        Authorization: `Basic ${Buffer.from(`api:${mailgunApiKey}`).toString('base64')}`,
+      },
+    });
+
+    return response.data;
+  } catch (error) {
+    throw new Error(logAxiosError({ error, message: 'Failed to send email via Mailgun' }));
+  }
+};
+
+/**
+ * Sends an email using SMTP via Nodemailer.
+ *
+ * @async
+ * @function sendEmailViaSMTP
+ * @param {Object} params - The parameters for sending the email.
+ * @param {Object} params.transporterOptions - The transporter configuration options.
+ * @param {Object} params.mailOptions - The email options.
+ * @returns {Promise<Object>} - A promise that resolves to the info object of the sent email.
+ */
+const sendEmailViaSMTP = async ({ transporterOptions, mailOptions }) => {
+  const transporter = nodemailer.createTransport(transporterOptions);
+  return await transporter.sendMail(mailOptions);
+};
 
 /**
  * Sends an email using the specified template, subject, and payload.
@@ -34,6 +92,29 @@ const logger = require('~/config/winston');
  */
 const sendEmail = async ({ email, subject, payload, template, throwError = true }) => {
   try {
+    const { content: source } = await readFileAsString(path.join(__dirname, 'emails', template));
+    const compiledTemplate = handlebars.compile(source);
+    const html = compiledTemplate(payload);
+
+    // Prepare common email data
+    const fromName = process.env.EMAIL_FROM_NAME || process.env.APP_TITLE;
+    const fromEmail = process.env.EMAIL_FROM;
+    const fromAddress = `"${fromName}" <${fromEmail}>`;
+    const toAddress = `"${payload.name}" <${email}>`;
+
+    // Check if Mailgun is configured
+    if (process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN) {
+      logger.debug('[sendEmail] Using Mailgun provider');
+      return await sendEmailViaMailgun({
+        from: fromAddress,
+        to: toAddress,
+        subject: subject,
+        html: html,
+      });
+    }
+
+    // Default to SMTP
+    logger.debug('[sendEmail] Using SMTP provider');
     const transporterOptions = {
       // Use STARTTLS by default instead of obligatory TLS
       secure: process.env.EMAIL_ENCRYPTION === 'tls',
@@ -62,30 +143,21 @@ const sendEmail = async ({ email, subject, payload, template, throwError = true 
       transporterOptions.port = process.env.EMAIL_PORT ?? 25;
     }
 
-    const transporter = nodemailer.createTransport(transporterOptions);
-
-    const source = fs.readFileSync(path.join(__dirname, 'emails', template), 'utf8');
-    const compiledTemplate = handlebars.compile(source);
-    const options = () => {
-      return {
-        // Header address should contain name-addr
-        from:
-          `"${process.env.EMAIL_FROM_NAME || process.env.APP_TITLE}"` +
-          `<${process.env.EMAIL_FROM}>`,
-        to: `"${payload.name}" <${email}>`,
-        envelope: {
-          // Envelope from should contain addr-spec
-          // Mistake in the Nodemailer documentation?
-          from: process.env.EMAIL_FROM,
-          to: email,
-        },
-        subject: subject,
-        html: compiledTemplate(payload),
-      };
+    const mailOptions = {
+      // Header address should contain name-addr
+      from: fromAddress,
+      to: toAddress,
+      envelope: {
+        // Envelope from should contain addr-spec
+        // Mistake in the Nodemailer documentation?
+        from: fromEmail,
+        to: email,
+      },
+      subject: subject,
+      html: html,
     };
 
-    // Send email
-    return await transporter.sendMail(options());
+    return await sendEmailViaSMTP({ transporterOptions, mailOptions });
   } catch (error) {
     if (throwError) {
       throw error;

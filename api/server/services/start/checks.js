@@ -1,10 +1,11 @@
+const { logger } = require('@librechat/data-schemas');
+const { isEnabled, webSearchKeys, checkEmailConfig } = require('@librechat/api');
 const {
   Constants,
+  extractVariableName,
   deprecatedAzureVariables,
   conflictingAzureVariables,
 } = require('librechat-data-provider');
-const { isEnabled, checkEmailConfig } = require('~/server/utils');
-const { logger } = require('~/config');
 
 const secretDefaults = {
   CREDS_KEY: 'f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0',
@@ -74,7 +75,7 @@ async function checkHealth() {
     if (response?.ok && response?.status === 200) {
       logger.info(`RAG API is running and reachable at ${process.env.RAG_API_URL}.`);
     }
-  } catch (error) {
+  } catch {
     logger.warn(
       `RAG API is either not running or not reachable at ${process.env.RAG_API_URL}, you may experience errors with file uploads.`,
     );
@@ -141,4 +142,56 @@ function checkPasswordReset() {
   }
 }
 
-module.exports = { checkVariables, checkHealth, checkConfig, checkAzureVariables };
+/**
+ * Checks web search configuration values to ensure they are environment variable references.
+ * Warns if actual API keys or URLs are used instead of environment variable references.
+ * Logs debug information for properly configured environment variable references.
+ * @param {Object} webSearchConfig - The loaded web search configuration object.
+ */
+function checkWebSearchConfig(webSearchConfig) {
+  if (!webSearchConfig) {
+    return;
+  }
+
+  webSearchKeys.forEach((key) => {
+    const value = webSearchConfig[key];
+
+    if (typeof value === 'string') {
+      const varName = extractVariableName(value);
+
+      if (varName) {
+        // This is a proper environment variable reference
+        const actualValue = process.env[varName];
+        if (actualValue) {
+          logger.debug(`Web search ${key}: Using environment variable ${varName} with value set`);
+        } else {
+          logger.debug(
+            `Web search ${key}: Using environment variable ${varName} (not set in environment, user provided value)`,
+          );
+        }
+      } else {
+        // This is not an environment variable reference - warn user
+        logger.warn(
+          `❗ Web search configuration error: ${key} contains an actual value instead of an environment variable reference.
+          
+          Current value: "${value.substring(0, 10)}..."
+          
+          This is incorrect! You should use environment variable references in your librechat.yaml file, such as:
+          ${key}: "\${YOUR_ENV_VAR_NAME}"
+          
+          Then set the actual API key in your .env file or environment variables.
+          
+          More info: https://www.librechat.ai/docs/configuration/librechat_yaml/web_search`,
+        );
+      }
+    }
+  });
+}
+
+module.exports = {
+  checkHealth,
+  checkConfig,
+  checkVariables,
+  checkAzureVariables,
+  checkWebSearchConfig,
+};

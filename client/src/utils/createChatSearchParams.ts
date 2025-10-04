@@ -1,6 +1,12 @@
-import { isAgentsEndpoint, isAssistantsEndpoint, Constants } from 'librechat-data-provider';
+import {
+  isAgentsEndpoint,
+  tQueryParamsSchema,
+  isAssistantsEndpoint,
+} from 'librechat-data-provider';
 import type { TConversation, TPreset } from 'librechat-data-provider';
+import { isEphemeralAgent } from '~/common';
 
+const allowedParams = Object.keys(tQueryParamsSchema.shape);
 export default function createChatSearchParams(
   input: TConversation | TPreset | Record<string, string> | null,
 ): URLSearchParams {
@@ -9,25 +15,6 @@ export default function createChatSearchParams(
   }
 
   const params = new URLSearchParams();
-
-  const allowedParams = [
-    'endpoint',
-    'model',
-    'temperature',
-    'presence_penalty',
-    'frequency_penalty',
-    'stop',
-    'top_p',
-    'max_tokens',
-    'topP',
-    'topK',
-    'maxOutputTokens',
-    'promptCache',
-    'region',
-    'maxTokens',
-    'agent_id',
-    'assistant_id',
-  ];
 
   if (input && typeof input === 'object' && !('endpoint' in input) && !('model' in input)) {
     Object.entries(input as Record<string, string>).forEach(([key, value]) => {
@@ -46,7 +33,7 @@ export default function createChatSearchParams(
   if (
     isAgentsEndpoint(endpoint) &&
     conversation.agent_id &&
-    conversation.agent_id !== Constants.EPHEMERAL_AGENT_ID
+    !isEphemeralAgent(conversation.agent_id)
   ) {
     return new URLSearchParams({ agent_id: String(conversation.agent_id) });
   } else if (isAssistantsEndpoint(endpoint) && conversation.assistant_id) {
@@ -64,20 +51,15 @@ export default function createChatSearchParams(
     params.set('model', conversation.model);
   }
 
-  const paramMap = {
-    temperature: conversation.temperature,
-    presence_penalty: conversation.presence_penalty,
-    frequency_penalty: conversation.frequency_penalty,
-    stop: conversation.stop,
-    top_p: conversation.top_p,
-    max_tokens: conversation.max_tokens,
-    topP: conversation.topP,
-    topK: conversation.topK,
-    maxOutputTokens: conversation.maxOutputTokens,
-    promptCache: conversation.promptCache,
-    region: conversation.region,
-    maxTokens: conversation.maxTokens,
-  };
+  const paramMap: Record<string, any> = {};
+  allowedParams.forEach((key) => {
+    if (key === 'agent_id' && isEphemeralAgent(conversation.agent_id)) {
+      return;
+    }
+    if (key !== 'endpoint' && key !== 'model') {
+      paramMap[key] = (conversation as any)[key];
+    }
+  });
 
   return Object.entries(paramMap).reduce((params, [key, value]) => {
     if (value != null) {

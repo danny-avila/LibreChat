@@ -139,9 +139,9 @@
     z-index: 66;
     top: 0;
     max-width: 320px;
-  
+
     /* max-width: 260px; */
-  
+
     bottom: 0;
     right: 0
     /* opacity: 0; */
@@ -313,20 +313,30 @@
   background-color: transparent;  /* Color of the tracking area */
 }
 
-.sp-preview-container {
-  @apply flex h-full w-full grow flex-col justify-center;
-}
-
-.sp-preview {
-  @apply flex h-full w-full grow flex-col justify-center;
-}
-
-.sp-preview-iframe {
-  @apply grow;
-}
-
+/* Base wrapper for both preview and editor */
 .sp-wrapper {
-  @apply flex h-full w-full grow flex-col justify-center;
+  @apply flex h-full w-full grow flex-col;
+}
+
+/* Stack containers (sp-preview and sp-editor) */
+.sp-preview,
+.sp-editor {
+  @apply flex h-full w-full grow flex-col;
+}
+
+/* Inner containers */
+.sp-preview-container,
+.sp-code-editor {
+  @apply flex h-full w-full grow flex-col;
+}
+
+/* Content elements */
+.sp-preview-iframe {
+  @apply h-full w-full grow;
+}
+
+.sp-cm {
+  @apply h-full w-full grow;
 }
 
 @keyframes shake {
@@ -341,7 +351,7 @@
 
 div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"] {
   scrollbar-gutter: stable !important;
-  background-color: rgba(21, 21, 21, 0.5) !important;
+  background-color: rgba(205, 205, 205, 0.66) !important;
 }
 
 div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"]::-webkit-scrollbar {

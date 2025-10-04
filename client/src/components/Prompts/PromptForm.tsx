@@ -1,29 +1,34 @@
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React from 'react';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
 import { Menu, Rocket } from 'lucide-react';
+import { useParams } from 'react-router-dom';
 import { useForm, FormProvider } from 'react-hook-form';
-import { useParams, useOutletContext } from 'react-router-dom';
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import type { TCreatePrompt } from 'librechat-data-provider';
-import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { Button, Skeleton, useToastContext } from '@librechat/client';
 import {
-  useCreatePrompt,
+  Permissions,
+  ResourceType,
+  PermissionBits,
+  PermissionTypes,
+} from 'librechat-data-provider';
+import type { TCreatePrompt, TPrompt, TPromptGroup } from 'librechat-data-provider';
+import {
   useGetPrompts,
   useGetPromptGroup,
+  useAddPromptToGroup,
   useUpdatePromptGroup,
   useMakePromptProduction,
-  useDeletePrompt,
 } from '~/data-provider';
-import { useAuthContext, usePromptGroupsNav, useHasAccess, useLocalize } from '~/hooks';
+import { useResourcePermissions, useHasAccess, useLocalize } from '~/hooks';
 import CategorySelector from './Groups/CategorySelector';
+import { usePromptGroupsContext } from '~/Providers';
 import NoPromptGroup from './Groups/NoPromptGroup';
-import { Button, Skeleton } from '~/components/ui';
 import PromptVariables from './PromptVariables';
 import { cn, findPromptGroup } from '~/utils';
-import { useToastContext } from '~/Providers';
 import PromptVersions from './PromptVersions';
 import { PromptsEditorMode } from '~/common';
-import DeleteConfirm from './DeleteVersion';
+import DeleteVersion from './DeleteVersion';
 import PromptDetails from './PromptDetails';
 import PromptEditor from './PromptEditor';
 import SkeletonForm from './SkeletonForm';
@@ -33,30 +38,163 @@ import PromptName from './PromptName';
 import Command from './Command';
 import store from '~/store';
 
+interface RightPanelProps {
+  group: TPromptGroup;
+  prompts: TPrompt[];
+  selectedPrompt: any;
+  selectionIndex: number;
+  selectedPromptId?: string;
+  isLoadingPrompts: boolean;
+  canEdit: boolean;
+  setSelectionIndex: React.Dispatch<React.SetStateAction<number>>;
+}
+
+const RightPanel = React.memo(
+  ({
+    group,
+    prompts,
+    selectedPrompt,
+    selectedPromptId,
+    isLoadingPrompts,
+    canEdit,
+    selectionIndex,
+    setSelectionIndex,
+  }: RightPanelProps) => {
+    const localize = useLocalize();
+    const { showToast } = useToastContext();
+    const editorMode = useRecoilValue(store.promptsEditorMode);
+    const hasShareAccess = useHasAccess({
+      permissionType: PermissionTypes.PROMPTS,
+      permission: Permissions.SHARED_GLOBAL,
+    });
+
+    const updateGroupMutation = useUpdatePromptGroup({
+      onError: () => {
+        showToast({
+          status: 'error',
+          message: localize('com_ui_prompt_update_error'),
+        });
+      },
+    });
+
+    const makeProductionMutation = useMakePromptProduction();
+
+    const groupId = group?._id || '';
+    const groupName = group?.name || '';
+    const groupCategory = group?.category || '';
+    const isLoadingGroup = !group;
+
+    return (
+      <div
+        className="h-full w-full overflow-y-auto bg-surface-primary px-4"
+        style={{ maxHeight: 'calc(100vh - 100px)' }}
+      >
+        <div className="mb-2 flex flex-col lg:flex-row lg:items-center lg:justify-center lg:gap-x-2 xl:flex-row xl:space-y-0">
+          <CategorySelector
+            currentCategory={groupCategory}
+            onValueChange={
+              canEdit
+                ? (value) =>
+                    updateGroupMutation.mutate({
+                      id: groupId,
+                      payload: { name: groupName, category: value },
+                    })
+                : undefined
+            }
+          />
+          <div className="mt-2 flex flex-row items-center justify-center gap-x-2 lg:mt-0">
+            {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
+            {editorMode === PromptsEditorMode.ADVANCED && canEdit && (
+              <Button
+                variant="submit"
+                size="sm"
+                aria-label="Make prompt production"
+                className="h-10 w-10 border border-transparent p-0.5 transition-all"
+                onClick={() => {
+                  if (!selectedPrompt) {
+                    console.warn('No prompt is selected');
+                    return;
+                  }
+                  const { _id: promptVersionId = '', prompt } = selectedPrompt;
+                  makeProductionMutation.mutate({
+                    id: promptVersionId,
+                    groupId,
+                    productionPrompt: { prompt },
+                  });
+                }}
+                disabled={
+                  isLoadingGroup ||
+                  !selectedPrompt ||
+                  selectedPrompt._id === group?.productionId ||
+                  makeProductionMutation.isLoading ||
+                  !canEdit
+                }
+              >
+                <Rocket className="size-5 cursor-pointer text-white" />
+              </Button>
+            )}
+            <DeleteVersion
+              promptId={selectedPromptId}
+              groupId={groupId}
+              promptName={groupName}
+              disabled={isLoadingGroup}
+            />
+          </div>
+        </div>
+        {editorMode === PromptsEditorMode.ADVANCED &&
+          (isLoadingPrompts
+            ? Array.from({ length: 6 }).map((_, index: number) => (
+                <div key={index} className="my-2">
+                  <Skeleton className="h-[72px] w-full" />
+                </div>
+              ))
+            : prompts.length > 0 && (
+                <PromptVersions
+                  group={group}
+                  prompts={prompts}
+                  selectionIndex={selectionIndex}
+                  setSelectionIndex={setSelectionIndex}
+                />
+              ))}
+      </div>
+    );
+  },
+);
+
+RightPanel.displayName = 'RightPanel';
+
 const PromptForm = () => {
   const params = useParams();
   const localize = useLocalize();
-  const { user } = useAuthContext();
-  const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
   const { showToast } = useToastContext();
+  const { hasAccess } = usePromptGroupsContext();
+  const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
   const promptId = params.promptId || '';
 
-  const [selectionIndex, setSelectionIndex] = useState<number>(0);
   const editorMode = useRecoilValue(store.promptsEditorMode);
+  const [selectionIndex, setSelectionIndex] = useState<number>(0);
+
   const prevIsEditingRef = useRef(false);
   const [isEditing, setIsEditing] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
   const [showSidePanel, setShowSidePanel] = useState(false);
   const sidePanelWidth = '320px';
 
-  // Fetch group early so it is available for later hooks.
-  const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(promptId);
+  const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(promptId, {
+    enabled: hasAccess && !!promptId,
+  });
   const { data: prompts = [], isLoading: isLoadingPrompts } = useGetPrompts(
     { groupId: promptId },
-    { enabled: !!promptId },
+    { enabled: hasAccess && !!promptId },
   );
 
-  const isOwner = useMemo(() => (user && group ? user.id === group.author : false), [user, group]);
+  const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
+    ResourceType.PROMPTGROUP,
+    group?._id || '',
+  );
+
+  const canEdit = hasPermission(PermissionBits.EDIT);
+  const canView = hasPermission(PermissionBits.VIEW);
 
   const methods = useForm({
     defaultValues: {
@@ -73,11 +211,9 @@ const PromptForm = () => {
     [prompts, selectionIndex],
   );
 
-  const { groupsQuery } = useOutletContext<ReturnType<typeof usePromptGroupsNav>>();
-  const hasShareAccess = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.SHARED_GLOBAL,
-  });
+  const selectedPromptId = useMemo(() => selectedPrompt?._id, [selectedPrompt?._id]);
+
+  const { groupsQuery } = usePromptGroupsContext();
 
   const updateGroupMutation = useUpdatePromptGroup({
     onError: () => {
@@ -89,14 +225,12 @@ const PromptForm = () => {
   });
 
   const makeProductionMutation = useMakePromptProduction();
-  const deletePromptMutation = useDeletePrompt();
-
-  const createPromptMutation = useCreatePrompt({
+  const addPromptToGroupMutation = useAddPromptToGroup({
     onMutate: (variables) => {
       reset(
         {
           prompt: variables.prompt.prompt,
-          category: variables.group ? variables.group.category : '',
+          category: group?.category || '',
         },
         { keepDirtyValues: true },
       );
@@ -112,14 +246,17 @@ const PromptForm = () => {
 
       reset({
         prompt: data.prompt.prompt,
-        promptName: data.group ? data.group.name : '',
-        category: data.group ? data.group.category : '',
+        promptName: group?.name || '',
+        category: group?.category || '',
       });
     },
   });
 
   const onSave = useCallback(
     (value: string) => {
+      if (!canEdit) {
+        return;
+      }
       if (!value) {
         // TODO: show toast, cannot be empty.
         return;
@@ -127,10 +264,17 @@ const PromptForm = () => {
       if (!selectedPrompt) {
         return;
       }
+
+      const groupId = selectedPrompt.groupId || group?._id;
+      if (!groupId) {
+        console.error('No groupId available');
+        return;
+      }
+
       const tempPrompt: TCreatePrompt = {
         prompt: {
           type: selectedPrompt.type ?? 'text',
-          groupId: selectedPrompt.groupId ?? '',
+          groupId: groupId,
           prompt: value,
         },
       };
@@ -139,9 +283,10 @@ const PromptForm = () => {
         return;
       }
 
-      createPromptMutation.mutate(tempPrompt);
+      // We're adding to an existing group, so use the addPromptToGroup mutation
+      addPromptToGroupMutation.mutate({ ...tempPrompt, groupId });
     },
-    [selectedPrompt, createPromptMutation],
+    [selectedPrompt, group, addPromptToGroupMutation, canEdit],
   );
 
   const handleLoadingComplete = useCallback(() => {
@@ -152,11 +297,11 @@ const PromptForm = () => {
   }, [isLoadingGroup, isLoadingPrompts]);
 
   useEffect(() => {
-    if (prevIsEditingRef.current && !isEditing) {
+    if (prevIsEditingRef.current && !isEditing && canEdit) {
       handleSubmit((data) => onSave(data.prompt))();
     }
     prevIsEditingRef.current = isEditing;
-  }, [isEditing, onSave, handleSubmit]);
+  }, [isEditing, onSave, handleSubmit, canEdit]);
 
   useEffect(() => {
     handleLoadingComplete();
@@ -178,129 +323,66 @@ const PromptForm = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const debouncedUpdateOneliner = useCallback(
-    debounce((oneliner: string) => {
-      if (!group || !group._id) {
-        return console.warn('Group not found');
-      }
-      updateGroupMutation.mutate({ id: group._id, payload: { oneliner } });
-    }, 950),
-    [updateGroupMutation, group],
+  const debouncedUpdateOneliner = useMemo(
+    () =>
+      debounce((groupId: string, oneliner: string, mutate: any) => {
+        mutate({ id: groupId, payload: { oneliner } });
+      }, 950),
+    [],
   );
 
-  const debouncedUpdateCommand = useCallback(
-    debounce((command: string) => {
+  const debouncedUpdateCommand = useMemo(
+    () =>
+      debounce((groupId: string, command: string, mutate: any) => {
+        mutate({ id: groupId, payload: { command } });
+      }, 950),
+    [],
+  );
+
+  const handleUpdateOneliner = useCallback(
+    (oneliner: string) => {
       if (!group || !group._id) {
         return console.warn('Group not found');
       }
-      updateGroupMutation.mutate({ id: group._id, payload: { command } });
-    }, 950),
-    [updateGroupMutation, group],
+      debouncedUpdateOneliner(group._id, oneliner, updateGroupMutation.mutate);
+    },
+    [group, updateGroupMutation.mutate, debouncedUpdateOneliner],
+  );
+
+  const handleUpdateCommand = useCallback(
+    (command: string) => {
+      if (!group || !group._id) {
+        return console.warn('Group not found');
+      }
+      debouncedUpdateCommand(group._id, command, updateGroupMutation.mutate);
+    },
+    [group, updateGroupMutation.mutate, debouncedUpdateCommand],
   );
 
   if (initialLoad) {
     return <SkeletonForm />;
   }
 
-  if (!isOwner && groupsQuery.data && user?.role !== SystemRoles.ADMIN) {
+  // Show read-only view if user doesn't have edit permission
+  if (!canEdit && !permissionsLoading && groupsQuery.data) {
     const fetchedPrompt = findPromptGroup(
       groupsQuery.data,
       (group) => group._id === params.promptId,
     );
-    if (!fetchedPrompt) {
+    if (!fetchedPrompt && !canView) {
       return <NoPromptGroup />;
     }
 
-    return <PromptDetails group={fetchedPrompt} />;
+    if (fetchedPrompt || group) {
+      return <PromptDetails group={fetchedPrompt || group} />;
+    }
   }
 
   if (!group || group._id == null) {
     return null;
   }
 
-  const groupId = group._id;
-
   const groupName = group.name;
-  const groupCategory = group.category;
-
-  const RightPanel = () => (
-    <div
-      className="h-full w-full overflow-y-auto bg-surface-primary px-4"
-      style={{ maxHeight: 'calc(100vh - 100px)' }}
-    >
-      <div className="mb-2 flex flex-col lg:flex-row lg:items-center lg:justify-center lg:gap-x-2 xl:flex-row xl:space-y-0">
-        <CategorySelector
-          currentCategory={groupCategory}
-          onValueChange={(value) =>
-            updateGroupMutation.mutate({
-              id: groupId,
-              payload: { name: groupName, category: value },
-            })
-          }
-        />
-        <div className="mt-2 flex flex-row items-center justify-center gap-x-2 lg:mt-0">
-          {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
-          {editorMode === PromptsEditorMode.ADVANCED && (
-            <Button
-              variant="submit"
-              size="sm"
-              aria-label="Make prompt production"
-              className="h-10 w-10 border border-transparent p-0.5 transition-all"
-              onClick={() => {
-                if (!selectedPrompt) {
-                  console.warn('No prompt is selected');
-                  return;
-                }
-                const { _id: promptVersionId = '', prompt } = selectedPrompt;
-                makeProductionMutation.mutate({
-                  id: promptVersionId,
-                  groupId,
-                  productionPrompt: { prompt },
-                });
-              }}
-              disabled={
-                isLoadingGroup ||
-                !selectedPrompt ||
-                selectedPrompt._id === group.productionId ||
-                makeProductionMutation.isLoading
-              }
-            >
-              <Rocket className="size-5 cursor-pointer text-white" />
-            </Button>
-          )}
-          <DeleteConfirm
-            name={groupName}
-            disabled={isLoadingGroup}
-            selectHandler={() => {
-              if (!selectedPrompt || !selectedPrompt._id) {
-                console.warn('No prompt is selected or prompt _id is missing');
-                return;
-              }
-              deletePromptMutation.mutate({
-                _id: selectedPrompt._id,
-                groupId,
-              });
-            }}
-          />
-        </div>
-      </div>
-      {editorMode === PromptsEditorMode.ADVANCED &&
-        (isLoadingPrompts
-          ? Array.from({ length: 6 }).map((_, index: number) => (
-            <div key={index} className="my-2">
-              <Skeleton className="h-[72px] w-full" />
-            </div>
-          ))
-          : prompts.length > 0 && (
-            <PromptVersions
-              group={group}
-              prompts={prompts}
-              selectionIndex={selectionIndex}
-              setSelectionIndex={setSelectionIndex}
-            />
-          ))}
-    </div>
-  );
 
   return (
     <FormProvider {...methods}>
@@ -323,10 +405,13 @@ const PromptForm = () => {
                       <PromptName
                         name={groupName}
                         onSave={(value) => {
-                          if (!group._id) {
+                          if (!canEdit || !group._id) {
                             return;
                           }
-                          updateGroupMutation.mutate({ id: group._id, payload: { name: value } });
+                          updateGroupMutation.mutate({
+                            id: group._id,
+                            payload: { name: value },
+                          });
                         }}
                       />
                       <div className="flex-1" />
@@ -340,7 +425,18 @@ const PromptForm = () => {
                         <Menu className="size-5" />
                       </Button>
                       <div className="hidden lg:block">
-                        {editorMode === PromptsEditorMode.SIMPLE && <RightPanel />}
+                        {editorMode === PromptsEditorMode.SIMPLE && (
+                          <RightPanel
+                            group={group}
+                            prompts={prompts}
+                            selectedPrompt={selectedPrompt}
+                            selectionIndex={selectionIndex}
+                            selectedPromptId={selectedPromptId}
+                            isLoadingPrompts={isLoadingPrompts}
+                            canEdit={canEdit}
+                            setSelectionIndex={setSelectionIndex}
+                          />
+                        )}
                       </div>
                     </>
                   )}
@@ -349,15 +445,21 @@ const PromptForm = () => {
                   <Skeleton className="h-96" aria-live="polite" />
                 ) : (
                   <div className="mb-2 flex h-full flex-col gap-4">
-                    <PromptEditor name="prompt" isEditing={isEditing} setIsEditing={setIsEditing} />
+                    <PromptEditor
+                      name="prompt"
+                      isEditing={isEditing}
+                      setIsEditing={(value) => canEdit && setIsEditing(value)}
+                    />
                     <PromptVariables promptText={promptText} />
                     <Description
                       initialValue={group.oneliner ?? ''}
-                      onValueChange={debouncedUpdateOneliner}
+                      onValueChange={canEdit ? handleUpdateOneliner : undefined}
+                      disabled={!canEdit}
                     />
                     <Command
                       initialValue={group.command ?? ''}
-                      onValueChange={debouncedUpdateCommand}
+                      onValueChange={canEdit ? handleUpdateCommand : undefined}
+                      disabled={!canEdit}
                     />
                   </div>
                 )}
@@ -365,7 +467,16 @@ const PromptForm = () => {
 
               {editorMode === PromptsEditorMode.ADVANCED && (
                 <div className="hidden w-1/4 border-l border-border-light lg:block">
-                  <RightPanel />
+                  <RightPanel
+                    group={group}
+                    prompts={prompts}
+                    selectionIndex={selectionIndex}
+                    selectedPrompt={selectedPrompt}
+                    selectedPromptId={selectedPromptId}
+                    isLoadingPrompts={isLoadingPrompts}
+                    canEdit={canEdit}
+                    setSelectionIndex={setSelectionIndex}
+                  />
                 </div>
               )}
             </div>
@@ -396,7 +507,16 @@ const PromptForm = () => {
           >
             <div className="h-full">
               <div className="h-full overflow-auto">
-                <RightPanel />
+                <RightPanel
+                  group={group}
+                  prompts={prompts}
+                  selectionIndex={selectionIndex}
+                  selectedPrompt={selectedPrompt}
+                  selectedPromptId={selectedPromptId}
+                  isLoadingPrompts={isLoadingPrompts}
+                  canEdit={canEdit}
+                  setSelectionIndex={setSelectionIndex}
+                />
               </div>
             </div>
           </div>

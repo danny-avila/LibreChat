@@ -1,30 +1,74 @@
-import * as Ariakit from '@ariakit/react';
 import React, { useRef, useState, useMemo } from 'react';
-import { EToolResources, EModelEndpoint } from 'librechat-data-provider';
+import * as Ariakit from '@ariakit/react';
+import { useRecoilState } from 'recoil';
 import { FileSearch, ImageUpIcon, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
-import { FileUpload, TooltipAnchor, DropdownPopup, AttachmentIcon } from '~/components';
-import { useGetEndpointsQuery } from '~/data-provider';
-import { useLocalize, useFileHandling } from '~/hooks';
+import { EToolResources, EModelEndpoint, defaultAgentCapabilities } from 'librechat-data-provider';
+import {
+  FileUpload,
+  TooltipAnchor,
+  DropdownPopup,
+  AttachmentIcon,
+  SharePointIcon,
+} from '@librechat/client';
+import type { EndpointFileConfig } from 'librechat-data-provider';
+import {
+  useAgentToolPermissions,
+  useAgentCapabilities,
+  useGetAgentsConfig,
+  useFileHandling,
+  useLocalize,
+} from '~/hooks';
+import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
+import { SharePointPickerDialog } from '~/components/SharePoint';
+import { useGetStartupConfig } from '~/data-provider';
+import { ephemeralAgentByConvoId } from '~/store';
+import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 
-interface AttachFileProps {
+interface AttachFileMenuProps {
+  conversationId: string;
+  agentId?: string | null;
   disabled?: boolean | null;
+  endpointFileConfig?: EndpointFileConfig;
 }
 
-const AttachFile = ({ disabled }: AttachFileProps) => {
+const AttachFileMenu = ({
+  agentId,
+  disabled,
+  conversationId,
+  endpointFileConfig,
+}: AttachFileMenuProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
+  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(
+    ephemeralAgentByConvoId(conversationId),
+  );
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
-  const { data: endpointsConfig } = useGetEndpointsQuery();
   const { handleFileChange } = useFileHandling({
     overrideEndpoint: EModelEndpoint.agents,
+    overrideEndpointFileConfig: endpointFileConfig,
   });
+  const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
+    overrideEndpoint: EModelEndpoint.agents,
+    overrideEndpointFileConfig: endpointFileConfig,
+    toolResource,
+  });
+  const { data: startupConfig } = useGetStartupConfig();
+  const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
 
-  const capabilities = useMemo(
-    () => endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [],
-    [endpointsConfig],
+  const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
+  const { agentsConfig } = useGetAgentsConfig();
+  /** TODO: Ephemeral Agent Capabilities
+   * Allow defining agent capabilities on a per-endpoint basis
+   * Use definition for agents endpoint for ephemeral agents
+   * */
+  const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
+
+  const { fileSearchAllowedByAgent, codeAllowedByAgent } = useAgentToolPermissions(
+    agentId,
+    ephemeralAgent,
   );
 
   const handleUploadClick = (isImage?: boolean) => {
@@ -38,52 +82,89 @@ const AttachFile = ({ disabled }: AttachFileProps) => {
   };
 
   const dropdownItems = useMemo(() => {
-    const items = [
-      {
-        label: localize('com_ui_upload_image_input'),
-        onClick: () => {
-          setToolResource(undefined);
-          handleUploadClick(true);
+    const createMenuItems = (onAction: (isImage?: boolean) => void) => {
+      const items: MenuItemProps[] = [
+        {
+          label: localize('com_ui_upload_image_input'),
+          onClick: () => {
+            setToolResource(undefined);
+            onAction(true);
+          },
+          icon: <ImageUpIcon className="icon-md" />,
         },
-        icon: <ImageUpIcon className="icon-md" />,
-      },
-    ];
+      ];
 
-    if (capabilities.includes(EToolResources.ocr)) {
-      items.push({
-        label: localize('com_ui_upload_ocr_text'),
-        onClick: () => {
-          setToolResource(EToolResources.ocr);
-          handleUploadClick();
-        },
-        icon: <FileType2Icon className="icon-md" />,
+      if (capabilities.contextEnabled) {
+        items.push({
+          label: localize('com_ui_upload_ocr_text'),
+          onClick: () => {
+            setToolResource(EToolResources.context);
+            onAction();
+          },
+          icon: <FileType2Icon className="icon-md" />,
+        });
+      }
+
+      if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
+        items.push({
+          label: localize('com_ui_upload_file_search'),
+          onClick: () => {
+            setToolResource(EToolResources.file_search);
+            setEphemeralAgent((prev) => ({
+              ...prev,
+              [EToolResources.file_search]: true,
+            }));
+            onAction();
+          },
+          icon: <FileSearch className="icon-md" />,
+        });
+      }
+
+      if (capabilities.codeEnabled && codeAllowedByAgent) {
+        items.push({
+          label: localize('com_ui_upload_code_files'),
+          onClick: () => {
+            setToolResource(EToolResources.execute_code);
+            setEphemeralAgent((prev) => ({
+              ...prev,
+              [EToolResources.execute_code]: true,
+            }));
+            onAction();
+          },
+          icon: <TerminalSquareIcon className="icon-md" />,
+        });
+      }
+
+      return items;
+    };
+
+    const localItems = createMenuItems(handleUploadClick);
+
+    if (sharePointEnabled) {
+      const sharePointItems = createMenuItems(() => {
+        setIsSharePointDialogOpen(true);
+        // Note: toolResource will be set by the specific item clicked
       });
+      localItems.push({
+        label: localize('com_files_upload_sharepoint'),
+        onClick: () => {},
+        icon: <SharePointIcon className="icon-md" />,
+        subItems: sharePointItems,
+      });
+      return localItems;
     }
 
-    if (capabilities.includes(EToolResources.file_search)) {
-      items.push({
-        label: localize('com_ui_upload_file_search'),
-        onClick: () => {
-          setToolResource(EToolResources.file_search);
-          handleUploadClick();
-        },
-        icon: <FileSearch className="icon-md" />,
-      });
-    }
-
-    if (capabilities.includes(EToolResources.execute_code)) {
-      items.push({
-        label: localize('com_ui_upload_code_files'),
-        onClick: () => {
-          setToolResource(EToolResources.execute_code);
-          handleUploadClick();
-        },
-        icon: <TerminalSquareIcon className="icon-md" />,
-      });
-    }
-
-    return items;
-  }, [capabilities, localize, setToolResource]);
+    return localItems;
+  }, [
+    capabilities,
+    localize,
+    setToolResource,
+    setEphemeralAgent,
+    sharePointEnabled,
+    codeAllowedByAgent,
+    fileSearchAllowedByAgent,
+    setIsSharePointDialogOpen,
+  ]);
 
   const menuTrigger = (
     <TooltipAnchor
@@ -106,26 +187,45 @@ const AttachFile = ({ disabled }: AttachFileProps) => {
       disabled={isUploadDisabled}
     />
   );
+  const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
+    try {
+      await handleSharePointFiles(sharePointFiles);
+      setIsSharePointDialogOpen(false);
+    } catch (error) {
+      console.error('SharePoint file processing error:', error);
+    }
+  };
 
   return (
-    <FileUpload
-      ref={inputRef}
-      handleFileChange={(e) => {
-        handleFileChange(e, toolResource);
-      }}
-    >
-      <DropdownPopup
-        menuId="attach-file-menu"
-        isOpen={isPopoverActive}
-        setIsOpen={setIsPopoverActive}
-        modal={true}
-        unmountOnHide={true}
-        trigger={menuTrigger}
-        items={dropdownItems}
-        iconClassName="mr-0"
+    <>
+      <FileUpload
+        ref={inputRef}
+        handleFileChange={(e) => {
+          handleFileChange(e, toolResource);
+        }}
+      >
+        <DropdownPopup
+          menuId="attach-file-menu"
+          className="overflow-visible"
+          isOpen={isPopoverActive}
+          setIsOpen={setIsPopoverActive}
+          modal={true}
+          unmountOnHide={true}
+          trigger={menuTrigger}
+          items={dropdownItems}
+          iconClassName="mr-0"
+        />
+      </FileUpload>
+      <SharePointPickerDialog
+        isOpen={isSharePointDialogOpen}
+        onOpenChange={setIsSharePointDialogOpen}
+        onFilesSelected={handleSharePointFilesSelected}
+        isDownloading={isProcessing}
+        downloadProgress={downloadProgress}
+        maxSelectionCount={endpointFileConfig?.fileLimit}
       />
-    </FileUpload>
+    </>
   );
 };
 
-export default React.memo(AttachFile);
+export default React.memo(AttachFileMenu);

@@ -1,9 +1,9 @@
 import React from 'react';
 import { Plus, Minus } from 'lucide-react';
+import { Button, Label } from '@librechat/client';
 import TextareaAutosize from 'react-textarea-autosize';
 import type { TExample } from 'librechat-data-provider';
 import type { TSetExample } from '~/common';
-import { Button, Label } from '~/components/ui';
 import { cn, defaultTextProps } from '~/utils/';
 import { useLocalize } from '~/hooks';
 
@@ -42,7 +42,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample }:
                   placeholder="Set example input. Example is ignored if empty."
                   className={cn(
                     defaultTextProps,
-                    'flex max-h-[138px] min-h-[75px] w-full resize-none px-3 py-2 ',
+                    'flex max-h-[138px] min-h-[75px] w-full resize-none px-3 py-2',
                   )}
                 />
               </div>
@@ -67,7 +67,7 @@ function Examples({ readonly, examples, setExample, addExample, removeExample }:
                   placeholder={'Set example output. Example is ignored if empty.'}
                   className={cn(
                     defaultTextProps,
-                    'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2 ',
+                    'flex max-h-[300px] min-h-[75px] w-full resize-none px-3 py-2',
                   )}
                 />
               </div>

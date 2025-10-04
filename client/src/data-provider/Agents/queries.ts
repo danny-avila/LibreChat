@@ -1,12 +1,20 @@
-import { QueryKeys, dataService, EModelEndpoint, defaultOrderQuery } from 'librechat-data-provider';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, dataService, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
+import type {
+  QueryObserverResult,
+  UseQueryOptions,
+  UseInfiniteQueryOptions,
+} from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
+import { isEphemeralAgent } from '~/common';
 
 /**
  * AGENTS
  */
-
+export const defaultAgentParams: t.AgentListParams = {
+  limit: 10,
+  requiredPermission: PermissionBits.EDIT,
+};
 /**
  * Hook for getting all available tools for A
  */
@@ -27,7 +35,7 @@ export const useAvailableAgentToolsQuery = (): QueryObserverResult<t.TPlugin[]> 
  * Hook for listing all Agents, with optional parameters provided for pagination and sorting
  */
 export const useListAgentsQuery = <TData = t.AgentListResponse>(
-  params: t.AgentListParams = defaultOrderQuery,
+  params: t.AgentListParams = defaultAgentParams,
   config?: UseQueryOptions<t.AgentListResponse, unknown, TData>,
 ): QueryObserverResult<TData> => {
   const queryClient = useQueryClient();
@@ -54,16 +62,42 @@ export const useListAgentsQuery = <TData = t.AgentListResponse>(
 };
 
 /**
- * Hook for retrieving details about a single agent
+ * Hook for retrieving basic details about a single agent (VIEW permission)
  */
 export const useGetAgentByIdQuery = (
-  agent_id: string,
+  agent_id: string | null | undefined,
   config?: UseQueryOptions<t.Agent>,
 ): QueryObserverResult<t.Agent> => {
+  const isValidAgentId = !!agent_id && !isEphemeralAgent(agent_id);
+
   return useQuery<t.Agent>(
     [QueryKeys.agent, agent_id],
     () =>
       dataService.getAgentById({
+        agent_id: agent_id as string,
+      }),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      enabled: isValidAgentId && (config?.enabled ?? true),
+      ...config,
+    },
+  );
+};
+
+/**
+ * Hook for retrieving full agent details including sensitive configuration (EDIT permission)
+ */
+export const useGetExpandedAgentByIdQuery = (
+  agent_id: string,
+  config?: UseQueryOptions<t.Agent>,
+): QueryObserverResult<t.Agent> => {
+  return useQuery<t.Agent>(
+    [QueryKeys.agent, agent_id, 'expanded'],
+    () =>
+      dataService.getExpandedAgentById({
         agent_id,
       }),
     {
@@ -74,4 +108,61 @@ export const useGetAgentByIdQuery = (
       ...config,
     },
   );
+};
+
+/**
+ * MARKETPLACE
+ */
+/**
+ * Hook for getting agent categories for marketplace tabs
+ */
+export const useGetAgentCategoriesQuery = (
+  config?: UseQueryOptions<t.TMarketplaceCategory[]>,
+): QueryObserverResult<t.TMarketplaceCategory[]> => {
+  return useQuery<t.TMarketplaceCategory[]>(
+    [QueryKeys.agentCategories],
+    () => dataService.getAgentCategories(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+      ...config,
+    },
+  );
+};
+
+/**
+ * Hook for infinite loading of marketplace agents with cursor-based pagination
+ */
+export const useMarketplaceAgentsInfiniteQuery = (
+  params: {
+    requiredPermission: number;
+    category?: string;
+    search?: string;
+    limit?: number;
+    promoted?: 0 | 1;
+    cursor?: string; // For pagination
+  },
+  config?: UseInfiniteQueryOptions<t.AgentListResponse, unknown>,
+) => {
+  return useInfiniteQuery<t.AgentListResponse>({
+    queryKey: [QueryKeys.marketplaceAgents, params],
+    queryFn: ({ pageParam }) => {
+      const queryParams = { ...params };
+      if (pageParam) {
+        queryParams.cursor = pageParam.toString();
+      }
+      return dataService.getMarketplaceAgents(queryParams);
+    },
+    getNextPageParam: (lastPage) => lastPage?.after ?? undefined,
+    enabled: !!params.requiredPermission,
+    keepPreviousData: true,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    cacheTime: 10 * 60 * 1000, // 10 minutes
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
 };

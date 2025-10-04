@@ -1,11 +1,11 @@
 jest.mock('~/cache/getLogStores');
 const request = require('supertest');
 const express = require('express');
-const routes = require('../');
+const configRoute = require('../config');
 // file deepcode ignore UseCsurfForExpress/test: test
 const app = express();
 app.disable('x-powered-by');
-app.use('/api/config', routes.config);
+app.use('/api/config', configRoute);
 
 afterEach(() => {
   delete process.env.APP_TITLE;
@@ -24,6 +24,12 @@ afterEach(() => {
   delete process.env.GITHUB_CLIENT_SECRET;
   delete process.env.DISCORD_CLIENT_ID;
   delete process.env.DISCORD_CLIENT_SECRET;
+  delete process.env.SAML_ENTRY_POINT;
+  delete process.env.SAML_ISSUER;
+  delete process.env.SAML_CERT;
+  delete process.env.SAML_SESSION_SECRET;
+  delete process.env.SAML_BUTTON_LABEL;
+  delete process.env.SAML_IMAGE_URL;
   delete process.env.DOMAIN_SERVER;
   delete process.env.ALLOW_REGISTRATION;
   delete process.env.ALLOW_SOCIAL_LOGIN;
@@ -55,6 +61,12 @@ describe.skip('GET /', () => {
     process.env.GITHUB_CLIENT_SECRET = 'Test Github client Secret';
     process.env.DISCORD_CLIENT_ID = 'Test Discord client Id';
     process.env.DISCORD_CLIENT_SECRET = 'Test Discord client Secret';
+    process.env.SAML_ENTRY_POINT = 'http://test-server.com';
+    process.env.SAML_ISSUER = 'Test SAML Issuer';
+    process.env.SAML_CERT = 'saml.pem';
+    process.env.SAML_SESSION_SECRET = 'Test Secret';
+    process.env.SAML_BUTTON_LABEL = 'Test SAML';
+    process.env.SAML_IMAGE_URL = 'http://test-server.com';
     process.env.DOMAIN_SERVER = 'http://test-server.com';
     process.env.ALLOW_REGISTRATION = 'true';
     process.env.ALLOW_SOCIAL_LOGIN = 'true';
@@ -70,7 +82,7 @@ describe.skip('GET /', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
       appTitle: 'Test Title',
-      socialLogins: ['google', 'facebook', 'openid', 'github', 'discord'],
+      socialLogins: ['google', 'facebook', 'openid', 'github', 'discord', 'saml'],
       discordLoginEnabled: true,
       facebookLoginEnabled: true,
       githubLoginEnabled: true,
@@ -78,6 +90,9 @@ describe.skip('GET /', () => {
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
+      samlLoginEnabled: true,
+      samlLabel: 'Test SAML',
+      samlImageUrl: 'http://test-server.com',
       ldap: {
         enabled: true,
       },

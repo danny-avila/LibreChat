@@ -14,6 +14,9 @@ function MessageAudio(props: TMessageAudio) {
   };
 
   const SelectedTTS = TTSComponents[engineTTS];
+  if (!SelectedTTS) {
+    return null;
+  }
   return <SelectedTTS {...props} />;
 }
 

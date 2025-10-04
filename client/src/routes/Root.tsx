@@ -2,21 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import type { ContextType } from '~/common';
 import {
-  useAuthContext,
+  useSearchEnabled,
   useAssistantsMap,
+  useAuthContext,
   useAgentsMap,
   useFileMap,
-  useSearchEnabled,
 } from '~/hooks';
 import {
-  AgentsMapContext,
+  PromptGroupsProvider,
   AssistantsMapContext,
-  FileMapContext,
+  AgentsMapContext,
   SetConvoProvider,
+  FileMapContext,
 } from '~/Providers';
-import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
+import { TermsAndConditionsModal } from '~/components/ui';
 import { Nav, MobileNav } from '~/components/Nav';
+import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
 
 export default function Root() {
@@ -28,6 +30,10 @@ export default function Root() {
   });
 
   const { isAuthenticated, logout } = useAuthContext();
+
+  // Global health check - runs once per authenticated session
+  useHealthCheck(isAuthenticated);
+
   const assistantsMap = useAssistantsMap({ isAuthenticated });
   const agentsMap = useAgentsMap({ isAuthenticated });
   const fileMap = useFileMap({ isAuthenticated });
@@ -63,16 +69,18 @@ export default function Root() {
       <FileMapContext.Provider value={fileMap}>
         <AssistantsMapContext.Provider value={assistantsMap}>
           <AgentsMapContext.Provider value={agentsMap}>
-            <Banner onHeightChange={setBannerHeight} />
-            <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
-              <div className="relative z-0 flex h-full w-full overflow-hidden">
-                <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
-                <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
-                  <MobileNav setNavVisible={setNavVisible} />
-                  <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
+            <PromptGroupsProvider>
+              <Banner onHeightChange={setBannerHeight} />
+              <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
+                <div className="relative z-0 flex h-full w-full overflow-hidden">
+                  <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
+                  <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
+                    <MobileNav setNavVisible={setNavVisible} />
+                    <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
+                  </div>
                 </div>
               </div>
-            </div>
+            </PromptGroupsProvider>
           </AgentsMapContext.Provider>
           {config?.interface?.termsOfService?.modalAcceptance === true && (
             <TermsAndConditionsModal

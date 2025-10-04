@@ -1,7 +1,6 @@
 const fs = require('fs').promises;
+const { logger } = require('@librechat/data-schemas');
 const { getImporter } = require('./importers');
-const { indexSync } = require('~/lib/db');
-const { logger } = require('~/config');
 
 /**
  * Job definition for importing a conversation.
@@ -15,8 +14,6 @@ const importConversations = async (job) => {
     const jsonData = JSON.parse(fileData);
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId);
-    // Sync Meilisearch index
-    await indexSync();
     logger.debug(`user: ${requestUserId} | Finished importing conversations`);
   } catch (error) {
     logger.error(`user: ${requestUserId} | Failed to import conversation: `, error);
