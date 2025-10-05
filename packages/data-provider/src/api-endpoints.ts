@@ -2,16 +2,26 @@ import type { AssistantsEndpoint } from './schemas';
 import * as q from './types/queries';
 import { ResourceType } from './accessPermissions';
 
+// Type declaration for microfrontend API base URL
+declare global {
+  interface Window {
+    __LIBRECHAT_API_BASE__?: string;
+  }
+}
+
 let BASE_URL = '';
 if (
   typeof process === 'undefined' ||
   (process as typeof process & { browser?: boolean }).browser === true
 ) {
-  // process is only available in node context, or process.browser is true in client-side code
-  // This is to ensure that the BASE_URL is set correctly based on the <base>
-  // element in the HTML document, if it exists.
-  const baseEl = document.querySelector('base');
-  BASE_URL = baseEl?.getAttribute('href') || '/';
+  // Check for configured API base URL first (for microfrontend)
+  if (typeof window !== 'undefined' && window.__LIBRECHAT_API_BASE__) {
+    BASE_URL = window.__LIBRECHAT_API_BASE__;
+  } else {
+    // Fallback to base element or current origin
+    const baseEl = document.querySelector('base');
+    BASE_URL = baseEl?.getAttribute('href') || '/';
+  }
 }
 
 if (BASE_URL && BASE_URL.endsWith('/')) {

@@ -2,7 +2,6 @@
 <html lang="en-US">
   <head>
     <meta charset="utf-8" />
-    <base href="/" />
     <meta name="theme-color" content="#171717" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -47,6 +46,11 @@
         }
       `;
       document.head.appendChild(loadingContainerStyle);
+    </script>
+    <!-- Set API base URL for microfrontend -->
+    <script>
+      // Configure API base URL for the microfrontend to point to the backend server
+      window.__LIBRECHAT_API_BASE__ = 'http://localhost:3080';
     </script>
     <!-- Load React and ReactDOM globally -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
