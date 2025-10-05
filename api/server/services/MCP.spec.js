@@ -108,6 +108,11 @@ describe('tests for the new helper functions used by the MCP connection status e
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
     mockGetLogStores = require('~/cache').getLogStores;
     mockGetOAuthReconnectionManager = require('~/config').getOAuthReconnectionManager;
+
+    // Default mock for getMCPManager - can be overridden in specific tests
+    mockGetMCPManager.mockReturnValue({
+      getRawConfig: jest.fn(() => ({})),
+    });
   });
 
   describe('getMCPSetupData', () => {
@@ -126,6 +131,7 @@ describe('tests for the new helper functions used by the MCP connection status e
         appConnections: { getAll: jest.fn(() => new Map()) },
         getUserConnections: jest.fn(() => new Map()),
         getOAuthServers: jest.fn(() => new Set()),
+        getRawConfig: jest.fn(() => ({})),
       });
     });
 
@@ -140,6 +146,7 @@ describe('tests for the new helper functions used by the MCP connection status e
         appConnections: { getAll: jest.fn(() => mockAppConnections) },
         getUserConnections: jest.fn(() => mockUserConnections),
         getOAuthServers: jest.fn(() => mockOAuthServers),
+        getRawConfig: jest.fn(() => ({})),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
 
@@ -171,6 +178,7 @@ describe('tests for the new helper functions used by the MCP connection status e
         appConnections: { getAll: jest.fn(() => null) },
         getUserConnections: jest.fn(() => null),
         getOAuthServers: jest.fn(() => null),
+        getRawConfig: jest.fn(() => ({})),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
 
