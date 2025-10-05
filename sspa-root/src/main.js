@@ -21,6 +21,61 @@ function loadCSS(href) {
   });
 }
 
+// Register the Custom Header microfrontend FIRST
+registerApplication({
+  name: 'custom-header',
+  app: () => {
+    console.log('Loading Custom Header microfrontend...');
+    
+    // Load JS (CSS not needed for this simple header)
+    return new Promise((resolve, reject) => {
+        // Check if already loaded
+        if (window.CustomHeaderMicrofrontend) {
+          console.log('Custom Header microfrontend already available');
+          resolve(window.CustomHeaderMicrofrontend);
+          return;
+        }
+        
+        const script = document.createElement('script');
+        script.src = '/custom-header-dist/custom-header.umd.js';
+        script.onload = () => {
+          console.log('Custom Header script loaded');
+          if (window.CustomHeaderMicrofrontend) {
+            console.log('Custom Header microfrontend found on window');
+            resolve(window.CustomHeaderMicrofrontend);
+          } else {
+            console.error('Custom Header microfrontend not found on window object');
+            reject(new Error('Custom Header microfrontend not found on window object'));
+          }
+        };
+        script.onerror = (error) => {
+          console.error('Error loading custom header microfrontend script:', error);
+          // Don't reject to avoid breaking the main app
+          resolve(null);
+        };
+        
+        document.head.appendChild(script);
+      })
+    .then((microfrontend) => {
+      console.log('Custom Header microfrontend loaded successfully');
+      return microfrontend;
+    }).catch((error) => {
+      console.warn('Custom Header microfrontend failed to load:', error);
+      // Return a no-op microfrontend to avoid breaking the main app
+      return {
+        bootstrap: () => Promise.resolve(),
+        mount: () => Promise.resolve(),
+        unmount: () => Promise.resolve()
+      };
+    });
+  },
+  activeWhen: () => true, // Always active - loads first
+  customProps: (name, location) => ({
+    name,
+    singleSpa: { name, location }
+  }),
+});
+
 // Register the LibreChat microfrontend
 registerApplication({
   name: 'librechat',

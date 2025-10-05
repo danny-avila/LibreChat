@@ -19,6 +19,14 @@
         padding: 0;
         height: 100%;
       }
+      #root {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      #custom-header {
+        order: -1; /* Ensure header appears first */
+      }
     </style>
     <script>
       const theme = localStorage.getItem('color-theme');

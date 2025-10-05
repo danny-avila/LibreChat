@@ -1,0 +1,23 @@
+{
+  "name": "@librechat/custom-header",
+  "version": "1.0.0",
+  "description": "Custom header microfrontend for LibreChat",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "build": "cross-env NODE_ENV=production vite build",
+    "preview": "vite preview",
+    "dev": "vite --host localhost --port 3091"
+  },
+  "dependencies": {
+    "cross-env": "^10.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "single-spa": "^6.0.1",
+    "single-spa-react": "^6.0.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^6.3.6"
+  }
+}

@@ -6,8 +6,10 @@
   "scripts": {
     "start": "vite",
     "build": "vite build",
+    "postbuild": "node scripts/copy-assets.js",
+    "copy-assets": "node scripts/copy-assets.js",
     "preview": "vite preview",
-    "dev": "vite --host localhost --port 3090"
+    "dev": "npm run copy-assets && vite --host localhost --port 3090"
   },
   "dependencies": {
     "single-spa": "^6.0.1"

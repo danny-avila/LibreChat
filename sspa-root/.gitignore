@@ -8,6 +8,10 @@ yarn-error.log*
 dist/
 build/
 
+# Public assets (copied from other microfrontends)
+public/client-dist/
+public/custom-header-dist/
+
 # Environment variables
 .env
 .env.local
