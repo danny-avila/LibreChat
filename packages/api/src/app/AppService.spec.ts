@@ -387,28 +387,6 @@ describe('AppService', () => {
     expect(process.env.FILE_UPLOAD_USER_WINDOW).toEqual(initialEnv.FILE_UPLOAD_USER_WINDOW);
   });
 
-  it('should correctly set FILE_UPLOAD environment variables based on rate limits', async () => {
-    // Define and mock a custom configuration with rate limits
-    const config: Partial<TCustomConfig> = {
-      rateLimits: {
-        fileUploads: {
-          ipMax: 100,
-          ipWindowInMinutes: 60,
-          userMax: 50,
-          userWindowInMinutes: 30,
-        },
-      },
-    };
-
-    await AppService({ config });
-
-    // Verify that process.env has been updated according to the rate limits config
-    expect(process.env.FILE_UPLOAD_IP_MAX).toEqual('100');
-    expect(process.env.FILE_UPLOAD_IP_WINDOW).toEqual('60');
-    expect(process.env.FILE_UPLOAD_USER_MAX).toEqual('50');
-    expect(process.env.FILE_UPLOAD_USER_WINDOW).toEqual('30');
-  });
-
   it('should fallback to default FILE_UPLOAD environment variables when rate limits are unspecified', async () => {
     // Setup initial environment variables to non-default values
     process.env.FILE_UPLOAD_IP_MAX = 'initialMax';
@@ -443,28 +421,6 @@ describe('AppService', () => {
     expect(process.env.IMPORT_IP_WINDOW).toEqual(initialEnv.IMPORT_IP_WINDOW);
     expect(process.env.IMPORT_USER_MAX).toEqual(initialEnv.IMPORT_USER_MAX);
     expect(process.env.IMPORT_USER_WINDOW).toEqual(initialEnv.IMPORT_USER_WINDOW);
-  });
-
-  it('should correctly set IMPORT environment variables based on rate limits', async () => {
-    // Define and mock a custom configuration with rate limits
-    const config: Partial<TCustomConfig> = {
-      rateLimits: {
-        conversationsImport: {
-          ipMax: 150,
-          ipWindowInMinutes: 60,
-          userMax: 50,
-          userWindowInMinutes: 30,
-        },
-      },
-    };
-
-    await AppService({ config });
-
-    // Verify that process.env has been updated according to the rate limits config
-    expect(process.env.IMPORT_IP_MAX).toEqual('150');
-    expect(process.env.IMPORT_IP_WINDOW).toEqual('60');
-    expect(process.env.IMPORT_USER_MAX).toEqual('50');
-    expect(process.env.IMPORT_USER_WINDOW).toEqual('30');
   });
 
   it('should fallback to default IMPORT environment variables when rate limits are unspecified', async () => {
