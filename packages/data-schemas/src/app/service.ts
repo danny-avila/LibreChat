@@ -7,7 +7,6 @@ import { agentsConfigSetup } from './agents';
 import { loadWebSearchConfig } from './web';
 import { processModelSpecs } from './specs';
 import { loadMemoryConfig } from './memory';
-import { handleRateLimits } from './limits';
 import { loadEndpoints } from './endpoints';
 import { loadOCRConfig } from './ocr';
 
@@ -100,7 +99,6 @@ export const AppService = async (params?: {
     return appConfig;
   }
 
-  handleRateLimits(config?.rateLimits);
   const loadedEndpoints = loadEndpoints(config, agentsDefaults);
 
   const appConfig = {

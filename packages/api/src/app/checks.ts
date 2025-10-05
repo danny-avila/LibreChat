@@ -3,6 +3,7 @@ import { Constants, extractVariableName } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { isEnabled, checkEmailConfig } from '~/utils';
+import { handleRateLimits } from './limits';
 
 const secretDefaults = {
   CREDS_KEY: 'f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0',
@@ -235,6 +236,9 @@ export async function performStartupChecks(appConfig?: AppConfig) {
   }
   if (appConfig?.config?.webSearch) {
     checkWebSearchConfig(appConfig.config.webSearch);
+  }
+  if (appConfig?.config?.rateLimits) {
+    handleRateLimits(appConfig.config.rateLimits);
   }
   await checkHealth();
 }
