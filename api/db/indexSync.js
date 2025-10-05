@@ -30,6 +30,55 @@ class MeiliSearchClient {
 }
 
 /**
+ * Deletes documents from MeiliSearch index that are missing the user field
+ * @param {import('meilisearch').Index} index - MeiliSearch index instance
+ * @param {string} indexName - Name of the index for logging
+ * @returns {Promise<number>} - Number of documents deleted
+ */
+async function deleteDocumentsWithoutUserField(index, indexName) {
+  let deletedCount = 0;
+  let offset = 0;
+  const batchSize = 1000;
+
+  try {
+    while (true) {
+      const searchResult = await index.search('', {
+        limit: batchSize,
+        offset: offset,
+      });
+
+      if (searchResult.hits.length === 0) {
+        break;
+      }
+
+      const idsToDelete = searchResult.hits.filter((hit) => !hit.user).map((hit) => hit.id);
+
+      if (idsToDelete.length > 0) {
+        logger.info(
+          `[indexSync] Deleting ${idsToDelete.length} documents without user field from ${indexName} index`,
+        );
+        await index.deleteDocuments(idsToDelete);
+        deletedCount += idsToDelete.length;
+      }
+
+      if (searchResult.hits.length < batchSize) {
+        break;
+      }
+
+      offset += batchSize;
+    }
+
+    if (deletedCount > 0) {
+      logger.info(`[indexSync] Deleted ${deletedCount} orphaned documents from ${indexName} index`);
+    }
+  } catch (error) {
+    logger.error(`[indexSync] Error deleting documents from ${indexName}:`, error);
+  }
+
+  return deletedCount;
+}
+
+/**
  * Ensures indexes have proper filterable attributes configured and checks if documents have user field
  * @param {MeiliSearch} client - MeiliSearch client instance
  * @returns {Promise<boolean>} - true if configuration was updated or re-sync is needed
@@ -55,7 +104,10 @@ async function ensureFilterableAttributes(client) {
       try {
         const searchResult = await messagesIndex.search('', { limit: 1 });
         if (searchResult.hits.length > 0 && !searchResult.hits[0].user) {
-          logger.info('[indexSync] Existing messages missing user field, re-sync needed');
+          logger.info(
+            '[indexSync] Existing messages missing user field, cleaning up orphaned documents...',
+          );
+          await deleteDocumentsWithoutUserField(messagesIndex, 'messages');
           return true;
         }
       } catch (searchError) {
@@ -86,7 +138,10 @@ async function ensureFilterableAttributes(client) {
       try {
         const searchResult = await convosIndex.search('', { limit: 1 });
         if (searchResult.hits.length > 0 && !searchResult.hits[0].user) {
-          logger.info('[indexSync] Existing conversations missing user field, re-sync needed');
+          logger.info(
+            '[indexSync] Existing conversations missing user field, cleaning up orphaned documents...',
+          );
+          await deleteDocumentsWithoutUserField(convosIndex, 'convos');
           return true;
         }
       } catch (searchError) {
