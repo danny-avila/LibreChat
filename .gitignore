@@ -138,3 +138,4 @@ helm/**/.values.yaml
 /.tabnine/
 /.codeium
 *.local.md
+.playwright-mcp/
