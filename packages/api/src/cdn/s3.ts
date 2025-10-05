@@ -1,7 +1,7 @@
-const { S3Client } = require('@aws-sdk/client-s3');
-const { logger } = require('@librechat/data-schemas');
+import { S3Client } from '@aws-sdk/client-s3';
+import { logger } from '@librechat/data-schemas';
 
-let s3 = null;
+let s3: S3Client | null = null;
 
 /**
  * Initializes and returns an instance of the AWS S3 client.
@@ -11,9 +11,9 @@ let s3 = null;
  *
  * If AWS_ENDPOINT_URL is provided, it will be used as the endpoint.
  *
- * @returns {S3Client|null} An instance of S3Client if the region is provided; otherwise, null.
+ * @returns An instance of S3Client if the region is provided; otherwise, null.
  */
-const initializeS3 = () => {
+export const initializeS3 = (): S3Client | null => {
   if (s3) {
     return s3;
   }
@@ -49,5 +49,3 @@ const initializeS3 = () => {
 
   return s3;
 };
-
-module.exports = { initializeS3 };

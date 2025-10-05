@@ -9,7 +9,31 @@ import type {
   TCustomEndpoints,
   TAssistantEndpoint,
 } from 'librechat-data-provider';
-import type { FunctionTool } from './tools';
+
+export type JsonSchemaType = {
+  type: 'string' | 'number' | 'integer' | 'float' | 'boolean' | 'array' | 'object';
+  enum?: string[];
+  items?: JsonSchemaType;
+  properties?: Record<string, JsonSchemaType>;
+  required?: string[];
+  description?: string;
+  additionalProperties?: boolean | JsonSchemaType;
+};
+
+export type ConvertJsonSchemaToZodOptions = {
+  allowEmptyObject?: boolean;
+  dropFields?: string[];
+  transformOneOfAnyOf?: boolean;
+};
+
+export interface FunctionTool {
+  type: 'function';
+  function: {
+    description: string;
+    name: string;
+    parameters: JsonSchemaType;
+  };
+}
 
 /**
  * Application configuration object
@@ -17,11 +41,11 @@ import type { FunctionTool } from './tools';
  */
 export interface AppConfig {
   /** The main custom configuration */
-  config: TCustomConfig;
+  config: Partial<TCustomConfig>;
   /** OCR configuration */
   ocr?: TCustomConfig['ocr'];
   /** File paths configuration */
-  paths: {
+  paths?: {
     uploads: string;
     imageOutput: string;
     publicPath: string;
@@ -34,7 +58,7 @@ export interface AppConfig {
   /** File storage strategy ('local', 's3', 'firebase', 'azure_blob') */
   fileStrategy: FileSources.local | FileSources.s3 | FileSources.firebase | FileSources.azure_blob;
   /** File strategies configuration */
-  fileStrategies: TCustomConfig['fileStrategies'];
+  fileStrategies?: TCustomConfig['fileStrategies'];
   /** Registration configurations */
   registration?: TCustomConfig['registration'];
   /** Actions configurations */
@@ -48,9 +72,9 @@ export interface AppConfig {
   /** Interface configuration */
   interfaceConfig?: TCustomConfig['interface'];
   /** Turnstile configuration */
-  turnstileConfig?: TCustomConfig['turnstile'];
+  turnstileConfig?: Partial<TCustomConfig['turnstile']>;
   /** Balance configuration */
-  balance?: TCustomConfig['balance'];
+  balance?: Partial<TCustomConfig['balance']>;
   /** Transactions configuration */
   transactions?: TCustomConfig['transactions'];
   /** Speech configuration */
@@ -67,26 +91,26 @@ export interface AppConfig {
   availableTools?: Record<string, FunctionTool>;
   endpoints?: {
     /** OpenAI endpoint configuration */
-    openAI?: TEndpoint;
+    openAI?: Partial<TEndpoint>;
     /** Google endpoint configuration */
-    google?: TEndpoint;
+    google?: Partial<TEndpoint>;
     /** Bedrock endpoint configuration */
-    bedrock?: TEndpoint;
+    bedrock?: Partial<TEndpoint>;
     /** Anthropic endpoint configuration */
-    anthropic?: TEndpoint;
+    anthropic?: Partial<TEndpoint>;
     /** GPT plugins endpoint configuration */
-    gptPlugins?: TEndpoint;
+    gptPlugins?: Partial<TEndpoint>;
     /** Azure OpenAI endpoint configuration */
     azureOpenAI?: TAzureConfig;
     /** Assistants endpoint configuration */
-    assistants?: TAssistantEndpoint;
+    assistants?: Partial<TAssistantEndpoint>;
     /** Azure assistants endpoint configuration */
-    azureAssistants?: TAssistantEndpoint;
+    azureAssistants?: Partial<TAssistantEndpoint>;
     /** Agents endpoint configuration */
-    [EModelEndpoint.agents]?: TAgentsEndpoint;
+    [EModelEndpoint.agents]?: Partial<TAgentsEndpoint>;
     /** Custom endpoints configuration */
     [EModelEndpoint.custom]?: TCustomEndpoints;
     /** Global endpoint configuration */
-    all?: TEndpoint;
+    all?: Partial<TEndpoint>;
   };
 }

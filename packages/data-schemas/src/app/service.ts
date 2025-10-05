@@ -1,48 +1,56 @@
-const { FileSources, EModelEndpoint, getConfigDefaults } = require('librechat-data-provider');
-const {
-  isEnabled,
-  loadOCRConfig,
-  loadMemoryConfig,
-  agentsConfigSetup,
-  loadWebSearchConfig,
-  loadDefaultInterface,
-} = require('@librechat/api');
-const {
-  checkWebSearchConfig,
-  checkVariables,
-  checkHealth,
-  checkConfig,
-} = require('./start/checks');
-const { initializeAzureBlobService } = require('./Files/Azure/initialize');
-const { initializeFirebase } = require('./Files/Firebase/initialize');
-const handleRateLimits = require('./Config/handleRateLimits');
-const loadCustomConfig = require('./Config/loadCustomConfig');
-const { loadTurnstileConfig } = require('./start/turnstile');
-const { processModelSpecs } = require('./start/modelSpecs');
-const { initializeS3 } = require('./Files/S3/initialize');
-const { loadAndFormatTools } = require('./start/tools');
-const { loadEndpoints } = require('./start/endpoints');
-const paths = require('~/config/paths');
+import { EModelEndpoint, getConfigDefaults } from 'librechat-data-provider';
+import type { TCustomConfig, FileSources, DeepPartial } from 'librechat-data-provider';
+import type { AppConfig, FunctionTool } from '~/types/app';
+import { loadDefaultInterface } from './interface';
+import { loadTurnstileConfig } from './turnstile';
+import { agentsConfigSetup } from './agents';
+import { loadWebSearchConfig } from './web';
+import { processModelSpecs } from './specs';
+import { loadMemoryConfig } from './memory';
+import { loadEndpoints } from './endpoints';
+import { loadOCRConfig } from './ocr';
+
+export type Paths = {
+  root: string;
+  uploads: string;
+  clientPath: string;
+  dist: string;
+  publicPath: string;
+  fonts: string;
+  assets: string;
+  imageOutput: string;
+  structuredTools: string;
+  pluginManifest: string;
+};
 
 /**
  * Loads custom config and initializes app-wide variables.
  * @function AppService
  */
-const AppService = async () => {
-  /** @type {TCustomConfig} */
-  const config = (await loadCustomConfig()) ?? {};
+export const AppService = async (params?: {
+  config: DeepPartial<TCustomConfig>;
+  paths?: Paths;
+  systemTools?: Record<string, FunctionTool>;
+}): Promise<AppConfig> => {
+  const { config, paths, systemTools } = params || {};
+  if (!config) {
+    throw new Error('Config is required');
+  }
   const configDefaults = getConfigDefaults();
 
   const ocr = loadOCRConfig(config.ocr);
   const webSearch = loadWebSearchConfig(config.webSearch);
-  checkWebSearchConfig(webSearch);
   const memory = loadMemoryConfig(config.memory);
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
-  const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
+  const fileStrategy = (config.fileStrategy ?? configDefaults.fileStrategy) as
+    | FileSources.local
+    | FileSources.s3
+    | FileSources.firebase
+    | FileSources.azure_blob;
   const startBalance = process.env.START_BALANCE;
   const balance = config.balance ?? {
-    enabled: isEnabled(process.env.CHECK_BALANCE),
+    enabled: process.env.CHECK_BALANCE?.toLowerCase().trim() === 'true',
     startBalance: startBalance ? parseInt(startBalance, 10) : undefined,
   };
   const transactions = config.transactions ?? configDefaults.transactions;
@@ -50,23 +58,7 @@ const AppService = async () => {
 
   process.env.CDN_PROVIDER = fileStrategy;
 
-  checkVariables();
-  await checkHealth();
-
-  if (fileStrategy === FileSources.firebase) {
-    initializeFirebase();
-  } else if (fileStrategy === FileSources.azure_blob) {
-    initializeAzureBlobService();
-  } else if (fileStrategy === FileSources.s3) {
-    initializeS3();
-  }
-
-  /** @type {Record<string, FunctionTool>} */
-  const availableTools = loadAndFormatTools({
-    adminFilter: filteredTools,
-    adminIncluded: includedTools,
-    directory: paths.structuredTools,
-  });
+  const availableTools = systemTools;
 
   const mcpConfig = config.mcpServers || null;
   const registration = config.registration ?? configDefaults.registration;
@@ -107,8 +99,6 @@ const AppService = async () => {
     return appConfig;
   }
 
-  checkConfig(config);
-  handleRateLimits(config?.rateLimits);
   const loadedEndpoints = loadEndpoints(config, agentsDefaults);
 
   const appConfig = {
@@ -121,5 +111,3 @@ const AppService = async () => {
 
   return appConfig;
 };
-
-module.exports = AppService;

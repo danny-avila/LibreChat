@@ -1,4 +1,4 @@
-import type { AppConfig } from '~/types';
+import type { AppConfig } from '@librechat/data-schemas';
 import {
   createTempChatExpirationDate,
   getTempChatRetentionHours,

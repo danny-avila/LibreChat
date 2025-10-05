@@ -1103,13 +1103,13 @@
 
 /**
  * @exports AppConfig
- * @typedef {import('@librechat/api').AppConfig} AppConfig
+ * @typedef {import('@librechat/data-schemas').AppConfig} AppConfig
  * @memberof typedefs
  */
 
 /**
  * @exports JsonSchemaType
- * @typedef {import('@librechat/api').JsonSchemaType} JsonSchemaType
+ * @typedef {import('@librechat/data-schemas').JsonSchemaType} JsonSchemaType
  * @memberof typedefs
  */
 
@@ -1371,12 +1371,7 @@
 
 /**
  * @exports FunctionTool
- * @typedef {Object} FunctionTool
- * @property {'function'} type - The type of tool, 'function'.
- * @property {Object} function - The function definition.
- * @property {string} function.description - A description of what the function does.
- * @property {string} function.name - The name of the function to be called.
- * @property {Object} function.parameters - The parameters the function accepts, described as a JSON Schema object.
+ * @typedef {import('@librechat/data-schemas').FunctionTool} FunctionTool
  * @memberof typedefs
  */
 
