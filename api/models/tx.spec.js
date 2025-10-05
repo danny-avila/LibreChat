@@ -184,6 +184,16 @@ describe('getValueKey', () => {
     expect(getValueKey('claude-3.5-haiku-turbo')).toBe('claude-3.5-haiku');
     expect(getValueKey('claude-3.5-haiku-0125')).toBe('claude-3.5-haiku');
   });
+
+  it('should return expected value keys for "gpt-oss" models', () => {
+    expect(getValueKey('openai/gpt-oss-120b')).toBe('gpt-oss-120b');
+    expect(getValueKey('openai/gpt-oss:120b')).toBe('gpt-oss:120b');
+    expect(getValueKey('openai/gpt-oss-570b')).toBe('gpt-oss');
+    expect(getValueKey('gpt-oss-570b')).toBe('gpt-oss');
+    expect(getValueKey('groq/gpt-oss-1080b')).toBe('gpt-oss');
+    expect(getValueKey('gpt-oss-20b')).toBe('gpt-oss-20b');
+    expect(getValueKey('oai/gpt-oss:20b')).toBe('gpt-oss:20b');
+  });
 });
 
 describe('getMultiplier', () => {

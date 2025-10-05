@@ -396,8 +396,15 @@ describe('getModelMaxTokens', () => {
   });
 
   test('should return correct tokens for GPT-OSS models', () => {
-    const expected = maxTokensMap[EModelEndpoint.openAI]['gpt-oss-20b'];
-    ['gpt-oss-20b', 'gpt-oss-120b', 'openai/gpt-oss-20b', 'openai/gpt-oss-120b'].forEach((name) => {
+    const expected = maxTokensMap[EModelEndpoint.openAI]['gpt-oss'];
+    [
+      'gpt-oss:20b',
+      'gpt-oss-20b',
+      'gpt-oss-120b',
+      'openai/gpt-oss-20b',
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss:120b',
+    ].forEach((name) => {
       expect(getModelMaxTokens(name)).toBe(expected);
     });
   });
