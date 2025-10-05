@@ -25,12 +25,15 @@ function loadCSS(href) {
 registerApplication({
   name: 'librechat',
   app: () => {
+    console.log('Loading LibreChat microfrontend...');
+    
     // Load both CSS and JS
     return Promise.all([
       loadCSS('/client-dist/librechat.css'),
       new Promise((resolve, reject) => {
         // Check if already loaded
         if (window.LibreChatMicrofrontend) {
+          console.log('LibreChat microfrontend already available');
           resolve(window.LibreChatMicrofrontend);
           return;
         }
@@ -38,14 +41,17 @@ registerApplication({
         const script = document.createElement('script');
         script.src = '/client-dist/librechat.umd.js';
         script.onload = () => {
+          console.log('LibreChat script loaded');
           if (window.LibreChatMicrofrontend) {
+            console.log('LibreChat microfrontend found on window');
             resolve(window.LibreChatMicrofrontend);
           } else {
+            console.error('LibreChat microfrontend not found on window object');
             reject(new Error('LibreChat microfrontend not found on window object'));
           }
         };
         script.onerror = (error) => {
-          console.error('Error loading microfrontend:', error);
+          console.error('Error loading microfrontend script:', error);
           // Show a helpful error message
           const loadingContainer = document.getElementById('loading-container');
           if (loadingContainer) {
@@ -72,12 +78,18 @@ Error loading script: /client-dist/librechat.umd.js
         
         document.head.appendChild(script);
       })
-    ]).then(([, microfrontend]) => microfrontend);
+    ]).then(([, microfrontend]) => {
+      console.log('Microfrontend loaded successfully');
+      return microfrontend;
+    });
   },
   activeWhen: () => true, // Always active since this is the main app
-  customProps: {
+  customProps: (name, location) => ({
+    // Pass the root element to the microfrontend
     domElement: document.getElementById('root'),
-  },
+    name,
+    singleSpa: { name, location }
+  }),
 });
 
 // Start single-spa
