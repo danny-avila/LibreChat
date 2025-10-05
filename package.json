@@ -45,7 +45,7 @@
     "frontend": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && npm run build:client-package && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
-    "spa:build": "node scripts/build-spa.js",
+    "build:spa": "node scripts/build-spa.js",
     "spa:dev": "npm run spa:build && npm run backend:dev",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
     "e2e:headed": "playwright test --config=e2e/playwright.config.local.ts --headed",
