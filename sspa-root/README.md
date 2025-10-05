@@ -19,19 +19,19 @@ Make sure you have Node.js and npm installed.
 
 ### Running in Development Mode
 
-1. **Build the Client Microfrontend first:**
+1. **Start the LibreChat Backend (required):**
+   ```bash
+   cd ..
+   npm run backend:dev
+   ```
+   This starts the API server on `http://localhost:3080` that the microfrontend needs for authentication and API calls.
+
+2. **Build the Client Microfrontend:**
    ```bash
    cd ../client
    npm run build:spa
    ```
    This creates the microfrontend bundle that the root app will load.
-
-2. **Start the Client Dev Server (optional, for API proxying):**
-   ```bash
-   cd ../client
-   npm run dev
-   ```
-   This will start the client dev server on `http://localhost:3090` for API proxying.
 
 3. **Start the Root Application:**
    ```bash
@@ -39,10 +39,10 @@ Make sure you have Node.js and npm installed.
    npm install
    npm run dev
    ```
-   This will start the root application on `http://localhost:3091`.
+   This will start the root application on `http://localhost:3090` (or next available port).
 
 4. **Access the Application:**
-   Open your browser to `http://localhost:3091` to see the complete application.
+   Open your browser to `http://localhost:3090` (or the port shown in terminal) to see the complete application.
 
 ### Building for Production
 
@@ -100,11 +100,18 @@ sspa-root/
    - Make sure you've built the client microfrontend: `cd ../client && npm run build:spa`
    - Check that the file exists: `../client/dist/librechat.es.js`
    
-2. **CORS Errors**: Make sure the client dev server (port 3090) is running if you need API access
+2. **API 404 Errors (auth/refresh, etc.)**: 
+   - Ensure the LibreChat backend is running: `cd .. && npm run backend:dev`
+   - Check that the backend is accessible at `http://localhost:3080`
 
-3. **Module Loading Errors**: Ensure the client is built in microfrontend mode (`npm run build:spa`)
+3. **Port Conflicts**: 
+   - Root app will try port 3090, then use next available port
+   - Check terminal output for actual port being used
+   - Backend must be on port 3080
 
-4. **Port Conflicts**: Check that ports 3090 and 3091 are available
+4. **CORS or Module Loading Errors**: 
+   - Ensure the client microfrontend is built in microfrontend mode (`npm run build:spa`)
+   - Check browser console for specific error messages
 
 ### Debugging
 

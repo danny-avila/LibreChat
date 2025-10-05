@@ -102,10 +102,10 @@ export default defineConfig(({ command, mode }) => ({
       threshold: 10240,
     }),
   ],
-  publicDir: command === 'serve' ? './public' : false,
+  publicDir: mode === 'microfrontend' ? './public' : (command === 'serve' ? './public' : false),
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
-    outDir: './dist',
+    outDir: mode === 'microfrontend' ? './dist/spa' : './dist',
     minify: 'terser',
     lib: mode === 'microfrontend' ? {
       entry: './src/main-spa.jsx',
@@ -120,6 +120,12 @@ export default defineConfig(({ command, mode }) => ({
         globals: {
           react: 'React',
           'react-dom': 'ReactDOM'
+        },
+        assetFileNames: (assetInfo) => {
+          if (assetInfo.name?.endsWith('.css')) {
+            return 'librechat.css';
+          }
+          return 'assets/[name][extname]';
         }
       } : {
         manualChunks(id: string) {

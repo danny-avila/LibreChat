@@ -5,13 +5,24 @@ export default defineConfig({
   base: '',
   server: {
     host: 'localhost',
-    port: 3091,
+    port: 3090,
     strictPort: false,
     cors: true,
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
       'Access-Control-Allow-Headers': 'X-Requested-With, content-type, Authorization',
+    },
+    proxy: {
+      // Proxy API calls to the LibreChat backend
+      '/api': {
+        target: 'http://localhost:3080',
+        changeOrigin: true,
+      },
+      '/oauth': {
+        target: 'http://localhost:3080',
+        changeOrigin: true,
+      },
     },
     fs: {
       // Allow serving files from the client dist directory
