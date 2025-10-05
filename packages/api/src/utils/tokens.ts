@@ -263,6 +263,7 @@ const aggregateModels = {
   'gpt-oss:120b': 131000,
   'gpt-oss-120b': 131000,
   // GLM models (Zhipu AI)
+  glm4: 128000,
   'glm-4': 128000,
   'glm-4-32b': 128000,
   'glm-4.5': 131000,

@@ -406,7 +406,7 @@ describe('getMultiplier', () => {
   });
 
   it('should return correct multipliers for GLM models', () => {
-    const models = ['glm-4.6', 'glm-4.5v', 'glm-4.5-air', 'glm-4.5', 'glm-4-32b', 'glm-4'];
+    const models = ['glm-4.6', 'glm-4.5v', 'glm-4.5-air', 'glm-4.5', 'glm-4-32b', 'glm-4', 'glm4'];
     models.forEach((key) => {
       const expectedPrompt = tokenValues[key].prompt;
       const expectedCompletion = tokenValues[key].completion;
@@ -802,6 +802,7 @@ describe('GLM Model Tests', () => {
     expect(getValueKey('glm-4.5-air')).toBe('glm-4.5-air');
     expect(getValueKey('glm-4-32b')).toBe('glm-4-32b');
     expect(getValueKey('glm-4')).toBe('glm-4');
+    expect(getValueKey('glm4')).toBe('glm4');
   });
 
   it('should match GLM model variations with provider prefixes', () => {
@@ -876,6 +877,11 @@ describe('GLM Model Tests', () => {
     );
     expect(getMultiplier({ model: 'glm-4', tokenType: 'completion' })).toBe(
       tokenValues['glm-4'].completion,
+    );
+
+    expect(getMultiplier({ model: 'glm4', tokenType: 'prompt' })).toBe(tokenValues['glm4'].prompt);
+    expect(getMultiplier({ model: 'glm4', tokenType: 'completion' })).toBe(
+      tokenValues['glm4'].completion,
     );
   });
 

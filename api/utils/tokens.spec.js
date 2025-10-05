@@ -418,6 +418,7 @@ describe('getModelMaxTokens', () => {
     expect(getModelMaxTokens('glm-4.5')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm-4.5']);
     expect(getModelMaxTokens('glm-4-32b')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm-4-32b']);
     expect(getModelMaxTokens('glm-4')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm-4']);
+    expect(getModelMaxTokens('glm4')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm4']);
   });
 
   test('should return correct tokens for GLM models with provider prefixes', () => {
@@ -932,6 +933,7 @@ describe('GLM Model Tests (Zhipu AI)', () => {
       expect(getModelMaxTokens('glm-4.5')).toBe(131000);
       expect(getModelMaxTokens('glm-4-32b')).toBe(128000);
       expect(getModelMaxTokens('glm-4')).toBe(128000);
+      expect(getModelMaxTokens('glm4')).toBe(128000);
     });
 
     test('should handle partial matches for GLM models with provider prefixes', () => {
@@ -974,6 +976,7 @@ describe('GLM Model Tests (Zhipu AI)', () => {
       expect(matchModelName('glm-4.5')).toBe('glm-4.5');
       expect(matchModelName('glm-4-32b')).toBe('glm-4-32b');
       expect(matchModelName('glm-4')).toBe('glm-4');
+      expect(matchModelName('glm4')).toBe('glm4');
     });
 
     test('should match GLM model variations with provider prefixes', () => {
