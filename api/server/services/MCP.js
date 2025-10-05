@@ -294,26 +294,46 @@ async function createMCPTool({
     return;
   }
 
+  const mcpManager = getMCPManager(user?.id);
+  const serverConfig = mcpManager.getRawConfig(serverName);
+
   return createToolInstance({
     res,
     provider,
     toolName,
     serverName,
     toolDefinition,
+    serverConfig,
   });
 }
 
-function createToolInstance({ res, toolName, serverName, toolDefinition, provider: _provider }) {
+function createToolInstance({
+  res,
+  toolName,
+  serverName,
+  toolDefinition,
+  provider: _provider,
+  serverConfig,
+}) {
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
   const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
-  let schema = convertWithResolvedRefs(parameters, {
-    allowEmptyObject: !isGoogle,
-    transformOneOfAnyOf: true,
-  });
+  const skipSchemaValidation = serverConfig?.clientSideSchemaValidation === false;
 
-  if (!schema) {
-    schema = z.object({ input: z.string().optional() });
+  let schema;
+  if (skipSchemaValidation) {
+    // Skip client-side schema validation - use permissive schema
+    schema = z.any();
+  } else {
+    // Perform client-side schema validation
+    schema = convertWithResolvedRefs(parameters, {
+      allowEmptyObject: !isGoogle,
+      transformOneOfAnyOf: true,
+    });
+
+    if (!schema) {
+      schema = z.object({ input: z.string().optional() });
+    }
   }
 
   const normalizedToolKey = `${toolName}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;

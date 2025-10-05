@@ -108,6 +108,11 @@ describe('tests for the new helper functions used by the MCP connection status e
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
     mockGetLogStores = require('~/cache').getLogStores;
     mockGetOAuthReconnectionManager = require('~/config').getOAuthReconnectionManager;
+
+    // Default mock for getMCPManager - can be overridden in specific tests
+    mockGetMCPManager.mockReturnValue({
+      getRawConfig: jest.fn(() => ({})),
+    });
   });
 
   describe('getMCPSetupData', () => {
@@ -126,6 +131,7 @@ describe('tests for the new helper functions used by the MCP connection status e
         appConnections: { getAll: jest.fn(() => new Map()) },
         getUserConnections: jest.fn(() => new Map()),
         getOAuthServers: jest.fn(() => new Set()),
+        getRawConfig: jest.fn(() => ({})),
       });
     });
 
@@ -140,6 +146,7 @@ describe('tests for the new helper functions used by the MCP connection status e
         appConnections: { getAll: jest.fn(() => mockAppConnections) },
         getUserConnections: jest.fn(() => mockUserConnections),
         getOAuthServers: jest.fn(() => mockOAuthServers),
+        getRawConfig: jest.fn(() => ({})),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
 
@@ -171,6 +178,7 @@ describe('tests for the new helper functions used by the MCP connection status e
         appConnections: { getAll: jest.fn(() => null) },
         getUserConnections: jest.fn(() => null),
         getOAuthServers: jest.fn(() => null),
+        getRawConfig: jest.fn(() => ({})),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
 
@@ -885,6 +893,115 @@ describe('User parameter passing tests', () => {
 
       // Verify reinitMCPServer was not called due to early error
       expect(mockReinitMCPServer).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('clientSideSchemaValidation', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should use z.any() schema when clientSideSchemaValidation is false', async () => {
+      const mockUser = { id: 'test-user' };
+      const mockRes = { write: jest.fn() };
+      const mockMCPManager = {
+        getRawConfig: jest.fn().mockReturnValue({
+          clientSideSchemaValidation: false,
+        }),
+      };
+
+      require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
+
+      const availableTools = {
+        'test-tool::test-server': {
+          function: {
+            description: 'Test tool',
+            parameters: { type: 'object', properties: { param1: { type: 'string' } } },
+          },
+        },
+      };
+
+      const toolInstance = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: 'test-tool::test-server',
+        provider: 'openai',
+        availableTools,
+      });
+
+      // Verify getRawConfig was called
+      expect(mockMCPManager.getRawConfig).toHaveBeenCalledWith('test-server');
+
+      // Verify tool was created with z.any() schema (permissive)
+      expect(toolInstance).toBeDefined();
+      expect(toolInstance.schema).toBeDefined();
+    });
+
+    it('should use convertWithResolvedRefs when clientSideSchemaValidation is true', async () => {
+      const mockUser = { id: 'test-user' };
+      const mockRes = { write: jest.fn() };
+      const mockMCPManager = {
+        getRawConfig: jest.fn().mockReturnValue({
+          clientSideSchemaValidation: true,
+        }),
+      };
+
+      require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
+
+      const availableTools = {
+        'test-tool::test-server': {
+          function: {
+            description: 'Test tool',
+            parameters: { type: 'object', properties: { param1: { type: 'string' } } },
+          },
+        },
+      };
+
+      await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: 'test-tool::test-server',
+        provider: 'openai',
+        availableTools,
+      });
+
+      // Verify getRawConfig was called
+      expect(mockMCPManager.getRawConfig).toHaveBeenCalledWith('test-server');
+
+      // Verify convertWithResolvedRefs was called for schema conversion
+      const { convertWithResolvedRefs } = require('@librechat/api');
+      expect(convertWithResolvedRefs).toHaveBeenCalled();
+    });
+
+    it('should use convertWithResolvedRefs when clientSideSchemaValidation is undefined (default)', async () => {
+      const mockUser = { id: 'test-user' };
+      const mockRes = { write: jest.fn() };
+      const mockMCPManager = {
+        getRawConfig: jest.fn().mockReturnValue({}), // No clientSideSchemaValidation field
+      };
+
+      require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
+
+      const availableTools = {
+        'test-tool::test-server': {
+          function: {
+            description: 'Test tool',
+            parameters: { type: 'object', properties: { param1: { type: 'string' } } },
+          },
+        },
+      };
+
+      await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: 'test-tool::test-server',
+        provider: 'openai',
+        availableTools,
+      });
+
+      // Verify convertWithResolvedRefs was called (default behavior)
+      const { convertWithResolvedRefs } = require('@librechat/api');
+      expect(convertWithResolvedRefs).toHaveBeenCalled();
     });
   });
 });
