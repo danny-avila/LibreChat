@@ -152,7 +152,10 @@ const tokenValues = Object.assign(
     'ministral-8b': { prompt: 0.1, completion: 0.1 },
     'ministral-3b': { prompt: 0.04, completion: 0.04 },
     // GPT-OSS models
+    'gpt-oss': { prompt: 0.05, completion: 0.2 },
+    'gpt-oss:20b': { prompt: 0.05, completion: 0.2 },
     'gpt-oss-20b': { prompt: 0.05, completion: 0.2 },
+    'gpt-oss:120b': { prompt: 0.15, completion: 0.6 },
     'gpt-oss-120b': { prompt: 0.15, completion: 0.6 },
   },
   bedrockValues,

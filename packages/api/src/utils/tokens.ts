@@ -257,7 +257,10 @@ const aggregateModels = {
   // misc.
   kimi: 131000,
   // GPT-OSS
+  'gpt-oss': 131000,
+  'gpt-oss:20b': 131000,
   'gpt-oss-20b': 131000,
+  'gpt-oss:120b': 131000,
   'gpt-oss-120b': 131000,
 };
 
