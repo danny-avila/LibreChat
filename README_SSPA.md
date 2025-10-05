@@ -15,8 +15,8 @@ LibreChat's microfrontend architecture consists of:
 
 ### Prerequisites
 
-- Node.js (v16 or higher)
-- npm or yarn
+- Node.js (v23 or higher)
+- npm
 - MongoDB (for backend)
 
 ### 1. Install Dependencies
