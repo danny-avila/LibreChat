@@ -1,0 +1,20 @@
+{
+  "name": "@librechat/root",
+  "version": "1.0.0",
+  "description": "Single-spa root application for LibreChat",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "dev": "vite --host localhost --port 3091"
+  },
+  "dependencies": {
+    "single-spa": "^6.0.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^1.0.2",
+    "vite": "^6.3.6",
+    "vite-plugin-node-polyfills": "^0.23.0"
+  }
+}
