@@ -1292,5 +1292,10 @@
   "com_ui_reset_adjustments": "Reset adjustments",
   "com_ui_drag_reposition": "Drag the image to reposition",
   "com_ui_zoom_adjust": "Use zoom slider or buttons to adjust size",
-  "com_ui_editor_instructions": "Drag the image to reposition • Use zoom slider or buttons to adjust size"
+  "com_ui_editor_instructions": "Drag the image to reposition • Use zoom slider or buttons to adjust size",
+  "com_ui_save_key_success": "API key saved successfully",
+  "com_ui_save_key_error": "Failed to save API key. Please try again.",
+  "com_ui_revoke_key_success": "API key revoked successfully",
+  "com_ui_revoke_key_error": "Failed to revoke API key. Please try again.",
+  "com_ui_key_required": "API key is required"
 }

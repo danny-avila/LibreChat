@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import {
-  OGDialogTemplate,
   OGDialog,
+  OGDialogContent,
+  OGDialogHeader,
+  OGDialogTitle,
+  OGDialogFooter,
   Dropdown,
   useToastContext,
   Button,
@@ -18,11 +21,13 @@ import {
 import type { TDialogProps } from '~/common';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { useUserKey, useLocalize } from '~/hooks';
+import { NotificationSeverity } from '~/common';
 import CustomConfig from './CustomEndpoint';
 import GoogleConfig from './GoogleConfig';
 import OpenAIConfig from './OpenAIConfig';
 import OtherConfig from './OtherConfig';
 import HelpText from './HelpText';
+import { logger } from '~/utils';
 
 const endpointComponents = {
   [EModelEndpoint.google]: GoogleConfig,
@@ -65,10 +70,16 @@ const RevokeKeysButton = ({
 }) => {
   const localize = useLocalize();
   const [open, setOpen] = useState(false);
+  const { showToast } = useToastContext();
   const revokeKeyMutation = useRevokeUserKeyMutation(endpoint);
   const revokeKeysMutation = useRevokeAllUserKeysMutation();
 
   const handleSuccess = () => {
+    showToast({
+      message: localize('com_ui_revoke_key_success'),
+      status: NotificationSeverity.SUCCESS,
+    });
+
     if (!setDialogOpen) {
       return;
     }
@@ -76,18 +87,27 @@ const RevokeKeysButton = ({
     setDialogOpen(false);
   };
 
-  const onClick = () => {
-    revokeKeyMutation.mutate({}, { onSuccess: handleSuccess });
+  const handleError = () => {
+    showToast({
+      message: localize('com_ui_revoke_key_error'),
+      status: NotificationSeverity.ERROR,
+    });
   };
 
-  const dialogTitle = localize('com_ui_revoke_key_endpoint', { 0: endpoint });
-  const dialogMessage = localize('com_ui_revoke_key_confirm');
+  const onClick = () => {
+    revokeKeyMutation.mutate(
+      {},
+      {
+        onSuccess: handleSuccess,
+        onError: handleError,
+      },
+    );
+  };
+
   const isLoading = revokeKeyMutation.isLoading || revokeKeysMutation.isLoading;
 
   return (
     <div className="flex items-center justify-between">
-      <Label id="revoke-info-label">{localize('com_ui_revoke_info')}</Label>
-
       <OGDialog open={open} onOpenChange={setOpen}>
         <OGDialogTrigger asChild>
           <Button
@@ -99,18 +119,29 @@ const RevokeKeysButton = ({
             {localize('com_ui_revoke')}
           </Button>
         </OGDialogTrigger>
-        <OGDialogTemplate
-          showCloseButton={false}
-          title={dialogTitle}
-          className="max-w-[450px]"
-          main={<Label className="text-left text-sm font-medium">{dialogMessage}</Label>}
-          selection={{
-            selectHandler: onClick,
-            selectClasses:
-              'bg-destructive text-white transition-all duration-200 hover:bg-destructive/80',
-            selectText: isLoading ? <Spinner /> : localize('com_ui_revoke'),
-          }}
-        />
+        <OGDialogContent className="max-w-[450px]">
+          <OGDialogHeader>
+            <OGDialogTitle>{localize('com_ui_revoke_key_endpoint', { 0: endpoint })}</OGDialogTitle>
+          </OGDialogHeader>
+          <div className="py-4">
+            <Label className="text-left text-sm font-medium">
+              {localize('com_ui_revoke_key_confirm')}
+            </Label>
+          </div>
+          <OGDialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              {localize('com_ui_cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={onClick}
+              disabled={isLoading}
+              className="bg-destructive text-white transition-all duration-200 hover:bg-destructive/80"
+            >
+              {isLoading ? <Spinner /> : localize('com_ui_revoke')}
+            </Button>
+          </OGDialogFooter>
+        </OGDialogContent>
       </OGDialog>
     </div>
   );
@@ -166,8 +197,20 @@ const SetKeyDialog = ({
     }
 
     const saveKey = (key: string) => {
-      saveUserKey(key, expiresAt);
-      onOpenChange(false);
+      try {
+        saveUserKey(key, expiresAt);
+        showToast({
+          message: localize('com_ui_save_key_success'),
+          status: NotificationSeverity.SUCCESS,
+        });
+        onOpenChange(false);
+      } catch (error) {
+        logger.error('Error saving user key:', error);
+        showToast({
+          message: localize('com_ui_save_key_error'),
+          status: NotificationSeverity.ERROR,
+        });
+      }
     };
 
     if (formSet.has(endpoint) || formSet.has(endpointType ?? '')) {
@@ -222,6 +265,14 @@ const SetKeyDialog = ({
       return;
     }
 
+    if (!userKey.trim()) {
+      showToast({
+        message: localize('com_ui_key_required'),
+        status: NotificationSeverity.ERROR,
+      });
+      return;
+    }
+
     saveKey(userKey);
     setUserKey('');
   };
@@ -233,56 +284,54 @@ const SetKeyDialog = ({
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogTemplate
-        title={`${localize('com_endpoint_config_key_for')} ${alternateName[endpoint] ?? endpoint}`}
-        className="w-11/12 max-w-2xl"
-        showCancelButton={false}
-        main={
-          <div className="grid w-full items-center gap-2">
-            <small className="text-red-600">
-              {expiryTime === 'never'
-                ? localize('com_endpoint_config_key_never_expires')
-                : `${localize('com_endpoint_config_key_encryption')} ${new Date(
-                    expiryTime ?? 0,
-                  ).toLocaleString()}`}
-            </small>
-            <Dropdown
-              label="Expires "
-              value={expiresAtLabel}
-              onChange={handleExpirationChange}
-              options={expirationOptions.map((option) => option.label)}
-              sizeClasses="w-[185px]"
-              portal={false}
+      <OGDialogContent className="w-11/12 max-w-2xl">
+        <OGDialogHeader>
+          <OGDialogTitle>
+            {`${localize('com_endpoint_config_key_for')} ${alternateName[endpoint] ?? endpoint}`}
+          </OGDialogTitle>
+        </OGDialogHeader>
+        <div className="grid w-full items-center gap-2 py-4">
+          <small className="text-red-600">
+            {expiryTime === 'never'
+              ? localize('com_endpoint_config_key_never_expires')
+              : `${localize('com_endpoint_config_key_encryption')} ${new Date(
+                  expiryTime ?? 0,
+                ).toLocaleString()}`}
+          </small>
+          <Dropdown
+            label="Expires "
+            value={expiresAtLabel}
+            onChange={handleExpirationChange}
+            options={expirationOptions.map((option) => option.label)}
+            sizeClasses="w-[185px]"
+            portal={false}
+          />
+          <div className="mt-2" />
+          <FormProvider {...methods}>
+            <EndpointComponent
+              userKey={userKey}
+              setUserKey={setUserKey}
+              endpoint={
+                endpoint === EModelEndpoint.gptPlugins && (config?.azure ?? false)
+                  ? EModelEndpoint.azureOpenAI
+                  : endpoint
+              }
+              userProvideURL={userProvideURL}
             />
-            <div className="mt-2" />
-            <FormProvider {...methods}>
-              <EndpointComponent
-                userKey={userKey}
-                setUserKey={setUserKey}
-                endpoint={
-                  endpoint === EModelEndpoint.gptPlugins && (config?.azure ?? false)
-                    ? EModelEndpoint.azureOpenAI
-                    : endpoint
-                }
-                userProvideURL={userProvideURL}
-              />
-            </FormProvider>
-            <HelpText endpoint={endpoint} />
-          </div>
-        }
-        selection={{
-          selectHandler: submit,
-          selectClasses: 'btn btn-primary',
-          selectText: localize('com_ui_submit'),
-        }}
-        leftButtons={
+          </FormProvider>
+          <HelpText endpoint={endpoint} />
+        </div>
+        <OGDialogFooter>
           <RevokeKeysButton
             endpoint={endpoint}
             disabled={!(expiryTime ?? '')}
             setDialogOpen={onOpenChange}
           />
-        }
-      />
+          <Button variant="submit" onClick={submit}>
+            {localize('com_ui_submit')}
+          </Button>
+        </OGDialogFooter>
+      </OGDialogContent>
     </OGDialog>
   );
 };
