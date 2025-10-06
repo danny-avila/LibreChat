@@ -37,19 +37,19 @@ import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 
 interface AttachFileMenuProps {
-  conversationId: string;
   agentId?: string | null;
-  disabled?: boolean | null;
-  endpointFileConfig?: EndpointFileConfig;
   endpoint?: string | null;
+  disabled?: boolean | null;
+  conversationId: string;
+  endpointFileConfig?: EndpointFileConfig;
 }
 
 const AttachFileMenu = ({
   agentId,
+  endpoint,
   disabled,
   conversationId,
   endpointFileConfig,
-  endpoint,
 }: AttachFileMenuProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
