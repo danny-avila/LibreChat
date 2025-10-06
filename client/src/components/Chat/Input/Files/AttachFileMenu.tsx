@@ -1,12 +1,12 @@
 import React, { useRef, useState, useMemo } from 'react';
-import * as Ariakit from '@ariakit/react';
 import { useRecoilState } from 'recoil';
+import * as Ariakit from '@ariakit/react';
 import {
   FileSearch,
   ImageUpIcon,
-  TerminalSquareIcon,
   FileType2Icon,
   FileImageIcon,
+  TerminalSquareIcon,
 } from 'lucide-react';
 import {
   EToolResources,
