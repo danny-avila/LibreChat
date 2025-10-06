@@ -6,6 +6,7 @@ export type TWebSearchKeys =
   | 'searxngApiKey'
   | 'firecrawlApiKey'
   | 'firecrawlApiUrl'
+  | 'firecrawlVersion'
   | 'jinaApiKey'
   | 'jinaApiUrl'
   | 'cohereApiKey';

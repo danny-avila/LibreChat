@@ -1054,7 +1054,7 @@
 
 /**
  * @exports TWebSearchKeys
- * @typedef {import('librechat-data-provider').TWebSearchKeys} TWebSearchKeys
+ * @typedef {import('@librechat/data-schemas').TWebSearchKeys} TWebSearchKeys
  * @memberof typedefs
  */
 

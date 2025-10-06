@@ -35,10 +35,10 @@ export const webSearchAuth = {
 };
 
 /**
- * Extracts all API keys from the webSearchAuth configuration object
+ * Extracts all unique API keys from the webSearchAuth configuration object
  */
 export function getWebSearchKeys(): TWebSearchKeys[] {
-  const keys: TWebSearchKeys[] = [];
+  const keysSet = new Set<TWebSearchKeys>();
 
   // Iterate through each category (providers, scrapers, rerankers)
   for (const category of Object.keys(webSearchAuth)) {
@@ -48,14 +48,14 @@ export function getWebSearchKeys(): TWebSearchKeys[] {
     for (const service of Object.keys(categoryObj)) {
       const serviceObj = categoryObj[service as keyof typeof categoryObj];
 
-      // Extract the API keys from the service
+      // Extract the API keys from the service and add to set for deduplication
       for (const key of Object.keys(serviceObj)) {
-        keys.push(key as TWebSearchKeys);
+        keysSet.add(key as TWebSearchKeys);
       }
     }
   }
 
-  return keys;
+  return Array.from(keysSet);
 }
 
 export const webSearchKeys: TWebSearchKeys[] = getWebSearchKeys();
