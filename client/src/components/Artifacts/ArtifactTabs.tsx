@@ -8,6 +8,7 @@ import { useAutoScroll } from '~/hooks/Artifacts/useAutoScroll';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
 import { useGetStartupConfig } from '~/data-provider';
 import { ArtifactPreview } from './ArtifactPreview';
+import { MermaidMarkdown } from './MermaidMarkdown';
 import { cn } from '~/utils';
 
 export default function ArtifactTabs({
@@ -44,23 +45,25 @@ export default function ArtifactTabs({
         id="artifacts-code"
         className={cn('flex-grow overflow-auto')}
       >
-        <ArtifactCodeEditor
-          files={files}
-          fileKey={fileKey}
-          template={template}
-          artifact={artifact}
-          editorRef={editorRef}
-          sharedProps={sharedProps}
-        />
+        {isMermaid ? (
+          <MermaidMarkdown content={content} isSubmitting={isSubmitting} />
+        ) : (
+          <ArtifactCodeEditor
+            files={files}
+            fileKey={fileKey}
+            template={template}
+            artifact={artifact}
+            editorRef={editorRef}
+            sharedProps={sharedProps}
+          />
+        )}
       </Tabs.Content>
-      <Tabs.Content
-        value="preview"
-        className={cn('flex-grow overflow-auto', isMermaid ? 'bg-[#282C34]' : 'bg-white')}
-      >
+      <Tabs.Content value="preview" className="flex-grow overflow-auto">
         <ArtifactPreview
           files={files}
           fileKey={fileKey}
           template={template}
+          isMermaid={isMermaid}
           previewRef={previewRef}
           sharedProps={sharedProps}
           currentCode={currentCode}

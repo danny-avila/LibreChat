@@ -7,7 +7,9 @@ import type {
 import type { PromptOption } from '~/common';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import { useGetAllMCPPrompts, useGetAllPromptGroups } from '~/data-provider';
-import { usePromptGroupsNav } from '~/hooks';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
+import { usePromptGroupsNav, useHasAccess } from '~/hooks';
 import { mapPromptGroups } from '~/utils';
 
 type AllPromptGroupsData =
@@ -27,14 +29,21 @@ type PromptGroupsContextType =
         mcpData: MCPPromptResponse[];
         mcpIsLoading: boolean;
       };
+      hasAccess: boolean;
     })
   | null;
 
 const PromptGroupsContext = createContext<PromptGroupsContextType>(null);
 
 export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
-  const promptGroupsNav = usePromptGroupsNav();
+  const hasAccess = useHasAccess({
+    permissionType: PermissionTypes.PROMPTS,
+    permission: Permissions.USE,
+  });
+
+  const promptGroupsNav = usePromptGroupsNav(hasAccess);
   const { data: allGroupsData, isLoading: isLoadingAll } = useGetAllPromptGroups(undefined, {
+    enabled: hasAccess,
     select: (data) => {
       const mappedArray: PromptOption[] = data.map((group) => ({
         id: group._id ?? '',
@@ -97,8 +106,8 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
     return {
       ...promptGroupsNav,
       allPromptGroups: {
-        data: allGroupsData,
-        isLoading: isLoadingAll,
+        data: hasAccess ? allGroupsData : undefined,
+        isLoading: hasAccess ? isLoadingAll : false,
       },
       mcpPromptsResponse: {
         mcpData: mcpPromptsData ?? [],
@@ -106,6 +115,10 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
       },
     };
   }, [promptGroupsNav, allGroupsData, mcpPromptsData, isLoadingAll, mcpIsLoading]);
+      hasAccess,
+    }),
+    [promptGroupsNav, allGroupsData, isLoadingAll, hasAccess],
+  );
 
   return (
     <PromptGroupsContext.Provider value={contextValue}>{children}</PromptGroupsContext.Provider>

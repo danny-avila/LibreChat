@@ -1,4 +1,5 @@
 const appConfig = require('./app');
+const mcpToolsCache = require('./mcp');
 const { config } = require('./EndpointService');
 const getCachedTools = require('./getCachedTools');
 const getCachedPrompts = require('./getCachedPrompts');

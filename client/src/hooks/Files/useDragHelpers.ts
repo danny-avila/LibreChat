@@ -17,6 +17,7 @@ import type { DropTargetMonitor } from 'react-dnd';
 import type * as t from 'librechat-data-provider';
 import store, { ephemeralAgentByConvoId } from '~/store';
 import useFileHandling from './useFileHandling';
+import { isEphemeralAgent } from '~/common';
 
 export default function useDragHelpers() {
   const queryClient = useQueryClient();
@@ -71,14 +72,14 @@ export default function useDragHelpers() {
       const capabilities = agentsConfig?.capabilities ?? defaultAgentCapabilities;
       const fileSearchEnabled = capabilities.includes(AgentCapabilities.file_search) === true;
       const codeEnabled = capabilities.includes(AgentCapabilities.execute_code) === true;
-      const ocrEnabled = capabilities.includes(AgentCapabilities.ocr) === true;
+      const contextEnabled = capabilities.includes(AgentCapabilities.context) === true;
 
       /** Get agent permissions at drop time */
       const agentId = conversationRef.current?.agent_id;
       let fileSearchAllowedByAgent = true;
       let codeAllowedByAgent = true;
 
-      if (agentId && agentId !== Constants.EPHEMERAL_AGENT_ID) {
+      if (agentId && !isEphemeralAgent(agentId)) {
         /** Agent data from cache */
         const agent = queryClient.getQueryData<t.Agent>([QueryKeys.agent, agentId]);
         if (agent) {
@@ -99,7 +100,7 @@ export default function useDragHelpers() {
         allImages ||
         (fileSearchEnabled && fileSearchAllowedByAgent) ||
         (codeEnabled && codeAllowedByAgent) ||
-        ocrEnabled;
+        contextEnabled;
 
       if (!shouldShowModal) {
         // Fallback: directly handle files without showing modal

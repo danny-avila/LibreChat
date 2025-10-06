@@ -12,8 +12,8 @@ import type { PromptOption } from '~/common';
 import { removeCharIfLast, detectVariables } from '~/utils';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
 import { usePromptGroupsContext } from '~/Providers';
-import { useLocalize, useHasAccess } from '~/hooks';
 import MentionItem from './MentionItem';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import { useGetAllMCPPrompts } from '~/data-provider';
@@ -60,12 +60,7 @@ function PromptsCommand({
   submitPrompt: (textPrompt: string) => void;
 }) {
   const localize = useLocalize();
-  const hasAccess = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.USE,
-  });
-
-  const { allPromptGroups } = usePromptGroupsContext();
+  const { allPromptGroups, hasAccess } = usePromptGroupsContext();
   const { data, isLoading } = allPromptGroups;
 // Get MCP prompts directly here
   const { data: mcpPromptsData, isLoading: mcpIsLoading } = useGetAllMCPPrompts({
