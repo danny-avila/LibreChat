@@ -18,6 +18,10 @@ export const webSearchAuth = {
       firecrawlApiKey: 1 as const,
       /** Optional (0) */
       firecrawlApiUrl: 0 as const,
+      firecrawlVersion: 0 as const,
+    },
+    serper: {
+      serperApiKey: 1 as const,
     },
   },
   rerankers: {
@@ -31,10 +35,10 @@ export const webSearchAuth = {
 };
 
 /**
- * Extracts all API keys from the webSearchAuth configuration object
+ * Extracts all unique API keys from the webSearchAuth configuration object
  */
 export function getWebSearchKeys(): TWebSearchKeys[] {
-  const keys: TWebSearchKeys[] = [];
+  const keysSet = new Set<TWebSearchKeys>();
 
   // Iterate through each category (providers, scrapers, rerankers)
   for (const category of Object.keys(webSearchAuth)) {
@@ -44,14 +48,14 @@ export function getWebSearchKeys(): TWebSearchKeys[] {
     for (const service of Object.keys(categoryObj)) {
       const serviceObj = categoryObj[service as keyof typeof categoryObj];
 
-      // Extract the API keys from the service
+      // Extract the API keys from the service and add to set for deduplication
       for (const key of Object.keys(serviceObj)) {
-        keys.push(key as TWebSearchKeys);
+        keysSet.add(key as TWebSearchKeys);
       }
     }
   }
 
-  return keys;
+  return Array.from(keysSet);
 }
 
 export const webSearchKeys: TWebSearchKeys[] = getWebSearchKeys();
@@ -64,6 +68,7 @@ export function loadWebSearchConfig(
   const searxngApiKey = config?.searxngApiKey ?? '${SEARXNG_API_KEY}';
   const firecrawlApiKey = config?.firecrawlApiKey ?? '${FIRECRAWL_API_KEY}';
   const firecrawlApiUrl = config?.firecrawlApiUrl ?? '${FIRECRAWL_API_URL}';
+  const firecrawlVersion = config?.firecrawlVersion ?? '${FIRECRAWL_VERSION}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
@@ -76,9 +81,10 @@ export function loadWebSearchConfig(
     jinaApiUrl,
     cohereApiKey,
     serperApiKey,
-    searxngInstanceUrl,
     searxngApiKey,
     firecrawlApiKey,
     firecrawlApiUrl,
+    firecrawlVersion,
+    searxngInstanceUrl,
   };
 }
