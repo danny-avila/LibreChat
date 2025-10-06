@@ -1,10 +1,22 @@
 import React, { useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
-import { OGDialogTemplate, OGDialog, Dropdown, useToastContext } from '@librechat/client';
+import {
+  OGDialogTemplate,
+  OGDialog,
+  Dropdown,
+  useToastContext,
+  Button,
+  Label,
+  OGDialogTrigger,
+  Spinner,
+} from '@librechat/client';
 import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
+import {
+  useRevokeAllUserKeysMutation,
+  useRevokeUserKeyMutation,
+} from 'librechat-data-provider/react-query';
 import type { TDialogProps } from '~/common';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { RevokeKeysButton } from '~/components/Nav';
 import { useUserKey, useLocalize } from '~/hooks';
 import CustomConfig from './CustomEndpoint';
 import GoogleConfig from './GoogleConfig';
@@ -40,6 +52,68 @@ const EXPIRY = {
   ONE_WEEK: { label: 'in 7 days', value: 7 * 24 * 60 * 60 * 1000 },
   ONE_MONTH: { label: 'in 30 days', value: 30 * 24 * 60 * 60 * 1000 },
   NEVER: { label: 'never', value: 0 },
+};
+
+const RevokeKeysButton = ({
+  endpoint,
+  disabled,
+  setDialogOpen,
+}: {
+  endpoint: string;
+  disabled: boolean;
+  setDialogOpen: (open: boolean) => void;
+}) => {
+  const localize = useLocalize();
+  const [open, setOpen] = useState(false);
+  const revokeKeyMutation = useRevokeUserKeyMutation(endpoint);
+  const revokeKeysMutation = useRevokeAllUserKeysMutation();
+
+  const handleSuccess = () => {
+    if (!setDialogOpen) {
+      return;
+    }
+
+    setDialogOpen(false);
+  };
+
+  const onClick = () => {
+    revokeKeyMutation.mutate({}, { onSuccess: handleSuccess });
+  };
+
+  const dialogTitle = localize('com_ui_revoke_key_endpoint', { 0: endpoint });
+  const dialogMessage = localize('com_ui_revoke_key_confirm');
+  const isLoading = revokeKeyMutation.isLoading || revokeKeysMutation.isLoading;
+
+  return (
+    <div className="flex items-center justify-between">
+      <Label id="revoke-info-label">{localize('com_ui_revoke_info')}</Label>
+
+      <OGDialog open={open} onOpenChange={setOpen}>
+        <OGDialogTrigger asChild>
+          <Button
+            variant="destructive"
+            className="flex items-center justify-center rounded-lg transition-colors duration-200"
+            onClick={() => setOpen(true)}
+            disabled={disabled}
+          >
+            {localize('com_ui_revoke')}
+          </Button>
+        </OGDialogTrigger>
+        <OGDialogTemplate
+          showCloseButton={false}
+          title={dialogTitle}
+          className="max-w-[450px]"
+          main={<Label className="text-left text-sm font-medium">{dialogMessage}</Label>}
+          selection={{
+            selectHandler: onClick,
+            selectClasses:
+              'bg-destructive text-white transition-all duration-200 hover:bg-destructive/80',
+            selectText: isLoading ? <Spinner /> : localize('com_ui_revoke'),
+          }}
+        />
+      </OGDialog>
+    </div>
+  );
 };
 
 const SetKeyDialog = ({
@@ -83,7 +157,7 @@ const SetKeyDialog = ({
 
   const submit = () => {
     const selectedOption = expirationOptions.find((option) => option.label === expiresAtLabel);
-    let expiresAt;
+    let expiresAt: number | null;
 
     if (selectedOption?.value === 0) {
       expiresAt = null;

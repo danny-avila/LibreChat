@@ -182,7 +182,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <line x1="18" x2="6" y1="6" y2="18"></line>
                     <line x1="6" x2="18" y1="6" y2="18"></line>
                   </svg>
-                  <span className="sr-only">{localize('com_ui_close')}</span>
+                  <span className="sr-only">{localize('com_ui_close_settings')}</span>
                 </button>
               </DialogTitle>
               <div className="max-h-[550px] overflow-auto px-6 md:max-h-[400px] md:min-h-[400px] md:w-[680px]">

@@ -23,7 +23,7 @@ import {
 } from './STT';
 import ConversationModeSwitch from './ConversationModeSwitch';
 import { useLocalize } from '~/hooks';
-import { cn, logger } from '~/utils';
+import { cn } from '~/utils';
 import store from '~/store';
 
 function Speech() {
