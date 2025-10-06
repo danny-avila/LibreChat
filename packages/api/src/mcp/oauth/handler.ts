@@ -504,6 +504,7 @@ export class MCPOAuthHandler {
         let authMethods: string[] | undefined;
         if (config?.token_url) {
           tokenUrl = config.token_url;
+          authMethods = config.token_endpoint_auth_methods_supported;
         } else if (!metadata.serverUrl) {
           throw new Error('No token URL available for refresh');
         } else {

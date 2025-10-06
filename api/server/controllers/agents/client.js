@@ -1116,9 +1116,16 @@ class AgentClient extends BaseClient {
       appConfig.endpoints?.[endpoint] ??
       titleProviderConfig.customEndpointConfig;
     if (!endpointConfig) {
-      logger.warn(
-        '[api/server/controllers/agents/client.js #titleConvo] Error getting endpoint config',
+      logger.debug(
+        `[api/server/controllers/agents/client.js #titleConvo] No endpoint config for "${endpoint}"`,
       );
+    }
+
+    if (endpointConfig?.titleConvo === false) {
+      logger.debug(
+        `[api/server/controllers/agents/client.js #titleConvo] Title generation disabled for endpoint "${endpoint}"`,
+      );
+      return;
     }
 
     if (endpointConfig?.titleEndpoint && endpointConfig.titleEndpoint !== endpoint) {
@@ -1130,7 +1137,7 @@ class AgentClient extends BaseClient {
         endpoint = endpointConfig.titleEndpoint;
       } catch (error) {
         logger.warn(
-          `[api/server/controllers/agents/client.js #titleConvo] Error getting title endpoint config for ${endpointConfig.titleEndpoint}, falling back to default`,
+          `[api/server/controllers/agents/client.js #titleConvo] Error getting title endpoint config for "${endpointConfig.titleEndpoint}", falling back to default`,
           error,
         );
         // Fall back to original provider config
