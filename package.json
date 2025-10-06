@@ -42,6 +42,7 @@
     "build:api": "cd packages/api && npm run build",
     "build:data-schemas": "cd packages/data-schemas && npm run build",
     "build:client-package": "cd packages/client && npm run build",
+    "build:packages": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package",
     "frontend": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && npm run build:client-package && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
