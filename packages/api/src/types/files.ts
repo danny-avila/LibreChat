@@ -48,7 +48,8 @@ export interface VideoResult {
 
 export interface DocumentResult {
   documents: Array<{
-    type: string;
+    type: 'document' | 'file' | 'input_file';
+    /** Anthropic File Format, `document` */
     source?: {
       type: string;
       media_type: string;
@@ -56,12 +57,17 @@ export interface DocumentResult {
     };
     cache_control?: { type: string };
     citations?: { enabled: boolean };
+    /** Google File Format, `document` */
+    mimeType?: string;
+    data?: string;
+    /** OpenAI File Format, `file` */
     file?: {
       filename?: string;
       file_data?: string;
     };
-    mimeType?: string;
-    data?: string;
+    /** OpenAI Responses API File Format, `input_file` */
+    filename?: string;
+    file_data?: string;
   }>;
   files: Array<{
     file_id?: string;

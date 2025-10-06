@@ -1208,7 +1208,10 @@ class BaseClient {
     const documentResult = await encodeAndFormatDocuments(
       this.options.req,
       attachments,
-      this.options.agent.provider,
+      {
+        endpoint: this.options.agent?.provider,
+        useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
+      },
       getStrategyFunctions,
     );
     message.documents =

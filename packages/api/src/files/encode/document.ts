@@ -16,7 +16,7 @@ import { getFileStream } from './utils';
 export async function encodeAndFormatDocuments(
   req: Request,
   files: IMongoFile[],
-  endpoint: EModelEndpoint,
+  { endpoint, useResponsesApi }: { endpoint: EModelEndpoint; useResponsesApi?: boolean },
   getStrategyFunctions: (source: string) => StrategyFunctions,
 ): Promise<DocumentResult> {
   if (!files?.length) {
@@ -77,6 +77,12 @@ export async function encodeAndFormatDocuments(
           },
           cache_control: { type: 'ephemeral' },
           citations: { enabled: true },
+        });
+      } else if (useResponsesApi) {
+        result.documents.push({
+          type: 'input_file',
+          filename: file.filename,
+          file_data: `data:application/pdf;base64,${content}`,
         });
       } else if (endpoint === EModelEndpoint.openAI) {
         result.documents.push({
