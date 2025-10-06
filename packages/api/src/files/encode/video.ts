@@ -1,4 +1,5 @@
-import { EModelEndpoint, isDocumentSupportedEndpoint } from 'librechat-data-provider';
+import { Providers } from '@librechat/agents';
+import { isDocumentSupportedProvider } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Request } from 'express';
 import type { StrategyFunctions, VideoResult } from '~/types/files';
@@ -6,17 +7,17 @@ import { getFileStream } from './utils';
 import { validateVideo } from '~/files/validation';
 
 /**
- * Encodes and formats video files for different endpoints
+ * Encodes and formats video files for different providers
  * @param req - The request object
  * @param files - Array of video files
- * @param endpoint - The endpoint to format for
+ * @param provider - The provider to format for
  * @param getStrategyFunctions - Function to get strategy functions
  * @returns Promise that resolves to videos and file metadata
  */
 export async function encodeAndFormatVideos(
   req: Request,
   files: IMongoFile[],
-  endpoint: EModelEndpoint,
+  provider: Providers,
   getStrategyFunctions: (source: string) => StrategyFunctions,
 ): Promise<VideoResult> {
   if (!files?.length) {
@@ -46,19 +47,19 @@ export async function encodeAndFormatVideos(
       continue;
     }
 
-    if (!file.type.startsWith('video/') || !isDocumentSupportedEndpoint(endpoint)) {
+    if (!file.type.startsWith('video/') || !isDocumentSupportedProvider(provider)) {
       result.files.push(metadata);
       continue;
     }
 
     const videoBuffer = Buffer.from(content, 'base64');
-    const validation = await validateVideo(videoBuffer, videoBuffer.length, endpoint);
+    const validation = await validateVideo(videoBuffer, videoBuffer.length, provider);
 
     if (!validation.isValid) {
       throw new Error(`Video validation failed: ${validation.error}`);
     }
 
-    if (endpoint === EModelEndpoint.google) {
+    if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
       result.videos.push({
         type: 'video',
         mimeType: file.type,

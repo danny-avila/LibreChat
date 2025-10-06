@@ -1,4 +1,5 @@
-import { EModelEndpoint, isDocumentSupportedEndpoint } from 'librechat-data-provider';
+import { Providers } from '@librechat/agents';
+import { isDocumentSupportedProvider } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Request } from 'express';
 import type { StrategyFunctions, AudioResult } from '~/types/files';
@@ -6,17 +7,17 @@ import { validateAudio } from '~/files/validation';
 import { getFileStream } from './utils';
 
 /**
- * Encodes and formats audio files for different endpoints
+ * Encodes and formats audio files for different providers
  * @param req - The request object
  * @param files - Array of audio files
- * @param endpoint - The endpoint to format for (currently only google is supported)
+ * @param provider - The provider to format for (currently only google is supported)
  * @param getStrategyFunctions - Function to get strategy functions
  * @returns Promise that resolves to audio and file metadata
  */
 export async function encodeAndFormatAudios(
   req: Request,
   files: IMongoFile[],
-  endpoint: EModelEndpoint,
+  provider: Providers,
   getStrategyFunctions: (source: string) => StrategyFunctions,
 ): Promise<AudioResult> {
   if (!files?.length) {
@@ -46,19 +47,19 @@ export async function encodeAndFormatAudios(
       continue;
     }
 
-    if (!file.type.startsWith('audio/') || !isDocumentSupportedEndpoint(endpoint)) {
+    if (!file.type.startsWith('audio/') || !isDocumentSupportedProvider(provider)) {
       result.files.push(metadata);
       continue;
     }
 
     const audioBuffer = Buffer.from(content, 'base64');
-    const validation = await validateAudio(audioBuffer, audioBuffer.length, endpoint);
+    const validation = await validateAudio(audioBuffer, audioBuffer.length, provider);
 
     if (!validation.isValid) {
       throw new Error(`Audio validation failed: ${validation.error}`);
     }
 
-    if (endpoint === EModelEndpoint.google) {
+    if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
       result.audios.push({
         type: 'audio',
         mimeType: file.type,

@@ -12,7 +12,7 @@ import {
   EToolResources,
   EModelEndpoint,
   defaultAgentCapabilities,
-  isDocumentSupportedEndpoint,
+  isDocumentSupportedProvider,
 } from 'librechat-data-provider';
 import {
   FileUpload,
@@ -41,6 +41,7 @@ interface AttachFileMenuProps {
   endpoint?: string | null;
   disabled?: boolean | null;
   conversationId: string;
+  endpointType?: EModelEndpoint;
   endpointFileConfig?: EndpointFileConfig;
 }
 
@@ -48,6 +49,7 @@ const AttachFileMenu = ({
   agentId,
   endpoint,
   disabled,
+  endpointType,
   conversationId,
   endpointFileConfig,
 }: AttachFileMenuProps) => {
@@ -116,7 +118,7 @@ const AttachFileMenu = ({
 
       const currentProvider = provider || endpoint;
 
-      if (isDocumentSupportedEndpoint(currentProvider)) {
+      if (isDocumentSupportedProvider(endpointType || currentProvider)) {
         items.push({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
@@ -203,6 +205,7 @@ const AttachFileMenu = ({
     localize,
     endpoint,
     provider,
+    endpointType,
     capabilities,
     setToolResource,
     setEphemeralAgent,

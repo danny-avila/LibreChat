@@ -1209,7 +1209,7 @@ class BaseClient {
       this.options.req,
       attachments,
       {
-        endpoint: this.options.agent?.provider,
+        provider: this.options.agent?.provider,
         useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
       },
       getStrategyFunctions,

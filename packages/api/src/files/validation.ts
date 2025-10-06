@@ -1,4 +1,5 @@
-import { mbToBytes, EModelEndpoint } from 'librechat-data-provider';
+import { Providers } from '@librechat/agents';
+import { mbToBytes, isOpenAILikeProvider } from 'librechat-data-provider';
 
 export interface PDFValidationResult {
   isValid: boolean;
@@ -18,17 +19,17 @@ export interface AudioValidationResult {
 export async function validatePdf(
   pdfBuffer: Buffer,
   fileSize: number,
-  endpoint: EModelEndpoint,
+  provider: Providers,
 ): Promise<PDFValidationResult> {
-  if (endpoint === EModelEndpoint.anthropic) {
+  if (provider === Providers.ANTHROPIC) {
     return validateAnthropicPdf(pdfBuffer, fileSize);
   }
 
-  if (endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI) {
+  if (isOpenAILikeProvider(provider)) {
     return validateOpenAIPdf(fileSize);
   }
 
-  if (endpoint === EModelEndpoint.google) {
+  if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
     return validateGooglePdf(fileSize);
   }
 
@@ -123,18 +124,18 @@ async function validateGooglePdf(fileSize: number): Promise<PDFValidationResult>
 }
 
 /**
- * Validates video files for different endpoints
+ * Validates video files for different providers
  * @param videoBuffer - The video file as a buffer
  * @param fileSize - The file size in bytes
- * @param endpoint - The endpoint to validate for
+ * @param provider - The provider to validate for
  * @returns Promise that resolves to validation result
  */
 export async function validateVideo(
   videoBuffer: Buffer,
   fileSize: number,
-  endpoint: EModelEndpoint,
+  provider: Providers,
 ): Promise<VideoValidationResult> {
-  if (endpoint === EModelEndpoint.google) {
+  if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
     if (fileSize > 20 * 1024 * 1024) {
       return {
         isValid: false,
@@ -154,18 +155,18 @@ export async function validateVideo(
 }
 
 /**
- * Validates audio files for different endpoints
+ * Validates audio files for different providers
  * @param audioBuffer - The audio file as a buffer
  * @param fileSize - The file size in bytes
- * @param endpoint - The endpoint to validate for
+ * @param provider - The provider to validate for
  * @returns Promise that resolves to validation result
  */
 export async function validateAudio(
   audioBuffer: Buffer,
   fileSize: number,
-  endpoint: EModelEndpoint,
+  provider: Providers,
 ): Promise<AudioValidationResult> {
-  if (endpoint === EModelEndpoint.google) {
+  if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
     if (fileSize > 20 * 1024 * 1024) {
       return {
         isValid: false,

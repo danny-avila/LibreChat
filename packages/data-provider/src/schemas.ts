@@ -31,18 +31,59 @@ export enum EModelEndpoint {
   gptPlugins = 'gptPlugins',
 }
 
+/** Mirrors `@librechat/agents` providers */
+export enum Providers {
+  OPENAI = 'openAI',
+  ANTHROPIC = 'anthropic',
+  AZURE = 'azureOpenAI',
+  GOOGLE = 'google',
+  VERTEXAI = 'vertexai',
+  BEDROCK = 'bedrock',
+  BEDROCK_LEGACY = 'bedrock_legacy',
+  MISTRALAI = 'mistralai',
+  MISTRAL = 'mistral',
+  OLLAMA = 'ollama',
+  DEEPSEEK = 'deepseek',
+  OPENROUTER = 'openrouter',
+  XAI = 'xai',
+}
+
 /**
  * Endpoints that support direct PDF processing in the agent system
  */
-export const documentSupportedEndpoints = new Set<EModelEndpoint | string>([
+export const documentSupportedProviders = new Set<string>([
   EModelEndpoint.anthropic,
   EModelEndpoint.openAI,
+  EModelEndpoint.custom,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.google,
+  Providers.VERTEXAI,
+  Providers.MISTRALAI,
+  Providers.MISTRAL,
+  Providers.OLLAMA,
+  Providers.DEEPSEEK,
+  Providers.OPENROUTER,
+  Providers.XAI,
 ]);
 
-export const isDocumentSupportedEndpoint = (endpoint?: string | null): boolean => {
-  return documentSupportedEndpoints.has(endpoint ?? '');
+const openAILikeProviders = new Set<string>([
+  Providers.OPENAI,
+  Providers.AZURE,
+  EModelEndpoint.custom,
+  Providers.MISTRALAI,
+  Providers.MISTRAL,
+  Providers.OLLAMA,
+  Providers.DEEPSEEK,
+  Providers.OPENROUTER,
+  Providers.XAI,
+]);
+
+export const isOpenAILikeProvider = (provider?: string | null): boolean => {
+  return openAILikeProviders.has(provider ?? '');
+};
+
+export const isDocumentSupportedProvider = (provider?: string | null): boolean => {
+  return documentSupportedProviders.has(provider ?? '');
 };
 
 export const paramEndpoints = new Set<EModelEndpoint | string>([

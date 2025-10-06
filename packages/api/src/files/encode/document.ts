@@ -1,4 +1,5 @@
-import { EModelEndpoint, isDocumentSupportedEndpoint } from 'librechat-data-provider';
+import { Providers } from '@librechat/agents';
+import { isOpenAILikeProvider, isDocumentSupportedProvider } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Request } from 'express';
 import type { StrategyFunctions, DocumentResult } from '~/types/files';
@@ -6,17 +7,17 @@ import { validatePdf } from '~/files/validation';
 import { getFileStream } from './utils';
 
 /**
- * Processes and encodes document files for various endpoints
+ * Processes and encodes document files for various providers
  * @param req - Express request object
  * @param files - Array of file objects to process
- * @param endpoint - The endpoint identifier (e.g., EModelEndpoint.anthropic)
+ * @param provider - The provider name
  * @param getStrategyFunctions - Function to get strategy functions
  * @returns Promise that resolves to documents and file metadata
  */
 export async function encodeAndFormatDocuments(
   req: Request,
   files: IMongoFile[],
-  { endpoint, useResponsesApi }: { endpoint: EModelEndpoint; useResponsesApi?: boolean },
+  { provider, useResponsesApi }: { provider: Providers; useResponsesApi?: boolean },
   getStrategyFunctions: (source: string) => StrategyFunctions,
 ): Promise<DocumentResult> {
   if (!files?.length) {
@@ -36,7 +37,7 @@ export async function encodeAndFormatDocuments(
 
   const results = await Promise.allSettled(
     documentFiles.map((file) => {
-      if (file.type !== 'application/pdf' || !isDocumentSupportedEndpoint(endpoint)) {
+      if (file.type !== 'application/pdf' || !isDocumentSupportedProvider(provider)) {
         return Promise.resolve(null);
       }
       return getFileStream(req, file, encodingMethods, getStrategyFunctions);
@@ -59,15 +60,15 @@ export async function encodeAndFormatDocuments(
       continue;
     }
 
-    if (file.type === 'application/pdf' && isDocumentSupportedEndpoint(endpoint)) {
+    if (file.type === 'application/pdf' && isDocumentSupportedProvider(provider)) {
       const pdfBuffer = Buffer.from(content, 'base64');
-      const validation = await validatePdf(pdfBuffer, pdfBuffer.length, endpoint);
+      const validation = await validatePdf(pdfBuffer, pdfBuffer.length, provider);
 
       if (!validation.isValid) {
         throw new Error(`PDF validation failed: ${validation.error}`);
       }
 
-      if (endpoint === EModelEndpoint.anthropic) {
+      if (provider === Providers.ANTHROPIC) {
         result.documents.push({
           type: 'document',
           source: {
@@ -84,7 +85,13 @@ export async function encodeAndFormatDocuments(
           filename: file.filename,
           file_data: `data:application/pdf;base64,${content}`,
         });
-      } else if (endpoint === EModelEndpoint.openAI) {
+      } else if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
+        result.documents.push({
+          type: 'document',
+          mimeType: 'application/pdf',
+          data: content,
+        });
+      } else if (isOpenAILikeProvider(provider) && provider != Providers.AZURE) {
         result.documents.push({
           type: 'file',
           file: {
@@ -92,14 +99,7 @@ export async function encodeAndFormatDocuments(
             file_data: `data:application/pdf;base64,${content}`,
           },
         });
-      } else if (endpoint === EModelEndpoint.google) {
-        result.documents.push({
-          type: 'document',
-          mimeType: 'application/pdf',
-          data: content,
-        });
       }
-
       result.files.push(metadata);
     }
   }
