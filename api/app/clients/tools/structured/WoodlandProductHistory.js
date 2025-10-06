@@ -1,4 +1,3 @@
-// /api/app/clients/tools/structured/WoodlandProductHistory.js
 const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
@@ -8,441 +7,377 @@ class WoodlandProductHistory extends Tool {
   static DEFAULT_API_VERSION = '2024-07-01';
   static DEFAULT_QUERY_TYPE = 'simple';
   static DEFAULT_TOP = 20;
-
-  _initializeField(field, envVar, defaultValue) {
-    return field ?? process.env[envVar] ?? defaultValue;
-  }
+  static DEFAULT_SELECT = '*';
+  static DEFAULT_VECTOR_K = 15;
 
   constructor(fields = {}) {
     super();
     this.name = 'woodland-ai-product-history';
-    this.description =
-      'Use to query the Airtable Product History (product indexes only). Strict $filter eq, optional relaxed retry, only index fields used.';
-    this.override = fields.override ?? false;
+    this.description = 'Query the Woodland product history index (Airtable sourced).';
 
-    // Schema: only Azure product index fields (+ output controls)
     this.schema = z.object({
       query: z.string().default(''),
-
-      // Filters (strict equality in $filter)
-      rakeModel: z.string().optional(),    // rake_model
-      engineModel: z.string().optional(),  // engine_model
-      deckHose: z.string().optional(),     // deck_hose
-      collectorBag: z.string().optional(), // collector_bag
-      blowerColor: z.string().optional(),  // blower_color
-
-      // Output controls
-      format: z.enum(['json', 'answer']).default('answer'),
-      maxCitations: z.number().int().positive().max(10).default(3),
-      groupBy: z.enum(['rake_model', 'engine_model', 'none']).default('rake_model'),
-
+      rakeModel: z.string().optional(),
+      engineModel: z.string().optional(),
+      deckHose: z.string().optional(),
+      collectorBag: z.string().optional(),
+      blowerColor: z.string().optional(),
       top: z.number().int().positive().max(100).optional(),
+      format: z.enum(['json']).default('json'),
     });
 
-    // Core fields & options
-    this.serviceEndpoint = this._initializeField(
-      fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT,
-      'AZURE_AI_SEARCH_SERVICE_ENDPOINT'
-    );
-    // Comma-separated allowed; we’ll pick product-only below
-    this.indexName = this._initializeField(
-      fields.AZURE_AI_SEARCH_HISTORY_INDEX ?? fields.AZURE_AI_SEARCH_INDEX_NAME,
-      'AZURE_AI_SEARCH_HISTORY_INDEX',
-    );
-    this.apiKey = this._initializeField(fields.AZURE_AI_SEARCH_API_KEY, 'AZURE_AI_SEARCH_API_KEY');
-    this.apiVersion = this._initializeField(
-      fields.AZURE_AI_SEARCH_API_VERSION, 'AZURE_AI_SEARCH_API_VERSION', WoodlandProductHistory.DEFAULT_API_VERSION
-    );
-    this.queryType = this._initializeField(
-      fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE,
-      'AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE',
-      WoodlandProductHistory.DEFAULT_QUERY_TYPE
-    );
-    this.topDefault = Number(this._initializeField(
-      fields.WOODLAND_HISTORY_DEFAULT_TOP,
-      'WOODLAND_HISTORY_DEFAULT_TOP',
-      WoodlandProductHistory.DEFAULT_TOP
-    ));
+    this.serviceEndpoint = fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_AI_SEARCH_SERVICE_ENDPOINT;
+    this.apiKey = fields.AZURE_AI_SEARCH_API_KEY || process.env.AZURE_AI_SEARCH_API_KEY;
+    this.indexName =
+      fields.AZURE_AI_SEARCH_PRODUCT_HISTORY_INDEX || process.env.AZURE_AI_SEARCH_PRODUCT_HISTORY_INDEX ||
+      fields.AZURE_AI_SEARCH_INDEX_NAME ||
+      process.env.AZURE_AI_SEARCH_INDEX_NAME;
 
-    this.searchFields = (this._initializeField(
-      fields.WOODLAND_HISTORY_SEARCH_FIELDS,
-      'WOODLAND_HISTORY_SEARCH_FIELDS',
-      'title,content,tags,rake_model,engine_model'
-    ) || '').split(',').map(s => s.trim()).filter(Boolean);
-
-    this.enableRelaxedRetry = (this._initializeField(
-      fields.WOODLAND_ENABLE_RELAXED_RETRY,
-      'WOODLAND_ENABLE_RELAXED_RETRY',
-      '1'
-    ) !== '0');
-
-    // Requireds
-    if (!this.override && (!this.serviceEndpoint || !this.indexName || !this.apiKey)) {
-      throw new Error(
-        'Missing AZURE_AI_SEARCH_SERVICE_ENDPOINT, AZURE_AI_SEARCH_HISTORY_INDEX (or AZURE_AI_SEARCH_INDEX_NAME), or AZURE_AI_SEARCH_API_KEY.'
-      );
-    }
-    if (this.override) return;
-
-    // Resolve product-only indexes
-    const allIndexNames = String(this.indexName)
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean);
-    this.productIndexes = allIndexNames.filter(n => /product/i.test(n));
-    if (this.productIndexes.length === 0 && allIndexNames.length === 1) {
-      this.productIndexes = allIndexNames;
-    }
-    if (this.productIndexes.length === 0) {
-      throw new Error('[woodland-product-history] No product index configured (expects name containing "product").');
+    if (!this.serviceEndpoint || !this.apiKey || !this.indexName) {
+      throw new Error('Missing Azure Search configuration for product history.');
     }
 
-    // Client per index
-    this.clients = this.productIndexes.map(
-      name => new SearchClient(this.serviceEndpoint, name, new AzureKeyCredential(this.apiKey), { apiVersion: this.apiVersion })
+    this.apiVersion = fields.AZURE_AI_SEARCH_API_VERSION || process.env.AZURE_AI_SEARCH_API_VERSION || WoodlandProductHistory.DEFAULT_API_VERSION;
+
+    const semanticConfiguration = fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION || process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION;
+    const queryLanguage = fields.AZURE_AI_SEARCH_QUERY_LANGUAGE || process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE;
+    this.semanticConfiguration = typeof semanticConfiguration === 'string' ? semanticConfiguration.trim() : semanticConfiguration;
+    this.queryLanguage = typeof queryLanguage === 'string' ? queryLanguage.trim() : queryLanguage;
+
+    this.queryType = this._resolveQueryType(fields);
+
+    this.topDefault = Number(fields.WOODLAND_HISTORY_DEFAULT_TOP || process.env.WOODLAND_HISTORY_DEFAULT_TOP || WoodlandProductHistory.DEFAULT_TOP);
+    const selectFields = this._stringArray(
+      fields.WOODLAND_HISTORY_SELECT || process.env.WOODLAND_HISTORY_SELECT || WoodlandProductHistory.DEFAULT_SELECT,
     );
+    this.select = selectFields.length ? selectFields : ['*'];
+
+    const configuredSearchFields = fields.WOODLAND_HISTORY_SEARCH_FIELDS || process.env.WOODLAND_HISTORY_SEARCH_FIELDS;
+    const searchFields = configuredSearchFields ? this._stringArray(configuredSearchFields) : [];
+    this.searchFields = searchFields.length ? searchFields : undefined;
+
+    const vectorFields = fields.AZURE_AI_SEARCH_VECTOR_FIELDS || process.env.AZURE_AI_SEARCH_VECTOR_FIELDS;
+    this.vectorFields = vectorFields
+      ? String(vectorFields)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+    this.vectorK = Number(fields.AZURE_AI_SEARCH_VECTOR_K || process.env.AZURE_AI_SEARCH_VECTOR_K || WoodlandProductHistory.DEFAULT_VECTOR_K);
+
+    this.client = new SearchClient(
+      this.serviceEndpoint,
+      this.indexName,
+      new AzureKeyCredential(this.apiKey),
+      { apiVersion: this.apiVersion },
+    );
+
+    logger.info('[woodland-ai-product-history] Initialized', {
+      endpoint: this.serviceEndpoint,
+      index: this.indexName,
+      apiVersion: this.apiVersion,
+      queryType: this.queryType,
+      topDefault: this.topDefault,
+      select: this.select,
+      searchFields: this.searchFields,
+      vectorFields: this.vectorFields,
+      vectorK: this.vectorK,
+      semanticConfiguration: this.semanticConfiguration,
+      queryLanguage: this.queryLanguage,
+    });
   }
 
   _buildFilter(input) {
     const filters = [];
-    const addEq = (field, value) => {
+    const add = (field, value) => {
       if (!value) return;
-      const sanitized = String(value).replace(/'/g, "''").replace(/\s+/g, ' ').trim();
+      const sanitized = String(value).replace(/'/g, "''").trim();
+      if (!sanitized) return;
       filters.push(`${field} eq '${sanitized}'`);
     };
-    addEq('rake_model', input.rakeModel);
-    addEq('engine_model', input.engineModel);
-    addEq('deck_hose', input.deckHose);
-    addEq('collector_bag', input.collectorBag);
-    addEq('blower_color', input.blowerColor);
+    add('rake_model', input.rakeModel);
+    add('engine_model', input.engineModel);
+    add('deck_hose', input.deckHose);
+    add('collector_bag', input.collectorBag);
+    add('blower_color', input.blowerColor);
     return filters.join(' and ');
   }
 
-  /** Collect URLs strictly from *_url fields you defined in the Product index */
   _collectUrls(doc) {
-    // Add only the URL siblings you indexed
-    const possible = [
-      'replacement_side_tubes_set1_url',
-      'replacement_side_tubes_set2_url',
-      'replacement_top_brace_url',
-      'replacement_bag_option_1_url',
-      'replacement_bag_option_2_url',
-      'latch_upgrade_kit_for_exit_chute_url',
-      'replacement_collector_complete_url',
-      'chassis_url',
-      'replacement_impeller_option_1_url',
-      'replacement_impeller_option_2_url',
-      'impeller_hardware_kit_url',
-      'replacement_blower_housing_option_1_url',
-      'replacement_blower_housing_option_2_url',
-      'replacement_blower_w_impeller_option_1_url',
-      'replacement_blower_w_impeller_option_2_url',
-      'replacement_engine_option_1_url',
-      'replacement_engine_option_2_url',
-      'engine_blower_complete_option_1_url',
-      'engine_blower_complete_option_2_url',
-      'engine_blower_complete_option_3_url',
-      'engine_blower_complete_option_4_url',
-      'replacement_air_filters_url',
-      'engine_maintenance_kit_url',
-      'mda_collar_url',
-      'blower_inlet_url',
-      'exit_chute_url',
-      'band_clamp_url',
-      'pvp_coupling_url',
-      'estate_vac_coupling_url',
-      'power_unloader_chute_url',
-      'roof_rack_carrier_url',
-      'pvp_pvc_url',
-      'pvp_urethane_url',
-      'estate_vac_pvc_url',
-      'estate_vac_urethane_url',
-      'power_unloader_pvc_url',
-      'power_unloader_urethane_url',
-    ];
-    const urls = [];
-    for (const f of possible) {
-      const v = doc[f];
-      if (!v) continue;
-      if (typeof v === 'string') urls.push(v);
-      else if (Array.isArray(v)) for (const u of v) if (typeof u === 'string') urls.push(u);
-    }
-    return { primaryUrl: urls[0] || '', supplementalUrls: urls.slice(1) };
-  }
-
-  _shapeDoc(d, indexName) {
-    const { primaryUrl, supplementalUrls } = this._collectUrls(d);
-    const out = {
-      id: d.id || d.key || d.record_id,
-      title: d.title,
-      content: typeof d.content === 'string' ? d.content : '',
-      tags: d.tags || [],
-      index: indexName,
-      page_type: 'producthistory',
-      '@search.score': typeof d['@search.score'] === 'number' ? d['@search.score'] : undefined,
-      citations: [primaryUrl, ...(supplementalUrls || [])].filter(Boolean),
-
-      // Only product fields from your index
-      rake_model: d.rake_model,
-      deck_hose: d.deck_hose,
-      collector_bag: d.collector_bag,
-      blower_color: d.blower_color,
-      engine_model: d.engine_model,
-
-      replacement_side_tubes_set1: d.replacement_side_tubes_set1,
-      replacement_side_tubes_set2: d.replacement_side_tubes_set2,
-      replacement_top_brace: d.replacement_top_brace,
-      replacement_bag_option_1: d.replacement_bag_option_1,
-      replacement_bag_option_2: d.replacement_bag_option_2,
-      latch_upgrade_kit_for_exit_chute: d.latch_upgrade_kit_for_exit_chute,
-      replacement_collector_complete: d.replacement_collector_complete,
-      chassis: d.chassis,
-      replacement_impeller_option_1: d.replacement_impeller_option_1,
-      replacement_impeller_option_2: d.replacement_impeller_option_2,
-      impeller_hardware_kit: d.impeller_hardware_kit,
-      replacement_blower_housing_option_1: d.replacement_blower_housing_option_1,
-      replacement_blower_housing_option_2: d.replacement_blower_housing_option_2,
-      replacement_blower_w_impeller_option_1: d.replacement_blower_w_impeller_option_1,
-      replacement_blower_w_impeller_option_2: d.replacement_blower_w_impeller_option_2,
-      replacement_engine_option_1: d.replacement_engine_option_1,
-      replacement_engine_option_2: d.replacement_engine_option_2,
-      engine_blower_complete_option_1: d.engine_blower_complete_option_1,
-      engine_blower_complete_option_2: d.engine_blower_complete_option_2,
-      engine_blower_complete_option_3: d.engine_blower_complete_option_3,
-      engine_blower_complete_option_4: d.engine_blower_complete_option_4,
-      replacement_air_filters: d.replacement_air_filters,
-      engine_maintenance_kit: d.engine_maintenance_kit,
-      mda_collar: d.mda_collar,
-      blower_inlet: d.blower_inlet,
-      exit_chute: d.exit_chute,
-      band_clamp: d.band_clamp,
-      pvp_coupling: d.pvp_coupling,
-      estate_vac_coupling: d.estate_vac_coupling,
-      power_unloader_chute: d.power_unloader_chute,
-      roof_rack_carrier: d.roof_rack_carrier,
-      pvp_pvc: d.pvp_pvc,
-      pvp_urethane: d.pvp_urethane,
-      estate_vac_pvc: d.estate_vac_pvc,
-      estate_vac_urethane: d.estate_vac_urethane,
-      power_unloader_pvc: d.power_unloader_pvc,
-      power_unloader_urethane: d.power_unloader_urethane,
-
-      // URL siblings
-      replacement_side_tubes_set1_url: d.replacement_side_tubes_set1_url,
-      replacement_side_tubes_set2_url: d.replacement_side_tubes_set2_url,
-      replacement_top_brace_url: d.replacement_top_brace_url,
-      replacement_bag_option_1_url: d.replacement_bag_option_1_url,
-      replacement_bag_option_2_url: d.replacement_bag_option_2_url,
-      latch_upgrade_kit_for_exit_chute_url: d.latch_upgrade_kit_for_exit_chute_url,
-      replacement_collector_complete_url: d.replacement_collector_complete_url,
-      chassis_url: d.chassis_url,
-      replacement_impeller_option_1_url: d.replacement_impeller_option_1_url,
-      replacement_impeller_option_2_url: d.replacement_impeller_option_2_url,
-      impeller_hardware_kit_url: d.impeller_hardware_kit_url,
-      replacement_blower_housing_option_1_url: d.replacement_blower_housing_option_1_url,
-      replacement_blower_housing_option_2_url: d.replacement_blower_housing_option_2_url,
-      replacement_blower_w_impeller_option_1_url: d.replacement_blower_w_impeller_option_1_url,
-      replacement_blower_w_impeller_option_2_url: d.replacement_blower_w_impeller_option_2_url,
-      replacement_engine_option_1_url: d.replacement_engine_option_1_url,
-      replacement_engine_option_2_url: d.replacement_engine_option_2_url,
-      engine_blower_complete_option_1_url: d.engine_blower_complete_option_1_url,
-      engine_blower_complete_option_2_url: d.engine_blower_complete_option_2_url,
-      engine_blower_complete_option_3_url: d.engine_blower_complete_option_3_url,
-      engine_blower_complete_option_4_url: d.engine_blower_complete_option_4_url,
-      replacement_air_filters_url: d.replacement_air_filters_url,
-      engine_maintenance_kit_url: d.engine_maintenance_kit_url,
-      mda_collar_url: d.mda_collar_url,
-      blower_inlet_url: d.blower_inlet_url,
-      exit_chute_url: d.exit_chute_url,
-      band_clamp_url: d.band_clamp_url,
-      pvp_coupling_url: d.pvp_coupling_url,
-      estate_vac_coupling_url: d.estate_vac_coupling_url,
-      power_unloader_chute_url: d.power_unloader_chute_url,
-      roof_rack_carrier_url: d.roof_rack_carrier_url,
-      pvp_pvc_url: d.pvp_pvc_url,
-      pvp_urethane_url: d.pvp_urethane_url,
-      estate_vac_pvc_url: d.estate_vac_pvc_url,
-      estate_vac_urethane_url: d.estate_vac_urethane_url,
-      power_unloader_pvc_url: d.power_unloader_pvc_url,
-      power_unloader_urethane_url: d.power_unloader_urethane_url,
-    };
-    return out;
-  }
-
-  _buildAnswer(docs, { groupBy = 'rake_model', maxCitations = 3 } = {}) {
-    // Grouping
-    let groups = [];
-    if (groupBy === 'rake_model' || groupBy === 'engine_model') {
-      const m = new Map();
-      for (const d of docs) {
-        const k = d[groupBy] || '';
-        if (!m.has(k)) m.set(k, []);
-        m.get(k).push(d);
+    const urls = new Set();
+    const prioritized = [];
+    const push = (val, priority = false) => {
+      if (!val) return;
+      if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (!trimmed) {
+          return;
+        }
+        if (priority) {
+          prioritized.push(trimmed);
+        } else {
+          urls.add(trimmed);
+        }
+      } else if (Array.isArray(val)) {
+        val.forEach((item) => push(item, priority));
       }
-      groups = Array.from(m.entries()).map(([key, arr]) => ({ key, docs: arr }));
-    } else {
-      groups = [{ key: '', docs }];
+    };
+
+    const airtableCandidates = [
+      doc.airtable_url,
+      doc.airtableUrl,
+      doc.airtable_link,
+      doc.airtableLink,
+      doc.airtable_record_url,
+      doc.airtableRecordUrl,
+    ];
+    airtableCandidates.forEach((value) => push(value, true));
+
+    ['document_url', 'source_url', 'url'].forEach((key) => push(doc[key]));
+    Object.keys(doc).forEach((key) => {
+      if (/airtable/i.test(key)) {
+        push(doc[key], true);
+      } else if (/(_url)$/i.test(key)) {
+        push(doc[key]);
+      }
+    });
+
+    const ordered = [...prioritized.filter(Boolean), ...Array.from(urls)];
+    const seen = new Set();
+    const deduped = ordered.filter((url) => {
+      const lower = url.toLowerCase();
+      if (seen.has(lower)) {
+        return false;
+      }
+      seen.add(lower);
+      return true;
+    });
+
+    return { primaryUrl: deduped[0] || '', supplementalUrls: deduped.slice(1) };
+  }
+
+  _shapeDocument(doc) {
+    const { primaryUrl, supplementalUrls } = this._collectUrls(doc);
+    const normalized = {
+      rake_model: doc.rake_model,
+      engine_model: doc.engine_model,
+      deck_hose: doc.deck_hose,
+      collector_bag: doc.collector_bag,
+      blower_color: doc.blower_color,
+    };
+
+    return {
+      ...doc,
+      citations: [primaryUrl, ...supplementalUrls].filter(Boolean),
+      normalized_product: normalized,
+    };
+  }
+
+  _stringArray(value) {
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => (typeof item === 'string' ? item.trim() : String(item || '').trim()))
+        .filter(Boolean);
     }
+    if (value == null) {
+      return [];
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return [];
+      }
+      return trimmed
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return String(value)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
 
-    let out = '';
-    for (const g of groups) {
-      const p = g.docs[0];
-      const headerKey =
-        groupBy === 'rake_model' ? (g.key || p.rake_model || '') :
-        groupBy === 'engine_model' ? (g.key || p.engine_model || '') :
-        `${p.rake_model || ''}${p.rake_model && p.engine_model ? ' — ' : ''}${p.engine_model || ''}`;
+  _collectTerms(...values) {
+    const terms = [];
+    const visit = (val) => {
+      if (val == null) {
+        return;
+      }
+      if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (trimmed) {
+          terms.push(trimmed);
+        }
+        return;
+      }
+      if (typeof val === 'number' || typeof val === 'boolean') {
+        terms.push(String(val));
+        return;
+      }
+      if (Array.isArray(val)) {
+        val.forEach(visit);
+        return;
+      }
+      if (typeof val === 'object') {
+        if (typeof val.value === 'string') {
+          visit(val.value);
+          return;
+        }
+        if (Array.isArray(val.value)) {
+          visit(val.value);
+        }
+      }
+    };
 
-      const headerLabel = groupBy === 'rake_model' ? 'Model' : groupBy === 'engine_model' ? 'Engine' : 'Product Group';
-      out += `**${headerLabel}: ${headerKey || '—'}**\n`;
+    values.forEach(visit);
+    return terms;
+  }
 
-      const add = (label, sku, url) => {
-        if (!sku) return;
-        out += `- **${label}:** ${sku}${url ? ` [Link](${url})` : ''}\n`;
+  _extractFilterTerms(filter) {
+    if (!filter || typeof filter !== 'string') {
+      return [];
+    }
+    const matches = filter.matchAll(/'([^']*)'/g);
+    return Array.from(matches, (match) => match[1]?.replace(/''/g, "'")?.trim()).filter(Boolean);
+  }
+
+  async _performSearch(queryString, options) {
+    const opts = { ...options };
+
+    if (this.queryType === 'semantic') {
+      opts.semanticSearchOptions = {
+        configurationName: this.semanticConfiguration,
+        queryLanguage: this.queryLanguage,
       };
-
-      // Render the commonly used parts (add/remove lines as you need)
-      add('engine maintenance kit', p.engine_maintenance_kit, p.engine_maintenance_kit_url);
-      add('replacement side tubes set1', p.replacement_side_tubes_set1, p.replacement_side_tubes_set1_url);
-      add('replacement side tubes set2', p.replacement_side_tubes_set2, p.replacement_side_tubes_set2_url);
-      add('replacement top brace', p.replacement_top_brace, p.replacement_top_brace_url);
-      add('replacement bag option 1', p.replacement_bag_option_1, p.replacement_bag_option_1_url);
-      add('replacement bag option 2', p.replacement_bag_option_2, p.replacement_bag_option_2_url);
-      add('latch upgrade kit (exit chute)', p.latch_upgrade_kit_for_exit_chute, p.latch_upgrade_kit_for_exit_chute_url);
-      add('replacement collector complete', p.replacement_collector_complete, p.replacement_collector_complete_url);
-      add('chassis', p.chassis, p.chassis_url);
-      add('replacement impeller option 1', p.replacement_impeller_option_1, p.replacement_impeller_option_1_url);
-      add('replacement impeller option 2', p.replacement_impeller_option_2, p.replacement_impeller_option_2_url);
-      add('impeller hardware kit', p.impeller_hardware_kit, p.impeller_hardware_kit_url);
-      add('blower housing option 1', p.replacement_blower_housing_option_1, p.replacement_blower_housing_option_1_url);
-      add('blower housing option 2', p.replacement_blower_housing_option_2, p.replacement_blower_housing_option_2_url);
-      add('blower w/ impeller option 1', p.replacement_blower_w_impeller_option_1, p.replacement_blower_w_impeller_option_1_url);
-      add('blower w/ impeller option 2', p.replacement_blower_w_impeller_option_2, p.replacement_blower_w_impeller_option_2_url);
-      add('replacement engine option 1', p.replacement_engine_option_1, p.replacement_engine_option_1_url);
-      add('replacement engine option 2', p.replacement_engine_option_2, p.replacement_engine_option_2_url);
-      add('engine blower complete 1', p.engine_blower_complete_option_1, p.engine_blower_complete_option_1_url);
-      add('engine blower complete 2', p.engine_blower_complete_option_2, p.engine_blower_complete_option_2_url);
-      add('engine blower complete 3', p.engine_blower_complete_option_3, p.engine_blower_complete_option_3_url);
-      add('engine blower complete 4', p.engine_blower_complete_option_4, p.engine_blower_complete_option_4_url);
-      add('replacement air filters', p.replacement_air_filters, p.replacement_air_filters_url);
-      add('MDA collar', p.mda_collar, p.mda_collar_url);
-      add('blower inlet', p.blower_inlet, p.blower_inlet_url);
-      add('exit chute', p.exit_chute, p.exit_chute_url);
-      add('band clamp', p.band_clamp, p.band_clamp_url);
-      add('PVP coupling', p.pvp_coupling, p.pvp_coupling_url);
-      add('Estate Vac coupling', p.estate_vac_coupling, p.estate_vac_coupling_url);
-      add('power unloader chute', p.power_unloader_chute, p.power_unloader_chute_url);
-      add('roof rack carrier', p.roof_rack_carrier, p.roof_rack_carrier_url);
-      add('PVP PVC', p.pvp_pvc, p.pvp_pvc_url);
-      add('PVP urethane', p.pvp_urethane, p.pvp_urethane_url);
-      add('Estate Vac PVC', p.estate_vac_pvc, p.estate_vac_pvc_url);
-      add('Estate Vac urethane', p.estate_vac_urethane, p.estate_vac_urethane_url);
-      add('power unloader PVC', p.power_unloader_pvc, p.power_unloader_pvc_url);
-      add('power unloader urethane', p.power_unloader_urethane, p.power_unloader_urethane_url);
-
-      out += '\n';
     }
 
-    // Citations strictly from index *_url fields
-    const cites = [];
-    for (const d of docs) if (Array.isArray(d.citations)) for (const u of d.citations) if (u && !cites.includes(u)) cites.push(u);
-    if (cites.length) {
-      out += '**Citations:**\n';
-      for (let i = 0; i < Math.min(maxCitations, cites.length); i++) out += `[Source ${i + 1}](${cites[i]})\n`;
+    logger.debug('[woodland-ai-product-history] Executing search', {
+      queryString,
+      filter: opts.filter,
+      top: opts.top,
+      hasVector: Array.isArray(opts.vectorQueries) && opts.vectorQueries.length > 0,
+      searchFields: opts.searchFields,
+      select: opts.select,
+      queryType: opts.queryType,
+      searchMode: opts.searchMode,
+      semanticConfiguration: opts.semanticSearchOptions?.configurationName,
+    });
+
+    const results = [];
+    const seen = new Set();
+
+    const iterator = await this.client.search(queryString, opts);
+    for await (const result of iterator.results) {
+      const doc = result.document || {};
+      const key = String(doc.record_id || doc.id || doc.key || '').toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push(this._shapeDocument({ ...doc, ['@search.score']: result.score }));
     }
-    return out.trim();
+
+    return results;
+  }
+
+  _resolveQueryType(fields = {}) {
+    const raw = (fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || WoodlandProductHistory.DEFAULT_QUERY_TYPE);
+    const normalized = String(raw || '').toLowerCase().trim();
+    if (normalized === 'semantic' && !this._hasSemanticConfig()) {
+      logger.warn('[woodland-ai-product-history] Semantic queryType requested but semantic configuration is missing. Using simple.', {
+        semanticConfiguration: this.semanticConfiguration,
+        queryLanguage: this.queryLanguage,
+      });
+      return 'simple';
+    }
+    return normalized || 'simple';
+  }
+
+  _hasSemanticConfig() {
+    return Boolean(this.semanticConfiguration && this.queryLanguage);
   }
 
   async _call(data) {
     const parsed = this.schema.safeParse(data);
     if (!parsed.success) {
-      return `INPUT_VALIDATION_FAILED: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
+      return `INPUT_VALIDATION_FAILED: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
     }
+
     const input = parsed.data;
-
     const top = Number.isFinite(input.top) ? Math.floor(input.top) : this.topDefault;
-
-    // 1) Strict filtered search
     const filter = this._buildFilter(input);
-    const results = [];
-    const seen = new Set();
+    const fallbackTerms = this._collectTerms(
+      input.rakeModel,
+      input.engineModel,
+      input.deckHose,
+      input.collectorBag,
+      input.blowerColor,
+    );
+    const filterTerms = this._extractFilterTerms(filter);
+    const queryString =
+      (input.query || '').trim() ||
+      (fallbackTerms.length ? fallbackTerms.join(' ') : '') ||
+      (filterTerms.length ? filterTerms.join(' ') : '') ||
+      '*';
+
+    const inferredMode = (() => {
+      const q = (input.query || '').toString();
+      if (/".+"/.test(q) || /\b(AND|OR|NOT)\b/i.test(q)) {
+        return 'all';
+      }
+      return 'any';
+    })();
+
+    const options = {
+      queryType: this.queryType,
+      searchMode: inferredMode,
+      top,
+      includeTotalCount: false,
+      filter: filter || undefined,
+    };
+
+    const selectFields = Array.isArray(this.select) ? this.select : this._stringArray(this.select);
+    if (selectFields.length && !(selectFields.length === 1 && selectFields[0] === '*')) {
+      options.select = selectFields;
+    }
+
+    if (Array.isArray(this.searchFields) && this.searchFields.length) {
+      options.searchFields = this.searchFields;
+    }
+
+    if (Array.isArray(input.embedding) && input.embedding.length && this.vectorFields.length) {
+      options.vectorQueries = this.vectorFields.map((field) => ({
+        kind: 'vector',
+        vector: input.embedding,
+        fields: field,
+        kNearestNeighborsCount: this.vectorK,
+      }));
+    }
 
     try {
-      for (const client of this.clients) {
-        const options = {
-          queryType: this.queryType,
-          top,
-          includeTotalCount: true,
-          searchFields: this.searchFields.length ? this.searchFields : undefined,
-          filter: filter || undefined,
-        };
+      let results = await this._performSearch(queryString, options);
 
-        const searchResults = await client.search(input.query || '*', options);
-        for await (const r of searchResults.results) {
-          const d = r.document || {};
-          const key = `${client.indexName}::${String(d.record_id || d.id || d.key || d.title || '').toLowerCase()}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          d['@search.score'] = r.score;
-          results.push(this._shapeDoc(d, client.indexName));
-        }
+      if (results.length === 0 && options.filter) {
+        const retryOptions = { ...options };
+        delete retryOptions.filter;
+        logger.info('[woodland-ai-product-history] No results with filter, retrying without filter');
+        results = await this._performSearch(queryString, retryOptions);
       }
+
+      if (results.length === 0 && queryString !== '*' && !options.filter) {
+        logger.info('[woodland-ai-product-history] No results with query terms, retrying with wildcard');
+        results = await this._performSearch('*', { ...options, filter: undefined });
+      }
+
+      if (results.length === 0) {
+        return 'NEEDS_HUMAN_REVIEW: No reviewed records found.';
+      }
+
+      results.sort((a, b) => (b['@search.score'] || 0) - (a['@search.score'] || 0));
+      return JSON.stringify(results.slice(0, top));
     } catch (error) {
-      logger.error('[woodland-product-history] Azure filtered search failed', error);
+      logger.error('[woodland-ai-product-history] Search request failed', error);
+      return `AZURE_SEARCH_FAILED: ${error?.message || error}`;
     }
-
-    // 2) Optional relaxed retry (Lucene) with client-side prefix
-    if (this.enableRelaxedRetry && results.length === 0 && (input.rakeModel || input.engineModel)) {
-      const rmPrefix = (input.rakeModel || '').trim().toLowerCase();
-      const emPrefix = (input.engineModel || '').trim().toLowerCase();
-
-      for (const client of this.clients) {
-        try {
-          const options = {
-            queryType: 'full',
-            top,
-            includeTotalCount: true,
-            searchFields: this.searchFields.length ? this.searchFields : undefined,
-          };
-
-          const terms = [];
-          if (input.query) terms.push(input.query);
-          if (rmPrefix)    terms.push(`${input.rakeModel}\\*`);
-          if (emPrefix)    terms.push(`${input.engineModel}\\*`);
-          const q = terms.length ? terms.join(' ') : '*';
-
-          const searchResults = await client.search(q, options);
-          for await (const r of searchResults.results) {
-            const d = r.document || {};
-            const rm = (d.rake_model || '').toString().toLowerCase();
-            const em = (d.engine_model || '').toString().toLowerCase();
-
-            const ok = (rmPrefix && rm.startsWith(rmPrefix)) || (emPrefix && em.startsWith(emPrefix)) || (!rmPrefix && !emPrefix);
-            if (!ok) continue;
-
-            const key = `${client.indexName}::${String(d.record_id || d.id || d.key || d.title || '').toLowerCase()}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-
-            d['@search.score'] = r.score;
-            results.push(this._shapeDoc(d, client.indexName));
-          }
-        } catch (error) {
-          logger.warn('[woodland-product-history] Relaxed retry failed', { index: client.indexName, error });
-        }
-      }
-    }
-
-    if (results.length === 0) return 'NEEDS_HUMAN_REVIEW: No reviewed records found.';
-
-    // Sort + output
-    results.sort((a, b) =>
-      (b['@search.score'] || 0) - (a['@search.score'] || 0) ||
-      String(a.title || '').localeCompare(String(b.title || ''))
-    );
-
-    const trimmed = results.slice(0, top);
-    if (input.format === 'json') return JSON.stringify(trimmed);
-    return this._buildAnswer(trimmed, { groupBy: input.groupBy, maxCitations: input.maxCitations });
   }
 }
 

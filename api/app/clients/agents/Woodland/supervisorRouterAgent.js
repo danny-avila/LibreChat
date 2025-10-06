@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
+const { logger } = require('@librechat/data-schemas');
 const {
   OUTPUT_TEMPLATE,
   COMMON_GUARDRAILS,
@@ -42,7 +43,10 @@ const DOMAIN_AGENT_CONFIGS = [
   },
 ];
 
-const INTENT_TOOL_PRIORITIES = {
+const DEFAULT_MAX_DOMAIN_TOOLS = 4;
+const DEFAULT_LOW_CONFIDENCE_THRESHOLD = 0.55;
+
+const DEFAULT_INTENT_TOOL_PRIORITIES = {
   sales: ['SalesSupportAgent', 'CatalogPartsAgent'],
   parts: ['CatalogPartsAgent', 'CyclopediaSupportAgent'],
   support: ['CyclopediaSupportAgent', 'CasesReferenceAgent'],
@@ -51,34 +55,118 @@ const INTENT_TOOL_PRIORITIES = {
   unknown: ['CatalogPartsAgent', 'CyclopediaSupportAgent', 'SalesSupportAgent'],
 };
 
-const MAX_DOMAIN_TOOLS = 3;
+const KEYWORD_TOOL_RULES = [
+  {
+    label: 'tractor_compatibility',
+    regex: /(compatible|compatibility|fit|fits|deck|tractor|attachment|mount|hitch|clearance)/i,
+    tools: ['TractorFitmentAgent', 'CatalogPartsAgent'],
+    frontLoad: true,
+  },
+  {
+    label: 'policy_support',
+    regex: /(warranty|policy|shipping|return|troubleshoot|sop|install|procedure|steps)/i,
+    tools: ['CyclopediaSupportAgent'],
+  },
+  {
+    label: 'pricing_sales',
+    regex: /(price|cost|quote|bundle|finance|compare|upgrade|sales)/i,
+    tools: ['SalesSupportAgent', 'CatalogPartsAgent'],
+  },
+  {
+    label: 'cases_reference',
+    regex: /(case\s?#?\d+|support case|ticket|internal case|knowledge base)/i,
+    tools: ['CasesReferenceAgent'],
+  },
+];
 
-const resolveDomainTools = (primaryIntent, secondaryIntents = []) => {
-  const prioritized = new Set();
-  const appendTools = (intent) => {
-    const candidates = INTENT_TOOL_PRIORITIES[intent] || [];
-    for (const toolName of candidates) {
-      if (prioritized.size >= MAX_DOMAIN_TOOLS) {
-        break;
+const resolveDomainTools = (
+  { primaryIntent, secondaryIntents = [], confidence },
+  rawText,
+  availableToolNames,
+) => {
+  const intentToolPriorities = DEFAULT_INTENT_TOOL_PRIORITIES;
+  const keywordToolRules = KEYWORD_TOOL_RULES;
+  const maxDomainTools = DEFAULT_MAX_DOMAIN_TOOLS;
+  const lowConfidenceThreshold = DEFAULT_LOW_CONFIDENCE_THRESHOLD;
+  const availableSet = new Set(availableToolNames);
+  const selections = [];
+  const pushUnique = (name, { front = false } = {}) => {
+    if (!availableSet.has(name)) {
+      return;
+    }
+    const idx = selections.indexOf(name);
+    if (idx !== -1) {
+      if (front && idx !== 0) {
+        selections.splice(idx, 1);
+        selections.unshift(name);
       }
-      prioritized.add(toolName);
+      return;
+    }
+    if (front) {
+      selections.unshift(name);
+    } else {
+      selections.push(name);
     }
   };
 
-  appendTools(primaryIntent || 'unknown');
+  const appendIntentTools = (intent) => {
+    const candidates = intentToolPriorities[intent] || [];
+    candidates.forEach((toolName) => pushUnique(toolName));
+  };
 
-  for (const intent of secondaryIntents) {
-    if (prioritized.size >= MAX_DOMAIN_TOOLS) {
-      break;
-    }
-    appendTools(intent);
+  appendIntentTools(primaryIntent || 'unknown');
+  secondaryIntents.forEach((intent) => appendIntentTools(intent));
+
+  const text =
+    typeof rawText === 'string'
+      ? rawText
+      : jsonSafeStringify(rawText);
+
+  const matchedRules = [];
+  if (text) {
+    keywordToolRules.forEach((rule) => {
+      if (rule.regex.test(text)) {
+        matchedRules.push(rule.label);
+        rule.tools.forEach((toolName, index) => {
+          pushUnique(toolName, { front: rule.frontLoad && index === 0 });
+        });
+      }
+    });
   }
 
-  if (prioritized.size === 0) {
-    appendTools('unknown');
+  const isLowConfidence =
+    confidence == null || Number(confidence) < Number(lowConfidenceThreshold || 0);
+  if (isLowConfidence) {
+    appendIntentTools('unknown');
   }
 
-  return Array.from(prioritized);
+  if (selections.length === 0) {
+    appendIntentTools('unknown');
+  }
+
+  const recommended = selections.slice(0, maxDomainTools);
+
+  if (logger?.debug) {
+    logger.debug('[SupervisorRouter] Tool selection heuristics', {
+      primaryIntent,
+      secondaryIntents,
+      confidence,
+      recommended,
+      maxDomainTools,
+      lowConfidenceThreshold,
+      matchedRules,
+    });
+  }
+
+  return recommended;
+};
+
+const jsonSafeStringify = (value) => {
+  try {
+    return JSON.stringify(value);
+  } catch (_) {
+    return '';
+  }
 };
 
 const INSTRUCTIONS = `Prompt version ${WOODLAND_PROMPT_VERSION}
@@ -250,7 +338,11 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
       ? metadata.missing_anchors
       : [];
     const clarifyingQuestion = metadata.clarifying_question || null;
-    const recommendedTools = resolveDomainTools(primaryIntent, secondaryIntents);
+    const recommendedTools = resolveDomainTools(
+      { primaryIntent, secondaryIntents, confidence },
+      original,
+      allDomainToolNames,
+    );
 
     const intentHeaderLines = [
       `[Intent Classification]`,

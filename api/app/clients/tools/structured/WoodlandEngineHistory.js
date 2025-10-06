@@ -1,308 +1,390 @@
-// /api/app/clients/tools/structured/WoodlandEngineHistory.js
 const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 const { logger } = require('~/config');
 
 class WoodlandEngineHistory extends Tool {
-  // Defaults aligned with your AzureAISearch template
   static DEFAULT_API_VERSION = '2024-07-01';
   static DEFAULT_QUERY_TYPE = 'simple';
   static DEFAULT_TOP = 20;
-
-  _initializeField(field, envVar, defaultValue) {
-    return field ?? process.env[envVar] ?? defaultValue;
-  }
+  static DEFAULT_SELECT = '*';
+  static DEFAULT_VECTOR_K = 15;
 
   constructor(fields = {}) {
     super();
     this.name = 'woodland-ai-engine-history';
-    this.description =
-      'Use to query the Airtable Engine History (engine indexes only). Strict $filter eq, optional relaxed retry, only index fields used.';
-    this.override = fields.override ?? false;
+    this.description = 'Query the Woodland engine history index (Airtable sourced).';
 
-    // Schema: only Azure index fields
     this.schema = z.object({
       query: z.string().default(''),
-
-      // Filters (strict equality in $filter)
-      engineModel: z.string().optional(),         // engine_model
-      rakeModel: z.string().optional(),           // rake_model
-      horsepower: z.string().optional(),          // engine_horsepower
-      filterShape: z.string().optional(),         // filter_shape
-      blowerColor: z.string().optional(),         // blower_color
-      airFilter: z.string().optional(),           // air_filter
-      engineMaintenanceKit: z.string().optional(),// engine_maintenance_kit
-
-      // Output controls
-      format: z.enum(['json', 'answer']).default('answer'),
-      maxCitations: z.number().int().positive().max(10).default(3),
-      groupBy: z.enum(['engine_model', 'rake_model', 'none']).default('engine_model'),
-
-      // Optional: limit results
+      engineModel: z.string().optional(),
+      rakeModel: z.string().optional(),
+      horsepower: z.string().optional(),
+      filterShape: z.string().optional(),
+      blowerColor: z.string().optional(),
+      airFilter: z.string().optional(),
+      engineMaintenanceKit: z.string().optional(),
       top: z.number().int().positive().max(100).optional(),
+      format: z.enum(['json']).default('json'),
     });
 
-    // Core fields & options
-    this.serviceEndpoint = this._initializeField(
-      fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT,
-      'AZURE_AI_SEARCH_SERVICE_ENDPOINT'
-    );
-    // NOTE: you can pass a comma-separated list; we’ll pick engine-only below
-    this.indexName = this._initializeField(
-      fields.AZURE_AI_SEARCH_HISTORY_INDEX ?? fields.AZURE_AI_SEARCH_INDEX_NAME,
-      'AZURE_AI_SEARCH_HISTORY_INDEX',
-    );
-    this.apiKey = this._initializeField(fields.AZURE_AI_SEARCH_API_KEY, 'AZURE_AI_SEARCH_API_KEY');
-    this.apiVersion = this._initializeField(
-      fields.AZURE_AI_SEARCH_API_VERSION, 'AZURE_AI_SEARCH_API_VERSION', WoodlandEngineHistory.DEFAULT_API_VERSION
-    );
-    this.queryType = this._initializeField(
-      fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE,
-      'AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE',
-      WoodlandEngineHistory.DEFAULT_QUERY_TYPE
-    );
-    this.topDefault = Number(this._initializeField(
-      fields.WOODLAND_HISTORY_DEFAULT_TOP,
-      'WOODLAND_HISTORY_DEFAULT_TOP',
-      WoodlandEngineHistory.DEFAULT_TOP
-    ));
+    this.serviceEndpoint = fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_AI_SEARCH_SERVICE_ENDPOINT;
+    this.apiKey = fields.AZURE_AI_SEARCH_API_KEY || process.env.AZURE_AI_SEARCH_API_KEY;
+    this.indexName =
+      fields.AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX || process.env.AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX ||
+      fields.AZURE_AI_SEARCH_INDEX_NAME ||
+      process.env.AZURE_AI_SEARCH_INDEX_NAME;
 
-    this.searchFields = (this._initializeField(
-      fields.WOODLAND_HISTORY_SEARCH_FIELDS,
-      'WOODLAND_HISTORY_SEARCH_FIELDS',
-      'title,content,tags,engine_model,rake_model'
-    ) || '').split(',').map(s => s.trim()).filter(Boolean);
-
-    this.enableRelaxedRetry = (this._initializeField(
-      fields.WOODLAND_ENABLE_RELAXED_RETRY,
-      'WOODLAND_ENABLE_RELAXED_RETRY',
-      '1'
-    ) !== '0');
-
-    // Requireds check
-    if (!this.override && (!this.serviceEndpoint || !this.indexName || !this.apiKey)) {
-      throw new Error(
-        'Missing AZURE_AI_SEARCH_SERVICE_ENDPOINT, AZURE_AI_SEARCH_HISTORY_INDEX (or AZURE_AI_SEARCH_INDEX_NAME), or AZURE_AI_SEARCH_API_KEY.'
-      );
-    }
-    if (this.override) return;
-
-    // Resolve engine-only indexes from a comma-separated list
-    const allIndexNames = String(this.indexName)
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean);
-    this.engineIndexes = allIndexNames.filter(n => /engine/i.test(n));
-    if (this.engineIndexes.length === 0 && allIndexNames.length === 1) {
-      this.engineIndexes = allIndexNames;
-    }
-    if (this.engineIndexes.length === 0) {
-      throw new Error('[woodland-engine-history] No engine index configured (expects name containing "engine").');
+    if (!this.serviceEndpoint || !this.apiKey || !this.indexName) {
+      throw new Error('Missing Azure Search configuration for engine history.');
     }
 
-    // Client per index (keeps the template’s SearchClient usage)
-    this.clients = this.engineIndexes.map(
-      name => new SearchClient(this.serviceEndpoint, name, new AzureKeyCredential(this.apiKey), { apiVersion: this.apiVersion })
+    this.apiVersion = fields.AZURE_AI_SEARCH_API_VERSION || process.env.AZURE_AI_SEARCH_API_VERSION || WoodlandEngineHistory.DEFAULT_API_VERSION;
+
+    const semanticConfiguration = fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION || process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION;
+    const queryLanguage = fields.AZURE_AI_SEARCH_QUERY_LANGUAGE || process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE;
+    this.semanticConfiguration = typeof semanticConfiguration === 'string' ? semanticConfiguration.trim() : semanticConfiguration;
+    this.queryLanguage = typeof queryLanguage === 'string' ? queryLanguage.trim() : queryLanguage;
+
+    this.queryType = this._resolveQueryType(fields);
+
+    this.topDefault = Number(fields.WOODLAND_HISTORY_DEFAULT_TOP || process.env.WOODLAND_HISTORY_DEFAULT_TOP || WoodlandEngineHistory.DEFAULT_TOP);
+    const selectFields = this._stringArray(
+      fields.WOODLAND_HISTORY_SELECT || process.env.WOODLAND_HISTORY_SELECT || WoodlandEngineHistory.DEFAULT_SELECT,
     );
+    this.select = selectFields.length ? selectFields : ['*'];
+
+    const configuredSearchFields = fields.WOODLAND_HISTORY_SEARCH_FIELDS || process.env.WOODLAND_HISTORY_SEARCH_FIELDS;
+    const searchFields = configuredSearchFields ? this._stringArray(configuredSearchFields) : [];
+    this.searchFields = searchFields.length ? searchFields : undefined;
+
+    const vectorFields = fields.AZURE_AI_SEARCH_VECTOR_FIELDS || process.env.AZURE_AI_SEARCH_VECTOR_FIELDS;
+    this.vectorFields = vectorFields
+      ? String(vectorFields)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+    this.vectorK = Number(fields.AZURE_AI_SEARCH_VECTOR_K || process.env.AZURE_AI_SEARCH_VECTOR_K || WoodlandEngineHistory.DEFAULT_VECTOR_K);
+
+    this.client = new SearchClient(
+      this.serviceEndpoint,
+      this.indexName,
+      new AzureKeyCredential(this.apiKey),
+      { apiVersion: this.apiVersion }, 
+    );
+
+    logger.info('[woodland-ai-engine-history] Initialized', {
+      endpoint: this.serviceEndpoint,
+      index: this.indexName,
+      apiVersion: this.apiVersion,
+      queryType: this.queryType,
+      topDefault: this.topDefault,
+      select: this.select,
+      searchFields: this.searchFields,
+      vectorFields: this.vectorFields,
+      vectorK: this.vectorK,
+      semanticConfiguration: this.semanticConfiguration,
+      queryLanguage: this.queryLanguage,
+    });
   }
 
-  /** Build a strict $filter string (eq only) */
   _buildFilter(input) {
     const filters = [];
-    const addEq = (field, value) => {
+    const add = (field, value) => {
       if (!value) return;
-      const sanitized = String(value).replace(/'/g, "''").replace(/\s+/g, ' ').trim();
+      const sanitized = String(value).replace(/'/g, "''").trim();
+      if (!sanitized) return;
       filters.push(`${field} eq '${sanitized}'`);
     };
-    addEq('engine_model', input.engineModel);
-    addEq('rake_model', input.rakeModel);
-    addEq('engine_horsepower', input.horsepower);
-    addEq('filter_shape', input.filterShape);
-    addEq('blower_color', input.blowerColor);
-    addEq('air_filter', input.airFilter);
-    addEq('engine_maintenance_kit', input.engineMaintenanceKit);
+    add('engine_model', input.engineModel);
+    add('rake_model', input.rakeModel);
+    add('engine_horsepower', input.horsepower);
+    add('filter_shape', input.filterShape);
+    add('blower_color', input.blowerColor);
+    add('air_filter', input.airFilter);
+    add('engine_maintenance_kit', input.engineMaintenanceKit);
     return filters.join(' and ');
   }
 
-  /** Collect URLs strictly from engine *_url fields */
   _collectUrls(doc) {
-    const urls = [];
-    const v = doc.engine_maintenance_kit_url;
-    if (typeof v === 'string') urls.push(v);
-    else if (Array.isArray(v)) for (const u of v) if (typeof u === 'string') urls.push(u);
-    return { primaryUrl: urls[0] || '', supplementalUrls: urls.slice(1) };
-  }
-
-  /** Normalize doc to output (only engine index fields) */
-  _shapeDoc(d, indexName) {
-    const { primaryUrl, supplementalUrls } = this._collectUrls(d);
-    const out = {
-      id: d.id || d.key || d.record_id,
-      title: d.title,
-      content: typeof d.content === 'string' ? d.content : '',
-      tags: d.tags || [],
-      index: indexName,
-      page_type: 'enginehistory',
-      '@search.score': typeof d['@search.score'] === 'number' ? d['@search.score'] : undefined,
-      citations: [primaryUrl, ...(supplementalUrls || [])].filter(Boolean),
-
-      // Only engine fields (from your index)
-      engine_model: d.engine_model,
-      inuse_date: d.inuse_date,
-      engine_horsepower: d.engine_horsepower,
-      filter_shape: d.filter_shape,
-      deck_hose_diameter: d.deck_hose_diameter,
-      rake_model: d.rake_model,
-      blower_color: d.blower_color,
-      air_filter: d.air_filter,
-      engine_maintenance_kit: d.engine_maintenance_kit,
-      engine_maintenance_kit_url: d.engine_maintenance_kit_url,
+    const urls = new Set();
+    const prioritized = [];
+    const push = (val, priority = false) => {
+      if (!val) return;
+      if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (!trimmed) {
+          return;
+        }
+        if (priority) {
+          prioritized.push(trimmed);
+        } else {
+          urls.add(trimmed);
+        }
+      } else if (Array.isArray(val)) {
+        val.forEach((item) => push(item, priority));
+      }
     };
-    return out;
+
+    const airtableCandidates = [
+      doc.airtable_url,
+      doc.airtableUrl,
+      doc.airtable_link,
+      doc.airtableLink,
+      doc.airtable_record_url,
+      doc.airtableRecordUrl,
+    ];
+    airtableCandidates.forEach((value) => push(value, true));
+
+    ['document_url', 'source_url', 'url', 'engine_maintenance_kit_url'].forEach((key) => push(doc[key]));
+    Object.keys(doc).forEach((key) => {
+      if (/airtable/i.test(key)) {
+        push(doc[key], true);
+      } else if (/(_url)$/i.test(key)) {
+        push(doc[key]);
+      }
+    });
+
+    const ordered = [...prioritized.filter(Boolean), ...Array.from(urls)];
+    const seen = new Set();
+    const deduped = ordered.filter((url) => {
+      const lower = url.toLowerCase();
+      if (seen.has(lower)) {
+        return false;
+      }
+      seen.add(lower);
+      return true;
+    });
+
+    return { primaryUrl: deduped[0] || '', supplementalUrls: deduped.slice(1) };
   }
 
-  /** Markdown answer */
-  _buildAnswer(docs, { groupBy = 'engine_model', maxCitations = 3 } = {}) {
-    // Group
-    let groups = [];
-    if (groupBy === 'engine_model' || groupBy === 'rake_model') {
-      const m = new Map();
-      for (const d of docs) {
-        const k = d[groupBy] || '';
-        if (!m.has(k)) m.set(k, []);
-        m.get(k).push(d);
-      }
-      groups = Array.from(m.entries()).map(([key, arr]) => ({ key, docs: arr }));
-    } else {
-      groups = [{ key: '', docs }];
-    }
+  _shapeDocument(doc) {
+    const { primaryUrl, supplementalUrls } = this._collectUrls(doc);
+    const normalized = {
+      engine_model: doc.engine_model,
+      rake_model: doc.rake_model,
+      inuse_date: doc.inuse_date,
+      engine_horsepower: doc.engine_horsepower,
+      filter_shape: doc.filter_shape,
+      blower_color: doc.blower_color,
+      air_filter: doc.air_filter,
+      engine_maintenance_kit: doc.engine_maintenance_kit,
+      engine_maintenance_kit_url: doc.engine_maintenance_kit_url,
+    };
 
-    let out = '';
-    for (const g of groups) {
-      const first = g.docs[0];
-      const headerKey =
-        groupBy === 'engine_model'
-          ? (g.key || first.engine_model || '')
-          : groupBy === 'rake_model'
-            ? (g.key || first.rake_model || '')
-            : `${first.rake_model || ''}${first.rake_model && first.engine_model ? ' — ' : ''}${first.engine_model || ''}`;
-      const headerLabel = groupBy === 'engine_model' ? 'Engine' : groupBy === 'rake_model' ? 'Model' : 'Product Group';
-      out += `**${headerLabel}: ${headerKey || '—'}**\n`;
-
-      const facts = [];
-      if (first.inuse_date)        facts.push(`- **in use:** ${first.inuse_date}`);
-      if (first.engine_horsepower) facts.push(`- **horsepower:** ${first.engine_horsepower}`);
-      if (first.filter_shape)      facts.push(`- **filter shape:** ${first.filter_shape}`);
-      if (first.engine_maintenance_kit) {
-        const u = first.engine_maintenance_kit_url;
-        facts.push(`- **engine maintenance kit:** ${first.engine_maintenance_kit}${u ? ` [Link](${u})` : ''}`);
-      }
-      if (facts.length) out += facts.join('\n') + '\n\n';
-    }
-
-    // Citations strictly from index *_url fields
-    const cites = [];
-    for (const d of docs) if (Array.isArray(d.citations)) for (const u of d.citations) if (u && !cites.includes(u)) cites.push(u);
-    if (cites.length) {
-      out += '**Citations:**\n';
-      for (let i = 0; i < Math.min(maxCitations, cites.length); i++) out += `[Source ${i + 1}](${cites[i]})\n`;
-    }
-    return out.trim();
+    return {
+      ...doc,
+      citations: [primaryUrl, ...supplementalUrls].filter(Boolean),
+      normalized_engine: normalized,
+    };
   }
 
-  /** Main call (aligned with your template’s style) */
+  _stringArray(value) {
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => (typeof item === 'string' ? item.trim() : String(item || '').trim()))
+        .filter(Boolean);
+    }
+    if (value == null) {
+      return [];
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return [];
+      }
+      return trimmed
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return String(value)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  _resolveQueryType(fields = {}) {
+    const raw = (fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || WoodlandEngineHistory.DEFAULT_QUERY_TYPE);
+    const normalized = String(raw || '').toLowerCase().trim();
+    if (normalized === 'semantic' && !this._hasSemanticConfig()) {
+      logger.warn('[woodland-ai-engine-history] Semantic queryType requested but semantic configuration is missing. Using simple.', {
+        semanticConfiguration: this.semanticConfiguration,
+        queryLanguage: this.queryLanguage,
+      });
+      return 'simple';
+    }
+    return normalized || 'simple';
+  }
+
+  _hasSemanticConfig() {
+    return Boolean(this.semanticConfiguration && this.queryLanguage);
+  }
+
+  _collectTerms(...values) {
+    const terms = [];
+    const visit = (val) => {
+      if (val == null) {
+        return;
+      }
+      if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (trimmed) {
+          terms.push(trimmed);
+        }
+        return;
+      }
+      if (typeof val === 'number' || typeof val === 'boolean') {
+        terms.push(String(val));
+        return;
+      }
+      if (Array.isArray(val)) {
+        val.forEach(visit);
+        return;
+      }
+      if (typeof val === 'object') {
+        if (typeof val.value === 'string') {
+          visit(val.value);
+          return;
+        }
+        if (Array.isArray(val.value)) {
+          visit(val.value);
+        }
+      }
+    };
+
+    values.forEach(visit);
+    return terms;
+  }
+
+  _extractFilterTerms(filter) {
+    if (!filter || typeof filter !== 'string') {
+      return [];
+    }
+    const matches = filter.matchAll(/'([^']*)'/g);
+    return Array.from(matches, (match) => match[1]?.replace(/''/g, "'")?.trim()).filter(Boolean);
+  }
+
+  async _performSearch(queryString, options) {
+    const opts = { ...options };
+
+    if (this.queryType === 'semantic') {
+      opts.semanticSearchOptions = {
+        configurationName: this.semanticConfiguration,
+        queryLanguage: this.queryLanguage,
+      };
+    }
+
+    logger.debug('[woodland-ai-engine-history] Executing search', {
+      queryString,
+      filter: opts.filter,
+      top: opts.top,
+      hasVector: Array.isArray(opts.vectorQueries) && opts.vectorQueries.length > 0,
+      searchFields: opts.searchFields,
+      select: opts.select,
+      queryType: opts.queryType,
+      searchMode: opts.searchMode,
+      semanticConfiguration: opts.semanticSearchOptions?.configurationName,
+    });
+
+    const results = [];
+    const seen = new Set();
+
+    const iterator = await this.client.search(queryString, opts);
+    for await (const result of iterator.results) {
+      const doc = result.document || {};
+      const key = String(doc.record_id || doc.id || doc.key || '').toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push(this._shapeDocument({ ...doc, ['@search.score']: result.score }));
+    }
+
+    return results;
+  }
+
   async _call(data) {
     const parsed = this.schema.safeParse(data);
     if (!parsed.success) {
-      return `INPUT_VALIDATION_FAILED: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
+      return `INPUT_VALIDATION_FAILED: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`;
     }
+
     const input = parsed.data;
-
     const top = Number.isFinite(input.top) ? Math.floor(input.top) : this.topDefault;
-
-    // 1) Strict filtered search on each engine index
     const filter = this._buildFilter(input);
-    const results = [];
-    const seen = new Set(); // dedupe across indexes
+    const fallbackTerms = this._collectTerms(
+      input.engineModel,
+      input.rakeModel,
+      input.horsepower,
+      input.filterShape,
+    );
+    const filterTerms = this._extractFilterTerms(filter);
+    const queryString =
+      (input.query || '').trim() ||
+      (fallbackTerms.length ? fallbackTerms.join(' ') : '') ||
+      (filterTerms.length ? filterTerms.join(' ') : '') ||
+      '*';
+
+    const inferredMode = (() => {
+      const q = (input.query || '').toString();
+      if (/".+"/.test(q) || /\b(AND|OR|NOT)\b/i.test(q)) {
+        return 'all';
+      }
+      return 'any';
+    })();
+
+    const options = {
+      queryType: this.queryType,
+      searchMode: inferredMode,
+      top,
+      includeTotalCount: false,
+      filter: filter || undefined,
+    };
+
+    const selectFields = Array.isArray(this.select) ? this.select : this._stringArray(this.select);
+    if (selectFields.length && !(selectFields.length === 1 && selectFields[0] === '*')) {
+      options.select = selectFields;
+    }
+
+    if (Array.isArray(this.searchFields) && this.searchFields.length) {
+      options.searchFields = this.searchFields;
+    }
+
+    if (Array.isArray(input.embedding) && input.embedding.length && this.vectorFields.length) {
+      options.vectorQueries = this.vectorFields.map((field) => ({
+        kind: 'vector',
+        vector: input.embedding,
+        fields: field,
+        kNearestNeighborsCount: this.vectorK,
+      }));
+    }
 
     try {
-      for (const client of this.clients) {
-        const options = {
-          queryType: this.queryType,
-          top,
-          includeTotalCount: true,
-          searchFields: this.searchFields.length ? this.searchFields : undefined,
-          filter: filter || undefined,
-        };
+      let results = await this._performSearch(queryString, options);
 
-        const searchResults = await client.search(input.query || '*', options);
-        for await (const r of searchResults.results) {
-          const d = r.document || {};
-          const key = `${client.indexName}::${String(d.record_id || d.id || d.key || d.title || '').toLowerCase()}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          // preserve score in the doc shape
-          d['@search.score'] = r.score;
-          results.push(this._shapeDoc(d, client.indexName));
-        }
+      if (results.length === 0 && options.filter) {
+        const retryOptions = { ...options };
+        delete retryOptions.filter;
+        logger.info('[woodland-ai-engine-history] No results with filter, retrying without filter');
+        results = await this._performSearch(queryString, retryOptions);
       }
+
+      if (results.length === 0 && queryString !== '*' && !options.filter) {
+        logger.info('[woodland-ai-engine-history] No results with query terms, retrying with wildcard');
+        results = await this._performSearch('*', { ...options, filter: undefined });
+      }
+
+      if (results.length === 0) {
+        return 'NEEDS_HUMAN_REVIEW: No reviewed records found.';
+      }
+
+      results.sort((a, b) => (b['@search.score'] || 0) - (a['@search.score'] || 0));
+      return JSON.stringify(results.slice(0, top));
     } catch (error) {
-      logger.error('[woodland-engine-history] Azure filtered search failed', error);
+      logger.error('[woodland-ai-engine-history] Search request failed', error);
+      return `AZURE_SEARCH_FAILED: ${error?.message || error}`;
     }
-
-    // 2) Optional relaxed retry (Lucene, no $filter, client-side prefix test)
-    if (this.enableRelaxedRetry && results.length === 0 && (input.engineModel || input.rakeModel)) {
-      const engPrefix = (input.engineModel || '').trim().toLowerCase();
-      const rmPrefix  = (input.rakeModel  || '').trim().toLowerCase();
-
-      for (const client of this.clients) {
-        try {
-          const options = {
-            queryType: 'full',
-            top,
-            includeTotalCount: true,
-            searchFields: this.searchFields.length ? this.searchFields : undefined,
-          };
-
-          const terms = [];
-          if (input.query) terms.push(input.query);
-          if (engPrefix)   terms.push(`${input.engineModel}\\*`);
-          if (rmPrefix)    terms.push(`${input.rakeModel}\\*`);
-
-          const q = terms.length ? terms.join(' ') : '*';
-          const searchResults = await client.search(q, options);
-
-          for await (const r of searchResults.results) {
-            const d = r.document || {};
-            const em = (d.engine_model || '').toString().toLowerCase();
-            const rm = (d.rake_model || '').toString().toLowerCase();
-            const ok = (engPrefix && em.startsWith(engPrefix)) || (rmPrefix && rm.startsWith(rmPrefix)) || (!engPrefix && !rmPrefix);
-            if (!ok) continue;
-
-            const key = `${client.indexName}::${String(d.record_id || d.id || d.key || d.title || '').toLowerCase()}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            d['@search.score'] = r.score;
-            results.push(this._shapeDoc(d, client.indexName));
-          }
-        } catch (error) {
-          logger.warn('[woodland-engine-history] Relaxed retry failed', { index: client.indexName, error });
-        }
-      }
-    }
-
-    if (results.length === 0) return 'NEEDS_HUMAN_REVIEW: No reviewed records found.';
-
-    // Sort: score desc, then title
-    results.sort((a, b) =>
-      (b['@search.score'] || 0) - (a['@search.score'] || 0) ||
-      String(a.title || '').localeCompare(String(b.title || ''))
-    );
-
-    const trimmed = results.slice(0, top);
-    if (input.format === 'json') return JSON.stringify(trimmed);
-    return this._buildAnswer(trimmed, { groupBy: input.groupBy, maxCitations: input.maxCitations });
   }
 }
 
