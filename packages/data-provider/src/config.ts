@@ -650,7 +650,7 @@ export type TStartupConfig = {
   minPasswordLength?: number;
   webSearch?: {
     searchProvider?: SearchProviders;
-    scraperType?: ScraperTypes;
+    scraperProvider?: ScraperProviders;
     rerankerType?: RerankerTypes;
   };
   mcpServers?: Record<
@@ -689,7 +689,7 @@ export enum SearchProviders {
   SEARXNG = 'searxng',
 }
 
-export enum ScraperTypes {
+export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
 }
@@ -711,11 +711,12 @@ export const webSearchSchema = z.object({
   searxngApiKey: z.string().optional().default('${SEARXNG_API_KEY}'),
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
+  firecrawlVersion: z.string().optional().default('${FIRECRAWL_VERSION}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
-  scraperType: z.nativeEnum(ScraperTypes).optional(),
+  scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
   scraperTimeout: z.number().optional(),
   safeSearch: z.nativeEnum(SafeSearchTypes).default(SafeSearchTypes.MODERATE),

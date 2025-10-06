@@ -4,14 +4,14 @@ import {
   SearchCategories,
   extractVariableName,
 } from 'librechat-data-provider';
+import { webSearchAuth } from '@librechat/data-schemas';
 import type {
-  ScraperTypes,
   RerankerTypes,
   TCustomConfig,
   SearchProviders,
+  ScraperProviders,
   TWebSearchConfig,
 } from 'librechat-data-provider';
-import { webSearchAuth } from '@librechat/data-schemas';
 import type { TWebSearchKeys, TWebSearchCategories } from '@librechat/data-schemas';
 
 export function extractWebSearchEnvVars({
@@ -88,8 +88,8 @@ export async function loadWebSearchAuth({
     let specificService: ServiceType | undefined;
     if (category === SearchCategories.PROVIDERS && webSearchConfig?.searchProvider) {
       specificService = webSearchConfig.searchProvider as unknown as ServiceType;
-    } else if (category === SearchCategories.SCRAPERS && webSearchConfig?.scraperType) {
-      specificService = webSearchConfig.scraperType as unknown as ServiceType;
+    } else if (category === SearchCategories.SCRAPERS && webSearchConfig?.scraperProvider) {
+      specificService = webSearchConfig.scraperProvider as unknown as ServiceType;
     } else if (category === SearchCategories.RERANKERS && webSearchConfig?.rerankerType) {
       specificService = webSearchConfig.rerankerType as unknown as ServiceType;
     }
@@ -165,7 +165,7 @@ export async function loadWebSearchAuth({
         if (category === SearchCategories.PROVIDERS) {
           authResult.searchProvider = service as SearchProviders;
         } else if (category === SearchCategories.SCRAPERS) {
-          authResult.scraperType = service as ScraperTypes;
+          authResult.scraperProvider = service as ScraperProviders;
         } else if (category === SearchCategories.RERANKERS) {
           authResult.rerankerType = service as RerankerTypes;
         }

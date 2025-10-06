@@ -1268,6 +1268,8 @@
   "com_ui_web_search_scraper": "Scraper",
   "com_ui_web_search_scraper_firecrawl": "Firecrawl API",
   "com_ui_web_search_scraper_firecrawl_key": "Get your Firecrawl API key",
+  "com_ui_web_search_scraper_serper": "Serper Scrape API",
+  "com_ui_web_search_scraper_serper_key": "Get your Serper API key",
   "com_ui_web_search_searxng_api_key": "Enter SearXNG API Key (optional)",
   "com_ui_web_search_searxng_instance_url": "SearXNG Instance URL",
   "com_ui_web_searching": "Searching the web",

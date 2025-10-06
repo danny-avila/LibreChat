@@ -18,6 +18,10 @@ export const webSearchAuth = {
       firecrawlApiKey: 1 as const,
       /** Optional (0) */
       firecrawlApiUrl: 0 as const,
+      firecrawlVersion: 0 as const,
+    },
+    serper: {
+      serperApiKey: 1 as const,
     },
   },
   rerankers: {
@@ -64,6 +68,7 @@ export function loadWebSearchConfig(
   const searxngApiKey = config?.searxngApiKey ?? '${SEARXNG_API_KEY}';
   const firecrawlApiKey = config?.firecrawlApiKey ?? '${FIRECRAWL_API_KEY}';
   const firecrawlApiUrl = config?.firecrawlApiUrl ?? '${FIRECRAWL_API_URL}';
+  const firecrawlVersion = config?.firecrawlVersion ?? '${FIRECRAWL_VERSION}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
@@ -76,9 +81,10 @@ export function loadWebSearchConfig(
     jinaApiUrl,
     cohereApiKey,
     serperApiKey,
-    searxngInstanceUrl,
     searxngApiKey,
     firecrawlApiKey,
     firecrawlApiUrl,
+    firecrawlVersion,
+    searxngInstanceUrl,
   };
 }
