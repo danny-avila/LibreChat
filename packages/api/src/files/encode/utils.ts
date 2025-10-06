@@ -1,4 +1,5 @@
 import getStream from 'get-stream';
+import { FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Request } from 'express';
 import type { StrategyFunctions, ProcessedFile } from '~/types/files';
@@ -21,7 +22,7 @@ export async function getFileStream(
     return null;
   }
 
-  const source = file.source ?? 'local';
+  const source = file.source ?? FileSources.local;
   if (!encodingMethods[source]) {
     encodingMethods[source] = getStrategyFunctions(source);
   }

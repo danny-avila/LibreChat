@@ -56,8 +56,10 @@ export interface DocumentResult {
     };
     cache_control?: { type: string };
     citations?: { enabled: boolean };
-    filename?: string;
-    file_data?: string;
+    file?: {
+      filename?: string;
+      file_data?: string;
+    };
     mimeType?: string;
     data?: string;
   }>;

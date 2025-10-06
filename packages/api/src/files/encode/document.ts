@@ -80,9 +80,11 @@ export async function encodeAndFormatDocuments(
         });
       } else if (endpoint === EModelEndpoint.openAI) {
         result.documents.push({
-          type: 'input_file',
-          filename: file.filename,
-          file_data: `data:application/pdf;base64,${content}`,
+          type: 'file',
+          file: {
+            filename: file.filename,
+            file_data: `data:application/pdf;base64,${content}`,
+          },
         });
       } else if (endpoint === EModelEndpoint.google) {
         result.documents.push({
