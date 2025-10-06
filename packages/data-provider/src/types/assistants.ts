@@ -475,10 +475,20 @@ export type ContentPart = (
 ) &
   PartMetadata;
 
+export type TextData = (Text & PartMetadata) | undefined;
+
 export type TMessageContentParts =
-  | { type: ContentTypes.ERROR; text?: string | (Text & PartMetadata); error?: string }
-  | { type: ContentTypes.THINK; think: string | (Text & PartMetadata) }
-  | { type: ContentTypes.TEXT; text: string | (Text & PartMetadata); tool_call_ids?: string[] }
+  | {
+      type: ContentTypes.ERROR;
+      text?: string | TextData;
+      error?: string;
+    }
+  | { type: ContentTypes.THINK; think?: string | TextData }
+  | {
+      type: ContentTypes.TEXT;
+      text?: string | TextData;
+      tool_call_ids?: string[];
+    }
   | {
       type: ContentTypes.TOOL_CALL;
       tool_call: (

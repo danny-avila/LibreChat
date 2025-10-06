@@ -11,7 +11,7 @@ const {
   getProjectByName,
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
-const { getCachedTools } = require('~/server/services/Config');
+const { getMCPServerTools } = require('~/server/services/Config');
 const { getActions } = require('./Action');
 const { Agent } = require('~/db/models');
 
@@ -69,8 +69,6 @@ const getAgents = async (searchParameter) => await Agent.find(searchParameter).l
  */
 const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _m }) => {
   const { model, ...model_parameters } = _m;
-  /** @type {Record<string, FunctionTool>} */
-  const availableTools = await getCachedTools({ userId: req.user.id, includeGlobal: true });
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;
   const mcpServers = new Set(ephemeralAgent?.mcp);
@@ -88,22 +86,18 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
 
   const addedServers = new Set();
   if (mcpServers.size > 0) {
-    for (const toolName of Object.keys(availableTools)) {
-      if (!toolName.includes(mcp_delimiter)) {
-        continue;
-      }
-      const mcpServer = toolName.split(mcp_delimiter)?.[1];
-      if (mcpServer && mcpServers.has(mcpServer)) {
-        addedServers.add(mcpServer);
-        tools.push(toolName);
-      }
-    }
-
     for (const mcpServer of mcpServers) {
       if (addedServers.has(mcpServer)) {
         continue;
       }
-      tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
+      const serverTools = await getMCPServerTools(mcpServer);
+      if (!serverTools) {
+        tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
+        addedServers.add(mcpServer);
+        continue;
+      }
+      tools.push(...Object.keys(serverTools));
+      addedServers.add(mcpServer);
     }
   }
 
