@@ -56,7 +56,7 @@ export class MCPServersRegistry {
     );
 
     // Ensure all connections are disconnected after initialization
-    await Promise.allSettled(this.connections.disconnectAll());
+    //await Promise.allSettled(this.connections.disconnectAll());
   }
 
   /** Wraps server initialization with a timeout to prevent hanging */
