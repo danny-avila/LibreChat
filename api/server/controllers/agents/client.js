@@ -257,7 +257,7 @@ class AgentClient extends BaseClient {
         };
       }
 
-      const files = await this.addImageURLs(
+      const files = await this.processAttachments(
         orderedMessages[orderedMessages.length - 1],
         attachments,
       );

@@ -1,18 +1,24 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
-const { getBalanceConfig } = require('@librechat/api');
 const {
-  supportsBalanceCheck,
-  isAgentsEndpoint,
-  isParamEndpoint,
-  EModelEndpoint,
+  getBalanceConfig,
+  encodeAndFormatAudios,
+  encodeAndFormatVideos,
+  encodeAndFormatDocuments,
+} = require('@librechat/api');
+const {
+  Constants,
+  ErrorTypes,
   ContentTypes,
   excludedKeys,
-  ErrorTypes,
-  Constants,
+  EModelEndpoint,
+  isParamEndpoint,
+  isAgentsEndpoint,
+  supportsBalanceCheck,
 } = require('librechat-data-provider');
 const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
 const { getFiles } = require('~/models/File');
@@ -1198,8 +1204,99 @@ class BaseClient {
     return await this.sendCompletion(payload, opts);
   }
 
+  async addDocuments(message, attachments) {
+    const documentResult = await encodeAndFormatDocuments(
+      this.options.req,
+      attachments,
+      {
+        provider: this.options.agent?.provider,
+        useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
+      },
+      getStrategyFunctions,
+    );
+    message.documents =
+      documentResult.documents && documentResult.documents.length
+        ? documentResult.documents
+        : undefined;
+    return documentResult.files;
+  }
+
+  async addVideos(message, attachments) {
+    const videoResult = await encodeAndFormatVideos(
+      this.options.req,
+      attachments,
+      this.options.agent.provider,
+      getStrategyFunctions,
+    );
+    message.videos =
+      videoResult.videos && videoResult.videos.length ? videoResult.videos : undefined;
+    return videoResult.files;
+  }
+
+  async addAudios(message, attachments) {
+    const audioResult = await encodeAndFormatAudios(
+      this.options.req,
+      attachments,
+      this.options.agent.provider,
+      getStrategyFunctions,
+    );
+    message.audios =
+      audioResult.audios && audioResult.audios.length ? audioResult.audios : undefined;
+    return audioResult.files;
+  }
+
+  async processAttachments(message, attachments) {
+    const categorizedAttachments = {
+      images: [],
+      documents: [],
+      videos: [],
+      audios: [],
+    };
+
+    for (const file of attachments) {
+      if (file.type.startsWith('image/')) {
+        categorizedAttachments.images.push(file);
+      } else if (file.type === 'application/pdf') {
+        categorizedAttachments.documents.push(file);
+      } else if (file.type.startsWith('video/')) {
+        categorizedAttachments.videos.push(file);
+      } else if (file.type.startsWith('audio/')) {
+        categorizedAttachments.audios.push(file);
+      }
+    }
+
+    const [imageFiles, documentFiles, videoFiles, audioFiles] = await Promise.all([
+      categorizedAttachments.images.length > 0
+        ? this.addImageURLs(message, categorizedAttachments.images)
+        : Promise.resolve([]),
+      categorizedAttachments.documents.length > 0
+        ? this.addDocuments(message, categorizedAttachments.documents)
+        : Promise.resolve([]),
+      categorizedAttachments.videos.length > 0
+        ? this.addVideos(message, categorizedAttachments.videos)
+        : Promise.resolve([]),
+      categorizedAttachments.audios.length > 0
+        ? this.addAudios(message, categorizedAttachments.audios)
+        : Promise.resolve([]),
+    ]);
+
+    const allFiles = [...imageFiles, ...documentFiles, ...videoFiles, ...audioFiles];
+    const seenFileIds = new Set();
+    const uniqueFiles = [];
+
+    for (const file of allFiles) {
+      if (file.file_id && !seenFileIds.has(file.file_id)) {
+        seenFileIds.add(file.file_id);
+        uniqueFiles.push(file);
+      } else if (!file.file_id) {
+        uniqueFiles.push(file);
+      }
+    }
+
+    return uniqueFiles;
+  }
+
   /**
-   *
    * @param {TMessage[]} _messages
    * @returns {Promise<TMessage[]>}
    */
@@ -1248,7 +1345,7 @@ class BaseClient {
         {},
       );
 
-      await this.addImageURLs(message, files, this.visionMode);
+      await this.processAttachments(message, files);
 
       this.message_file_map[message.messageId] = files;
       return message;
