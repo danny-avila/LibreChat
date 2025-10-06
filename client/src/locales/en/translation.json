@@ -408,7 +408,6 @@
   "com_nav_auto_scroll": "Auto-Scroll to latest message on chat open",
   "com_nav_auto_send_prompts": "Auto-send Prompts",
   "com_nav_auto_send_text": "Auto send text",
-  "com_nav_auto_send_text_disabled": "set -1 to disable",
   "com_nav_auto_transcribe_audio": "Auto transcribe audio",
   "com_nav_automatic_playback": "Autoplay Latest Message",
   "com_nav_balance": "Balance",
@@ -1288,14 +1287,16 @@
   "com_ui_reset": "Reset",
   "com_ui_zoom_in": "Zoom in",
   "com_ui_zoom_out": "Zoom out",
+  "com_ui_zoom_level": "Zoom level",
   "com_ui_rotate_90": "Rotate 90 degrees",
   "com_ui_reset_adjustments": "Reset adjustments",
-  "com_ui_drag_reposition": "Drag the image to reposition",
-  "com_ui_zoom_adjust": "Use zoom slider or buttons to adjust size",
   "com_ui_editor_instructions": "Drag the image to reposition • Use zoom slider or buttons to adjust size",
   "com_ui_save_key_success": "API key saved successfully",
   "com_ui_save_key_error": "Failed to save API key. Please try again.",
   "com_ui_revoke_key_success": "API key revoked successfully",
   "com_ui_revoke_key_error": "Failed to revoke API key. Please try again.",
-  "com_ui_key_required": "API key is required"
+  "com_ui_key_required": "API key is required",
+  "com_ui_max_file_size": "PNG, JPG or JPEG (max {{0}})",
+  "com_ui_upload_avatar_label": "Upload avatar image",
+  "com_ui_file_input_avatar_label": "File input for avatar"
 }

@@ -221,7 +221,7 @@ function Avatar() {
                       size="sm"
                       onClick={handleZoomOut}
                       disabled={scale <= 1}
-                      aria-label="Zoom out"
+                      aria-label={localize('com_ui_zoom_out')}
                       className="shrink-0"
                     >
                       <ZoomOut className="h-4 w-4" />
@@ -234,7 +234,7 @@ function Avatar() {
                       step={0.1}
                       onValueChange={handleScaleChange}
                       className="flex-1"
-                      aria-label="Zoom level"
+                      aria-label={localize('com_ui_zoom_level')}
                     />
                     <Button
                       type="button"
@@ -242,7 +242,7 @@ function Avatar() {
                       size="sm"
                       onClick={handleZoomIn}
                       disabled={scale >= 5}
-                      aria-label="Zoom in"
+                      aria-label={localize('com_ui_zoom_in')}
                       className="shrink-0"
                     >
                       <ZoomIn className="h-4 w-4" />
@@ -320,18 +320,18 @@ function Avatar() {
                   openFileDialog();
                 }
               }}
-              aria-label="Upload avatar image"
+              aria-label={localize('com_ui_upload_avatar_label')}
             >
               <FileImage className="mb-4 size-16 text-gray-400" />
               <p className="mb-2 text-center text-sm font-medium text-text-primary">
                 {localize('com_ui_drag_drop')}
               </p>
               <p className="mb-4 text-center text-xs text-text-secondary">
-                PNG, JPG or JPEG (max{' '}
-                {fileConfig.avatarSizeLimit != null
-                  ? formatBytes(fileConfig.avatarSizeLimit)
-                  : '2MB'}
-                )
+                {localize('com_ui_max_file_size', [
+                  fileConfig.avatarSizeLimit != null
+                    ? formatBytes(fileConfig.avatarSizeLimit)
+                    : '2MB',
+                ])}
               </p>
               <Button type="button" variant="secondary" onClick={openFileDialog}>
                 {localize('com_ui_select_file')}
@@ -342,7 +342,7 @@ function Avatar() {
                 className="hidden"
                 accept=".png, .jpg, .jpeg"
                 onChange={handleFileChange}
-                aria-label="File input for avatar"
+                aria-label={localize('com_ui_file_input_avatar_label')}
               />
             </div>
           )}
