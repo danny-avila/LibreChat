@@ -1,6 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import {
   PromptsView,
+  MCPPromptForm,
   PromptForm,
   CreatePromptForm,
   EmptyPromptPreview,
@@ -69,6 +70,10 @@ const dashboardRoutes = {
         {
           path: ':promptId',
           element: <PromptForm />,
+        },
+        {
+          path: 'mcp/:serverName',
+          element: <MCPPromptForm />,
         },
       ],
     },

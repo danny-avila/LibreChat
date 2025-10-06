@@ -27,5 +27,6 @@ export * from './DragDropContext';
 export * from './MCPPanelContext';
 export * from './ArtifactsContext';
 export * from './PromptGroupsContext';
+export * from './MCPPromptGroupsContext';
 export * from './MessagesViewContext';
 export { default as BadgeRowProvider } from './BadgeRowContext';

@@ -529,3 +529,68 @@ export const useUserTermsQuery = (
     ...config,
   });
 };
+
+export const useGetAllMCPPrompts = (
+  config?: UseQueryOptions<t.MCPPromptResponseArray>,
+): QueryObserverResult<t.MCPPromptResponseArray> => {
+  console.log('useGetAllMCPPrompts called', config);
+  return useQuery<t.MCPPromptResponseArray>(
+    [QueryKeys.prompts, 'mcp', 'all'],
+    async () => {
+      try {
+        return await dataService.allMCPPrompts();
+      } catch (error) {
+        console.error('Failed to fetch MCP prompts:', error);
+        throw error;
+      }
+    },
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: 1, // Maybe allow 1 retry instead of false
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      cacheTime: 10 * 60 * 1000, // 10 minutes
+      ...config,
+      enabled: config?.enabled !== undefined ? config.enabled : true,
+    },
+  );
+};
+
+export const useGetMCPPrompt = (
+  serverName: string,
+  config?: UseQueryOptions<t.MCPPromptResponse>,
+): QueryObserverResult<t.MCPPromptResponse> => {
+  console.log('useGetMCPPrompts called', serverName);
+  return useQuery<t.MCPPromptResponse>(
+    [QueryKeys.prompts, 'mcp', serverName],
+    () => dataService.getMCPPrompt(serverName),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+      enabled: config?.enabled !== undefined ? config.enabled : true,
+    },
+  );
+};
+
+export const useGetMCPPromptGroup = (
+  serverName: string,
+  config?: UseQueryOptions<t.TMCPPromptArgument>,
+): QueryObserverResult<t.TMCPPromptArgument> => {
+  console.log('useGetMCPPromptGroup called', serverName);
+  return useQuery<t.TMCPPromptArgument>(
+    [QueryKeys.prompts, 'mcpgroup', serverName],
+    () => dataService.getMCPPromptGroup(serverName),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+      enabled: config?.enabled !== undefined ? config.enabled : true,
+    },
+  );
+};

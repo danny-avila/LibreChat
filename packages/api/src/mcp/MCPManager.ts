@@ -20,6 +20,7 @@ import { processMCPEnv } from '~/utils/env';
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
+  public appConnections: ConnectionsRepository | null = null;
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -77,9 +78,14 @@ export class MCPManager extends UserConnectionManager {
     return this.serversRegistry.toolFunctions;
   }
 
+  /** Returns all available MCP prompts from app-level connections */
+  public getAppMCPPrompts(): t.LCAvailableMCPPrompts {
+    return this.serversRegistry.mcpPrompt;
+  }
+
   /** Returns all available tool functions from all connections available to user */
   public async getAllToolFunctions(userId: string): Promise<t.LCAvailableTools | null> {
-    const allToolFunctions: t.LCAvailableTools = this.getAppToolFunctions();
+    const allToolFunctions: t.LCAvailableTools = this.getAppToolFunctions() ?? {};
     const userConnections = this.getUserConnections(userId);
     if (!userConnections || userConnections.size === 0) {
       return allToolFunctions;

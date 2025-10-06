@@ -34,6 +34,7 @@ export class MCPServersRegistry {
   public oauthServers: Set<string> = new Set();
   public serverInstructions: Record<string, string> = {};
   public toolFunctions: t.LCAvailableTools = {};
+  public mcpPrompt: t.LCAvailableMCPPrompts = {};
   public appServerConfigs: t.MCPServers = {};
 
   constructor(configs: t.MCPServers) {
@@ -53,6 +54,9 @@ export class MCPServersRegistry {
     await Promise.allSettled(
       serverNames.map((serverName) => this.initializeServerWithTimeout(serverName)),
     );
+
+    // Ensure all connections are disconnected after initialization
+    //await Promise.allSettled(this.connections.disconnectAll());
   }
 
   /** Wraps server initialization with a timeout to prevent hanging */
@@ -85,24 +89,32 @@ export class MCPServersRegistry {
     const config = this.parsedConfigs[serverName];
 
     // 1. Detect OAuth requirements if not already specified
+    let serverCapabilityPrompts: t.LCAvailableMCPPrompts | null = null;
     try {
       await this.fetchOAuthRequirement(serverName);
 
       if (config.startup !== false && !config.requiresOAuth) {
-        await Promise.allSettled([
+        const results = await Promise.allSettled([
           this.fetchServerInstructions(serverName).catch((error) =>
             logger.warn(`${this.prefix(serverName)} Failed to fetch server instructions:`, error),
           ),
-          this.fetchServerCapabilities(serverName).catch((error) =>
-            logger.warn(`${this.prefix(serverName)} Failed to fetch server capabilities:`, error),
-          ),
+          this.fetchServerCapabilities(serverName).catch((error) => {
+            logger.warn(`${this.prefix(serverName)} Failed to fetch server capabilities:`, error);
+            return null;
+          }),
         ]);
+        
+        // Extract prompts from fetchServerCapabilities result
+        const capabilitiesResult = results[1];
+        if (capabilitiesResult.status === 'fulfilled') {
+          serverCapabilityPrompts = capabilitiesResult.value;
+        }
       }
     } catch (error) {
       logger.warn(`${this.prefix(serverName)} Failed to initialize server:`, error);
     }
 
-    // 2. Fetch tool functions for this server if a connection was established
+    // 2. Fetch tool functions and prompts for this server if a connection was established
     const getToolFunctions = async (): Promise<t.LCAvailableTools | null> => {
       try {
         const loadedConns = await this.connections.getLoaded();
@@ -117,6 +129,10 @@ export class MCPServersRegistry {
       }
     };
     const toolFunctions = await getToolFunctions();
+
+    // 2.1. Use prompts collected from fetchServerCapabilities
+    const mcpPrompts = serverCapabilityPrompts;
+    console.log(`[DEBUG][${serverName}] Using prompts from server capabilities:`, mcpPrompts);
 
     // 3. Disconnect this server's connection if it was established (fire-and-forget)
     void this.connections.disconnect(serverName);
@@ -137,6 +153,14 @@ export class MCPServersRegistry {
     // 4.4 Add tool functions if available
     if (toolFunctions != null) {
       Object.assign(this.toolFunctions, toolFunctions);
+    }
+    // 4.5 Add MCP prompts if available
+    if (mcpPrompts != null) {
+      console.log(`[DEBUG][${serverName}] Adding prompts to registry:`, Object.keys(mcpPrompts));
+      Object.assign(this.mcpPrompt, mcpPrompts);
+      console.log(`[DEBUG][${serverName}] Registry now has prompts:`, Object.keys(this.mcpPrompt));
+    } else {
+      console.log(`[DEBUG][${serverName}] No prompts to add (mcpPrompts is null)`);
     }
 
     const duration = Date.now() - start;
@@ -164,6 +188,27 @@ export class MCPServersRegistry {
     });
 
     return toolFunctions;
+  }
+
+  public async getMCPPrompt(
+    serverName: string,
+    conn: MCPConnection,
+  ): Promise<t.LCAvailableMCPPrompts> {
+    const { prompts }: t.MCPPromptListResponse = await conn.client.listPrompts();
+    console.log('Constants.mcp_delimiter', Constants.mcp_delimiter);
+    const mcpPromptList: t.LCAvailableMCPPrompts = {};
+    prompts.forEach((prompt) => {
+      const name = `${prompt.name}${Constants.mcp_delimiter}${serverName}`;
+      mcpPromptList[name] = {
+        name: prompt.name,
+        description: prompt.description || '',
+        arguments: Array.isArray(prompt.arguments) ? prompt.arguments : [],
+        mcpServerName: serverName,
+        promptKey: name,
+      };
+    });
+    console.log('mcpPromptList', mcpPromptList);
+    return mcpPromptList;
   }
 
   /** Determines if server requires OAuth if not already specified in the config */
@@ -197,16 +242,36 @@ export class MCPServersRegistry {
     }
   }
 
-  /** Fetches server capabilities and available tools list */
-  private async fetchServerCapabilities(serverName: string): Promise<void> {
+  /** Fetches server capabilities and available tools list, returns prompts for collection */
+  private async fetchServerCapabilities(
+    serverName: string,
+  ): Promise<t.LCAvailableMCPPrompts | null> {
     const config = this.parsedConfigs[serverName];
     const conn = await this.connections.get(serverName);
     const capabilities = conn.client.getServerCapabilities();
-    if (!capabilities) return;
+    if (!capabilities) return null;
     config.capabilities = JSON.stringify(capabilities);
-    if (!capabilities.tools) return;
-    const tools = await conn.client.listTools();
-    config.tools = tools.tools.map((tool) => tool.name).join(', ');
+    
+    // Fetch tools if supported
+    if (capabilities.tools) {
+      const tools = await conn.client.listTools();
+      config.tools = tools.tools.map((tool) => tool.name).join(', ');
+    }
+    
+    // Fetch and return prompts if supported
+    if (capabilities.prompts) {
+      const prompts = await conn.client.listPrompts();
+      config.mcp_prompts = prompts.prompts.map((prompt) => prompt.name).join(', ');
+      console.log(
+        `[DEBUG][${serverName}] Found ${prompts.prompts.length} prompts, converting to LibreChat format`,
+      );
+      console.log(`[DEBUG][${serverName}] EXECUTING NEW PROMPT COLLECTION LOGIC`);
+      const mcpPrompts = this.getMCPPrompt(serverName, conn);
+      console.log(`[DEBUG][${serverName}] Created MCP prompts:`, mcpPrompts);
+      return mcpPrompts;
+    }
+    
+    return null;
   }
 
   // Logs server configuration summary after initialization
@@ -218,6 +283,7 @@ export class MCPServersRegistry {
     logger.info(`${prefix} OAuth Required: ${config.requiresOAuth}`);
     logger.info(`${prefix} Capabilities: ${config.capabilities}`);
     logger.info(`${prefix} Tools: ${config.tools}`);
+    logger.info(`${prefix} Prompts: ${config.mcp_prompts}`);
     logger.info(`${prefix} Server Instructions: ${config.serverInstructions}`);
     logger.info(`${prefix} Initialized in: ${initDuration}ms`);
     logger.info(`${prefix} -------------------------------------------------┘`);

@@ -94,3 +94,4 @@ export const mapPromptGroups = (groups: TPromptGroup[]): Record<string, TPromptG
     {} as Record<string, TPromptGroup>,
   );
 };
+

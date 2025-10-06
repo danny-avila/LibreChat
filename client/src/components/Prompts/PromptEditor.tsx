@@ -23,11 +23,13 @@ const { promptsEditorMode } = store;
 
 type Props = {
   name: string;
+  mcp?: boolean;
   isEditing: boolean;
   setIsEditing: React.Dispatch<React.SetStateAction<boolean>>;
+  promptValue: string;
 };
 
-const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
+const PromptEditor: React.FC<Props> = ({ name, mcp, isEditing, promptValue, setIsEditing }) => {
   const localize = useLocalize();
   const { control } = useFormContext();
   const editorMode = useRecoilValue(promptsEditorMode);
@@ -63,20 +65,22 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
           {editorMode === PromptsEditorMode.ADVANCED && (
             <AlwaysMakeProd className="hidden sm:flex" />
           )}
-          <VariablesDropdown fieldName={name} />
-          <button
-            type="button"
-            onClick={() => setIsEditing((prev) => !prev)}
-            aria-label={isEditing ? localize('com_ui_save') : localize('com_ui_edit')}
-            className="mr-1 rounded-lg p-1.5 sm:mr-2 sm:p-1"
-          >
-            <EditorIcon
-              className={cn(
-                'h-5 w-5 sm:h-6 sm:w-6',
-                isEditing ? 'p-[0.05rem]' : 'text-secondary-alt hover:text-text-primary',
-              )}
-            />
-          </button>
+          {!mcp && <VariablesDropdown fieldName={name} />}
+          {!mcp && (
+            <button
+              type="button"
+              onClick={() => setIsEditing((prev) => !prev)}
+              aria-label={isEditing ? localize('com_ui_save') : localize('com_ui_edit')}
+              className="mr-1 rounded-lg p-1.5 sm:mr-2 sm:p-1"
+            >
+              <EditorIcon
+                className={cn(
+                  'h-5 w-5 sm:h-6 sm:w-6',
+                  isEditing ? 'p-[0.05rem]' : 'text-secondary-alt hover:text-text-primary',
+                )}
+              />
+            </button>
+          )}
         </div>
       </h2>
       <div
@@ -102,16 +106,20 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
         <Controller
           name={name}
           control={control}
-          render={({ field }) =>
-            isEditing ? (
+          render={({ field }) => {
+            const displayValue = field.value! !== '' ? field.value : promptValue;
+            return isEditing ? (
               <TextareaAutosize
                 {...field}
+                value={displayValue}
                 // eslint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus
                 className="w-full resize-none overflow-y-auto rounded bg-transparent text-sm text-text-primary focus:outline-none sm:text-base"
                 minRows={3}
                 maxRows={14}
-                onBlur={() => setIsEditing(false)}
+                onBlur={() => {
+                  setIsEditing(false);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
                     e.preventDefault();
@@ -137,11 +145,11 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
                   components={{ p: PromptVariableGfm, code: codeNoExecution }}
                   className="markdown prose dark:prose-invert light my-1 w-full break-words text-text-primary"
                 >
-                  {field.value}
+                  {displayValue}
                 </ReactMarkdown>
               </div>
-            )
-          }
+            );
+          }}
         />
       </div>
     </div>

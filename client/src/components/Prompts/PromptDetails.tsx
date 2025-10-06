@@ -7,7 +7,7 @@ import supersub from 'remark-supersub';
 import { Label } from '@librechat/client';
 import rehypeHighlight from 'rehype-highlight';
 import { replaceSpecialVars } from 'librechat-data-provider';
-import type { TPromptGroup } from 'librechat-data-provider';
+import type { TPromptGroup, TMCPPromptArgument } from 'librechat-data-provider';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import { useLocalize, useAuthContext } from '~/hooks';
 import CategoryIcon from './Groups/CategoryIcon';
@@ -16,30 +16,46 @@ import { PromptVariableGfm } from './Markdown';
 import Description from './Description';
 import Command from './Command';
 
-const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
+const PromptDetails = ({
+  group,
+  mcpPrompt,
+  mcp,
+}: {
+  group?: TPromptGroup;
+  mcpPrompt?: TMCPPromptArgument;
+  mcp?: boolean;
+}) => {
   const localize = useLocalize();
   const { user } = useAuthContext();
 
   const mainText = useMemo(() => {
-    const initialText = group?.productionPrompt?.prompt ?? '';
+    const initialText =
+      mcp == false || !mcp ? group?.productionPrompt?.prompt || '' : mcpPrompt?.description || '';
     return replaceSpecialVars({ text: initialText, user });
-  }, [group?.productionPrompt?.prompt, user]);
+  }, [group?.productionPrompt?.prompt, mcp, mcpPrompt?.description, user]);
 
-  if (!group) {
+  if (!group && !mcpPrompt) {
     return null;
   }
+
+  const renderIcon = () => {
+    if ((group?.category?.length ?? 0) > 0) {
+      return <CategoryIcon category={group?.category ?? ''} />;
+    }
+    if (mcpPrompt) {
+      <CategoryIcon category={'mcpServer'} />;
+    }
+    return null;
+  };
+  const serverName = mcpPrompt?.mcpServerName ?? mcpPrompt?.promptKey.split('_mcp_')[1];
 
   return (
     <div>
       <div className="flex flex-col items-center justify-between p-4 text-text-primary sm:flex-row">
         <div className="mb-1 flex flex-row items-center font-bold sm:text-xl md:mb-0 md:text-2xl">
           <div className="mb-1 flex items-center md:mb-0">
-            <div className="rounded pr-2">
-              {(group.category?.length ?? 0) > 0 ? (
-                <CategoryIcon category={group.category ?? ''} />
-              ) : null}
-            </div>
-            <Label className="text-2xl font-bold">{group.name}</Label>
+            <div className="rounded pr-2">{renderIcon()}</div>
+            <Label className="text-2xl font-bold">{group?.name}</Label>
           </div>
         </div>
       </div>
@@ -72,8 +88,11 @@ const PromptDetails = ({ group }: { group?: TPromptGroup }) => {
             </div>
           </div>
           <PromptVariables promptText={mainText} showInfo={false} />
-          <Description initialValue={group.oneliner} disabled={true} />
-          <Command initialValue={group.command} disabled={true} />
+          <Description
+            initialValue={group?.oneliner ?? `ON MCP Server: ${serverName}`}
+            disabled={true}
+          />
+          <Command initialValue={group?.command} disabled={true} />
         </div>
       </div>
     </div>

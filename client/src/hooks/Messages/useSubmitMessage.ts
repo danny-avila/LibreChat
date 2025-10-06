@@ -24,7 +24,7 @@ export default function useSubmitMessage() {
   const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
 
   const submitMessage = useCallback(
-    (data?: { text: string }) => {
+    (data?: { text: string; mcp?: boolean }) => {
       if (!data) {
         return console.warn('No data provided to submitMessage');
       }
@@ -80,10 +80,10 @@ export default function useSubmitMessage() {
   );
 
   const submitPrompt = useCallback(
-    (text: string) => {
+    (text: string, mcp?: boolean) => {
       const parsedText = replaceSpecialVars({ text, user });
       if (autoSendPrompts) {
-        submitMessage({ text: parsedText });
+        submitMessage({ text: parsedText, mcp: mcp });
         return;
       }
 
