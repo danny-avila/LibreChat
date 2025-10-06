@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
 import { AutoSizer, List } from 'react-virtualized';
 import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+
 import type {
   TPromptGroup,
   MCPPromptResponseArray,
@@ -26,12 +26,16 @@ const PopoverContainer = memo(
     children,
     isVariableDialogOpen,
     variableGroup,
+    mcpPrompt,
+    isMcpPrompt,
     setVariableDialogOpen,
   }: {
     index: number;
     children: React.ReactNode;
     isVariableDialogOpen: boolean;
     variableGroup: TPromptGroup | null;
+    mcpPrompt: MCPPromptResponse | null;
+    isMcpPrompt: boolean;
     setVariableDialogOpen: (isOpen: boolean) => void;
   }) => {
     const showPromptsPopover = useRecoilValue(store.showPromptsPopoverFamily(index));
@@ -42,6 +46,8 @@ const PopoverContainer = memo(
           open={isVariableDialogOpen}
           onClose={() => setVariableDialogOpen(false)}
           group={variableGroup}
+          mcpPrompt={mcpPrompt}
+          mcp={isMcpPrompt}
         />
       </>
     );
@@ -62,7 +68,7 @@ function PromptsCommand({
   const localize = useLocalize();
   const { allPromptGroups, hasAccess } = usePromptGroupsContext();
   const { data, isLoading } = allPromptGroups;
-// Get MCP prompts directly here
+  // Get MCP prompts directly here
   const { data: mcpPromptsData, isLoading: mcpIsLoading } = useGetAllMCPPrompts({
     select: (data: MCPPromptResponseArray): MCPPromptResponse[] => {
       if (!data || typeof data !== 'object') {
@@ -85,15 +91,24 @@ function PromptsCommand({
     },
   });
 
+  console.log('MCP Prompts Data:', mcpPromptsData);
+  console.log('Regular prompts data:', data);
+  console.log('Has access to prompts:', hasAccess);
+  console.log('MCP loading:', mcpIsLoading);
+  console.log('Regular loading:', isLoading);
+
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isVariableDialogOpen, setVariableDialogOpen] = useState(false);
   const [variableGroup, setVariableGroup] = useState<TPromptGroup | null>(null);
+  const [mcpPrompt, setMcpPrompt] = useState<MCPPromptResponse | null>(null);
+  const [isMcpPrompt, setIsMcpPrompt] = useState(false);
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
 
   const prompts = useMemo(() => {
-    const regularPrompts = data?.promptGroups || [];
+    // Only include regular prompts if user has access
+    const regularPrompts = hasAccess ? data?.promptGroups || [] : [];
 
     // Convert MCP prompts to PromptOption format
     const mcpPromptOptions: PromptOption[] = (mcpPromptsData || []).map((mcpPrompt) => ({
@@ -105,13 +120,16 @@ function PromptsCommand({
       icon: <CategoryIcon category="mcpServer" className="h-5 w-5" />,
       mcpData: mcpPrompt,
     }));
-
+    console.log('mcpPromptOptions:', mcpPromptOptions);
     return [...regularPrompts, ...mcpPromptOptions];
-  }, [data?.promptGroups, mcpPromptsData]);
+  }, [hasAccess, data?.promptGroups, mcpPromptsData]);
+
+  console.log('Combined Prompts:', prompts);
 
   // Create promptsMap including MCP prompts
   const promptsMap = useMemo(() => {
-    const regularMap = data?.promptsMap || {};
+    // Only include regular prompts map if user has access
+    const regularMap = hasAccess ? data?.promptsMap || {} : {};
 
     // Add MCP prompts to the map
     const mcpMap: Record<string, any> = {};
@@ -128,8 +146,8 @@ function PromptsCommand({
     });
 
     return { ...regularMap, ...mcpMap };
-  }, [data?.promptsMap, mcpPromptsData]);
-
+  }, [hasAccess, data?.promptsMap, mcpPromptsData]);
+  console.log('Combined Prompts Map:', promptsMap);
   // Use combined loading state
   const isAnyLoading = isLoading || mcpIsLoading;
 
@@ -158,8 +176,22 @@ function PromptsCommand({
       }
 
       if (group.mcpData) {
-        submitPrompt(group.mcpData.description || group.mcpData.name);
-        return;
+        const mcpPromptData = group.mcpData;
+        const hasVariables = detectVariables(mcpPromptData.description ?? '');
+        
+        if (hasVariables) {
+          if (e && e.key === 'Tab') {
+            e.preventDefault();
+          }
+          setMcpPrompt(mcpPromptData);
+          setIsMcpPrompt(true);
+          setVariableGroup(group); // Pass the group which contains the mcpData
+          setVariableDialogOpen(true);
+          return;
+        } else {
+          submitPrompt(mcpPromptData.description || mcpPromptData.name);
+          return;
+        }
       }
 
       const hasVariables = detectVariables(group.productionPrompt?.prompt ?? '');
@@ -167,6 +199,8 @@ function PromptsCommand({
         if (e && e.key === 'Tab') {
           e.preventDefault();
         }
+        setMcpPrompt(null);
+        setIsMcpPrompt(false);
         setVariableGroup(group);
         setVariableDialogOpen(true);
         return;
@@ -182,6 +216,8 @@ function PromptsCommand({
       setActiveIndex(0);
     } else {
       setVariableGroup(null);
+      setMcpPrompt(null);
+      setIsMcpPrompt(false);
     }
   }, [open]);
 
@@ -198,7 +234,9 @@ function PromptsCommand({
     currentActiveItem?.scrollIntoView({ behavior: 'instant', block: 'nearest' });
   }, [activeIndex]);
 
-  if (!hasAccess) {
+  // Show component if user has access to regular prompts OR if there are MCP prompts available
+  const hasMCPPrompts = mcpPromptsData && mcpPromptsData.length > 0;
+  if (!hasAccess && !hasMCPPrompts) {
     return null;
   }
 
@@ -238,6 +276,8 @@ function PromptsCommand({
       index={index}
       isVariableDialogOpen={isVariableDialogOpen}
       variableGroup={variableGroup}
+      mcpPrompt={mcpPrompt}
+      isMcpPrompt={isMcpPrompt}
       setVariableDialogOpen={setVariableDialogOpen}
     >
       <div className="absolute bottom-28 z-10 w-full space-y-2">
@@ -283,7 +323,7 @@ function PromptsCommand({
           />
           <div className="max-h-40 overflow-y-auto">
             {(() => {
-              if (isLoading && open) {
+              if (isAnyLoading && open) {
                 return (
                   <div className="flex h-32 items-center justify-center text-text-primary">
                     <Spinner />
@@ -291,7 +331,7 @@ function PromptsCommand({
                 );
               }
 
-              if (!isLoading && open) {
+              if (!isAnyLoading && open) {
                 return (
                   <div className="max-h-40">
                     <AutoSizer disableHeight>

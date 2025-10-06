@@ -535,7 +535,7 @@ export const useGetAllMCPPrompts = (
 ): QueryObserverResult<t.MCPPromptResponseArray> => {
   console.log('useGetAllMCPPrompts called', config);
   return useQuery<t.MCPPromptResponseArray>(
-    [QueryKeys.prompts, 'mcp', 'all'], // More specific key
+    [QueryKeys.prompts, 'mcp', 'all'],
     async () => {
       try {
         return await dataService.allMCPPrompts();

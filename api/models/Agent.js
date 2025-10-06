@@ -11,7 +11,7 @@ const {
   getProjectByName,
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
-const { getMCPServerTools, getCachedTools, getCachedPrompts } = require('~/server/services/Config');
+const { getMCPServerTools, getCachedPrompts } = require('~/server/services/Config');
 const { getActions } = require('./Action');
 const { Agent } = require('~/db/models');
 
@@ -69,8 +69,6 @@ const getAgents = async (searchParameter) => await Agent.find(searchParameter).l
  */
 const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _m }) => {
   const { model, ...model_parameters } = _m;
-  /** @type {Record<string, FunctionTool>} */
-  const availableTools = await getCachedTools({ userId: req.user.id, includeGlobal: true });
   const availablePrompts = await getCachedPrompts({ userId: req.user.id, includeGlobal: true });
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;

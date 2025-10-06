@@ -17,11 +17,7 @@ const { getMCPTools } = require('~/server/controllers/mcp');
 const { requireJwtAuth } = require('~/server/middleware');
 const { findPluginAuthsByKeys } = require('~/models');
 const { getLogStores } = require('~/cache');
-const {
-  getCachedPrompts,
-  setCachedPrompts,
-  invalidateCachedPrompts,
-} = require('~/server/services/Config');
+const { getCachedPrompts, invalidateCachedPrompts } = require('~/server/services/Config');
 
 const router = Router();
 
@@ -551,35 +547,31 @@ router.get('/prompts/:serverName', requireJwtAuth, async (req, res) => {
   try {
     const { serverName } = req.params;
     const user = req.user;
-    console.log("user promptslist", user);
+    logger.debug('Server prompts request for user:', user?.id, 'server:', serverName);
+
     if (!user?.id) {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    // Try to get from cache first
-    const cachedPrompts = await getCachedPrompts({
+    // Get all prompts using cached system with auto-fetch
+    const allPrompts = await getCachedPrompts({
       userId: user.id,
-      serverName,
+      includeGlobal: true, // Enable global prompts and auto-fetch
     });
 
-    if (cachedPrompts) {
-      return res.json(cachedPrompts);
+    // Filter prompts for this server only
+    const serverPrompts = {};
+    if (allPrompts) {
+      for (const [key, prompt] of Object.entries(allPrompts)) {
+        if (prompt.mcpServerName === serverName) {
+          serverPrompts[key] = prompt;
+        }
+      }
     }
 
-    // Cache miss - fetch only for this server
-    const mcpManager = getMCPManager(user.id);
-    console.log("mcpManager", mcpManager);
+    logger.debug('Filtered prompts for server:', serverName, Object.keys(serverPrompts).length);
 
-    // Use connection to fetch server-specific prompts
-    // ... your code to fetch prompts for this server ...
-
-    // Cache the results
-    let mcpPrompts = await setCachedPrompts(mcpManager, {
-      userId: user.id,
-      serverName,
-    });
-
-    res.json(mcpPrompts);
+    res.json(serverPrompts);
   } catch (error) {
     logger.error('[MCP] Server prompts error', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -588,95 +580,23 @@ router.get('/prompts/:serverName', requireJwtAuth, async (req, res) => {
 
 router.get('/mcp-prompts', requireJwtAuth, async (req, res) => {
   try {
-    logger.debug("MCP prompts request", req.user?.id);
     const user = req.user;
+    logger.debug('MCP prompts request for user:', user?.id);
 
     if (!user?.id) {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    // Try cache first (with error handling)
-    try {
-      const cachedPrompts = await getCachedPrompts({
-        userId: user.id,
-      });
-      //logger.debug("cachedPrompts", cachedPrompts);
-      if (cachedPrompts && Object.keys(cachedPrompts).length > 0) {
-        return res.json(cachedPrompts);
-      }
-    } catch (cacheError) {
-      logger.warn("Failed to read from cache:", cacheError);
-    }
-
-    // Get MCP Manager safely
-    const mcpManager = await getMCPManager(user.id);
-    if (!mcpManager) {
-      logger.debug("No MCP manager or connections available", mcpManager);
-      return res.json({});
-    }
-
-    let availablePrompts = {};
-
-    // Process connections safely
-    const connectionPromises = Array.from(mcpManager).map(async ([key, connection]) => {
-      // logger.debug("key", key, ": connection", connection);
-      try {
-        logger.debug(`Processing connection: ${key}`);
-
-        if (!connection || typeof connection.fetchPrompts !== 'function') {
-          logger.warn(`Invalid connection for ${key}`);
-          return;
-        }
-
-        const mcpPrompts = await connection.fetchPrompts(key);
-
-        if (!Array.isArray(mcpPrompts)) {
-          logger.warn(`No prompts returned from ${key}`);
-          return;
-        }
-
-        // Process prompts for this connection
-        for (const prompt of mcpPrompts) {
-          if (!prompt || !prompt.name) {
-            logger.warn(`Invalid prompt from ${key}:`, prompt);
-            continue;
-          }
-
-          const name = `${key}:${prompt.name}`;
-          availablePrompts[name] = {
-            name: prompt.name,
-            mcpServerName: key,
-            description: prompt.description || '',
-            arguments: Array.isArray(prompt.arguments) ? prompt.arguments : [],
-            promptKey: name,
-          };
-        }
-      } catch (connectionError) {
-        logger.error(`Error fetching prompts from ${key}:`, connectionError);
-        // Don't throw - just log and continue with other connections
-      }
+    // Get global MCP prompts (cached during server startup)
+    // Don't pass userId to ensure we get the global prompts path
+    const cachedPrompts = await getCachedPrompts({
+      includeGlobal: true, // Enable global prompts and auto-fetch
     });
-
-    // Wait for all connections (with timeout)
-    try {
-      await Promise.all(connectionPromises);
-    } catch (promiseError) {
-      // Continue anyway - we might have some prompts
-    }
-
-    // Cache the results (don't fail request if caching fails)
-    try {
-      await setCachedPrompts(availablePrompts, {
-        userId: user.id,
-      });
-      logger.debug("Cached new prompts for user", user.id);
-    } catch (cacheError) {
-      logger.warn("Failed to cache prompts:", cacheError);
-    }
-
-    res.json(availablePrompts);
+    logger.debug('Retrieved MCP prompts:', cachedPrompts ? Object.keys(cachedPrompts).length : 0);
+    // Return the prompts (empty object if none found)
+    res.json(cachedPrompts || {});
   } catch (error) {
-    logger.error(`[MCP Get Prompts] Fatal error:`, error);
+    logger.error('[MCP Get Prompts] Fatal error:', error);
     res.status(500).json({ error: 'Failed to fetch MCP prompts' });
   }
 });

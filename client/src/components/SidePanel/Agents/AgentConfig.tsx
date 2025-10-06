@@ -18,14 +18,13 @@ import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
 import { useGetAgentFiles, useGetAllMCPPrompts } from '~/data-provider';
-import { useLocalize, useVisibleTools } from '~/hooks';
-import { Panel, isEphemeralAgent } from '~/common';
+import { useLocalize, useVisibleTools, useCustomLink } from '~/hooks';
+import { Panel } from '~/common';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
 import SearchForm from './Search/Form';
-import { useLocalize, useVisibleTools, useCustomLink } from '~/hooks';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
@@ -79,14 +78,17 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   }, [setPromptsName, setPromptsCategory]);
   const customLink = useCustomLink('/d/prompts/?agentAdd=true', clickCallback);
   const clickHandler = (e: React.MouseEvent<HTMLButtonElement>) => {
-    localStorage.setItem('agent-mcpPrompts', currentMCPPrompts ? JSON.stringify(currentMCPPrompts) : '');
+    localStorage.setItem(
+      'agent-mcpPrompts',
+      currentMCPPrompts ? JSON.stringify(currentMCPPrompts) : '',
+    );
     customLink(e as unknown as React.MouseEvent<HTMLAnchorElement>);
   };
 
   const { data: agentFiles = [] } = useGetAgentFiles(agent_id);
 
   const { data: mcpPrompts = [] } = useGetAllMCPPrompts();
-  let currentMCPPrompts: string[] = [];
+  const currentMCPPrompts: string[] = [];
 
   const mergedFileMap = useMemo(() => {
     const newFileMap = { ...fileMap };
@@ -169,7 +171,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   }, [agent, agent_id, mergedFileMap]);
 
   const handleAddActions = useCallback(() => {
-    if (isEphemeralAgent(agent_id)) {
+    if (!agent_id) {
       showToast({
         message: localize('com_assistants_actions_disabled'),
         status: 'warning',
@@ -197,19 +199,6 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
     Icon = icons[iconKey];
   }
 
-  const { toolIds, mcpServerNames } = useVisibleTools(tools, allTools, mcpServersMap);
-  const selectedToolIds = tools ?? [];
-  const visibleToolIds = new Set(selectedToolIds);
-
-  // Check what group parent tools should be shown if any subtool is present
-  Object.entries(allTools ?? {}).forEach(([toolId, toolObj]) => {
-    if (toolObj.tools?.length) {
-      // if any subtool of this group is selected, ensure group parent tool rendered
-      if (toolObj.tools.some((st) => selectedToolIds.includes(st.tool_id))) {
-        visibleToolIds.add(toolId);
-      }
-    }
-  });
   const savedPrompts = localStorage.getItem('agent-prompts');
   const selectedPromptIds = mcp_prompts ?? [];
   const visiblePromptIds = new Set(selectedPromptIds);
@@ -458,7 +447,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
               {(actionsEnabled ?? false) && (
                 <button
                   type="button"
-                  disabled={isEphemeralAgent(agent_id)}
+                  disabled={!agent_id}
                   onClick={handleAddActions}
                   className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
                   aria-haspopup="dialog"

@@ -3,6 +3,7 @@ import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
+import { useGetAllMCPPrompts } from '~/data-provider';
 import store from '~/store';
 
 /** Event Keys that shouldn't trigger a command */
@@ -54,6 +55,11 @@ const useHandleKeyUp = ({
     permissionType: PermissionTypes.MULTI_CONVO,
     permission: Permissions.USE,
   });
+  
+  // Check for MCP prompts availability
+  const { data: mcpPromptsData } = useGetAllMCPPrompts();
+  const hasMCPPrompts = mcpPromptsData && Object.keys(mcpPromptsData).length > 0;
+  
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
 
@@ -78,13 +84,14 @@ const useHandleKeyUp = ({
   }, [textAreaRef, setShowPlusPopover, plusCommandEnabled, hasMultiConvoAccess]);
 
   const handlePromptsCommand = useCallback(() => {
-    if (!hasPromptsAccess || !slashCommandEnabled) {
+    // Allow prompts command if user has regular prompts access OR if there are MCP prompts available
+    if ((!hasPromptsAccess && !hasMCPPrompts) || !slashCommandEnabled) {
       return;
     }
     if (shouldTriggerCommand(textAreaRef, '/')) {
       setShowPromptsPopover(true);
     }
-  }, [textAreaRef, hasPromptsAccess, setShowPromptsPopover, slashCommandEnabled]);
+  }, [textAreaRef, hasPromptsAccess, hasMCPPrompts, setShowPromptsPopover, slashCommandEnabled]);
 
   const commandHandlers = useMemo(
     () => ({

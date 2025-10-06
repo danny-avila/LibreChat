@@ -7,7 +7,6 @@ import {
   useGetActionsQuery,
   useGetAllMCPPrompts,
   useGetStartupConfig,
-  useGetStartupConfig,
   useMCPToolsQuery,
 } from '~/data-provider';
 import { useLocalize, useGetAgentsConfig, useMCPConnectionStatus } from '~/hooks';
@@ -55,12 +54,10 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
       arguments: p.arguments,
       mcpServerName: p.mcpServerName,
       promptKey: p.name + '_mcp_' + p.mcpServerName,
-      description: p.description,
+      description: p.description ?? '',
     };
   });
 
-
-  const { data: startupConfig } = useGetStartupConfig();
   const { data: mcpData } = useMCPToolsQuery({
     enabled: !isEphemeralAgent(agent_id) && startupConfig?.mcpServers != null,
   });

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, ReactNode, useMemo } from 'react';
+import React, { createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
 import type { TMCPPromptArgument, MCPPromptResponse } from 'librechat-data-provider';
 import { dataService } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
@@ -9,13 +9,16 @@ const fetchMCPPrompts = async (): Promise<MCPPromptResponse[]> => {
   try {
     // Use LibreChat's existing dataService pattern
     const response = await dataService.allMCPPrompts();
-    const mappedArray: PromptOption[] = response.map((prompt) => ({
+    const mappedArray: MCPPromptResponse[] = response.map((prompt) => ({
       id: prompt.name ?? '',
       name: prompt.name ?? '',
       type: 'mcpPrompt',
       value: prompt.name,
       label: `On MCP Server: ${prompt?.mcpServerName || prompt.promptKey.split('_mcp_')[1]}`,
       icon: <CategoryIcon category={'mcpServer'} className="h-5 w-5" />,
+      description: prompt.description ?? '',
+      mcpServerName: prompt.mcpServerName ?? '',
+      promptKey: prompt.promptKey ?? '',
     }));
 
     return mappedArray || [];
@@ -45,15 +48,39 @@ const MCPPromptGroupsContext = createContext<MCPPromptGroupsContextType>(null);
 
 export const MCPPromptGroupsProvider = ({ children }: { children: ReactNode }) => {
   const mcpPromptGroupsNav = usePromptGroupsNav();
-  const mcpMappedArray = fetchMCPPrompts();
+  const [data, setData] = useState<AllMCPPromptGroupsData>(undefined);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    fetchMCPPrompts()
+      .then((prompts) => {
+        if (isMounted) {
+          setData(prompts as unknown as AllMCPPromptGroupsData);
+          setIsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setData(undefined);
+          setIsLoading(false);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const contextValue = useMemo(
     () => ({
       ...mcpPromptGroupsNav,
       allMCPPromptGroups: {
-        data: mcpMappedArray,
+        data,
+        isLoading,
       },
     }),
-    [mcpPromptGroupsNav, mcpMappedArray],
+    [mcpPromptGroupsNav, data, isLoading],
   );
 
   return (

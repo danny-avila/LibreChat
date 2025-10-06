@@ -168,6 +168,7 @@ export default function AgentPanel() {
         model_parameters,
         provider: _provider,
         agent_ids,
+        mcp_prompts,
         end_after_tools,
         hide_sequential_outputs,
         recursion_limit,

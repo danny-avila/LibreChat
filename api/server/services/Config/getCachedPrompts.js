@@ -1,5 +1,6 @@
 const { CacheKeys } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
+const { getMCPManager } = require('~/config');
 
 /**
  * Cache key generators for different tool access patterns
@@ -25,7 +26,6 @@ const PromptCacheKeys = {
  * @throws {Error} If an error occurs while fetching prompts*
  */
 async function getMCPPrompts(mcpManager) {
-
   let availablePrompts = {};
   const connectionPromises = Array.from(mcpManager.connection).map(async ([key, connection]) => {
     let serverName = key;
@@ -48,8 +48,7 @@ async function getMCPPrompts(mcpManager) {
     } catch (error) {
       console.warn(`[MCP][${serverName}] Error fetching prompts`, error);
     }
-  },
-);
+  });
 
   // Wait for all connection processing to complete
   await Promise.all(connectionPromises);
@@ -68,40 +67,53 @@ async function getServerMCPPrompt(mcpManager, searchName, promptName) {
   let availablePrompts = {};
   try {
     let cachedPrompts = await getCachedPrompts({ includeGlobal: true });
-    console.log("cachedPrompts server", cachedPrompts);
-    if (!cachedPrompts) {
+    console.log('cachedPrompts server', cachedPrompts);
+
+    if (!cachedPrompts || !cachedPrompts[searchName]) {
       const searchSplit = searchName.split('_mcp_');
+      if (searchSplit.length !== 2) {
+        console.warn(`[MCP] Invalid search name format: ${searchName}`);
+        return null;
+      }
+
+      const promptNameFromSearch = searchSplit[0];
       const serverName = searchSplit[1];
       const connection = mcpManager.connections.get(serverName);
 
       if (!connection) {
-        console.warn(`[MCP] No connection found for server: ${searchName}`);
-        return {}; // Or however you want to handle missing connections
+        console.warn(`[MCP] No connection found for server: ${serverName}`);
+        return null;
       }
-      console.log(`Fetching prompts for: ${searchName}`);
-      const mcpPrompts = await connection.fetchPrompts(searchSplit[0]);
 
-      // Since we only need one connection, we don't need to create an array of promises
+      console.log(`Fetching prompts for server: ${serverName}`);
+      const mcpPrompts = await connection.fetchPrompts();
+
       // Find the specific prompt by name
-      const targetPrompt = mcpPrompts.find((prompt) => prompt.name === searchSplit[0]);
+      const targetPrompt = mcpPrompts.find((prompt) => prompt.name === promptNameFromSearch);
 
       if (!targetPrompt) {
-        console.log(`Prompt "${promptName}" not found on server "${searchName}"`);
+        console.log(`Prompt "${promptNameFromSearch}" not found on server "${serverName}"`);
         return null;
       }
 
       // Create the entry for just this one prompt
-      const name = `${targetPrompt.name}:${serverName}`;
-      availablePrompts[name] = {
+      const promptKey = `${promptNameFromSearch}_mcp_${serverName}`;
+      availablePrompts[promptKey] = {
         name: targetPrompt.name,
         mcpServerName: serverName,
         description: targetPrompt.description || '',
         arguments: Array.isArray(targetPrompt.arguments) ? targetPrompt.arguments : [],
-        promptKey: name,
+        promptKey: promptKey,
       };
-      return availablePrompts[name];
+      return availablePrompts[promptKey];
     } else {
+      // Use cached prompt
       const promptValues = cachedPrompts[searchName];
+      if (!promptValues) {
+        console.log(`Cached prompt "${searchName}" not found`);
+        return null;
+      }
+
       const serverName = searchName.split('_mcp_')[1];
 
       availablePrompts[searchName] = {
@@ -120,73 +132,135 @@ async function getServerMCPPrompt(mcpManager, searchName, promptName) {
 }
 
 /**
- * Retrieves available tools from cache
+ * Fetches prompts from MCP servers and caches them
+ * @function fetchAndCachePrompts
+ * @param {Object} options - Options for fetching prompts
+ * @returns {Promise<Object|null>} The fetched and cached prompts
+ */
+async function fetchAndCachePrompts() {
+  try {
+    // Use the existing MCP manager to get prompts
+    const mcpManager = getMCPManager();
+    if (!mcpManager) {
+      console.log('No MCP manager available');
+      return null;
+    }
+
+    const mcpPrompts = mcpManager.getAppMCPPrompts() || {};
+    if (Object.keys(mcpPrompts).length === 0) {
+      console.log('No MCP prompts available from MCP manager');
+      return null;
+    }
+
+    // Cache the prompts globally using the same method as initialization
+    await setCachedPrompts(mcpPrompts, { isGlobal: true });
+    console.log('Cached', Object.keys(mcpPrompts).length, 'prompts from MCP servers');
+
+    return mcpPrompts;
+  } catch (error) {
+    console.error('Error fetching and caching prompts:', error);
+    return null;
+  }
+}
+
+/**
+ * Retrieves available prompts from cache, fetching from MCP servers if not cached
  * @function getCachedPrompts
- * @param {Object} options - Options for retrieving tools
- * @param {string} [options.userId] - User ID for user-specific tools
- * @param {string[]} [options.roleIds] - Role IDs for role-based tools
- * @param {string[]} [options.groupIds] - Group IDs for group-based tools
- * @param {boolean} [options.includeGlobal=true] - Whether to include global tools
- * @returns {Promise<Object|null>} The available tools object or null if not cached
+ * @param {Object} options - Options for retrieving prompts
+ * @param {string} [options.userId] - User ID for user-specific prompts
+ * @param {string[]} [options.roleIds] - Role IDs for role-based prompts
+ * @param {string[]} [options.groupIds] - Group IDs for group-based prompts
+ * @param {boolean} [options.includeGlobal=true] - Whether to include global prompts
+ * @param {boolean} [options.skipAutoFetch=false] - Whether to skip automatic fetching if not cached
+ * @returns {Promise<Object|null>} The available prompts object or null if not cached
  */
 async function getCachedPrompts(options = {}) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  const { userId, roleIds = [], groupIds = [], includeGlobal = true } = options;
+  const {
+    userId,
+    roleIds = [],
+    groupIds = [],
+    includeGlobal = true,
+    skipAutoFetch = false,
+  } = options;
 
-  // For now, return global prompts (current behavior)
-  // This will be expanded to merge prompts from different sources
-  if (!userId && includeGlobal) {
-    return await cache.get(PromptCacheKeys.GLOBAL);
+  try {
+    // For now, return global prompts (current behavior)
+    // This will be expanded to merge prompts from different sources
+    if (!userId && includeGlobal) {
+      let globalPrompts = await cache.get(PromptCacheKeys.GLOBAL);
+
+      // If no cached prompts and auto-fetch is enabled, try to fetch from MCP servers
+      if (!globalPrompts && !skipAutoFetch) {
+        console.log('No cached global prompts found, attempting to fetch from MCP servers...');
+        globalPrompts = await fetchAndCachePrompts();
+      }
+
+      return globalPrompts;
+    }
+
+    // Future implementation will merge prompts from multiple sources
+    // based on user permissions, roles, and groups
+    if (userId) {
+      // Check if we have pre-computed effective prompts for this user
+      const effectivePrompts = await cache.get(PromptCacheKeys.EFFECTIVE(userId));
+      if (effectivePrompts) {
+        return effectivePrompts;
+      }
+
+      // Otherwise, compute from individual sources
+      const promptSources = [];
+
+      if (includeGlobal) {
+        let globalPrompts = await cache.get(PromptCacheKeys.GLOBAL);
+
+        // If no cached global prompts and auto-fetch is enabled, try to fetch from MCP servers
+        if (!globalPrompts && !skipAutoFetch) {
+          console.log('No cached global prompts found, attempting to fetch from MCP servers...');
+          globalPrompts = await fetchAndCachePrompts();
+        }
+
+        if (globalPrompts && Object.keys(globalPrompts).length > 0) {
+          promptSources.push(globalPrompts);
+        }
+      }
+
+      // User-specific prompts
+      const userPrompts = await cache.get(PromptCacheKeys.USER(userId));
+      if (userPrompts && Object.keys(userPrompts).length > 0) {
+        promptSources.push(userPrompts);
+        console.log('Added user prompts to sources:', Object.keys(userPrompts).length, 'prompts');
+      }
+
+      // Role-based prompts
+      for (const roleId of roleIds) {
+        const rolePrompts = await cache.get(PromptCacheKeys.ROLE(roleId));
+        if (rolePrompts && Object.keys(rolePrompts).length > 0) {
+          promptSources.push(rolePrompts);
+        }
+      }
+
+      // Group-based prompts
+      for (const groupId of groupIds) {
+        const groupPrompts = await cache.get(PromptCacheKeys.GROUP(groupId));
+        if (groupPrompts && Object.keys(groupPrompts).length > 0) {
+          promptSources.push(groupPrompts);
+        }
+      }
+
+      // Merge all prompt sources (for now, simple merge - future will handle conflicts)
+      if (promptSources.length > 0) {
+        const mergedPrompts = mergePromptSources(promptSources);
+        return mergedPrompts;
+      }
+    }
+
+    console.log('No cached prompts found for options:', options);
+    return null;
+  } catch (error) {
+    console.error('Error retrieving cached prompts:', error);
+    return null;
   }
-
-  // Future implementation will merge prompts from multiple sources
-  // based on user permissions, roles, and groups
-  if (userId) {
-    // Check if we have pre-computed effective tools for this user
-    const effectivePrompts = await cache.get(PromptCacheKeys.EFFECTIVE(userId));
-    if (effectivePrompts) {
-      return effectivePrompts;
-    }
-
-    // Otherwise, compute from individual sources
-    const promptSources = [];
-
-    if (includeGlobal) {
-      const globalPrompts = await cache.get(PromptCacheKeys.GLOBAL);
-      if (globalPrompts) {
-        promptSources.push(globalPrompts);
-      }
-    }
-
-    // User-specific prompts
-    const userPrompts = await cache.get(PromptCacheKeys.USER(userId));
-    if (userPrompts) {
-      promptSources.push(userPrompts);
-    }
-
-    // Role-based prompts
-    for (const roleId of roleIds) {
-      const rolePrompts = await cache.get(PromptCacheKeys.ROLE(roleId));
-      if (rolePrompts) {
-        promptSources.push(rolePrompts);
-      }
-    }
-
-    // Group-based prompts
-    for (const groupId of groupIds) {
-      const groupPrompts = await cache.get(PromptCacheKeys.GROUP(groupId));
-      if (groupPrompts) {
-        promptSources.push(groupPrompts);
-      }
-    }
-
-    // Merge all tool sources (for now, simple merge - future will handle conflicts)
-    if (promptSources.length > 0) {
-      return mergePromptSources(promptSources);
-    }
-  }
-
-  return null;
 }
 
 /**
@@ -202,7 +276,7 @@ async function getCachedPrompts(options = {}) {
  * @returns {Promise<boolean>} Whether the operation was successful
  */
 async function setCachedPrompts(prompts, options = {}) {
-  console.log("set cached prompts", prompts, options);
+  console.log('set cached prompts', prompts, options);
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const { userId, roleId, groupId, isGlobal = true, ttl } = options;
 
@@ -276,9 +350,10 @@ async function mergeAppPrompts(appPrompts) {
     if (!count) {
       return;
     }
-    const cachedPrompts = await getCachedPrompts({ includeGlobal: true });
-    const mergdPrompts = { ...cachedPrompts, ...appPrompts };
-    await setCachedPrompts(mergdPrompts, { isGlobal: true });
+    const cachedPrompts = await getCachedPrompts({ includeGlobal: true, skipAutoFetch: true });
+    console.log('cachedPrompts', cachedPrompts);
+    const mergedPrompts = { ...cachedPrompts, ...appPrompts };
+    await setCachedPrompts(mergedPrompts, { isGlobal: true });
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     await cache.delete(CacheKeys.MCP_PROMPTS);
     console.log(`Merged ${count} app-level prompts`);
@@ -325,22 +400,29 @@ async function computeEffectivePrompts(userId, context = {}, ttl) {
  * @returns {Object} Merged tools object
  */
 function mergePromptSources(sources) {
-  // For now, simple merge that combines all tools
+  // For now, simple merge that combines all prompts
   // Future implementation will handle:
   // - Permission precedence (deny > allow)
-  // - Tool property conflicts
+  // - Prompt property conflicts
   // - Metadata merging
   const merged = {};
+
+  if (!Array.isArray(sources)) {
+    console.warn('mergePromptSources: sources is not an array');
+    return merged;
+  }
 
   for (const source of sources) {
     if (!source || typeof source !== 'object') {
       continue;
     }
 
-    for (const [toolId, toolConfig] of Object.entries(source)) {
-      // Simple last-write-wins for now
-      // Future: merge based on permission levels
-      merged[toolId] = toolConfig;
+    for (const [promptId, promptConfig] of Object.entries(source)) {
+      if (promptConfig && typeof promptConfig === 'object') {
+        // Simple last-write-wins for now
+        // Future: merge based on permission levels
+        merged[promptId] = promptConfig;
+      }
     }
   }
 
@@ -395,7 +477,7 @@ const MCPCacheKeys = {
  * @returns {Promise<Object|null>} The cached MCP prompts or null if not found
  */
 async function getCachedMCPPrompts(options = {}) {
-  console.log("get cached prompts", options);
+  console.log('get cached prompts', options);
   const { userId, serverName, promptName } = options;
   if (!userId) {
     throw new Error('User ID is required for MCP prompts caching');
@@ -500,4 +582,5 @@ module.exports = {
   getCachedMCPPrompts,
   setCachedMCPPrompts,
   mergeAppPrompts,
+  fetchAndCachePrompts,
 };

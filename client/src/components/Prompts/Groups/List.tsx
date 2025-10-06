@@ -89,12 +89,16 @@ export default function List({
             return (
               <DashGroupItem key={group._id} group={group} instanceProjectId={instanceProjectId} />
             );
-          })}
-          {Object.keys(mcpPrompts).length > 0 &&
+          })} 
+          {mcpPrompts &&
+            typeof mcpPrompts === 'object' &&
+            Object.keys(mcpPrompts).length > 0 &&
             Object.entries(mcpPrompts).map(([index, mcpPrompt]) => {
-              //console.log("key", mcpPrompt, index);
+              if (typeof mcpPrompt !== 'object' || mcpPrompt === null) {
+                return null;
+              }
               const instanceSplit = index.split('_mcp_');
-              mcpPrompt.mcpServerName = instanceSplit[1];
+              (mcpPrompt as any).mcpServerName = instanceSplit[1];
               if (agentAddPrompts) {
                 return (
                   <FormProvider {...methods} key={index}>
@@ -111,7 +115,10 @@ export default function List({
                   return (
                     <PromptGroupItem
                       key={index}
-                      mcpPrompt={mcpPrompt}
+                      mcpPrompt={{
+                        ...mcpPrompt,
+                        description: mcpPrompt.description ?? '',
+                      }}
                       instanceProjectId={index}
                       group={{
                         name: mcpPrompt.name,
@@ -122,7 +129,7 @@ export default function List({
                         projectIds: undefined,
                         productionId: undefined,
                         productionPrompt: undefined,
-                        author: mcpPrompt.mcpServerName,
+                        author: (mcpPrompt as any).mcpServerName,
                         authorName: 'MCP Server',
                         createdAt: undefined,
                         updatedAt: undefined,

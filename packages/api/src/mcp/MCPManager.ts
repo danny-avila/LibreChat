@@ -20,6 +20,7 @@ import { processMCPEnv } from '~/utils/env';
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
+  public appConnections: ConnectionsRepository | null = null;
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -38,7 +39,7 @@ export class MCPManager extends UserConnectionManager {
   /** Initializes the MCPManager by setting up server registry and app connections */
   public async initialize() {
     await this.serversRegistry.initialize();
-    this.appConnections = new ConnectionsRepository(this.serversRegistry.appServerConfigs!);
+    this.appConnections = new ConnectionsRepository(this.serversRegistry.appServerConfigs);
   }
 
   /** Retrieves an app-level or user-specific connection based on provided arguments */
@@ -63,23 +64,23 @@ export class MCPManager extends UserConnectionManager {
   }
 
   /** Get servers that require OAuth */
-  public getOAuthServers(): Set<string> | null {
-    return this.serversRegistry.oauthServers!;
+  public getOAuthServers(): Set<string> {
+    return this.serversRegistry.oauthServers;
   }
 
   /** Get all servers */
-  public getAllServers(): t.MCPServers | null {
-    return this.serversRegistry.rawConfigs!;
+  public getAllServers(): t.MCPServers {
+    return this.serversRegistry.rawConfigs;
   }
 
   /** Returns all available tool functions from app-level connections */
-  public getAppToolFunctions(): t.LCAvailableTools | null {
-    return this.serversRegistry.toolFunctions!;
+  public getAppToolFunctions(): t.LCAvailableTools {
+    return this.serversRegistry.toolFunctions;
   }
 
   /** Returns all available MCP prompts from app-level connections */
-  public getAppMCPPrompts(): t.LCAvailableMCPPrompts | null {
-    return this.serversRegistry.mcpPrompt!;
+  public getAppMCPPrompts(): t.LCAvailableMCPPrompts {
+    return this.serversRegistry.mcpPrompt;
   }
 
   /** Returns all available tool functions from all connections available to user */
@@ -134,7 +135,7 @@ export class MCPManager extends UserConnectionManager {
    * @returns Object mapping server names to their instructions
    */
   public getInstructions(serverNames?: string[]): Record<string, string> {
-    const instructions = this.serversRegistry.serverInstructions!;
+    const instructions = this.serversRegistry.serverInstructions;
     if (!serverNames) return instructions;
     return pick(instructions, serverNames);
   }

@@ -33,11 +33,10 @@ export default function GroupSidePanel({
 
   const [categoryFilter] = useRecoilState(store.promptsCategory);
 
-  let mcpPrompts = mcpPromptsResponse;
+  const mcpPrompts = mcpPromptsResponse;
   if (categoryFilter && categoryFilter != 'sys__mcp__prompts__sys') {
     mcpPrompts.mcpData = [];
   }
-
   return (
     <div
       className={cn(
@@ -48,7 +47,12 @@ export default function GroupSidePanel({
     >
       {children}
       <div className={cn('flex-grow overflow-y-auto', isChatRoute ? '' : 'px-2 md:px-0')}>
-        <List groups={promptGroups} isChatRoute={isChatRoute} isLoading={!!groupsQuery.isLoading} />
+        <List
+          groups={promptGroups}
+          mcpPrompts={mcpPrompts.mcpData}
+          isChatRoute={isChatRoute}
+          isLoading={!!groupsQuery.isLoading}
+        />
       </div>
       <div className={cn(isChatRoute ? '' : 'px-2 pb-3 pt-2 md:px-0')}>
         <PanelNavigation

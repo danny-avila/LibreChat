@@ -182,8 +182,6 @@ const getPromptGroups = async (req, filter) => {
 
     let combinedQuery = query;
 
-    const mcpPrompts = await getCachedPrompts({ isGlobal: true });
-
     if (searchShared) {
       // const projects = req.user.projects || []; // TODO: handle multiple projects
       const project = await getProjectByName(Constants.GLOBAL_PROJECT_NAME, 'promptGroupIds');

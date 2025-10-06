@@ -3,7 +3,6 @@ const mcpToolsCache = require('./mcp');
 const { config } = require('./EndpointService');
 const getCachedTools = require('./getCachedTools');
 const getCachedPrompts = require('./getCachedPrompts');
-const mcpToolsCache = require('./mcpToolsCache');
 const loadCustomConfig = require('./loadCustomConfig');
 const loadConfigModels = require('./loadConfigModels');
 const loadDefaultModels = require('./loadDefaultModels');

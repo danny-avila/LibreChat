@@ -8,7 +8,6 @@ import type { PromptOption } from '~/common';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import { useGetAllMCPPrompts, useGetAllPromptGroups } from '~/data-provider';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import { usePromptGroupsNav, useHasAccess } from '~/hooks';
 import { mapPromptGroups } from '~/utils';
 
@@ -102,6 +101,8 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
     },
   });
 
+  console.log("MCP Prompts Data:", mcpPromptsData);
+
   const contextValue = useMemo(() => {
     return {
       ...promptGroupsNav,
@@ -113,12 +114,9 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
         mcpData: mcpPromptsData ?? [],
         mcpIsLoading: mcpIsLoading,
       },
-    };
-  }, [promptGroupsNav, allGroupsData, mcpPromptsData, isLoadingAll, mcpIsLoading]);
       hasAccess,
-    }),
-    [promptGroupsNav, allGroupsData, isLoadingAll, hasAccess],
-  );
+    };
+  }, [promptGroupsNav, hasAccess, allGroupsData, isLoadingAll, mcpPromptsData, mcpIsLoading]);
 
   return (
     <PromptGroupsContext.Provider value={contextValue}>{children}</PromptGroupsContext.Provider>

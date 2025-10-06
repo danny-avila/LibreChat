@@ -8,8 +8,8 @@ import VariableForm from './VariableForm';
 interface VariableDialogProps extends Omit<DialogPrimitive.DialogProps, 'onOpenChange'> {
   onClose: () => void;
   group: TPromptGroup | null;
-  mcpPrompt: MCPPromptResponse;
-  mcp;
+  mcpPrompt?: MCPPromptResponse | null;
+  mcp?: boolean;
 }
 
 const VariableDialog: React.FC<VariableDialogProps> = ({

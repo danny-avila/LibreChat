@@ -118,7 +118,7 @@ function PromptGroupItem({
         </div>
       </ListCard>
       <PreviewPrompt
-        group={[]}
+        group={mcpPrompt}
         mcpPrompt={mcpPrompt}
         open={isPreviewDialogOpen}
         onOpenChange={setPreviewDialogOpen}
@@ -127,7 +127,7 @@ function PromptGroupItem({
       <VariableDialog
         open={isVariableDialogOpen}
         onClose={() => setVariableDialogOpen(false)}
-        group={mcpPrompt}
+        group={null}
         mcpPrompt={mcpPrompt}
         mcp={true}
         addPrompt={agentAddPrompts}
