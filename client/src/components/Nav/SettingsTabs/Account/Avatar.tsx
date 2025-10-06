@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
+// @ts-ignore - no type definitions available
 import AvatarEditor from 'react-avatar-editor';
 import { FileImage, RotateCw, Upload, ZoomIn, ZoomOut, Move, X } from 'lucide-react';
 import { fileConfig as defaultFileConfig, mergeFileConfig } from 'librechat-data-provider';
@@ -67,21 +68,24 @@ function Avatar() {
     handleFile(file);
   };
 
-  const handleFile = (file: File | undefined) => {
-    if (fileConfig.avatarSizeLimit != null && file && file.size <= fileConfig.avatarSizeLimit) {
-      setImage(file);
-      setScale(1);
-      setRotation(0);
-      setPosition({ x: 0.5, y: 0.5 });
-    } else {
-      const megabytes =
-        fileConfig.avatarSizeLimit != null ? formatBytes(fileConfig.avatarSizeLimit) : 2;
-      showToast({
-        message: localize('com_ui_upload_invalid_var', { 0: megabytes + '' }),
-        status: 'error',
-      });
-    }
-  };
+  const handleFile = useCallback(
+    (file: File | undefined) => {
+      if (fileConfig.avatarSizeLimit != null && file && file.size <= fileConfig.avatarSizeLimit) {
+        setImage(file);
+        setScale(1);
+        setRotation(0);
+        setPosition({ x: 0.5, y: 0.5 });
+      } else {
+        const megabytes =
+          fileConfig.avatarSizeLimit != null ? formatBytes(fileConfig.avatarSizeLimit) : 2;
+        showToast({
+          message: localize('com_ui_upload_invalid_var', { 0: megabytes + '' }),
+          status: 'error',
+        });
+      }
+    },
+    [fileConfig.avatarSizeLimit, localize, showToast],
+  );
 
   const handleScaleChange = (value: number[]) => {
     setScale(value[0]);
@@ -117,11 +121,14 @@ function Avatar() {
     }
   };
 
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    handleFile(file);
-  }, []);
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const file = e.dataTransfer.files[0];
+      handleFile(file);
+    },
+    [handleFile],
+  );
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -327,11 +334,12 @@ function Avatar() {
                 {localize('com_ui_drag_drop')}
               </p>
               <p className="mb-4 text-center text-xs text-text-secondary">
-                {localize('com_ui_max_file_size', [
-                  fileConfig.avatarSizeLimit != null
-                    ? formatBytes(fileConfig.avatarSizeLimit)
-                    : '2MB',
-                ])}
+                {localize('com_ui_max_file_size', {
+                  0:
+                    fileConfig.avatarSizeLimit != null
+                      ? formatBytes(fileConfig.avatarSizeLimit)
+                      : '2MB',
+                })}
               </p>
               <Button type="button" variant="secondary" onClick={openFileDialog}>
                 {localize('com_ui_select_file')}
