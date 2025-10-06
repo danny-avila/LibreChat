@@ -189,7 +189,6 @@
   "com_error_files_dupe": "Byl zjištěn duplicitní soubor.",
   "com_error_files_empty": "Prázdné soubory nejsou povoleny.",
   "com_error_files_process": "Při zpracování souboru došlo k chybě.",
-  "com_error_files_unsupported_capability": "Nejsou povoleny žádné funkce podporující tento typ souboru.",
   "com_error_files_upload": "Při nahrávání souboru došlo k chybě.",
   "com_error_files_upload_canceled": "Požadavek na nahrání souboru byl zrušen. Poznámka: nahrávání souboru může stále probíhat a bude nutné jej ručně smazat.",
   "com_error_files_validation": "Při ověřování souboru došlo k chybě.",
