@@ -256,7 +256,7 @@ const openAIParams: Record<string, SettingDefinition> = {
     description: 'com_endpoint_openai_use_responses_api',
     descriptionCode: true,
     type: 'boolean',
-    default: false,
+    default: true,
     component: 'switch',
     optionType: 'model',
     showDefault: false,
