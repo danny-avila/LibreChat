@@ -461,7 +461,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     email: email,
     openidId: claims.sub || userinfo.sub,
     openidIssuer,
-    idOnTheSource: claims.oid || userinfo.oid,
+    idOnTheSource: claims.oid || claims.sub, // Use sub as fallback for non-Microsoft OIDC providers
     strategyName: 'openidStrategy',
   });
   let user = result.user;
@@ -565,8 +565,12 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       email: email || '',
       emailVerified: userinfo.email_verified || false,
       name: fullName,
+<<<<<<< HEAD
       idOnTheSource: userinfo.oid,
       openidIssuer,
+=======
+      idOnTheSource: userinfo.oid || userinfo.sub, // Use sub as fallback for non-Microsoft OIDC providers
+>>>>>>> b91703fe7 (feat: Add OIDC group sync for Keycloak and generic OpenID providers)
     };
 
     const balanceConfig = getBalanceConfig(appConfig);
@@ -579,7 +583,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     }
     user.username = username;
     user.name = fullName;
-    user.idOnTheSource = userinfo.oid;
+    user.idOnTheSource = userinfo.oid || userinfo.sub; // Use sub as fallback for non-Microsoft OIDC providers
     if (email && email !== user.email) {
       user.email = email;
       user.emailVerified = userinfo.email_verified || false;
