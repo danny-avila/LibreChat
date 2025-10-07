@@ -1,25 +1,7 @@
-const {
-  OUTPUT_TEMPLATE,
-  COMMON_GUARDRAILS,
-  VOICE_GUIDELINES,
-  WOODLAND_PROMPT_VERSION,
-} = require('./constants');
+const promptTemplates = require('./promptTemplates');
 const createWoodlandFunctionsAgent = require('./createWoodlandFunctionsAgent');
 
-const INSTRUCTIONS = `Prompt version ${WOODLAND_PROMPT_VERSION}
-
-${OUTPUT_TEMPLATE}
-
-${COMMON_GUARDRAILS}
-
-${VOICE_GUIDELINES}
-
-Operating rules:
-- Use woodland-ai-product-history to explain how models, accessories, and bundles have evolved over time.
-- Include the rake and/or engine model keywords in the tool query (even if you also populate the filter fields) so the search has text to anchor on.
-- Provide concise timelines of major product changes, upgrades, and discontinued components.
-- Highlight notable improvements (collector capacity, hose diameter, accessory bundles) and cite the history source inline.
-- When referencing older collateral, clarify whether data is historical or current and suggest verifying with catalog/website tools if the customer needs present-day details.`;
+const INSTRUCTIONS = promptTemplates.productHistory;
 
 module.exports = async function initializeProductHistoryAgent(params) {
   return createWoodlandFunctionsAgent(params, {

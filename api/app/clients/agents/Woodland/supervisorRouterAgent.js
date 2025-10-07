@@ -1,19 +1,14 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
-const {
-  OUTPUT_TEMPLATE,
-  COMMON_GUARDRAILS,
-  VOICE_GUIDELINES,
-  WOODLAND_PROMPT_VERSION,
-} = require('./constants');
+const promptTemplates = require('./promptTemplates');
 const createWoodlandFunctionsAgent = require('./createWoodlandFunctionsAgent');
 const createIntentClassifier = require('./intentClassifier');
 const initializeCatalogPartsAgent = require('./catalogPartsAgent');
 const initializeCyclopediaSupportAgent = require('./cyclopediaSupportAgent');
-const initializeSalesSupportAgent = require('./salesSupportAgent');
-const initializeTractorFitmentAgent = require('./tractorFitmentAgent');
 const initializeCasesReferenceAgent = require('./casesReferenceAgent');
+const initializeWebsiteProductAgent = require('./websiteProductAgent');
+const initializeTractorFitmentAgent = require('./tractorFitmentAgent');
 
 const DOMAIN_AGENT_CONFIGS = [
   {
@@ -27,19 +22,19 @@ const DOMAIN_AGENT_CONFIGS = [
     initializer: initializeCyclopediaSupportAgent,
   },
   {
-    name: 'SalesSupportAgent',
-    description: 'Consult for Commander vs Classic vs Commercial comparisons and upgrade advice.',
-    initializer: initializeSalesSupportAgent,
+    name: 'CasesReferenceAgent',
+    description: 'Consult for internal case summaries when explicitly requested.',
+    initializer: initializeCasesReferenceAgent,
+  },
+  {
+    name: 'WebsiteProductAgent',
+    description: 'Consult for woodland.com pricing snapshots, promotions, and ordering guidance.',
+    initializer: initializeWebsiteProductAgent,
   },
   {
     name: 'TractorFitmentAgent',
     description: 'Consult for tractor compatibility, installation requirements, and missing anchors.',
     initializer: initializeTractorFitmentAgent,
-  },
-  {
-    name: 'CasesReferenceAgent',
-    description: 'Consult for internal case summaries when explicitly requested.',
-    initializer: initializeCasesReferenceAgent,
   },
 ];
 
@@ -47,12 +42,12 @@ const DEFAULT_MAX_DOMAIN_TOOLS = 4;
 const DEFAULT_LOW_CONFIDENCE_THRESHOLD = 0.55;
 
 const DEFAULT_INTENT_TOOL_PRIORITIES = {
-  sales: ['SalesSupportAgent', 'CatalogPartsAgent'],
+  sales: ['CatalogPartsAgent', 'WebsiteProductAgent'],
   parts: ['CatalogPartsAgent', 'CyclopediaSupportAgent'],
-  support: ['CyclopediaSupportAgent', 'CasesReferenceAgent'],
+  support: ['CyclopediaSupportAgent', 'CatalogPartsAgent'],
   tractor_fitment: ['TractorFitmentAgent', 'CatalogPartsAgent'],
   cases: ['CasesReferenceAgent', 'CyclopediaSupportAgent'],
-  unknown: ['CatalogPartsAgent', 'CyclopediaSupportAgent', 'SalesSupportAgent'],
+  unknown: ['CatalogPartsAgent', 'CyclopediaSupportAgent', 'WebsiteProductAgent'],
 };
 
 const KEYWORD_TOOL_RULES = [
@@ -70,7 +65,7 @@ const KEYWORD_TOOL_RULES = [
   {
     label: 'pricing_sales',
     regex: /(price|cost|quote|bundle|finance|compare|upgrade|sales)/i,
-    tools: ['SalesSupportAgent', 'CatalogPartsAgent'],
+    tools: ['WebsiteProductAgent', 'CatalogPartsAgent'],
   },
   {
     label: 'cases_reference',
@@ -79,24 +74,21 @@ const KEYWORD_TOOL_RULES = [
   },
 ];
 
-const resolveDomainTools = (
-  { primaryIntent, secondaryIntents = [], confidence },
-  rawText,
-  availableToolNames,
-) => {
-  const intentToolPriorities = DEFAULT_INTENT_TOOL_PRIORITIES;
-  const keywordToolRules = KEYWORD_TOOL_RULES;
-  const maxDomainTools = DEFAULT_MAX_DOMAIN_TOOLS;
-  const lowConfidenceThreshold = DEFAULT_LOW_CONFIDENCE_THRESHOLD;
+const EARLY_EXIT_KEYWORDS = new Map(
+  KEYWORD_TOOL_RULES.filter((rule) => rule.tools?.length === 1).map((rule) => [rule.label, rule.tools[0]]),
+);
+
+const resolveDomainTools = ({ primaryIntent, secondaryIntents = [], confidence }, rawText, availableToolNames) => {
   const availableSet = new Set(availableToolNames);
   const selections = [];
-  const pushUnique = (name, { front = false } = {}) => {
+
+  const addTool = (name, { front = false } = {}) => {
     if (!availableSet.has(name)) {
       return;
     }
     const idx = selections.indexOf(name);
     if (idx !== -1) {
-      if (front && idx !== 0) {
+      if (front && idx > 0) {
         selections.splice(idx, 1);
         selections.unshift(name);
       }
@@ -110,109 +102,59 @@ const resolveDomainTools = (
   };
 
   const appendIntentTools = (intent) => {
-    const candidates = intentToolPriorities[intent] || [];
-    candidates.forEach((toolName) => pushUnique(toolName));
+    const candidates = DEFAULT_INTENT_TOOL_PRIORITIES[intent] || [];
+    candidates.forEach((toolName) => addTool(toolName));
   };
 
-  appendIntentTools(primaryIntent || 'unknown');
-  secondaryIntents.forEach((intent) => appendIntentTools(intent));
-
-  const text =
-    typeof rawText === 'string'
-      ? rawText
-      : jsonSafeStringify(rawText);
-
-  const matchedRules = [];
+  const text = typeof rawText === 'string' ? rawText : JSON.stringify(rawText ?? '');
   if (text) {
-    keywordToolRules.forEach((rule) => {
-      if (rule.regex.test(text)) {
-        matchedRules.push(rule.label);
-        rule.tools.forEach((toolName, index) => {
-          pushUnique(toolName, { front: rule.frontLoad && index === 0 });
-        });
+    for (const rule of KEYWORD_TOOL_RULES) {
+      if (!rule.regex.test(text)) {
+        continue;
       }
-    });
+      if (EARLY_EXIT_KEYWORDS.has(rule.label)) {
+        const toolName = EARLY_EXIT_KEYWORDS.get(rule.label);
+        if (availableSet.has(toolName)) {
+          return [toolName];
+        }
+      }
+      rule.tools.forEach((toolName, index) => addTool(toolName, { front: rule.frontLoad && index === 0 }));
+      if (rule.frontLoad && selections.length >= DEFAULT_MAX_DOMAIN_TOOLS) {
+        return selections.slice(0, DEFAULT_MAX_DOMAIN_TOOLS);
+      }
+    }
   }
+
+  appendIntentTools(primaryIntent || 'unknown');
+  secondaryIntents.forEach(appendIntentTools);
 
   const isLowConfidence =
-    confidence == null || Number(confidence) < Number(lowConfidenceThreshold || 0);
+    confidence == null || Number(confidence) < Number(DEFAULT_LOW_CONFIDENCE_THRESHOLD || 0);
   if (isLowConfidence) {
+    const fallback = DEFAULT_INTENT_TOOL_PRIORITIES.unknown || [];
+    fallback
+      .filter((name) => availableSet.has(name))
+      .slice(0, 1)
+      .forEach((name) => addTool(name, { front: true }));
+  }
+
+  if (!selections.length) {
     appendIntentTools('unknown');
   }
 
-  if (selections.length === 0) {
-    appendIntentTools('unknown');
-  }
+  const recommended = selections.slice(0, DEFAULT_MAX_DOMAIN_TOOLS);
 
-  const recommended = selections.slice(0, maxDomainTools);
-
-  if (logger?.debug) {
-    logger.debug('[SupervisorRouter] Tool selection heuristics', {
-      primaryIntent,
-      secondaryIntents,
-      confidence,
-      recommended,
-      maxDomainTools,
-      lowConfidenceThreshold,
-      matchedRules,
-    });
-  }
+  logger?.debug?.('[SupervisorRouter] Tool selection heuristics', {
+    primaryIntent,
+    secondaryIntents,
+    confidence,
+    recommended,
+  });
 
   return recommended;
 };
 
-const jsonSafeStringify = (value) => {
-  try {
-    return JSON.stringify(value);
-  } catch (_) {
-    return '';
-  }
-};
-
-const INSTRUCTIONS = `Prompt version ${WOODLAND_PROMPT_VERSION}
-
-${OUTPUT_TEMPLATE}
-
-${COMMON_GUARDRAILS}
-
-${VOICE_GUIDELINES}
-
-You are the Woodland SupervisorRouter. Your job:
-1. Interpret the user's intent (Parts / Support / Sales / Tractor Fitment / Cases).
-2. Gather missing anchors only when absolutely necessary; otherwise proceed with reasonable assumptions and state them explicitly.
-3. Call the correct Woodland tools with precise queries.
-4. Assemble a single customer-ready response using catalog → cyclopedia → website → tractor DB in that citation priority. Use "needs human review." when sources conflict.
-
-Available domain agents:
-- CatalogPartsAgent - authoritative for catalog SKUs, selectors, and pricing snapshots.
-- CyclopediaSupportAgent - policies, SOPs, warranty, and shipping rules.
-- SalesSupportAgent - comparative recommendations, bundles, and upgrade guidance.
-- TractorFitmentAgent - tractor anchors, installation steps, and fitment validation.
-- CasesReferenceAgent - internal case summaries when the user explicitly asks.
-
-Critical rules:
-- Catalog is the authority for SKUs. If it disagrees with other sources, stop and escalate.
-- Cyclopedia governs policies/SOP/warranty/shipping. Never cite external shipping links.
-- Website data is only for pricing/ordering. If pricing is stale/missing, tell the user to verify on the linked order page.
-- Tractor fitment requires tractor make/model/engine/deck/year. Ask for any missing anchor instead of guessing.
-- Load cases only when the user explicitly asks. Never expose case URLs.
-- If a relevant internal case reinforces the answer, mention the case number and summary as supporting context (no URLs).
-- Surface multiple options immediately with selector labels (A/B/C) and decision criteria when the answer depends on configuration.
-- When prices/options are uniform across variants (e.g., Commander hose extension kits), state the shared price and note that it applies to all versions before offering optional clarifications.
-- Recognize abbreviations ("CR" ➜ "Cyclone Rake").
-- Citations must be tool-provided URLs only, ordered Catalog → Cyclopedia → Website → Tractor. If no URLs returned, write "None".
-- State clear next steps (order, verify, install, escalate, or request missing info).
-- Activate only the smallest set of domain agents that covers the detected intents; avoid calling every agent by default.
-
-Use the intent block (enclosed in '[Intent Classification] ... [/Intent Classification]') to decide routing, follow-up questions, and which domain agent to consult first. Deliver the answer with current data and state assumptions. Treat 'clarifying_question' (if present) as optional guidance the user may answer, not a prerequisite.
-
-Response formatting:
-- "Answer" must be a single concise summary (1-2 sentences) covering all relevant findings.
-- Under "Details" provide at most one bullet per contributing domain (Catalog, Cyclopedia, Website, Tractor, Cases, Sales). Summarize each domain's unique contribution and include the corresponding citation in parentheses. Do not repeat identical text for multiple domains.
-- If multiple domains reported the same fact, mention it once and cite the highest-priority source (Catalog first, then Cyclopedia, Website, Tractor, Cases).
-- "Next actions" should list concrete follow-ups or clarification requests. Avoid duplicating the same next action for every domain.
-- "Citations" must be the deduplicated space-separated list of all citations already referenced in Details.
-- Never echo raw tool outputs or headings like "Catalog Parts Agent"; provide a unified customer-ready summary instead.`;
+const INSTRUCTIONS = promptTemplates.supervisorRouter;
 
 module.exports = async function initializeSupervisorRouterAgent(params) {
   const classifier = await createIntentClassifier(params);
@@ -222,12 +164,12 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
     .filter((name) => typeof name === 'string' && name.length > 0);
 
   const domainAgentEntries = DOMAIN_AGENT_CONFIGS.map(({ name, description, initializer }) => {
-    let agentPromise;
-    const ensureAgent = () => {
-      if (!agentPromise) {
-        agentPromise = initializer(params);
+    let cachedAgent;
+    const ensureAgent = async () => {
+      if (!cachedAgent) {
+        cachedAgent = await initializer(params);
       }
-      return agentPromise;
+      return cachedAgent;
     };
 
     const wrappedTool = tool(
@@ -235,23 +177,16 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
         const agent = await ensureAgent();
         const payload = typeof input === 'string' ? input : JSON.stringify(input);
         const result = await agent.invoke({ input: payload });
-        if (typeof result === 'string') {
-          return result;
+        if (!result || typeof result === 'string') {
+          return result || '';
         }
-        if (result && typeof result.output === 'string') {
-          return result.output;
-        }
-        if (result && typeof result.text === 'string') {
-          return result.text;
-        }
-        if (result && typeof result === 'object') {
-          const returnValueOutput = result?.returnValues?.output;
-          if (typeof returnValueOutput === 'string') {
-            return returnValueOutput;
-          }
-          return JSON.stringify(result);
-        }
-        return '';
+        const { output, text, returnValues } = result;
+        return (
+          (typeof output === 'string' && output) ||
+          (typeof text === 'string' && text) ||
+          (typeof returnValues?.output === 'string' && returnValues.output) ||
+          JSON.stringify(result)
+        );
       },
       {
         name,
@@ -323,7 +258,7 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
     }
 
     const original = input.input ?? '';
-    const text = typeof original === 'string' ? original : JSON.stringify(original);
+    const text = typeof original === 'string' ? original : JSON.stringify(original ?? '');
     const metadata = await classifier.classify(text);
     if (!metadata) {
       return input;
@@ -344,21 +279,19 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
       allDomainToolNames,
     );
 
-    const intentHeaderLines = [
-      `[Intent Classification]`,
-      `primary_intent: ${primaryIntent}`,
-      `secondary_intents: ${secondaryIntents.join(', ') || 'none'}`,
-      `confidence: ${confidence != null ? confidence.toFixed(2) : 'n/a'}`,
-      `missing_anchors: ${missingAnchors.join(', ') || 'none'}`,
-      `clarifying_question: ${clarifyingQuestion || 'none'}`,
-      `[/Intent Classification]`,
-      '',
-      original,
-    ];
-
     return {
       ...input,
-      input: intentHeaderLines.join('\n'),
+      input: [
+        `[Intent Classification]`,
+        `primary_intent: ${primaryIntent}`,
+        `secondary_intents: ${secondaryIntents.join(', ') || 'none'}`,
+        `confidence: ${confidence != null ? confidence.toFixed(2) : 'n/a'}`,
+        `missing_anchors: ${missingAnchors.join(', ') || 'none'}`,
+        `clarifying_question: ${clarifyingQuestion || 'none'}`,
+        `[/Intent Classification]`,
+        '',
+        original,
+      ].join('\n'),
       intentMetadata: {
         primaryIntent,
         secondaryIntents,
@@ -375,11 +308,7 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
     executor[methodName] = async (input, ...args) => {
       const augmented = await injectIntentMetadata(input);
       const recommended = augmented?.intentMetadata?.recommendedTools;
-      if (recommended) {
-        setActiveTools(recommended);
-      } else {
-        setActiveTools(allDomainToolNames);
-      }
+      setActiveTools(recommended || allDomainToolNames);
       let sanitized = augmented;
       if (augmented && typeof augmented === 'object') {
         // Remove helper metadata before handing off to the executor.

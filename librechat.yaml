@@ -16,9 +16,10 @@ interface:
   prompts: true
   runCode: false 
   webSearch: false 
-  fileSearch: false
+  fileSearch: true
   modelSelect: true
   sidePanel : true # Enable/disable the side panel (default: false)
+
   # MCP Servers UI configuration
   mcpServers:
     everything: 
@@ -155,6 +156,8 @@ endpoints:
     # Limit global Agent capabilities; individual Agents can still narrow these down
     capabilities: ["actions", "tools","chain"]
     minRelevanceScore: 0.7
+    maxCitations: 8
+    maxCitationsPerFile: 3
     
  
 # fileConfig:
