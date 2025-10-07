@@ -569,6 +569,7 @@ export class MCPOAuthHandler {
         const headers: HeadersInit = {
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
+          ...oauthHeaders,
         };
 
         /** Handle authentication based on server's advertised methods */
@@ -649,6 +650,7 @@ export class MCPOAuthHandler {
         const headers: HeadersInit = {
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
+          ...oauthHeaders,
         };
 
         /** Handle authentication based on configured methods */
@@ -738,6 +740,7 @@ export class MCPOAuthHandler {
       const headers: HeadersInit = {
         'Content-Type': 'application/x-www-form-urlencoded',
         Accept: 'application/json',
+        ...oauthHeaders,
       };
 
       const response = await fetch(tokenUrl, {
@@ -780,6 +783,7 @@ export class MCPOAuthHandler {
       revocationEndpoint?: string;
       revocationEndpointAuthMethodsSupported?: string[];
     },
+    oauthHeaders: Record<string, string> = {},
   ): Promise<void> {
     // build the revoke URL, falling back to the server URL + /revoke if no revocation endpoint is provided
     const revokeUrl: URL =
@@ -797,6 +801,7 @@ export class MCPOAuthHandler {
     // init the request headers
     const headers: Record<string, string> = {
       'Content-Type': 'application/x-www-form-urlencoded',
+      ...oauthHeaders,
     };
 
     // init the request body
