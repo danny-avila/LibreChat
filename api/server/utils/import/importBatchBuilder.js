@@ -1,9 +1,9 @@
 const { v4: uuidv4 } = require('uuid');
+const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
 const { bulkIncrementTagCounts } = require('~/models/ConversationTag');
 const { bulkSaveConvos } = require('~/models/Conversation');
 const { bulkSaveMessages } = require('~/models/Message');
-const { logger } = require('~/config');
 
 /**
  * Factory function for creating an instance of ImportBatchBuilder.

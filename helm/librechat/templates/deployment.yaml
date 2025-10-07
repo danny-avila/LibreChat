@@ -84,6 +84,10 @@ spec:
               name: {{ .Values.global.librechat.existingSecretName }}
               optional: true
           {{- end }}
+          {{- with .Values.global.librechat.env }}
+          env:
+          {{- toYaml . | nindent 12 }}
+          {{- end }}
       volumes:
       {{- if or .Values.librechat.configYamlContent .Values.librechat.existingConfigYaml }}
       - name: config-yaml

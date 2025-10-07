@@ -91,6 +91,7 @@ const googleModels = {
   'gemini-2.5': 1000000, // 1M input tokens, 64k output tokens
   'gemini-2.5-pro': 1000000,
   'gemini-2.5-flash': 1000000,
+  'gemini-2.5-flash-lite': 1000000,
   'gemini-2.0': 2000000,
   'gemini-2.0-flash': 1000000,
   'gemini-2.0-flash-lite': 1000000,
@@ -132,9 +133,9 @@ const anthropicModels = {
 };
 
 const deepseekModels = {
-  'deepseek-reasoner': 63000, // -1000 from max (API)
-  deepseek: 63000, // -1000 from max (API)
-  'deepseek.r1': 127500,
+  'deepseek-reasoner': 128000,
+  deepseek: 128000,
+  'deepseek.r1': 128000,
 };
 
 const metaModels = {
@@ -256,8 +257,19 @@ const aggregateModels = {
   // misc.
   kimi: 131000,
   // GPT-OSS
+  'gpt-oss': 131000,
+  'gpt-oss:20b': 131000,
   'gpt-oss-20b': 131000,
+  'gpt-oss:120b': 131000,
   'gpt-oss-120b': 131000,
+  // GLM models (Zhipu AI)
+  glm4: 128000,
+  'glm-4': 128000,
+  'glm-4-32b': 128000,
+  'glm-4.5': 131000,
+  'glm-4.5-air': 131000,
+  'glm-4.5v': 66000,
+  'glm-4.6': 200000,
 };
 
 export const maxTokensMap = {
@@ -313,9 +325,10 @@ export function findMatchingPattern(
   tokensMap: Record<string, number> | EndpointTokenConfig,
 ): string | null {
   const keys = Object.keys(tokensMap);
+  const lowerModelName = modelName.toLowerCase();
   for (let i = keys.length - 1; i >= 0; i--) {
     const modelKey = keys[i];
-    if (modelName.includes(modelKey)) {
+    if (lowerModelName.includes(modelKey)) {
       return modelKey;
     }
   }

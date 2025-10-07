@@ -1,8 +1,8 @@
 const cookies = require('cookie');
-const { getOpenIdConfig } = require('~/strategies');
+const { isEnabled } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { logoutUser } = require('~/server/services/AuthService');
-const { isEnabled } = require('~/server/utils');
-const { logger } = require('~/config');
+const { getOpenIdConfig } = require('~/strategies');
 
 const logoutController = async (req, res) => {
   const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;

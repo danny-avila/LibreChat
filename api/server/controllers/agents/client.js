@@ -257,7 +257,7 @@ class AgentClient extends BaseClient {
         };
       }
 
-      const files = await this.addImageURLs(
+      const files = await this.processAttachments(
         orderedMessages[orderedMessages.length - 1],
         attachments,
       );
@@ -1116,8 +1116,8 @@ class AgentClient extends BaseClient {
       appConfig.endpoints?.[endpoint] ??
       titleProviderConfig.customEndpointConfig;
     if (!endpointConfig) {
-      logger.warn(
-        '[api/server/controllers/agents/client.js #titleConvo] Error getting endpoint config',
+      logger.debug(
+        `[api/server/controllers/agents/client.js #titleConvo] No endpoint config for "${endpoint}"`,
       );
     }
 
