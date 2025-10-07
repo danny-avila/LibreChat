@@ -9,6 +9,7 @@ const {
   getGroupMembers,
   getGroupOwners,
 } = require('~/server/services/GraphApiService');
+const { extractGroupsFromToken } = require('~/utils/extractJwtClaims');
 const {
   findAccessibleResources: findAccessibleResourcesACL,
   getEffectivePermissions: getEffectivePermissionsACL,
@@ -547,6 +548,167 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
 };
 
 /**
+ * Sync user's OIDC groups from JWT token claims to LibreChat's Group database
+ * Extracts groups/roles from JWT token and syncs group memberships automatically on login
+ * 
+ * Supports any OpenID Connect provider (Keycloak, Auth0, Okta, etc.) by reading groups/roles
+ * from configurable JWT claim paths.
+ * 
+ * TODO: Future improvements:
+ * - Add transaction wrapping for full atomicity (currently relies on passed session)
+ * - Implement bulk query optimization for large group counts (>20 groups)
+ * - Add configurable group name transformation/mapping
+ * - Add role filtering to exclude system/default roles
+ * - Add orphaned group cleanup (groups with no members)
+ * - Add manual sync trigger via admin API
+ * 
+ * @param {Object} user - User object from authentication
+ * @param {string} user.idOnTheSource - User's external ID (oid or sub from token claims)
+ * @param {string} user.provider - Authentication provider ('openid')
+ * @param {Object} tokenset - OpenID Connect tokenset containing access_token and id_token
+ * @param {mongoose.ClientSession} [session] - Optional MongoDB session for transactions
+ * @returns {Promise<void>}
+ */
+const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
+  try {
+    // Check if feature is enabled
+    if (!isEnabled(process.env.OPENID_SYNC_GROUPS_FROM_TOKEN)) {
+      return;
+    }
+
+    // Validate user authentication
+    if (!user || user.provider !== 'openid' || !user.idOnTheSource) {
+      logger.debug('[PermissionService.syncUserOidcGroupsFromToken] User not eligible for OIDC group sync');
+      return;
+    }
+
+    // Validate tokenset
+    if (!tokenset || typeof tokenset !== 'object') {
+      logger.warn('[PermissionService.syncUserOidcGroupsFromToken] Invalid tokenset provided');
+      return;
+    }
+
+    // Get configuration
+    const claimPath = process.env.OPENID_GROUPS_CLAIM_PATH || 'realm_access.roles';
+    const tokenKind = process.env.OPENID_GROUPS_TOKEN_KIND || 'access';
+    const groupSource = process.env.OPENID_GROUP_SOURCE || 'oidc';
+
+    // Extract groups from token
+    const groupNames = extractGroupsFromToken(tokenset, claimPath, tokenKind);
+
+    if (!groupNames || groupNames.length === 0) {
+      logger.info(
+        `[PermissionService.syncUserOidcGroupsFromToken] No groups found for user ${user.email}`,
+        {
+          claimPath,
+          tokenKind,
+        },
+      );
+
+      // Remove user from all OIDC groups if they no longer have any groups
+      const sessionOptions = session ? { session } : {};
+      await Group.updateMany(
+        {
+          source: groupSource,
+          memberIds: user.idOnTheSource,
+        },
+        { $pull: { memberIds: user.idOnTheSource } },
+        sessionOptions,
+      );
+
+      return;
+    }
+
+    logger.info(
+      `[PermissionService.syncUserOidcGroupsFromToken] Syncing ${groupNames.length} groups for user ${user.email}`,
+      {
+        groups: groupNames,
+        claimPath,
+        tokenKind,
+        source: groupSource,
+      },
+    );
+
+    const sessionOptions = session ? { session } : {};
+
+    // TODO: Performance optimization - Replace N+1 queries with bulk operations
+    // Current implementation queries each group individually (acceptable for <20 groups)
+    // Future improvement: Fetch all existing groups in single query, then bulk create/update
+    // Example:
+    //   const existingGroups = await Group.find({ idOnTheSource: { $in: groupNames }, source: groupSource });
+    //   const existingIds = new Set(existingGroups.map(g => g.idOnTheSource));
+    //   const newGroups = groupNames.filter(name => !existingIds.has(name)).map(name => ({ ... }));
+    //   await Group.insertMany(newGroups, sessionOptions);
+
+    // Create or update groups and add user to them
+    for (const groupName of groupNames) {
+      try {
+        // Check if group exists
+        let group = await Group.findOne({
+          idOnTheSource: groupName,
+          source: groupSource,
+        });
+
+        if (!group) {
+          // Create new group
+          group = await Group.create(
+            [
+              {
+                name: groupName,
+                idOnTheSource: groupName,
+                source: groupSource,
+                memberIds: [user.idOnTheSource],
+              },
+            ],
+            sessionOptions,
+          );
+          logger.info(
+            `[PermissionService.syncUserOidcGroupsFromToken] Created new group: ${groupName}`,
+          );
+        } else {
+          // Add user to existing group if not already a member
+          if (!group.memberIds.includes(user.idOnTheSource)) {
+            await Group.updateOne(
+              { _id: group._id },
+              { $addToSet: { memberIds: user.idOnTheSource } },
+              sessionOptions,
+            );
+            logger.debug(
+              `[PermissionService.syncUserOidcGroupsFromToken] Added user to group: ${groupName}`,
+            );
+          }
+        }
+      } catch (error) {
+        logger.error(
+          `[PermissionService.syncUserOidcGroupsFromToken] Error processing group ${groupName}:`,
+          error,
+        );
+      }
+    }
+
+    // Remove user from groups they are no longer part of
+    await Group.updateMany(
+      {
+        source: groupSource,
+        memberIds: user.idOnTheSource,
+        idOnTheSource: { $nin: groupNames },
+      },
+      { $pull: { memberIds: user.idOnTheSource } },
+      sessionOptions,
+    );
+
+    logger.info(
+      `[PermissionService.syncUserOidcGroupsFromToken] Successfully synced groups for user ${user.email}`,
+    );
+  } catch (error) {
+    logger.error(
+      `[PermissionService.syncUserOidcGroupsFromToken] Error syncing groups:`,
+      error,
+    );
+  }
+};
+
+/**
  * Check if public has a specific permission on a resource
  * @param {Object} params - Parameters for checking public permission
  * @param {string} params.resourceType - Type of resource (e.g., 'agent')
@@ -841,5 +1003,6 @@ module.exports = {
   ensurePrincipalExists,
   ensureGroupPrincipalExists,
   syncUserEntraGroupMemberships,
+  syncUserOidcGroupsFromToken,
   removeAllPermissions,
 };
