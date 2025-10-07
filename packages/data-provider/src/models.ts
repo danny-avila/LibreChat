@@ -15,6 +15,7 @@ export type TModelSpec = {
   order?: number;
   default?: boolean;
   description?: string;
+  group?: string; // Group name - can match endpoint name or custom group
   showIconInMenu?: boolean;
   showIconInHeader?: boolean;
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
@@ -28,6 +29,7 @@ export const tModelSpecSchema = z.object({
   order: z.number().optional(),
   default: z.boolean().optional(),
   description: z.string().optional(),
+  group: z.string().optional(),
   showIconInMenu: z.boolean().optional(),
   showIconInHeader: z.boolean().optional(),
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),

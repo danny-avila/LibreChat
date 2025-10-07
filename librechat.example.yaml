@@ -229,13 +229,11 @@ endpoints:
       baseURL: 'https://api.groq.com/openai/v1/'
       models:
         default:
-          [
-            'llama3-70b-8192',
-            'llama3-8b-8192',
-            'llama2-70b-4096',
-            'mixtral-8x7b-32768',
-            'gemma-7b-it',
-          ]
+          - 'llama3-70b-8192'
+          - 'llama3-8b-8192'
+          - 'llama2-70b-4096'
+          - 'mixtral-8x7b-32768'
+          - 'gemma-7b-it'
         fetch: false
       titleConvo: true
       titleModel: 'mixtral-8x7b-32768'
@@ -320,6 +318,56 @@ endpoints:
       forcePrompt: false
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
+# Example modelSpecs configuration showing grouping options
+# modelSpecs:
+#   list:
+#     # Example 1: Nested under an endpoint (grouped with "openAI")
+#     - name: "gpt-4o"
+#       label: "GPT-4 Optimized"
+#       description: "Most capable GPT-4 model with multimodal support"
+#       group: "openAI"  # This will appear nested under the OpenAI endpoint
+#       preset:
+#         endpoint: "openAI"
+#         model: "gpt-4o"
+#
+#     # Example 2: Nested under a custom endpoint (grouped with "groq")
+#     - name: "llama3-70b-8192"
+#       label: "Llama 3 70B"
+#       description: "Fastest inference available - great for quick responses"
+#       group: "groq"  # This will appear nested under the groq custom endpoint
+#       preset:
+#         endpoint: "groq"
+#         model: "llama3-70b-8192"
+#
+#     # Example 3: Custom group (creates a separate collapsible section)
+#     - name: "coding-assistant"
+#       label: "Coding Assistant"
+#       description: "Specialized for coding tasks"
+#       group: "my-assistants"  # Custom group name - creates its own section
+#       preset:
+#         endpoint: "openAI"
+#         model: "gpt-4o"
+#         instructions: "You are an expert coding assistant..."
+#         temperature: 0.3
+#
+#     - name: "writing-assistant"
+#       label: "Writing Assistant"
+#       description: "Specialized for creative writing"
+#       group: "my-assistants"  # Same group - appears in same section
+#       preset:
+#         endpoint: "anthropic"
+#         model: "claude-sonnet-4"
+#         instructions: "You are a creative writing expert..."
+#
+#     # Example 4: Standalone (no group - appears at top level)
+#     - name: "general-assistant"
+#       label: "General Assistant"
+#       description: "General purpose assistant"
+#       # No group field - appears as standalone at top level
+#       preset:
+#         endpoint: "openAI"
+#         model: "gpt-4o-mini"
+
 # fileConfig:
 #   endpoints:
 #     assistants:
