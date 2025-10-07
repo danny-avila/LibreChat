@@ -25,7 +25,7 @@ export const getLatestText = (message?: TMessage | null, includeIndex?: boolean)
         continue;
       }
 
-      const text = (typeof part?.text === 'string' ? part.text : part?.text.value) ?? '';
+      const text = (typeof part?.text === 'string' ? part.text : part?.text?.value) ?? '';
       if (text.length > 0) {
         if (includeIndex === true) {
           return `${text}-${i}`;
@@ -52,7 +52,12 @@ export const getAllContentText = (message?: TMessage | null): string => {
   if (message.content && message.content.length > 0) {
     return message.content
       .filter((part) => part.type === ContentTypes.TEXT)
-      .map((part) => (typeof part.text === 'string' ? part.text : part.text.value) || '')
+      .map((part) => {
+        if (!('text' in part)) return '';
+        const text = part.text;
+        if (typeof text === 'string') return text;
+        return text?.value || '';
+      })
       .filter((text) => text.length > 0)
       .join('\n');
   }

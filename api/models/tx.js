@@ -111,8 +111,8 @@ const tokenValues = Object.assign(
     'claude-': { prompt: 0.8, completion: 2.4 },
     'command-r-plus': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
-    'deepseek-reasoner': { prompt: 0.55, completion: 2.19 },
-    deepseek: { prompt: 0.14, completion: 0.28 },
+    'deepseek-reasoner': { prompt: 0.28, completion: 0.42 },
+    deepseek: { prompt: 0.28, completion: 0.42 },
     /* cohere doesn't have rates for the older command models,
   so this was from https://artificialanalysis.ai/models/command-light/providers */
     command: { prompt: 0.38, completion: 0.38 },
@@ -124,7 +124,8 @@ const tokenValues = Object.assign(
     'gemini-2.0-flash': { prompt: 0.1, completion: 0.4 },
     'gemini-2.0': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
     'gemini-2.5-pro': { prompt: 1.25, completion: 10 },
-    'gemini-2.5-flash': { prompt: 0.15, completion: 3.5 },
+    'gemini-2.5-flash': { prompt: 0.3, completion: 2.5 },
+    'gemini-2.5-flash-lite': { prompt: 0.075, completion: 0.4 },
     'gemini-2.5': { prompt: 0, completion: 0 }, // Free for a period of time
     'gemini-1.5-flash-8b': { prompt: 0.075, completion: 0.3 },
     'gemini-1.5-flash': { prompt: 0.15, completion: 0.6 },
@@ -151,8 +152,19 @@ const tokenValues = Object.assign(
     'ministral-8b': { prompt: 0.1, completion: 0.1 },
     'ministral-3b': { prompt: 0.04, completion: 0.04 },
     // GPT-OSS models
+    'gpt-oss': { prompt: 0.05, completion: 0.2 },
+    'gpt-oss:20b': { prompt: 0.05, completion: 0.2 },
     'gpt-oss-20b': { prompt: 0.05, completion: 0.2 },
+    'gpt-oss:120b': { prompt: 0.15, completion: 0.6 },
     'gpt-oss-120b': { prompt: 0.15, completion: 0.6 },
+    // GLM models (Zhipu AI)
+    glm4: { prompt: 0.1, completion: 0.1 },
+    'glm-4': { prompt: 0.1, completion: 0.1 },
+    'glm-4-32b': { prompt: 0.1, completion: 0.1 },
+    'glm-4.5': { prompt: 0.35, completion: 1.55 },
+    'glm-4.5v': { prompt: 0.6, completion: 1.8 },
+    'glm-4.5-air': { prompt: 0.14, completion: 0.86 },
+    'glm-4.6': { prompt: 0.5, completion: 1.75 },
   },
   bedrockValues,
 );

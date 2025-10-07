@@ -1,7 +1,6 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, webSearchKeys } = require('@librechat/data-schemas');
 const { Tools, CacheKeys, Constants, FileSources } = require('librechat-data-provider');
 const {
-  webSearchKeys,
   MCPOAuthHandler,
   MCPTokenStorage,
   normalizeHttpError,

@@ -72,7 +72,7 @@ export class OAuthReconnectionManager {
 
     // 1. derive the servers to reconnect
     const serversToReconnect = [];
-    for (const serverName of this.mcpManager.getOAuthServers() ?? []) {
+    for (const serverName of this.mcpManager.getOAuthServers()) {
       const canReconnect = await this.canReconnect(userId, serverName);
       if (canReconnect) {
         serversToReconnect.push(serverName);

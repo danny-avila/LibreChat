@@ -1,5 +1,5 @@
 const passport = require('passport');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
 
 const requireLocalAuth = (req, res, next) => {
   passport.authenticate('local', (err, user, info) => {

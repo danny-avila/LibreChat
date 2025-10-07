@@ -181,6 +181,197 @@ describe('Token Methods - Detailed Tests', () => {
 
       expect(found).toBeNull();
     });
+
+    test('should find most recent token with sort option', async () => {
+      const recentUserId = new mongoose.Types.ObjectId();
+
+      // Create tokens with different timestamps
+      const oldDate = new Date(Date.now() - 7200000); // 2 hours ago
+      const midDate = new Date(Date.now() - 3600000); // 1 hour ago
+      const newDate = new Date(); // now
+
+      await Token.create([
+        {
+          token: 'old-token',
+          userId: recentUserId,
+          email: 'recent@example.com',
+          createdAt: oldDate,
+          expiresAt: new Date(oldDate.getTime() + 86400000),
+        },
+        {
+          token: 'mid-token',
+          userId: recentUserId,
+          email: 'recent@example.com',
+          createdAt: midDate,
+          expiresAt: new Date(midDate.getTime() + 86400000),
+        },
+        {
+          token: 'new-token',
+          userId: recentUserId,
+          email: 'recent@example.com',
+          createdAt: newDate,
+          expiresAt: new Date(newDate.getTime() + 86400000),
+        },
+      ]);
+
+      // Find most recent token for the user with sort option
+      const found = await methods.findToken(
+        { userId: recentUserId.toString() },
+        { sort: { createdAt: -1 } },
+      );
+
+      expect(found).toBeDefined();
+      expect(found?.token).toBe('new-token');
+      expect(found?.createdAt.getTime()).toBe(newDate.getTime());
+    });
+
+    test('should find oldest token with ascending sort', async () => {
+      const sortUserId = new mongoose.Types.ObjectId();
+
+      const oldDate = new Date(Date.now() - 7200000);
+      const midDate = new Date(Date.now() - 3600000);
+      const newDate = new Date();
+
+      await Token.create([
+        {
+          token: 'sort-old',
+          userId: sortUserId,
+          email: 'sort@example.com',
+          createdAt: oldDate,
+          expiresAt: new Date(oldDate.getTime() + 86400000),
+        },
+        {
+          token: 'sort-mid',
+          userId: sortUserId,
+          email: 'sort@example.com',
+          createdAt: midDate,
+          expiresAt: new Date(midDate.getTime() + 86400000),
+        },
+        {
+          token: 'sort-new',
+          userId: sortUserId,
+          email: 'sort@example.com',
+          createdAt: newDate,
+          expiresAt: new Date(newDate.getTime() + 86400000),
+        },
+      ]);
+
+      // Find oldest token with ascending sort
+      const found = await methods.findToken(
+        { userId: sortUserId.toString() },
+        { sort: { createdAt: 1 } },
+      );
+
+      expect(found).toBeDefined();
+      expect(found?.token).toBe('sort-old');
+      expect(found?.createdAt.getTime()).toBe(oldDate.getTime());
+    });
+
+    test('should handle multiple sort criteria', async () => {
+      const multiSortUserId = new mongoose.Types.ObjectId();
+      const sameDate = new Date();
+
+      await Token.create([
+        {
+          token: 'token-a',
+          userId: multiSortUserId,
+          email: 'z@example.com',
+          createdAt: sameDate,
+          expiresAt: new Date(sameDate.getTime() + 86400000),
+        },
+        {
+          token: 'token-b',
+          userId: multiSortUserId,
+          email: 'a@example.com',
+          createdAt: sameDate,
+          expiresAt: new Date(sameDate.getTime() + 86400000),
+        },
+        {
+          token: 'token-c',
+          userId: multiSortUserId,
+          email: 'm@example.com',
+          createdAt: new Date(Date.now() - 1000), // slightly older
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+      ]);
+
+      // Sort by createdAt descending, then by email ascending
+      const found = await methods.findToken(
+        { userId: multiSortUserId.toString() },
+        { sort: { createdAt: -1, email: 1 } },
+      );
+
+      expect(found).toBeDefined();
+      // Should get token-b (same recent date but 'a@example.com' comes first alphabetically)
+      expect(found?.token).toBe('token-b');
+      expect(found?.email).toBe('a@example.com');
+    });
+
+    test('should find token with projection option', async () => {
+      const projectionUserId = new mongoose.Types.ObjectId();
+
+      await Token.create({
+        token: 'projection-token',
+        userId: projectionUserId,
+        email: 'projection@example.com',
+        identifier: 'oauth-projection',
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 86400000),
+      });
+
+      // Find token with projection to only include specific fields
+      const found = await methods.findToken(
+        { userId: projectionUserId.toString() },
+        { projection: { token: 1, email: 1 } },
+      );
+
+      expect(found).toBeDefined();
+      expect(found?.token).toBe('projection-token');
+      expect(found?.email).toBe('projection@example.com');
+      // Note: _id is usually included by default unless explicitly excluded
+    });
+
+    test('should respect combined query options', async () => {
+      const combinedUserId = new mongoose.Types.ObjectId();
+
+      // Create multiple tokens with different attributes
+      await Token.create([
+        {
+          token: 'combined-1',
+          userId: combinedUserId,
+          email: 'combined1@example.com',
+          createdAt: new Date(Date.now() - 7200000),
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+        {
+          token: 'combined-2',
+          userId: combinedUserId,
+          email: 'combined2@example.com',
+          createdAt: new Date(Date.now() - 3600000),
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+        {
+          token: 'combined-3',
+          userId: combinedUserId,
+          email: 'combined3@example.com',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+      ]);
+
+      // Use multiple query options together
+      const found = await methods.findToken(
+        { userId: combinedUserId.toString() },
+        {
+          sort: { createdAt: -1 },
+          projection: { token: 1, createdAt: 1 },
+        },
+      );
+
+      expect(found).toBeDefined();
+      expect(found?.token).toBe('combined-3'); // Most recent
+      expect(found?.createdAt).toBeDefined();
+    });
   });
 
   describe('updateToken', () => {

@@ -1,8 +1,8 @@
 /* eslint-disable no-useless-escape */
-const axios = require('axios');
 const { z } = require('zod');
+const axios = require('axios');
 const { Tool } = require('@langchain/core/tools');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
 
 class WolframAlphaAPI extends Tool {
   constructor(fields) {

@@ -1,0 +1,6 @@
+# Example: Redirect AWS Bedrock EU traffic to proxy server
+hostAliases:
+  - ip: "10.1.2.3"  # Your proxy server IP
+    hostnames:
+      - "bedrock-runtime.eu-central-1.amazonaws.com"
+      - "bedrock.eu-central-1.amazonaws.com"

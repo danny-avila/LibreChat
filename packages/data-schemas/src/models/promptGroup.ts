@@ -1,4 +1,5 @@
-import promptGroupSchema, { IPromptGroupDocument } from '~/schema/promptGroup';
+import promptGroupSchema from '~/schema/promptGroup';
+import type { IPromptGroupDocument } from '~/types/prompts';
 
 /**
  * Creates or returns the PromptGroup model using the provided mongoose instance and schema

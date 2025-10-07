@@ -3,8 +3,8 @@ const path = require('path');
 const mime = require('mime');
 const axios = require('axios');
 const fetch = require('node-fetch');
-const { logger } = require('~/config');
-const { getAzureContainerClient } = require('./initialize');
+const { logger } = require('@librechat/data-schemas');
+const { getAzureContainerClient } = require('@librechat/api');
 
 const defaultBasePath = 'images';
 const { AZURE_STORAGE_PUBLIC_ACCESS = 'true', AZURE_CONTAINER_NAME = 'files' } = process.env;
@@ -30,7 +30,7 @@ async function saveBufferToAzure({
   containerName,
 }) {
   try {
-    const containerClient = getAzureContainerClient(containerName);
+    const containerClient = await getAzureContainerClient(containerName);
     const access = AZURE_STORAGE_PUBLIC_ACCESS?.toLowerCase() === 'true' ? 'blob' : undefined;
     // Create the container if it doesn't exist. This is done per operation.
     await containerClient.createIfNotExists({ access });
@@ -84,7 +84,7 @@ async function saveURLToAzure({
  */
 async function getAzureURL({ fileName, basePath = defaultBasePath, userId, containerName }) {
   try {
-    const containerClient = getAzureContainerClient(containerName);
+    const containerClient = await getAzureContainerClient(containerName);
     const blobPath = userId ? `${basePath}/${userId}/${fileName}` : `${basePath}/${fileName}`;
     const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
     return blockBlobClient.url;
@@ -103,7 +103,7 @@ async function getAzureURL({ fileName, basePath = defaultBasePath, userId, conta
  */
 async function deleteFileFromAzure(req, file) {
   try {
-    const containerClient = getAzureContainerClient(AZURE_CONTAINER_NAME);
+    const containerClient = await getAzureContainerClient(AZURE_CONTAINER_NAME);
     const blobPath = file.filepath.split(`${AZURE_CONTAINER_NAME}/`)[1];
     if (!blobPath.includes(req.user.id)) {
       throw new Error('User ID not found in blob path');
@@ -140,7 +140,7 @@ async function streamFileToAzure({
   containerName,
 }) {
   try {
-    const containerClient = getAzureContainerClient(containerName);
+    const containerClient = await getAzureContainerClient(containerName);
     const access = AZURE_STORAGE_PUBLIC_ACCESS?.toLowerCase() === 'true' ? 'blob' : undefined;
 
     // Create the container if it doesn't exist

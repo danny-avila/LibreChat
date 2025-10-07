@@ -1,4 +1,4 @@
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
 
 /**
  * Extracts the base URL from the provided URL.

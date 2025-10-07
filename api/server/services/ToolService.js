@@ -1,7 +1,12 @@
 const { sleep } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const { tool: toolFn, DynamicStructuredTool } = require('@langchain/core/tools');
-const { getToolkitKey, hasCustomUserVars, getUserMCPAuthMap } = require('@librechat/api');
+const {
+  getToolkitKey,
+  hasCustomUserVars,
+  getUserMCPAuthMap,
+  isActionDomainAllowed,
+} = require('@librechat/api');
 const {
   Tools,
   Constants,
@@ -26,7 +31,6 @@ const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/p
 const { getEndpointsConfig, getCachedTools } = require('~/server/services/Config');
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
-const { isActionDomainAllowed } = require('~/server/services/domains');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');

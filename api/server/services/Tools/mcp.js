@@ -7,7 +7,7 @@ const { getLogStores } = require('~/cache');
 
 /**
  * @param {Object} params
- * @param {string} params.userId
+ * @param {IUser} params.user - The user from the request object.
  * @param {string} params.serverName - The name of the MCP server
  * @param {boolean} params.returnOnOAuth - Whether to initiate OAuth and return, or wait for OAuth flow to finish
  * @param {AbortSignal} [params.signal] - The abort signal to handle cancellation.
@@ -18,7 +18,7 @@ const { getLogStores } = require('~/cache');
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  */
 async function reinitMCPServer({
-  userId,
+  user,
   signal,
   forceNew,
   serverName,
@@ -29,7 +29,7 @@ async function reinitMCPServer({
   flowManager: _flowManager,
 }) {
   /** @type {MCPConnection | null} */
-  let userConnection = null;
+  let connection = null;
   /** @type {LCAvailableTools | null} */
   let availableTools = null;
   /** @type {ReturnType<MCPConnection['fetchTools']> | null} */
@@ -50,8 +50,8 @@ async function reinitMCPServer({
       });
 
     try {
-      userConnection = await mcpManager.getUserConnection({
-        user: { id: userId },
+      connection = await mcpManager.getConnection({
+        user,
         signal,
         forceNew,
         oauthStart,
@@ -70,7 +70,7 @@ async function reinitMCPServer({
 
       logger.info(`[MCP Reinitialize] Successfully established connection for ${serverName}`);
     } catch (err) {
-      logger.info(`[MCP Reinitialize] getUserConnection threw error: ${err.message}`);
+      logger.info(`[MCP Reinitialize] getConnection threw error: ${err.message}`);
       logger.info(
         `[MCP Reinitialize] OAuth state - oauthRequired: ${oauthRequired}, oauthUrl: ${oauthUrl ? 'present' : 'null'}`,
       );
@@ -95,8 +95,8 @@ async function reinitMCPServer({
       }
     }
 
-    if (userConnection && !oauthRequired) {
-      tools = await userConnection.fetchTools();
+    if (connection && !oauthRequired) {
+      tools = await connection.fetchTools();
       availableTools = await updateMCPServerTools({
         serverName,
         tools,
@@ -111,7 +111,7 @@ async function reinitMCPServer({
       if (oauthRequired) {
         return `MCP server '${serverName}' ready for OAuth authentication`;
       }
-      if (userConnection) {
+      if (connection) {
         return `MCP server '${serverName}' reinitialized successfully`;
       }
       return `Failed to reinitialize MCP server '${serverName}'`;
@@ -119,7 +119,7 @@ async function reinitMCPServer({
 
     const result = {
       availableTools,
-      success: Boolean((userConnection && !oauthRequired) || (oauthRequired && oauthUrl)),
+      success: Boolean((connection && !oauthRequired) || (oauthRequired && oauthUrl)),
       message: getResponseMessage(),
       oauthRequired,
       serverName,

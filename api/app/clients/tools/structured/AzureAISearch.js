@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
+const { logger } = require('@librechat/data-schemas');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
-const { logger } = require('~/config');
 
 class AzureAISearch extends Tool {
   // Constants for default values
@@ -18,7 +18,7 @@ class AzureAISearch extends Tool {
     super();
     this.name = 'azure-ai-search';
     this.description =
-      'Use the \'azure-ai-search\' tool to retrieve search results relevant to your input';
+      "Use the 'azure-ai-search' tool to retrieve search results relevant to your input";
     /* Used to initialize the Tool without necessary variables. */
     this.override = fields.override ?? false;
 

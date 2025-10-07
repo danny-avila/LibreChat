@@ -26,6 +26,10 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      {{- with .Values.hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.dnsPolicy }}
       dnsPolicy: {{ .Values.dnsPolicy }}
       {{- end }}
@@ -79,6 +83,10 @@ spec:
           - secretRef:
               name: {{ .Values.global.librechat.existingSecretName }}
               optional: true
+          {{- end }}
+          {{- with .Values.global.librechat.env }}
+          env:
+          {{- toYaml . | nindent 12 }}
           {{- end }}
       volumes:
       {{- if or .Values.librechat.configYamlContent .Values.librechat.existingConfigYaml }}

@@ -1,10 +1,10 @@
 const { v4: uuidv4 } = require('uuid');
+const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint, Constants, ForkOptions } = require('librechat-data-provider');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getConvo } = require('~/models/Conversation');
 const { getMessages } = require('~/models/Message');
-const logger = require('~/config/winston');
 
 /**
  * Helper function to clone messages with proper parent-child relationships and timestamps

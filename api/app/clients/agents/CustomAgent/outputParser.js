@@ -1,5 +1,5 @@
+const { logger } = require('@librechat/data-schemas');
 const { ZeroShotAgentOutputParser } = require('langchain/agents');
-const { logger } = require('~/config');
 
 class CustomOutputParser extends ZeroShotAgentOutputParser {
   constructor(fields) {

@@ -10,9 +10,8 @@ import {
 } from 'librechat-data-provider';
 import type { SearchResultData, UIResource, TPlugin, TUser } from 'librechat-data-provider';
 import type * as t from '@modelcontextprotocol/sdk/types.js';
-import type { TokenMethods } from '@librechat/data-schemas';
+import type { TokenMethods, JsonSchemaType } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
-import type { JsonSchemaType } from '~/types/zod';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
 

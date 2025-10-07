@@ -23,7 +23,7 @@ version: 1.9.1
 # It is recommended to use it with quotes.
 
 # renovate: image=ghcr.io/danny-avila/librechat
-appVersion: "v0.8.0-rc4"
+appVersion: "v0.8.0"
 
 home: https://www.librechat.ai
 
