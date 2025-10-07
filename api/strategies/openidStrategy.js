@@ -1,4 +1,5 @@
 const undici = require('undici');
+const { get } = require('lodash');
 const fetch = require('node-fetch');
 const passport = require('passport');
 const client = require('openid-client');
@@ -282,28 +283,6 @@ function convertToUsername(input, defaultValue = '') {
 }
 
 /**
- * Retrieves a property from an object using a dot-separated path.
- * If the property does not exist, it returns undefined.
- *
- * @param {Object} obj - The object from which to retrieve the property.
- * @param {string} path - The dot-separated path to the property.
- * @returns {*} The value of the property at the specified path, or undefined if it does not exist.
- */
-function getPropertyFromObject(obj, path) {
-  if (!obj || !path) {
-    return undefined;
-  }
-
-  const pathParts = path.split('.');
-  return pathParts.reduce((o, key) => {
-    if (o === null || o === undefined || !(key in o)) {
-      return undefined;
-    }
-    return o[key];
-  }, obj);
-}
-
-/**
  * Sets up the OpenID strategy for authentication.
  * This function configures the OpenID client, handles proxy settings,
  * and defines the OpenID strategy for Passport.js.
@@ -415,7 +394,7 @@ async function setupOpenId() {
               decodedToken = jwtDecode(tokenset.id_token);
             }
 
-            let roles = getPropertyFromObject(decodedToken, requiredRoleParameterPath);
+            let roles = get(decodedToken, requiredRoleParameterPath);
             if (!roles) {
               logger.error(
                 `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
@@ -486,7 +465,7 @@ async function setupOpenId() {
                 return done(new Error('Invalid admin role token kind'));
             }
 
-            const adminRoles = getPropertyFromObject(adminRoleObject, adminRoleParameterPath);
+            const adminRoles = get(adminRoleObject, adminRoleParameterPath);
 
             // Accept 3 types of values for the object extracted from adminRoleParameterPath:
             // 1. A boolean value indicating if the user is an admin
