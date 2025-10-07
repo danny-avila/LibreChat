@@ -361,7 +361,6 @@
   "com_error_files_dupe": "Doppelte Datei erkannt.",
   "com_error_files_empty": "Leere Dateien sind nicht zulässig",
   "com_error_files_process": "Bei der Verarbeitung der Datei ist ein Fehler aufgetreten.",
-  "com_error_files_unsupported_capability": "Keine aktivierten Funktionen unterstützen diesen Dateityp",
   "com_error_files_upload": "Beim Hochladen der Datei ist ein Fehler aufgetreten",
   "com_error_files_upload_canceled": "Die Datei-Upload-Anfrage wurde abgebrochen. Hinweis: Der Upload-Vorgang könnte noch im Hintergrund laufen und die Datei muss möglicherweise manuell gelöscht werden.",
   "com_error_files_validation": "Bei der Validierung der Datei ist ein Fehler aufgetreten.",
