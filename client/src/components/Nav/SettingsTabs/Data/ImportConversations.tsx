@@ -7,6 +7,8 @@ import { useLocalize } from '~/hooks';
 import { cn, logger } from '~/utils';
 
 function ImportConversations() {
+  const queryClient = useQueryClient();
+  const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
   const localize = useLocalize();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { showToast } = useToastContext();
