@@ -365,6 +365,7 @@
   "com_error_files_process": "An error occurred while processing the file.",
   "com_error_files_upload": "An error occurred while uploading the file.",
   "com_error_files_upload_canceled": "The file upload request was canceled. Note: the file upload may still be processing and will need to be manually deleted.",
+  "com_error_files_upload_too_large": "The file is too large.  Please upload a file smaller than {{0}} MB",
   "com_error_files_validation": "An error occurred while validating the file.",
   "com_error_google_tool_conflict": "Usage of built-in Google tools are not supported with external tools. Please disable either the built-in tools or the external tools.",
   "com_error_heic_conversion": "Failed to convert HEIC image to JPEG. Please try converting the image manually or use a different format.",

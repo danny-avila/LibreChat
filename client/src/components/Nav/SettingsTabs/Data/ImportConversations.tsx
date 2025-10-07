@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { Import } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, TStartupConfig } from 'librechat-data-provider';
 import { Spinner, useToastContext, Label, Button } from '@librechat/client';
 import { useUploadConversationsMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
@@ -7,6 +9,8 @@ import { useLocalize } from '~/hooks';
 import { cn, logger } from '~/utils';
 
 function ImportConversations() {
+  const queryClient = useQueryClient();
+  const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
   const localize = useLocalize();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { showToast } = useToastContext();
@@ -49,6 +53,17 @@ function ImportConversations() {
   const handleFileUpload = useCallback(
     async (file: File) => {
       try {
+        const maxFileSize = (startupConfig as any)?.conversationImportMaxFileSize;
+        if (maxFileSize && file.size > maxFileSize) {
+          const size = (maxFileSize / (1024 * 1024)).toFixed(2);
+          showToast({
+            message: localize('com_error_files_upload_too_large', { 0: size }),
+            status: NotificationSeverity.ERROR,
+          });
+          setIsUploading(false);
+          return;
+        }
+
         const formData = new FormData();
         formData.append('file', file, encodeURIComponent(file.name || 'File'));
         uploadFile.mutate(formData);
@@ -61,13 +76,14 @@ function ImportConversations() {
         });
       }
     },
-    [uploadFile, showToast, localize],
+    [uploadFile, showToast, localize, startupConfig],
   );
 
   const handleFileChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (file) {
+        setIsUploading(true);
         handleFileUpload(file);
       }
       event.target.value = '';
