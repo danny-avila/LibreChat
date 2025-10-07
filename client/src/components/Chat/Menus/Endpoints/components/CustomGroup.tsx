@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import React from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
 import { CustomMenu as Menu } from '../CustomMenu';
 import { ModelSpecItem } from './ModelSpecItem';

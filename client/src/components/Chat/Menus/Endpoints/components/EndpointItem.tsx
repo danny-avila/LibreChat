@@ -67,7 +67,11 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
     setEndpointSearchValue,
     endpointRequiresUserKey,
   } = useModelSelectorContext();
-  const { model: selectedModel, endpoint: selectedEndpoint, modelSpec: selectedSpec } = selectedValues;
+  const {
+    model: selectedModel,
+    endpoint: selectedEndpoint,
+    modelSpec: selectedSpec,
+  } = selectedValues;
 
   // Filter modelSpecs for this endpoint (by group matching endpoint value)
   const endpointSpecs = useMemo(() => {

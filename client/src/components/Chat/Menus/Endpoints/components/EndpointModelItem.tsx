@@ -38,18 +38,21 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
       onClick={() => handleSelectModel(endpoint, modelId ?? '')}
       className="flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm"
     >
-      <div className="flex w-full min-w-0 gap-2 px-1 py-1 items-center">
+      <div className="flex w-full min-w-0 items-center gap-2 px-1 py-1">
         {avatarUrl ? (
           <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
             <img src={avatarUrl} alt={modelName ?? ''} className="h-full w-full object-cover" />
           </div>
-        ) : (isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)) && endpoint.icon ? (
+        ) : (isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)) &&
+          endpoint.icon ? (
           <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
             {endpoint.icon}
           </div>
         ) : null}
         <span className="truncate text-left">{modelName}</span>
-        {isGlobal && <EarthIcon className="ml-auto size-4 flex-shrink-0 self-center text-green-400" />}
+        {isGlobal && (
+          <EarthIcon className="ml-auto size-4 flex-shrink-0 self-center text-green-400" />
+        )}
       </div>
       {isSelected && (
         <div className="flex-shrink-0 self-center">
