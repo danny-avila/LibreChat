@@ -395,9 +395,9 @@ async function setupOpenId() {
             }
 
             let roles = get(decodedToken, requiredRoleParameterPath);
-            if (!roles) {
+            if (!roles || (!Array.isArray(roles) && typeof roles !== 'string')) {
               logger.error(
-                `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
+                `[openidStrategy] Key '${requiredRoleParameterPath}' not found or invalid type in ${requiredRoleTokenKind} token!`,
               );
               const rolesList =
                 requiredRoles.length === 1

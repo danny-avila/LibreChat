@@ -531,7 +531,9 @@ describe('setupOpenId', () => {
       const { user, details } = await validate(tokenset);
 
       expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining("Key 'resource_access.nonexistent.roles' not found in id token!"),
+        expect.stringContaining(
+          "Key 'resource_access.nonexistent.roles' not found or invalid type in id token!",
+        ),
       );
       expect(user).toBe(false);
       expect(details.message).toContain('role to log in');
@@ -554,7 +556,7 @@ describe('setupOpenId', () => {
       const { user } = await validate(tokenset);
 
       expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining("Key 'org.team.roles' not found in id token!"),
+        expect.stringContaining("Key 'org.team.roles' not found or invalid type in id token!"),
       );
       expect(user).toBe(false);
     });
@@ -738,7 +740,7 @@ describe('setupOpenId', () => {
       const { user } = await validate(tokenset);
 
       expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining("Key 'access.roles' not found in id token!"),
+        expect.stringContaining("Key 'access.roles' not found or invalid type in id token!"),
       );
       expect(user).toBe(false);
     });
@@ -758,7 +760,7 @@ describe('setupOpenId', () => {
       const { user } = await validate(tokenset);
 
       expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining("Key 'data.roles' not found in id token!"),
+        expect.stringContaining("Key 'data.roles' not found or invalid type in id token!"),
       );
       expect(user).toBe(false);
     });
@@ -784,6 +786,47 @@ describe('setupOpenId', () => {
           "Invalid admin role token kind: invalid. Must be one of 'access', 'id', or 'userinfo'",
         ),
       );
+    });
+
+    it('should reject login when roles path returns invalid type (object)', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      process.env.OPENID_REQUIRED_ROLE = 'app-user';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roles';
+
+      jwtDecode.mockReturnValue({
+        roles: { admin: true, user: false },
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user, details } = await validate(tokenset);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("Key 'roles' not found or invalid type in id token!"),
+      );
+      expect(user).toBe(false);
+      expect(details.message).toContain('role to log in');
+    });
+
+    it('should reject login when roles path returns invalid type (number)', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      process.env.OPENID_REQUIRED_ROLE = 'user';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roleCount';
+
+      jwtDecode.mockReturnValue({
+        roleCount: 5,
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("Key 'roleCount' not found or invalid type in id token!"),
+      );
+      expect(user).toBe(false);
     });
   });
 });
