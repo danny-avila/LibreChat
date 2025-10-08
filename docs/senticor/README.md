@@ -111,12 +111,12 @@ This means users must provide their own API keys in the UI.
 
 1. **OpenRouter** - Pre-configured with API key:
    ```env
-   OPENROUTER_KEY=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
+   OPENROUTER_KEY=<your-openrouter-api-key>
    ```
 
 2. **aiXplain** - Pre-configured with API key:
    ```env
-   AIXPLAIN_API_KEY=8327094ec9fbd0299f75efada22f43fe9e6d00a792b96302efa61732499e9a5d
+   AIXPLAIN_API_KEY=<your-aixplain-api-key>
    ```
 
 ### Custom Endpoints
@@ -326,7 +326,7 @@ MONGO_URI=mongodb://127.0.0.1:27017/LibreChat
 ```env
 SEARCH=true
 MEILI_HOST=http://0.0.0.0:7700
-MEILI_MASTER_KEY=3eacc86d31caa87bea7e8fbd475cfe70
+MEILI_MASTER_KEY=<your-meili-master-key>
 MEILI_NO_ANALYTICS=true
 ```
 
@@ -341,20 +341,22 @@ MEILI_NO_ANALYTICS=true
 ### JWT Secrets
 
 ```env
-JWT_SECRET=16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef
-JWT_REFRESH_SECRET=f25a9393da616c6d5895f7b8161374e688583f44ed95d5796d19627f79cce703
+JWT_SECRET=<your-jwt-secret-64-chars>
+JWT_REFRESH_SECRET=<your-jwt-refresh-secret-64-chars>
 ```
 
-⚠️ **Important**: These secrets should be rotated for production use.
+⚠️ **Important**: Generate secure random secrets for production. Use `openssl rand -hex 32` to generate.
 
 ### Encryption Keys
 
 ```env
-CREDS_KEY=8ac0295e4c7e446ddbbb4ac68c3db18580926931e47217ed66a7724f1c20023f
-CREDS_IV=70b4bb22d1b6f1d5cb9dca84c7a2a913
+CREDS_KEY=<your-creds-encryption-key-64-chars>
+CREDS_IV=<your-creds-iv-32-chars>
 ```
 
-Used for encrypting stored credentials (API keys, tokens).
+Used for encrypting stored credentials (API keys, tokens). Generate with:
+- `CREDS_KEY`: `openssl rand -hex 32`
+- `CREDS_IV`: `openssl rand -hex 16`
 
 ### Rate Limiting & Moderation
 
