@@ -1,0 +1,48 @@
+# EditorConfig configuration for LibreChat project
+# This ensures consistent editor settings across all developers and IDEs
+
+root = true
+
+# All files
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# YAML files
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+max_line_length = 120
+
+# JSON files  
+[*.json]
+indent_style = space
+indent_size = 2
+
+# JavaScript/TypeScript
+[*.{js,jsx,ts,tsx,mjs}]
+indent_style = space
+indent_size = 2
+
+# Python files
+[*.py]
+indent_style = space
+indent_size = 4
+max_line_length = 88
+
+# Shell scripts
+[*.{sh,bash}]
+indent_style = space
+indent_size = 2
+
+# Docker files
+[{Dockerfile,Dockerfile.*}]
+indent_style = space
+indent_size = 2
+
+# Markdown
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = 80

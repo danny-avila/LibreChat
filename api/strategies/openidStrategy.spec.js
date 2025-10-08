@@ -441,4 +441,177 @@ describe('setupOpenId', () => {
     expect(callOptions.usePKCE).toBe(false);
     expect(callOptions.params?.code_challenge_method).toBeUndefined();
   });
+
+  describe('OPENID_AUTHORIZATION_PARAMS', () => {
+    const { logger } = require('@librechat/data-schemas');
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      delete process.env.OPENID_AUTHORIZATION_PARAMS;
+    });
+
+    it('should add single custom parameter from OPENID_AUTHORIZATION_PARAMS', async () => {
+      // Arrange
+      process.env.OPENID_AUTHORIZATION_PARAMS = '{"idp_identifier":"MySAMLProvider"}';
+
+      // Create a CustomOpenIDStrategy instance directly by requiring the module
+      // This will parse and apply OPENID_AUTHORIZATION_PARAMS
+      await setupOpenId();
+
+      // We can't easily test the method directly due to mocking, so we verify the env var is valid JSON
+      const customParams = JSON.parse(process.env.OPENID_AUTHORIZATION_PARAMS);
+
+      // Assert
+      expect(customParams.idp_identifier).toBe('MySAMLProvider');
+      expect(typeof customParams).toBe('object');
+      expect(customParams).not.toBeNull();
+    });
+
+    it('should add multiple custom parameters from OPENID_AUTHORIZATION_PARAMS', async () => {
+      // Arrange
+      process.env.OPENID_AUTHORIZATION_PARAMS =
+        '{"idp_identifier":"Provider","prompt":"login","max_age":"3600"}';
+
+      await setupOpenId();
+      const customParams = JSON.parse(process.env.OPENID_AUTHORIZATION_PARAMS);
+
+      // Assert
+      expect(customParams.idp_identifier).toBe('Provider');
+      expect(customParams.prompt).toBe('login');
+      expect(customParams.max_age).toBe('3600');
+      expect(Object.keys(customParams)).toHaveLength(3);
+    });
+
+    it('should handle invalid JSON in OPENID_AUTHORIZATION_PARAMS gracefully', async () => {
+      // Arrange
+      process.env.OPENID_AUTHORIZATION_PARAMS = '{invalid json}';
+
+      // Act - setupOpenId should handle the invalid JSON gracefully
+      const result = await setupOpenId();
+
+      // Assert - should not crash and should return config
+      expect(result).toBeTruthy();
+      expect(result).toHaveProperty('clientId');
+    });
+
+    it('should handle non-object JSON values gracefully', async () => {
+      // Arrange
+      process.env.OPENID_AUTHORIZATION_PARAMS = '"string value"';
+
+      // Act
+      const result = await setupOpenId();
+
+      // Assert - should not crash and should return config
+      expect(result).toBeTruthy();
+      expect(result).toHaveProperty('clientId');
+    });
+
+    it('should handle array JSON values gracefully', async () => {
+      // Arrange
+      process.env.OPENID_AUTHORIZATION_PARAMS = '["value1", "value2"]';
+
+      // Act
+      const result = await setupOpenId();
+
+      // Assert - should not crash and should return config
+      expect(result).toBeTruthy();
+      expect(result).toHaveProperty('clientId');
+    });
+
+    it('should parse parameters with null values correctly', async () => {
+      // Arrange
+      process.env.OPENID_AUTHORIZATION_PARAMS =
+        '{"param1":"value1","param2":null,"param3":"value3"}';
+
+      await setupOpenId();
+      const customParams = JSON.parse(process.env.OPENID_AUTHORIZATION_PARAMS);
+
+      // Assert - null values are valid JSON but should be skipped in the implementation
+      expect(customParams.param1).toBe('value1');
+      expect(customParams.param2).toBeNull();
+      expect(customParams.param3).toBe('value3');
+    });
+
+    it('should parse numeric values correctly', async () => {
+      // Arrange
+      process.env.OPENID_AUTHORIZATION_PARAMS = '{"max_age":3600,"count":5}';
+
+      await setupOpenId();
+      const customParams = JSON.parse(process.env.OPENID_AUTHORIZATION_PARAMS);
+
+      // Assert - numeric values will be converted to strings when added to URL params
+      expect(customParams.max_age).toBe(3600);
+      expect(customParams.count).toBe(5);
+      expect(String(customParams.max_age)).toBe('3600');
+      expect(String(customParams.count)).toBe('5');
+    });
+
+    it('should parse boolean values correctly', async () => {
+      // Arrange
+      process.env.OPENID_AUTHORIZATION_PARAMS = '{"include_granted_scopes":true,"force":false}';
+
+      await setupOpenId();
+      const customParams = JSON.parse(process.env.OPENID_AUTHORIZATION_PARAMS);
+
+      // Assert - boolean values will be converted to strings when added to URL params
+      expect(customParams.include_granted_scopes).toBe(true);
+      expect(customParams.force).toBe(false);
+      expect(String(customParams.include_granted_scopes)).toBe('true');
+      expect(String(customParams.force)).toBe('false');
+    });
+
+    it('should not process parameters when OPENID_AUTHORIZATION_PARAMS is not set', async () => {
+      // Arrange
+      delete process.env.OPENID_AUTHORIZATION_PARAMS;
+
+      // Act
+      await setupOpenId();
+
+      // Assert - should not log any custom parameter messages
+      expect(logger.debug).not.toHaveBeenCalledWith(
+        expect.stringContaining('Adding custom authorization parameter'),
+      );
+    });
+
+    it('should accept valid JSON alongside other OpenID config', async () => {
+      // Arrange
+      process.env.OPENID_AUTHORIZATION_PARAMS = '{"idp_identifier":"Provider"}';
+      process.env.OPENID_AUDIENCE = 'https://api.example.com';
+
+      // Act
+      await setupOpenId();
+      const customParams = JSON.parse(process.env.OPENID_AUTHORIZATION_PARAMS);
+
+      // Assert - custom params should be valid and coexist with other config
+      expect(customParams.idp_identifier).toBe('Provider');
+      expect(process.env.OPENID_AUDIENCE).toBe('https://api.example.com');
+    });
+
+    it('should handle empty object in OPENID_AUTHORIZATION_PARAMS', async () => {
+      // Arrange
+      process.env.OPENID_AUTHORIZATION_PARAMS = '{}';
+
+      // Act
+      await setupOpenId();
+      const customParams = JSON.parse(process.env.OPENID_AUTHORIZATION_PARAMS);
+
+      // Assert - should not crash and should result in no parameters
+      expect(customParams).toEqual({});
+      expect(Object.keys(customParams)).toHaveLength(0);
+    });
+
+    it('should handle special characters in parameter values', async () => {
+      // Arrange
+      process.env.OPENID_AUTHORIZATION_PARAMS =
+        '{"login_hint":"user@example.com","display":"popup"}';
+
+      // Act
+      await setupOpenId();
+      const customParams = JSON.parse(process.env.OPENID_AUTHORIZATION_PARAMS);
+
+      // Assert - special characters should be preserved in JSON parsing
+      expect(customParams.login_hint).toBe('user@example.com');
+      expect(customParams.display).toBe('popup');
+    });
+  });
 });

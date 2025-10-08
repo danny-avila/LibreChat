@@ -129,6 +129,29 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
       logger.debug('[openidStrategy] Generated nonce for federated provider:', nonce);
     }
 
+    /** Add custom authorization parameters from environment variable */
+    if (process.env.OPENID_AUTHORIZATION_PARAMS) {
+      try {
+        const customParams = JSON.parse(process.env.OPENID_AUTHORIZATION_PARAMS);
+        if (typeof customParams === 'object' && customParams !== null) {
+          for (const [key, value] of Object.entries(customParams)) {
+            if (typeof key === 'string' && value != null) {
+              params.set(key, String(value));
+              logger.debug(
+                `[openidStrategy] Adding custom authorization parameter: ${key}=${String(value)}`,
+              );
+            }
+          }
+        } else {
+          logger.warn('[openidStrategy] OPENID_AUTHORIZATION_PARAMS must be a valid JSON object');
+        }
+      } catch (error) {
+        logger.error(
+          `[openidStrategy] Failed to parse OPENID_AUTHORIZATION_PARAMS: ${error.message}`,
+        );
+      }
+    }
+
     return params;
   }
 }
