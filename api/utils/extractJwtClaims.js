@@ -105,13 +105,53 @@ function sanitizeGroupName(groupName) {
 }
 
 /**
+ * Checks if a group name should be excluded based on exclusion patterns.
+ * Supports exact matches (case-insensitive) and regex patterns (prefix with 'regex:').
+ * @param {string} groupName - The group name to check.
+ * @param {string|null} exclusionPattern - Comma-separated list of exact names or regex patterns.
+ * @returns {boolean} True if the group should be excluded.
+ */
+function shouldExcludeGroup(groupName, exclusionPattern) {
+  if (!exclusionPattern || typeof exclusionPattern !== 'string') {
+    return false;
+  }
+
+  const patterns = exclusionPattern.split(',').map(p => p.trim()).filter(Boolean);
+  
+  for (const pattern of patterns) {
+    // Check if it's a regex pattern
+    if (pattern.startsWith('regex:')) {
+      try {
+        const regexStr = pattern.substring(6); // Remove 'regex:' prefix
+        const regex = new RegExp(regexStr, 'i'); // Case-insensitive
+        if (regex.test(groupName)) {
+          logger.debug(`[shouldExcludeGroup] Excluding '${groupName}' (matched regex: ${regexStr})`);
+          return true;
+        }
+      } catch (error) {
+        logger.warn(`[shouldExcludeGroup] Invalid regex pattern '${pattern}': ${error.message}`);
+      }
+    } else {
+      // Exact match (case-insensitive)
+      if (pattern.toLowerCase() === groupName.toLowerCase()) {
+        logger.debug(`[shouldExcludeGroup] Excluding '${groupName}' (exact match: ${pattern})`);
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Extracts groups from JWT token for OIDC group synchronization
  * @param {Object} tokenset - OpenID token set containing access_token and id_token
  * @param {string} claimPath - Dot-notation path to groups/roles claim
  * @param {string} tokenKind - Which token to extract from ('access' or 'id')
+ * @param {string|null} exclusionPattern - Optional exclusion pattern for filtering groups
  * @returns {Array<string>} Array of sanitized group names
  */
-function extractGroupsFromToken(tokenset, claimPath, tokenKind = 'access') {
+function extractGroupsFromToken(tokenset, claimPath, tokenKind = 'access', exclusionPattern = null) {
   try {
     if (!tokenset || typeof tokenset !== 'object') {
       logger.warn('[extractGroupsFromToken] Invalid tokenset provided');
@@ -137,8 +177,21 @@ function extractGroupsFromToken(tokenset, claimPath, tokenKind = 'access') {
       .map(sanitizeGroupName)
       .filter(name => name.length > 0);
 
+    // Apply exclusion filter
+    const filteredGroups = exclusionPattern 
+      ? sanitizedGroups.filter(g => !shouldExcludeGroup(g, exclusionPattern))
+      : sanitizedGroups;
+
     // Remove duplicates
-    const uniqueGroups = [...new Set(sanitizedGroups)];
+    const uniqueGroups = [...new Set(filteredGroups)];
+
+    const excludedCount = sanitizedGroups.length - uniqueGroups.length;
+    if (excludedCount > 0) {
+      logger.info(
+        `[extractGroupsFromToken] Excluded ${excludedCount} groups based on exclusion pattern`,
+        { pattern: exclusionPattern },
+      );
+    }
 
     logger.info(
       `[extractGroupsFromToken] Extracted ${uniqueGroups.length} unique groups from ${tokenKind} token`,
@@ -156,5 +209,6 @@ module.exports = {
   extractClaimFromToken,
   sanitizeGroupName,
   extractGroupsFromToken,
+  shouldExcludeGroup,
 };
 

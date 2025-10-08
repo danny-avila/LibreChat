@@ -592,9 +592,10 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     const claimPath = process.env.OPENID_GROUPS_CLAIM_PATH || 'realm_access.roles';
     const tokenKind = process.env.OPENID_GROUPS_TOKEN_KIND || 'access';
     const groupSource = process.env.OPENID_GROUP_SOURCE || 'oidc';
+    const exclusionPattern = process.env.OPENID_GROUPS_EXCLUDE_PATTERN || null;
 
     // Extract groups from token
-    const groupNames = extractGroupsFromToken(tokenset, claimPath, tokenKind);
+    const groupNames = extractGroupsFromToken(tokenset, claimPath, tokenKind, exclusionPattern);
 
     if (!groupNames || groupNames.length === 0) {
       logger.info(
