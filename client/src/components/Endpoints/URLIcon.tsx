@@ -15,7 +15,20 @@ const DynamicSVGIcon = ({ url }: { url: string }) => {
     fetch(url)
       .then((res) => res.text())
       .then((svg) => {
-        setSvgContent(svg);
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(svg, 'image/svg+xml');
+        if (doc.documentElement.nodeName !== 'svg') {
+          console.error('Content is not an SVG element:', doc.documentElement.nodeName);
+          return;
+        }
+        const svgElement = doc.querySelector('svg');
+        if (svgElement) {
+          svgElement.setAttribute('width', '100%');
+          svgElement.setAttribute('height', '100%');
+          setSvgContent(svgElement.outerHTML);
+        } else {
+          setSvgContent(svg);
+        }
       });
   }, [url]);
 
@@ -23,7 +36,12 @@ const DynamicSVGIcon = ({ url }: { url: string }) => {
     return null;
   }
 
-  return <div dangerouslySetInnerHTML={{ __html: svgContent }} />;
+  return (
+    <div
+      style={{ width: '100%', height: '100%'}}
+      dangerouslySetInnerHTML={{ __html: svgContent }}
+    />
+  );
 };
 
 export const URLIcon = memo(
@@ -69,7 +87,6 @@ export const URLIcon = memo(
       );
     }
 
-    console.log('iconURL', iconURL);
     return (
       <div className={className} style={containerStyle}>
         {iconURL.endsWith('.svg') ? (
