@@ -4,6 +4,25 @@ const { CacheKeys } = require('librechat-data-provider');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const getLogStores = require('~/cache/getLogStores');
 
+function parseResponseBody(body) {
+  if (!body) {
+    return null;
+  }
+
+  if (typeof body === 'string') {
+    try {
+      return JSON.parse(body);
+    } catch (error) {
+      logger.debug('[GraphTokenService] Failed to parse error response body as JSON', {
+        parseError: error.message,
+      });
+      return body;
+    }
+  }
+
+  return body;
+}
+
 /**
  * Get Microsoft Graph API token using existing token exchange mechanism
  * @param {Object} user - User object with OpenID information
@@ -73,11 +92,31 @@ async function getGraphApiToken(user, accessToken, scopes, fromCache = true) {
     );
     return tokenResponse;
   } catch (error) {
+    const statusCode = error?.response?.status ?? error?.statusCode;
+    const parsedBody = parseResponseBody(error?.response?.body);
+    const errorDescription =
+      parsedBody?.error_description ||
+      parsedBody?.error ||
+      error?.error_description ||
+      error?.error ||
+      error?.message;
+
+    const errorDetails = {
+      statusCode,
+      error: parsedBody?.error || error?.error,
+      error_description: errorDescription,
+      responseBody: parsedBody,
+    };
+
     logger.error(
       `[GraphTokenService] Failed to acquire Graph API token for user ${user.openidId}:`,
-      error,
+      errorDetails,
     );
-    throw new Error(`Graph token acquisition failed: ${error.message}`);
+
+    const graphError = new Error(`Graph token acquisition failed: ${errorDescription}`);
+    graphError.originalError = error;
+    graphError.details = errorDetails;
+    throw graphError;
   }
 }
 
