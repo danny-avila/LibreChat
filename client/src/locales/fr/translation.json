@@ -301,7 +301,6 @@
   "com_error_files_dupe": "Fichier en double détecté.",
   "com_error_files_empty": "Les fichiers vides ne sont pas autorisés",
   "com_error_files_process": "Une erreur s'est produite lors du traitement du fichier.",
-  "com_error_files_unsupported_capability": "Aucune capacité activée ne prend en charge ce type de fichier.",
   "com_error_files_upload": "Une erreur s'est produite lors du téléversement du fichier",
   "com_error_files_upload_canceled": "La demande de téléversement du fichier a été annulée. Remarque : le téléversement peut être toujours en cours de traitement et devra être supprimé manuellement.",
   "com_error_files_validation": "Une erreur s'est produite lors de la validation du fichier.",

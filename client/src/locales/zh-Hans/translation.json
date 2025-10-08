@@ -363,7 +363,6 @@
   "com_error_files_dupe": "检测到重复文件",
   "com_error_files_empty": "不允许上传空文件",
   "com_error_files_process": "处理文件时发生错误",
-  "com_error_files_unsupported_capability": "未启用支持此类文件的功能",
   "com_error_files_upload": "上传文件时发生错误",
   "com_error_files_upload_canceled": "文件上传请求已取消。注意：文件上传可能仍在进行中，需要手动删除。",
   "com_error_files_validation": "验证文件时出错。",
