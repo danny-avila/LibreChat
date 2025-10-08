@@ -399,6 +399,13 @@ async function setupOpenId() {
               logger.error(
                 `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
               );
+              const rolesList =
+                requiredRoles.length === 1
+                  ? `"${requiredRoles[0]}"`
+                  : `one of: ${requiredRoles.map((r) => `"${r}"`).join(', ')}`;
+              return done(null, false, {
+                message: `You must have ${rolesList} role to log in.`,
+              });
             }
 
             if (!requiredRoles.some((role) => roles.includes(role))) {
