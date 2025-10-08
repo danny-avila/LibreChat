@@ -219,6 +219,7 @@ export default App = () => (
 
 export const getMermaidFiles = (content: string) => {
   return {
+    'content.md': content || 'No mermaid diagram content provided',
     'App.tsx': wrapMermaidDiagram(content),
     'index.tsx': dedent(`import React, { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

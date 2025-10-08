@@ -6,10 +6,10 @@ import type {
 } from '@codesandbox/sandpack-react';
 
 const artifactFilename = {
-  'application/vnd.mermaid': 'App.tsx',
   'application/vnd.react': 'App.tsx',
   'text/html': 'index.html',
   'application/vnd.code-html': 'index.html',
+  // mermaid and markdown types are handled separately in useArtifactProps.ts
   default: 'index.html',
   // 'css': 'css',
   // 'javascript': 'js',
@@ -26,6 +26,8 @@ const artifactTemplate: Record<
   'application/vnd.react': 'react-ts',
   'application/vnd.mermaid': 'react-ts',
   'application/vnd.code-html': 'static',
+  'text/markdown': 'react-ts',
+  'text/plain': 'react-ts',
   default: 'static',
   // 'css': 'css',
   // 'javascript': 'js',
@@ -33,27 +35,6 @@ const artifactTemplate: Record<
   // 'jsx': 'jsx',
   // 'tsx': 'tsx',
 };
-
-export function getFileExtension(language?: string): string {
-  switch (language) {
-    case 'application/vnd.react':
-      return 'tsx';
-    case 'application/vnd.mermaid':
-      return 'mermaid';
-    case 'text/html':
-      return 'html';
-    // case 'jsx':
-    //   return 'jsx';
-    // case 'tsx':
-    //   return 'tsx';
-    // case 'html':
-    //   return 'html';
-    // case 'css':
-    //   return 'css';
-    default:
-      return 'txt';
-  }
-}
 
 export function getKey(type: string, language?: string): string {
   return `${type}${(language?.length ?? 0) > 0 ? `-${language}` : ''}`;
@@ -117,11 +98,20 @@ const mermaidDependencies = Object.assign(
   standardDependencies,
 );
 
+const markdownDependencies = Object.assign(
+  {
+    'marked-react': '^2.0.0',
+  },
+  standardDependencies,
+);
+
 const dependenciesMap: Record<keyof typeof artifactFilename, object> = {
   'application/vnd.mermaid': mermaidDependencies,
   'application/vnd.react': standardDependencies,
   'text/html': standardDependencies,
   'application/vnd.code-html': standardDependencies,
+  'text/markdown': markdownDependencies,
+  'text/plain': markdownDependencies,
   default: standardDependencies,
 };
 
