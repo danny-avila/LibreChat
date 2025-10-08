@@ -522,11 +522,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   }
 
   const isImage = file.mimetype.startsWith('image');
-  if (!isImage && !tool_resource) {
-    /** Note: this needs to be removed when we can support files to providers */
-    throw new Error('No tool resource provided for non-image agent file upload');
-  }
-
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
