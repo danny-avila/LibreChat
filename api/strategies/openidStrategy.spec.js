@@ -445,12 +445,6 @@ describe('setupOpenId', () => {
   describe('OPENID_AUTHORIZATION_PARAMS', () => {
     const { logger } = require('@librechat/data-schemas');
 
-    // Helper to create a mock URLSearchParams for testing
-    const createMockParams = () => {
-      const params = new URLSearchParams();
-      return params;
-    };
-
     beforeEach(() => {
       jest.clearAllMocks();
       delete process.env.OPENID_AUTHORIZATION_PARAMS;
