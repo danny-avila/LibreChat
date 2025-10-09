@@ -268,7 +268,6 @@
   "com_nav_auto_scroll": "التمرير التلقائي إلى أحدث عند الفتح",
   "com_nav_auto_send_prompts": "إرسال تلقائي للموجهات",
   "com_nav_auto_send_text": "إرسال النص تلقائيًا",
-  "com_nav_auto_send_text_disabled": "اضبط القيمة على -1 للتعطيل",
   "com_nav_auto_transcribe_audio": "النسخ التلقائي للصوت",
   "com_nav_automatic_playback": "تشغيل تلقائي لآخر رسالة",
   "com_nav_balance": "توازن",

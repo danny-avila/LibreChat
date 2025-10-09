@@ -407,7 +407,6 @@
   "com_nav_auto_scroll": "Автоматически проматывать к самым новым сообщениям при открытии",
   "com_nav_auto_send_prompts": "Автоотправка промптов",
   "com_nav_auto_send_text": "Автоотправка сообщений",
-  "com_nav_auto_send_text_disabled": "установите -1 для отключения",
   "com_nav_auto_transcribe_audio": "Автоматическая транскрипция",
   "com_nav_automatic_playback": "Автовоспроизведение последнего сообщения",
   "com_nav_balance": "Баланс",

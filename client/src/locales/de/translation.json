@@ -405,7 +405,6 @@
   "com_nav_auto_scroll": "Automatisch zur neuesten Nachricht scrollen, wenn der Chat geöffnet wird",
   "com_nav_auto_send_prompts": "Prompts automatisch senden",
   "com_nav_auto_send_text": "Text automatisch senden",
-  "com_nav_auto_send_text_disabled": "-1 setzen zum Deaktivieren",
   "com_nav_auto_transcribe_audio": "Audio automatisch transkribieren",
   "com_nav_automatic_playback": "Automatische Wiedergabe der neuesten Nachricht",
   "com_nav_balance": "Guthaben",

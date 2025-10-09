@@ -336,7 +336,6 @@
   "com_nav_auto_scroll": "Desplazamiento automático al más reciente al abrir",
   "com_nav_auto_send_prompts": "Envío automático de mensajes",
   "com_nav_auto_send_text": "Envío automático de texto",
-  "com_nav_auto_send_text_disabled": "Establecer -1 para deshabilitar",
   "com_nav_auto_transcribe_audio": "Transcribir audio automáticamente",
   "com_nav_automatic_playback": "Reproducción automática del último mensaje",
   "com_nav_balance": "Balance",

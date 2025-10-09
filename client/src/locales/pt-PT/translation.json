@@ -378,7 +378,6 @@
   "com_nav_auto_scroll": "Rolagem Automática para a última mensagem ao abrir o chat",
   "com_nav_auto_send_prompts": "Enviar prompts automaticamente",
   "com_nav_auto_send_text": "Enviar texto automaticamente",
-  "com_nav_auto_send_text_disabled": "definir -1 para desativar",
   "com_nav_auto_transcribe_audio": "Transcrever áudio automaticamente",
   "com_nav_automatic_playback": "Reprodução Automática da Última Mensagem",
   "com_nav_balance": "Equilíbrio",

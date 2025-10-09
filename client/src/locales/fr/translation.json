@@ -332,7 +332,6 @@
   "com_nav_auto_scroll": "Défilement automatique jusqu'au plus récent à l'ouverture",
   "com_nav_auto_send_prompts": "Envoi automatique des prompts",
   "com_nav_auto_send_text": "Envoi automatique du texte (après 3 sec)",
-  "com_nav_auto_send_text_disabled": "définir sur -1 pour désactiver",
   "com_nav_auto_transcribe_audio": "Transcription audio automatique",
   "com_nav_automatic_playback": "Lecture automatique du dernier message (externe seulement)",
   "com_nav_balance": "Équilibre",
