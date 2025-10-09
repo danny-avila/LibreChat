@@ -59,18 +59,16 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
   const virtualizationActive = data.length >= minRows;
 
-  // Dynamic overscan adjustment for fast scroll bursts (state kept stable, minimal updates)
+  // Dynamic overscan for fast scrolling - increases rendered rows during rapid scroll
   const [dynamicOverscan, setDynamicOverscan] = useState(overscan);
   const lastScrollTopRef = useRef(0);
   const lastScrollTimeRef = useRef(performance.now());
   const fastScrollTimeoutRef = useRef<number | null>(null);
 
-  // Sync overscan prop changes
   useEffect(() => {
     setDynamicOverscan(overscan);
   }, [overscan]);
 
-  // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
       if (fastScrollTimeoutRef.current) {
@@ -119,25 +117,11 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   const debouncedTerm = useDebounced(searchTerm, debounceDelay);
   const finalSorting = sorting ?? internalSorting;
 
-  /**
-   * Mobile responsive column visibility system
-   *
-   * Calculates which columns should be hidden on mobile devices based on the `desktopOnly` meta property.
-   * When a column has `meta.desktopOnly: true`, it will be visually hidden on viewports < 768px (mobile)
-   * but still accessible to screen readers.
-   *
-   * This works in conjunction with:
-   * - Header rendering: Headers are still rendered but with CSS hiding on mobile
-   * - Cell rendering (DataTableComponents.tsx): Applies CSS classes to hide cells visually
-   * - Skeleton rendering (DataTableComponents.tsx): Applies same CSS to skeleton cells
-   *
-   * Note: We keep columns visible in React Table's state to maintain them in the DOM
-   * for screen reader accessibility, relying on CSS classes for visual hiding.
-   */
+  // Mobile column visibility: columns with desktopOnly meta are hidden via CSS on mobile
+  // but remain in DOM for accessibility. CSS classes handle visual hiding.
   const calculatedVisibility = useMemo(() => {
     const newVisibility: VisibilityState = {};
-    // Don't hide columns in React Table state - let CSS handle visual hiding
-    // This keeps content accessible to screen readers
+
     columns.forEach((col) => {
       const meta = (col as { meta?: { desktopOnly?: boolean } }).meta;
       if (!meta?.desktopOnly) return;
@@ -147,8 +131,6 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         (col as { accessorKey?: string | number }).accessorKey;
 
       if ((typeof rawId === 'string' || typeof rawId === 'number') && String(rawId).length > 0) {
-        // Always keep column visible in React Table state
-        // CSS classes will handle visual hiding on mobile
         newVisibility[String(rawId)] = true;
       } else {
         logger.warn(
@@ -164,6 +146,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     setColumnVisibility((prev) => ({ ...prev, ...calculatedVisibility }));
   }, [calculatedVisibility]);
 
+  // Warn about missing row IDs - only once per component lifecycle
   const hasWarnedAboutMissingIds = useRef(false);
 
   useEffect(() => {
@@ -253,7 +236,6 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     setOptimizedRowSelection,
   ]);
 
-  // No transformation for sizing; width handled via meta.width percentages.
   const sizedColumns = tableColumns;
 
   const table = useReactTable<TData>({
@@ -274,8 +256,6 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setOptimizedRowSelection,
   });
-
-  // Removed column size initialization (deprecated)
 
   const rowVirtualizer = useVirtualizer({
     enabled: virtualizationActive,
@@ -298,6 +278,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   const showSkeletons = isLoading || (isFetching && !isFetchingNextPage);
   const shouldShowSearch = enableSearch && onFilterChange;
 
+  // Render table body based on loading state and virtualization
   let tableBodyContent: React.ReactNode;
   if (showSkeletons) {
     tableBodyContent = (
@@ -364,16 +345,13 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     }
   }, [debouncedTerm, filterValue, onFilterChange, setOptimizedRowSelection]);
 
-  // Re-measure on key state changes that can affect layout
+  // Recalculate virtual range when data or state changes
   useEffect(() => {
     if (!virtualizationActive) return;
-    // With fixed rowHeight, just ensure the range recalculates
     rowVirtualizer.calculateRange();
   }, [data.length, finalSorting, columnVisibility, virtualizationActive, rowVirtualizer]);
 
-  // Removed manual column sizing dependency effect
-
-  // ResizeObserver to re-measure when container size changes
+  // Recalculate when container is resized
   useEffect(() => {
     if (!virtualizationActive) return;
     const container = tableContainerRef.current;
@@ -399,12 +377,9 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
           const delta = Math.abs(container.scrollTop - lastScrollTopRef.current);
           const dt = now - lastScrollTimeRef.current;
           if (dt > 0) {
-            const velocity = delta / dt; // px per ms
-            if (
-              velocity > 2 &&
-              virtualizationActive &&
-              dynamicOverscan === overscan /* only expand if not already expanded */
-            ) {
+            const velocity = delta / dt;
+            // Increase overscan during fast scrolling for smoother experience
+            if (velocity > 2 && virtualizationActive && dynamicOverscan === overscan) {
               if (fastScrollTimeoutRef.current) {
                 window.clearTimeout(fastScrollTimeoutRef.current);
               }
@@ -420,6 +395,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
         if (timeoutId) clearTimeout(timeoutId);
 
+        // Trigger infinite scroll pagination
         timeoutId = window.setTimeout(() => {
           const loaderContainer = tableContainerRef.current;
           if (!loaderContainer || !fetchNextPage || !hasNextPage || isFetchingNextPage) return;
@@ -494,13 +470,10 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
             {headerGroups.map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
-                  // Check if this column should be hidden on mobile (desktopOnly feature)
                   const isDesktopOnly =
                     (header.column.columnDef.meta as { desktopOnly?: boolean } | undefined)
                       ?.desktopOnly ?? false;
 
-                  // Hide header if column is not visible in React Table state
-                  // Note: We don't hide desktopOnly columns from DOM, only visually via CSS
                   if (!header.column.getIsVisible()) {
                     return null;
                   }
@@ -508,6 +481,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                   const isSelectHeader = header.id === 'select';
                   const meta = header.column.columnDef.meta as { className?: string } | undefined;
                   const canSort = header.column.getCanSort();
+
                   let sortAriaLabel: string | undefined;
                   if (canSort) {
                     const sortState = header.column.getIsSorted();
@@ -589,7 +563,6 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                           )}
                         </div>
                       )}
-                      {/* Resizer removed (manual resizing deprecated) */}
                     </TableHead>
                   );
                 })}
