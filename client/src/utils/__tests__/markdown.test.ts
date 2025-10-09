@@ -43,7 +43,6 @@ describe('markdown artifacts', () => {
 
       expect(files['/components/ui/MarkdownRenderer.tsx']).toContain('import Markdown from');
       expect(files['/components/ui/MarkdownRenderer.tsx']).toContain('MarkdownRendererProps');
-      expect(files['/components/ui/MarkdownRenderer.tsx']).toContain('prefers-color-scheme');
       expect(files['/components/ui/MarkdownRenderer.tsx']).toContain(
         'export default MarkdownRenderer',
       );

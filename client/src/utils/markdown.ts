@@ -8,29 +8,12 @@ interface MarkdownRendererProps {
 }
 
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
-  const [isDark, setIsDark] = useState(false); // Default to light
-
-  useEffect(() => {
-    // Check system preference
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    setIsDark(mediaQuery.matches);
-
-    const handleChange = (e) => setIsDark(e.matches);
-    mediaQuery.addEventListener('change', handleChange);
-
-    return () => {
-      mediaQuery.removeEventListener('change', handleChange);
-    };
-  }, []);
-
-
   return (
     <div
       className="markdown-body"
       style={{
         padding: '2rem',        
         margin: '1rem',
-        backgroundColor: isDark ? '#0d1117' : '#ffffff',
         minHeight: '100vh'
       }}
     >
