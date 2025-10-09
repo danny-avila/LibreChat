@@ -151,6 +151,8 @@ export type ParsedServerConfig = MCPOptions & {
   oauthMetadata?: Record<string, unknown> | null;
   capabilities?: string;
   tools?: string;
+  toolFunctions?: LCAvailableTools;
+  initDuration?: number;
 };
 
 export interface BasicConnectionOptions {
