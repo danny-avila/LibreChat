@@ -357,7 +357,6 @@
   "com_error_files_dupe": "זוהה קובץ כפול",
   "com_error_files_empty": "אין אפשרות לקבצים ריקים",
   "com_error_files_process": "אירעה שגיאה במהלך עיבוד הקובץ.",
-  "com_error_files_unsupported_capability": "לא הופעלו התכונות התומכות בסוג קובץ זה.",
   "com_error_files_upload": "אירעה שגיאה בעת העלאת הקובץ",
   "com_error_files_upload_canceled": "בקשת העלאת הקובץ בוטלה. הערה: ייתכן שהעלאת הקובץ עדיין בעיבוד ותצטרך למחוק אותו בצורה ידנית.",
   "com_error_files_validation": "אירעה שגיאה במהלך אימות הקובץ.",

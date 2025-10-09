@@ -115,6 +115,9 @@ router.get('/', async function (req, res) {
       sharePointPickerGraphScope: process.env.SHAREPOINT_PICKER_GRAPH_SCOPE,
       sharePointPickerSharePointScope: process.env.SHAREPOINT_PICKER_SHAREPOINT_SCOPE,
       openidReuseTokens,
+      conversationImportMaxFileSize: process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES
+        ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
+        : 0,
     };
 
     const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);

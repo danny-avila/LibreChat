@@ -363,7 +363,6 @@
   "com_error_files_dupe": "Atrasts dublikāta fails.",
   "com_error_files_empty": "Tukši faili nav atļauti.",
   "com_error_files_process": "Apstrādājot failu, radās kļūda.",
-  "com_error_files_unsupported_capability": "Šis faila tips nav atbalstīts.",
   "com_error_files_upload": "Augšupielādējot failu, radās kļūda.",
   "com_error_files_upload_canceled": "Faila augšupielādes pieprasījums tika atcelts. Piezīme. Iespējams, ka faila augšupielāde joprojām tiek apstrādāta, un tā būs manuāli jādzēš.",
   "com_error_files_validation": "Validējot failu, radās kļūda.",
