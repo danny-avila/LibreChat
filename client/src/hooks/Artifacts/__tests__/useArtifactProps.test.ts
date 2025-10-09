@@ -156,7 +156,7 @@ describe('useArtifactProps', () => {
 
       const { result } = renderHook(() => useArtifactProps({ artifact }));
 
-      expect(result.current.fileKey).toBe('content.md');
+      expect(result.current.fileKey).toBe('diagram.mmd');
       expect(result.current.template).toBe('react-ts');
     });
   });

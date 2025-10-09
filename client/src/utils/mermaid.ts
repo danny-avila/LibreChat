@@ -217,13 +217,20 @@ export default App = () => (
 `);
 };
 
+const mermaidCSS = `
+body {
+  background-color: #282C34;
+}
+`;
+
 export const getMermaidFiles = (content: string) => {
   return {
-    'content.md': content || 'No mermaid diagram content provided',
+    'diagram.mmd': content || '# No mermaid diagram content provided',
     'App.tsx': wrapMermaidDiagram(content),
     'index.tsx': dedent(`import React, { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import "./mermaid.css";
 
 import App from "./App";
 
@@ -231,5 +238,6 @@ const root = createRoot(document.getElementById("root"));
 root.render(<App />);
 ;`),
     '/components/ui/MermaidDiagram.tsx': mermaid,
+    'mermaid.css': mermaidCSS,
   };
 };

@@ -11,7 +11,7 @@ export default function useArtifactProps({ artifact }: { artifact: Artifact }) {
     const type = artifact.type ?? '';
 
     if (key.includes('mermaid')) {
-      return ['content.md', getMermaidFiles(artifact.content ?? '')];
+      return ['diagram.mmd', getMermaidFiles(artifact.content ?? '')];
     }
 
     if (type === 'text/markdown' || type === 'text/plain') {
