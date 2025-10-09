@@ -50,6 +50,9 @@ jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
   normalizeServerName: jest.fn((name) => name),
   convertWithResolvedRefs: jest.fn((params) => params),
+  mcpServersRegistry: {
+    getOAuthServers: jest.fn(() => Promise.resolve(new Set())),
+  },
 }));
 
 jest.mock('librechat-data-provider', () => ({
@@ -100,6 +103,7 @@ describe('tests for the new helper functions used by the MCP connection status e
   let mockGetFlowStateManager;
   let mockGetLogStores;
   let mockGetOAuthReconnectionManager;
+  let mockMcpServersRegistry;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -108,6 +112,7 @@ describe('tests for the new helper functions used by the MCP connection status e
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
     mockGetLogStores = require('~/cache').getLogStores;
     mockGetOAuthReconnectionManager = require('~/config').getOAuthReconnectionManager;
+    mockMcpServersRegistry = require('@librechat/api').mcpServersRegistry;
   });
 
   describe('getMCPSetupData', () => {
@@ -125,8 +130,8 @@ describe('tests for the new helper functions used by the MCP connection status e
       mockGetMCPManager.mockReturnValue({
         appConnections: { getAll: jest.fn(() => new Map()) },
         getUserConnections: jest.fn(() => new Map()),
-        getOAuthServers: jest.fn(() => new Set()),
       });
+      mockMcpServersRegistry.getOAuthServers.mockResolvedValue(new Set());
     });
 
     it('should successfully return MCP setup data', async () => {
@@ -139,9 +144,9 @@ describe('tests for the new helper functions used by the MCP connection status e
       const mockMCPManager = {
         appConnections: { getAll: jest.fn(() => mockAppConnections) },
         getUserConnections: jest.fn(() => mockUserConnections),
-        getOAuthServers: jest.fn(() => mockOAuthServers),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
+      mockMcpServersRegistry.getOAuthServers.mockResolvedValue(mockOAuthServers);
 
       const result = await getMCPSetupData(mockUserId);
 
@@ -149,7 +154,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       expect(mockGetMCPManager).toHaveBeenCalledWith(mockUserId);
       expect(mockMCPManager.appConnections.getAll).toHaveBeenCalled();
       expect(mockMCPManager.getUserConnections).toHaveBeenCalledWith(mockUserId);
-      expect(mockMCPManager.getOAuthServers).toHaveBeenCalled();
+      expect(mockMcpServersRegistry.getOAuthServers).toHaveBeenCalled();
 
       expect(result).toEqual({
         mcpConfig: mockConfig.mcpServers,
@@ -170,9 +175,9 @@ describe('tests for the new helper functions used by the MCP connection status e
       const mockMCPManager = {
         appConnections: { getAll: jest.fn(() => null) },
         getUserConnections: jest.fn(() => null),
-        getOAuthServers: jest.fn(() => new Set()),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
+      mockMcpServersRegistry.getOAuthServers.mockResolvedValue(new Set());
 
       const result = await getMCPSetupData(mockUserId);
 
