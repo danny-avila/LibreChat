@@ -15,7 +15,13 @@ export type TModelSpec = {
   order?: number;
   default?: boolean;
   description?: string;
-  group?: string; // Group name - can match endpoint name or custom group
+  /**
+   * Optional group name for organizing specs in the UI selector.
+   * - If it matches an endpoint name (e.g., "openAI", "groq"), the spec appears nested under that endpoint
+   * - If it's a custom name (doesn't match any endpoint), it creates a separate collapsible group
+   * - If omitted, the spec appears as a standalone item at the top level
+   */
+  group?: string;
   showIconInMenu?: boolean;
   showIconInHeader?: boolean;
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
