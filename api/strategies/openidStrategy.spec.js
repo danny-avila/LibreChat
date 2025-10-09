@@ -468,6 +468,93 @@ describe('setupOpenId', () => {
     expect(user.role).toBeUndefined();
   });
 
+  it('should demote existing admin user when admin role is removed from token', async () => {
+    // Arrange – simulate an existing user who is currently an admin
+    const existingAdminUser = {
+      _id: 'existingAdminId',
+      provider: 'openid',
+      email: tokenset.claims().email,
+      openidId: tokenset.claims().sub,
+      username: 'adminuser',
+      name: 'Admin User',
+      role: 'ADMIN',
+    };
+
+    findUser.mockImplementation(async (query) => {
+      if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+        return existingAdminUser;
+      }
+      return null;
+    });
+
+    // Token without admin permission
+    jwtDecode.mockReturnValue({
+      roles: ['requiredRole'],
+      permissions: ['not-admin'],
+    });
+
+    const { logger } = require('@librechat/data-schemas');
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert – verify that the user was demoted
+    expect(user.role).toBe('USER');
+    expect(updateUser).toHaveBeenCalledWith(
+      existingAdminUser._id,
+      expect.objectContaining({
+        role: 'USER',
+      }),
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining('demoted from admin - role no longer present in token'),
+    );
+  });
+
+  it('should NOT demote admin user when admin role env vars are not configured', async () => {
+    // Arrange – remove admin role env vars
+    delete process.env.OPENID_ADMIN_ROLE;
+    delete process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH;
+    delete process.env.OPENID_ADMIN_ROLE_TOKEN_KIND;
+
+    await setupOpenId();
+    verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+    // Simulate an existing admin user
+    const existingAdminUser = {
+      _id: 'existingAdminId',
+      provider: 'openid',
+      email: tokenset.claims().email,
+      openidId: tokenset.claims().sub,
+      username: 'adminuser',
+      name: 'Admin User',
+      role: 'ADMIN',
+    };
+
+    findUser.mockImplementation(async (query) => {
+      if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+        return existingAdminUser;
+      }
+      return null;
+    });
+
+    jwtDecode.mockReturnValue({
+      roles: ['requiredRole'],
+    });
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert – verify that the admin user was NOT demoted
+    expect(user.role).toBe('ADMIN');
+    expect(updateUser).toHaveBeenCalledWith(
+      existingAdminUser._id,
+      expect.objectContaining({
+        role: 'ADMIN',
+      }),
+    );
+  });
+
   describe('lodash get - nested path extraction', () => {
     it('should extract roles from deeply nested token path', async () => {
       process.env.OPENID_REQUIRED_ROLE = 'app-user';

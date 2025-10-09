@@ -489,6 +489,11 @@ async function setupOpenId() {
               logger.info(
                 `[openidStrategy] User ${username} is an admin based on role: ${adminRole}`,
               );
+            } else if (user.role === 'ADMIN') {
+              user.role = 'USER';
+              logger.info(
+                `[openidStrategy] User ${username} demoted from admin - role no longer present in token`,
+              );
             }
           }
 
