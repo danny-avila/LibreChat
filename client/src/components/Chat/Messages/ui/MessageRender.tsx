@@ -97,7 +97,7 @@ const MessageRender = memo(
       () =>
         showCardRender && !isLatestMessage
           ? () => {
-              logger.log(`Message Card click: Setting ${msg?.messageId} as latest message`);
+              logger.log('latest_message', `Message Card click: Setting ${msg?.messageId} as latest message`);
               logger.dir(msg);
               setLatestMessage(msg!);
             }
