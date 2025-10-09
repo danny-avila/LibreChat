@@ -8,12 +8,13 @@ import { getMarkdownFiles } from '~/utils/markdown';
 export default function useArtifactProps({ artifact }: { artifact: Artifact }) {
   const [fileKey, files] = useMemo(() => {
     const key = getKey(artifact.type ?? '', artifact.language);
+    const type = artifact.type ?? '';
 
     if (key.includes('mermaid')) {
       return ['content.md', getMermaidFiles(artifact.content ?? '')];
     }
 
-    if (key === 'text/markdown' || key === 'text/plain') {
+    if (type === 'text/markdown' || type === 'text/plain') {
       return ['content.md', getMarkdownFiles(artifact.content ?? '')];
     }
 
