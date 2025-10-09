@@ -7,7 +7,7 @@ import type {
 } from 'librechat-data-provider';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
-import { getEndpointField, getIconEndpoint } from '~/utils';
+import { getEndpointField, getIconEndpoint, isUrl } from '~/utils';
 
 export default function EndpointIcon({
   conversation,
@@ -39,7 +39,7 @@ export default function EndpointIcon({
 
   const iconURL = assistantAvatar || convoIconURL;
 
-  if (iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'))) {
+  if (iconURL && (isUrl(iconURL) || iconURL.startsWith('/images/'))) {
     return (
       <ConvoIconURL
         iconURL={iconURL}

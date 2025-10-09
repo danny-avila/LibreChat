@@ -1,7 +1,7 @@
 import React, { useMemo, memo } from 'react';
 import type { Assistant, Agent } from 'librechat-data-provider';
 import type { TMessageIcon } from '~/common';
-import { getEndpointField, getIconEndpoint, logger } from '~/utils';
+import { getEndpointField, getIconEndpoint, logger, isUrl } from '~/utils';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { useGetEndpointsQuery } from '~/data-provider';
 import Icon from '~/components/Endpoints/Icon';
@@ -45,7 +45,7 @@ const MessageIcon = memo(
       [endpointsConfig, endpoint],
     );
 
-    if (iconData?.isCreatedByUser !== true && iconURL != null && iconURL.includes('http')) {
+    if (iconData?.isCreatedByUser !== true && iconURL != null && isUrl(iconURL)) {
       return (
         <ConvoIconURL
           iconURL={iconURL}
