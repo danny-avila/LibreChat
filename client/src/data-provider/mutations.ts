@@ -168,18 +168,26 @@ export const useArchiveConvoMutation = (
 };
 
 export const useCreateSharedLinkMutation = (
-  options?: t.MutationOptions<t.TCreateShareLinkRequest, { conversationId: string }>,
-): UseMutationResult<t.TSharedLinkResponse, unknown, { conversationId: string }, unknown> => {
+  options?: t.MutationOptions<
+    t.TCreateShareLinkRequest,
+    { conversationId: string; targetMessageId?: string }
+  >,
+): UseMutationResult<
+  t.TSharedLinkResponse,
+  unknown,
+  { conversationId: string; targetMessageId?: string },
+  unknown
+> => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ conversationId }: { conversationId: string }) => {
+    ({ conversationId, targetMessageId }: { conversationId: string; targetMessageId?: string }) => {
       if (!conversationId) {
         throw new Error('Conversation ID is required');
       }
 
-      return dataService.createSharedLink(conversationId);
+      return dataService.createSharedLink(conversationId, targetMessageId);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
