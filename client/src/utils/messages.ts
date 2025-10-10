@@ -117,7 +117,7 @@ const getLatestContentForKey = (message: TMessage): string => {
     }
 
     if (text.length > 0) {
-      return `${text}-${i}`;
+      return `${text}&i=${i}`;
     }
   }
 
@@ -131,7 +131,7 @@ export const getTextKey = (message?: TMessage | null, convoId?: string | null) =
   const text = getLatestContentForKey(message);
   return `?messageId=${(message.messageId as string | null) ?? ''}&convoId=${
     message.conversationId ?? convoId
-  }&${getLengthAndLastNChars(text, 12)}`;
+  }&${getLengthAndLastNChars(text, 16)}`;
 };
 
 export const scrollToEnd = (callback?: () => void) => {
