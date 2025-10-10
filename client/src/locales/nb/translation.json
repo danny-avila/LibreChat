@@ -405,7 +405,6 @@
   "com_nav_auto_scroll": "Rull automatisk til siste melding når samtalen åpnes",
   "com_nav_auto_send_prompts": "Send prompter automatisk",
   "com_nav_auto_send_text": "Send tekst automatisk",
-  "com_nav_auto_send_text_disabled": "sett -1 for å deaktivere",
   "com_nav_auto_transcribe_audio": "Transkriber lyd automatisk",
   "com_nav_automatic_playback": "Spill av siste melding automatisk",
   "com_nav_balance": "Saldo",

@@ -296,7 +296,6 @@
   "com_nav_auto_scroll": "Auto-scroll til seneste besked, når chatten er åben",
   "com_nav_auto_send_prompts": "Automatisk afsendelse af prompte",
   "com_nav_auto_send_text": "Send tekst automatisk",
-  "com_nav_auto_send_text_disabled": "sæt -1 for at deaktivere",
   "com_nav_auto_transcribe_audio": "Automatisk transskribering af lyd",
   "com_nav_automatic_playback": "Autoplay Seneste besked",
   "com_nav_balance": "Balance",
