@@ -11,6 +11,10 @@ jest.mock('@librechat/data-schemas', () => ({
 const mockDecryptV2 = decryptV2 as jest.MockedFunction<typeof decryptV2>;
 
 describe('MCPTokenStorage', () => {
+  beforeEach(() => {
+    MCPTokenStorage.setEncryptionPreference(true);
+  });
+
   afterAll(() => {
     jest.clearAllMocks();
   });
@@ -105,6 +109,7 @@ describe('MCPTokenStorage', () => {
       const metadata = new Map([
         ['serverUrl', 'https://test.example.com'],
         ['state', 'test-state'],
+        ['encrypted', true],
       ]);
 
       const mockToken: IToken = {
@@ -129,6 +134,7 @@ describe('MCPTokenStorage', () => {
       expect(result?.clientMetadata).toEqual({
         serverUrl: 'https://test.example.com',
         state: 'test-state',
+        encrypted: true,
       });
       expect(mockDecryptV2).toHaveBeenCalledWith('encrypted-token');
     });
@@ -167,6 +173,7 @@ describe('MCPTokenStorage', () => {
       const metadata = {
         serverUrl: 'https://test.example.com',
         state: 'test-state',
+        encrypted: true,
       };
 
       const mockToken: IToken = {
@@ -189,6 +196,31 @@ describe('MCPTokenStorage', () => {
       expect(result).not.toBeNull();
       expect(result?.clientInfo).toEqual(clientInfo);
       expect(result?.clientMetadata).toEqual(metadata);
+    });
+
+    it('should skip decryption when metadata indicates plain text', async () => {
+      MCPTokenStorage.setEncryptionPreference(false);
+      const clientInfo = { client_id: 'test-client-id' };
+      const metadata = new Map([['encrypted', false]]);
+      const mockToken: IToken = {
+        userId: new Types.ObjectId(userId),
+        type: 'mcp_oauth_client',
+        identifier: `${identifier}:client`,
+        token: JSON.stringify(clientInfo),
+        metadata,
+      } as IToken;
+
+      mockFindToken.mockResolvedValue(mockToken);
+      mockDecryptV2.mockResolvedValue(JSON.stringify(clientInfo));
+
+      const result = await MCPTokenStorage.getClientInfoAndMetadata({
+        userId,
+        serverName,
+        findToken: mockFindToken,
+      });
+
+      expect(mockDecryptV2).not.toHaveBeenCalled();
+      expect(result?.clientInfo).toEqual(clientInfo);
     });
   });
 });
