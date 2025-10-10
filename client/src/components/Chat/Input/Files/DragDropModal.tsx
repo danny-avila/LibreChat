@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogTemplate } from '@librechat/client';
 import {
   EToolResources,
+  EModelEndpoint,
   defaultAgentCapabilities,
   isDocumentSupportedProvider,
 } from 'librechat-data-provider';
@@ -57,11 +58,22 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
 
     // Check if provider supports document upload
     if (isDocumentSupportedProvider(currentProvider || endpointType)) {
+      const isGoogleProvider = currentProvider === EModelEndpoint.google;
+      const validFileTypes = isGoogleProvider
+        ? files.every(
+            (file) =>
+              file.type?.startsWith('image/') ||
+              file.type?.startsWith('video/') ||
+              file.type?.startsWith('audio/') ||
+              file.type === 'application/pdf',
+          )
+        : files.every((file) => file.type?.startsWith('image/') || file.type === 'application/pdf');
+
       _options.push({
         label: localize('com_ui_upload_provider'),
         value: undefined,
         icon: <FileImageIcon className="icon-md" />,
-        condition: true, // Allow for both images and documents
+        condition: validFileTypes,
       });
     } else {
       // Only show image upload option if all files are images and provider doesn't support documents
