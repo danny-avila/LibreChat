@@ -1,15 +1,7 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 
-export const getLengthAndLastNChars = (str?: string, n?: number): string => {
-  if (typeof str !== 'string' || str.length === 0) {
-    return 'len=0';
-  }
-
-  const length = str.length;
-  const lastNChars = str.slice(-(n ?? 10));
-  return `len=${length}&last_${n}=${lastNChars}`;
-};
+export const TEXT_KEY_DIVIDER = '|||';
 
 export const getLatestText = (message?: TMessage | null, includeIndex?: boolean): string => {
   if (!message) {
@@ -66,8 +58,17 @@ export const getAllContentText = (message?: TMessage | null): string => {
 };
 
 const getLatestContentForKey = (message: TMessage): string => {
+  const formatText = (str: string, index: number): string => {
+    if (str.length === 0) {
+      return '0';
+    }
+    const length = str.length;
+    const lastChars = str.slice(-16);
+    return `${length}${TEXT_KEY_DIVIDER}${lastChars}${TEXT_KEY_DIVIDER}${index}`;
+  };
+
   if (message.text) {
-    return message.text;
+    return formatText(message.text, -1);
   }
 
   if (!message.content || message.content.length === 0) {
@@ -93,31 +94,35 @@ const getLatestContentForKey = (message: TMessage): string => {
     }
     // Handle ERROR type
     else if (type === ContentTypes.ERROR && 'error' in part) {
-      text = part.error || '[err]';
+      text = String(part.error || 'err').slice(0, 30);
     }
     // Handle TOOL_CALL - use simple marker with type
     else if (type === ContentTypes.TOOL_CALL && 'tool_call' in part) {
-      text = `[tc:${part.tool_call?.type || 'x'}|name:${part.tool_call?.['name'] || 'unknown'}|args:${part.tool_call?.['args'] || 'none'}|output:${part.tool_call?.['output'] || 'none'}]`;
+      const tcType = part.tool_call?.type || 'x';
+      const tcName = String(part.tool_call?.['name'] || 'unknown').slice(0, 20);
+      const tcArgs = String(part.tool_call?.['args'] || 'none').slice(0, 20);
+      const tcOutput = String(part.tool_call?.['output'] || 'none').slice(0, 20);
+      text = `tc_${tcType}_${tcName}_${tcArgs}_${tcOutput}`;
     }
     // Handle IMAGE_FILE - use simple marker with file_id suffix
     else if (type === ContentTypes.IMAGE_FILE && 'image_file' in part) {
       const fileId = part.image_file?.file_id || 'x';
-      text = `[if:${fileId.slice(-8)}]`;
+      text = `if_${fileId.slice(-8)}`;
     }
     // Handle IMAGE_URL - use simple marker
     else if (type === ContentTypes.IMAGE_URL) {
-      text = '[iu]';
+      text = 'iu';
     }
     // Handle AGENT_UPDATE - use simple marker with agentId suffix
     else if (type === ContentTypes.AGENT_UPDATE && 'agent_update' in part) {
-      const agentId = part.agent_update?.agentId || 'x';
-      text = `[au:${agentId}]`;
+      const agentId = String(part.agent_update?.agentId || 'x').slice(0, 30);
+      text = `au_${agentId}`;
     } else {
-      text = `[${type}]`;
+      text = type;
     }
 
     if (text.length > 0) {
-      return `${text}&i=${i}`;
+      return formatText(text, i);
     }
   }
 
@@ -128,10 +133,8 @@ export const getTextKey = (message?: TMessage | null, convoId?: string | null) =
   if (!message) {
     return '';
   }
-  const text = getLatestContentForKey(message);
-  return `?messageId=${(message.messageId as string | null) ?? ''}&convoId=${
-    message.conversationId ?? convoId
-  }&${getLengthAndLastNChars(text, 16)}`;
+  const contentKey = getLatestContentForKey(message);
+  return `${(message.messageId as string | null) ?? ''}${TEXT_KEY_DIVIDER}${contentKey}${TEXT_KEY_DIVIDER}${message.conversationId ?? convoId}`;
 };
 
 export const scrollToEnd = (callback?: () => void) => {

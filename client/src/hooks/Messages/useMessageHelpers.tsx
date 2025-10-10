@@ -3,8 +3,8 @@ import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useMessagesViewContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
+import { getTextKey, TEXT_KEY_DIVIDER, logger } from '~/utils';
 import useCopyToClipboard from './useCopyToClipboard';
-import { getTextKey, logger } from '~/utils';
 
 export default function useMessageHelpers(props: TMessageProps) {
   const latestText = useRef<string | number>('');
@@ -50,18 +50,15 @@ export default function useMessageHelpers(props: TMessageProps) {
       convoId,
     };
 
-    /* Extracted convoId from previous textKey (format: ?messageId=...&convoId=...&...) */
+    /* Extracted convoId from previous textKey (format: messageId|||length|||lastChars|||convoId) */
     let previousConvoId: string | null = null;
     if (
       latestText.current &&
       typeof latestText.current === 'string' &&
       latestText.current.length > 0
     ) {
-      try {
-        previousConvoId = new URLSearchParams(latestText.current).get('convoId');
-      } catch {
-        previousConvoId = null;
-      }
+      const parts = latestText.current.split(TEXT_KEY_DIVIDER);
+      previousConvoId = parts[parts.length - 1] || null;
     }
 
     if (
