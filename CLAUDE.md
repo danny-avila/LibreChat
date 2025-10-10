@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Security Guidelines
+
+**CRITICAL: API Keys and Secrets**
+
+- **NEVER** commit API keys, secrets, or credentials directly in any files (code, documentation, configs)
+- **ALWAYS** use placeholders in documentation (e.g., `<your-api-key>`, `<your-secret>`)
+- API keys and secrets belong **ONLY** in `.env` files (which are gitignored)
+- When documenting configuration:
+  - Use: `OPENROUTER_KEY=<your-openrouter-api-key>`
+  - Never: `OPENROUTER_KEY=sk-or-v1-actual-key-here`
+- For security-sensitive values (JWT secrets, encryption keys, database passwords):
+  - Provide generation instructions (e.g., `openssl rand -hex 32`)
+  - Never include actual values, even as examples
+- Double-check any documentation changes before committing
+
 ## Project Overview
 
 LibreChat is an all-in-one AI conversations platform that integrates multiple AI models (OpenAI, Anthropic, Google, Azure, AWS Bedrock, custom endpoints) with advanced features like agents, RAG, code interpreter, and multi-user support. The project is a full-stack application with a monorepo structure using npm workspaces.
