@@ -1,7 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const { createOAuthReconnectionManager, getFlowStateManager } = require('~/config');
-const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
+const { getTokenStoreMethods } = require('./TokenStore');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -10,12 +10,7 @@ const { getLogStores } = require('~/cache');
 async function initializeOAuthReconnectManager() {
   try {
     const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
-    const tokenMethods = {
-      findToken,
-      updateToken,
-      createToken,
-      deleteTokens,
-    };
+    const tokenMethods = getTokenStoreMethods();
     await createOAuthReconnectionManager(flowManager, tokenMethods);
     logger.info(`OAuth reconnect manager initialized successfully.`);
   } catch (error) {
