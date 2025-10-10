@@ -56,7 +56,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     const currentProvider = provider || endpoint;
 
     // Check if provider supports document upload
-    if (isDocumentSupportedProvider(endpointType || currentProvider)) {
+    if (isDocumentSupportedProvider(currentProvider || endpointType)) {
       _options.push({
         label: localize('com_ui_upload_provider'),
         value: undefined,
