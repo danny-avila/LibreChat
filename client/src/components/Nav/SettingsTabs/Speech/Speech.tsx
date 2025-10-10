@@ -23,7 +23,7 @@ import {
 } from './STT';
 import ConversationModeSwitch from './ConversationModeSwitch';
 import { useLocalize } from '~/hooks';
-import { cn, logger } from '~/utils';
+import { cn } from '~/utils';
 import store from '~/store';
 
 function Speech() {
@@ -186,7 +186,7 @@ function Speech() {
         </Tabs.List>
       </div>
 
-      <Tabs.Content value={'simple'}>
+      <Tabs.Content value={'simple'} tabIndex={-1}>
         <div className="flex flex-col gap-3 text-sm text-text-primary">
           <SpeechToTextSwitch />
           <EngineSTTDropdown external={sttExternal} />
@@ -198,7 +198,7 @@ function Speech() {
         </div>
       </Tabs.Content>
 
-      <Tabs.Content value={'advanced'}>
+      <Tabs.Content value={'advanced'} tabIndex={-1}>
         <div className="flex flex-col gap-3 text-sm text-text-primary">
           <ConversationModeSwitch />
           <div className="mt-2 h-px bg-border-medium" role="none" />
