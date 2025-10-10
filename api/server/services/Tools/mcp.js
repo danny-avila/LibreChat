@@ -1,6 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
-const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
+const { getTokenStoreMethods } = require('~/server/services/TokenStore');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { updateMCPServerTools } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
@@ -50,6 +50,7 @@ async function reinitMCPServer({
       });
 
     try {
+      const tokenMethods = getTokenStoreMethods();
       connection = await mcpManager.getConnection({
         user,
         signal,
@@ -60,12 +61,7 @@ async function reinitMCPServer({
         returnOnOAuth,
         customUserVars,
         connectionTimeout,
-        tokenMethods: {
-          findToken,
-          updateToken,
-          createToken,
-          deleteTokens,
-        },
+        tokenMethods,
       });
 
       logger.info(`[MCP Reinitialize] Successfully established connection for ${serverName}`);
