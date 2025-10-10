@@ -356,7 +356,6 @@
   "com_nav_auto_scroll": "Scorri automaticamente ai nuovi messaggi all'apertura",
   "com_nav_auto_send_prompts": "Invio automatico dei prompt",
   "com_nav_auto_send_text": "Invio automatico del testo",
-  "com_nav_auto_send_text_disabled": "imposta -1 per disabilitare",
   "com_nav_auto_transcribe_audio": "Trascrivi audio automaticamente",
   "com_nav_automatic_playback": "Riproduzione automatica ultimo messaggio",
   "com_nav_balance": "Bilancio",

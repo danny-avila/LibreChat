@@ -216,7 +216,6 @@
   "com_nav_auto_scroll": "Automaticky rolovat na nejnovější zprávu po otevření chatu",
   "com_nav_auto_send_prompts": "Automatické odesílání výzev",
   "com_nav_auto_send_text": "Automatické odesílání textu",
-  "com_nav_auto_send_text_disabled": "nastavte -1 pro deaktivaci",
   "com_nav_auto_transcribe_audio": "Automaticky přepisovat zvuk",
   "com_nav_automatic_playback": "Automatické přehrávání poslední zprávy",
   "com_nav_balance": "Zůstatek",

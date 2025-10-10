@@ -296,7 +296,6 @@
   "com_nav_auto_scroll": "Automaatne kerimine vestluse avamisel viimase sõnumini",
   "com_nav_auto_send_prompts": "Saada vihjed automaatselt",
   "com_nav_auto_send_text": "Saada tekst automaatselt",
-  "com_nav_auto_send_text_disabled": "Keelamiseks määra -1",
   "com_nav_auto_transcribe_audio": "Transkribeeri heli automaatselt",
   "com_nav_automatic_playback": "Esita viimane sõnum automaatselt",
   "com_nav_balance": "Saldo",

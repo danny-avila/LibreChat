@@ -408,7 +408,6 @@
   "com_nav_auto_scroll": "打开对话时自动滚动到最新消息",
   "com_nav_auto_send_prompts": "自动发送提示词",
   "com_nav_auto_send_text": "自动发送文本",
-  "com_nav_auto_send_text_disabled": "设置为 -1 以禁用",
   "com_nav_auto_transcribe_audio": "自动转录音频",
   "com_nav_automatic_playback": "自动播放最新消息",
   "com_nav_balance": "余额",
