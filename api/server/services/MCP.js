@@ -28,7 +28,7 @@ const {
   getFlowStateManager,
   getMCPManager,
 } = require('~/config');
-const { findToken, createToken, updateToken } = require('~/models');
+const { getTokenStoreMethods } = require('~/server/services/TokenStore');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
@@ -494,11 +494,7 @@ function createToolInstance({
         requestBody: config?.configurable?.requestBody,
         customUserVars,
         flowManager,
-        tokenMethods: {
-          findToken,
-          createToken,
-          updateToken,
-        },
+        tokenMethods: getTokenStoreMethods(),
         oauthStart,
         oauthEnd,
       });
