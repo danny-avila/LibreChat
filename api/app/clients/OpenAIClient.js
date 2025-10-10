@@ -6,8 +6,10 @@ const {
   Tokenizer,
   createFetch,
   resolveHeaders,
+  shouldUseEntraId,
   constructAzureURL,
   getModelMaxTokens,
+  getEntraIdAccessToken,
   genAzureChatCompletion,
   getModelMaxOutputTokens,
   createStreamEventHandlers,
@@ -695,7 +697,14 @@ class OpenAIClient extends BaseClient {
         this.options.defaultQuery = azureOptions.azureOpenAIApiVersion
           ? { 'api-version': azureOptions.azureOpenAIApiVersion }
           : undefined;
-        this.options.headers['api-key'] = this.apiKey;
+        if (shouldUseEntraId()) {
+          this.options.headers = {
+            ...this.options.headers,
+            Authorization: `Bearer ${await getEntraIdAccessToken()}`,
+          };
+        } else {
+          this.options.headers['api-key'] = this.apiKey;
+        }
       }
     }
 
@@ -754,7 +763,7 @@ ${convo}
 
     try {
       this.abortController = new AbortController();
-      const llm = this.initializeLLM({
+      const llm = await this.initializeLLM({
         ...modelOptions,
         conversationId,
         context: 'title',
@@ -903,7 +912,7 @@ ${convo}
     const initialPromptTokens = this.maxContextTokens - remainingContextTokens;
     logger.debug('[OpenAIClient] initialPromptTokens', initialPromptTokens);
 
-    const llm = this.initializeLLM({
+    const llm = await this.initializeLLM({
       model,
       temperature: 0.2,
       context: 'summary',
@@ -1129,7 +1138,14 @@ ${convo}
           this.options.defaultQuery = azureOptions.azureOpenAIApiVersion
             ? { 'api-version': azureOptions.azureOpenAIApiVersion }
             : undefined;
-          this.options.headers['api-key'] = this.apiKey;
+          if (shouldUseEntraId()) {
+            this.options.headers = {
+              ...this.options.headers,
+              Authorization: `Bearer ${await getEntraIdAccessToken()}`,
+            };
+          } else {
+            this.options.headers['api-key'] = this.apiKey;
+          }
         }
       }
 
@@ -1150,7 +1166,14 @@ ${convo}
           : this.azureEndpoint.split(/(?<!\/)\/(chat|completion)\//)[0];
 
         opts.defaultQuery = { 'api-version': this.azure.azureOpenAIApiVersion };
-        opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
+        if (shouldUseEntraId()) {
+          opts.defaultHeaders = {
+            ...opts.defaultHeaders,
+            Authorization: `Bearer ${await getEntraIdAccessToken()}`,
+          };
+        } else {
+          opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
+        }
       }
 
       if (this.isOmni === true && modelOptions.max_tokens != null) {
