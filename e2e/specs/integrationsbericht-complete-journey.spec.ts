@@ -123,8 +123,11 @@ test.describe('Integrationsbericht BW 2025 - Complete Sales Demo Journey', () =>
 
     // Select Agents endpoint
     console.log('\n📋 Step 0: Selecting Agents endpoint...');
-    await page.locator('#new-conversation-menu').click();
-    await page.locator('#agents').click();
+    // Click the model selector button (shows current model like "gpt-5")
+    await page.locator('button:has-text("gpt-5")').first().click();
+    await page.waitForTimeout(500);
+    // Click on "My Agents" option in the dropdown
+    await page.locator('[role="option"]:has-text("My Agents")').click();
     await page.waitForTimeout(1000);
     console.log('✅ Agents endpoint selected\n');
 
@@ -287,8 +290,9 @@ test.describe('Integrationsbericht BW 2025 - Complete Sales Demo Journey', () =>
     console.log('\n🔧 Running quick smoke test for MCP servers...\n');
 
     await page.goto(`${BASE_URL}/c/new`);
-    await page.locator('#new-conversation-menu').click();
-    await page.locator('#agents').click();
+    await page.locator('button:has-text("gpt-5")').first().click();
+    await page.waitForTimeout(500);
+    await page.locator('[role="option"]:has-text("My Agents")').click();
 
     const smokeMessage = 'Welche MCP-Tools hast du verfügbar?';
     await sendMessageAndWaitForResponse(page, smokeMessage);

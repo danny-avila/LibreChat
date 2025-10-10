@@ -48,6 +48,7 @@ const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
+const { createCircuitBreaker } = require('~/server/utils/circuitBreaker');
 
 const omitTitleOptions = new Set([
   'stream',
@@ -88,11 +89,24 @@ function createTokenCounter(encoding) {
   };
 }
 
-function logToolError(graph, error, toolId) {
-  logAxiosError({
-    error,
-    message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
-  });
+function createToolErrorHandler(circuitBreaker) {
+  return function logToolError(graph, error, toolId) {
+    logAxiosError({
+      error,
+      message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
+    });
+
+    // Record the failure in circuit breaker
+    if (circuitBreaker) {
+      circuitBreaker.recordToolCall(toolId, false, error);
+
+      // Check if we should warn or block
+      const warning = circuitBreaker.getWarningMessage(toolId);
+      if (warning) {
+        logger.warn(`[Circuit Breaker] ${warning}`);
+      }
+    }
+  };
 }
 
 class AgentClient extends BaseClient {
@@ -778,6 +792,19 @@ class AgentClient extends BaseClient {
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
+      // Initialize circuit breaker to prevent infinite loops
+      const circuitBreaker = createCircuitBreaker({
+        maxFailures: 3,
+        windowSize: 5,
+        onCircuitOpen: (toolName, info) => {
+          logger.error(
+            `[Circuit Breaker] Stopping execution due to repeated failures of tool "${toolName}". ` +
+            `Consider asking the user for alternative approach or manual input.`,
+            info,
+          );
+        },
+      });
+
       config = {
         configurable: {
           thread_id: this.conversationId,
@@ -937,7 +964,7 @@ class AgentClient extends BaseClient {
           indexTokenCountMap: currentIndexCountMap,
           maxContextTokens: agent.maxContextTokens,
           callbacks: {
-            [Callback.TOOL_ERROR]: logToolError,
+            [Callback.TOOL_ERROR]: createToolErrorHandler(circuitBreaker),
           },
         });
 
