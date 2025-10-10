@@ -335,7 +335,6 @@
   "com_nav_auto_scroll": "開啟時自動捲動至最新內容",
   "com_nav_auto_send_prompts": "自動傳送提示",
   "com_nav_auto_send_text": "自動傳送訊息",
-  "com_nav_auto_send_text_disabled": "設定為 -1 以停用",
   "com_nav_auto_transcribe_audio": "自動轉錄語音",
   "com_nav_automatic_playback": "自動播放最新訊息",
   "com_nav_balance": "餘額",

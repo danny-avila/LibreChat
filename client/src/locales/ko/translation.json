@@ -318,7 +318,6 @@
   "com_nav_auto_scroll": "채팅 열렸을 때 최신 메시지로 자동 스크롤",
   "com_nav_auto_send_prompts": "프롬프트 자동 전송",
   "com_nav_auto_send_text": "자동 메시지 전송",
-  "com_nav_auto_send_text_disabled": "자동 전송 비활성화는 -1로 설정",
   "com_nav_auto_transcribe_audio": "오디오 자동 변환",
   "com_nav_automatic_playback": "최신 메시지 자동 재생",
   "com_nav_balance": "잔고",

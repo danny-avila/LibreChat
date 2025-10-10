@@ -325,7 +325,6 @@
   "com_nav_auto_scroll": "チャットを開いたときに最新まで自動でスクロール",
   "com_nav_auto_send_prompts": "プロンプト自動送信",
   "com_nav_auto_send_text": "テキストを自動送信",
-  "com_nav_auto_send_text_disabled": "無効にするには-1を設定",
   "com_nav_auto_transcribe_audio": "オーディオを自動で書き起こす",
   "com_nav_automatic_playback": "最新メッセージを自動再生",
   "com_nav_balance": "バランス",

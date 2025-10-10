@@ -268,7 +268,6 @@
   "com_nav_auto_scroll": "Sohbet açıldığında otomatik olarak son mesaja kaydır",
   "com_nav_auto_send_prompts": "İstemleri Otomatik Gönder",
   "com_nav_auto_send_text": "Metni otomatik gönder (3 sn sonra)",
-  "com_nav_auto_send_text_disabled": "devre dışı bırakmak için -1 ayarlayın",
   "com_nav_auto_transcribe_audio": "Sesi otomatik olarak yazıya dök",
   "com_nav_automatic_playback": "Son Mesajı Otomatik Çal (yalnızca dış)",
   "com_nav_balance": "Denge",
