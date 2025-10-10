@@ -301,7 +301,6 @@
   "com_nav_auto_scroll": "เลื่อนอัตโนมัติไปที่ข้อความล่าสุดเมื่อเปิดแชท",
   "com_nav_auto_send_prompts": "ส่งพรอมต์อัตโนมัติ",
   "com_nav_auto_send_text": "ส่งข้อความอัตโนมัติ",
-  "com_nav_auto_send_text_disabled": "ตั้งค่าเป็น -1 เพื่อปิดใช้งาน",
   "com_nav_auto_transcribe_audio": "ถอดเสียงอัตโนมัติ",
   "com_nav_automatic_playback": "เล่นข้อความล่าสุดอัตโนมัติ",
   "com_nav_balance": "ยอดคงเหลือ",

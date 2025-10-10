@@ -291,7 +291,6 @@
   "com_nav_auto_scroll": "Automatikus görgetés a legutóbbi üzenetre a csevegés megnyitásakor",
   "com_nav_auto_send_prompts": "Promptok automatikus küldése",
   "com_nav_auto_send_text": "Szöveg automatikus küldése",
-  "com_nav_auto_send_text_disabled": "-1 beállítása a letiltáshoz",
   "com_nav_auto_transcribe_audio": "Audió automatikus átírása",
   "com_nav_automatic_playback": "Legutóbbi üzenet automatikus lejátszása",
   "com_nav_balance": "Egyenleg",

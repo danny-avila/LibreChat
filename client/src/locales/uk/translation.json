@@ -405,7 +405,6 @@
   "com_nav_auto_scroll": "Автоматично прокручувати до найновіших повідомлень при відкритті",
   "com_nav_auto_send_prompts": "Автовідправка підказок",
   "com_nav_auto_send_text": "Автовідправка повідомлень",
-  "com_nav_auto_send_text_disabled": "встановіть -1 для вимкнення",
   "com_nav_auto_transcribe_audio": "Автоматична транскрипція",
   "com_nav_automatic_playback": "Автовідтворення останнього повідомлення",
   "com_nav_balance": "Баланс",

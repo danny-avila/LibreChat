@@ -302,7 +302,6 @@
   "com_nav_auto_scroll": "Desplaçament automàtic al darrer missatge en obrir el xat",
   "com_nav_auto_send_prompts": "Envia automàticament els prompts",
   "com_nav_auto_send_text": "Envia text automàticament",
-  "com_nav_auto_send_text_disabled": "estableix -1 per desactivar",
   "com_nav_auto_transcribe_audio": "Transcriu àudio automàticament",
   "com_nav_automatic_playback": "Reprodueix automàticament el darrer missatge",
   "com_nav_balance": "Balanç",
