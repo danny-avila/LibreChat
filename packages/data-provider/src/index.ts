@@ -2,6 +2,7 @@
 export * from './azure';
 export * from './bedrock';
 export * from './config';
+export * from './tokenStore';
 export * from './file-config';
 /* messages  */
 export * from './messages';
