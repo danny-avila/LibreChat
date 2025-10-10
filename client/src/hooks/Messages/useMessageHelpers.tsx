@@ -49,9 +49,24 @@ export default function useMessageHelpers(props: TMessageProps) {
       messageId: message.messageId,
       convoId,
     };
+
+    /* Extracted convoId from previous textKey (format: ?messageId=...&convoId=...&...) */
+    let previousConvoId: string | null = null;
+    if (
+      latestText.current &&
+      typeof latestText.current === 'string' &&
+      latestText.current.length > 0
+    ) {
+      try {
+        previousConvoId = new URLSearchParams(latestText.current).get('convoId');
+      } catch {
+        previousConvoId = null;
+      }
+    }
+
     if (
       textKey !== latestText.current ||
-      (latestText.current && convoId !== latestText.current.split(Constants.COMMON_DIVIDER)[2])
+      (convoId != null && previousConvoId != null && convoId !== previousConvoId)
     ) {
       logger.log('latest_message', '[useMessageHelpers] Setting latest message: ', logInfo);
       latestText.current = textKey;
