@@ -508,7 +508,10 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
-  if (agent_id && !tool_resource) {
+
+  let messageAttachment = !!metadata.message_file;
+
+  if (agent_id && !tool_resource && !messageAttachment) {
     throw new Error('No tool resource provided for agent file upload');
   }
 
@@ -516,7 +519,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     throw new Error('Image uploads are not supported for file search tool resources');
   }
 
-  let messageAttachment = !!metadata.message_file;
   if (!messageAttachment && !agent_id) {
     throw new Error('No agent ID provided for agent file upload');
   }

@@ -37,7 +37,10 @@ export default function useAgentToolPermissions(
     [agentData?.tools, selectedAgent?.tools],
   );
 
-  const provider = useMemo(() => selectedAgent?.provider, [selectedAgent?.provider]);
+  const provider = useMemo(
+    () => agentData?.provider || selectedAgent?.provider,
+    [agentData?.provider, selectedAgent?.provider],
+  );
 
   const fileSearchAllowedByAgent = useMemo(() => {
     // Check ephemeral agent settings
