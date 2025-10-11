@@ -19,7 +19,7 @@ const artifactFilename = {
 };
 
 const artifactTemplate: Record<
-  keyof typeof artifactFilename,
+  keyof typeof artifactFilename | 'application/vnd.mermaid' | 'text/markdown' | 'text/plain',
   SandpackPredefinedTemplate | undefined
 > = {
   'text/html': 'static',
@@ -90,13 +90,14 @@ const standardDependencies = {
   vaul: '^0.9.1',
 };
 
-const mermaidDependencies = Object.assign(
-  {
-    mermaid: '^11.4.1',
-    'react-zoom-pan-pinch': '^3.6.1',
-  },
-  standardDependencies,
-);
+const mermaidDependencies = {
+  mermaid: '^11.4.1',
+  'react-zoom-pan-pinch': '^3.6.1',
+  'class-variance-authority': '^0.6.0',
+  clsx: '^1.2.1',
+  'tailwind-merge': '^1.9.1',
+  '@radix-ui/react-slot': '^1.1.0',
+};
 
 const markdownDependencies = Object.assign(
   {
@@ -105,7 +106,10 @@ const markdownDependencies = Object.assign(
   standardDependencies,
 );
 
-const dependenciesMap: Record<keyof typeof artifactFilename, object> = {
+const dependenciesMap: Record<
+  keyof typeof artifactFilename | 'application/vnd.mermaid' | 'text/markdown' | 'text/plain',
+  Record<string, string>
+> = {
   'application/vnd.mermaid': mermaidDependencies,
   'application/vnd.react': standardDependencies,
   'text/html': standardDependencies,
