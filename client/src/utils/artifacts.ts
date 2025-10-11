@@ -19,7 +19,11 @@ const artifactFilename = {
 };
 
 const artifactTemplate: Record<
-  keyof typeof artifactFilename | 'application/vnd.mermaid' | 'text/markdown' | 'text/plain',
+  | keyof typeof artifactFilename
+  | 'application/vnd.mermaid'
+  | 'text/markdown'
+  | 'text/md'
+  | 'text/plain',
   SandpackPredefinedTemplate | undefined
 > = {
   'text/html': 'static',
@@ -27,6 +31,7 @@ const artifactTemplate: Record<
   'application/vnd.mermaid': 'react-ts',
   'application/vnd.code-html': 'static',
   'text/markdown': 'react-ts',
+  'text/md': 'react-ts',
   'text/plain': 'react-ts',
   default: 'static',
   // 'css': 'css',
@@ -107,7 +112,11 @@ const markdownDependencies = Object.assign(
 );
 
 const dependenciesMap: Record<
-  keyof typeof artifactFilename | 'application/vnd.mermaid' | 'text/markdown' | 'text/plain',
+  | keyof typeof artifactFilename
+  | 'application/vnd.mermaid'
+  | 'text/markdown'
+  | 'text/md'
+  | 'text/plain',
   Record<string, string>
 > = {
   'application/vnd.mermaid': mermaidDependencies,
@@ -115,6 +124,7 @@ const dependenciesMap: Record<
   'text/html': standardDependencies,
   'application/vnd.code-html': standardDependencies,
   'text/markdown': markdownDependencies,
+  'text/md': markdownDependencies,
   'text/plain': markdownDependencies,
   default: standardDependencies,
 };
