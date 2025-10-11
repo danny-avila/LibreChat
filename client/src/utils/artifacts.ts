@@ -104,12 +104,9 @@ const mermaidDependencies = {
   '@radix-ui/react-slot': '^1.1.0',
 };
 
-const markdownDependencies = Object.assign(
-  {
-    'marked-react': '^2.0.0',
-  },
-  standardDependencies,
-);
+const markdownDependencies = {
+  'marked-react': '^2.0.0',
+};
 
 const dependenciesMap: Record<
   | keyof typeof artifactFilename
