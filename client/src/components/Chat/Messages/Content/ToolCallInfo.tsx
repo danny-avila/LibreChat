@@ -1,7 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocalize } from '~/hooks';
 import { Tools } from 'librechat-data-provider';
-import { UIResourceRenderer } from '@mcp-ui/client';
 import UIResourceCarousel from './UIResourceCarousel';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
 
@@ -38,6 +37,9 @@ export default function ToolCallInfo({
   attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
+  const [UIResourceRenderer, setUIResourceRenderer] = useState<React.ComponentType<any> | null>(
+    null,
+  );
   const formatText = (text: string) => {
     try {
       return JSON.stringify(JSON.parse(text), null, 2);
@@ -64,6 +66,26 @@ export default function ToolCallInfo({
         return attachment[Tools.ui_resources] as UIResource[];
       }) ?? [];
 
+  useEffect(() => {
+    if (!uiResources || uiResources.length === 0) {
+      return;
+    }
+    let mounted = true;
+    (async () => {
+      try {
+        const { UIResourceRenderer: Renderer } = await import('@mcp-ui/client');
+        if (mounted && Renderer) {
+          setUIResourceRenderer(() => Renderer);
+        }
+      } catch {
+        return;
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [uiResources]);
+
   return (
     <div className="w-full p-2">
       <div style={{ opacity: 1 }}>
@@ -87,10 +109,10 @@ export default function ToolCallInfo({
             <div>
               {uiResources.length > 1 && <UIResourceCarousel uiResources={uiResources} />}
 
-              {uiResources.length === 1 && (
+              {uiResources.length === 1 && UIResourceRenderer && (
                 <UIResourceRenderer
                   resource={uiResources[0]}
-                  onUIAction={async (result) => {
+                  onUIAction={async (result: unknown) => {
                     console.log('Action:', result);
                   }}
                   htmlProps={{
