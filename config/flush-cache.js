@@ -282,7 +282,7 @@ async function main() {
   }
 
   let success = true;
-  const isRedisEnabled = isEnabled(USE_REDIS) && REDIS_URI;
+  const isRedisEnabled = isEnabled(USE_REDIS) || (REDIS_URI != null && REDIS_URI !== '');
 
   // Flush the appropriate cache type
   if (isRedisEnabled) {
