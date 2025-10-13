@@ -1,5 +1,7 @@
 // See .env.test.example for an example of the '.env.test' file.
 require('dotenv').config({ path: './test/.env.test' });
+const applyUseAutumnKey = require('../utils/applyUseAutumnKey');
+applyUseAutumnKey();
 
 process.env.MONGO_URI = 'mongodb://127.0.0.1:27017/dummy-uri';
 process.env.BAN_VIOLATIONS = 'true';

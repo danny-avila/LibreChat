@@ -6,6 +6,14 @@
  * This script flushes the cache store used by LibreChat, whether it's
  * Redis (if configured) or file-based cache.
  *
+ * LibreChat caches short-lived operational data such as session tokens,
+ * rate-limit counters, model responses, and other non-authoritative
+ * metadata so that it can respond quickly.  Secrets that come from
+ * configuration (for example API keys or database passwords) are never
+ * written into these caches; they remain in memory only.  When in doubt,
+ * you can safely flush the cache to remove any derived tokens without
+ * risking leakage of the original credential values.
+ *
  * Usage:
  *   npm run flush-cache
  *   node config/flush-cache.js
@@ -17,6 +25,8 @@ const fs = require('fs');
 
 // Set up environment
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const applyUseAutumnKey = require('../api/utils/applyUseAutumnKey');
+applyUseAutumnKey();
 
 const { USE_REDIS, REDIS_URI, REDIS_KEY_PREFIX } = process.env;
 
