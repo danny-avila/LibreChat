@@ -13,6 +13,8 @@
 */
 
 require('dotenv').config();
+const applyUseAutumnKey = require('../../utils/applyUseAutumnKey');
+applyUseAutumnKey();
 const { OpenAIClient } = require('../');
 
 function timeout(ms) {
