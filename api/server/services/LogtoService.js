@@ -1,15 +1,19 @@
 const fetch = require('node-fetch');
-const { logger } = require('@librechat/data-schemas');
+
+let dataSchemasLogger;
+const getLogger = () => {
+  if (!dataSchemasLogger) {
+    ({ logger: dataSchemasLogger } = require('@librechat/data-schemas'));
+  }
+
+  return dataSchemasLogger;
+};
 
 const sanitizeBaseUrl = (url) => url.replace(/\/+$/, '');
 
 const getLogtoBaseUrl = () => {
-  if (process.env.LOGTO_BASE_URL) {
-    return sanitizeBaseUrl(process.env.LOGTO_BASE_URL);
-  }
-
-  if (process.env.LOGTO_TENANT_ID) {
-    return `https://${process.env.LOGTO_TENANT_ID}.logto.app`;
+  if (process.env.LOGTO_APP_BASE_URL) {
+    return sanitizeBaseUrl(process.env.LOGTO_APP_BASE_URL);
   }
 
   return null;
@@ -20,9 +24,9 @@ let cachedClientTokenExpiry = 0;
 let cachedClientTokenKey;
 
 const getLogtoClientCredentials = (baseUrl) => {
-  const clientId = process.env.LOGTO_APP_ID || process.env.LOGTO_CLIENT_ID;
-  const clientSecret = process.env.LOGTO_APP_SECRET || process.env.LOGTO_CLIENT_SECRET;
-  const resource = process.env.LOGTO_MANAGEMENT_RESOURCE || (baseUrl ? `${baseUrl}/api` : null);
+  const clientId = process.env.LOGTO_APP_ID;
+  const clientSecret = process.env.LOGTO_APP_SECRET;
+  const resource = baseUrl ? `${baseUrl}/api` : null;
 
   if (!baseUrl || !clientId || !clientSecret || !resource) {
     return null;
@@ -33,7 +37,7 @@ const getLogtoClientCredentials = (baseUrl) => {
 
 const getClientCredentialsToken = async (credentials) => {
   const { baseUrl, clientId, clientSecret, resource } = credentials;
-  const cacheKey = `${baseUrl}|${clientId}|${resource}`;
+  const cacheKey = `${baseUrl}|${clientId}|${clientSecret}|${resource}`;
 
   if (
     cachedClientToken &&
@@ -46,17 +50,19 @@ const getClientCredentialsToken = async (credentials) => {
   try {
     const response = await fetch(`${baseUrl}/oidc/token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+      },
       body: new URLSearchParams({
         grant_type: 'client_credentials',
-        client_id: clientId,
-        client_secret: clientSecret,
         resource,
+        scope: 'all',
       }),
     });
 
     if (!response.ok) {
-      logger.warn('[getLogtoAuthorizationToken] Failed to fetch management token', {
+      getLogger().warn('[getLogtoAuthorizationToken] Failed to fetch management token', {
         status: response.status,
         statusText: response.statusText,
       });
@@ -68,13 +74,16 @@ const getClientCredentialsToken = async (credentials) => {
     try {
       payload = await response.json();
     } catch (error) {
-      logger.warn('[getLogtoAuthorizationToken] Failed to parse token response as JSON', error);
+      getLogger().warn(
+        '[getLogtoAuthorizationToken] Failed to parse token response as JSON',
+        error,
+      );
       return null;
     }
 
     const accessToken = payload?.access_token;
     if (!accessToken) {
-      logger.warn('[getLogtoAuthorizationToken] Token response missing `access_token` field');
+      getLogger().warn('[getLogtoAuthorizationToken] Token response missing `access_token` field');
       return null;
     }
 
@@ -89,17 +98,12 @@ const getClientCredentialsToken = async (credentials) => {
     cachedClientTokenKey = cacheKey;
     return accessToken;
   } catch (error) {
-    logger.error('[getLogtoAuthorizationToken] Unable to fetch management token', error);
+    getLogger().error('[getLogtoAuthorizationToken] Unable to fetch management token', error);
     return null;
   }
 };
 
 const getLogtoAuthorizationToken = async (baseUrl) => {
-  const apiKey = process.env.LOGTO_API_KEY;
-  if (apiKey) {
-    return apiKey;
-  }
-
   const credentials = getLogtoClientCredentials(baseUrl);
   if (!credentials) {
     return null;
@@ -130,7 +134,7 @@ const getLogtoUserIdByEmail = async (email) => {
   }
 
   const searchParams = new URLSearchParams({
-    limit: '1',
+    limit: '20',
     search: email,
   });
 
@@ -145,7 +149,7 @@ const getLogtoUserIdByEmail = async (email) => {
     });
 
     if (!response.ok) {
-      logger.warn('[getLogtoUserIdByEmail] Logto API request failed', {
+      getLogger().warn('[getLogtoUserIdByEmail] Logto API request failed', {
         status: response.status,
         statusText: response.statusText,
       });
@@ -157,7 +161,7 @@ const getLogtoUserIdByEmail = async (email) => {
     try {
       payload = await response.json();
     } catch (error) {
-      logger.warn('[getLogtoUserIdByEmail] Failed to parse Logto response as JSON', error);
+      getLogger().warn('[getLogtoUserIdByEmail] Failed to parse Logto response as JSON', error);
       return null;
     }
 
@@ -166,13 +170,91 @@ const getLogtoUserIdByEmail = async (email) => {
       return null;
     }
 
-    return extractUserId(results[0]);
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const hasMatchingEmail = (value) => {
+      if (!value || typeof value !== 'string') {
+        return false;
+      }
+
+      return value.trim().toLowerCase() === normalizedEmail;
+    };
+
+    const collectEmails = (candidate) => {
+      const collected = [];
+
+      if (!candidate || typeof candidate !== 'object') {
+        return collected;
+      }
+
+      const possibleEmailFields = [
+        candidate.email,
+        candidate.primaryEmail,
+        candidate.primary_email,
+        candidate.contactEmail,
+        candidate.contact_email,
+        candidate?.profile?.email,
+      ];
+
+      collected.push(...possibleEmailFields.filter(Boolean));
+
+      if (Array.isArray(candidate.emails)) {
+        collected.push(...candidate.emails);
+      }
+
+      if (Array.isArray(candidate.identities)) {
+        for (const identity of candidate.identities) {
+          if (identity && typeof identity === 'object') {
+            const identityEmails = [];
+            if (identity.email) {
+              identityEmails.push(identity.email);
+            }
+
+            if (Array.isArray(identity.emails)) {
+              identityEmails.push(...identity.emails);
+            }
+
+            collected.push(...identityEmails);
+          }
+        }
+      }
+
+      return collected;
+    };
+
+    const matchedUser = results.find((candidate) =>
+      collectEmails(candidate).some((value) => hasMatchingEmail(value)),
+    );
+
+    if (!matchedUser) {
+      return null;
+    }
+
+    return extractUserId(matchedUser);
   } catch (error) {
-    logger.error('[getLogtoUserIdByEmail] Unable to retrieve Logto user ID', error);
+    getLogger().error('[getLogtoUserIdByEmail] Unable to retrieve Logto user ID', error);
     return null;
   }
 };
 
+const describeLogtoConfiguration = () => {
+  const baseUrl = getLogtoBaseUrl();
+  const clientId = process.env.LOGTO_APP_ID;
+  const clientSecret = process.env.LOGTO_APP_SECRET;
+  const effectiveResource = baseUrl ? `${baseUrl}/api` : null;
+  const hasClientCredentials = Boolean(clientId && clientSecret);
+  const canQueryManagementApi = hasClientCredentials && Boolean(effectiveResource);
+
+  return {
+    baseUrl,
+    clientIdSet: Boolean(clientId),
+    clientSecretSet: Boolean(clientSecret),
+    effectiveResource,
+    hasClientCredentials,
+    canQueryManagementApi,
+  };
+};
+
 module.exports = {
   getLogtoUserIdByEmail,
+  describeLogtoConfiguration,
 };

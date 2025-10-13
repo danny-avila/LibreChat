@@ -21,22 +21,50 @@ const normalizeBoolean = (value) => {
 };
 
 const applyUseAutumnKey = (env = process.env) => {
-  if (!env || env.USEAUTUMN_KEY) {
-    return;
+  const result = {
+    active: Boolean(env?.USEAUTUMN_KEY),
+    derived: false,
+    source: null,
+    isProduction: normalizeBoolean(env?.IS_USEAUTUMN_PROD),
+    sandboxKeyPresent: Boolean(env?.USEAUTUMN_SANDBOX_KEY),
+    productionKeyPresent: Boolean(env?.USEAUTUMN_PROD_KEY),
+  };
+
+  if (!env) {
+    return result;
   }
 
-  const useProduction = normalizeBoolean(env.IS_USEAUTUMN_PROD);
+  if (result.active) {
+    if (env.USEAUTUMN_KEY === env.USEAUTUMN_PROD_KEY) {
+      result.source = 'production';
+    } else if (env.USEAUTUMN_KEY === env.USEAUTUMN_SANDBOX_KEY) {
+      result.source = 'sandbox';
+    } else {
+      result.source = 'explicit';
+    }
+
+    return result;
+  }
+
   const sandboxKey = env.USEAUTUMN_SANDBOX_KEY;
   const productionKey = env.USEAUTUMN_PROD_KEY;
 
-  if (useProduction && productionKey) {
+  if (result.isProduction && productionKey) {
     env.USEAUTUMN_KEY = productionKey;
-    return;
+    result.active = true;
+    result.derived = true;
+    result.source = 'production';
+    return result;
   }
 
-  if (!useProduction && sandboxKey) {
+  if (!result.isProduction && sandboxKey) {
     env.USEAUTUMN_KEY = sandboxKey;
+    result.active = true;
+    result.derived = true;
+    result.source = 'sandbox';
   }
+
+  return result;
 };
 
 module.exports = applyUseAutumnKey;

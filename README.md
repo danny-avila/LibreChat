@@ -160,6 +160,50 @@ Click on the thumbnail to open the video☝️
 
 ---
 
+## 🧰 Cache management
+
+LibreChat keeps a small amount of operational data in its cache so the
+application can respond quickly. Depending on your configuration the cache
+is either backed by Redis or a pair of JSON files on disk (`data/logs.json`
+and `data/violations.json`). This cache holds short-lived artifacts such as
+session tokens, rate-limit counters, and generated conversation metadata.
+It is **not** used to persist environment secrets like API keys or database
+passwords.
+
+The `npm run flush-cache` script (defined in `config/flush-cache.js`) can be
+used whenever you need to clear cached sessions or other derived tokens.
+Flushing the cache is safe for sensitive credentials, but it will log users
+out and require them to re-authenticate.
+
+## 🔎 Configuration diagnostics
+
+LibreChat ships with a `npm run check-config` helper that prints a sanitized
+summary of the UseAutumn and Logto credentials currently loaded into the
+environment. The script never echoes the underlying secret values; instead it
+reports whether each variable is present and which strategy LibreChat will use
+to contact the Logto management API.
+
+Run the command directly on your host when using a local `.env` file:
+
+```
+npm run check-config
+```
+
+When the application runs through Docker Compose you can execute the same
+check inside the API container to make sure Compose injected the variables:
+
+```
+docker compose exec api npm run check-config
+```
+
+The output will confirm which UseAutumn key was applied (sandbox or
+production) and whether LibreChat has enough Logto credentials to look up user
+IDs via the management API. For Logto, provide `LOGTO_APP_BASE_URL`,
+`LOGTO_APP_ID`, and `LOGTO_APP_SECRET`; the diagnostic verifies that each value
+is present before LibreChat attempts a lookup.
+
+---
+
 ## 📝 Changelog
 
 Keep up with the latest updates by visiting the releases page and notes:
