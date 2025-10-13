@@ -1,6 +1,7 @@
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, Time, dataService } from 'librechat-data-provider';
+import { useGetStartupConfig } from './Endpoints/queries';
 import { logger } from '~/utils';
 
 export const useHealthCheck = (isAuthenticated = false) => {
@@ -84,10 +85,37 @@ export const useHealthCheck = (isAuthenticated = false) => {
 export const useInteractionHealthCheck = () => {
   const queryClient = useQueryClient();
   const lastInteractionTimeRef = useRef(Date.now());
+  const { data: startupConfig } = useGetStartupConfig({ enabled: true });
+
+  // Compute the maximum interval between interactions before triggering a health check
+  // max(FIVE_MINUTES, timeouts of all MCP servers)
+  const maxInteractionInterval = useMemo(() => {
+    let maxInterval = Time.FIVE_MINUTES;
+    const servers = startupConfig?.mcpServers;
+
+    if (servers && typeof servers === 'object') {
+      for (const server of Object.values(servers)) {
+        // server type omits timeout fields in the public type; access defensively
+        const s: any = server as any;
+        const timeoutValues: number[] = [];
+        if (typeof s?.timeout === 'number' && isFinite(s.timeout)) timeoutValues.push(s.timeout);
+        if (typeof s?.initTimeout === 'number' && isFinite(s.initTimeout))
+          timeoutValues.push(s.initTimeout);
+
+        for (const t of timeoutValues) {
+          if (t > maxInterval) {
+            maxInterval = t;
+          }
+        }
+      }
+    }
+
+    return maxInterval;
+  }, [startupConfig?.mcpServers]);
 
   const checkHealthOnInteraction = useCallback(() => {
     const currentTime = Date.now();
-    if (currentTime - lastInteractionTimeRef.current > Time.FIVE_MINUTES) {
+    if (currentTime - lastInteractionTimeRef.current > maxInteractionInterval) {
       logger.log(
         'Checking health on interaction. Time elapsed:',
         currentTime - lastInteractionTimeRef.current,
@@ -95,7 +123,7 @@ export const useInteractionHealthCheck = () => {
       queryClient.invalidateQueries([QueryKeys.health]);
       lastInteractionTimeRef.current = currentTime;
     }
-  }, [queryClient]);
+  }, [queryClient, maxInteractionInterval]);
 
   return checkHealthOnInteraction;
 };
