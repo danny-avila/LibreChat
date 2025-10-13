@@ -22,6 +22,7 @@ const {
 } = require('~/models');
 const { registerSchema } = require('~/strategies/validators');
 const { getAppConfig } = require('~/server/services/Config');
+const { getLogtoUserIdByEmail } = require('~/server/services/LogtoService');
 const { sendEmail } = require('~/server/utils');
 
 const domains = {
@@ -206,6 +207,7 @@ const registerUser = async (user, additionalData = {}) => {
     const isFirstRegisteredUser = (await countUsers()) === 0;
 
     const salt = bcrypt.genSaltSync(10);
+    const logtoUserId = await getLogtoUserIdByEmail(email);
     const newUserData = {
       provider: 'local',
       email,
@@ -214,6 +216,7 @@ const registerUser = async (user, additionalData = {}) => {
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       password: bcrypt.hashSync(password, salt),
+      ...(logtoUserId ? { logtoUserId } : {}),
       ...additionalData,
     };
 
