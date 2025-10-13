@@ -1,4 +1,6 @@
 require('dotenv').config();
+const applyUseAutumnKey = require('../utils/applyUseAutumnKey');
+applyUseAutumnKey();
 const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 

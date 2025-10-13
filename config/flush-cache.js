@@ -17,6 +17,8 @@ const fs = require('fs');
 
 // Set up environment
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const applyUseAutumnKey = require('../api/utils/applyUseAutumnKey');
+applyUseAutumnKey();
 
 const { USE_REDIS, REDIS_URI, REDIS_KEY_PREFIX } = process.env;
 

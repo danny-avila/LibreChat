@@ -1,5 +1,7 @@
 jest.mock('~/cache/getLogStores');
 require('dotenv').config();
+const { applyUseAutumnKey } = require('~/utils');
+applyUseAutumnKey();
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const getLogStores = require('~/cache/getLogStores');
 const OpenAIClient = require('../OpenAIClient');
