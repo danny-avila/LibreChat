@@ -96,6 +96,11 @@ const userSchema = new Schema<IUser>(
       unique: true,
       sparse: true,
     },
+    logtoUserId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
     discordId: {
       type: String,
       unique: true,
