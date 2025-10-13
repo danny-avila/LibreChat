@@ -134,7 +134,7 @@ const getLogtoUserIdByEmail = async (email) => {
   }
 
   const searchParams = new URLSearchParams({
-    limit: '1',
+    limit: '20',
     search: email,
   });
 
@@ -170,7 +170,66 @@ const getLogtoUserIdByEmail = async (email) => {
       return null;
     }
 
-    return extractUserId(results[0]);
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const hasMatchingEmail = (value) => {
+      if (!value || typeof value !== 'string') {
+        return false;
+      }
+
+      return value.trim().toLowerCase() === normalizedEmail;
+    };
+
+    const collectEmails = (candidate) => {
+      const collected = [];
+
+      if (!candidate || typeof candidate !== 'object') {
+        return collected;
+      }
+
+      const possibleEmailFields = [
+        candidate.email,
+        candidate.primaryEmail,
+        candidate.primary_email,
+        candidate.contactEmail,
+        candidate.contact_email,
+        candidate?.profile?.email,
+      ];
+
+      collected.push(...possibleEmailFields.filter(Boolean));
+
+      if (Array.isArray(candidate.emails)) {
+        collected.push(...candidate.emails);
+      }
+
+      if (Array.isArray(candidate.identities)) {
+        for (const identity of candidate.identities) {
+          if (identity && typeof identity === 'object') {
+            const identityEmails = [];
+            if (identity.email) {
+              identityEmails.push(identity.email);
+            }
+
+            if (Array.isArray(identity.emails)) {
+              identityEmails.push(...identity.emails);
+            }
+
+            collected.push(...identityEmails);
+          }
+        }
+      }
+
+      return collected;
+    };
+
+    const matchedUser = results.find((candidate) =>
+      collectEmails(candidate).some((value) => hasMatchingEmail(value)),
+    );
+
+    if (!matchedUser) {
+      return null;
+    }
+
+    return extractUserId(matchedUser);
   } catch (error) {
     getLogger().error('[getLogtoUserIdByEmail] Unable to retrieve Logto user ID', error);
     return null;
