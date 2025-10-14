@@ -38,15 +38,6 @@ describe('useFocusChatEffect', () => {
       search: '',
       state: { focusChat: true },
     });
-
-    // Mock window.location
-    Object.defineProperty(window, 'location', {
-      value: {
-        pathname: '/c/new',
-        search: '',
-      },
-      writable: true,
-    });
   });
 
   describe('Basic functionality', () => {
@@ -102,56 +93,7 @@ describe('useFocusChatEffect', () => {
   });
 
   describe('URL parameter handling', () => {
-    // Helper function to run tests with different URL scenarios
-    const testUrlScenario = ({
-      windowLocationSearch,
-      reactRouterSearch,
-      expectedUrl,
-      testDescription,
-    }: {
-      windowLocationSearch: string;
-      reactRouterSearch: string;
-      expectedUrl: string;
-      testDescription: string;
-    }) => {
-      test(`${testDescription}`, () => {
-        // Mock window.location
-        Object.defineProperty(window, 'location', {
-          value: {
-            pathname: '/c/new',
-            search: windowLocationSearch,
-          },
-          writable: true,
-        });
-
-        // Mock React Router's location
-        (useLocation as jest.Mock).mockReturnValue({
-          pathname: '/c/new',
-          search: reactRouterSearch,
-          state: { focusChat: true },
-        });
-
-        renderHook(() => useFocusChatEffect(mockTextAreaRef as any));
-
-        expect(mockNavigate).toHaveBeenCalledWith(
-          expectedUrl,
-          expect.objectContaining({
-            replace: true,
-            state: {},
-          }),
-        );
-      });
-    };
-
-    test('should use window.location.search instead of location.search', () => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: '?agent_id=test_agent_id',
-        },
-        writable: true,
-      });
-
+    test('should use React Router location.search', () => {
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',
         search: '?endpoint=openAI&model=gpt-4o-mini',
@@ -161,8 +103,7 @@ describe('useFocusChatEffect', () => {
       renderHook(() => useFocusChatEffect(mockTextAreaRef as any));
 
       expect(mockNavigate).toHaveBeenCalledWith(
-        // Should use window.location.search, not location.search
-        '/c/new?agent_id=test_agent_id',
+        '/c/new?endpoint=openAI&model=gpt-4o-mini',
         expect.objectContaining({
           replace: true,
           state: {},
@@ -170,67 +111,79 @@ describe('useFocusChatEffect', () => {
       );
     });
 
-    testUrlScenario({
-      windowLocationSearch: '?agent_id=agent123',
-      reactRouterSearch: '?endpoint=openAI&model=gpt-4',
-      expectedUrl: '/c/new?agent_id=agent123',
-      testDescription: 'should prioritize window.location.search with agent_id parameter',
+    test('should handle empty search params', () => {
+      (useLocation as jest.Mock).mockReturnValue({
+        pathname: '/c/new',
+        search: '',
+        state: { focusChat: true },
+      });
+
+      renderHook(() => useFocusChatEffect(mockTextAreaRef as any));
+
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/c/new',
+        expect.objectContaining({
+          replace: true,
+          state: {},
+        }),
+      );
     });
 
-    testUrlScenario({
-      windowLocationSearch: '',
-      reactRouterSearch: '?endpoint=openAI&model=gpt-4',
-      expectedUrl: '/c/new',
-      testDescription: 'should use empty path when window.location.search is empty',
+    test('should handle search params with agent_id', () => {
+      (useLocation as jest.Mock).mockReturnValue({
+        pathname: '/c/new',
+        search: '?agent_id=agent123&prompt=test',
+        state: { focusChat: true },
+      });
+
+      renderHook(() => useFocusChatEffect(mockTextAreaRef as any));
+
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/c/new?agent_id=agent123&prompt=test',
+        expect.objectContaining({
+          replace: true,
+          state: {},
+        }),
+      );
     });
 
-    testUrlScenario({
-      windowLocationSearch: '?agent_id=agent123&prompt=test',
-      reactRouterSearch: '',
-      expectedUrl: '/c/new?agent_id=agent123&prompt=test',
-      testDescription: 'should use window.location.search when React Router search is empty',
+    test('should handle URL parameters with special characters correctly', () => {
+      (useLocation as jest.Mock).mockReturnValue({
+        pathname: '/c/new',
+        search: '?agent_id=agent/with%20spaces&prompt=test%20query',
+        state: { focusChat: true },
+      });
+
+      renderHook(() => useFocusChatEffect(mockTextAreaRef as any));
+
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/c/new?agent_id=agent/with%20spaces&prompt=test%20query',
+        expect.objectContaining({
+          replace: true,
+          state: {},
+        }),
+      );
     });
 
-    testUrlScenario({
-      windowLocationSearch: '?agent_id=agent123',
-      reactRouterSearch: '?agent_id=differentAgent',
-      expectedUrl: '/c/new?agent_id=agent123',
-      testDescription:
-        'should use window.location.search even when both have agent_id but with different values',
-    });
+    test('should handle multiple URL parameters correctly', () => {
+      (useLocation as jest.Mock).mockReturnValue({
+        pathname: '/c/new',
+        search: '?agent_id=agent123&prompt=test&model=gpt-4&temperature=0.7&max_tokens=1000',
+        state: { focusChat: true },
+      });
 
-    testUrlScenario({
-      windowLocationSearch: '?agent_id=agent/with%20spaces&prompt=test%20query',
-      reactRouterSearch: '?endpoint=openAI',
-      expectedUrl: '/c/new?agent_id=agent/with%20spaces&prompt=test%20query',
-      testDescription: 'should handle URL parameters with special characters correctly',
-    });
+      renderHook(() => useFocusChatEffect(mockTextAreaRef as any));
 
-    testUrlScenario({
-      windowLocationSearch:
-        '?agent_id=agent123&prompt=test&model=gpt-4&temperature=0.7&max_tokens=1000',
-      reactRouterSearch: '?endpoint=openAI',
-      expectedUrl:
+      expect(mockNavigate).toHaveBeenCalledWith(
         '/c/new?agent_id=agent123&prompt=test&model=gpt-4&temperature=0.7&max_tokens=1000',
-      testDescription: 'should handle multiple URL parameters correctly',
-    });
-
-    testUrlScenario({
-      windowLocationSearch: '?agent_id=agent123&broken=param=with=equals',
-      reactRouterSearch: '?endpoint=openAI',
-      expectedUrl: '/c/new?agent_id=agent123&broken=param=with=equals',
-      testDescription: 'should pass through malformed URL parameters unchanged',
+        expect.objectContaining({
+          replace: true,
+          state: {},
+        }),
+      );
     });
 
     test('should handle navigation immediately after URL parameter changes', () => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: '?endpoint=openAI&model=gpt-4',
-        },
-        writable: true,
-      });
-
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',
         search: '?endpoint=openAI&model=gpt-4',
@@ -249,17 +202,9 @@ describe('useFocusChatEffect', () => {
 
       jest.clearAllMocks();
 
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: '?agent_id=agent123',
-        },
-        writable: true,
-      });
-
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new_changed',
-        search: '?endpoint=openAI&model=gpt-4',
+        search: '?agent_id=agent123',
         state: { focusChat: true },
       });
 
@@ -275,14 +220,6 @@ describe('useFocusChatEffect', () => {
     });
 
     test('should handle undefined or null search params gracefully', () => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: undefined,
-        },
-        writable: true,
-      });
-
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',
         search: undefined,
@@ -300,14 +237,6 @@ describe('useFocusChatEffect', () => {
       );
 
       jest.clearAllMocks();
-
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: null,
-        },
-        writable: true,
-      });
 
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',
@@ -327,17 +256,9 @@ describe('useFocusChatEffect', () => {
     });
 
     test('should handle navigation when location.state is null', () => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: '?agent_id=agent123',
-        },
-        writable: true,
-      });
-
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',
-        search: '?endpoint=openAI&model=gpt-4',
+        search: '?agent_id=agent123',
         state: null,
       });
 
@@ -348,17 +269,9 @@ describe('useFocusChatEffect', () => {
     });
 
     test('should handle navigation when location.state.focusChat is undefined', () => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: '?agent_id=agent123',
-        },
-        writable: true,
-      });
-
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',
-        search: '?endpoint=openAI&model=gpt-4',
+        search: '?agent_id=agent123',
         state: { someOtherProp: true },
       });
 
@@ -369,14 +282,6 @@ describe('useFocusChatEffect', () => {
     });
 
     test('should handle navigation when both search params are empty', () => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: '',
-        },
-        writable: true,
-      });
-
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',
         search: '',

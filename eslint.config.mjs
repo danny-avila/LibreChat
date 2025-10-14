@@ -163,6 +163,21 @@ export default [
       'jsx-a11y/interactive-supports-focus': 'off',
       'jsx-a11y/no-noninteractive-tabindex': 'off',
       'jsx-a11y/img-redundant-alt': 'off',
+      // React Router migration rule
+      'no-restricted-properties': [
+        'warn',
+        {
+          object: 'window',
+          property: 'location',
+          message:
+            'Use React Router hooks (useLocation, useNavigate, useSearchParams) instead of window.location for internal navigation. window.location is only appropriate for external URLs, OAuth flows, and full page reloads.',
+        },
+        {
+          object: 'window',
+          property: 'history',
+          message: 'Use React Router hooks (useNavigate) instead of window.history for navigation.',
+        },
+      ],
     },
   },
   {
