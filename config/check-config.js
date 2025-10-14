@@ -21,6 +21,10 @@ const supplementalUseAutumnEnv = [
     name: 'USEAUTUMN_TOKEN_CREDITS_FEATURE_ID',
     description: 'Token credits feature identifier',
   },
+  {
+    name: 'USEAUTUMN_HAS_SUBSCRIPTION_FEATURE_ID',
+    description: 'Subscription feature identifier',
+  },
 ];
 
 const summarizeUseAutumn = () => {

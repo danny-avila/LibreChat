@@ -107,6 +107,7 @@ router.get('/', async function (req, res) {
       useAutumnApiBase: process.env.USEAUTUMN_API_BASE,
       useAutumnProductId: process.env.USEAUTUMN_PRODUCT_ID,
       useAutumnTokenCreditsFeatureId: process.env.USEAUTUMN_TOKEN_CREDITS_FEATURE_ID,
+      useAutumnHasSubscriptionFeatureId: process.env.USEAUTUMN_HAS_SUBSCRIPTION_FEATURE_ID,
       sharedLinksEnabled,
       publicSharedLinksEnabled,
       analyticsGtmId: process.env.ANALYTICS_GTM_ID,

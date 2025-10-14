@@ -610,6 +610,7 @@ export type TStartupConfig = {
   useAutumnApiBase?: string;
   useAutumnProductId?: string;
   useAutumnTokenCreditsFeatureId?: string;
+  useAutumnHasSubscriptionFeatureId?: string;
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
   githubLoginEnabled: boolean;
