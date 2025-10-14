@@ -178,10 +178,10 @@ out and require them to re-authenticate.
 ## 🔎 Configuration diagnostics
 
 LibreChat ships with a `npm run check-config` helper that prints a sanitized
-summary of the UseAutumn and Logto credentials currently loaded into the
-environment. The script never echoes the underlying secret values; instead it
-reports whether each variable is present and which strategy LibreChat will use
-to contact the Logto management API.
+summary of the UseAutumn credentials currently loaded into the environment.
+The script never echoes the underlying secret values; instead it reports
+whether each variable is present and which strategy LibreChat will use when
+deriving the effective `USEAUTUMN_KEY`.
 
 Run the command directly on your host when using a local `.env` file:
 
@@ -197,10 +197,8 @@ docker compose exec api npm run check-config
 ```
 
 The output will confirm which UseAutumn key was applied (sandbox or
-production) and whether LibreChat has enough Logto credentials to look up user
-IDs via the management API. For Logto, provide `LOGTO_APP_BASE_URL`,
-`LOGTO_APP_ID`, and `LOGTO_APP_SECRET`; the diagnostic verifies that each value
-is present before LibreChat attempts a lookup.
+production) and whether `USEAUTUMN_KEY` was derived during the check or
+pre-existing in the environment.
 
 ---
 
