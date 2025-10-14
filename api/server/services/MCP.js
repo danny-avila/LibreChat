@@ -450,7 +450,7 @@ async function getMCPSetupData(userId) {
     logger.error(`[MCP][User: ${userId}] Error getting app connections:`, error);
   }
   const userConnections = mcpManager.getUserConnections(userId) || new Map();
-  const oauthServers = mcpManager.getOAuthServers() || new Set();
+  const oauthServers = mcpManager.getOAuthServers();
 
   return {
     mcpConfig,

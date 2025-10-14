@@ -155,8 +155,10 @@ export type TAzureGroupMap = Record<
 
 export type TValidatedAzureConfig = {
   modelNames: string[];
-  modelGroupMap: TAzureModelGroupMap;
   groupMap: TAzureGroupMap;
+  assistantModels?: string[];
+  assistantGroups?: string[];
+  modelGroupMap: TAzureModelGroupMap;
 };
 
 export type TAzureConfigValidationResult = TValidatedAzureConfig & {
@@ -212,6 +214,14 @@ export const bedrockEndpointSchema = baseEndpointSchema.merge(
   }),
 );
 
+const modelItemSchema = z.union([
+  z.string(),
+  z.object({
+    name: z.string(),
+    description: z.string().optional(),
+  }),
+]);
+
 export const assistantEndpointSchema = baseEndpointSchema.merge(
   z.object({
     /* assistants specific */
@@ -237,7 +247,7 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
     apiKey: z.string().optional(),
     models: z
       .object({
-        default: z.array(z.string()).min(1),
+        default: z.array(modelItemSchema).min(1),
         fetch: z.boolean().optional(),
         userIdQuery: z.boolean().optional(),
       })
@@ -297,7 +307,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     apiKey: z.string(),
     baseURL: z.string(),
     models: z.object({
-      default: z.array(z.string()).min(1),
+      default: z.array(modelItemSchema).min(1),
       fetch: z.boolean().optional(),
       userIdQuery: z.boolean().optional(),
     }),
@@ -634,6 +644,7 @@ export type TStartupConfig = {
   helpAndFaqURL: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
+  modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
@@ -648,7 +659,7 @@ export type TStartupConfig = {
   minPasswordLength?: number;
   webSearch?: {
     searchProvider?: SearchProviders;
-    scraperType?: ScraperTypes;
+    scraperProvider?: ScraperProviders;
     rerankerType?: RerankerTypes;
   };
   mcpServers?: Record<
@@ -667,6 +678,7 @@ export type TStartupConfig = {
     }
   >;
   mcpPlaceholder?: string;
+  conversationImportMaxFileSize?: number;
 };
 
 export enum OCRStrategy {
@@ -687,7 +699,7 @@ export enum SearchProviders {
   SEARXNG = 'searxng',
 }
 
-export enum ScraperTypes {
+export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
 }
@@ -709,11 +721,12 @@ export const webSearchSchema = z.object({
   searxngApiKey: z.string().optional().default('${SEARXNG_API_KEY}'),
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
+  firecrawlVersion: z.string().optional().default('${FIRECRAWL_VERSION}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
-  scraperType: z.nativeEnum(ScraperTypes).optional(),
+  scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
   scraperTimeout: z.number().optional(),
   safeSearch: z.nativeEnum(SafeSearchTypes).default(SafeSearchTypes.MODERATE),
@@ -752,7 +765,7 @@ export const webSearchSchema = z.object({
     .optional(),
 });
 
-export type TWebSearchConfig = z.infer<typeof webSearchSchema>;
+export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
 
 export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
@@ -799,7 +812,7 @@ export const memorySchema = z.object({
     .optional(),
 });
 
-export type TMemoryConfig = z.infer<typeof memorySchema>;
+export type TMemoryConfig = DeepPartial<z.infer<typeof memorySchema>>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
@@ -862,9 +875,27 @@ export const configSchema = z.object({
     .optional(),
 });
 
-export const getConfigDefaults = () => getSchemaDefaults(configSchema);
+/**
+ * Recursively makes all properties of T optional, including nested objects.
+ * Handles arrays, primitives, functions, and Date objects correctly.
+ */
+export type DeepPartial<T> = T extends (infer U)[]
+  ? DeepPartial<U>[]
+  : T extends ReadonlyArray<infer U>
+    ? ReadonlyArray<DeepPartial<U>>
+    : // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+      T extends Function
+      ? T
+      : T extends Date
+        ? T
+        : T extends object
+          ? {
+              [P in keyof T]?: DeepPartial<T[P]>;
+            }
+          : T;
 
-export type TCustomConfig = z.infer<typeof configSchema>;
+export const getConfigDefaults = () => getSchemaDefaults(configSchema);
+export type TCustomConfig = DeepPartial<z.infer<typeof configSchema>>;
 export type TCustomEndpoints = z.infer<typeof customEndpointsSchema>;
 
 export type TProviderSchema =

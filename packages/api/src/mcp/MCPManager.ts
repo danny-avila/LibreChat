@@ -38,7 +38,7 @@ export class MCPManager extends UserConnectionManager {
   /** Initializes the MCPManager by setting up server registry and app connections */
   public async initialize() {
     await this.serversRegistry.initialize();
-    this.appConnections = new ConnectionsRepository(this.serversRegistry.appServerConfigs!);
+    this.appConnections = new ConnectionsRepository(this.serversRegistry.appServerConfigs);
   }
 
   /** Retrieves an app-level or user-specific connection based on provided arguments */
@@ -63,22 +63,23 @@ export class MCPManager extends UserConnectionManager {
   }
 
   /** Get servers that require OAuth */
-  public getOAuthServers(): Set<string> | null {
-    return this.serversRegistry.oauthServers!;
+  public getOAuthServers(): Set<string> {
+    return this.serversRegistry.oauthServers;
   }
 
   /** Get all servers */
-  public getAllServers(): t.MCPServers | null {
-    return this.serversRegistry.rawConfigs!;
+  public getAllServers(): t.MCPServers {
+    return this.serversRegistry.rawConfigs;
   }
 
   /** Returns all available tool functions from app-level connections */
-  public getAppToolFunctions(): t.LCAvailableTools | null {
-    return this.serversRegistry.toolFunctions!;
+  public getAppToolFunctions(): t.LCAvailableTools {
+    return this.serversRegistry.toolFunctions;
   }
+
   /** Returns all available tool functions from all connections available to user */
   public async getAllToolFunctions(userId: string): Promise<t.LCAvailableTools | null> {
-    const allToolFunctions: t.LCAvailableTools = this.getAppToolFunctions() ?? {};
+    const allToolFunctions: t.LCAvailableTools = this.getAppToolFunctions();
     const userConnections = this.getUserConnections(userId);
     if (!userConnections || userConnections.size === 0) {
       return allToolFunctions;
@@ -128,7 +129,7 @@ export class MCPManager extends UserConnectionManager {
    * @returns Object mapping server names to their instructions
    */
   public getInstructions(serverNames?: string[]): Record<string, string> {
-    const instructions = this.serversRegistry.serverInstructions!;
+    const instructions = this.serversRegistry.serverInstructions;
     if (!serverNames) return instructions;
     return pick(instructions, serverNames);
   }
