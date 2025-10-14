@@ -36,6 +36,7 @@ librechat:
     DOMAIN_SERVER: https://chat.internal.node.energy
 
     ANTHROPIC_MODELS: claude-3-5-sonnet-20240620,claude-3-haiku-20240307
+    OPENAI_MODELS: gpt-5,gpt-5-mini
     AZURE_USE_MODEL_AS_DEPLOYMENT_NAME: "false"
 
     # IMPORTANT -- GENERATE your own: openssl rand -hex 32 and openssl rand -hex 16 for CREDS_IV. Best Practise: Put into Secret. See gloobal.librechat.existingSecretName
