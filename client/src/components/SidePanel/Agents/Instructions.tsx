@@ -45,7 +45,7 @@ export default function Instructions() {
     <div className="mb-4">
       <div className="mb-2 flex items-center">
         <label className="text-token-text-primary flex-grow font-medium" htmlFor="instructions">
-          {localize('com_ui_instructions')}
+          {localize('com_ui_instructions')} <span className="text-red-500">*</span>
         </label>
         <div className="ml-auto" title="Add variables to instructions">
           <DropdownPopup
@@ -77,12 +77,15 @@ export default function Instructions() {
       <Controller
         name="instructions"
         control={control}
+        rules={{
+          required: localize('com_ui_field_required'),
+        }}
         render={({ field, fieldState: { error } }) => (
           <>
             <textarea
               {...field}
               value={field.value ?? ''}
-              className={cn(inputClass, 'min-h-[100px] resize-y')}
+              className={cn(inputClass, 'min-h-[100px] resize-y', error ? 'border-2 border-red-500' : '')}
               id="instructions"
               placeholder={localize('com_agents_instructions_placeholder')}
               rows={3}
@@ -95,7 +98,7 @@ export default function Instructions() {
                 className="text-sm text-red-500 transition duration-300 ease-in-out"
                 role="alert"
               >
-                {localize('com_ui_field_required')}
+                {error.message}
               </span>
             )}
           </>

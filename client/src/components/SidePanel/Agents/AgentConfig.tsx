@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
@@ -17,7 +17,7 @@ import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
-import { useLocalize, useVisibleTools } from '~/hooks';
+import { useLocalize, useVisibleTools, useAuthContext } from '~/hooks';
 import { Panel, isEphemeralAgent } from '~/common';
 import { useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
@@ -45,6 +45,8 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   const methods = useFormContext<AgentForm>();
   const [showToolDialog, setShowToolDialog] = useState(false);
   const [showMCPToolDialog, setShowMCPToolDialog] = useState(false);
+  const { user } = useAuthContext();
+  console.log("poop", user);
   const {
     actions,
     setAction,
@@ -58,6 +60,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
 
   const {
     control,
+    setValue,
     formState: { errors },
   } = methods;
   const provider = useWatch({ control, name: 'provider' });
@@ -65,6 +68,18 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   const agent = useWatch({ control, name: 'agent' });
   const tools = useWatch({ control, name: 'tools' });
   const agent_id = useWatch({ control, name: 'id' });
+  const supportContactName = useWatch({ control, name: 'support_contact.name' });
+  const supportContactEmail = useWatch({ control, name: 'support_contact.email' });
+
+  // Set default values for support contact when user data loads
+  useEffect(() => {
+    if (user?.name && !supportContactName) {
+      setValue('support_contact.name', user.name);
+    }
+    if (user?.email && !supportContactEmail) {
+      setValue('support_contact.email', user.email);
+    }
+  }, [user?.name, user?.email, supportContactName, supportContactEmail, setValue]);
 
   const { data: agentFiles = [] } = useGetAgentFiles(agent_id);
 
@@ -383,7 +398,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             </div>
           </div>
         </div>
-        {/* Support Contact (Optional) */}
+        {/* Support Contact */}
         <div className="mb-4">
           <div className="mb-1.5 flex items-center gap-2">
             <span>
@@ -399,12 +414,13 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                 className="mb-1 flex items-center justify-between"
                 htmlFor="support-contact-name"
               >
-                <span className="text-sm">{localize('com_ui_support_contact_name')}</span>
+                <span className="text-sm">{localize('com_ui_support_contact_name')} <span className="text-red-500">*</span></span>
               </label>
               <Controller
                 name="support_contact.name"
                 control={control}
                 rules={{
+                  required: localize('com_ui_field_required'),
                   minLength: {
                     value: 3,
                     message: localize('com_ui_support_contact_name_min_length', { minLength: 3 }),
@@ -436,12 +452,13 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                 className="mb-1 flex items-center justify-between"
                 htmlFor="support-contact-email"
               >
-                <span className="text-sm">{localize('com_ui_support_contact_email')}</span>
+                <span className="text-sm">{localize('com_ui_support_contact_email')} <span className="text-red-500">*</span></span>
               </label>
               <Controller
                 name="support_contact.email"
                 control={control}
                 rules={{
+                  required: localize('com_ui_field_required'),
                   validate: (value) =>
                     validateEmail(value ?? '', localize('com_ui_support_contact_email_invalid')),
                 }}
