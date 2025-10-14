@@ -95,8 +95,8 @@ test.describe('Integrationsbericht BW 2025 - Complete Sales Demo Journey', () =>
 
   test.beforeAll(async () => {
     browser = await chromium.launch({
-      headless: false, // Show browser for demo
-      slowMo: 300,     // Slow down for visibility
+      headless: process.env.HEADED === "true", // Show browser for demo
+      slowMo: process.env.HEADED === "true" ? 300 : 0,     // Slow down for visibility
     });
 
     context = await browser.newContext({

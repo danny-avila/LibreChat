@@ -8,9 +8,10 @@ dotenv.config();
 const config: PlaywrightTestConfig = {
   ...mainConfig,
   retries: 0,
-  globalSetup: require.resolve('./setup/global-setup.local'),
-  globalTeardown: require.resolve('./setup/global-teardown.local'),
-  webServer: {
+  globalSetup: undefined,  // Disabled - auth already generated
+  globalTeardown: undefined,  // Disabled - using existing container
+  webServer: undefined,  // Don't start server - use running instance
+  /* webServer: {
     ...mainConfig.webServer,
     command: `node ${absolutePath}`,
     env: {
@@ -49,7 +50,7 @@ const config: PlaywrightTestConfig = {
       MESSAGE_USER_MAX: '100',
       MESSAGE_USER_WINDOW: '1',
     },
-  },
+  }, */
   fullyParallel: false, // if you are on Windows, keep this as `false`. On a Mac, `true` could make tests faster (maybe on some Windows too, just try)
   // workers: 1,
   // testMatch: /messages/,

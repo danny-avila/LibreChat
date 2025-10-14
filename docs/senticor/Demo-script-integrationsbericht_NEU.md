@@ -2,7 +2,7 @@ Demo: Integrationsbericht Baden-Württemberg 2025
 
 Dauer: 15–20 Minuten
 Veröffentlichung: Q1 2026
-Ziel: Zeigen, wie LibreChat mit MCP-Servern komplexe Recherche- und Dokumentationsaufgaben unterstützt
+Ziel: Zeigen, wie LibreChat mit Senticor Hive und Senticor MCP-Servern komplexe Recherche- und Dokumentationsaufgaben unterstützt
 
 ⸻
 
@@ -15,10 +15,10 @@ Kernaufgabe: Dokumentation von 34 lokalen Integrationsprojekten, die mit 1,8 Mio
 Herausforderungen:
 	•	34 Projekte müssen recherchiert und dokumentiert werden
 	•	Rechtliche Grundlagen müssen aktuell sein
-	•	Projektfortschritte müssen bis Q1 2026 nachverfolgt werden
+	•	Projektfortschritte müssen bis Q1 2026 nachverfolgt/verfolgt werden
 	•	Alle Informationen brauchen Quellenangaben
 
-Die Lösung: LibreChat mit drei MCP-Servern
+Die Lösung: LibreChat mit Senticor
 	•	📊 HIVE Honeycomb – Wissensgraph für strukturierte Datenhaltung
 	•	⚖️ Rechtsinformationen – Direkter Zugriff auf deutsche Bundes- und Landesgesetze
 	•	🌐 Fetch – Webseiten und Pressemitteilungen einlesen
@@ -369,65 +369,6 @@ Evaluierung (Beispiel‑Metriken Q4/2025):
 
 ⸻
 
-🆕 Persona‑basierte Use Cases (konkret & leicht realisierbar)
-
-Ziel: Schnelle Mehrwerte je Zielgruppe (reale Grundlagen: 34 Projekte/1,8 Mio. €, SGB/PartIntG BW; Technik: Graph, Vektorindex, Volltextindex, Agenten).
-
-Zielgruppen: Sachbearbeitung • Projektleitung • Kommunikation • Juristischer Dienst • IT‑Fachreferate • Führungsebene
-
-🗃️ Sachbearbeitung
-	•	Use Case 1 – Fallauskunft „Mehrbedarf & Integrationsleistungen“
-Frage: „Steht einer erwerbsfähigen behinderten Person im SGB II ein Mehrbedarf zu und wie hoch?“
-Logik: § 21 Abs. 4 SGB II (35 % Mehrbedarf bei Teilhabeleistungen nach SGB IX).
-Technik: Graph (Leistungsart/Paragraph/Weisung/Baustein), FAISS‑Vektorindex, Volltextindex; Agenten (Legal‑Assist/Draft‑Writer/Evidence‑Collector).
-Mehrwert: 20–40 Min. schneller; konsistente, revisionssichere Begründungen.
-	•	Use Case 2 – Schreiben‑Generator (Bewilligung/Ablehnung)
-Workflow: Stichpunkte → KI‑Entwurf mit korrekten Zitaten → Reviewer‑Freigabe.
-Mehrwert: 30–60 Min. pro Bescheid; einheitliche Formulierungen.
-
-📈 Projektleitung
-	•	Use Case 3 – Statusbericht (34/1,8 Mio. €)
-Frage: „Welche Projekte sind on/off track? Welche KPIs fehlen bis Q1/2026?“
-Technik: Graph (Projekt/Träger/KPI/Status/Quelle), Portfolio‑Analyst, Gap‑Finder, Report‑Writer.
-Mehrwert: Stundenersparnis/Monat; transparente Lenkung.
-	•	Use Case 4 – Best‑Practice‑Finder
-Workflow: Semantische Auswertung Abschlussberichte → Top‑Hebel mit Quellen.
-Mehrwert: Evidenzbasierte Planung nächste Förderperiode.
-
-📣 Kommunikation
-	•	Use Case 5 – Presse‑/Reden‑Assistenz mit Faktenanker
-Workflow: Themenstichworte → Fakten & Gesetzesbezüge → Pressetext + Quellenliste.
-Mehrwert: 50 % schneller; konsistent & belegbar.
-	•	Use Case 6 – Bürgeranfragen‑Antwortmodul (intern)
-Workflow: Interne FAQ + Dokumenten‑RAG → Entwurfsantwort → Redaktionsfreigabe.
-Mehrwert: Minuten statt Tage; einheitliche Auskünfte.
-
-⚖️ Juristischer Dienst
-	•	Use Case 7 – Rechtsänderungs‑Monitor & Weisungs‑Impact
-Workflow: Norm‑Diff → Mapping betroffene Weisungen/Formulare → To‑Dos.
-Technik: Named Graphs (alt/neu), Diff‑Analyst, Impact‑Mapper.
-Mehrwert: Frühwarnung, Audit‑Trail.
-	•	Use Case 8 – „Juristischer Rechercheur“
-Workflow: Strukturierte Antwort mit Paragraphen, Kurzkommentar, Erlass‑Verweisen.
-Mehrwert: Minuten statt Stunden; prüfbare Bezüge.
-
-💻 IT‑Fachreferate
-	•	Use Case 9 – Wissensgraph der Systemlandschaft
-Workflow: Graph‑Abfrage → Visualisierung Schnittstellen → Abhängigkeitsliste.
-Mehrwert: Schnellere Impact‑Analysen, weniger Ausfälle.
-	•	Use Case 10 – Support/Log‑Analyser
-Workflow: Semantisches Clustering von Logs/Tickets → Hotfix‑Vorschläge.
-Mehrwert: Schnellere Behebung; Knowledge Build‑Up.
-
-🏛️ Führungsebene
-	•	Use Case 11 – Ad‑hoc‑Kennzahlenauskunft & Lagebild
-Workflow: Portfolio‑Abfrage → Ampel → Risiken & Meilensteine.
-Mehrwert: Sofortige Entscheidungsfähigkeit.
-	•	Use Case 12 – Wirkungs‑Analyse & Szenarien
-Workflow: Abschlussberichte + KPIs + Budgets → Evidenz‑Ranking → Szenario.
-Mehrwert: Strategische Steuerung mit Belegen.
-
-⸻
 
 💡 Was diese Demo zeigt
 
@@ -548,5 +489,66 @@ Grounding-Modi: GraphRAG, VectorRAG, IndexRAG sowie NoGrounding (Kontrollfälle)
 Use-Case-Abdeckung: Legal-Q&A, Prüfschemata, Verfahrensanweisungen, Zuständigkeitsprüfung, Mindmaps, Presseentwürfe, Status-/Portfolio-KPIs, Best Practices, Rechtsänderungsmonitor, Juristische Recherche, IT‑Graph, Support‑Logs.
 	•	bw_rag_data_description_2025-10-13.md
 Enthält die Paragraphen & Quellen (u. a. AufenthG §§ 43, 44, 44a, 45; SGB XII § 33, § 44, §§ 67–69; SGB II § 21 Abs. 4; PartIntG BW), Pressereferenz (PM 15.03.2024), Retrieval-Setup (GraphRAG/VectorRAG/IndexRAG), Preprocessing-Guidelines (JSONL-Struktur, Granularität je Absatz), Evaluationskriterien und Hinweise zu Lebenszyklusfeldern (valid_from/valid_to/last_verified/review_due/stale_status).
+
+⸻
+
+🆕 Weitere Persona‑basierte Use Cases (konkret & leicht realisierbar) - not in scope
+
+Ziel: Schnelle Mehrwerte je Zielgruppe (reale Grundlagen: 34 Projekte/1,8 Mio. €, SGB/PartIntG BW; Technik: Graph, Vektorindex, Volltextindex, Agenten).
+
+Zielgruppen: Sachbearbeitung • Projektleitung • Kommunikation • Juristischer Dienst • IT‑Fachreferate • Führungsebene
+
+🗃️ Sachbearbeitung
+	•	Use Case 1 – Fallauskunft „Mehrbedarf & Integrationsleistungen“
+Frage: „Steht einer erwerbsfähigen behinderten Person im SGB II ein Mehrbedarf zu und wie hoch?“
+Logik: § 21 Abs. 4 SGB II (35 % Mehrbedarf bei Teilhabeleistungen nach SGB IX).
+Technik: Graph (Leistungsart/Paragraph/Weisung/Baustein), FAISS‑Vektorindex, Volltextindex; Agenten (Legal‑Assist/Draft‑Writer/Evidence‑Collector).
+Mehrwert: 20–40 Min. schneller; konsistente, revisionssichere Begründungen.
+	•	Use Case 2 – Schreiben‑Generator (Bewilligung/Ablehnung)
+Workflow: Stichpunkte → KI‑Entwurf mit korrekten Zitaten → Reviewer‑Freigabe.
+Mehrwert: 30–60 Min. pro Bescheid; einheitliche Formulierungen.
+
+📈 Projektleitung
+	•	Use Case 3 – Statusbericht (34/1,8 Mio. €)
+Frage: „Welche Projekte sind on/off track? Welche KPIs fehlen bis Q1/2026?“
+Technik: Graph (Projekt/Träger/KPI/Status/Quelle), Portfolio‑Analyst, Gap‑Finder, Report‑Writer.
+Mehrwert: Stundenersparnis/Monat; transparente Lenkung.
+	•	Use Case 4 – Best‑Practice‑Finder
+Workflow: Semantische Auswertung Abschlussberichte → Top‑Hebel mit Quellen.
+Mehrwert: Evidenzbasierte Planung nächste Förderperiode.
+
+📣 Kommunikation
+	•	Use Case 5 – Presse‑/Reden‑Assistenz mit Faktenanker
+Workflow: Themenstichworte → Fakten & Gesetzesbezüge → Pressetext + Quellenliste.
+Mehrwert: 50 % schneller; konsistent & belegbar.
+	•	Use Case 6 – Bürgeranfragen‑Antwortmodul (intern)
+Workflow: Interne FAQ + Dokumenten‑RAG → Entwurfsantwort → Redaktionsfreigabe.
+Mehrwert: Minuten statt Tage; einheitliche Auskünfte.
+
+⚖️ Juristischer Dienst
+	•	Use Case 7 – Rechtsänderungs‑Monitor & Weisungs‑Impact
+Workflow: Norm‑Diff → Mapping betroffene Weisungen/Formulare → To‑Dos.
+Technik: Named Graphs (alt/neu), Diff‑Analyst, Impact‑Mapper.
+Mehrwert: Frühwarnung, Audit‑Trail.
+	•	Use Case 8 – „Juristischer Rechercheur“
+Workflow: Strukturierte Antwort mit Paragraphen, Kurzkommentar, Erlass‑Verweisen.
+Mehrwert: Minuten statt Stunden; prüfbare Bezüge.
+
+💻 IT‑Fachreferate
+	•	Use Case 9 – Wissensgraph der Systemlandschaft
+Workflow: Graph‑Abfrage → Visualisierung Schnittstellen → Abhängigkeitsliste.
+Mehrwert: Schnellere Impact‑Analysen, weniger Ausfälle.
+	•	Use Case 10 – Support/Log‑Analyser
+Workflow: Semantisches Clustering von Logs/Tickets → Hotfix‑Vorschläge.
+Mehrwert: Schnellere Behebung; Knowledge Build‑Up.
+
+🏛️ Führungsebene
+	•	Use Case 11 – Ad‑hoc‑Kennzahlenauskunft & Lagebild
+Workflow: Portfolio‑Abfrage → Ampel → Risiken & Meilensteine.
+Mehrwert: Sofortige Entscheidungsfähigkeit.
+	•	Use Case 12 – Wirkungs‑Analyse & Szenarien
+Workflow: Abschlussberichte + KPIs + Budgets → Evidenz‑Ranking → Szenario.
+Mehrwert: Strategische Steuerung mit Belegen.
+
 
 
