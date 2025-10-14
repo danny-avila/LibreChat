@@ -83,7 +83,8 @@ export const isOpenAILikeProvider = (provider?: string | null): boolean => {
 };
 
 export const isDocumentSupportedProvider = (provider?: string | null): boolean => {
-  return documentSupportedProviders.has(provider ?? '');
+  return true;
+  // stripe return documentSupportedProviders.has(provider ?? '');
 };
 
 export const paramEndpoints = new Set<EModelEndpoint | string>([
