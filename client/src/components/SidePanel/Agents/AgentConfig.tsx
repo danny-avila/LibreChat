@@ -333,6 +333,8 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           />
         )}
         {/* Agent Tools & Actions */}
+        {/* 
+        <stripe>
         <div className="mb-4">
           <label className={labelClass}>
             {`${toolsEnabled === true ? localize('com_ui_tools') : ''}
@@ -341,7 +343,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           </label>
           <div>
             <div className="mb-1">
-              {/* Render all visible IDs */}
+              Render all visible IDs
               {toolIds.map((toolId, i) => {
                 const tool = regularTools?.find((t) => t.pluginKey === toolId);
                 if (!tool) return null;
@@ -398,6 +400,8 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             </div>
           </div>
         </div>
+        </stripe>
+        */}
         {/* Support Contact */}
         <div className="mb-4">
           <div className="mb-1.5 flex items-center gap-2">
