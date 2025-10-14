@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useOnClickOutside } from '@librechat/client';
 import ImportConversations from './ImportConversations';
-import { RevokeAllKeys } from './RevokeAllKeys';
+import { RevokeKeys } from './RevokeKeys';
 import { DeleteCache } from './DeleteCache';
 import { ClearChats } from './ClearChats';
 import SharedLinks from './SharedLinks';
@@ -20,7 +20,7 @@ function Data() {
         <SharedLinks />
       </div>
       <div className="pb-3">
-        <RevokeAllKeys />
+        <RevokeKeys />
       </div>
       <div className="pb-3">
         <DeleteCache />
