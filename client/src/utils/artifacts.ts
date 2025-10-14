@@ -6,10 +6,10 @@ import type {
 } from '@codesandbox/sandpack-react';
 
 const artifactFilename = {
-  'application/vnd.mermaid': 'App.tsx',
   'application/vnd.react': 'App.tsx',
   'text/html': 'index.html',
   'application/vnd.code-html': 'index.html',
+  // mermaid and markdown types are handled separately in useArtifactProps.ts
   default: 'index.html',
   // 'css': 'css',
   // 'javascript': 'js',
@@ -19,13 +19,20 @@ const artifactFilename = {
 };
 
 const artifactTemplate: Record<
-  keyof typeof artifactFilename,
+  | keyof typeof artifactFilename
+  | 'application/vnd.mermaid'
+  | 'text/markdown'
+  | 'text/md'
+  | 'text/plain',
   SandpackPredefinedTemplate | undefined
 > = {
   'text/html': 'static',
   'application/vnd.react': 'react-ts',
   'application/vnd.mermaid': 'react-ts',
   'application/vnd.code-html': 'static',
+  'text/markdown': 'react-ts',
+  'text/md': 'react-ts',
+  'text/plain': 'react-ts',
   default: 'static',
   // 'css': 'css',
   // 'javascript': 'js',
@@ -33,27 +40,6 @@ const artifactTemplate: Record<
   // 'jsx': 'jsx',
   // 'tsx': 'tsx',
 };
-
-export function getFileExtension(language?: string): string {
-  switch (language) {
-    case 'application/vnd.react':
-      return 'tsx';
-    case 'application/vnd.mermaid':
-      return 'mermaid';
-    case 'text/html':
-      return 'html';
-    // case 'jsx':
-    //   return 'jsx';
-    // case 'tsx':
-    //   return 'tsx';
-    // case 'html':
-    //   return 'html';
-    // case 'css':
-    //   return 'css';
-    default:
-      return 'txt';
-  }
-}
 
 export function getKey(type: string, language?: string): string {
   return `${type}${(language?.length ?? 0) > 0 ? `-${language}` : ''}`;
@@ -109,19 +95,34 @@ const standardDependencies = {
   vaul: '^0.9.1',
 };
 
-const mermaidDependencies = Object.assign(
-  {
-    mermaid: '^11.4.1',
-    'react-zoom-pan-pinch': '^3.6.1',
-  },
-  standardDependencies,
-);
+const mermaidDependencies = {
+  mermaid: '^11.4.1',
+  'react-zoom-pan-pinch': '^3.6.1',
+  'class-variance-authority': '^0.6.0',
+  clsx: '^1.2.1',
+  'tailwind-merge': '^1.9.1',
+  '@radix-ui/react-slot': '^1.1.0',
+};
 
-const dependenciesMap: Record<keyof typeof artifactFilename, object> = {
+const markdownDependencies = {
+  'marked-react': '^2.0.0',
+};
+
+const dependenciesMap: Record<
+  | keyof typeof artifactFilename
+  | 'application/vnd.mermaid'
+  | 'text/markdown'
+  | 'text/md'
+  | 'text/plain',
+  Record<string, string>
+> = {
   'application/vnd.mermaid': mermaidDependencies,
   'application/vnd.react': standardDependencies,
   'text/html': standardDependencies,
   'application/vnd.code-html': standardDependencies,
+  'text/markdown': markdownDependencies,
+  'text/md': markdownDependencies,
+  'text/plain': markdownDependencies,
   default: standardDependencies,
 };
 

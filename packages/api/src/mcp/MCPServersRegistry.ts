@@ -1,8 +1,8 @@
 import mapValues from 'lodash/mapValues';
 import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
+import type { JsonSchemaType } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
-import type { JsonSchemaType } from '~/types';
 import type * as t from '~/mcp/types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { detectOAuthRequirement } from '~/mcp/oauth';
@@ -80,11 +80,11 @@ export class MCPServersRegistry {
 
   /** Initializes a single server with all its metadata and adds it to appropriate collections */
   private async initializeServer(serverName: string): Promise<void> {
-    logger.info(`${this.prefix(serverName)} Initializing server`);
     const start = Date.now();
 
     const config = this.parsedConfigs[serverName];
 
+    // 1. Detect OAuth requirements if not already specified
     try {
       await this.fetchOAuthRequirement(serverName);
 
@@ -98,44 +98,49 @@ export class MCPServersRegistry {
           ),
         ]);
       }
-
-      this.logUpdatedConfig(serverName);
     } catch (error) {
       logger.warn(`${this.prefix(serverName)} Failed to initialize server:`, error);
     }
 
-    // Add to OAuth servers if needed
+    // 2. Fetch tool functions for this server if a connection was established
+    const getToolFunctions = async (): Promise<t.LCAvailableTools | null> => {
+      try {
+        const loadedConns = await this.connections.getLoaded();
+        const conn = loadedConns.get(serverName);
+        if (conn == null) {
+          return null;
+        }
+        return this.getToolFunctions(serverName, conn);
+      } catch (error) {
+        logger.warn(`${this.prefix(serverName)} Error fetching tool functions:`, error);
+        return null;
+      }
+    };
+    const toolFunctions = await getToolFunctions();
+
+    // 3. Disconnect this server's connection if it was established (fire-and-forget)
+    void this.connections.disconnect(serverName);
+
+    // 4. Side effects
+    // 4.1 Add to OAuth servers if needed
     if (config.requiresOAuth) {
       this.oauthServers.add(serverName);
     }
-
-    // Add server instructions if available
+    // 4.2 Add server instructions if available
     if (config.serverInstructions != null) {
       this.serverInstructions[serverName] = config.serverInstructions as string;
     }
-
-    // Add to app server configs if eligible (startup enabled, non-OAuth servers)
+    // 4.3 Add to app server configs if eligible (startup enabled, non-OAuth servers)
     if (config.startup !== false && config.requiresOAuth === false) {
       this.appServerConfigs[serverName] = this.rawConfigs[serverName];
     }
-
-    // Fetch tool functions for this server if a connection was established
-    try {
-      const conn = await this.connections.get(serverName);
-      const toolFunctions = await this.getToolFunctions(serverName, conn);
+    // 4.4 Add tool functions if available
+    if (toolFunctions != null) {
       Object.assign(this.toolFunctions, toolFunctions);
-    } catch (error) {
-      logger.warn(`${this.prefix(serverName)} Error fetching tool functions:`, error);
     }
 
-    // Disconnect this server's connection after initialization
-    try {
-      await this.connections.disconnect(serverName);
-    } catch (disconnectError) {
-      logger.debug(`${this.prefix(serverName)} Failed to disconnect:`, disconnectError);
-    }
-
-    logger.info(`${this.prefix(serverName)} Initialized server in ${Date.now() - start}ms`);
+    const duration = Date.now() - start;
+    this.logUpdatedConfig(serverName, duration);
   }
 
   /** Converts server tools to LibreChat-compatible tool functions format */
@@ -205,7 +210,7 @@ export class MCPServersRegistry {
   }
 
   // Logs server configuration summary after initialization
-  private logUpdatedConfig(serverName: string): void {
+  private logUpdatedConfig(serverName: string, initDuration: number): void {
     const prefix = this.prefix(serverName);
     const config = this.parsedConfigs[serverName];
     logger.info(`${prefix} -------------------------------------------------┐`);
@@ -214,6 +219,7 @@ export class MCPServersRegistry {
     logger.info(`${prefix} Capabilities: ${config.capabilities}`);
     logger.info(`${prefix} Tools: ${config.tools}`);
     logger.info(`${prefix} Server Instructions: ${config.serverInstructions}`);
+    logger.info(`${prefix} Initialized in: ${initDuration}ms`);
     logger.info(`${prefix} -------------------------------------------------┘`);
   }
 

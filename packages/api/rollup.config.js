@@ -18,6 +18,7 @@ const plugins = [
   peerDepsExternal(),
   resolve({
     preferBuiltins: true,
+    skipSelf: true,
   }),
   replace({
     __IS_DEV__: isDevelopment,

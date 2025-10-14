@@ -396,10 +396,75 @@ describe('getModelMaxTokens', () => {
   });
 
   test('should return correct tokens for GPT-OSS models', () => {
-    const expected = maxTokensMap[EModelEndpoint.openAI]['gpt-oss-20b'];
-    ['gpt-oss-20b', 'gpt-oss-120b', 'openai/gpt-oss-20b', 'openai/gpt-oss-120b'].forEach((name) => {
+    const expected = maxTokensMap[EModelEndpoint.openAI]['gpt-oss'];
+    [
+      'gpt-oss:20b',
+      'gpt-oss-20b',
+      'gpt-oss-120b',
+      'openai/gpt-oss-20b',
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss:120b',
+    ].forEach((name) => {
       expect(getModelMaxTokens(name)).toBe(expected);
     });
+  });
+
+  test('should return correct tokens for GLM models', () => {
+    expect(getModelMaxTokens('glm-4.6')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm-4.6']);
+    expect(getModelMaxTokens('glm-4.5v')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm-4.5v']);
+    expect(getModelMaxTokens('glm-4.5-air')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['glm-4.5-air'],
+    );
+    expect(getModelMaxTokens('glm-4.5')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm-4.5']);
+    expect(getModelMaxTokens('glm-4-32b')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm-4-32b']);
+    expect(getModelMaxTokens('glm-4')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm-4']);
+    expect(getModelMaxTokens('glm4')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm4']);
+  });
+
+  test('should return correct tokens for GLM models with provider prefixes', () => {
+    expect(getModelMaxTokens('z-ai/glm-4.6')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm-4.6']);
+    expect(getModelMaxTokens('z-ai/glm-4.5')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm-4.5']);
+    expect(getModelMaxTokens('z-ai/glm-4.5-air')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['glm-4.5-air'],
+    );
+    expect(getModelMaxTokens('z-ai/glm-4.5v')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['glm-4.5v'],
+    );
+    expect(getModelMaxTokens('z-ai/glm-4-32b')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['glm-4-32b'],
+    );
+
+    expect(getModelMaxTokens('zai/glm-4.6')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm-4.6']);
+    expect(getModelMaxTokens('zai/glm-4.5-air')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['glm-4.5-air'],
+    );
+    expect(getModelMaxTokens('zai/glm-4.5v')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm-4.5v']);
+
+    expect(getModelMaxTokens('zai-org/GLM-4.6')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['glm-4.6'],
+    );
+    expect(getModelMaxTokens('zai-org/GLM-4.5')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['glm-4.5'],
+    );
+    expect(getModelMaxTokens('zai-org/GLM-4.5-Air')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['glm-4.5-air'],
+    );
+    expect(getModelMaxTokens('zai-org/GLM-4.5V')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['glm-4.5v'],
+    );
+    expect(getModelMaxTokens('zai-org/GLM-4-32B-0414')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['glm-4-32b'],
+    );
+  });
+
+  test('should return correct tokens for GLM models with suffixes', () => {
+    expect(getModelMaxTokens('glm-4.6-fp8')).toBe(maxTokensMap[EModelEndpoint.openAI]['glm-4.6']);
+    expect(getModelMaxTokens('zai-org/GLM-4.6-FP8')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['glm-4.6'],
+    );
+    expect(getModelMaxTokens('zai-org/GLM-4.5-Air-FP8')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['glm-4.5-air'],
+    );
   });
 
   test('should return correct max output tokens for GPT-5 models', () => {
@@ -855,6 +920,94 @@ describe('Kimi Model Tests', () => {
       expect(matchModelName('kimi-k2-latest')).toBe('kimi');
       expect(matchModelName('kimi-vl-preview')).toBe('kimi');
       expect(matchModelName('kimi-2024')).toBe('kimi');
+    });
+  });
+});
+
+describe('GLM Model Tests (Zhipu AI)', () => {
+  describe('getModelMaxTokens', () => {
+    test('should return correct tokens for GLM models', () => {
+      expect(getModelMaxTokens('glm-4.6')).toBe(200000);
+      expect(getModelMaxTokens('glm-4.5v')).toBe(66000);
+      expect(getModelMaxTokens('glm-4.5-air')).toBe(131000);
+      expect(getModelMaxTokens('glm-4.5')).toBe(131000);
+      expect(getModelMaxTokens('glm-4-32b')).toBe(128000);
+      expect(getModelMaxTokens('glm-4')).toBe(128000);
+      expect(getModelMaxTokens('glm4')).toBe(128000);
+    });
+
+    test('should handle partial matches for GLM models with provider prefixes', () => {
+      expect(getModelMaxTokens('z-ai/glm-4.6')).toBe(200000);
+      expect(getModelMaxTokens('z-ai/glm-4.5')).toBe(131000);
+      expect(getModelMaxTokens('z-ai/glm-4.5-air')).toBe(131000);
+      expect(getModelMaxTokens('z-ai/glm-4.5v')).toBe(66000);
+      expect(getModelMaxTokens('z-ai/glm-4-32b')).toBe(128000);
+
+      expect(getModelMaxTokens('zai/glm-4.6')).toBe(200000);
+      expect(getModelMaxTokens('zai/glm-4.5')).toBe(131000);
+      expect(getModelMaxTokens('zai/glm-4.5-air')).toBe(131000);
+      expect(getModelMaxTokens('zai/glm-4.5v')).toBe(66000);
+
+      expect(getModelMaxTokens('zai-org/GLM-4.6')).toBe(200000);
+      expect(getModelMaxTokens('zai-org/GLM-4.5')).toBe(131000);
+      expect(getModelMaxTokens('zai-org/GLM-4.5-Air')).toBe(131000);
+      expect(getModelMaxTokens('zai-org/GLM-4.5V')).toBe(66000);
+      expect(getModelMaxTokens('zai-org/GLM-4-32B-0414')).toBe(128000);
+    });
+
+    test('should handle GLM model variations with suffixes', () => {
+      expect(getModelMaxTokens('glm-4.6-fp8')).toBe(200000);
+      expect(getModelMaxTokens('zai-org/GLM-4.6-FP8')).toBe(200000);
+      expect(getModelMaxTokens('zai-org/GLM-4.5-Air-FP8')).toBe(131000);
+    });
+
+    test('should prioritize more specific GLM patterns', () => {
+      expect(getModelMaxTokens('glm-4.5-air-custom')).toBe(131000);
+      expect(getModelMaxTokens('glm-4.5-custom')).toBe(131000);
+      expect(getModelMaxTokens('glm-4.5v-custom')).toBe(66000);
+    });
+  });
+
+  describe('matchModelName', () => {
+    test('should match exact GLM model names', () => {
+      expect(matchModelName('glm-4.6')).toBe('glm-4.6');
+      expect(matchModelName('glm-4.5v')).toBe('glm-4.5v');
+      expect(matchModelName('glm-4.5-air')).toBe('glm-4.5-air');
+      expect(matchModelName('glm-4.5')).toBe('glm-4.5');
+      expect(matchModelName('glm-4-32b')).toBe('glm-4-32b');
+      expect(matchModelName('glm-4')).toBe('glm-4');
+      expect(matchModelName('glm4')).toBe('glm4');
+    });
+
+    test('should match GLM model variations with provider prefixes', () => {
+      expect(matchModelName('z-ai/glm-4.6')).toBe('glm-4.6');
+      expect(matchModelName('z-ai/glm-4.5')).toBe('glm-4.5');
+      expect(matchModelName('z-ai/glm-4.5-air')).toBe('glm-4.5-air');
+      expect(matchModelName('z-ai/glm-4.5v')).toBe('glm-4.5v');
+      expect(matchModelName('z-ai/glm-4-32b')).toBe('glm-4-32b');
+
+      expect(matchModelName('zai/glm-4.6')).toBe('glm-4.6');
+      expect(matchModelName('zai/glm-4.5')).toBe('glm-4.5');
+      expect(matchModelName('zai/glm-4.5-air')).toBe('glm-4.5-air');
+      expect(matchModelName('zai/glm-4.5v')).toBe('glm-4.5v');
+
+      expect(matchModelName('zai-org/GLM-4.6')).toBe('glm-4.6');
+      expect(matchModelName('zai-org/GLM-4.5')).toBe('glm-4.5');
+      expect(matchModelName('zai-org/GLM-4.5-Air')).toBe('glm-4.5-air');
+      expect(matchModelName('zai-org/GLM-4.5V')).toBe('glm-4.5v');
+      expect(matchModelName('zai-org/GLM-4-32B-0414')).toBe('glm-4-32b');
+    });
+
+    test('should match GLM model variations with suffixes', () => {
+      expect(matchModelName('glm-4.6-fp8')).toBe('glm-4.6');
+      expect(matchModelName('zai-org/GLM-4.6-FP8')).toBe('glm-4.6');
+      expect(matchModelName('zai-org/GLM-4.5-Air-FP8')).toBe('glm-4.5-air');
+    });
+
+    test('should handle case-insensitive matching for GLM models', () => {
+      expect(matchModelName('zai-org/GLM-4.6')).toBe('glm-4.6');
+      expect(matchModelName('zai-org/GLM-4.5V')).toBe('glm-4.5v');
+      expect(matchModelName('zai-org/GLM-4-32B-0414')).toBe('glm-4-32b');
     });
   });
 });

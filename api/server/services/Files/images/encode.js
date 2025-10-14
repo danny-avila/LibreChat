@@ -1,16 +1,14 @@
 const axios = require('axios');
+const { logAxiosError } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { logAxiosError, processTextWithTokenLimit } = require('@librechat/api');
 const {
   FileSources,
   VisionModes,
   ImageDetail,
   ContentTypes,
   EModelEndpoint,
-  mergeFileConfig,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const countTokens = require('~/server/utils/countTokens');
 
 /**
  * Converts a readable stream to a base64 encoded string.
@@ -88,15 +86,14 @@ const blobStorageSources = new Set([FileSources.azure_blob, FileSources.s3]);
  * @param {Array<MongoFile>} files - The array of files to encode and format.
  * @param {EModelEndpoint} [endpoint] - Optional: The endpoint for the image.
  * @param {string} [mode] - Optional: The endpoint mode for the image.
- * @returns {Promise<{ text: string; files: MongoFile[]; image_urls: MessageContentImageUrl[] }>} - A promise that resolves to the result object containing the encoded images and file details.
+ * @returns {Promise<{ files: MongoFile[]; image_urls: MessageContentImageUrl[] }>} - A promise that resolves to the result object containing the encoded images and file details.
  */
 async function encodeAndFormat(req, files, endpoint, mode) {
   const promises = [];
   /** @type {Record<FileSources, Pick<ReturnType<typeof getStrategyFunctions>, 'prepareImagePayload' | 'getDownloadStream'>>} */
   const encodingMethods = {};
-  /** @type {{ text: string; files: MongoFile[]; image_urls: MessageContentImageUrl[] }} */
+  /** @type {{ files: MongoFile[]; image_urls: MessageContentImageUrl[] }} */
   const result = {
-    text: '',
     files: [],
     image_urls: [],
   };
@@ -105,29 +102,9 @@ async function encodeAndFormat(req, files, endpoint, mode) {
     return result;
   }
 
-  const fileTokenLimit =
-    req.body?.fileTokenLimit ?? mergeFileConfig(req.config?.fileConfig).fileTokenLimit;
-
   for (let file of files) {
     /** @type {FileSources} */
     const source = file.source ?? FileSources.local;
-    if (source === FileSources.text && file.text) {
-      let fileText = file.text;
-
-      const { text: limitedText, wasTruncated } = await processTextWithTokenLimit({
-        text: fileText,
-        tokenLimit: fileTokenLimit,
-        tokenCountFn: (text) => countTokens(text),
-      });
-
-      if (wasTruncated) {
-        logger.debug(
-          `[encodeAndFormat] Text content truncated for file: ${file.filename} due to token limits`,
-        );
-      }
-
-      result.text += `${!result.text ? 'Attached document(s):\n```md' : '\n\n---\n\n'}# "${file.filename}"\n${limitedText}\n`;
-    }
 
     if (!file.height) {
       promises.push([file, null]);
@@ -163,10 +140,6 @@ async function encodeAndFormat(req, files, endpoint, mode) {
       continue;
     }
     promises.push(preparePayload(req, file));
-  }
-
-  if (result.text) {
-    result.text += '\n```';
   }
 
   const detail = req.body.imageDetail ?? ImageDetail.auto;

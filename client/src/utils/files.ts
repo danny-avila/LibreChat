@@ -1,4 +1,11 @@
-import { SheetPaths, TextPaths, FilePaths, CodePaths } from '@librechat/client';
+import {
+  TextPaths,
+  FilePaths,
+  CodePaths,
+  AudioPaths,
+  VideoPaths,
+  SheetPaths,
+} from '@librechat/client';
 import {
   megabyte,
   QueryKeys,
@@ -38,6 +45,18 @@ const artifact = {
   title: 'Code',
 };
 
+const audioFile = {
+  paths: AudioPaths,
+  fill: '#FF6B35',
+  title: 'Audio',
+};
+
+const videoFile = {
+  paths: VideoPaths,
+  fill: '#8B5CF6',
+  title: 'Video',
+};
+
 export const fileTypes = {
   /* Category matches */
   file: {
@@ -47,6 +66,8 @@ export const fileTypes = {
   },
   text: textDocument,
   txt: textDocument,
+  audio: audioFile,
+  video: videoFile,
   // application:,
 
   /* Partial matches */

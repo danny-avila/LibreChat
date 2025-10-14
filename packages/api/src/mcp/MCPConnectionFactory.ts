@@ -142,6 +142,7 @@ export class MCPConnectionFactory {
           serverName: metadata.serverName,
           clientInfo: metadata.clientInfo,
         },
+        this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
       );
     };
@@ -161,6 +162,7 @@ export class MCPConnectionFactory {
               this.serverName,
               data.serverUrl || '',
               this.userId!,
+              config?.oauth_headers ?? {},
               config?.oauth,
             );
 
@@ -358,6 +360,7 @@ export class MCPConnectionFactory {
         this.serverName,
         serverUrl,
         this.userId!,
+        this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
       );
 

@@ -4,6 +4,13 @@ metadata:
   name: {{ include "librechat.fullname" $ }}
   labels:
     {{- include "librechat.labels" . | nindent 4 }}
+    {{- with .Values.deploymentLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.deploymentAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
   {{- if .Values.updateStrategy }}
@@ -83,6 +90,10 @@ spec:
           - secretRef:
               name: {{ .Values.global.librechat.existingSecretName }}
               optional: true
+          {{- end }}
+          {{- with .Values.global.librechat.env }}
+          env:
+          {{- toYaml . | nindent 12 }}
           {{- end }}
       volumes:
       {{- if or .Values.librechat.configYamlContent .Values.librechat.existingConfigYaml }}

@@ -170,8 +170,10 @@ export type TAzureGroupMap = Record<
 
 export type TValidatedAzureConfig = {
   modelNames: string[];
-  modelGroupMap: TAzureModelGroupMap;
   groupMap: TAzureGroupMap;
+  assistantModels?: string[];
+  assistantGroups?: string[];
+  modelGroupMap: TAzureModelGroupMap;
 };
 
 export type TAzureConfigValidationResult = TValidatedAzureConfig & {
@@ -232,6 +234,14 @@ export const bedrockEndpointSchema = baseEndpointSchema.merge(
   }),
 );
 
+const modelItemSchema = z.union([
+  z.string(),
+  z.object({
+    name: z.string(),
+    description: z.string().optional(),
+  }),
+]);
+
 export const assistantEndpointSchema = baseEndpointSchema.merge(
   z.object({
     /* assistants specific */
@@ -261,7 +271,7 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
     apiKey: z.string().optional(),
     models: z
       .object({
-        default: z.array(z.string()).min(1),
+        default: z.array(modelItemSchema).min(1),
         fetch: z.boolean().optional(),
         userIdQuery: z.boolean().optional(),
       })
@@ -326,7 +336,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     apiKey: z.string(),
     baseURL: z.string(),
     models: z.object({
-      default: z.array(z.string()).min(1),
+      default: z.array(modelItemSchema).min(1),
       fetch: z.boolean().optional(),
       userIdQuery: z.boolean().optional(),
     }),
@@ -665,6 +675,7 @@ export type TStartupConfig = {
   helpAndFaqURL: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
+  modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
@@ -679,7 +690,7 @@ export type TStartupConfig = {
   minPasswordLength?: number;
   webSearch?: {
     searchProvider?: SearchProviders;
-    scraperType?: ScraperTypes;
+    scraperProvider?: ScraperProviders;
     rerankerType?: RerankerTypes;
   };
   mcpServers?: Record<
@@ -698,6 +709,7 @@ export type TStartupConfig = {
     }
   >;
   mcpPlaceholder?: string;
+  conversationImportMaxFileSize?: number;
 };
 
 export enum OCRStrategy {
@@ -718,9 +730,9 @@ export enum SearchProviders {
   SEARXNG = "searxng",
 }
 
-export enum ScraperTypes {
-  FIRECRAWL = "firecrawl",
-  SERPER = "serper",
+export enum ScraperProviders {
+  FIRECRAWL = 'firecrawl',
+  SERPER = 'serper',
 }
 
 export enum RerankerTypes {
@@ -735,16 +747,17 @@ export enum SafeSearchTypes {
 }
 
 export const webSearchSchema = z.object({
-  serperApiKey: z.string().optional().default("${SERPER_API_KEY}"),
-  searxngInstanceUrl: z.string().optional().default("${SEARXNG_INSTANCE_URL}"),
-  searxngApiKey: z.string().optional().default("${SEARXNG_API_KEY}"),
-  firecrawlApiKey: z.string().optional().default("${FIRECRAWL_API_KEY}"),
-  firecrawlApiUrl: z.string().optional().default("${FIRECRAWL_API_URL}"),
-  jinaApiKey: z.string().optional().default("${JINA_API_KEY}"),
-  jinaApiUrl: z.string().optional().default("${JINA_API_URL}"),
-  cohereApiKey: z.string().optional().default("${COHERE_API_KEY}"),
+  serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
+  searxngInstanceUrl: z.string().optional().default('${SEARXNG_INSTANCE_URL}'),
+  searxngApiKey: z.string().optional().default('${SEARXNG_API_KEY}'),
+  firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
+  firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
+  firecrawlVersion: z.string().optional().default('${FIRECRAWL_VERSION}'),
+  jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
+  jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
+  cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
-  scraperType: z.nativeEnum(ScraperTypes).optional(),
+  scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
   scraperTimeout: z.number().optional(),
   safeSearch: z.nativeEnum(SafeSearchTypes).default(SafeSearchTypes.MODERATE),
@@ -783,7 +796,7 @@ export const webSearchSchema = z.object({
     .optional(),
 });
 
-export type TWebSearchConfig = z.infer<typeof webSearchSchema>;
+export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
 
 export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
@@ -830,7 +843,7 @@ export const memorySchema = z.object({
     .optional(),
 });
 
-export type TMemoryConfig = z.infer<typeof memorySchema>;
+export type TMemoryConfig = DeepPartial<z.infer<typeof memorySchema>>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
@@ -893,9 +906,27 @@ export const configSchema = z.object({
     .optional(),
 });
 
-export const getConfigDefaults = () => getSchemaDefaults(configSchema);
+/**
+ * Recursively makes all properties of T optional, including nested objects.
+ * Handles arrays, primitives, functions, and Date objects correctly.
+ */
+export type DeepPartial<T> = T extends (infer U)[]
+  ? DeepPartial<U>[]
+  : T extends ReadonlyArray<infer U>
+    ? ReadonlyArray<DeepPartial<U>>
+    : // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+      T extends Function
+      ? T
+      : T extends Date
+        ? T
+        : T extends object
+          ? {
+              [P in keyof T]?: DeepPartial<T[P]>;
+            }
+          : T;
 
-export type TCustomConfig = z.infer<typeof configSchema>;
+export const getConfigDefaults = () => getSchemaDefaults(configSchema);
+export type TCustomConfig = DeepPartial<z.infer<typeof configSchema>>;
 export type TCustomEndpoints = z.infer<typeof customEndpointsSchema>;
 
 export type TProviderSchema =
@@ -960,25 +991,32 @@ export const alternateName = {
 };
 
 const sharedOpenAIModels = [
-  "gpt-4o-mini",
-  "gpt-4o",
-  "gpt-4.5-preview",
-  "gpt-4.5-preview-2025-02-27",
-  "gpt-3.5-turbo",
-  "gpt-3.5-turbo-0125",
-  "gpt-4-turbo",
-  "gpt-4-turbo-2024-04-09",
-  "gpt-4-0125-preview",
-  "gpt-4-turbo-preview",
-  "gpt-4-1106-preview",
-  "gpt-3.5-turbo-1106",
-  "gpt-3.5-turbo-16k-0613",
-  "gpt-3.5-turbo-16k",
-  "gpt-4",
-  "gpt-4-0314",
-  "gpt-4-32k-0314",
-  "gpt-4-0613",
-  "gpt-3.5-turbo-0613",
+  'gpt-5',
+  'gpt-5-mini',
+  'gpt-5-nano',
+  'gpt-5-chat-latest',
+  'gpt-4.1',
+  'gpt-4.1-mini',
+  'gpt-4.1-nano',
+  'gpt-4o-mini',
+  'gpt-4o',
+  'gpt-4.5-preview',
+  'gpt-4.5-preview-2025-02-27',
+  'gpt-3.5-turbo',
+  'gpt-3.5-turbo-0125',
+  'gpt-4-turbo',
+  'gpt-4-turbo-2024-04-09',
+  'gpt-4-0125-preview',
+  'gpt-4-turbo-preview',
+  'gpt-4-1106-preview',
+  'gpt-3.5-turbo-1106',
+  'gpt-3.5-turbo-16k-0613',
+  'gpt-3.5-turbo-16k',
+  'gpt-4',
+  'gpt-4-0314',
+  'gpt-4-32k-0314',
+  'gpt-4-0613',
+  'gpt-3.5-turbo-0613',
 ];
 
 const sharedAnthropicModels = [
@@ -1567,9 +1605,9 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = "v0.8.0-rc4",
+  VERSION = 'v0.8.0',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = "1.2.9",
+  CONFIG_VERSION = '1.3.0',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = "00000000-0000-0000-0000-000000000000",
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
