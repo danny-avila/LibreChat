@@ -6,6 +6,8 @@ import { createUserMethods, type UserMethods } from './user';
 import { createMemoryMethods, type MemoryMethods } from './memory';
 /* Agent Categories */
 import { createAgentCategoryMethods, type AgentCategoryMethods } from './agentCategory';
+/* MCP Servers */
+import { createMCPServerMethods, type MCPServerMethods } from './mcpServer';
 /* Plugin Auth */
 import { createPluginAuthMethods, type PluginAuthMethods } from './pluginAuth';
 /* Permissions */
@@ -20,6 +22,7 @@ export type AllMethods = UserMethods &
   RoleMethods &
   MemoryMethods &
   AgentCategoryMethods &
+  MCPServerMethods &
   UserGroupMethods &
   AclEntryMethods &
   ShareMethods &
@@ -37,6 +40,7 @@ export function createMethods(mongoose: typeof import('mongoose')): AllMethods {
     ...createRoleMethods(mongoose),
     ...createMemoryMethods(mongoose),
     ...createAgentCategoryMethods(mongoose),
+    ...createMCPServerMethods(mongoose),
     ...createAccessRoleMethods(mongoose),
     ...createUserGroupMethods(mongoose),
     ...createAclEntryMethods(mongoose),
@@ -52,6 +56,7 @@ export type {
   RoleMethods,
   MemoryMethods,
   AgentCategoryMethods,
+  MCPServerMethods,
   UserGroupMethods,
   AclEntryMethods,
   ShareMethods,
