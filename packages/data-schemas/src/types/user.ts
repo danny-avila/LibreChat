@@ -16,7 +16,6 @@ export interface IUser extends Document {
   samlId?: string;
   ldapId?: string;
   githubId?: string;
-  logtoUserId?: string;
   discordId?: string;
   appleId?: string;
   plugins?: string[];
@@ -89,7 +88,6 @@ export interface UserFilterOptions extends CursorPaginationParams {
   samlId?: string;
   ldapId?: string;
   githubId?: string;
-  logtoUserId?: string;
   discordId?: string;
   appleId?: string;
   // Date filters
