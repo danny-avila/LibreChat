@@ -607,6 +607,9 @@ export type TStartupConfig = {
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
   transactions?: TTransactionsConfig;
+  useAutumnApiBase?: string;
+  useAutumnProductId?: string;
+  useAutumnTokenCreditsFeatureId?: string;
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
   githubLoginEnabled: boolean;

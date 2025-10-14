@@ -8,6 +8,21 @@ const applyUseAutumnKey = require('../api/utils/applyUseAutumnKey');
 
 const yesNo = (value) => (value ? 'yes' : 'no');
 
+const supplementalUseAutumnEnv = [
+  {
+    name: 'USEAUTUMN_API_BASE',
+    description: 'REST API base URL',
+  },
+  {
+    name: 'USEAUTUMN_PRODUCT_ID',
+    description: 'Product identifier',
+  },
+  {
+    name: 'USEAUTUMN_TOKEN_CREDITS_FEATURE_ID',
+    description: 'Token credits feature identifier',
+  },
+];
+
 const summarizeUseAutumn = () => {
   const status = applyUseAutumnKey();
   const mode = status.isProduction ? 'production' : 'sandbox';
@@ -43,3 +58,30 @@ const summarizeUseAutumn = () => {
 };
 
 summarizeUseAutumn();
+
+const checkSupplementalUseAutumnEnv = () => {
+  console.log('\nSupplemental UseAutumn environment variables');
+
+  const rows = supplementalUseAutumnEnv.map(({ name, description }) => {
+    const provided = Boolean(process.env?.[name]);
+    return {
+      variable: name,
+      description,
+      provided: yesNo(provided),
+    };
+  });
+
+  console.table(rows);
+
+  const missing = supplementalUseAutumnEnv.filter(({ name }) => !process.env?.[name]);
+  if (missing.length > 0) {
+    const list = missing.map(({ name }) => name).join(', ');
+    console.warn(
+      `\n⚠️  The following UseAutumn environment variables are not set: ${list}.`,
+    );
+  } else {
+    console.log('\n✅  All supplemental UseAutumn environment variables are set.');
+  }
+};
+
+checkSupplementalUseAutumnEnv();
