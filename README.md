@@ -182,6 +182,11 @@ summary of the UseAutumn credentials currently loaded into the environment.
 The script never echoes the underlying secret values; instead it reports
 whether each variable is present and which strategy LibreChat will use when
 deriving the effective `USEAUTUMN_KEY`.
+It also verifies that the supplemental UseAutumn settings (`USEAUTUMN_API_BASE`,
+`USEAUTUMN_PRODUCT_ID`, `USEAUTUMN_TOKEN_CREDITS_FEATURE_ID`, and
+`USEAUTUMN_HAS_SUBSCRIPTION_FEATURE_ID`) are available,
+which is especially helpful when their values are passed via Docker Compose
+overrides.
 
 Run the command directly on your host when using a local `.env` file:
 
