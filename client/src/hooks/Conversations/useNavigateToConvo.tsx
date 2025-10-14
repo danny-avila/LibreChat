@@ -51,6 +51,7 @@ const useNavigateToConvo = (index = 0) => {
     hasSetConversation.current = true;
     setSubmission(null);
     if (resetLatestMessage) {
+      logger.log('latest_message', 'Clearing all latest messages');
       clearAllLatestMessages();
     }
 

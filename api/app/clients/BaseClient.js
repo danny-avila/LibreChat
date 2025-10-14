@@ -3,6 +3,7 @@ const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
 const {
   getBalanceConfig,
+  extractFileContext,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   encodeAndFormatDocuments,
@@ -10,6 +11,7 @@ const {
 const {
   Constants,
   ErrorTypes,
+  FileSources,
   ContentTypes,
   excludedKeys,
   EModelEndpoint,
@@ -21,6 +23,7 @@ const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
+const countTokens = require('~/server/utils/countTokens');
 const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
 
@@ -1245,27 +1248,62 @@ class BaseClient {
     return audioResult.files;
   }
 
+  /**
+   * Extracts text context from attachments and sets it on the message.
+   * This handles text that was already extracted from files (OCR, transcriptions, document text, etc.)
+   * @param {TMessage} message - The message to add context to
+   * @param {MongoFile[]} attachments - Array of file attachments
+   * @returns {Promise<void>}
+   */
+  async addFileContextToMessage(message, attachments) {
+    const fileContext = await extractFileContext({
+      attachments,
+      req: this.options?.req,
+      tokenCountFn: (text) => countTokens(text),
+    });
+
+    if (fileContext) {
+      message.fileContext = fileContext;
+    }
+  }
+
   async processAttachments(message, attachments) {
     const categorizedAttachments = {
       images: [],
-      documents: [],
       videos: [],
       audios: [],
+      documents: [],
     };
 
+    const allFiles = [];
+
     for (const file of attachments) {
+      /** @type {FileSources} */
+      const source = file.source ?? FileSources.local;
+      if (source === FileSources.text) {
+        allFiles.push(file);
+        continue;
+      }
+      if (file.embedded === true || file.metadata?.fileIdentifier != null) {
+        allFiles.push(file);
+        continue;
+      }
+
       if (file.type.startsWith('image/')) {
         categorizedAttachments.images.push(file);
       } else if (file.type === 'application/pdf') {
         categorizedAttachments.documents.push(file);
+        allFiles.push(file);
       } else if (file.type.startsWith('video/')) {
         categorizedAttachments.videos.push(file);
+        allFiles.push(file);
       } else if (file.type.startsWith('audio/')) {
         categorizedAttachments.audios.push(file);
+        allFiles.push(file);
       }
     }
 
-    const [imageFiles, documentFiles, videoFiles, audioFiles] = await Promise.all([
+    const [imageFiles] = await Promise.all([
       categorizedAttachments.images.length > 0
         ? this.addImageURLs(message, categorizedAttachments.images)
         : Promise.resolve([]),
@@ -1280,7 +1318,8 @@ class BaseClient {
         : Promise.resolve([]),
     ]);
 
-    const allFiles = [...imageFiles, ...documentFiles, ...videoFiles, ...audioFiles];
+    allFiles.push(...imageFiles);
+
     const seenFileIds = new Set();
     const uniqueFiles = [];
 
@@ -1345,6 +1384,7 @@ class BaseClient {
         {},
       );
 
+      await this.addFileContextToMessage(message, files);
       await this.processAttachments(message, files);
 
       this.message_file_map[message.messageId] = files;

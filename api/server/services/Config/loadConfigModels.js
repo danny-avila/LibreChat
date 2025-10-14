@@ -85,7 +85,9 @@ async function loadConfigModels(req) {
     }
 
     if (Array.isArray(models.default)) {
-      modelsConfig[name] = models.default;
+      modelsConfig[name] = models.default.map((model) =>
+        typeof model === 'string' ? model : model.name,
+      );
     }
   }
 

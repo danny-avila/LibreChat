@@ -65,6 +65,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, async (req, res) => {
       serverName,
       serverUrl,
       userId,
+      getOAuthHeaders(serverName),
       oauthConfig,
     );
 
@@ -132,7 +133,12 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     });
 
     logger.debug('[MCP OAuth] Completing OAuth flow');
-    const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager);
+    const tokens = await MCPOAuthHandler.completeOAuthFlow(
+      flowId,
+      code,
+      flowManager,
+      getOAuthHeaders(serverName),
+    );
     logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 
     /** Persist tokens immediately so reconnection uses fresh credentials */
@@ -537,5 +543,11 @@ router.get('/:serverName/auth-values', requireJwtAuth, async (req, res) => {
     res.status(500).json({ error: 'Failed to check auth value flags' });
   }
 });
+
+function getOAuthHeaders(serverName) {
+  const mcpManager = getMCPManager();
+  const serverConfig = mcpManager.getRawConfig(serverName);
+  return serverConfig?.oauth_headers ?? {};
+}
 
 module.exports = router;

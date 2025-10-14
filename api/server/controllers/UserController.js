@@ -327,16 +327,23 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   const revocationEndpointAuthMethodsSupported =
     serverConfig.oauth?.revocation_endpoint_auth_methods_supported ??
     clientMetadata.revocation_endpoint_auth_methods_supported;
+  const oauthHeaders = serverConfig.oauth_headers ?? {};
 
   if (tokens?.access_token) {
     try {
-      await MCPOAuthHandler.revokeOAuthToken(serverName, tokens.access_token, 'access', {
-        serverUrl: serverConfig.url,
-        clientId: clientInfo.client_id,
-        clientSecret: clientInfo.client_secret ?? '',
-        revocationEndpoint,
-        revocationEndpointAuthMethodsSupported,
-      });
+      await MCPOAuthHandler.revokeOAuthToken(
+        serverName,
+        tokens.access_token,
+        'access',
+        {
+          serverUrl: serverConfig.url,
+          clientId: clientInfo.client_id,
+          clientSecret: clientInfo.client_secret ?? '',
+          revocationEndpoint,
+          revocationEndpointAuthMethodsSupported,
+        },
+        oauthHeaders,
+      );
     } catch (error) {
       logger.error(`Error revoking OAuth access token for ${serverName}:`, error);
     }
@@ -344,13 +351,19 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
 
   if (tokens?.refresh_token) {
     try {
-      await MCPOAuthHandler.revokeOAuthToken(serverName, tokens.refresh_token, 'refresh', {
-        serverUrl: serverConfig.url,
-        clientId: clientInfo.client_id,
-        clientSecret: clientInfo.client_secret ?? '',
-        revocationEndpoint,
-        revocationEndpointAuthMethodsSupported,
-      });
+      await MCPOAuthHandler.revokeOAuthToken(
+        serverName,
+        tokens.refresh_token,
+        'refresh',
+        {
+          serverUrl: serverConfig.url,
+          clientId: clientInfo.client_id,
+          clientSecret: clientInfo.client_secret ?? '',
+          revocationEndpoint,
+          revocationEndpointAuthMethodsSupported,
+        },
+        oauthHeaders,
+      );
     } catch (error) {
       logger.error(`Error revoking OAuth refresh token for ${serverName}:`, error);
     }

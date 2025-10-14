@@ -21,6 +21,7 @@ import { useLocalize } from '~/hooks';
 export default function SharedLinkButton({
   share,
   conversationId,
+  targetMessageId,
   setShareDialogOpen,
   showQR,
   setShowQR,
@@ -28,6 +29,7 @@ export default function SharedLinkButton({
 }: {
   share: TSharedLinkGetResponse | undefined;
   conversationId: string;
+  targetMessageId?: string;
   setShareDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
   showQR: boolean;
   setShowQR: (showQR: boolean) => void;
@@ -86,7 +88,7 @@ export default function SharedLinkButton({
   };
 
   const createShareLink = async () => {
-    const share = await mutate({ conversationId });
+    const share = await mutate({ conversationId, targetMessageId });
     const newLink = generateShareLink(share.shareId);
     setSharedLink(newLink);
   };

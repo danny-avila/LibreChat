@@ -16,6 +16,7 @@ interface DropdownProps {
   iconOnly?: boolean;
   renderValue?: (option: Option) => React.ReactNode;
   ariaLabel?: string;
+  'aria-labelledby'?: string;
   portal?: boolean;
 }
 
@@ -37,6 +38,7 @@ const Dropdown: React.FC<DropdownProps> = ({
   iconOnly = false,
   renderValue,
   ariaLabel,
+  'aria-labelledby': ariaLabelledBy,
   portal = true,
 }) => {
   const handleChange = (value: string) => {
@@ -77,6 +79,7 @@ const Dropdown: React.FC<DropdownProps> = ({
         )}
         data-testid={testId}
         aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
       >
         <div className="flex w-full items-center gap-2">
           {icon}

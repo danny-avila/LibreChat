@@ -266,7 +266,6 @@
   "com_nav_auto_scroll": "Automatyczne przewijanie do najnowszej wiadomości przy otwarciu czatu",
   "com_nav_auto_send_prompts": "Automatycznie wysyłaj prompty",
   "com_nav_auto_send_text": "Automatycznie wysyłaj tekst",
-  "com_nav_auto_send_text_disabled": "ustaw -1 aby wyłączyć",
   "com_nav_auto_transcribe_audio": "Automatycznie transkrybuj audio",
   "com_nav_automatic_playback": "Automatyczne odtwarzanie najnowszej wiadomości",
   "com_nav_balance": "Balansować",

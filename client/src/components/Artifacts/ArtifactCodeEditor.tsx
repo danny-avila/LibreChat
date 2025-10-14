@@ -144,9 +144,10 @@ export const ArtifactCodeEditor = function ({
     }
     return {
       ...sharedOptions,
+      activeFile: '/' + fileKey,
       bundlerURL: template === 'static' ? config.staticBundlerURL : config.bundlerURL,
     };
-  }, [config, template]);
+  }, [config, template, fileKey]);
   const [readOnly, setReadOnly] = useState(isSubmitting ?? false);
   useEffect(() => {
     setReadOnly(isSubmitting ?? false);
