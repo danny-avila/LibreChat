@@ -220,7 +220,7 @@ const checkBalance = async ({ req, res, txData }) => {
         } else {
           checkoutUrl = await createCheckoutAutumn({
             openidID: openidId,
-            email,
+            email: email,
             fingerprint: email,
           });
         }
