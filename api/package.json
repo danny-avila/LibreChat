@@ -40,6 +40,7 @@
     "@azure/identity": "^4.7.0",
     "@azure/search-documents": "^12.0.0",
     "@azure/storage-blob": "^12.27.0",
+    "autumn-js": "^0.1.40",
     "@google/generative-ai": "^0.24.0",
     "@googleapis/youtube": "^20.0.0",
     "@keyv/redis": "^4.3.3",
