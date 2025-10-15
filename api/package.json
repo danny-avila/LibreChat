@@ -51,6 +51,7 @@
     "@librechat/agents": "^2.4.85",
     "@librechat/api": "*",
     "@librechat/data-schemas": "*",
+    "autumn-js": "^0.1.40",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@modelcontextprotocol/sdk": "^1.17.1",
     "@node-saml/passport-saml": "^5.1.0",

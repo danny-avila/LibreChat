@@ -16,7 +16,10 @@ const namespaces = {
   [ViolationTypes.NON_BROWSER]: violationCache(ViolationTypes.NON_BROWSER),
   [ViolationTypes.MESSAGE_LIMIT]: violationCache(ViolationTypes.MESSAGE_LIMIT),
   [ViolationTypes.REGISTRATIONS]: violationCache(ViolationTypes.REGISTRATIONS),
-  [ViolationTypes.TOKEN_BALANCE]: violationCache(ViolationTypes.TOKEN_BALANCE),
+  [ViolationTypes.TOKEN_BALANCE_SUB]: violationCache(ViolationTypes.TOKEN_BALANCE_SUB),
+  [ViolationTypes.TOKEN_BALANCE_NO_SUB]: violationCache(
+    ViolationTypes.TOKEN_BALANCE_NO_SUB,
+  ),
   [ViolationTypes.TTS_LIMIT]: violationCache(ViolationTypes.TTS_LIMIT),
   [ViolationTypes.STT_LIMIT]: violationCache(ViolationTypes.STT_LIMIT),
   [ViolationTypes.CONVO_ACCESS]: violationCache(ViolationTypes.CONVO_ACCESS),
