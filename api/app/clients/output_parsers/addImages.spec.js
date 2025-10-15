@@ -74,7 +74,7 @@ describe('addImages', () => {
 
   it('should append correctly from a real scenario', () => {
     responseMessage.text =
-      'Here is the generated image based on your request. It depicts a surreal landscape filled with floating musical notes. The style is impressionistic, with vibrant sunset hues dominating the scene. At the center, there\'s a silhouette of a grand piano, adding a dreamy emotion to the overall image. This could serve as a unique and creative music album cover. Would you like to make any changes or generate another image?';
+      "Here is the generated image based on your request. It depicts a surreal landscape filled with floating musical notes. The style is impressionistic, with vibrant sunset hues dominating the scene. At the center, there's a silhouette of a grand piano, adding a dreamy emotion to the overall image. This could serve as a unique and creative music album cover. Would you like to make any changes or generate another image?";
     const originalText = responseMessage.text;
     const imageMarkdown = '![generated image](/images/img-RnVWaYo2Yg4x3e0isICiMuf5.png)';
     intermediateSteps.push({ observation: imageMarkdown });
@@ -206,7 +206,9 @@ describe('addImages', () => {
       intermediateSteps.push({ observation: '![desc1](/images/test1.png)' });
       intermediateSteps.push({ observation: '![desc2](/librechat/images/test2.png)' });
       addImages(intermediateSteps, responseMessage);
-      expect(responseMessage.text).toBe('\n![desc1](/librechat/images/test1.png)\n![desc2](/librechat/images/test2.png)');
+      expect(responseMessage.text).toBe(
+        '\n![desc1](/librechat/images/test1.png)\n![desc2](/librechat/images/test2.png)',
+      );
     });
 
     it('should handle complex markdown with base path', () => {
@@ -231,9 +233,14 @@ describe('addImages', () => {
 
     it('should handle data URLs', () => {
       process.env.DOMAIN_CLIENT = 'http://localhost:3080/librechat';
-      intermediateSteps.push({ observation: '![desc](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==)' });
+      intermediateSteps.push({
+        observation:
+          '![desc](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==)',
+      });
       addImages(intermediateSteps, responseMessage);
-      expect(responseMessage.text).toBe('\n![desc](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==)');
+      expect(responseMessage.text).toBe(
+        '\n![desc](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==)',
+      );
     });
   });
 });

@@ -53,13 +53,15 @@ describe('getBasePath', () => {
 
   it('should return empty string for invalid URL', () => {
     process.env.DOMAIN_CLIENT = 'not-a-valid-url';
-    const loggerSpy = jest.spyOn(require('@librechat/data-schemas').logger, 'warn').mockImplementation(() => {});
+    const loggerSpy = jest
+      .spyOn(require('@librechat/data-schemas').logger, 'warn')
+      .mockImplementation(() => {});
     expect(getBasePath()).toBe('');
     expect(loggerSpy).toHaveBeenCalledWith(
       'Error parsing DOMAIN_CLIENT for base path:',
       expect.objectContaining({
-        message: 'Invalid URL'
-      })
+        message: 'Invalid URL',
+      }),
     );
     loggerSpy.mockRestore();
   });
