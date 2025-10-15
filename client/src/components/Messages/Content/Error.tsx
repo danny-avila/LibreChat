@@ -148,7 +148,7 @@ const Error = ({ text }: { text: string }) => {
 
   if (errorKey === ViolationTypes.TOKEN_BALANCE_NO_SUB) {
     const { balance, tokenCost, promptTokens, generations, checkoutUrl } = json as TTokenBalance;
-    const resolvedCheckoutUrl = checkoutUrl ?? 'https://example-example.com/checkout';
+    const resolvedCheckoutUrl = checkoutUrl';
     const subTrialPeriodStr = startupConfig?.sellingMessage?.trialPeriod ?? '';
     const subPriceStr = startupConfig?.sellingMessage?.price ?? '';
     const subFaqUrl = startupConfig?.sellingMessage?.faqUrl ?? '#';
