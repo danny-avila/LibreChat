@@ -189,7 +189,11 @@ describe('AgentCard', () => {
   });
 
   it('applies additional className when provided', () => {
-    render(<AgentCard agent={mockAgent} onClick={mockOnClick} className="custom-class" />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={mockAgent} onClick={mockOnClick} className="custom-class" />
+      </QueryClientProvider>,
+    );
 
     const card = screen.getByRole('button');
     expect(card).toHaveClass('custom-class');
@@ -202,7 +206,11 @@ describe('AgentCard', () => {
       authorName: undefined,
     };
 
-    render(<AgentCard agent={agentWithoutContact} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithoutContact} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('Test Agent')).toBeInTheDocument();
     expect(screen.getByText('A test agent for testing purposes')).toBeInTheDocument();
@@ -216,7 +224,11 @@ describe('AgentCard', () => {
       authorName: 'John Doe',
     };
 
-    render(<AgentCard agent={agentWithAuthorName} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithAuthorName} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('John Doe')).toBeInTheDocument();
   });
@@ -228,7 +240,11 @@ describe('AgentCard', () => {
       authorName: undefined,
     };
 
-    render(<AgentCard agent={agentWithEmailOnly} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithEmailOnly} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('contact@example.com')).toBeInTheDocument();
   });
@@ -240,7 +256,11 @@ describe('AgentCard', () => {
       authorName: 'John Doe',
     };
 
-    render(<AgentCard agent={agentWithBoth} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithBoth} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('Support Team')).toBeInTheDocument();
     expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
@@ -256,7 +276,11 @@ describe('AgentCard', () => {
       authorName: undefined,
     };
 
-    render(<AgentCard agent={agentWithNameAndEmail} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithNameAndEmail} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('Support Team')).toBeInTheDocument();
     expect(screen.queryByText('support@example.com')).not.toBeInTheDocument();
