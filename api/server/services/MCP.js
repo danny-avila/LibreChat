@@ -442,15 +442,15 @@ async function getMCPSetupData(userId) {
   }
 
   const mcpManager = getMCPManager(userId);
-  /** @type {ReturnType<MCPManager['getAllConnections']>} */
+  /** @type {Map<string, import('@librechat/api').MCPConnection>} */
   let appConnections = new Map();
   try {
-    appConnections = (await mcpManager.getAllConnections()) || new Map();
+    appConnections = (await mcpManager.appConnections?.getAll()) || new Map();
   } catch (error) {
     logger.error(`[MCP][User: ${userId}] Error getting app connections:`, error);
   }
   const userConnections = mcpManager.getUserConnections(userId) || new Map();
-  const oauthServers = mcpManager.getOAuthServers() || new Set();
+  const oauthServers = mcpManager.getOAuthServers();
 
   return {
     mcpConfig,

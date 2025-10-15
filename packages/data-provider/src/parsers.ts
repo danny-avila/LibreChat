@@ -369,7 +369,7 @@ export function parseTextParts(
       continue;
     }
     if (part.type === ContentTypes.TEXT) {
-      const textValue = typeof part.text === 'string' ? part.text : part.text.value;
+      const textValue = (typeof part.text === 'string' ? part.text : part.text?.value) || '';
 
       if (
         result.length > 0 &&

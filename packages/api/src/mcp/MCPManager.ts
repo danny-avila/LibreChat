@@ -20,8 +20,6 @@ import { processMCPEnv } from '~/utils/env';
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
-  // Connections shared by all users.
-  private appConnections: ConnectionsRepository | null = null;
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -40,31 +38,48 @@ export class MCPManager extends UserConnectionManager {
   /** Initializes the MCPManager by setting up server registry and app connections */
   public async initialize() {
     await this.serversRegistry.initialize();
-    this.appConnections = new ConnectionsRepository(this.serversRegistry.appServerConfigs!);
+    this.appConnections = new ConnectionsRepository(this.serversRegistry.appServerConfigs);
   }
 
-  /** Returns all app-level connections */
-  public async getAllConnections(): Promise<Map<string, MCPConnection> | null> {
-    return this.appConnections!.getAll();
+  /** Retrieves an app-level or user-specific connection based on provided arguments */
+  public async getConnection(
+    args: {
+      serverName: string;
+      user?: TUser;
+      forceNew?: boolean;
+      flowManager?: FlowStateManager<MCPOAuthTokens | null>;
+    } & Omit<t.OAuthConnectionOptions, 'useOAuth' | 'user' | 'flowManager'>,
+  ): Promise<MCPConnection> {
+    if (this.appConnections!.has(args.serverName)) {
+      return this.appConnections!.get(args.serverName);
+    } else if (args.user?.id) {
+      return this.getUserConnection(args as Parameters<typeof this.getUserConnection>[0]);
+    } else {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `No connection found for server ${args.serverName}`,
+      );
+    }
   }
 
   /** Get servers that require OAuth */
-  public getOAuthServers(): Set<string> | null {
-    return this.serversRegistry.oauthServers!;
+  public getOAuthServers(): Set<string> {
+    return this.serversRegistry.oauthServers;
   }
 
   /** Get all servers */
-  public getAllServers(): t.MCPServers | null {
-    return this.serversRegistry.rawConfigs!;
+  public getAllServers(): t.MCPServers {
+    return this.serversRegistry.rawConfigs;
   }
 
   /** Returns all available tool functions from app-level connections */
-  public getAppToolFunctions(): t.LCAvailableTools | null {
-    return this.serversRegistry.toolFunctions!;
+  public getAppToolFunctions(): t.LCAvailableTools {
+    return this.serversRegistry.toolFunctions;
   }
+
   /** Returns all available tool functions from all connections available to user */
   public async getAllToolFunctions(userId: string): Promise<t.LCAvailableTools | null> {
-    const allToolFunctions: t.LCAvailableTools = this.getAppToolFunctions() ?? {};
+    const allToolFunctions: t.LCAvailableTools = this.getAppToolFunctions();
     const userConnections = this.getUserConnections(userId);
     if (!userConnections || userConnections.size === 0) {
       return allToolFunctions;
@@ -82,22 +97,30 @@ export class MCPManager extends UserConnectionManager {
     userId: string,
     serverName: string,
   ): Promise<t.LCAvailableTools | null> {
-    if (this.appConnections?.has(serverName)) {
-      return this.serversRegistry.getToolFunctions(
-        serverName,
-        await this.appConnections.get(serverName),
+    try {
+      if (this.appConnections?.has(serverName)) {
+        return this.serversRegistry.getToolFunctions(
+          serverName,
+          await this.appConnections.get(serverName),
+        );
+      }
+
+      const userConnections = this.getUserConnections(userId);
+      if (!userConnections || userConnections.size === 0) {
+        return null;
+      }
+      if (!userConnections.has(serverName)) {
+        return null;
+      }
+
+      return this.serversRegistry.getToolFunctions(serverName, userConnections.get(serverName)!);
+    } catch (error) {
+      logger.warn(
+        `[getServerToolFunctions] Error getting tool functions for server ${serverName}`,
+        error,
       );
-    }
-
-    const userConnections = this.getUserConnections(userId);
-    if (!userConnections || userConnections.size === 0) {
       return null;
     }
-    if (!userConnections.has(serverName)) {
-      return null;
-    }
-
-    return this.serversRegistry.getToolFunctions(serverName, userConnections.get(serverName)!);
   }
 
   /**
@@ -106,7 +129,7 @@ export class MCPManager extends UserConnectionManager {
    * @returns Object mapping server names to their instructions
    */
   public getInstructions(serverNames?: string[]): Record<string, string> {
-    const instructions = this.serversRegistry.serverInstructions!;
+    const instructions = this.serversRegistry.serverInstructions;
     if (!serverNames) return instructions;
     return pick(instructions, serverNames);
   }
@@ -180,30 +203,19 @@ Please follow these instructions when using tools from the respective MCP server
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
 
     try {
-      if (!this.appConnections?.has(serverName) && userId && user) {
-        this.updateUserLastActivity(userId);
-        /** Get or create user-specific connection */
-        connection = await this.getUserConnection({
-          user,
-          serverName,
-          flowManager,
-          tokenMethods,
-          oauthStart,
-          oauthEnd,
-          signal: options?.signal,
-          customUserVars,
-          requestBody,
-        });
-      } else {
-        /** App-level connection */
-        connection = await this.appConnections!.get(serverName);
-        if (!connection) {
-          throw new McpError(
-            ErrorCode.InvalidRequest,
-            `${logPrefix} No app-level connection found. Cannot execute tool ${toolName}.`,
-          );
-        }
-      }
+      if (userId && user) this.updateUserLastActivity(userId);
+
+      connection = await this.getConnection({
+        serverName,
+        user,
+        flowManager,
+        tokenMethods,
+        oauthStart,
+        oauthEnd,
+        signal: options?.signal,
+        customUserVars,
+        requestBody,
+      });
 
       if (!(await connection.isConnected())) {
         /** May happen if getUserConnection failed silently or app connection dropped */

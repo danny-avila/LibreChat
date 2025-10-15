@@ -303,7 +303,7 @@ async function loadAuthConfig(context: OCRContext): Promise<AuthConfig> {
 /**
  * Gets the model configuration
  */
-function getModelConfig(ocrConfig: TCustomConfig['ocr']): string {
+function getModelConfig(ocrConfig?: TCustomConfig['ocr']): string {
   const modelConfig = ocrConfig?.mistralModel || '';
 
   if (!modelConfig.trim()) {

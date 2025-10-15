@@ -1,6 +1,7 @@
 const fs = require('fs').promises;
 const express = require('express');
 const { EnvVar } = require('@librechat/agents');
+const { logger } = require('@librechat/data-schemas');
 const {
   Time,
   isUUID,
@@ -30,7 +31,6 @@ const { cleanFileName } = require('~/server/utils/files');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
-const { logger } = require('~/config');
 const { Readable } = require('stream');
 
 const router = express.Router();

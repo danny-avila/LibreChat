@@ -1,8 +1,19 @@
 import React, { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogTemplate } from '@librechat/client';
-import { EToolResources, defaultAgentCapabilities } from 'librechat-data-provider';
-import { ImageUpIcon, FileSearch, TerminalSquareIcon, FileType2Icon } from 'lucide-react';
+import {
+  EToolResources,
+  EModelEndpoint,
+  defaultAgentCapabilities,
+  isDocumentSupportedProvider,
+} from 'librechat-data-provider';
+import {
+  ImageUpIcon,
+  FileSearch,
+  FileType2Icon,
+  FileImageIcon,
+  TerminalSquareIcon,
+} from 'lucide-react';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,
@@ -34,22 +45,45 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
    * Use definition for agents endpoint for ephemeral agents
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
-  const { conversationId, agentId } = useDragDropContext();
+  const { conversationId, agentId, endpoint, endpointType } = useDragDropContext();
   const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId ?? ''));
-  const { fileSearchAllowedByAgent, codeAllowedByAgent } = useAgentToolPermissions(
+  const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
     agentId,
     ephemeralAgent,
   );
 
   const options = useMemo(() => {
-    const _options: FileOption[] = [
-      {
+    const _options: FileOption[] = [];
+    const currentProvider = provider || endpoint;
+
+    // Check if provider supports document upload
+    if (isDocumentSupportedProvider(currentProvider || endpointType)) {
+      const isGoogleProvider = currentProvider === EModelEndpoint.google;
+      const validFileTypes = isGoogleProvider
+        ? files.every(
+            (file) =>
+              file.type?.startsWith('image/') ||
+              file.type?.startsWith('video/') ||
+              file.type?.startsWith('audio/') ||
+              file.type === 'application/pdf',
+          )
+        : files.every((file) => file.type?.startsWith('image/') || file.type === 'application/pdf');
+
+      _options.push({
+        label: localize('com_ui_upload_provider'),
+        value: undefined,
+        icon: <FileImageIcon className="icon-md" />,
+        condition: validFileTypes,
+      });
+    } else {
+      // Only show image upload option if all files are images and provider doesn't support documents
+      _options.push({
         label: localize('com_ui_upload_image_input'),
         value: undefined,
         icon: <ImageUpIcon className="icon-md" />,
         condition: files.every((file) => file.type?.startsWith('image/')),
-      },
-    ];
+      });
+    }
     if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
       _options.push({
         label: localize('com_ui_upload_file_search'),
@@ -73,7 +107,16 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     }
 
     return _options;
-  }, [capabilities, files, localize, fileSearchAllowedByAgent, codeAllowedByAgent]);
+  }, [
+    files,
+    localize,
+    provider,
+    endpoint,
+    endpointType,
+    capabilities,
+    codeAllowedByAgent,
+    fileSearchAllowedByAgent,
+  ]);
 
   if (!isVisible) {
     return null;
