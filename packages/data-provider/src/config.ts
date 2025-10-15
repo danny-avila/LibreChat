@@ -600,6 +600,13 @@ export const turnstileSchema = z.object({
 
 export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 
+export type TSellingMessageConfig = {
+  trialPeriod?: string;
+  price?: string;
+  faqUrl?: string;
+  supportEmail?: string;
+};
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
@@ -674,6 +681,7 @@ export type TStartupConfig = {
   >;
   mcpPlaceholder?: string;
   conversationImportMaxFileSize?: number;
+  sellingMessage?: TSellingMessageConfig;
 };
 
 export enum OCRStrategy {
