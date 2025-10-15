@@ -71,6 +71,10 @@ router.get('/', async function (req, res) {
       supportEmail: process.env.SUPPORT_EMAIL,
     });
 
+    const insideSubscription = removeNullishValues({
+      proSupportEmail: process.env.PRO_SUPPORT_EMAIL,
+    });
+
     /** @type {TStartupConfig} */
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
@@ -133,6 +137,10 @@ router.get('/', async function (req, res) {
 
     if (Object.keys(sellingMessage).length > 0) {
       payload.sellingMessage = sellingMessage;
+    }
+
+    if (Object.keys(insideSubscription).length > 0) {
+      payload.insideSubscription = insideSubscription;
     }
 
     const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);

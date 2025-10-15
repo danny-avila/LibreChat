@@ -607,6 +607,10 @@ export type TSellingMessageConfig = {
   supportEmail?: string;
 };
 
+export type TInsideSubscriptionConfig = {
+  proSupportEmail?: string;
+};
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
@@ -682,6 +686,7 @@ export type TStartupConfig = {
   mcpPlaceholder?: string;
   conversationImportMaxFileSize?: number;
   sellingMessage?: TSellingMessageConfig;
+  insideSubscription?: TInsideSubscriptionConfig;
 };
 
 export enum OCRStrategy {

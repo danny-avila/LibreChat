@@ -133,3 +133,37 @@ const checkSellingMessageEnv = () => {
 };
 
 checkSellingMessageEnv();
+
+const insideSubscriptionEnv = [
+  {
+    name: 'PRO_SUPPORT_EMAIL',
+    description: 'Pro subscription support contact email',
+  },
+];
+
+const checkInsideSubscriptionEnv = () => {
+  console.log('\nInside subscription environment variables');
+
+  const rows = insideSubscriptionEnv.map(({ name, description }) => {
+    const provided = Boolean(process.env?.[name]);
+    return {
+      variable: name,
+      description,
+      provided: yesNo(provided),
+    };
+  });
+
+  console.table(rows);
+
+  const missing = insideSubscriptionEnv.filter(({ name }) => !process.env?.[name]);
+  if (missing.length > 0) {
+    const list = missing.map(({ name }) => name).join(', ');
+    console.warn(
+      `\n⚠️  The following inside subscription environment variables are not set: ${list}.`,
+    );
+  } else {
+    console.log('\n✅  All inside subscription environment variables are set.');
+  }
+};
+
+checkInsideSubscriptionEnv();
