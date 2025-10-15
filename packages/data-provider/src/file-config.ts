@@ -1,7 +1,6 @@
-/* eslint-disable max-len */
 import { z } from 'zod';
 import { EModelEndpoint } from './schemas';
-import type { FileConfig, EndpointFileConfig } from './types/files';
+import type { EndpointFileConfig, FileConfig } from './types/files';
 
 export const supportsFiles = {
   [EModelEndpoint.openAI]: true,
@@ -50,12 +49,35 @@ export const fullMimeTypesList = [
   'text/javascript',
   'image/gif',
   'image/png',
+  'image/heic',
+  'image/heif',
   'application/x-tar',
   'application/typescript',
   'application/xml',
   'application/zip',
   'image/svg',
   'image/svg+xml',
+  // Video formats
+  'video/mp4',
+  'video/avi',
+  'video/mov',
+  'video/wmv',
+  'video/flv',
+  'video/webm',
+  'video/mkv',
+  'video/m4v',
+  'video/3gp',
+  'video/ogv',
+  // Audio formats
+  'audio/mp3',
+  'audio/wav',
+  'audio/ogg',
+  'audio/m4a',
+  'audio/aac',
+  'audio/flac',
+  'audio/wma',
+  'audio/opus',
+  'audio/mpeg',
   ...excelFileTypes,
 ];
 
@@ -81,6 +103,8 @@ export const codeInterpreterMimeTypesList = [
   'text/javascript',
   'image/gif',
   'image/png',
+  'image/heic',
+  'image/heif',
   'application/x-tar',
   'application/typescript',
   'application/xml',
@@ -106,25 +130,44 @@ export const retrievalMimeTypesList = [
   'text/plain',
 ];
 
-export const imageExtRegex = /\.(jpg|jpeg|png|gif|webp)$/i;
+export const imageExtRegex = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i;
 
 export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
 
 export const textMimeTypes =
-  /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv))$/;
+  /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml))$/;
 
 export const applicationMimeTypes =
   /^(application\/(epub\+zip|csv|json|pdf|x-tar|typescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
 
-export const imageMimeTypes = /^image\/(jpeg|gif|png|webp)$/;
+export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
+
+export const audioMimeTypes =
+  /^audio\/(mp3|mpeg|mpeg3|wav|wave|x-wav|ogg|vorbis|mp4|m4a|x-m4a|flac|x-flac|webm|aac|wma|opus)$/;
+
+export const videoMimeTypes = /^video\/(mp4|avi|mov|wmv|flv|webm|mkv|m4v|3gp|ogv)$/;
+
+export const defaultOCRMimeTypes = [
+  imageMimeTypes,
+  /^application\/pdf$/,
+  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)$/,
+  /^application\/vnd\.ms-(word|powerpoint|excel)$/,
+  /^application\/epub\+zip$/,
+];
+
+export const defaultTextMimeTypes = [/^[\w.-]+\/[\w.-]+$/];
+
+export const defaultSTTMimeTypes = [audioMimeTypes];
 
 export const supportedMimeTypes = [
   textMimeTypes,
   excelMimeTypes,
   applicationMimeTypes,
   imageMimeTypes,
-  /** Supported by LC Code Interpreter PAI */
+  videoMimeTypes,
+  audioMimeTypes,
+  /** Supported by LC Code Interpreter API */
   /^image\/(svg|svg\+xml)$/,
 ];
 
@@ -139,6 +182,7 @@ export const codeTypeMapping: { [key: string]: string } = {
   c: 'text/x-c',
   cs: 'text/x-csharp',
   cpp: 'text/x-c++',
+  h: 'text/x-h',
   md: 'text/markdown',
   php: 'text/x-php',
   py: 'text/x-python',
@@ -156,7 +200,7 @@ export const codeTypeMapping: { [key: string]: string } = {
 };
 
 export const retrievalMimeTypes = [
-  /^(text\/(x-c|x-c\+\+|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|vtt|xml))$/,
+  /^(text\/(x-c|x-c\+\+|x-h|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|vtt|xml))$/,
   /^(application\/(json|pdf|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)))$/,
 ];
 
@@ -165,6 +209,7 @@ export const megabyte = 1024 * 1024;
 export const mbToBytes = (mb: number): number => mb * megabyte;
 
 const defaultSizeLimit = mbToBytes(512);
+const defaultTokenLimit = 100000;
 const assistantsFileConfig = {
   fileLimit: 10,
   fileSizeLimit: defaultSizeLimit,
@@ -178,6 +223,13 @@ export const fileConfig = {
     [EModelEndpoint.assistants]: assistantsFileConfig,
     [EModelEndpoint.azureAssistants]: assistantsFileConfig,
     [EModelEndpoint.agents]: assistantsFileConfig,
+    [EModelEndpoint.anthropic]: {
+      fileLimit: 10,
+      fileSizeLimit: defaultSizeLimit,
+      totalSizeLimit: defaultSizeLimit,
+      supportedMimeTypes,
+      disabled: false,
+    },
     default: {
       fileLimit: 10,
       fileSizeLimit: defaultSizeLimit,
@@ -188,6 +240,22 @@ export const fileConfig = {
   },
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
+  fileTokenLimit: defaultTokenLimit,
+  clientImageResize: {
+    enabled: false,
+    maxWidth: 1900,
+    maxHeight: 1900,
+    quality: 0.92,
+  },
+  ocr: {
+    supportedMimeTypes: defaultOCRMimeTypes,
+  },
+  text: {
+    supportedMimeTypes: defaultTextMimeTypes,
+  },
+  stt: {
+    supportedMimeTypes: defaultSTTMimeTypes,
+  },
   checkType: function (fileType: string, supportedTypes: RegExp[] = supportedMimeTypes) {
     return supportedTypes.some((regex) => regex.test(fileType));
   },
@@ -222,10 +290,29 @@ export const fileConfigSchema = z.object({
   endpoints: z.record(endpointFileConfigSchema).optional(),
   serverFileSizeLimit: z.number().min(0).optional(),
   avatarSizeLimit: z.number().min(0).optional(),
+  fileTokenLimit: z.number().min(0).optional(),
   imageGeneration: z
     .object({
       percentage: z.number().min(0).max(100).optional(),
       px: z.number().min(0).optional(),
+    })
+    .optional(),
+  clientImageResize: z
+    .object({
+      enabled: z.boolean().optional(),
+      maxWidth: z.number().min(0).optional(),
+      maxHeight: z.number().min(0).optional(),
+      quality: z.number().min(0).max(1).optional(),
+    })
+    .optional(),
+  ocr: z
+    .object({
+      supportedMimeTypes: supportedMimeTypesSchema.optional(),
+    })
+    .optional(),
+  text: z
+    .object({
+      supportedMimeTypes: supportedMimeTypesSchema.optional(),
     })
     .optional(),
 });
@@ -243,7 +330,21 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
   }, []);
 
 export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | undefined): FileConfig {
-  const mergedConfig = fileConfig as FileConfig;
+  const mergedConfig: FileConfig = {
+    ...fileConfig,
+    ocr: {
+      ...fileConfig.ocr,
+      supportedMimeTypes: fileConfig.ocr?.supportedMimeTypes || [],
+    },
+    text: {
+      ...fileConfig.text,
+      supportedMimeTypes: fileConfig.text?.supportedMimeTypes || [],
+    },
+    stt: {
+      ...fileConfig.stt,
+      supportedMimeTypes: fileConfig.stt?.supportedMimeTypes || [],
+    },
+  };
   if (!dynamic) {
     return mergedConfig;
   }
@@ -254,6 +355,38 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
 
   if (dynamic.avatarSizeLimit !== undefined) {
     mergedConfig.avatarSizeLimit = mbToBytes(dynamic.avatarSizeLimit);
+  }
+
+  if (dynamic.fileTokenLimit !== undefined) {
+    mergedConfig.fileTokenLimit = dynamic.fileTokenLimit;
+  }
+
+  // Merge clientImageResize configuration
+  if (dynamic.clientImageResize !== undefined) {
+    mergedConfig.clientImageResize = {
+      ...mergedConfig.clientImageResize,
+      ...dynamic.clientImageResize,
+    };
+  }
+
+  if (dynamic.ocr !== undefined) {
+    mergedConfig.ocr = {
+      ...mergedConfig.ocr,
+      ...dynamic.ocr,
+    };
+    if (dynamic.ocr.supportedMimeTypes) {
+      mergedConfig.ocr.supportedMimeTypes = convertStringsToRegex(dynamic.ocr.supportedMimeTypes);
+    }
+  }
+
+  if (dynamic.text !== undefined) {
+    mergedConfig.text = {
+      ...mergedConfig.text,
+      ...dynamic.text,
+    };
+    if (dynamic.text.supportedMimeTypes) {
+      mergedConfig.text.supportedMimeTypes = convertStringsToRegex(dynamic.text.supportedMimeTypes);
+    }
   }
 
   if (!dynamic.endpoints) {

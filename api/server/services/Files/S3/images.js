@@ -1,11 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
+const { logger } = require('@librechat/data-schemas');
 const { resizeImageBuffer } = require('../images/resize');
-const { updateUser } = require('~/models/userMethods');
+const { updateUser, updateFile } = require('~/models');
 const { saveBufferToS3 } = require('./crud');
-const { updateFile } = require('~/models/File');
-const { logger } = require('~/config');
 
 const defaultBasePath = 'images';
 
@@ -13,7 +12,7 @@ const defaultBasePath = 'images';
  * Resizes, converts, and uploads an image file to S3.
  *
  * @param {Object} params
- * @param {import('express').Request} params.req - Express request (expects user and app.locals.imageOutputType).
+ * @param {import('express').Request} params.req - Express request (expects `user` and `appConfig.imageOutputType`).
  * @param {Express.Multer.File} params.file - File object from Multer.
  * @param {string} params.file_id - Unique file identifier.
  * @param {any} params.endpoint - Endpoint identifier used in image processing.
@@ -30,6 +29,7 @@ async function uploadImageToS3({
   basePath = defaultBasePath,
 }) {
   try {
+    const appConfig = req.config;
     const inputFilePath = file.path;
     const inputBuffer = await fs.promises.readFile(inputFilePath);
     const {
@@ -42,14 +42,12 @@ async function uploadImageToS3({
 
     let processedBuffer;
     let fileName = `${file_id}__${path.basename(inputFilePath)}`;
-    const targetExtension = `.${req.app.locals.imageOutputType}`;
+    const targetExtension = `.${appConfig.imageOutputType}`;
 
     if (extension.toLowerCase() === targetExtension) {
       processedBuffer = resizedBuffer;
     } else {
-      processedBuffer = await sharp(resizedBuffer)
-        .toFormat(req.app.locals.imageOutputType)
-        .toBuffer();
+      processedBuffer = await sharp(resizedBuffer).toFormat(appConfig.imageOutputType).toBuffer();
       fileName = fileName.replace(new RegExp(path.extname(fileName) + '$'), targetExtension);
       if (!path.extname(fileName)) {
         fileName += targetExtension;
@@ -95,15 +93,28 @@ async function prepareImageURLS3(req, file) {
  * @param {Buffer} params.buffer - Avatar image buffer.
  * @param {string} params.userId - User's unique identifier.
  * @param {string} params.manual - 'true' or 'false' flag for manual update.
+ * @param {string} [params.agentId] - Optional agent ID if this is an agent avatar.
  * @param {string} [params.basePath='images'] - Base path in the bucket.
  * @returns {Promise<string>} Signed URL of the uploaded avatar.
  */
-async function processS3Avatar({ buffer, userId, manual, basePath = defaultBasePath }) {
+async function processS3Avatar({ buffer, userId, manual, agentId, basePath = defaultBasePath }) {
   try {
-    const downloadURL = await saveBufferToS3({ userId, buffer, fileName: 'avatar.png', basePath });
-    if (manual === 'true') {
+    const metadata = await sharp(buffer).metadata();
+    const extension = metadata.format === 'gif' ? 'gif' : 'png';
+    const timestamp = new Date().getTime();
+
+    /** Unique filename with timestamp and optional agent ID */
+    const fileName = agentId
+      ? `agent-${agentId}-avatar-${timestamp}.${extension}`
+      : `avatar-${timestamp}.${extension}`;
+
+    const downloadURL = await saveBufferToS3({ userId, buffer, fileName, basePath });
+
+    // Only update user record if this is a user avatar (manual === 'true')
+    if (manual === 'true' && !agentId) {
       await updateUser(userId, { avatar: downloadURL });
     }
+
     return downloadURL;
   } catch (error) {
     logger.error('[processS3Avatar] Error processing S3 avatar:', error.message);

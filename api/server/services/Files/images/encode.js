@@ -1,4 +1,6 @@
 const axios = require('axios');
+const { logAxiosError } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const {
   FileSources,
   VisionModes,
@@ -7,8 +9,6 @@ const {
   EModelEndpoint,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { logAxiosError } = require('~/utils');
-const { logger } = require('~/config');
 
 /**
  * Converts a readable stream to a base64 encoded string.
@@ -82,19 +82,18 @@ const blobStorageSources = new Set([FileSources.azure_blob, FileSources.s3]);
 
 /**
  * Encodes and formats the given files.
- * @param {Express.Request} req - The request object.
+ * @param {ServerRequest} req - The request object.
  * @param {Array<MongoFile>} files - The array of files to encode and format.
  * @param {EModelEndpoint} [endpoint] - Optional: The endpoint for the image.
  * @param {string} [mode] - Optional: The endpoint mode for the image.
- * @returns {Promise<{ text: string; files: MongoFile[]; image_urls: MessageContentImageUrl[] }>} - A promise that resolves to the result object containing the encoded images and file details.
+ * @returns {Promise<{ files: MongoFile[]; image_urls: MessageContentImageUrl[] }>} - A promise that resolves to the result object containing the encoded images and file details.
  */
 async function encodeAndFormat(req, files, endpoint, mode) {
   const promises = [];
   /** @type {Record<FileSources, Pick<ReturnType<typeof getStrategyFunctions>, 'prepareImagePayload' | 'getDownloadStream'>>} */
   const encodingMethods = {};
-  /** @type {{ text: string; files: MongoFile[]; image_urls: MessageContentImageUrl[] }} */
+  /** @type {{ files: MongoFile[]; image_urls: MessageContentImageUrl[] }} */
   const result = {
-    text: '',
     files: [],
     image_urls: [],
   };
@@ -106,9 +105,6 @@ async function encodeAndFormat(req, files, endpoint, mode) {
   for (let file of files) {
     /** @type {FileSources} */
     const source = file.source ?? FileSources.local;
-    if (source === FileSources.text && file.text) {
-      result.text += `${!result.text ? 'Attached document(s):\n```md' : '\n\n---\n\n'}# "${file.filename}"\n${file.text}\n`;
-    }
 
     if (!file.height) {
       promises.push([file, null]);
@@ -136,7 +132,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
         base64Data = null;
         continue;
       } catch (error) {
-        // Error handling code
+        logger.error('Error processing image from blob storage:', error);
       }
     } else if (source !== FileSources.local && base64Only.has(endpoint)) {
       const [_file, imageURL] = await preparePayload(req, file);
@@ -144,10 +140,6 @@ async function encodeAndFormat(req, files, endpoint, mode) {
       continue;
     }
     promises.push(preparePayload(req, file));
-  }
-
-  if (result.text) {
-    result.text += '\n```';
   }
 
   const detail = req.body.imageDetail ?? ImageDetail.auto;

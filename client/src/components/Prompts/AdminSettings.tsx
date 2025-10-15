@@ -1,10 +1,9 @@
+import { useMemo, useEffect, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ExternalLink } from 'lucide-react';
-import { useMemo, useEffect, useState } from 'react';
 import { ShieldEllipsis } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'librechat-data-provider';
-import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
 import {
   OGDialog,
   OGDialogTitle,
@@ -13,11 +12,12 @@ import {
   Button,
   Switch,
   DropdownPopup,
-} from '~/components/ui';
+  OGDialogTemplate,
+  useToastContext,
+} from '@librechat/client';
+import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
 import { useUpdatePromptPermissionsMutation } from '~/data-provider';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize, useAuthContext } from '~/hooks';
-import { useToastContext } from '~/Providers';
 
 type FormValues = Record<Permissions, boolean>;
 
@@ -81,7 +81,7 @@ const AdminSettings = () => {
 
   const defaultValues = useMemo(() => {
     if (roles?.[selectedRole]?.permissions) {
-      return roles[selectedRole].permissions[PermissionTypes.PROMPTS];
+      return roles[selectedRole]?.permissions[PermissionTypes.PROMPTS];
     }
     return roleDefaults[selectedRole].permissions[PermissionTypes.PROMPTS];
   }, [roles, selectedRole]);
@@ -99,11 +99,7 @@ const AdminSettings = () => {
   });
 
   useEffect(() => {
-    if (roles?.[selectedRole]?.permissions?.[PermissionTypes.PROMPTS]) {
-      reset(roles[selectedRole].permissions[PermissionTypes.PROMPTS]);
-    } else {
-      reset(roleDefaults[selectedRole].permissions[PermissionTypes.PROMPTS]);
-    }
+    reset(roles?.[selectedRole]?.permissions?.[PermissionTypes.PROMPTS]);
   }, [roles, selectedRole, reset]);
 
   if (user?.role !== SystemRoles.ADMIN) {
@@ -113,7 +109,7 @@ const AdminSettings = () => {
   const labelControllerData = [
     {
       promptPerm: Permissions.SHARED_GLOBAL,
-      label: localize('com_ui_prompts_allow_share_global'),
+      label: localize('com_ui_prompts_allow_share'),
     },
     {
       promptPerm: Permissions.CREATE,
@@ -157,7 +153,7 @@ const AdminSettings = () => {
             <span className="hidden sm:flex">{localize('com_ui_admin')}</span>
           </Button>
         </OGDialogTrigger>
-        <OGDialogContent className="w-11/12 max-w-lg border-border-light bg-surface-primary text-text-primary">
+        <OGDialogContent className="max-w-lg border-border-light bg-surface-primary text-text-primary lg:w-1/4">
           <OGDialogTitle>
             {`${localize('com_ui_admin_settings')} - ${localize('com_ui_prompts')}`}
           </OGDialogTitle>

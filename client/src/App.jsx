@@ -4,10 +4,10 @@ import { RouterProvider } from 'react-router-dom';
 import * as RadixToast from '@radix-ui/react-toast';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { Toast, ThemeProvider, ToastProvider } from '@librechat/client';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
-import { ScreenshotProvider, ThemeProvider, useApiErrorBoundary } from './hooks';
-import { ToastProvider } from './Providers';
-import Toast from './components/ui/Toast';
+import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
+import { getThemeFromEnv } from './utils/getThemeFromEnv';
 import { LiveAnnouncer } from '~/a11y';
 import { router } from './routes';
 
@@ -24,11 +24,23 @@ const App = () => {
     }),
   });
 
+  // Load theme from environment variables if available
+  const envTheme = getThemeFromEnv();
+
   return (
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
         <LiveAnnouncer>
-          <ThemeProvider>
+          <ThemeProvider
+            // Only pass initialTheme and themeRGB if environment theme exists
+            // This allows localStorage values to persist when no env theme is set
+            {...(envTheme && { initialTheme: 'system', themeRGB: envTheme })}
+          >
+            {/* The ThemeProvider will automatically:
+                1. Apply dark/light mode classes
+                2. Apply custom theme colors if envTheme is provided
+                3. Otherwise use stored theme preferences from localStorage
+                4. Fall back to default theme colors if nothing is stored */}
             <RadixToast.Provider>
               <ToastProvider>
                 <DndProvider backend={HTML5Backend}>
@@ -50,7 +62,7 @@ export default () => (
   <ScreenshotProvider>
     <App />
     <iframe
-      src="/assets/silence.mp3"
+      src="assets/silence.mp3"
       allow="autoplay"
       id="audio"
       title="audio-silence"

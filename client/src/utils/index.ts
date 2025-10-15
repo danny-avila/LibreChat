@@ -4,8 +4,9 @@ export * from './map';
 export * from './json';
 export * from './files';
 export * from './latex';
-export * from './theme';
 export * from './forms';
+export * from './agents';
+export * from './drafts';
 export * from './convos';
 export * from './presets';
 export * from './prompts';
@@ -13,17 +14,21 @@ export * from './textarea';
 export * from './messages';
 export * from './languages';
 export * from './endpoints';
+export * from './resources';
+export * from './roles';
 export * from './localStorage';
 export * from './promptGroups';
+export * from './email';
+export * from './timestamps';
 export { default as cn } from './cn';
 export { default as logger } from './logger';
-export { default as buildTree } from './buildTree';
 export { default as scaleImage } from './scaleImage';
 export { default as getLoginError } from './getLoginError';
 export { default as cleanupPreset } from './cleanupPreset';
 export { default as buildDefaultConvo } from './buildDefaultConvo';
 export { default as getDefaultEndpoint } from './getDefaultEndpoint';
 export { default as createChatSearchParams } from './createChatSearchParams';
+export { getThemeFromEnv } from './getThemeFromEnv';
 
 export const languages = [
   'java',

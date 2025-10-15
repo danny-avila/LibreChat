@@ -1,16 +1,24 @@
 name: Detect Unused i18next Strings
 
+# This workflow checks for unused i18n keys in translation files.
+# It has special handling for:
+# - com_ui_special_var_* keys that are dynamically constructed
+# - com_agents_category_* keys that are stored in the database and used dynamically
+
 on:
   pull_request:
     paths:
       - "client/src/**"
       - "api/**"
+      - "packages/data-provider/src/**"
+      - "packages/client/**"
+      - "packages/data-schemas/src/**"
 
 jobs:
   detect-unused-i18n-keys:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write  # Required for posting PR comments
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -22,7 +30,7 @@ jobs:
 
           # Define paths
           I18N_FILE="client/src/locales/en/translation.json"
-          SOURCE_DIRS=("client/src" "api" "packages/data-provider/src")
+          SOURCE_DIRS=("client/src" "api" "packages/data-provider/src" "packages/client" "packages/data-schemas/src")
 
           # Check if translation file exists
           if [[ ! -f "$I18N_FILE" ]]; then
@@ -45,6 +53,31 @@ jobs:
               # Check if TSpecialVarLabel is used in the codebase
               for DIR in "${SOURCE_DIRS[@]}"; do
                 if grep -r --include=\*.{js,jsx,ts,tsx} -q "TSpecialVarLabel" "$DIR"; then
+                  FOUND=true
+                  break
+                fi
+              done
+              
+              # Also check if the key is directly used somewhere
+              if [[ "$FOUND" == false ]]; then
+                for DIR in "${SOURCE_DIRS[@]}"; do
+                  if grep -r --include=\*.{js,jsx,ts,tsx} -q "$KEY" "$DIR"; then
+                    FOUND=true
+                    break
+                  fi
+                done
+              fi
+            # Special case for agent category keys that are dynamically used from database
+            elif [[ "$KEY" == com_agents_category_* ]]; then
+              # Check if agent category localization is being used
+              for DIR in "${SOURCE_DIRS[@]}"; do
+                # Check for dynamic category label/description usage
+                if grep -r --include=\*.{js,jsx,ts,tsx} -E "category\.(label|description).*startsWith.*['\"]com_" "$DIR" > /dev/null 2>&1 || \
+                   # Check for the method that defines these keys
+                   grep -r --include=\*.{js,jsx,ts,tsx} "ensureDefaultCategories" "$DIR" > /dev/null 2>&1 || \
+                   # Check for direct usage in agentCategory.ts
+                   grep -r --include=\*.ts -E "label:.*['\"]$KEY['\"]" "$DIR" > /dev/null 2>&1 || \
+                   grep -r --include=\*.ts -E "description:.*['\"]$KEY['\"]" "$DIR" > /dev/null 2>&1; then
                   FOUND=true
                   break
                 fi

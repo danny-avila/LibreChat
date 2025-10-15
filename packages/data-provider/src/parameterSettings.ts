@@ -1,9 +1,11 @@
 import {
+  Verbosity,
   ImageDetail,
   EModelEndpoint,
   openAISettings,
   googleSettings,
   ReasoningEffort,
+  ReasoningSummary,
   BedrockProviders,
   anthropicSettings,
 } from './types';
@@ -71,6 +73,11 @@ const baseDefinitions: Record<string, SettingDefinition> = {
     default: ImageDetail.auto,
     component: 'slider',
     options: [ImageDetail.low, ImageDetail.auto, ImageDetail.high],
+    enumMappings: {
+      [ImageDetail.low]: 'com_ui_low',
+      [ImageDetail.auto]: 'com_ui_auto',
+      [ImageDetail.high]: 'com_ui_high',
+    },
     optionType: 'conversation',
     columnSpan: 2,
   },
@@ -83,7 +90,7 @@ const createDefinition = (
   return { ...base, ...overrides } as SettingDefinition;
 };
 
-const librechat: Record<string, SettingDefinition> = {
+export const librechat = {
   modelLabel: {
     key: 'modelLabel',
     label: 'com_endpoint_custom_name',
@@ -94,7 +101,7 @@ const librechat: Record<string, SettingDefinition> = {
     placeholder: 'com_endpoint_openai_custom_name_placeholder',
     placeholderCode: true,
     optionType: 'conversation',
-  },
+  } as const,
   maxContextTokens: {
     key: 'maxContextTokens',
     label: 'com_endpoint_context_tokens',
@@ -107,7 +114,7 @@ const librechat: Record<string, SettingDefinition> = {
     descriptionCode: true,
     optionType: 'model',
     columnSpan: 2,
-  },
+  } as const,
   resendFiles: {
     key: 'resendFiles',
     label: 'com_endpoint_plug_resend_files',
@@ -120,7 +127,7 @@ const librechat: Record<string, SettingDefinition> = {
     optionType: 'conversation',
     showDefault: false,
     columnSpan: 2,
-  },
+  } as const,
   promptPrefix: {
     key: 'promptPrefix',
     label: 'com_endpoint_prompt_prefix',
@@ -131,7 +138,19 @@ const librechat: Record<string, SettingDefinition> = {
     placeholder: 'com_endpoint_openai_prompt_prefix_placeholder',
     placeholderCode: true,
     optionType: 'model',
-  },
+  } as const,
+  fileTokenLimit: {
+    key: 'fileTokenLimit',
+    label: 'com_ui_file_token_limit',
+    labelCode: true,
+    description: 'com_ui_file_token_limit_desc',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
+    placeholderCode: true,
+    type: 'number',
+    component: 'input',
+    columnSpan: 2,
+  } as const,
 };
 
 const openAIParams: Record<string, SettingDefinition> = {
@@ -211,12 +230,107 @@ const openAIParams: Record<string, SettingDefinition> = {
     description: 'com_endpoint_openai_reasoning_effort',
     descriptionCode: true,
     type: 'enum',
-    default: ReasoningEffort.medium,
+    default: ReasoningEffort.none,
     component: 'slider',
-    options: [ReasoningEffort.low, ReasoningEffort.medium, ReasoningEffort.high],
+    options: [
+      ReasoningEffort.none,
+      ReasoningEffort.minimal,
+      ReasoningEffort.low,
+      ReasoningEffort.medium,
+      ReasoningEffort.high,
+    ],
+    enumMappings: {
+      [ReasoningEffort.none]: 'com_ui_none',
+      [ReasoningEffort.minimal]: 'com_ui_minimal',
+      [ReasoningEffort.low]: 'com_ui_low',
+      [ReasoningEffort.medium]: 'com_ui_medium',
+      [ReasoningEffort.high]: 'com_ui_high',
+    },
     optionType: 'model',
     columnSpan: 4,
   },
+  useResponsesApi: {
+    key: 'useResponsesApi',
+    label: 'com_endpoint_use_responses_api',
+    labelCode: true,
+    description: 'com_endpoint_openai_use_responses_api',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  web_search: {
+    key: 'web_search',
+    label: 'com_ui_web_search',
+    labelCode: true,
+    description: 'com_endpoint_openai_use_web_search',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  reasoning_summary: {
+    key: 'reasoning_summary',
+    label: 'com_endpoint_reasoning_summary',
+    labelCode: true,
+    description: 'com_endpoint_openai_reasoning_summary',
+    descriptionCode: true,
+    type: 'enum',
+    default: ReasoningSummary.none,
+    component: 'slider',
+    options: [
+      ReasoningSummary.none,
+      ReasoningSummary.auto,
+      ReasoningSummary.concise,
+      ReasoningSummary.detailed,
+    ],
+    enumMappings: {
+      [ReasoningSummary.none]: 'com_ui_none',
+      [ReasoningSummary.auto]: 'com_ui_auto',
+      [ReasoningSummary.concise]: 'com_ui_concise',
+      [ReasoningSummary.detailed]: 'com_ui_detailed',
+    },
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  verbosity: {
+    key: 'verbosity',
+    label: 'com_endpoint_verbosity',
+    labelCode: true,
+    description: 'com_endpoint_openai_verbosity',
+    descriptionCode: true,
+    type: 'enum',
+    default: Verbosity.none,
+    component: 'slider',
+    options: [Verbosity.none, Verbosity.low, Verbosity.medium, Verbosity.high],
+    enumMappings: {
+      [Verbosity.none]: 'com_ui_none',
+      [Verbosity.low]: 'com_ui_low',
+      [Verbosity.medium]: 'com_ui_medium',
+      [Verbosity.high]: 'com_ui_high',
+    },
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  disableStreaming: {
+    key: 'disableStreaming',
+    label: 'com_endpoint_disable_streaming_label',
+    labelCode: true,
+    description: 'com_endpoint_disable_streaming',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  } as const,
 };
 
 const anthropic: Record<string, SettingDefinition> = {
@@ -314,6 +428,19 @@ const anthropic: Record<string, SettingDefinition> = {
     optionType: 'conversation',
     columnSpan: 2,
   },
+  web_search: {
+    key: 'web_search',
+    label: 'com_ui_web_search',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_use_web_search',
+    descriptionCode: true,
+    type: 'boolean',
+    default: anthropicSettings.web_search.default,
+    component: 'switch',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
+  },
 };
 
 const bedrock: Record<string, SettingDefinition> = {
@@ -347,7 +474,9 @@ const bedrock: Record<string, SettingDefinition> = {
     labelCode: true,
     type: 'number',
     component: 'input',
-    placeholder: 'com_endpoint_anthropic_maxoutputtokens',
+    description: 'com_endpoint_anthropic_maxoutputtokens',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
     placeholderCode: true,
     optionType: 'model',
     columnSpan: 2,
@@ -450,6 +579,50 @@ const google: Record<string, SettingDefinition> = {
     optionType: 'model',
     columnSpan: 2,
   },
+  thinking: {
+    key: 'thinking',
+    label: 'com_endpoint_thinking',
+    labelCode: true,
+    description: 'com_endpoint_google_thinking',
+    descriptionCode: true,
+    type: 'boolean',
+    default: googleSettings.thinking.default,
+    component: 'switch',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  thinkingBudget: {
+    key: 'thinkingBudget',
+    label: 'com_endpoint_thinking_budget',
+    labelCode: true,
+    description: 'com_endpoint_google_thinking_budget',
+    descriptionCode: true,
+    placeholder: 'com_ui_auto',
+    placeholderCode: true,
+    type: 'number',
+    component: 'input',
+    range: {
+      min: googleSettings.thinkingBudget.min,
+      max: googleSettings.thinkingBudget.max,
+      step: googleSettings.thinkingBudget.step,
+    },
+    optionType: 'conversation',
+    columnSpan: 2,
+  },
+  web_search: {
+    key: 'web_search',
+    label: 'com_endpoint_use_search_grounding',
+    labelCode: true,
+    description: 'com_endpoint_google_use_search_grounding',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
 };
 
 const googleConfig: SettingsConfiguration = [
@@ -461,6 +634,10 @@ const googleConfig: SettingsConfiguration = [
   google.topP,
   google.topK,
   librechat.resendFiles,
+  google.thinking,
+  google.thinkingBudget,
+  google.web_search,
+  librechat.fileTokenLimit,
 ];
 
 const googleCol1: SettingsConfiguration = [
@@ -476,6 +653,10 @@ const googleCol2: SettingsConfiguration = [
   google.topP,
   google.topK,
   librechat.resendFiles,
+  google.thinking,
+  google.thinkingBudget,
+  google.web_search,
+  librechat.fileTokenLimit,
 ];
 
 const openAI: SettingsConfiguration = [
@@ -490,7 +671,13 @@ const openAI: SettingsConfiguration = [
   baseDefinitions.stop,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
+  openAIParams.web_search,
   openAIParams.reasoning_effort,
+  openAIParams.useResponsesApi,
+  openAIParams.reasoning_summary,
+  openAIParams.verbosity,
+  openAIParams.disableStreaming,
+  librechat.fileTokenLimit,
 ];
 
 const openAICol1: SettingsConfiguration = [
@@ -507,9 +694,15 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.frequency_penalty,
   openAIParams.presence_penalty,
   baseDefinitions.stop,
-  openAIParams.reasoning_effort,
   librechat.resendFiles,
   baseDefinitions.imageDetail,
+  openAIParams.reasoning_effort,
+  openAIParams.reasoning_summary,
+  openAIParams.verbosity,
+  openAIParams.useResponsesApi,
+  openAIParams.web_search,
+  openAIParams.disableStreaming,
+  librechat.fileTokenLimit,
 ];
 
 const anthropicConfig: SettingsConfiguration = [
@@ -524,6 +717,8 @@ const anthropicConfig: SettingsConfiguration = [
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  anthropic.web_search,
+  librechat.fileTokenLimit,
 ];
 
 const anthropicCol1: SettingsConfiguration = [
@@ -542,6 +737,8 @@ const anthropicCol2: SettingsConfiguration = [
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  anthropic.web_search,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockAnthropic: SettingsConfiguration = [
@@ -557,6 +754,7 @@ const bedrockAnthropic: SettingsConfiguration = [
   bedrock.region,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockMistral: SettingsConfiguration = [
@@ -568,6 +766,7 @@ const bedrockMistral: SettingsConfiguration = [
   mistral.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockCohere: SettingsConfiguration = [
@@ -579,6 +778,7 @@ const bedrockCohere: SettingsConfiguration = [
   cohere.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockGeneral: SettingsConfiguration = [
@@ -589,6 +789,7 @@ const bedrockGeneral: SettingsConfiguration = [
   meta.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockAnthropicCol1: SettingsConfiguration = [
@@ -608,6 +809,7 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   bedrock.region,
   anthropic.thinking,
   anthropic.thinkingBudget,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockMistralCol1: SettingsConfiguration = [
@@ -623,6 +825,7 @@ const bedrockMistralCol2: SettingsConfiguration = [
   mistral.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockCohereCol1: SettingsConfiguration = [
@@ -638,6 +841,7 @@ const bedrockCohereCol2: SettingsConfiguration = [
   cohere.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 const bedrockGeneralCol1: SettingsConfiguration = [
@@ -652,6 +856,7 @@ const bedrockGeneralCol2: SettingsConfiguration = [
   meta.topP,
   librechat.resendFiles,
   bedrock.region,
+  librechat.fileTokenLimit,
 ];
 
 export const paramSettings: Record<string, SettingsConfiguration | undefined> = {
@@ -682,9 +887,9 @@ const bedrockGeneralColumns = {
 export const presetSettings: Record<
   string,
   | {
-  col1: SettingsConfiguration;
-  col2: SettingsConfiguration;
-}
+      col1: SettingsConfiguration;
+      col2: SettingsConfiguration;
+    }
   | undefined
 > = {
   [EModelEndpoint.openAI]: openAIColumns,

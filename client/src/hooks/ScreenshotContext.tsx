@@ -1,6 +1,6 @@
 import { createContext, useRef, useContext, RefObject } from 'react';
 import { toCanvas } from 'html-to-image';
-import { ThemeContext } from '~/hooks/ThemeContext';
+import { ThemeContext, isDark } from '@librechat/client';
 
 type ScreenshotContextType = {
   ref?: RefObject<HTMLDivElement>;
@@ -17,11 +17,7 @@ export const useScreenshot = () => {
       throw new Error('You should provide correct html node.');
     }
 
-    let isDark = theme === 'dark';
-    if (theme === 'system') {
-      isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-    const backgroundColor = isDark ? '#171717' : 'white';
+    const backgroundColor = isDark(theme) ? '#171717' : 'white';
 
     const canvas = await toCanvas(node, {
       backgroundColor,

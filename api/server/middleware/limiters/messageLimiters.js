@@ -1,16 +1,15 @@
 const rateLimit = require('express-rate-limit');
-const { RedisStore } = require('rate-limit-redis');
+const { limiterCache } = require('@librechat/api');
+const { ViolationTypes } = require('librechat-data-provider');
 const denyRequest = require('~/server/middleware/denyRequest');
-const ioredisClient = require('~/cache/ioredisClient');
-const { isEnabled } = require('~/server/utils');
 const { logViolation } = require('~/cache');
-const { logger } = require('~/config');
 
 const {
   MESSAGE_IP_MAX = 40,
   MESSAGE_IP_WINDOW = 1,
   MESSAGE_USER_MAX = 40,
   MESSAGE_USER_WINDOW = 1,
+  MESSAGE_VIOLATION_SCORE: score,
 } = process.env;
 
 const ipWindowMs = MESSAGE_IP_WINDOW * 60 * 1000;
@@ -31,7 +30,7 @@ const userWindowInMinutes = userWindowMs / 60000;
  */
 const createHandler = (ip = true) => {
   return async (req, res) => {
-    const type = 'message_limit';
+    const type = ViolationTypes.MESSAGE_LIMIT;
     const errorMessage = {
       type,
       max: ip ? ipMax : userMax,
@@ -39,7 +38,7 @@ const createHandler = (ip = true) => {
       windowInMinutes: ip ? ipWindowInMinutes : userWindowInMinutes,
     };
 
-    await logViolation(req, res, type, errorMessage);
+    await logViolation(req, res, type, errorMessage, score);
     return await denyRequest(req, res, errorMessage);
   };
 };
@@ -51,6 +50,7 @@ const ipLimiterOptions = {
   windowMs: ipWindowMs,
   max: ipMax,
   handler: createHandler(),
+  store: limiterCache('message_ip_limiter'),
 };
 
 const userLimiterOptions = {
@@ -60,22 +60,8 @@ const userLimiterOptions = {
   keyGenerator: function (req) {
     return req.user?.id; // Use the user ID or NULL if not available
   },
+  store: limiterCache('message_user_limiter'),
 };
-
-if (isEnabled(process.env.USE_REDIS) && ioredisClient) {
-  logger.debug('Using Redis for message rate limiters.');
-  const sendCommand = (...args) => ioredisClient.call(...args);
-  const ipStore = new RedisStore({
-    sendCommand,
-    prefix: 'message_ip_limiter:',
-  });
-  const userStore = new RedisStore({
-    sendCommand,
-    prefix: 'message_user_limiter:',
-  });
-  ipLimiterOptions.store = ipStore;
-  userLimiterOptions.store = userStore;
-}
 
 /**
  * Message request rate limiter by IP

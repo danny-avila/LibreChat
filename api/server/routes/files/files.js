@@ -1,12 +1,15 @@
 const fs = require('fs').promises;
 const express = require('express');
 const { EnvVar } = require('@librechat/agents');
+const { logger } = require('@librechat/data-schemas');
 const {
   Time,
   isUUID,
   CacheKeys,
   FileSources,
+  ResourceType,
   EModelEndpoint,
+  PermissionBits,
   isAgentsEndpoint,
   checkOpenAIStorage,
 } = require('librechat-data-provider');
@@ -16,22 +19,27 @@ const {
   processDeleteRequest,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
+const { fileAccess } = require('~/server/middleware/accessResources/fileAccess');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
+const { checkPermission } = require('~/server/services/PermissionService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
+const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { getFiles, batchUpdateFiles } = require('~/models/File');
+const { cleanFileName } = require('~/server/utils/files');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
-const { logger } = require('~/config');
+const { Readable } = require('stream');
 
 const router = express.Router();
 
 router.get('/', async (req, res) => {
   try {
+    const appConfig = req.config;
     const files = await getFiles({ user: req.user.id });
-    if (req.app.locals.fileStrategy === FileSources.s3) {
+    if (appConfig.fileStrategy === FileSources.s3) {
       try {
         const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
         const alreadyChecked = await cache.get(req.user.id);
@@ -50,9 +58,66 @@ router.get('/', async (req, res) => {
   }
 });
 
+/**
+ * Get files specific to an agent
+ * @route GET /files/agent/:agent_id
+ * @param {string} agent_id - The agent ID to get files for
+ * @returns {Promise<TFile[]>} Array of files attached to the agent
+ */
+router.get('/agent/:agent_id', async (req, res) => {
+  try {
+    const { agent_id } = req.params;
+    const userId = req.user.id;
+
+    if (!agent_id) {
+      return res.status(400).json({ error: 'Agent ID is required' });
+    }
+
+    const agent = await getAgent({ id: agent_id });
+    if (!agent) {
+      return res.status(200).json([]);
+    }
+
+    if (agent.author.toString() !== userId) {
+      const hasEditPermission = await checkPermission({
+        userId,
+        role: req.user.role,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        requiredPermission: PermissionBits.EDIT,
+      });
+
+      if (!hasEditPermission) {
+        return res.status(200).json([]);
+      }
+    }
+
+    const agentFileIds = [];
+    if (agent.tool_resources) {
+      for (const [, resource] of Object.entries(agent.tool_resources)) {
+        if (resource?.file_ids && Array.isArray(resource.file_ids)) {
+          agentFileIds.push(...resource.file_ids);
+        }
+      }
+    }
+
+    if (agentFileIds.length === 0) {
+      return res.status(200).json([]);
+    }
+
+    const files = await getFiles({ file_id: { $in: agentFileIds } }, null, { text: 0 });
+
+    res.status(200).json(files);
+  } catch (error) {
+    logger.error('[/files/agent/:agent_id] Error fetching agent files:', error);
+    res.status(500).json({ error: 'Failed to fetch agent files' });
+  }
+});
+
 router.get('/config', async (req, res) => {
   try {
-    res.status(200).json(req.app.locals.fileConfig);
+    const appConfig = req.config;
+    res.status(200).json(appConfig.fileConfig);
   } catch (error) {
     logger.error('[/files] Error getting fileConfig', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
@@ -86,11 +151,57 @@ router.delete('/', async (req, res) => {
 
     const fileIds = files.map((file) => file.file_id);
     const dbFiles = await getFiles({ file_id: { $in: fileIds } });
-    const unauthorizedFiles = dbFiles.filter((file) => file.user.toString() !== req.user.id);
+
+    const ownedFiles = [];
+    const nonOwnedFiles = [];
+
+    for (const file of dbFiles) {
+      if (file.user.toString() === req.user.id.toString()) {
+        ownedFiles.push(file);
+      } else {
+        nonOwnedFiles.push(file);
+      }
+    }
+
+    if (nonOwnedFiles.length === 0) {
+      await processDeleteRequest({ req, files: ownedFiles });
+      logger.debug(
+        `[/files] Files deleted successfully: ${ownedFiles
+          .filter((f) => f.file_id)
+          .map((f) => f.file_id)
+          .join(', ')}`,
+      );
+      res.status(200).json({ message: 'Files deleted successfully' });
+      return;
+    }
+
+    let authorizedFiles = [...ownedFiles];
+    let unauthorizedFiles = [];
+
+    if (req.body.agent_id && nonOwnedFiles.length > 0) {
+      const nonOwnedFileIds = nonOwnedFiles.map((f) => f.file_id);
+      const accessMap = await hasAccessToFilesViaAgent({
+        userId: req.user.id,
+        role: req.user.role,
+        fileIds: nonOwnedFileIds,
+        agentId: req.body.agent_id,
+        isDelete: true,
+      });
+
+      for (const file of nonOwnedFiles) {
+        if (accessMap.get(file.file_id)) {
+          authorizedFiles.push(file);
+        } else {
+          unauthorizedFiles.push(file);
+        }
+      }
+    } else {
+      unauthorizedFiles = nonOwnedFiles;
+    }
 
     if (unauthorizedFiles.length > 0) {
       return res.status(403).json({
-        message: 'You can only delete your own files',
+        message: 'You can only delete files you have access to',
         unauthorizedFiles: unauthorizedFiles.map((f) => f.file_id),
       });
     }
@@ -131,10 +242,10 @@ router.delete('/', async (req, res) => {
         .json({ message: 'File associations removed successfully from Azure Assistant' });
     }
 
-    await processDeleteRequest({ req, files: dbFiles });
+    await processDeleteRequest({ req, files: authorizedFiles });
 
     logger.debug(
-      `[/files] Files deleted successfully: ${files
+      `[/files] Files deleted successfully: ${authorizedFiles
         .filter((f) => f.file_id)
         .map((f) => f.file_id)
         .join(', ')}`,
@@ -188,50 +299,33 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
   }
 });
 
-router.get('/download/:userId/:file_id', async (req, res) => {
+router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   try {
     const { userId, file_id } = req.params;
     logger.debug(`File download requested by user ${userId}: ${file_id}`);
 
-    if (userId !== req.user.id) {
-      logger.warn(`${errorPrefix} forbidden: ${file_id}`);
-      return res.status(403).send('Forbidden');
-    }
-
-    const [file] = await getFiles({ file_id });
-    const errorPrefix = `File download requested by user ${userId}`;
-
-    if (!file) {
-      logger.warn(`${errorPrefix} not found: ${file_id}`);
-      return res.status(404).send('File not found');
-    }
-
-    if (!file.filepath.includes(userId)) {
-      logger.warn(`${errorPrefix} forbidden: ${file_id}`);
-      return res.status(403).send('Forbidden');
-    }
+    // Access already validated by fileAccess middleware
+    const file = req.fileAccess.file;
 
     if (checkOpenAIStorage(file.source) && !file.model) {
-      logger.warn(`${errorPrefix} has no associated model: ${file_id}`);
+      logger.warn(`File download requested by user ${userId} has no associated model: ${file_id}`);
       return res.status(400).send('The model used when creating this file is not available');
     }
 
     const { getDownloadStream } = getStrategyFunctions(file.source);
     if (!getDownloadStream) {
-      logger.warn(`${errorPrefix} has no stream method implemented: ${file.source}`);
+      logger.warn(
+        `File download requested by user ${userId} has no stream method implemented: ${file.source}`,
+      );
       return res.status(501).send('Not Implemented');
     }
 
     const setHeaders = () => {
-      res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+      const cleanedFilename = cleanFileName(file.filename);
+      res.setHeader('Content-Disposition', `attachment; filename="${cleanedFilename}"`);
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('X-File-Metadata', JSON.stringify(file));
     };
-
-    /** @type {{ body: import('stream').PassThrough } | undefined} */
-    let passThrough;
-    /** @type {ReadableStream | undefined} */
-    let fileStream;
 
     if (checkOpenAIStorage(file.source)) {
       req.body = { model: file.model };
@@ -245,17 +339,29 @@ router.get('/download/:userId/:file_id', async (req, res) => {
         overrideEndpoint: endpointMap[file.source],
       });
       logger.debug(`Downloading file ${file_id} from OpenAI`);
-      passThrough = await getDownloadStream(file_id, openai);
+      const passThrough = await getDownloadStream(file_id, openai);
       setHeaders();
       logger.debug(`File ${file_id} downloaded from OpenAI`);
-      passThrough.body.pipe(res);
+
+      // Handle both Node.js and Web streams
+      const stream =
+        passThrough.body && typeof passThrough.body.getReader === 'function'
+          ? Readable.fromWeb(passThrough.body)
+          : passThrough.body;
+
+      stream.pipe(res);
     } else {
-      fileStream = getDownloadStream(file_id);
+      const fileStream = await getDownloadStream(req, file.filepath);
+
+      fileStream.on('error', (streamError) => {
+        logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
+      });
+
       setHeaders();
       fileStream.pipe(res);
     }
   } catch (error) {
-    logger.error('Error downloading file:', error);
+    logger.error('[DOWNLOAD ROUTE] Error downloading file:', error);
     res.status(500).send('Error downloading file');
   }
 });
@@ -283,7 +389,14 @@ router.post('/', async (req, res) => {
       message += ': ' + error.message;
     }
 
-    // TODO: delete remote file if it exists
+    if (
+      error.message?.includes('Invalid file format') ||
+      error.message?.includes('No OCR result') ||
+      error.message?.includes('exceeds token limit')
+    ) {
+      message = error.message;
+    }
+
     try {
       await fs.unlink(req.file.path);
       cleanup = false;
@@ -291,13 +404,15 @@ router.post('/', async (req, res) => {
       logger.error('[/files] Error deleting file:', error);
     }
     res.status(500).json({ message });
-  }
-
-  if (cleanup) {
-    try {
-      await fs.unlink(req.file.path);
-    } catch (error) {
-      logger.error('[/files] Error deleting file after file processing:', error);
+  } finally {
+    if (cleanup) {
+      try {
+        await fs.unlink(req.file.path);
+      } catch (error) {
+        logger.error('[/files] Error deleting file after file processing:', error);
+      }
+    } else {
+      logger.debug('[/files] File processing completed without cleanup');
     }
   }
 });

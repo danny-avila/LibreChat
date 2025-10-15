@@ -59,7 +59,7 @@ export const getAvailableEndpoints = (
 
 /** Get the specified field from the endpoint config */
 export function getEndpointField<K extends keyof t.TConfig>(
-  endpointsConfig: t.TEndpointsConfig | undefined,
+  endpointsConfig: t.TEndpointsConfig | undefined | null,
   endpoint: EModelEndpoint | string | null | undefined,
   property: K,
 ): t.TConfig[K] | undefined {
@@ -246,7 +246,7 @@ export function getIconKey({
   endpointIconURL: iconURL,
 }: {
   endpoint?: string | null;
-  endpointsConfig?: t.TEndpointsConfig;
+  endpointsConfig?: t.TEndpointsConfig | null;
   endpointType?: string | null;
   endpointIconURL?: string;
 }): keyof IconsRecord {

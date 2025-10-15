@@ -7,10 +7,8 @@ import {
   Constants,
   /* @ts-ignore */
   createPayload,
-  isAgentsEndpoint,
   LocalStorageKeys,
   removeNullishValues,
-  isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
@@ -64,6 +62,7 @@ export default function useSSE(
   } = chatHelpers;
 
   const {
+    clearStepMaps,
     stepHandler,
     syncHandler,
     finalHandler,
@@ -100,11 +99,10 @@ export default function useSSE(
 
     const payloadData = createPayload(submission);
     let { payload } = payloadData;
-    if (isAssistantsEndpoint(payload.endpoint) || isAgentsEndpoint(payload.endpoint)) {
-      payload = removeNullishValues(payload) as TPayload;
-    }
+    payload = removeNullishValues(payload) as TPayload;
 
     let textIndex = null;
+    clearStepMaps();
 
     const sse = new SSE(payloadData.server, {
       payload: JSON.stringify(payload),

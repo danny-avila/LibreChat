@@ -1,16 +1,20 @@
-// abortMiddleware.js
-const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
-const { sendMessage, sendError, countTokens, isEnabled } = require('~/server/utils');
+const { logger } = require('@librechat/data-schemas');
+const { countTokens, isEnabled, sendEvent } = require('@librechat/api');
+const { isAssistantsEndpoint, ErrorTypes, Constants } = require('librechat-data-provider');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
+const { sendError } = require('~/server/middleware/error');
 const { spendTokens } = require('~/models/spendTokens');
 const abortControllers = require('./abortControllers');
 const { saveMessage, getConvo } = require('~/models');
 const { abortRun } = require('./abortRun');
-const { logger } = require('~/config');
 
 const abortDataMap = new WeakMap();
 
+/**
+ * @param {string} abortKey
+ * @returns {boolean}
+ */
 function cleanupAbortController(abortKey) {
   if (!abortControllers.has(abortKey)) {
     return false;
@@ -71,6 +75,20 @@ function cleanupAbortController(abortKey) {
   return true;
 }
 
+/**
+ * @param {string} abortKey
+ * @returns {function(): void}
+ */
+function createCleanUpHandler(abortKey) {
+  return function () {
+    try {
+      cleanupAbortController(abortKey);
+    } catch {
+      // Ignore cleanup errors
+    }
+  };
+}
+
 async function abortMessage(req, res) {
   let { abortKey, endpoint } = req.body;
 
@@ -101,7 +119,7 @@ async function abortMessage(req, res) {
   cleanupAbortController(abortKey);
 
   if (res.headersSent && finalEvent) {
-    return sendMessage(res, finalEvent);
+    return sendEvent(res, finalEvent);
   }
 
   res.setHeader('Content-Type', 'application/json');
@@ -172,11 +190,15 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
   /**
    * @param {TMessage} userMessage
    * @param {string} responseMessageId
+   * @param {boolean} [isNewConvo]
    */
-  const onStart = (userMessage, responseMessageId) => {
-    sendMessage(res, { message: userMessage, created: true });
+  const onStart = (userMessage, responseMessageId, isNewConvo) => {
+    sendEvent(res, { message: userMessage, created: true });
 
-    const abortKey = userMessage?.conversationId ?? req.user.id;
+    const prelimAbortKey = userMessage?.conversationId ?? req.user.id;
+    const abortKey = isNewConvo
+      ? `${prelimAbortKey}${Constants.COMMON_DIVIDER}${Constants.NEW_CONVO}`
+      : prelimAbortKey;
     getReqData({ abortKey });
     const prevRequest = abortControllers.get(abortKey);
     const { overrideUserMessageId } = req?.body ?? {};
@@ -194,16 +216,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
       };
 
       abortControllers.set(addedAbortKey, { abortController, ...minimalOptions });
-
-      // Use a simple function for cleanup to avoid capturing context
-      const cleanupHandler = () => {
-        try {
-          cleanupAbortController(addedAbortKey);
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-      };
-
+      const cleanupHandler = createCleanUpHandler(addedAbortKey);
       res.on('finish', cleanupHandler);
       return;
     }
@@ -216,16 +229,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
     };
 
     abortControllers.set(abortKey, { abortController, ...minimalOptions });
-
-    // Use a simple function for cleanup to avoid capturing context
-    const cleanupHandler = () => {
-      try {
-        cleanupAbortController(abortKey);
-      } catch (e) {
-        // Ignore cleanup errors
-      }
-    };
-
+    const cleanupHandler = createCleanUpHandler(abortKey);
     res.on('finish', cleanupHandler);
   };
 
@@ -327,7 +331,7 @@ const handleAbortError = async (res, req, error, data) => {
     errorText = `{"type":"${ErrorTypes.INVALID_REQUEST}"}`;
   }
 
-  if (error?.message?.includes('does not support \'system\'')) {
+  if (error?.message?.includes("does not support 'system'")) {
     errorText = `{"type":"${ErrorTypes.NO_SYSTEM_MESSAGES}"}`;
   }
 
@@ -364,15 +368,7 @@ const handleAbortError = async (res, req, error, data) => {
       };
     }
 
-    // Create a simple callback without capturing parent scope
-    const callback = async () => {
-      try {
-        cleanupAbortController(conversationId);
-      } catch (e) {
-        // Ignore cleanup errors
-      }
-    };
-
+    const callback = createCleanUpHandler(conversationId);
     await sendError(req, res, options, callback);
   };
 

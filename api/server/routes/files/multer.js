@@ -2,13 +2,14 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
+const { sanitizeFilename } = require('@librechat/api');
 const { fileConfig: defaultFileConfig, mergeFileConfig } = require('librechat-data-provider');
-const { sanitizeFilename } = require('~/server/utils/handleText');
-const { getCustomConfig } = require('~/server/services/Config');
+const { getAppConfig } = require('~/server/services/Config');
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const outputPath = path.join(req.app.locals.paths.uploads, 'temp', req.user.id);
+    const appConfig = req.config;
+    const outputPath = path.join(appConfig.paths.uploads, 'temp', req.user.id);
     if (!fs.existsSync(outputPath)) {
       fs.mkdirSync(outputPath, { recursive: true });
     }
@@ -68,8 +69,8 @@ const createFileFilter = (customFileConfig) => {
 };
 
 const createMulterInstance = async () => {
-  const customConfig = await getCustomConfig();
-  const fileConfig = mergeFileConfig(customConfig?.fileConfig);
+  const appConfig = await getAppConfig();
+  const fileConfig = mergeFileConfig(appConfig?.fileConfig);
   const fileFilter = createFileFilter(fileConfig);
   return multer({
     storage,

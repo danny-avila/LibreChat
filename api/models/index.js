@@ -1,13 +1,7 @@
-const {
-  comparePassword,
-  deleteUserById,
-  generateToken,
-  getUserById,
-  updateUser,
-  createUser,
-  countUsers,
-  findUser,
-} = require('./userMethods');
+const mongoose = require('mongoose');
+const { createMethods } = require('@librechat/data-schemas');
+const methods = createMethods(mongoose);
+const { comparePassword } = require('./userMethods');
 const {
   findFileById,
   createFile,
@@ -26,32 +20,20 @@ const {
   deleteMessagesSince,
   deleteMessages,
 } = require('./Message');
-const {
-  createSession,
-  findSession,
-  updateExpiration,
-  deleteSession,
-  deleteAllUserSessions,
-  generateRefreshToken,
-  countActiveSessions,
-} = require('./Session');
 const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
-const { createToken, findToken, updateToken, deleteTokens } = require('./Token');
-const Balance = require('./Balance');
-const User = require('./User');
-const Key = require('./Key');
+const { File } = require('~/db/models');
+
+const seedDatabase = async () => {
+  await methods.initializeRoles();
+  await methods.seedDefaultRoles();
+  await methods.ensureDefaultCategories();
+};
 
 module.exports = {
+  ...methods,
+  seedDatabase,
   comparePassword,
-  deleteUserById,
-  generateToken,
-  getUserById,
-  updateUser,
-  createUser,
-  countUsers,
-  findUser,
-
   findFileById,
   createFile,
   updateFile,
@@ -78,20 +60,5 @@ module.exports = {
   savePreset,
   deletePresets,
 
-  createToken,
-  findToken,
-  updateToken,
-  deleteTokens,
-
-  createSession,
-  findSession,
-  updateExpiration,
-  deleteSession,
-  deleteAllUserSessions,
-  generateRefreshToken,
-  countActiveSessions,
-
-  User,
-  Key,
-  Balance,
+  Files: File,
 };

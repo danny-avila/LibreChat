@@ -1,10 +1,11 @@
-import { useForm } from 'react-hook-form';
 import React, { useState, useEffect, useContext } from 'react';
+import { useForm } from 'react-hook-form';
 import { Turnstile } from '@marsidev/react-turnstile';
+import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
 import type { TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import type { TAuthContext } from '~/common';
 import { useResendVerificationEmail, useGetStartupConfig } from '~/data-provider';
-import { ThemeContext, useLocalize } from '~/hooks';
+import { useLocalize } from '~/hooks';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
@@ -16,19 +17,18 @@ type TLoginFormProps = {
 const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, setError }) => {
   const localize = useLocalize();
   const { theme } = useContext(ThemeContext);
-
   const {
     register,
     getValues,
     handleSubmit,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<TLoginUser>();
   const [showResendLink, setShowResendLink] = useState<boolean>(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const { data: config } = useGetStartupConfig();
   const useUsernameLogin = config?.ldap?.username;
-  const validTheme = theme === 'dark' ? 'dark' : 'light';
+  const validTheme = isDark(theme) ? 'dark' : 'light';
   const requireCaptcha = Boolean(startupConfig.turnstile?.siteKey);
 
   useEffect(() => {
@@ -125,7 +125,10 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
               aria-label={localize('com_auth_password')}
               {...register('password', {
                 required: localize('com_auth_password_required'),
-                minLength: { value: 8, message: localize('com_auth_password_min_length') },
+                minLength: {
+                  value: startupConfig?.minPasswordLength || 8,
+                  message: localize('com_auth_password_min_length'),
+                },
                 maxLength: { value: 128, message: localize('com_auth_password_max_length') },
               })}
               aria-invalid={!!errors.password}
@@ -166,15 +169,16 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
         )}
 
         <div className="mt-6">
-          <button
+          <Button
             aria-label={localize('com_auth_continue')}
             data-testid="login-button"
             type="submit"
-            disabled={requireCaptcha && !turnstileToken}
-            className="w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50 disabled:hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700"
+            disabled={(requireCaptcha && !turnstileToken) || isSubmitting}
+            variant="submit"
+            className="h-12 w-full rounded-2xl"
           >
-            {localize('com_auth_continue')}
-          </button>
+            {isSubmitting ? <Spinner /> : localize('com_auth_continue')}
+          </Button>
         </div>
       </form>
     </>

@@ -1,10 +1,8 @@
 const rateLimit = require('express-rate-limit');
-const { RedisStore } = require('rate-limit-redis');
+const { limiterCache } = require('@librechat/api');
 const { ViolationTypes } = require('librechat-data-provider');
-const { removePorts, isEnabled } = require('~/server/utils');
-const ioredisClient = require('~/cache/ioredisClient');
+const { removePorts } = require('~/server/utils');
 const { logViolation } = require('~/cache');
-const { logger } = require('~/config');
 
 const {
   RESET_PASSWORD_WINDOW = 2,
@@ -33,16 +31,8 @@ const limiterOptions = {
   max,
   handler,
   keyGenerator: removePorts,
+  store: limiterCache('reset_password_limiter'),
 };
-
-if (isEnabled(process.env.USE_REDIS) && ioredisClient) {
-  logger.debug('Using Redis for reset password rate limiter.');
-  const store = new RedisStore({
-    sendCommand: (...args) => ioredisClient.call(...args),
-    prefix: 'reset_password_limiter:',
-  });
-  limiterOptions.store = store;
-}
 
 const resetPasswordLimiter = rateLimit(limiterOptions);
 

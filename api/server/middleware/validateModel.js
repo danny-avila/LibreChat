@@ -1,12 +1,12 @@
+const { handleError } = require('@librechat/api');
 const { ViolationTypes } = require('librechat-data-provider');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
-const { handleError } = require('~/server/utils');
 const { logViolation } = require('~/cache');
 /**
  * Validates the model of the request.
  *
  * @async
- * @param {Express.Request} req - The Express request object.
+ * @param {ServerRequest} req - The Express request object.
  * @param {Express.Response} res - The Express response object.
  * @param {Function} next - The Express next function.
  */
@@ -33,7 +33,7 @@ const validateModel = async (req, res, next) => {
     return next();
   }
 
-  const { ILLEGAL_MODEL_REQ_SCORE: score = 5 } = process.env ?? {};
+  const { ILLEGAL_MODEL_REQ_SCORE: score = 1 } = process.env ?? {};
 
   const type = ViolationTypes.ILLEGAL_MODEL_REQUEST;
   const errorMessage = {

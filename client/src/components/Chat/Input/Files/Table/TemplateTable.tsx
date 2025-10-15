@@ -1,4 +1,4 @@
-import { DotsIcon, TrashIcon } from '~/components/svg';
+import { DotsIcon, TrashIcon } from '@librechat/client';
 
 export default function Template() {
   return (

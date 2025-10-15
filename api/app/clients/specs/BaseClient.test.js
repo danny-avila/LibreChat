@@ -1,7 +1,15 @@
 const { Constants } = require('librechat-data-provider');
 const { initializeFakeClient } = require('./FakeClient');
 
-jest.mock('~/lib/db/connectDb');
+jest.mock('~/db/connect');
+jest.mock('~/server/services/Config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({
+    // Default app config for tests
+    paths: { uploads: '/tmp' },
+    fileStrategy: 'local',
+    memory: { disabled: false },
+  }),
+}));
 jest.mock('~/models', () => ({
   User: jest.fn(),
   Key: jest.fn(),
@@ -33,7 +41,9 @@ jest.mock('~/models', () => ({
 const { getConvo, saveConvo } = require('~/models');
 
 jest.mock('@librechat/agents', () => {
+  const { Providers } = jest.requireActual('@librechat/agents');
   return {
+    Providers,
     ChatOpenAI: jest.fn().mockImplementation(() => {
       return {};
     }),
@@ -52,7 +62,7 @@ const messageHistory = [
   {
     role: 'user',
     isCreatedByUser: true,
-    text: 'What\'s up',
+    text: "What's up",
     messageId: '3',
     parentMessageId: '2',
   },
@@ -420,6 +430,46 @@ describe('BaseClient', () => {
       expect(response).toEqual(expectedResult);
     });
 
+    test('should replace responseMessageId with new UUID when isRegenerate is true and messageId ends with underscore', async () => {
+      const mockCrypto = require('crypto');
+      const newUUID = 'new-uuid-1234';
+      jest.spyOn(mockCrypto, 'randomUUID').mockReturnValue(newUUID);
+
+      const opts = {
+        isRegenerate: true,
+        responseMessageId: 'existing-message-id_',
+      };
+
+      await TestClient.setMessageOptions(opts);
+
+      expect(TestClient.responseMessageId).toBe(newUUID);
+      expect(TestClient.responseMessageId).not.toBe('existing-message-id_');
+
+      mockCrypto.randomUUID.mockRestore();
+    });
+
+    test('should not replace responseMessageId when isRegenerate is false', async () => {
+      const opts = {
+        isRegenerate: false,
+        responseMessageId: 'existing-message-id_',
+      };
+
+      await TestClient.setMessageOptions(opts);
+
+      expect(TestClient.responseMessageId).toBe('existing-message-id_');
+    });
+
+    test('should not replace responseMessageId when it does not end with underscore', async () => {
+      const opts = {
+        isRegenerate: true,
+        responseMessageId: 'existing-message-id',
+      };
+
+      await TestClient.setMessageOptions(opts);
+
+      expect(TestClient.responseMessageId).toBe('existing-message-id');
+    });
+
     test('sendMessage should work with provided conversationId and parentMessageId', async () => {
       const userMessage = 'Second message in the conversation';
       const opts = {
@@ -456,7 +506,7 @@ describe('BaseClient', () => {
 
       const chatMessages2 = await TestClient.loadHistory(conversationId, '3');
       expect(TestClient.currentMessages).toHaveLength(3);
-      expect(chatMessages2[chatMessages2.length - 1].text).toEqual('What\'s up');
+      expect(chatMessages2[chatMessages2.length - 1].text).toEqual("What's up");
     });
 
     /* Most of the new sendMessage logic revolving around edited/continued AI messages
@@ -537,6 +587,8 @@ describe('BaseClient', () => {
       expect(onStart).toHaveBeenCalledWith(
         expect.objectContaining({ text: 'Hello, world!' }),
         expect.any(String),
+        /** `isNewConvo` */
+        true,
       );
     });
 

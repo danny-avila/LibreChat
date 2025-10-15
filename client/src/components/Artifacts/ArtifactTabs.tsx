@@ -2,27 +2,24 @@ import { useRef, useEffect } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
 import type { Artifact } from '~/common';
+import { useEditorContext, useArtifactsContext } from '~/Providers';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { useAutoScroll } from '~/hooks/Artifacts/useAutoScroll';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
 import { useGetStartupConfig } from '~/data-provider';
 import { ArtifactPreview } from './ArtifactPreview';
-import { useEditorContext } from '~/Providers';
 import { cn } from '~/utils';
 
 export default function ArtifactTabs({
   artifact,
-  isMermaid,
   editorRef,
   previewRef,
-  isSubmitting,
 }: {
   artifact: Artifact;
-  isMermaid: boolean;
-  isSubmitting: boolean;
   editorRef: React.MutableRefObject<CodeEditorRef>;
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
 }) {
+  const { isSubmitting } = useArtifactsContext();
   const { currentCode, setCurrentCode } = useEditorContext();
   const { data: startupConfig } = useGetStartupConfig();
   const lastIdRef = useRef<string | null>(null);
@@ -44,6 +41,7 @@ export default function ArtifactTabs({
         value="code"
         id="artifacts-code"
         className={cn('flex-grow overflow-auto')}
+        tabIndex={-1}
       >
         <ArtifactCodeEditor
           files={files}
@@ -52,13 +50,9 @@ export default function ArtifactTabs({
           artifact={artifact}
           editorRef={editorRef}
           sharedProps={sharedProps}
-          isSubmitting={isSubmitting}
         />
       </Tabs.Content>
-      <Tabs.Content
-        value="preview"
-        className={cn('flex-grow overflow-auto', isMermaid ? 'bg-[#282C34]' : 'bg-white')}
-      >
+      <Tabs.Content value="preview" className="flex-grow overflow-auto" tabIndex={-1}>
         <ArtifactPreview
           files={files}
           fileKey={fileKey}

@@ -1,7 +1,7 @@
 import React from 'react';
 // import { motion } from 'framer-motion';
 // import { LockIcon, UnlockIcon } from 'lucide-react';
-import { Label, Button } from '~/components';
+import { Label, Button } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 interface DisableTwoFactorToggleProps {
@@ -20,7 +20,7 @@ export const DisableTwoFactorToggle: React.FC<DisableTwoFactorToggleProps> = ({
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-2">
-        <Label className="font-light"> {localize('com_nav_2fa')}</Label>
+        <Label> {localize('com_nav_2fa')}</Label>
       </div>
       <div className="flex items-center gap-3">
         <Button

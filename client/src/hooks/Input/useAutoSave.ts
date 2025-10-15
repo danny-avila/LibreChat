@@ -4,35 +4,10 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { LocalStorageKeys, Constants } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
+import { clearDraft, getDraft, setDraft } from '~/utils';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
 import store from '~/store';
-
-const clearDraft = debounce((id?: string | null) => {
-  localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
-}, 2500);
-
-const encodeBase64 = (plainText: string): string => {
-  try {
-    const textBytes = new TextEncoder().encode(plainText);
-    return btoa(String.fromCharCode(...textBytes));
-  } catch (e) {
-    return '';
-  }
-};
-
-const decodeBase64 = (base64String: string): string => {
-  try {
-    const bytes = atob(base64String);
-    const uint8Array = new Uint8Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) {
-      uint8Array[i] = bytes.charCodeAt(i);
-    }
-    return new TextDecoder().decode(uint8Array);
-  } catch (e) {
-    return '';
-  }
-};
 
 export const useAutoSave = ({
   isSubmitting,
@@ -98,8 +73,11 @@ export const useAutoSave = ({
 
   const restoreText = useCallback(
     (id: string) => {
-      const savedDraft = (localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`) ?? '') || '';
-      setValue('text', decodeBase64(savedDraft));
+      const savedDraft = getDraft(id);
+      if (!savedDraft) {
+        return;
+      }
+      setValue('text', savedDraft);
     },
     [setValue],
   );
@@ -113,10 +91,7 @@ export const useAutoSave = ({
       if (textAreaRef.current.value === '' || textAreaRef.current.value.length === 1) {
         clearDraft(id);
       } else {
-        localStorage.setItem(
-          `${LocalStorageKeys.TEXT_DRAFT}${id}`,
-          encodeBase64(textAreaRef.current.value),
-        );
+        setDraft({ id, value: textAreaRef.current.value });
       }
     },
     [textAreaRef],
@@ -130,20 +105,33 @@ export const useAutoSave = ({
       return;
     }
 
-    const handleInput = debounce((value: string) => {
-      if (value && value.length > 1) {
-        localStorage.setItem(
-          `${LocalStorageKeys.TEXT_DRAFT}${conversationId}`,
-          encodeBase64(value),
-        );
-      } else {
-        localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
-      }
-    }, 750);
+    /** Use shorter debounce for saving text (65ms) to capture rapid typing */
+    const handleInputFast = debounce(
+      (value: string) => setDraft({ id: conversationId, value }),
+      65,
+    );
+
+    /** Use longer debounce for clearing empty values (850ms) to prevent accidental draft loss */
+    const handleInputSlow = debounce(
+      (value: string) => setDraft({ id: conversationId, value }),
+      850,
+    );
 
     const eventListener = (e: Event) => {
       const target = e.target as HTMLTextAreaElement;
-      handleInput(target.value);
+      const value = target.value;
+
+      /** Cancel any pending operations to avoid conflicts */
+      handleInputFast.cancel();
+      handleInputSlow.cancel();
+
+      /** If empty, use long delay to prevent accidental clearing
+       * Otherwise use short delay to capture rapid typing */
+      if (value === '') {
+        handleInputSlow(value);
+      } else {
+        handleInputFast(value);
+      }
     };
 
     const textArea = textAreaRef?.current;
@@ -155,7 +143,8 @@ export const useAutoSave = ({
       if (textArea) {
         textArea.removeEventListener('input', eventListener);
       }
-      handleInput.cancel();
+      handleInputFast.cancel();
+      handleInputSlow.cancel();
     };
   }, [conversationId, saveDrafts, textAreaRef]);
 
@@ -194,10 +183,7 @@ export const useAutoSave = ({
         if (pendingDraft) {
           localStorage.setItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`, pendingDraft);
         } else if (textAreaRef?.current?.value) {
-          localStorage.setItem(
-            `${LocalStorageKeys.TEXT_DRAFT}${conversationId}`,
-            encodeBase64(textAreaRef.current.value),
-          );
+          setDraft({ id: conversationId, value: textAreaRef.current.value });
         }
         const pendingFileDraft = localStorage.getItem(
           `${LocalStorageKeys.FILES_DRAFT}${Constants.PENDING_CONVO}`,

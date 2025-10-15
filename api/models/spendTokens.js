@@ -1,18 +1,11 @@
-const { Transaction } = require('./Transaction');
-const { logger } = require('~/config');
-
+const { logger } = require('@librechat/data-schemas');
+const { createTransaction, createStructuredTransaction } = require('./Transaction');
 /**
  * Creates up to two transactions to record the spending of tokens.
  *
  * @function
  * @async
- * @param {Object} txData - Transaction data.
- * @param {mongoose.Schema.Types.ObjectId} txData.user - The user ID.
- * @param {String} txData.conversationId - The ID of the conversation.
- * @param {String} txData.model - The model name.
- * @param {String} txData.context - The context in which the transaction is made.
- * @param {EndpointTokenConfig} [txData.endpointTokenConfig] - The current endpoint token config.
- * @param {String} [txData.valueKey] - The value key (optional).
+ * @param {txData} txData - Transaction data.
  * @param {Object} tokenUsage - The number of tokens used.
  * @param {Number} tokenUsage.promptTokens - The number of prompt tokens used.
  * @param {Number} tokenUsage.completionTokens - The number of completion tokens used.
@@ -33,7 +26,7 @@ const spendTokens = async (txData, tokenUsage) => {
   let prompt, completion;
   try {
     if (promptTokens !== undefined) {
-      prompt = await Transaction.create({
+      prompt = await createTransaction({
         ...txData,
         tokenType: 'prompt',
         rawAmount: promptTokens === 0 ? 0 : -Math.max(promptTokens, 0),
@@ -41,7 +34,7 @@ const spendTokens = async (txData, tokenUsage) => {
     }
 
     if (completionTokens !== undefined) {
-      completion = await Transaction.create({
+      completion = await createTransaction({
         ...txData,
         tokenType: 'completion',
         rawAmount: completionTokens === 0 ? 0 : -Math.max(completionTokens, 0),
@@ -70,13 +63,7 @@ const spendTokens = async (txData, tokenUsage) => {
  *
  * @function
  * @async
- * @param {Object} txData - Transaction data.
- * @param {mongoose.Schema.Types.ObjectId} txData.user - The user ID.
- * @param {String} txData.conversationId - The ID of the conversation.
- * @param {String} txData.model - The model name.
- * @param {String} txData.context - The context in which the transaction is made.
- * @param {EndpointTokenConfig} [txData.endpointTokenConfig] - The current endpoint token config.
- * @param {String} [txData.valueKey] - The value key (optional).
+ * @param {txData} txData - Transaction data.
  * @param {Object} tokenUsage - The number of tokens used.
  * @param {Object} tokenUsage.promptTokens - The number of prompt tokens used.
  * @param {Number} tokenUsage.promptTokens.input - The number of input tokens.
@@ -101,7 +88,7 @@ const spendStructuredTokens = async (txData, tokenUsage) => {
   try {
     if (promptTokens) {
       const { input = 0, write = 0, read = 0 } = promptTokens;
-      prompt = await Transaction.createStructured({
+      prompt = await createStructuredTransaction({
         ...txData,
         tokenType: 'prompt',
         inputTokens: -input,
@@ -111,7 +98,7 @@ const spendStructuredTokens = async (txData, tokenUsage) => {
     }
 
     if (completionTokens) {
-      completion = await Transaction.create({
+      completion = await createTransaction({
         ...txData,
         tokenType: 'completion',
         rawAmount: -completionTokens,

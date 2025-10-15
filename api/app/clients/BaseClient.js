@@ -1,22 +1,31 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
+const { logger } = require('@librechat/data-schemas');
 const {
-  supportsBalanceCheck,
-  isAgentsEndpoint,
-  isParamEndpoint,
-  EModelEndpoint,
+  getBalanceConfig,
+  extractFileContext,
+  encodeAndFormatAudios,
+  encodeAndFormatVideos,
+  encodeAndFormatDocuments,
+} = require('@librechat/api');
+const {
+  Constants,
+  ErrorTypes,
+  FileSources,
   ContentTypes,
   excludedKeys,
-  ErrorTypes,
-  Constants,
+  EModelEndpoint,
+  isParamEndpoint,
+  isAgentsEndpoint,
+  supportsBalanceCheck,
 } = require('librechat-data-provider');
 const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
-const { addSpaceIfNeeded } = require('~/server/utils');
+const countTokens = require('~/server/utils/countTokens');
 const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
-const { logger } = require('~/config');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -38,6 +47,8 @@ class BaseClient {
     this.conversationId;
     /** @type {string} */
     this.responseMessageId;
+    /** @type {string} */
+    this.parentMessageId;
     /** @type {TAttachment[]} */
     this.attachments;
     /** The key for the usage object's input tokens
@@ -109,12 +120,17 @@ class BaseClient {
   /**
    * Abstract method to record token usage. Subclasses must implement this method.
    * If a correction to the token usage is needed, the method should return an object with the corrected token counts.
+   * Should only be used if `recordCollectedUsage` was not used instead.
+   * @param {string} [model]
+   * @param {AppConfig['balance']} [balance]
    * @param {number} promptTokens
    * @param {number} completionTokens
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ promptTokens, completionTokens }) {
+  async recordTokenUsage({ model, balance, promptTokens, completionTokens }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
+      model,
+      balance,
       promptTokens,
       completionTokens,
     });
@@ -183,7 +199,8 @@ class BaseClient {
     this.user = user;
     const saveOptions = this.getSaveOptions();
     this.abortController = opts.abortController ?? new AbortController();
-    const conversationId = overrideConvoId ?? opts.conversationId ?? crypto.randomUUID();
+    const requestConvoId = overrideConvoId ?? opts.conversationId;
+    const conversationId = requestConvoId ?? crypto.randomUUID();
     const parentMessageId = opts.parentMessageId ?? Constants.NO_PARENT;
     const userMessageId =
       overrideUserMessageId ?? opts.overrideParentMessageId ?? crypto.randomUUID();
@@ -198,17 +215,22 @@ class BaseClient {
       this.currentMessages[this.currentMessages.length - 1].messageId = head;
     }
 
+    if (opts.isRegenerate && responseMessageId.endsWith('_')) {
+      responseMessageId = crypto.randomUUID();
+    }
+
     this.responseMessageId = responseMessageId;
 
     return {
       ...opts,
       user,
       head,
+      saveOptions,
+      userMessageId,
+      requestConvoId,
       conversationId,
       parentMessageId,
-      userMessageId,
       responseMessageId,
-      saveOptions,
     };
   }
 
@@ -227,11 +249,12 @@ class BaseClient {
     const {
       user,
       head,
+      saveOptions,
+      userMessageId,
+      requestConvoId,
       conversationId,
       parentMessageId,
-      userMessageId,
       responseMessageId,
-      saveOptions,
     } = await this.setMessageOptions(opts);
 
     const userMessage = opts.isEdited
@@ -253,7 +276,8 @@ class BaseClient {
     }
 
     if (typeof opts?.onStart === 'function') {
-      opts.onStart(userMessage, responseMessageId);
+      const isNewConvo = !requestConvoId && parentMessageId === Constants.NO_PARENT;
+      opts.onStart(userMessage, responseMessageId, isNewConvo);
     }
 
     return {
@@ -559,6 +583,7 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
+    const appConfig = this.options.req?.config;
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
@@ -572,7 +597,7 @@ class BaseClient {
       });
     }
 
-    const { generation = '' } = opts;
+    const { editedContent } = opts;
 
     // It's not necessary to push to currentMessages
     // depending on subclass implementation of handling messages
@@ -587,26 +612,40 @@ class BaseClient {
           isCreatedByUser: false,
           model: this.modelOptions?.model ?? this.model,
           sender: this.sender,
-          text: generation,
         };
         this.currentMessages.push(userMessage, latestMessage);
-      } else {
-        latestMessage.text = generation;
+      } else if (editedContent != null) {
+        // Handle editedContent for content parts
+        if (editedContent && latestMessage.content && Array.isArray(latestMessage.content)) {
+          const { index, text, type } = editedContent;
+          if (index >= 0 && index < latestMessage.content.length) {
+            const contentPart = latestMessage.content[index];
+            if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
+              contentPart[ContentTypes.THINK] = text;
+            } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
+              contentPart[ContentTypes.TEXT] = text;
+            }
+          }
+        }
       }
       this.continued = true;
     } else {
       this.currentMessages.push(userMessage);
     }
 
+    /**
+     * When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
+     * this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
+     */
+    const parentMessageId = isEdited ? head : userMessage.messageId;
+    this.parentMessageId = parentMessageId;
     let {
       prompt: payload,
       tokenCountMap,
       promptTokens,
     } = await this.buildMessages(
       this.currentMessages,
-      // When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
-      // this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
-      isEdited ? head : userMessage.messageId,
+      parentMessageId,
       this.getBuildMessagesOptions(opts),
       opts,
     );
@@ -631,9 +670,9 @@ class BaseClient {
       }
     }
 
-    const balance = this.options.req?.app?.locals?.balance;
+    const balanceConfig = getBalanceConfig(appConfig);
     if (
-      balance?.enabled &&
+      balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
       await checkBalance({
@@ -672,16 +711,32 @@ class BaseClient {
     };
 
     if (typeof completion === 'string') {
-      responseMessage.text = addSpaceIfNeeded(generation) + completion;
+      responseMessage.text = completion;
     } else if (
       Array.isArray(completion) &&
       (this.clientName === EModelEndpoint.agents ||
         isParamEndpoint(this.options.endpoint, this.options.endpointType))
     ) {
       responseMessage.text = '';
-      responseMessage.content = completion;
+
+      if (!opts.editedContent || this.currentMessages.length === 0) {
+        responseMessage.content = completion;
+      } else {
+        const latestMessage = this.currentMessages[this.currentMessages.length - 1];
+        if (!latestMessage?.content) {
+          responseMessage.content = completion;
+        } else {
+          const existingContent = [...latestMessage.content];
+          const { type: editedType } = opts.editedContent;
+          responseMessage.content = this.mergeEditedContent(
+            existingContent,
+            completion,
+            editedType,
+          );
+        }
+      }
     } else if (Array.isArray(completion)) {
-      responseMessage.text = addSpaceIfNeeded(generation) + completion.join('');
+      responseMessage.text = completion.join('');
     }
 
     if (
@@ -712,9 +767,14 @@ class BaseClient {
       } else {
         responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
         completionTokens = responseMessage.tokenCount;
+        await this.recordTokenUsage({
+          usage,
+          promptTokens,
+          completionTokens,
+          balance: balanceConfig,
+          model: responseMessage.model,
+        });
       }
-
-      await this.recordTokenUsage({ promptTokens, completionTokens, usage });
     }
 
     if (userMessagePromise) {
@@ -792,7 +852,8 @@ class BaseClient {
 
     userMessage.tokenCount = userMessageTokenCount;
     /*
-      Note: `AskController` saves the user message, so we update the count of its `userMessage` reference
+      Note: `AgentController` saves the user message if not saved here
+      (noted by `savedMessageIds`), so we update the count of its `userMessage` reference
     */
     if (typeof opts?.getReqData === 'function') {
       opts.getReqData({
@@ -801,7 +862,8 @@ class BaseClient {
     }
     /*
       Note: we update the user message to be sure it gets the calculated token count;
-      though `AskController` saves the user message, EditController does not
+      though `AgentController` saves the user message if not saved here
+      (noted by `savedMessageIds`), EditController does not
     */
     await userMessagePromise;
     await this.updateMessageInDatabase({
@@ -1093,6 +1155,50 @@ class BaseClient {
     return numTokens;
   }
 
+  /**
+   * Merges completion content with existing content when editing TEXT or THINK types
+   * @param {Array} existingContent - The existing content array
+   * @param {Array} newCompletion - The new completion content
+   * @param {string} editedType - The type of content being edited
+   * @returns {Array} The merged content array
+   */
+  mergeEditedContent(existingContent, newCompletion, editedType) {
+    if (!newCompletion.length) {
+      return existingContent.concat(newCompletion);
+    }
+
+    if (editedType !== ContentTypes.TEXT && editedType !== ContentTypes.THINK) {
+      return existingContent.concat(newCompletion);
+    }
+
+    const lastIndex = existingContent.length - 1;
+    const lastExisting = existingContent[lastIndex];
+    const firstNew = newCompletion[0];
+
+    if (lastExisting?.type !== firstNew?.type || firstNew?.type !== editedType) {
+      return existingContent.concat(newCompletion);
+    }
+
+    const mergedContent = [...existingContent];
+    if (editedType === ContentTypes.TEXT) {
+      mergedContent[lastIndex] = {
+        ...mergedContent[lastIndex],
+        [ContentTypes.TEXT]:
+          (mergedContent[lastIndex][ContentTypes.TEXT] || '') + (firstNew[ContentTypes.TEXT] || ''),
+      };
+    } else {
+      mergedContent[lastIndex] = {
+        ...mergedContent[lastIndex],
+        [ContentTypes.THINK]:
+          (mergedContent[lastIndex][ContentTypes.THINK] || '') +
+          (firstNew[ContentTypes.THINK] || ''),
+      };
+    }
+
+    // Add remaining completion items
+    return mergedContent.concat(newCompletion.slice(1));
+  }
+
   async sendPayload(payload, opts = {}) {
     if (opts && typeof opts === 'object') {
       this.setOptions(opts);
@@ -1101,8 +1207,135 @@ class BaseClient {
     return await this.sendCompletion(payload, opts);
   }
 
+  async addDocuments(message, attachments) {
+    const documentResult = await encodeAndFormatDocuments(
+      this.options.req,
+      attachments,
+      {
+        provider: this.options.agent?.provider,
+        useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
+      },
+      getStrategyFunctions,
+    );
+    message.documents =
+      documentResult.documents && documentResult.documents.length
+        ? documentResult.documents
+        : undefined;
+    return documentResult.files;
+  }
+
+  async addVideos(message, attachments) {
+    const videoResult = await encodeAndFormatVideos(
+      this.options.req,
+      attachments,
+      this.options.agent.provider,
+      getStrategyFunctions,
+    );
+    message.videos =
+      videoResult.videos && videoResult.videos.length ? videoResult.videos : undefined;
+    return videoResult.files;
+  }
+
+  async addAudios(message, attachments) {
+    const audioResult = await encodeAndFormatAudios(
+      this.options.req,
+      attachments,
+      this.options.agent.provider,
+      getStrategyFunctions,
+    );
+    message.audios =
+      audioResult.audios && audioResult.audios.length ? audioResult.audios : undefined;
+    return audioResult.files;
+  }
+
   /**
-   *
+   * Extracts text context from attachments and sets it on the message.
+   * This handles text that was already extracted from files (OCR, transcriptions, document text, etc.)
+   * @param {TMessage} message - The message to add context to
+   * @param {MongoFile[]} attachments - Array of file attachments
+   * @returns {Promise<void>}
+   */
+  async addFileContextToMessage(message, attachments) {
+    const fileContext = await extractFileContext({
+      attachments,
+      req: this.options?.req,
+      tokenCountFn: (text) => countTokens(text),
+    });
+
+    if (fileContext) {
+      message.fileContext = fileContext;
+    }
+  }
+
+  async processAttachments(message, attachments) {
+    const categorizedAttachments = {
+      images: [],
+      videos: [],
+      audios: [],
+      documents: [],
+    };
+
+    const allFiles = [];
+
+    for (const file of attachments) {
+      /** @type {FileSources} */
+      const source = file.source ?? FileSources.local;
+      if (source === FileSources.text) {
+        allFiles.push(file);
+        continue;
+      }
+      if (file.embedded === true || file.metadata?.fileIdentifier != null) {
+        allFiles.push(file);
+        continue;
+      }
+
+      if (file.type.startsWith('image/')) {
+        categorizedAttachments.images.push(file);
+      } else if (file.type === 'application/pdf') {
+        categorizedAttachments.documents.push(file);
+        allFiles.push(file);
+      } else if (file.type.startsWith('video/')) {
+        categorizedAttachments.videos.push(file);
+        allFiles.push(file);
+      } else if (file.type.startsWith('audio/')) {
+        categorizedAttachments.audios.push(file);
+        allFiles.push(file);
+      }
+    }
+
+    const [imageFiles] = await Promise.all([
+      categorizedAttachments.images.length > 0
+        ? this.addImageURLs(message, categorizedAttachments.images)
+        : Promise.resolve([]),
+      categorizedAttachments.documents.length > 0
+        ? this.addDocuments(message, categorizedAttachments.documents)
+        : Promise.resolve([]),
+      categorizedAttachments.videos.length > 0
+        ? this.addVideos(message, categorizedAttachments.videos)
+        : Promise.resolve([]),
+      categorizedAttachments.audios.length > 0
+        ? this.addAudios(message, categorizedAttachments.audios)
+        : Promise.resolve([]),
+    ]);
+
+    allFiles.push(...imageFiles);
+
+    const seenFileIds = new Set();
+    const uniqueFiles = [];
+
+    for (const file of allFiles) {
+      if (file.file_id && !seenFileIds.has(file.file_id)) {
+        seenFileIds.add(file.file_id);
+        uniqueFiles.push(file);
+      } else if (!file.file_id) {
+        uniqueFiles.push(file);
+      }
+    }
+
+    return uniqueFiles;
+  }
+
+  /**
    * @param {TMessage[]} _messages
    * @returns {Promise<TMessage[]>}
    */
@@ -1151,7 +1384,8 @@ class BaseClient {
         {},
       );
 
-      await this.addImageURLs(message, files, this.visionMode);
+      await this.addFileContextToMessage(message, files);
+      await this.processAttachments(message, files);
 
       this.message_file_map[message.messageId] = files;
       return message;

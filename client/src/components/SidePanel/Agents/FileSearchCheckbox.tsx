@@ -1,15 +1,15 @@
 import { memo } from 'react';
 import { AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
-import type { AgentForm } from '~/common';
 import {
   Checkbox,
   HoverCard,
   HoverCardContent,
   HoverCardPortal,
   HoverCardTrigger,
-} from '~/components/ui';
-import { CircleHelpIcon } from '~/components/svg';
+  CircleHelpIcon,
+} from '@librechat/client';
+import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 

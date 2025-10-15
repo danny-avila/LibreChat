@@ -7,20 +7,36 @@ replicaCount: 1
 
 
 global:
-   # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
+   # default Secret for envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
    # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
    # Required Values:
+   # - CREDS_KEY
+   # - CREDS_IV
+   # - JWT_SECRET
+   # - JWT_REFRESH_SECRET
    # - MEILI_MASTER_KEY
   librechat:
     existingSecretName: "librechat-credentials-env"
     # Used for Setting the Right Key, can be something like AZURE_API_KEY, if Azure OpenAI is used
     existingSecretApiKey: OPENAI_API_KEY
+    # Optionally add extra globally accessible environment variables here. These can be referenced under ConfigEnv to make them accessible inside LibreChat
+    # env:
+    #  - name: API_KEY
+    #    valueFrom:
+    #      secretKeyRef:
+    #        name: api_access
+    #        key: api_key
+    #  - name: CLIENT_ID
+    #    valueFrom:
+    #      secretKeyRef:
+    #        name: credentials
+    #        key: client_id
 
 librechat:
   configEnv:
     PLUGIN_MODELS: gpt-4,gpt-4-turbo-preview,gpt-4-0125-preview,gpt-4-1106-preview,gpt-4-0613,gpt-3.5-turbo,gpt-3.5-turbo-0125,gpt-3.5-turbo-1106,gpt-3.5-turbo-0613
     DEBUG_PLUGINS: "true"
-    # IMPORTANT -- GENERATE your own: openssl rand -hex 32 and openssl rand -hex 16 for CREDS_IV. Best Practise: Put into Secret. See gloobal.librechat.existingSecretName
+    # IMPORTANT -- GENERATE your own: openssl rand -hex 32 and openssl rand -hex 16 for CREDS_IV. Best Practise: Put into Secret. See global.librechat.existingSecretName
     CREDS_KEY: 9e95d9894da7e68dd69c0046caf5343c8b1e80c89609b5a1e40e6568b5b23ce6
     CREDS_IV: ac028c86ba23f4cd48165e0ca9f2c683
     JWT_SECRET: 16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef
@@ -115,6 +131,17 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
 
 lifecycle: {}
 # # base for adding a custom banner // see https://github.com/danny-avila/LibreChat/pull/3952 for an example
@@ -126,6 +153,8 @@ lifecycle: {}
 
 podAnnotations: {}
 podLabels: {}
+deploymentAnnotations: {}
+deploymentLabels: {}
 
 podSecurityContext:
   fsGroup: 2000
@@ -139,8 +168,10 @@ securityContext:
   runAsUser: 1000
 
 service:
-  type: ClusterIP
+  type: ClusterIP # LoadBalancer, NodePort, ClusterIP
   port: 3080
+  targetPort: 3080
+  containerPort: 3080
   annotations: {}
 
 ingress:
@@ -182,11 +213,11 @@ autoscaling:
 livenessProbe:
   httpGet:
     path: /health
-    port: http
+    port: 3080
 readinessProbe:
   httpGet:
     path: /health
-    port: http
+    port: 3080
 
 # Additional volumes on the output Deployment definition.
 volumes: []
@@ -206,6 +237,33 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+# Host aliases for custom domain-to-IP mappings (adds entries to /etc/hosts)
+hostAliases: []
+# Example - Redirect AWS Bedrock to proxy:
+# hostAliases:
+#   - ip: "10.1.2.3"
+#     hostnames:
+#       - "bedrock-runtime.eu-central-1.amazonaws.com"
+
+# DNS Configuration
+# Customize DNS resolution for redirecting traffic to proxy servers
+dnsPolicy: ""  # Options: ClusterFirst, Default, None, ClusterFirstWithHostNet
+dnsConfig: {}
+# Example configuration for custom DNS:
+# dnsPolicy: "None"  # Use only custom DNS settings
+# dnsConfig:
+#   nameservers:
+#     - "10.0.0.10"  # Your custom DNS server
+#     - "8.8.8.8"    # Fallback DNS
+#   searches:
+#     - "svc.cluster.local"
+#     - "cluster.local"
+#   options:
+#     - name: ndots
+#       value: "2"
+#     - name: timeout
+#       value: "1"
 
 # Strategy for LibreChat deployment updates
 updateStrategy:

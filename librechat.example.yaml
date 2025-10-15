@@ -7,12 +7,31 @@ version: 1.2.1
 # Cache settings: Set to true to enable caching
 cache: true
 
-# File strategy s3/firebase
+# File storage configuration
+# Single strategy for all file types (legacy format, still supported)
 # fileStrategy: "s3"
+
+# Granular file storage strategies (new format - recommended)
+# Allows different storage strategies for different file types
+# fileStrategy:
+#   avatar: "s3"        # Storage for user/agent avatar images
+#   image: "firebase"   # Storage for uploaded images in chats
+#   document: "local"   # Storage for document uploads (PDFs, text files, etc.)
+
+# Available strategies: "local", "s3", "firebase"
+# If not specified, defaults to "local" for all file types
+# You can mix and match strategies based on your needs:
+# - Use S3 for avatars for fast global access
+# - Use Firebase for images with automatic optimization
+# - Use local storage for documents for privacy/compliance
 
 # Custom interface configuration
 interface:
-  customWelcome: "Welcome to LibreChat! Enjoy your experience."
+  customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
+  # Enable/disable file search as a chatarea selection (default: true)
+  # Note: This setting does not disable the Agents File Search Capability.
+  # To disable the Agents Capability, see the Agents Endpoint configuration instead.
+  fileSearch: true
   # Privacy policy settings
   privacyPolicy:
     externalUrl: 'https://librechat.ai/privacy-policy'
@@ -23,7 +42,7 @@ interface:
     externalUrl: 'https://librechat.ai/tos'
     openNewTab: true
     modalAcceptance: true
-    modalTitle: "Terms of Service for LibreChat"
+    modalTitle: 'Terms of Service for LibreChat'
     modalContent: |
       # Terms and Conditions for LibreChat
 
@@ -70,6 +89,15 @@ interface:
   bookmarks: true
   multiConvo: true
   agents: true
+  peoplePicker:
+    users: true
+    groups: true
+    roles: true
+  marketplace:
+      use: false
+  fileCitations: true
+  # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
+  # temporaryChatRetention: 1
 
 # Example Cloudflare turnstile (optional)
 #turnstile:
@@ -80,10 +108,9 @@ interface:
 
 # Example Registration Object Structure (optional)
 registration:
-  socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple']
+  socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
   # allowedDomains:
   # - "gmail.com"
-
 
 # Example Balance settings
 # balance:
@@ -93,6 +120,14 @@ registration:
 #   refillIntervalValue: 30
 #   refillIntervalUnit: 'days'
 #   refillAmount: 10000
+
+# Example Transactions settings
+# Controls whether to save transaction records to the database
+# Default is true (enabled)
+#transactions:
+#  enabled: false
+# Note: If balance.enabled is true, transactions will always be enabled
+# regardless of this setting to ensure balance tracking works correctly
 
 # speech:
 #   tts:
@@ -124,9 +159,9 @@ registration:
 # Example Actions Object Structure
 actions:
   allowedDomains:
-    - "swapi.dev"
-    - "librechat.ai"
-    - "google.com"
+    - 'swapi.dev'
+    - 'librechat.ai'
+    - 'google.com'
 
 # Example MCP Servers Object Structure
 # mcpServers:
@@ -178,6 +213,13 @@ endpoints:
   #   maxRecursionLimit: 100
   #   # (optional) Disable the builder interface for agents
   #   disableBuilder: false
+  #   # (optional) Maximum total citations to include in agent responses, defaults to 30
+  #   maxCitations: 30
+  #   # (optional) Maximum citations per file to include in agent responses, defaults to 7
+  #   maxCitationsPerFile: 7
+  #   # (optional) Minimum relevance score for sources to be included in responses, defaults to 0.45 (45% relevance threshold)
+  #   # Set to 0.0 to show all sources (no filtering), or higher like 0.7 for stricter filtering
+  #   minRelevanceScore: 0.45
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
   custom:
@@ -187,13 +229,11 @@ endpoints:
       baseURL: 'https://api.groq.com/openai/v1/'
       models:
         default:
-          [
-            'llama3-70b-8192',
-            'llama3-8b-8192',
-            'llama2-70b-4096',
-            'mixtral-8x7b-32768',
-            'gemma-7b-it',
-          ]
+          - 'llama3-70b-8192'
+          - 'llama3-8b-8192'
+          - 'llama2-70b-4096'
+          - 'mixtral-8x7b-32768'
+          - 'gemma-7b-it'
         fetch: false
       titleConvo: true
       titleModel: 'mixtral-8x7b-32768'
@@ -250,6 +290,8 @@ endpoints:
       # recommended environment variables:
       apiKey: '${OPENROUTER_KEY}'
       baseURL: 'https://openrouter.ai/api/v1'
+      headers:
+          x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
       models:
         default: ['meta-llama/llama-3-70b-instruct']
         fetch: true
@@ -260,15 +302,15 @@ endpoints:
       modelDisplayLabel: 'OpenRouter'
 
     # Portkey AI Example
-    - name: "Portkey"
-      apiKey: "dummy"
+    - name: 'Portkey'
+      apiKey: 'dummy'
       baseURL: 'https://api.portkey.ai/v1'
       headers:
-          x-portkey-api-key: '${PORTKEY_API_KEY}'
-          x-portkey-virtual-key: '${PORTKEY_OPENAI_VIRTUAL_KEY}'
+        x-portkey-api-key: '${PORTKEY_API_KEY}'
+        x-portkey-virtual-key: '${PORTKEY_OPENAI_VIRTUAL_KEY}'
       models:
-          default: ['gpt-4o-mini', 'gpt-4o', 'chatgpt-4o-latest']
-          fetch: true
+        default: ['gpt-4o-mini', 'gpt-4o', 'chatgpt-4o-latest']
+        fetch: true
       titleConvo: true
       titleModel: 'current_model'
       summarize: false
@@ -276,6 +318,60 @@ endpoints:
       forcePrompt: false
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
+# Example modelSpecs configuration showing grouping options
+# The 'group' field organizes model specs in the UI selector:
+# - If 'group' matches an endpoint name (e.g., "openAI", "groq"), the spec appears nested under that endpoint
+# - If 'group' is a custom name (doesn't match any endpoint), it creates a separate collapsible section
+# - If 'group' is omitted, the spec appears as a standalone item at the top level
+# modelSpecs:
+#   list:
+#     # Example 1: Nested under an endpoint (grouped with openAI endpoint)
+#     - name: "gpt-4o"
+#       label: "GPT-4 Optimized"
+#       description: "Most capable GPT-4 model with multimodal support"
+#       group: "openAI"  # String value matching the endpoint name
+#       preset:
+#         endpoint: "openAI"
+#         model: "gpt-4o"
+#
+#     # Example 2: Nested under a custom endpoint (grouped with groq endpoint)
+#     - name: "llama3-70b-8192"
+#       label: "Llama 3 70B"
+#       description: "Fastest inference available - great for quick responses"
+#       group: "groq"  # String value matching your custom endpoint name from endpoints.custom
+#       preset:
+#         endpoint: "groq"
+#         model: "llama3-70b-8192"
+#
+#     # Example 3: Custom group (creates a separate collapsible section)
+#     - name: "coding-assistant"
+#       label: "Coding Assistant"
+#       description: "Specialized for coding tasks"
+#       group: "my-assistants"  # Custom string - doesn't match any endpoint, so creates its own group
+#       preset:
+#         endpoint: "openAI"
+#         model: "gpt-4o"
+#         instructions: "You are an expert coding assistant..."
+#         temperature: 0.3
+#
+#     - name: "writing-assistant"
+#       label: "Writing Assistant"
+#       description: "Specialized for creative writing"
+#       group: "my-assistants"  # Same custom group name - both specs appear in same section
+#       preset:
+#         endpoint: "anthropic"
+#         model: "claude-sonnet-4"
+#         instructions: "You are a creative writing expert..."
+#
+#     # Example 4: Standalone (no group - appears at top level)
+#     - name: "general-assistant"
+#       label: "General Assistant"
+#       description: "General purpose assistant"
+#       # No 'group' field - appears as standalone item at top level (not nested)
+#       preset:
+#         endpoint: "openAI"
+#         model: "gpt-4o-mini"
+
 # fileConfig:
 #   endpoints:
 #     assistants:
@@ -297,5 +393,51 @@ endpoints:
 #   imageGeneration: # Image Gen settings, either percentage or px
 #     percentage: 100
 #     px: 1024
+#   # Client-side image resizing to prevent upload errors
+#   clientImageResize:
+#     enabled: false  # Enable/disable client-side image resizing (default: false)
+#     maxWidth: 1900  # Maximum width for resized images (default: 1900)
+#     maxHeight: 1900  # Maximum height for resized images (default: 1900)
+#     quality: 0.92  # JPEG quality for compression (0.0-1.0, default: 0.92)
 # # See the Custom Configuration Guide for more information on Assistants Config:
 # # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
+
+# Web Search Configuration (optional)
+# webSearch:
+#   # Jina Reranking Configuration
+#   jinaApiKey: '${JINA_API_KEY}'  # Your Jina API key
+#   jinaApiUrl: '${JINA_API_URL}'  # Custom Jina API URL (optional, defaults to https://api.jina.ai/v1/rerank)
+#   
+#   # Other rerankers
+#   cohereApiKey: '${COHERE_API_KEY}'
+#   
+#   # Search providers
+#   serperApiKey: '${SERPER_API_KEY}'
+#   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
+#   searxngApiKey: '${SEARXNG_API_KEY}'
+#   
+#   # Content scrapers
+#   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
+#   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+
+# Memory configuration for user memories
+# memory:
+#   # (optional) Disable memory functionality
+#   disabled: false
+#   # (optional) Restrict memory keys to specific values to limit memory storage and improve consistency
+#   validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
+#   # (optional) Maximum token limit for memory storage (not yet implemented for token counting)
+#   tokenLimit: 10000
+#   # (optional) Enable personalization features (defaults to true if memory is configured)
+#   # When false, users will not see the Personalization tab in settings
+#   personalize: true
+#   # Memory agent configuration - either use an existing agent by ID or define inline
+#   agent:
+#     # Option 1: Use existing agent by ID
+#     id: "your-memory-agent-id"
+#     # Option 2: Define agent inline
+#     # provider: "openai"
+#     # model: "gpt-4o-mini"
+#     # instructions: "You are a memory management assistant. Store and manage user information accurately."
+#     # model_parameters:
+#     #   temperature: 0.1

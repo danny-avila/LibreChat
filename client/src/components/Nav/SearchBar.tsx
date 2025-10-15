@@ -24,35 +24,45 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
   const inputRef = useRef<HTMLInputElement>(null);
   const [showClearIcon, setShowClearIcon] = useState(false);
 
-  const { newConversation } = useNewConvo();
+  const { newConversation: newConvo } = useNewConvo();
   const [search, setSearchState] = useRecoilState(store.search);
 
-  const clearSearch = useCallback(() => {
-    if (location.pathname.includes('/search')) {
-      newConversation({ disableFocus: true });
-      navigate('/c/new', { replace: true });
-    }
-  }, [newConversation, location.pathname, navigate]);
+  const clearSearch = useCallback(
+    (pathname?: string) => {
+      if (pathname?.includes('/search') || pathname === '/c/new') {
+        queryClient.removeQueries([QueryKeys.messages]);
+        newConvo({ disableFocus: true });
+        navigate('/c/new');
+      }
+    },
+    [newConvo, navigate, queryClient],
+  );
 
-  const clearText = useCallback(() => {
-    setShowClearIcon(false);
-    setText('');
-    setSearchState((prev) => ({
-      ...prev,
-      query: '',
-      debouncedQuery: '',
-      isTyping: false,
-    }));
-    clearSearch();
-    inputRef.current?.focus();
-  }, [setSearchState, clearSearch]);
+  const clearText = useCallback(
+    (pathname?: string) => {
+      setShowClearIcon(false);
+      setText('');
+      setSearchState((prev) => ({
+        ...prev,
+        query: '',
+        debouncedQuery: '',
+        isTyping: false,
+      }));
+      clearSearch(pathname);
+      inputRef.current?.focus();
+    },
+    [setSearchState, clearSearch],
+  );
 
-  const handleKeyUp = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    const { value } = e.target as HTMLInputElement;
-    if (e.key === 'Backspace' && value === '') {
-      clearText();
-    }
-  };
+  const handleKeyUp = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      const { value } = e.target as HTMLInputElement;
+      if (e.key === 'Backspace' && value === '') {
+        clearText(location.pathname);
+      }
+    },
+    [clearText, location.pathname],
+  );
 
   const sendRequest = useCallback(
     (value: string) => {
@@ -85,8 +95,6 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
     debouncedSetDebouncedQuery(value);
     if (value.length > 0 && location.pathname !== '/search') {
       navigate('/search', { replace: true });
-    } else if (value.length === 0 && location.pathname === '/search') {
-      navigate('/c/new', { replace: true });
     }
   };
 
@@ -103,7 +111,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
       ref={ref}
       className={cn(
         'group relative mt-1 flex h-10 cursor-pointer items-center gap-3 rounded-lg border-border-medium px-3 py-2 text-text-primary transition-colors duration-200 focus-within:bg-surface-hover hover:bg-surface-hover',
-        isSmallScreen === true ? 'mb-2 h-14 rounded-2xl' : '',
+        isSmallScreen === true ? 'mb-2 h-14 rounded-xl' : '',
       )}
     >
       <Search className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary" />
@@ -132,7 +140,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
           showClearIcon ? 'opacity-100' : 'opacity-0',
           isSmallScreen === true ? 'right-[16px]' : '',
         )}
-        onClick={clearText}
+        onClick={() => clearText(location.pathname)}
         tabIndex={showClearIcon ? 0 : -1}
         disabled={!showClearIcon}
       >

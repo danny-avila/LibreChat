@@ -12,6 +12,7 @@ import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
+import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
 import ImageGen from './ImageGen';
 import Image from './Image';
@@ -56,7 +57,7 @@ const Part = memo(
         </>
       );
     } else if (part.type === ContentTypes.TEXT) {
-      const text = typeof part.text === 'string' ? part.text : part.text.value;
+      const text = typeof part.text === 'string' ? part.text : part.text?.value;
 
       if (typeof text !== 'string') {
         return null;
@@ -70,7 +71,7 @@ const Part = memo(
         </Container>
       );
     } else if (part.type === ContentTypes.THINK) {
-      const reasoning = typeof part.think === 'string' ? part.think : part.think.value;
+      const reasoning = typeof part.think === 'string' ? part.think : part.think?.value;
       if (typeof reasoning !== 'string') {
         return null;
       }
@@ -87,10 +88,11 @@ const Part = memo(
       if (isToolCall && toolCall.name === Tools.execute_code) {
         return (
           <ExecuteCode
-            args={typeof toolCall.args === 'string' ? toolCall.args : ''}
+            attachments={attachments}
+            isSubmitting={isSubmitting}
             output={toolCall.output ?? ''}
             initialProgress={toolCall.progress ?? 0.1}
-            attachments={attachments}
+            args={typeof toolCall.args === 'string' ? toolCall.args : ''}
           />
         );
       } else if (
@@ -105,6 +107,16 @@ const Part = memo(
             args={typeof toolCall.args === 'string' ? toolCall.args : ''}
             output={toolCall.output ?? ''}
             attachments={attachments}
+          />
+        );
+      } else if (isToolCall && toolCall.name === Tools.web_search) {
+        return (
+          <WebSearch
+            output={toolCall.output ?? ''}
+            initialProgress={toolCall.progress ?? 0.1}
+            isSubmitting={isSubmitting}
+            attachments={attachments}
+            isLast={isLast}
           />
         );
       } else if (isToolCall) {

@@ -1,46 +1,65 @@
-// const { HttpsProxyAgent } = require('https-proxy-agent');
-// const {
-// Constants,
-// ImageDetail,
-// EModelEndpoint,
-// resolveHeaders,
-// validateVisionModel,
-// mapModelToAzureConfig,
-// } = require('librechat-data-provider');
 require('events').EventEmitter.defaultMaxListeners = 100;
+const { logger } = require('@librechat/data-schemas');
+const { DynamicStructuredTool } = require('@langchain/core/tools');
+const { getBufferString, HumanMessage } = require('@langchain/core/messages');
+const {
+  sendEvent,
+  createRun,
+  Tokenizer,
+  checkAccess,
+  logAxiosError,
+  resolveHeaders,
+  getBalanceConfig,
+  memoryInstructions,
+  formatContentStrings,
+  getTransactionsConfig,
+  createMemoryProcessor,
+} = require('@librechat/api');
 const {
   Callback,
+  Providers,
   GraphEvents,
+  TitleMethod,
   formatMessage,
   formatAgentMessages,
-  formatContentStrings,
   getTokenCountForMessage,
   createMetadataAggregator,
 } = require('@librechat/agents');
 const {
   Constants,
+  Permissions,
   VisionModes,
   ContentTypes,
   EModelEndpoint,
-  KnownEndpoints,
+  PermissionTypes,
   isAgentsEndpoint,
   AgentCapabilities,
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { getCustomEndpointConfig, checkCapability } = require('~/server/services/Config');
 const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
+const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getBufferString, HumanMessage } = require('@langchain/core/messages');
+const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
-const Tokenizer = require('~/server/services/Tokenizer');
+const { getProviderConfig } = require('~/server/services/Endpoints');
+const { checkCapability } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
-const { logger, sendEvent } = require('~/config');
-const { createRun } = require('./run');
+const { getRoleByName } = require('~/models/Role');
+const { loadAgent } = require('~/models/Agent');
+const { getMCPManager } = require('~/config');
 
-/** @typedef {import('@librechat/agents').MessageContentComplex} MessageContentComplex */
-/** @typedef {import('@langchain/core/runnables').RunnableConfig} RunnableConfig */
+const omitTitleOptions = new Set([
+  'stream',
+  'thinking',
+  'streaming',
+  'clientOptions',
+  'thinkingConfig',
+  'thinkingBudget',
+  'includeThoughts',
+  'maxOutputTokens',
+  'additionalModelRequestFields',
+]);
 
 /**
  * @param {ServerRequest} req
@@ -51,32 +70,29 @@ const payloadParser = ({ req, agent, endpoint }) => {
   if (isAgentsEndpoint(endpoint)) {
     return { model: undefined };
   } else if (endpoint === EModelEndpoint.bedrock) {
-    return bedrockInputSchema.parse(agent.model_parameters);
+    const parsedValues = bedrockInputSchema.parse(agent.model_parameters);
+    if (parsedValues.thinking == null) {
+      parsedValues.thinking = false;
+    }
+    return parsedValues;
   }
   return req.body.endpointOption.model_parameters;
 };
 
-const legacyContentEndpoints = new Set([KnownEndpoints.groq, KnownEndpoints.deepseek]);
-
 const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];
 
-// const { processMemory, memoryInstructions } = require('~/server/services/Endpoints/agents/memory');
-// const { getFormattedMemories } = require('~/models/Memory');
-// const { getCurrentDateTime } = require('~/utils');
-
 function createTokenCounter(encoding) {
-  return (message) => {
+  return function (message) {
     const countTokens = (text) => Tokenizer.getTokenCount(text, encoding);
     return getTokenCountForMessage(message, countTokens);
   };
 }
 
 function logToolError(graph, error, toolId) {
-  logger.error(
-    '[api/server/controllers/agents/client.js #chatCompletion] Tool Error',
+  logAxiosError({
     error,
-    toolId,
-  );
+    message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
+  });
 }
 
 class AgentClient extends BaseClient {
@@ -126,6 +142,8 @@ class AgentClient extends BaseClient {
     this.usage;
     /** @type {Record<string, number>} */
     this.indexTokenCountMap = {};
+    /** @type {(messages: BaseMessage[]) => Promise<void>} */
+    this.processMemory;
   }
 
   /**
@@ -140,55 +158,10 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   *
-   * Checks if the model is a vision model based on request attachments and sets the appropriate options:
-   * - Sets `this.modelOptions.model` to `gpt-4-vision-preview` if the request is a vision request.
-   * - Sets `this.isVisionModel` to `true` if vision request.
-   * - Deletes `this.modelOptions.stop` if vision request.
+   * `AgentClient` is not opinionated about vision requests, so we don't do anything here
    * @param {MongoFile[]} attachments
    */
-  checkVisionRequest(attachments) {
-    // if (!attachments) {
-    //   return;
-    // }
-    // const availableModels = this.options.modelsConfig?.[this.options.endpoint];
-    // if (!availableModels) {
-    //   return;
-    // }
-    // let visionRequestDetected = false;
-    // for (const file of attachments) {
-    //   if (file?.type?.includes('image')) {
-    //     visionRequestDetected = true;
-    //     break;
-    //   }
-    // }
-    // if (!visionRequestDetected) {
-    //   return;
-    // }
-    // this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
-    // if (this.isVisionModel) {
-    //   delete this.modelOptions.stop;
-    //   return;
-    // }
-    // for (const model of availableModels) {
-    //   if (!validateVisionModel({ model, availableModels })) {
-    //     continue;
-    //   }
-    //   this.modelOptions.model = model;
-    //   this.isVisionModel = true;
-    //   delete this.modelOptions.stop;
-    //   return;
-    // }
-    // if (!availableModels.includes(this.defaultVisionModel)) {
-    //   return;
-    // }
-    // if (!validateVisionModel({ model: this.defaultVisionModel, availableModels })) {
-    //   return;
-    // }
-    // this.modelOptions.model = this.defaultVisionModel;
-    // this.isVisionModel = true;
-    // delete this.modelOptions.stop;
-  }
+  checkVisionRequest() {}
 
   getSaveOptions() {
     // TODO:
@@ -238,16 +211,13 @@ class AgentClient extends BaseClient {
    * @returns {Promise<Array<Partial<MongoFile>>>}
    */
   async addImageURLs(message, attachments) {
-    const { files, text, image_urls } = await encodeAndFormat(
+    const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
       this.options.agent.provider,
       VisionModes.agents,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;
-    if (text && text.length) {
-      message.ocr = text;
-    }
     return files;
   }
 
@@ -272,40 +242,21 @@ class AgentClient extends BaseClient {
       .filter(Boolean)
       .join('\n')
       .trim();
-    // this.systemMessage = getCurrentDateTime();
-    // const { withKeys, withoutKeys } = await getFormattedMemories({
-    //   userId: this.options.req.user.id,
-    // });
-    // processMemory({
-    //   userId: this.options.req.user.id,
-    //   message: this.options.req.body.text,
-    //   parentMessageId,
-    //   memory: withKeys,
-    //   thread_id: this.conversationId,
-    // }).catch((error) => {
-    //   logger.error('Memory Agent failed to process memory', error);
-    // });
-
-    // this.systemMessage += '\n\n' + memoryInstructions;
-    // if (withoutKeys) {
-    //   this.systemMessage += `\n\n# Existing memory about the user:\n${withoutKeys}`;
-    // }
 
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
+      const latestMessage = orderedMessages[orderedMessages.length - 1];
 
       if (this.message_file_map) {
-        this.message_file_map[orderedMessages[orderedMessages.length - 1].messageId] = attachments;
+        this.message_file_map[latestMessage.messageId] = attachments;
       } else {
         this.message_file_map = {
-          [orderedMessages[orderedMessages.length - 1].messageId]: attachments,
+          [latestMessage.messageId]: attachments,
         };
       }
 
-      const files = await this.addImageURLs(
-        orderedMessages[orderedMessages.length - 1],
-        attachments,
-      );
+      await this.addFileContextToMessage(latestMessage, attachments);
+      const files = await this.processAttachments(latestMessage, attachments);
 
       this.options.attachments = files;
     }
@@ -325,21 +276,21 @@ class AgentClient extends BaseClient {
         assistantName: this.options?.modelLabel,
       });
 
-      if (message.ocr && i !== orderedMessages.length - 1) {
+      if (message.fileContext && i !== orderedMessages.length - 1) {
         if (typeof formattedMessage.content === 'string') {
-          formattedMessage.content = message.ocr + '\n' + formattedMessage.content;
+          formattedMessage.content = message.fileContext + '\n' + formattedMessage.content;
         } else {
           const textPart = formattedMessage.content.find((part) => part.type === 'text');
           textPart
-            ? (textPart.text = message.ocr + '\n' + textPart.text)
-            : formattedMessage.content.unshift({ type: 'text', text: message.ocr });
+            ? (textPart.text = message.fileContext + '\n' + textPart.text)
+            : formattedMessage.content.unshift({ type: 'text', text: message.fileContext });
         }
-      } else if (message.ocr && i === orderedMessages.length - 1) {
-        systemContent = [systemContent, message.ocr].join('\n');
+      } else if (message.fileContext && i === orderedMessages.length - 1) {
+        systemContent = [systemContent, message.fileContext].join('\n');
       }
 
       const needsTokenCount =
-        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.ocr;
+        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.fileContext;
 
       /* If tokens were never counted, or, is a Vision request and the message has files, count again */
       if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
@@ -373,6 +324,37 @@ class AgentClient extends BaseClient {
       systemContent = this.augmentedPrompt + systemContent;
     }
 
+    // Inject MCP server instructions if available
+    const ephemeralAgent = this.options.req.body.ephemeralAgent;
+    let mcpServers = [];
+
+    // Check for ephemeral agent MCP servers
+    if (ephemeralAgent && ephemeralAgent.mcp && ephemeralAgent.mcp.length > 0) {
+      mcpServers = ephemeralAgent.mcp;
+    }
+    // Check for regular agent MCP tools
+    else if (this.options.agent && this.options.agent.tools) {
+      mcpServers = this.options.agent.tools
+        .filter(
+          (tool) =>
+            tool instanceof DynamicStructuredTool && tool.name.includes(Constants.mcp_delimiter),
+        )
+        .map((tool) => tool.name.split(Constants.mcp_delimiter).pop())
+        .filter(Boolean);
+    }
+
+    if (mcpServers.length > 0) {
+      try {
+        const mcpInstructions = getMCPManager().formatInstructionsForContext(mcpServers);
+        if (mcpInstructions) {
+          systemContent = [systemContent, mcpInstructions].filter(Boolean).join('\n\n');
+          logger.debug('[AgentClient] Injected MCP instructions for servers:', mcpServers);
+        }
+      } catch (error) {
+        logger.error('[AgentClient] Failed to inject MCP instructions:', error);
+      }
+    }
+
     if (systemContent) {
       this.options.agent.instructions = systemContent;
     }
@@ -402,7 +384,224 @@ class AgentClient extends BaseClient {
       opts.getReqData({ promptTokens });
     }
 
+    const withoutKeys = await this.useMemory();
+    if (withoutKeys) {
+      systemContent += `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
+    }
+
+    if (systemContent) {
+      this.options.agent.instructions = systemContent;
+    }
+
     return result;
+  }
+
+  /**
+   * Creates a promise that resolves with the memory promise result or undefined after a timeout
+   * @param {Promise<(TAttachment | null)[] | undefined>} memoryPromise - The memory promise to await
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 3000)
+   * @returns {Promise<(TAttachment | null)[] | undefined>}
+   */
+  async awaitMemoryWithTimeout(memoryPromise, timeoutMs = 3000) {
+    if (!memoryPromise) {
+      return;
+    }
+
+    try {
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Memory processing timeout')), timeoutMs),
+      );
+
+      const attachments = await Promise.race([memoryPromise, timeoutPromise]);
+      return attachments;
+    } catch (error) {
+      if (error.message === 'Memory processing timeout') {
+        logger.warn('[AgentClient] Memory processing timed out after 3 seconds');
+      } else {
+        logger.error('[AgentClient] Error processing memory:', error);
+      }
+      return;
+    }
+  }
+
+  /**
+   * @returns {Promise<string | undefined>}
+   */
+  async useMemory() {
+    const user = this.options.req.user;
+    if (user.personalization?.memories === false) {
+      return;
+    }
+    const hasAccess = await checkAccess({
+      user,
+      permissionType: PermissionTypes.MEMORIES,
+      permissions: [Permissions.USE],
+      getRoleByName,
+    });
+
+    if (!hasAccess) {
+      logger.debug(
+        `[api/server/controllers/agents/client.js #useMemory] User ${user.id} does not have USE permission for memories`,
+      );
+      return;
+    }
+    const appConfig = this.options.req.config;
+    const memoryConfig = appConfig.memory;
+    if (!memoryConfig || memoryConfig.disabled === true) {
+      return;
+    }
+
+    /** @type {Agent} */
+    let prelimAgent;
+    const allowedProviders = new Set(
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
+    );
+    try {
+      if (memoryConfig.agent?.id != null && memoryConfig.agent.id !== this.options.agent.id) {
+        prelimAgent = await loadAgent({
+          req: this.options.req,
+          agent_id: memoryConfig.agent.id,
+          endpoint: EModelEndpoint.agents,
+        });
+      } else if (
+        memoryConfig.agent?.id == null &&
+        memoryConfig.agent?.model != null &&
+        memoryConfig.agent?.provider != null
+      ) {
+        prelimAgent = { id: Constants.EPHEMERAL_AGENT_ID, ...memoryConfig.agent };
+      }
+    } catch (error) {
+      logger.error(
+        '[api/server/controllers/agents/client.js #useMemory] Error loading agent for memory',
+        error,
+      );
+    }
+
+    const agent = await initializeAgent({
+      req: this.options.req,
+      res: this.options.res,
+      agent: prelimAgent,
+      allowedProviders,
+      endpointOption: {
+        endpoint:
+          prelimAgent.id !== Constants.EPHEMERAL_AGENT_ID
+            ? EModelEndpoint.agents
+            : memoryConfig.agent?.provider,
+      },
+    });
+
+    if (!agent) {
+      logger.warn(
+        '[api/server/controllers/agents/client.js #useMemory] No agent found for memory',
+        memoryConfig,
+      );
+      return;
+    }
+
+    const llmConfig = Object.assign(
+      {
+        provider: agent.provider,
+        model: agent.model,
+      },
+      agent.model_parameters,
+    );
+
+    /** @type {import('@librechat/api').MemoryConfig} */
+    const config = {
+      validKeys: memoryConfig.validKeys,
+      instructions: agent.instructions,
+      llmConfig,
+      tokenLimit: memoryConfig.tokenLimit,
+    };
+
+    const userId = this.options.req.user.id + '';
+    const messageId = this.responseMessageId + '';
+    const conversationId = this.conversationId + '';
+    const [withoutKeys, processMemory] = await createMemoryProcessor({
+      userId,
+      config,
+      messageId,
+      conversationId,
+      memoryMethods: {
+        setMemory,
+        deleteMemory,
+        getFormattedMemories,
+      },
+      res: this.options.res,
+    });
+
+    this.processMemory = processMemory;
+    return withoutKeys;
+  }
+
+  /**
+   * Filters out image URLs from message content
+   * @param {BaseMessage} message - The message to filter
+   * @returns {BaseMessage} - A new message with image URLs removed
+   */
+  filterImageUrls(message) {
+    if (!message.content || typeof message.content === 'string') {
+      return message;
+    }
+
+    if (Array.isArray(message.content)) {
+      const filteredContent = message.content.filter(
+        (part) => part.type !== ContentTypes.IMAGE_URL,
+      );
+
+      if (filteredContent.length === 1 && filteredContent[0].type === ContentTypes.TEXT) {
+        const MessageClass = message.constructor;
+        return new MessageClass({
+          content: filteredContent[0].text,
+          additional_kwargs: message.additional_kwargs,
+        });
+      }
+
+      const MessageClass = message.constructor;
+      return new MessageClass({
+        content: filteredContent,
+        additional_kwargs: message.additional_kwargs,
+      });
+    }
+
+    return message;
+  }
+
+  /**
+   * @param {BaseMessage[]} messages
+   * @returns {Promise<void | (TAttachment | null)[]>}
+   */
+  async runMemory(messages) {
+    try {
+      if (this.processMemory == null) {
+        return;
+      }
+      const appConfig = this.options.req.config;
+      const memoryConfig = appConfig.memory;
+      const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
+
+      let messagesToProcess = [...messages];
+      if (messages.length > messageWindowSize) {
+        for (let i = messages.length - messageWindowSize; i >= 0; i--) {
+          const potentialWindow = messages.slice(i, i + messageWindowSize);
+          if (potentialWindow[0]?.role === 'user') {
+            messagesToProcess = [...potentialWindow];
+            break;
+          }
+        }
+
+        if (messagesToProcess.length === messages.length) {
+          messagesToProcess = [...messages.slice(-messageWindowSize)];
+        }
+      }
+
+      const filteredMessages = messagesToProcess.map((msg) => this.filterImageUrls(msg));
+      const bufferString = getBufferString(filteredMessages);
+      const bufferMessage = new HumanMessage(`# Current Chat:\n\n${bufferString}`);
+      return await this.processMemory([bufferMessage]);
+    } catch (error) {
+      logger.error('Memory Agent failed to process memory', error);
+    }
   }
 
   /** @type {sendCompletion} */
@@ -410,6 +609,7 @@ class AgentClient extends BaseClient {
     await this.chatCompletion({
       payload,
       onProgress: opts.onProgress,
+      userMCPAuthMap: opts.userMCPAuthMap,
       abortController: opts.abortController,
     });
     return this.contentParts;
@@ -419,9 +619,17 @@ class AgentClient extends BaseClient {
    * @param {Object} params
    * @param {string} [params.model]
    * @param {string} [params.context='message']
+   * @param {AppConfig['balance']} [params.balance]
+   * @param {AppConfig['transactions']} [params.transactions]
    * @param {UsageMetadata[]} [params.collectedUsage=this.collectedUsage]
    */
-  async recordCollectedUsage({ model, context = 'message', collectedUsage = this.collectedUsage }) {
+  async recordCollectedUsage({
+    model,
+    balance,
+    transactions,
+    context = 'message',
+    collectedUsage = this.collectedUsage,
+  }) {
     if (!collectedUsage || !collectedUsage.length) {
       return;
     }
@@ -443,6 +651,8 @@ class AgentClient extends BaseClient {
 
       const txMetadata = {
         context,
+        balance,
+        transactions,
         conversationId: this.conversationId,
         user: this.user ?? this.options.req.user?.id,
         endpointTokenConfig: this.options.endpointTokenConfig,
@@ -542,107 +752,27 @@ class AgentClient extends BaseClient {
     return currentMessageTokens > 0 ? currentMessageTokens : originalEstimate;
   }
 
-  async chatCompletion({ payload, abortController = null }) {
-    /** @type {Partial<RunnableConfig> & { version: 'v1' | 'v2'; run_id?: string; streamMode: string }} */
+  /**
+   * @param {object} params
+   * @param {string | ChatCompletionMessageParam[]} params.payload
+   * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+   * @param {AbortController} [params.abortController]
+   */
+  async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
+    /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
     let run;
+    /** @type {Promise<(TAttachment | null)[] | undefined>} */
+    let memoryPromise;
     try {
       if (!abortController) {
         abortController = new AbortController();
       }
 
-      // if (this.options.headers) {
-      //   opts.defaultHeaders = { ...opts.defaultHeaders, ...this.options.headers };
-      // }
-
-      // if (this.options.proxy) {
-      //   opts.httpAgent = new HttpsProxyAgent(this.options.proxy);
-      // }
-
-      // if (this.isVisionModel) {
-      //   modelOptions.max_tokens = 4000;
-      // }
-
-      // /** @type {TAzureConfig | undefined} */
-      // const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
-
-      // if (
-      //   (this.azure && this.isVisionModel && azureConfig) ||
-      //   (azureConfig && this.isVisionModel && this.options.endpoint === EModelEndpoint.azureOpenAI)
-      // ) {
-      //   const { modelGroupMap, groupMap } = azureConfig;
-      //   const {
-      //     azureOptions,
-      //     baseURL,
-      //     headers = {},
-      //     serverless,
-      //   } = mapModelToAzureConfig({
-      //     modelName: modelOptions.model,
-      //     modelGroupMap,
-      //     groupMap,
-      //   });
-      //   opts.defaultHeaders = resolveHeaders(headers);
-      //   this.langchainProxy = extractBaseURL(baseURL);
-      //   this.apiKey = azureOptions.azureOpenAIApiKey;
-
-      //   const groupName = modelGroupMap[modelOptions.model].group;
-      //   this.options.addParams = azureConfig.groupMap[groupName].addParams;
-      //   this.options.dropParams = azureConfig.groupMap[groupName].dropParams;
-      //   // Note: `forcePrompt` not re-assigned as only chat models are vision models
-
-      //   this.azure = !serverless && azureOptions;
-      //   this.azureEndpoint =
-      //     !serverless && genAzureChatCompletion(this.azure, modelOptions.model, this);
-      // }
-
-      // if (this.azure || this.options.azure) {
-      //   /* Azure Bug, extremely short default `max_tokens` response */
-      //   if (!modelOptions.max_tokens && modelOptions.model === 'gpt-4-vision-preview') {
-      //     modelOptions.max_tokens = 4000;
-      //   }
-
-      //   /* Azure does not accept `model` in the body, so we need to remove it. */
-      //   delete modelOptions.model;
-
-      //   opts.baseURL = this.langchainProxy
-      //     ? constructAzureURL({
-      //       baseURL: this.langchainProxy,
-      //       azureOptions: this.azure,
-      //     })
-      //     : this.azureEndpoint.split(/(?<!\/)\/(chat|completion)\//)[0];
-
-      //   opts.defaultQuery = { 'api-version': this.azure.azureOpenAIApiVersion };
-      //   opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
-      // }
-
-      // if (process.env.OPENAI_ORGANIZATION) {
-      //   opts.organization = process.env.OPENAI_ORGANIZATION;
-      // }
-
-      // if (this.options.addParams && typeof this.options.addParams === 'object') {
-      //   modelOptions = {
-      //     ...modelOptions,
-      //     ...this.options.addParams,
-      //   };
-      //   logger.debug('[api/server/controllers/agents/client.js #chatCompletion] added params', {
-      //     addParams: this.options.addParams,
-      //     modelOptions,
-      //   });
-      // }
-
-      // if (this.options.dropParams && Array.isArray(this.options.dropParams)) {
-      //   this.options.dropParams.forEach((param) => {
-      //     delete modelOptions[param];
-      //   });
-      //   logger.debug('[api/server/controllers/agents/client.js #chatCompletion] dropped params', {
-      //     dropParams: this.options.dropParams,
-      //     modelOptions,
-      //   });
-      // }
-
-      /** @type {TCustomConfig['endpoints']['agents']} */
-      const agentsEConfig = this.options.req.app.locals[EModelEndpoint.agents];
+      const appConfig = this.options.req.config;
+      /** @type {AppConfig['endpoints']['agents']} */
+      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
       config = {
         configurable: {
@@ -650,8 +780,14 @@ class AgentClient extends BaseClient {
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
+          requestBody: {
+            messageId: this.responseMessageId,
+            conversationId: this.conversationId,
+            parentMessageId: this.parentMessageId,
+          },
+          user: this.options.req.user,
         },
-        recursionLimit: agentsEConfig?.recursionLimit,
+        recursionLimit: agentsEConfig?.recursionLimit ?? 25,
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',
@@ -663,9 +799,6 @@ class AgentClient extends BaseClient {
         this.indexTokenCountMap,
         toolSet,
       );
-      if (legacyContentEndpoints.has(this.options.agent.endpoint?.toLowerCase())) {
-        initialMessages = formatContentStrings(initialMessages);
-      }
 
       /**
        *
@@ -680,6 +813,9 @@ class AgentClient extends BaseClient {
         const currentIndexCountMap = _currentIndexCountMap ?? indexTokenCountMap;
         if (i > 0) {
           this.model = agent.model_parameters.model;
+        }
+        if (i > 0 && config.signal == null) {
+          config.signal = abortController.signal;
         }
         if (agent.recursion_limit && typeof agent.recursion_limit === 'number') {
           config.recursionLimit = agent.recursion_limit;
@@ -719,7 +855,7 @@ class AgentClient extends BaseClient {
 
         if (noSystemMessages === true && systemContent?.length) {
           const latestMessageContent = _messages.pop().content;
-          if (typeof latestMessage !== 'string') {
+          if (typeof latestMessageContent !== 'string') {
             latestMessageContent[0].text = [systemContent, latestMessageContent[0].text].join('\n');
             _messages.push(new HumanMessage({ content: latestMessageContent }));
           } else {
@@ -729,12 +865,28 @@ class AgentClient extends BaseClient {
         }
 
         let messages = _messages;
-        if (
-          agent.model_parameters?.clientOptions?.defaultHeaders?.['anthropic-beta']?.includes(
-            'prompt-caching',
-          )
-        ) {
+        if (agent.useLegacyContent === true) {
+          messages = formatContentStrings(messages);
+        }
+        const defaultHeaders =
+          agent.model_parameters?.clientOptions?.defaultHeaders ??
+          agent.model_parameters?.configuration?.defaultHeaders;
+        if (defaultHeaders?.['anthropic-beta']?.includes('prompt-caching')) {
           messages = addCacheControl(messages);
+        }
+
+        if (i === 0) {
+          memoryPromise = this.runMemory(messages);
+        }
+
+        /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
+         *  non-custom endpoints, needs consideration of varying provider header configs.
+         */
+        if (agent.model_parameters?.configuration?.defaultHeaders != null) {
+          agent.model_parameters.configuration.defaultHeaders = resolveHeaders({
+            headers: agent.model_parameters.configuration.defaultHeaders,
+            body: config.configurable.requestBody,
+          });
         }
 
         run = await createRun({
@@ -772,10 +924,12 @@ class AgentClient extends BaseClient {
           run.Graph.contentData = contentData;
         }
 
-        const encoding = this.getEncoding();
+        if (userMCPAuthMap != null) {
+          config.configurable.userMCPAuthMap = userMCPAuthMap;
+        }
         await run.processStream({ messages }, config, {
           keepContent: i !== 0,
-          tokenCounter: createTokenCounter(encoding),
+          tokenCounter: createTokenCounter(this.getEncoding()),
           indexTokenCountMap: currentIndexCountMap,
           maxContextTokens: agent.maxContextTokens,
           callbacks: {
@@ -890,7 +1044,18 @@ class AgentClient extends BaseClient {
       });
 
       try {
-        await this.recordCollectedUsage({ context: 'message' });
+        const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
+        if (attachments && attachments.length > 0) {
+          this.artifactPromises.push(...attachments);
+        }
+
+        const balanceConfig = getBalanceConfig(appConfig);
+        const transactionsConfig = getTransactionsConfig(appConfig);
+        await this.recordCollectedUsage({
+          context: 'message',
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
@@ -898,6 +1063,10 @@ class AgentClient extends BaseClient {
         );
       }
     } catch (err) {
+      const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
+      if (attachments && attachments.length > 0) {
+        this.artifactPromises.push(...attachments);
+      }
       logger.error(
         '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
         err,
@@ -926,23 +1095,53 @@ class AgentClient extends BaseClient {
       throw new Error('Run not initialized');
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
-    const endpoint = this.options.agent.endpoint;
-    const { req, res } = this.options;
+    const { req, res, agent } = this.options;
+    const appConfig = req.config;
+    let endpoint = agent.endpoint;
+
     /** @type {import('@librechat/agents').ClientOptions} */
     let clientOptions = {
-      maxTokens: 75,
+      model: agent.model || agent.model_parameters.model,
     };
-    let endpointConfig = req.app.locals[endpoint];
+
+    let titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
+
+    /** @type {TEndpoint | undefined} */
+    const endpointConfig =
+      appConfig.endpoints?.all ??
+      appConfig.endpoints?.[endpoint] ??
+      titleProviderConfig.customEndpointConfig;
     if (!endpointConfig) {
+      logger.debug(
+        `[api/server/controllers/agents/client.js #titleConvo] No endpoint config for "${endpoint}"`,
+      );
+    }
+
+    if (endpointConfig?.titleConvo === false) {
+      logger.debug(
+        `[api/server/controllers/agents/client.js #titleConvo] Title generation disabled for endpoint "${endpoint}"`,
+      );
+      return;
+    }
+
+    if (endpointConfig?.titleEndpoint && endpointConfig.titleEndpoint !== endpoint) {
       try {
-        endpointConfig = await getCustomEndpointConfig(endpoint);
-      } catch (err) {
-        logger.error(
-          '[api/server/controllers/agents/client.js #titleConvo] Error getting custom endpoint config',
-          err,
+        titleProviderConfig = getProviderConfig({
+          provider: endpointConfig.titleEndpoint,
+          appConfig,
+        });
+        endpoint = endpointConfig.titleEndpoint;
+      } catch (error) {
+        logger.warn(
+          `[api/server/controllers/agents/client.js #titleConvo] Error getting title endpoint config for "${endpointConfig.titleEndpoint}", falling back to default`,
+          error,
         );
+        // Fall back to original provider config
+        endpoint = agent.endpoint;
+        titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
       }
     }
+
     if (
       endpointConfig &&
       endpointConfig.titleModel &&
@@ -950,33 +1149,83 @@ class AgentClient extends BaseClient {
     ) {
       clientOptions.model = endpointConfig.titleModel;
     }
+
+    const options = await titleProviderConfig.getOptions({
+      req,
+      res,
+      optionsOnly: true,
+      overrideEndpoint: endpoint,
+      overrideModel: clientOptions.model,
+      endpointOption: { model_parameters: clientOptions },
+    });
+
+    let provider = options.provider ?? titleProviderConfig.overrideProvider ?? agent.provider;
     if (
       endpoint === EModelEndpoint.azureOpenAI &&
-      clientOptions.model &&
-      this.options.agent.model_parameters.model !== clientOptions.model
+      options.llmConfig?.azureOpenAIApiInstanceName == null
     ) {
-      clientOptions =
-        (
-          await initOpenAI({
-            req,
-            res,
-            optionsOnly: true,
-            overrideModel: clientOptions.model,
-            overrideEndpoint: endpoint,
-            endpointOption: {
-              model_parameters: clientOptions,
-            },
-          })
-        )?.llmConfig ?? clientOptions;
+      provider = Providers.OPENAI;
+    } else if (
+      endpoint === EModelEndpoint.azureOpenAI &&
+      options.llmConfig?.azureOpenAIApiInstanceName != null &&
+      provider !== Providers.AZURE
+    ) {
+      provider = Providers.AZURE;
     }
-    if (/\b(o\d)\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+
+    /** @type {import('@librechat/agents').ClientOptions} */
+    clientOptions = { ...options.llmConfig };
+    if (options.configOptions) {
+      clientOptions.configuration = options.configOptions;
+    }
+
+    if (clientOptions.maxTokens != null) {
       delete clientOptions.maxTokens;
     }
+    if (clientOptions?.modelKwargs?.max_completion_tokens != null) {
+      delete clientOptions.modelKwargs.max_completion_tokens;
+    }
+    if (clientOptions?.modelKwargs?.max_output_tokens != null) {
+      delete clientOptions.modelKwargs.max_output_tokens;
+    }
+
+    clientOptions = Object.assign(
+      Object.fromEntries(
+        Object.entries(clientOptions).filter(([key]) => !omitTitleOptions.has(key)),
+      ),
+    );
+
+    if (
+      provider === Providers.GOOGLE &&
+      (endpointConfig?.titleMethod === TitleMethod.FUNCTIONS ||
+        endpointConfig?.titleMethod === TitleMethod.STRUCTURED)
+    ) {
+      clientOptions.json = true;
+    }
+
+    /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
+     *  non-custom endpoints, needs consideration of varying provider header configs.
+     */
+    if (clientOptions?.configuration?.defaultHeaders != null) {
+      clientOptions.configuration.defaultHeaders = resolveHeaders({
+        headers: clientOptions.configuration.defaultHeaders,
+        body: {
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          parentMessageId: this.parentMessageId,
+        },
+      });
+    }
+
     try {
       const titleResult = await this.run.generateTitle({
+        provider,
+        clientOptions,
         inputText: text,
         contentParts: this.contentParts,
-        clientOptions,
+        titleMethod: endpointConfig?.titleMethod,
+        titlePrompt: endpointConfig?.titlePrompt,
+        titlePromptTemplate: endpointConfig?.titlePromptTemplate,
         chainOptions: {
           signal: abortController.signal,
           callbacks: [
@@ -991,8 +1240,10 @@ class AgentClient extends BaseClient {
         let input_tokens, output_tokens;
 
         if (item.usage) {
-          input_tokens = item.usage.input_tokens || item.usage.inputTokens;
-          output_tokens = item.usage.output_tokens || item.usage.outputTokens;
+          input_tokens =
+            item.usage.prompt_tokens || item.usage.input_tokens || item.usage.inputTokens;
+          output_tokens =
+            item.usage.completion_tokens || item.usage.output_tokens || item.usage.outputTokens;
         } else if (item.tokenUsage) {
           input_tokens = item.tokenUsage.promptTokens;
           output_tokens = item.tokenUsage.completionTokens;
@@ -1004,10 +1255,14 @@ class AgentClient extends BaseClient {
         };
       });
 
+      const balanceConfig = getBalanceConfig(appConfig);
+      const transactionsConfig = getTransactionsConfig(appConfig);
       await this.recordCollectedUsage({
-        model: clientOptions.model,
-        context: 'title',
         collectedUsage,
+        context: 'title',
+        model: clientOptions.model,
+        balance: balanceConfig,
+        transactions: transactionsConfig,
       }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error recording collected usage',
@@ -1022,8 +1277,62 @@ class AgentClient extends BaseClient {
     }
   }
 
-  /** Silent method, as `recordCollectedUsage` is used instead */
-  async recordTokenUsage() {}
+  /**
+   * @param {object} params
+   * @param {number} params.promptTokens
+   * @param {number} params.completionTokens
+   * @param {string} [params.model]
+   * @param {OpenAIUsageMetadata} [params.usage]
+   * @param {AppConfig['balance']} [params.balance]
+   * @param {string} [params.context='message']
+   * @returns {Promise<void>}
+   */
+  async recordTokenUsage({
+    model,
+    usage,
+    balance,
+    promptTokens,
+    completionTokens,
+    context = 'message',
+  }) {
+    try {
+      await spendTokens(
+        {
+          model,
+          context,
+          balance,
+          conversationId: this.conversationId,
+          user: this.user ?? this.options.req.user?.id,
+          endpointTokenConfig: this.options.endpointTokenConfig,
+        },
+        { promptTokens, completionTokens },
+      );
+
+      if (
+        usage &&
+        typeof usage === 'object' &&
+        'reasoning_tokens' in usage &&
+        typeof usage.reasoning_tokens === 'number'
+      ) {
+        await spendTokens(
+          {
+            model,
+            balance,
+            context: 'reasoning',
+            conversationId: this.conversationId,
+            user: this.user ?? this.options.req.user?.id,
+            endpointTokenConfig: this.options.endpointTokenConfig,
+          },
+          { completionTokens: usage.reasoning_tokens },
+        );
+      }
+    } catch (error) {
+      logger.error(
+        '[api/server/controllers/agents/client.js #recordTokenUsage] Error recording token usage',
+        error,
+      );
+    }
+  }
 
   getEncoding() {
     return 'o200k_base';

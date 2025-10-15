@@ -1,8 +1,29 @@
 const fs = require('fs');
-const path = require('path');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
+
+jest.mock('~/server/services/Config', () => ({
+  loadCustomConfig: jest.fn(() => Promise.resolve({})),
+  getAppConfig: jest.fn().mockResolvedValue({
+    paths: {
+      uploads: '/tmp',
+      dist: '/tmp/dist',
+      fonts: '/tmp/fonts',
+      assets: '/tmp/assets',
+    },
+    fileStrategy: 'local',
+    imageOutputType: 'PNG',
+  }),
+  setCachedTools: jest.fn(),
+}));
+
+jest.mock('~/app/clients/tools', () => ({
+  createOpenAIImageTools: jest.fn(() => []),
+  createYouTubeTools: jest.fn(() => []),
+  manifestToolMap: {},
+  toolkits: [],
+}));
 
 describe('Server Configuration', () => {
   // Increase the default timeout to allow for Mongo cleanup
@@ -28,6 +49,22 @@ describe('Server Configuration', () => {
   });
 
   beforeAll(async () => {
+    // Create the required directories and files for the test
+    const fs = require('fs');
+    const path = require('path');
+
+    const dirs = ['/tmp/dist', '/tmp/fonts', '/tmp/assets'];
+    dirs.forEach((dir) => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    });
+
+    fs.writeFileSync(
+      path.join('/tmp/dist', 'index.html'),
+      '<!DOCTYPE html><html><head><title>LibreChat</title></head><body><div id="root"></div></body></html>',
+    );
+
     mongoServer = await MongoMemoryServer.create();
     process.env.MONGO_URI = mongoServer.getUri();
     process.env.PORT = '0'; // Use a random available port
@@ -55,6 +92,30 @@ describe('Server Configuration', () => {
     expect(response.headers['pragma']).toBe('no-cache');
     expect(response.headers['expires']).toBe('0');
   });
+
+  it('should return 500 for unknown errors via ErrorController', async () => {
+    // Testing the error handling here on top of unit tests to ensure the middleware is correctly integrated
+
+    // Mock MongoDB operations to fail
+    const originalFindOne = mongoose.models.User.findOne;
+    const mockError = new Error('MongoDB operation failed');
+    mongoose.models.User.findOne = jest.fn().mockImplementation(() => {
+      throw mockError;
+    });
+
+    try {
+      const response = await request(app).post('/api/auth/login').send({
+        email: 'test@example.com',
+        password: 'password123',
+      });
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('An unknown error occurred.');
+    } finally {
+      // Restore original function
+      mongoose.models.User.findOne = originalFindOne;
+    }
+  });
 });
 
 // Polls the /health endpoint every 30ms for up to 10 seconds to wait for the server to start completely
@@ -65,7 +126,7 @@ async function healthCheckPoll(app, retries = 0) {
     if (response.status === 200) {
       return; // App is healthy
     }
-  } catch (error) {
+  } catch {
     // Ignore connection errors during polling
   }
 

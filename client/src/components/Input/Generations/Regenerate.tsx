@@ -1,7 +1,7 @@
+import { RegenerateIcon } from '@librechat/client';
 import type { TGenButtonProps } from '~/common';
-import { RegenerateIcon } from '~/components/svg';
-import Button from './Button';
 import { useLocalize } from '~/hooks';
+import Button from './Button';
 
 export default function Regenerate({ onClick }: TGenButtonProps) {
   const localize = useLocalize();

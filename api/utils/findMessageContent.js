@@ -1,4 +1,4 @@
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
 
 function findContent(obj) {
   if (obj && typeof obj === 'object') {

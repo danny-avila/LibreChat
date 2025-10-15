@@ -1,25 +1,33 @@
 require('dotenv').config();
+const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
-const compression = require('compression');
 const passport = require('passport');
-const mongoSanitize = require('express-mongo-sanitize');
-const fs = require('fs');
+const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { jwtLogin, passportLogin } = require('~/strategies');
-const { connectDb, indexSync } = require('~/lib/db');
-const { isEnabled } = require('~/server/utils');
-const { ldapLogin } = require('~/strategies');
-const { logger } = require('~/config');
-const validateImageRequest = require('./middleware/validateImageRequest');
-const errorController = require('./controllers/ErrorController');
+const { logger } = require('@librechat/data-schemas');
+const mongoSanitize = require('express-mongo-sanitize');
+const {
+  isEnabled,
+  ErrorController,
+  performStartupChecks,
+  initializeFileStorage,
+} = require('@librechat/api');
+const { connectDb, indexSync } = require('~/db');
+const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
+const createValidateImageRequest = require('./middleware/validateImageRequest');
+const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
+const { updateInterfacePermissions } = require('~/models/interface');
+const { checkMigrations } = require('./services/start/migration');
+const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
-const AppService = require('./services/AppService');
+const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
+const { seedDatabase } = require('~/models');
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
@@ -36,22 +44,41 @@ const startServer = async () => {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }
   await connectDb();
+
   logger.info('Connected to MongoDB');
-  await indexSync();
+  indexSync().catch((err) => {
+    logger.error('[indexSync] Background sync failed:', err);
+  });
 
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
 
-  await AppService(app);
+  await seedDatabase();
+  const appConfig = await getAppConfig();
+  initializeFileStorage(appConfig);
+  await performStartupChecks(appConfig);
+  await updateInterfacePermissions(appConfig);
 
-  const indexPath = path.join(app.locals.paths.dist, 'index.html');
-  const indexHTML = fs.readFileSync(indexPath, 'utf8');
+  const indexPath = path.join(appConfig.paths.dist, 'index.html');
+  let indexHTML = fs.readFileSync(indexPath, 'utf8');
+
+  // In order to provide support to serving the application in a sub-directory
+  // We need to update the base href if the DOMAIN_CLIENT is specified and not the root path
+  if (process.env.DOMAIN_CLIENT) {
+    const clientUrl = new URL(process.env.DOMAIN_CLIENT);
+    const baseHref = clientUrl.pathname.endsWith('/')
+      ? clientUrl.pathname
+      : `${clientUrl.pathname}/`;
+    if (baseHref !== '/') {
+      logger.info(`Setting base href to ${baseHref}`);
+      indexHTML = indexHTML.replace(/base href="\/"/, `base href="${baseHref}"`);
+    }
+  }
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
   /* Middleware */
   app.use(noIndex);
-  app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(mongoSanitize());
@@ -64,10 +91,9 @@ const startServer = async () => {
     console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
   }
 
-  // Serve static assets with aggressive caching
-  app.use(staticCache(app.locals.paths.dist));
-  app.use(staticCache(app.locals.paths.fonts));
-  app.use(staticCache(app.locals.paths.assets));
+  app.use(staticCache(appConfig.paths.dist));
+  app.use(staticCache(appConfig.paths.fonts));
+  app.use(staticCache(appConfig.paths.assets));
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
@@ -75,7 +101,7 @@ const startServer = async () => {
 
   /* OAUTH */
   app.use(passport.initialize());
-  passport.use(await jwtLogin());
+  passport.use(jwtLogin());
   passport.use(passportLogin());
 
   /* LDAP Auth */
@@ -84,7 +110,7 @@ const startServer = async () => {
   }
 
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
-    configureSocialLogins(app);
+    await configureSocialLogins(app);
   }
 
   app.use('/oauth', routes.oauth);
@@ -93,7 +119,6 @@ const startServer = async () => {
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
-  app.use('/api/ask', routes.ask);
   app.use('/api/search', routes.search);
   app.use('/api/edit', routes.edit);
   app.use('/api/messages', routes.messages);
@@ -109,14 +134,18 @@ const startServer = async () => {
   app.use('/api/config', routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
-  app.use('/images/', validateImageRequest, routes.staticRoute);
+  app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
   app.use('/api/share', routes.share);
   app.use('/api/roles', routes.roles);
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
-  app.use('/api/bedrock', routes.bedrock);
+  app.use('/api/memories', routes.memories);
+  app.use('/api/permissions', routes.accessPermissions);
 
   app.use('/api/tags', routes.tags);
+  app.use('/api/mcp', routes.mcp);
+
+  app.use(ErrorController);
 
   app.use((req, res) => {
     res.set({
@@ -127,12 +156,13 @@ const startServer = async () => {
 
     const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
     const saneLang = lang.replace(/"/g, '&quot;');
-    const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+    let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+
     res.type('html');
     res.send(updatedIndexHtml);
   });
 
-  app.listen(port, host, () => {
+  app.listen(port, host, async () => {
     if (host === '0.0.0.0') {
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
@@ -140,6 +170,10 @@ const startServer = async () => {
     } else {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
+
+    await initializeMCPs();
+    await initializeOAuthReconnectManager();
+    await checkMigrations();
   });
 };
 
@@ -182,5 +216,5 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-// export app for easier testing purposes
+/** Export app for easier testing purposes */
 module.exports = app;

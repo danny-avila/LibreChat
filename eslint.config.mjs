@@ -2,11 +2,10 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import typescriptEslintEslintPlugin from '@typescript-eslint/eslint-plugin';
 import { fixupConfigRules, fixupPluginRules } from '@eslint/compat';
-// import perfectionist from 'eslint-plugin-perfectionist';
 import reactHooks from 'eslint-plugin-react-hooks';
-import prettier from 'eslint-plugin-prettier';
 import tsParser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import';
+import prettier from 'eslint-plugin-prettier';
 import { FlatCompat } from '@eslint/eslintrc';
 import jsxA11Y from 'eslint-plugin-jsx-a11y';
 import i18next from 'eslint-plugin-i18next';
@@ -31,9 +30,9 @@ export default [
       'client/public/**/*',
       'client/coverage/**/*',
       'e2e/playwright-report/**/*',
-      'packages/mcp/types/**/*',
-      'packages/mcp/dist/**/*',
-      'packages/mcp/test_bundle/**/*',
+      'packages/api/types/**/*',
+      'packages/api/dist/**/*',
+      'packages/api/test_bundle/**/*',
       'api/demo/**/*',
       'packages/data-provider/types/**/*',
       'packages/data-provider/dist/**/*',
@@ -62,7 +61,6 @@ export default [
       'jsx-a11y': fixupPluginRules(jsxA11Y),
       'import/parsers': tsParser,
       i18next,
-      // perfectionist,
       prettier: fixupPluginRules(prettier),
     },
 
@@ -121,9 +119,14 @@ export default [
       // common rules
       'no-nested-ternary': 'warn',
       'no-constant-binary-expression': 'warn',
-      // Also disable the core no-unused-vars rule globally.
-      'no-unused-vars': 'warn',
-
+      'no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
       'no-console': 'off',
       'import/no-cycle': 'error',
       'import/no-self-import': 'error',
@@ -134,61 +137,22 @@ export default [
       'no-restricted-syntax': 'off',
       'react/prop-types': 'off',
       'react/display-name': 'off',
-
-      // 'perfectionist/sort-imports': [
-      //   'error',
-      //   {
-      //     type: 'line-length',
-      //     order: 'desc',
-      //     newlinesBetween: 'never',
-      //     customGroups: {
-      //       value: {
-      //         react: ['^react$'],
-      //         // react: ['^react$', '^fs', '^zod', '^path'],
-      //         local: ['^(\\.{1,2}|~)/', '^librechat-data-provider'],
-      //       },
-      //     },
-      //     groups: [
-      //       'react',
-      //       'builtin',
-      //       'external',
-      //       ['builtin-type', 'external-type'],
-      //       ['internal-type'],
-      //       'local',
-      //       ['parent', 'sibling', 'index'],
-      //       'object',
-      //       'unknown',
-      //     ],
-      //   },
-      // ],
-
-      // 'perfectionist/sort-named-imports': [
-      //   'error',
-      //   {
-      //     type: 'line-length',
-      //     order: 'asc',
-      //     ignoreAlias: false,
-      //     ignoreCase: true,
-      //     specialCharacters: 'keep',
-      //     groupKind: 'mixed',
-      //     partitionByNewLine: false,
-      //     partitionByComment: false,
-      //   },
-      // ],
     },
   },
   {
     files: ['api/**/*.js', 'config/**/*.js'],
     rules: {
       // API
-      // TODO: maybe later to error.
-      'no-unused-const': 'off',
-      'no-unused-vars': 'off',
       'no-async-promise-executor': 'off',
     },
   },
   {
-    files: ['client/src/**/*.tsx', 'client/src/**/*.ts', 'client/src/**/*.jsx', 'client/src/**/*.js'],
+    files: [
+      'client/src/**/*.tsx',
+      'client/src/**/*.ts',
+      'client/src/**/*.jsx',
+      'client/src/**/*.js',
+    ],
     rules: {
       // Client a11y
       // TODO: maybe later to error.
@@ -273,7 +237,14 @@ export default [
       ],
       //
       '@typescript-eslint/no-unused-expressions': 'off',
-      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unnecessary-condition': 'off',
       '@typescript-eslint/strict-boolean-expressions': 'off',
@@ -285,7 +256,6 @@ export default [
       // General
       'no-constant-binary-expression': 'off',
       'import/no-cycle': 'off',
-      'no-nested-ternary': 'off',
     },
   },
   {
@@ -304,7 +274,7 @@ export default [
     files: ['./api/demo/**/*.ts'],
   },
   {
-    files: ['./packages/mcp/**/*.ts'],
+    files: ['./packages/api/**/*.ts'],
   },
   {
     files: ['./config/translations/**/*.ts'],
@@ -338,12 +308,12 @@ export default [
     },
   },
   {
-    files: ['./packages/mcp/specs/**/*.ts'],
+    files: ['./packages/api/specs/**/*.ts'],
     languageOptions: {
       ecmaVersion: 5,
       sourceType: 'script',
       parserOptions: {
-        project: './packages/mcp/tsconfig.spec.json',
+        project: './packages/api/tsconfig.spec.json',
       },
     },
   },

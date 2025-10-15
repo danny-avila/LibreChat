@@ -1,12 +1,11 @@
 import { useEffect, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
+import { Spinner, useToastContext } from '@librechat/client';
 import MinimalMessagesWrapper from '~/components/Chat/Messages/MinimalMessages';
 import { useNavScrolling, useLocalize, useAuthContext } from '~/hooks';
 import SearchMessage from '~/components/Chat/Messages/SearchMessage';
-import { useToastContext, useFileMapContext } from '~/Providers';
 import { useMessagesInfiniteQuery } from '~/data-provider';
-import { Spinner } from '~/components';
-import { buildTree } from '~/utils';
+import { useFileMapContext } from '~/Providers';
 import store from '~/store';
 
 export default function Search() {
@@ -23,7 +22,7 @@ export default function Search() {
     isError,
     fetchNextPage,
     isFetchingNextPage,
-    hasNextPage,
+    hasNextPage: _hasNextPage,
   } = useMessagesInfiniteQuery(
     {
       search: searchQuery || undefined,
@@ -43,9 +42,20 @@ export default function Search() {
   });
 
   const messages = useMemo(() => {
-    const msgs = searchMessages?.pages.flatMap((page) => page.messages) || [];
-    const dataTree = buildTree({ messages: msgs, fileMap });
-    return dataTree?.length === 0 ? null : (dataTree ?? null);
+    const msgs =
+      searchMessages?.pages.flatMap((page) =>
+        page.messages.map((message) => {
+          if (!message.files || !fileMap) {
+            return message;
+          }
+          return {
+            ...message,
+            files: message.files.map((file) => fileMap[file.file_id ?? ''] ?? file),
+          };
+        }),
+      ) || [];
+
+    return msgs.length === 0 ? null : msgs;
   }, [fileMap, searchMessages?.pages]);
 
   useEffect(() => {

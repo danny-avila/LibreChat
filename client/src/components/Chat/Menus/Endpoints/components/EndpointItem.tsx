@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import { SettingsIcon } from 'lucide-react';
+import { TooltipAnchor, Spinner } from '@librechat/client';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { renderEndpointModels } from './EndpointModelItem';
-import { TooltipAnchor, Spinner } from '~/components';
+import { ModelSpecItem } from './ModelSpecItem';
 import { filterModels } from '../utils';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -57,6 +59,7 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
   const {
     agentsMap,
     assistantsMap,
+    modelSpecs,
     selectedValues,
     handleOpenKeyDialog,
     handleSelectEndpoint,
@@ -64,7 +67,19 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
     setEndpointSearchValue,
     endpointRequiresUserKey,
   } = useModelSelectorContext();
-  const { model: selectedModel, endpoint: selectedEndpoint } = selectedValues;
+  const {
+    model: selectedModel,
+    endpoint: selectedEndpoint,
+    modelSpec: selectedSpec,
+  } = selectedValues;
+
+  // Filter modelSpecs for this endpoint (by group matching endpoint value)
+  const endpointSpecs = useMemo(() => {
+    if (!modelSpecs || !modelSpecs.length) {
+      return [];
+    }
+    return modelSpecs.filter((spec: TModelSpec) => spec.group === endpoint.value);
+  }, [modelSpecs, endpoint.value]);
 
   const searchValue = endpointSearchValues[endpoint.value] || '';
   const isUserProvided = useMemo(() => endpointRequiresUserKey(endpoint.value), [endpoint.value]);
@@ -102,12 +117,12 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
   if (endpoint.hasModels) {
     const filteredModels = searchValue
       ? filterModels(
-        endpoint,
-        (endpoint.models || []).map((model) => model.name),
-        searchValue,
-        agentsMap,
-        assistantsMap,
-      )
+          endpoint,
+          (endpoint.models || []).map((model) => model.name),
+          searchValue,
+          agentsMap,
+          assistantsMap,
+        )
       : null;
     const placeholder =
       isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)
@@ -138,10 +153,17 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
           <div className="flex items-center justify-center p-2">
             <Spinner />
           </div>
-        ) : filteredModels ? (
-          renderEndpointModels(endpoint, endpoint.models || [], selectedModel, filteredModels)
         ) : (
-          endpoint.models && renderEndpointModels(endpoint, endpoint.models, selectedModel)
+          <>
+            {/* Render modelSpecs for this endpoint */}
+            {endpointSpecs.map((spec: TModelSpec) => (
+              <ModelSpecItem key={spec.name} spec={spec} isSelected={selectedSpec === spec.name} />
+            ))}
+            {/* Render endpoint models */}
+            {filteredModels
+              ? renderEndpointModels(endpoint, endpoint.models || [], selectedModel, filteredModels)
+              : endpoint.models && renderEndpointModels(endpoint, endpoint.models, selectedModel)}
+          </>
         )}
       </Menu>
     );

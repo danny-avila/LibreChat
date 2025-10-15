@@ -4,10 +4,10 @@ import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
+import { EditorProvider, SidePanelProvider, ArtifactsProvider } from '~/Providers';
 import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { useSetFilesToDelete } from '~/hooks';
-import { EditorProvider } from '~/Providers';
 import store from '~/store';
 
 export default function Presentation({ children }: { children: React.ReactNode }) {
@@ -59,22 +59,26 @@ export default function Presentation({ children }: { children: React.ReactNode }
 
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
-      <SidePanelGroup
-        defaultLayout={defaultLayout}
-        fullPanelCollapse={fullCollapse}
-        defaultCollapsed={defaultCollapsed}
-        artifacts={
-          artifactsVisibility === true && Object.keys(artifacts ?? {}).length > 0 ? (
-            <EditorProvider>
-              <Artifacts />
-            </EditorProvider>
-          ) : null
-        }
-      >
-        <main className="flex h-full flex-col overflow-y-auto" role="main">
-          {children}
-        </main>
-      </SidePanelGroup>
+      <SidePanelProvider>
+        <SidePanelGroup
+          defaultLayout={defaultLayout}
+          fullPanelCollapse={fullCollapse}
+          defaultCollapsed={defaultCollapsed}
+          artifacts={
+            artifactsVisibility === true && Object.keys(artifacts ?? {}).length > 0 ? (
+              <ArtifactsProvider>
+                <EditorProvider>
+                  <Artifacts />
+                </EditorProvider>
+              </ArtifactsProvider>
+            ) : null
+          }
+        >
+          <main className="flex h-full flex-col overflow-y-auto" role="main">
+            {children}
+          </main>
+        </SidePanelGroup>
+      </SidePanelProvider>
     </DragDropWrapper>
   );
 }

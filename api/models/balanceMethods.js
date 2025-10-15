@@ -1,9 +1,9 @@
+const { logger } = require('@librechat/data-schemas');
 const { ViolationTypes } = require('librechat-data-provider');
-const { Transaction } = require('./Transaction');
+const { createAutoRefillTransaction } = require('./Transaction');
 const { logViolation } = require('~/cache');
 const { getMultiplier } = require('./tx');
-const { logger } = require('~/config');
-const Balance = require('./Balance');
+const { Balance } = require('~/db/models');
 
 function isInvalidDate(date) {
   return isNaN(date);
@@ -60,7 +60,7 @@ const checkBalanceRecord = async function ({
     ) {
       try {
         /** @type {{ rate: number, user: string, balance: number, transaction: import('@librechat/data-schemas').ITransaction}} */
-        const result = await Transaction.createAutoRefillTransaction({
+        const result = await createAutoRefillTransaction({
           user: user,
           tokenType: 'credits',
           context: 'autoRefill',
@@ -118,7 +118,7 @@ const addIntervalToDate = (date, value, unit) => {
  * @async
  * @function
  * @param {Object} params - The function parameters.
- * @param {Express.Request} params.req - The Express request object.
+ * @param {ServerRequest} params.req - The Express request object.
  * @param {Express.Response} params.res - The Express response object.
  * @param {Object} params.txData - The transaction data.
  * @param {string} params.txData.user - The user ID or identifier.

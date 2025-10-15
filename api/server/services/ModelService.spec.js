@@ -1,6 +1,6 @@
 const axios = require('axios');
+const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint, defaultModels } = require('librechat-data-provider');
-const { logger } = require('~/config');
 
 const {
   fetchModels,
@@ -11,8 +11,8 @@ const {
   getAnthropicModels,
 } = require('./ModelService');
 
-jest.mock('~/utils', () => {
-  const originalUtils = jest.requireActual('~/utils');
+jest.mock('@librechat/api', () => {
+  const originalUtils = jest.requireActual('@librechat/api');
   return {
     ...originalUtils,
     processModelData: jest.fn((...args) => {
@@ -28,7 +28,8 @@ jest.mock('~/cache/getLogStores', () =>
     set: jest.fn().mockResolvedValue(true),
   })),
 );
-jest.mock('~/config', () => ({
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
   logger: {
     error: jest.fn(),
   },
@@ -107,7 +108,7 @@ describe('fetchModels with createTokenConfig true', () => {
 
   beforeEach(() => {
     // Clears the mock's history before each test
-    const _utils = require('~/utils');
+    const _utils = require('@librechat/api');
     axios.get.mockResolvedValue({ data });
   });
 
@@ -119,7 +120,7 @@ describe('fetchModels with createTokenConfig true', () => {
       createTokenConfig: true,
     });
 
-    const { processModelData } = require('~/utils');
+    const { processModelData } = require('@librechat/api');
     expect(processModelData).toHaveBeenCalled();
     expect(processModelData).toHaveBeenCalledWith(data);
   });

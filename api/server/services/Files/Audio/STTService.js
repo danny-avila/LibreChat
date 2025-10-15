@@ -2,10 +2,10 @@ const axios = require('axios');
 const fs = require('fs').promises;
 const FormData = require('form-data');
 const { Readable } = require('stream');
+const { logger } = require('@librechat/data-schemas');
+const { genAzureEndpoint } = require('@librechat/api');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
-const { getCustomConfig } = require('~/server/services/Config');
-const { genAzureEndpoint } = require('~/utils');
-const { logger } = require('~/config');
+const { getAppConfig } = require('~/server/services/Config');
 
 /**
  * Maps MIME types to their corresponding file extensions for audio files.
@@ -84,12 +84,7 @@ function getFileExtensionFromMime(mimeType) {
  * @class
  */
 class STTService {
-  /**
-   * Creates an instance of STTService.
-   * @param {Object} customConfig - The custom configuration object.
-   */
-  constructor(customConfig) {
-    this.customConfig = customConfig;
+  constructor() {
     this.providerStrategies = {
       [STTProviders.OPENAI]: this.openAIProvider,
       [STTProviders.AZURE_OPENAI]: this.azureOpenAIProvider,
@@ -104,21 +99,22 @@ class STTService {
    * @throws {Error} If the custom config is not found.
    */
   static async getInstance() {
-    const customConfig = await getCustomConfig();
-    if (!customConfig) {
-      throw new Error('Custom config not found');
-    }
-    return new STTService(customConfig);
+    return new STTService();
   }
 
   /**
    * Retrieves the configured STT provider and its schema.
+   * @param {ServerRequest} req - The request object.
    * @returns {Promise<[string, Object]>} A promise that resolves to an array containing the provider name and its schema.
    * @throws {Error} If no STT schema is set, multiple providers are set, or no provider is set.
    */
-  async getProviderSchema() {
-    const sttSchema = this.customConfig.speech.stt;
-
+  async getProviderSchema(req) {
+    const appConfig =
+      req.config ??
+      (await getAppConfig({
+        role: req?.user?.role,
+      }));
+    const sttSchema = appConfig?.speech?.stt;
     if (!sttSchema) {
       throw new Error(
         'No STT schema is set. Did you configure STT in the custom config (librechat.yaml)?',
@@ -163,9 +159,11 @@ class STTService {
    * Prepares the request for the OpenAI STT provider.
    * @param {Object} sttSchema - The STT schema for OpenAI.
    * @param {Stream} audioReadStream - The audio data to be transcribed.
+   * @param {Object} audioFile - The audio file object (unused in OpenAI provider).
+   * @param {string} language - The language code for the transcription.
    * @returns {Array} An array containing the URL, data, and headers for the request.
    */
-  openAIProvider(sttSchema, audioReadStream) {
+  openAIProvider(sttSchema, audioReadStream, audioFile, language) {
     const url = sttSchema?.url || 'https://api.openai.com/v1/audio/transcriptions';
     const apiKey = extractEnvVariable(sttSchema.apiKey) || '';
 
@@ -173,6 +171,12 @@ class STTService {
       file: audioReadStream,
       model: sttSchema.model,
     };
+
+    if (language) {
+      /** Converted locale code (e.g., "en-US") to ISO-639-1 format (e.g., "en") */
+      const isoLanguage = language.split('-')[0];
+      data.language = isoLanguage;
+    }
 
     const headers = {
       'Content-Type': 'multipart/form-data',
@@ -188,10 +192,11 @@ class STTService {
    * @param {Object} sttSchema - The STT schema for Azure OpenAI.
    * @param {Buffer} audioBuffer - The audio data to be transcribed.
    * @param {Object} audioFile - The audio file object containing originalname, mimetype, and size.
+   * @param {string} language - The language code for the transcription.
    * @returns {Array} An array containing the URL, data, and headers for the request.
    * @throws {Error} If the audio file size exceeds 25MB or the audio file format is not accepted.
    */
-  azureOpenAIProvider(sttSchema, audioBuffer, audioFile) {
+  azureOpenAIProvider(sttSchema, audioBuffer, audioFile, language) {
     const url = `${genAzureEndpoint({
       azureOpenAIApiInstanceName: extractEnvVariable(sttSchema?.instanceName),
       azureOpenAIApiDeploymentName: extractEnvVariable(sttSchema?.deploymentName),
@@ -215,6 +220,12 @@ class STTService {
       contentType: audioFile.mimetype,
     });
 
+    if (language) {
+      /** Converted locale code (e.g., "en-US") to ISO-639-1 format (e.g., "en") */
+      const isoLanguage = language.split('-')[0];
+      formData.append('language', isoLanguage);
+    }
+
     const headers = {
       'Content-Type': 'multipart/form-data',
       ...(apiKey && { 'api-key': apiKey }),
@@ -233,10 +244,11 @@ class STTService {
    * @param {Object} requestData - The data required for the STT request.
    * @param {Buffer} requestData.audioBuffer - The audio data to be transcribed.
    * @param {Object} requestData.audioFile - The audio file object containing originalname, mimetype, and size.
+   * @param {string} requestData.language - The language code for the transcription.
    * @returns {Promise<string>} A promise that resolves to the transcribed text.
    * @throws {Error} If the provider is invalid, the response status is not 200, or the response data is missing.
    */
-  async sttRequest(provider, sttSchema, { audioBuffer, audioFile }) {
+  async sttRequest(provider, sttSchema, { audioBuffer, audioFile, language }) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
@@ -247,7 +259,13 @@ class STTService {
     const audioReadStream = Readable.from(audioBuffer);
     audioReadStream.path = `audio.${fileExtension}`;
 
-    const [url, data, headers] = strategy.call(this, sttSchema, audioReadStream, audioFile);
+    const [url, data, headers] = strategy.call(
+      this,
+      sttSchema,
+      audioReadStream,
+      audioFile,
+      language,
+    );
 
     try {
       const response = await axios.post(url, data, { headers });
@@ -274,7 +292,7 @@ class STTService {
    * @param {Object} res - The response object.
    * @returns {Promise<void>}
    */
-  async processTextToSpeech(req, res) {
+  async processSpeechToText(req, res) {
     if (!req.file) {
       return res.status(400).json({ message: 'No audio file provided in the FormData' });
     }
@@ -287,8 +305,9 @@ class STTService {
     };
 
     try {
-      const [provider, sttSchema] = await this.getProviderSchema();
-      const text = await this.sttRequest(provider, sttSchema, { audioBuffer, audioFile });
+      const [provider, sttSchema] = await this.getProviderSchema(req);
+      const language = req.body?.language || '';
+      const text = await this.sttRequest(provider, sttSchema, { audioBuffer, audioFile, language });
       res.json({ text });
     } catch (error) {
       logger.error('An error occurred while processing the audio:', error);
@@ -297,7 +316,7 @@ class STTService {
       try {
         await fs.unlink(req.file.path);
         logger.debug('[/speech/stt] Temp. audio upload file deleted');
-      } catch (error) {
+      } catch {
         logger.debug('[/speech/stt] Temp. audio upload file already deleted');
       }
     }
@@ -322,7 +341,7 @@ async function createSTTService() {
  */
 async function speechToText(req, res) {
   const sttService = await createSTTService();
-  await sttService.processTextToSpeech(req, res);
+  await sttService.processSpeechToText(req, res);
 }
 
-module.exports = { speechToText };
+module.exports = { STTService, speechToText };

@@ -1,4 +1,7 @@
 const { klona } = require('klona');
+const { sleep } = require('@librechat/agents');
+const { sendEvent } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const {
   StepTypes,
   RunStatus,
@@ -11,11 +14,10 @@ const {
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { processRequiredActions } = require('~/server/services/ToolService');
-const { createOnProgress, sendMessage, sleep } = require('~/server/utils');
 const { RunManager, waitForRun } = require('~/server/services/Runs');
 const { processMessages } = require('~/server/services/Threads');
+const { createOnProgress } = require('~/server/utils');
 const { TextStream } = require('~/app/clients');
-const { logger } = require('~/config');
 
 /**
  * Sorts, processes, and flattens messages to a single string.
@@ -64,7 +66,7 @@ async function createOnTextProgress({
     };
 
     logger.debug('Content data:', contentData);
-    sendMessage(openai.res, contentData);
+    sendEvent(openai.res, contentData);
   };
 }
 
@@ -279,7 +281,7 @@ function createInProgressHandler(openai, thread_id, messages) {
 
       openai.seenCompletedMessages.add(message_id);
 
-      const message = await openai.beta.threads.messages.retrieve(thread_id, message_id);
+      const message = await openai.beta.threads.messages.retrieve(message_id, { thread_id });
       if (!message?.content?.length) {
         return;
       }
@@ -348,6 +350,7 @@ async function runAssistant({
   accumulatedMessages = [],
   in_progress: inProgress,
 }) {
+  const appConfig = openai.req.config;
   let steps = accumulatedSteps;
   let messages = accumulatedMessages;
   const in_progress = inProgress ?? createInProgressHandler(openai, thread_id, messages);
@@ -394,8 +397,8 @@ async function runAssistant({
   });
 
   const { endpoint = EModelEndpoint.azureAssistants } = openai.req.body;
-  /** @type {TCustomConfig.endpoints.assistants} */
-  const assistantsEndpointConfig = openai.req.app.locals?.[endpoint] ?? {};
+  /** @type {AppConfig['endpoints']['assistants']} */
+  const assistantsEndpointConfig = appConfig.endpoints?.[endpoint] ?? {};
   const { pollIntervalMs, timeoutMs } = assistantsEndpointConfig;
 
   const run = await waitForRun({
@@ -433,9 +436,11 @@ async function runAssistant({
     };
   });
 
-  const outputs = await processRequiredActions(openai, actions);
-
-  const toolRun = await openai.beta.threads.runs.submitToolOutputs(run.thread_id, run.id, outputs);
+  const tool_outputs = await processRequiredActions(openai, actions);
+  const toolRun = await openai.beta.threads.runs.submitToolOutputs(run.id, {
+    thread_id: run.thread_id,
+    tool_outputs,
+  });
 
   // Recursive call with accumulated steps and messages
   return await runAssistant({

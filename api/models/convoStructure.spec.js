@@ -1,48 +1,10 @@
 const mongoose = require('mongoose');
+const { buildTree } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { Message, getMessages, bulkSaveMessages } = require('./Message');
-
-// Original version of buildTree function
-function buildTree({ messages, fileMap }) {
-  if (messages === null) {
-    return null;
-  }
-
-  const messageMap = {};
-  const rootMessages = [];
-  const childrenCount = {};
-
-  messages.forEach((message) => {
-    const parentId = message.parentMessageId ?? '';
-    childrenCount[parentId] = (childrenCount[parentId] || 0) + 1;
-
-    const extendedMessage = {
-      ...message,
-      children: [],
-      depth: 0,
-      siblingIndex: childrenCount[parentId] - 1,
-    };
-
-    if (message.files && fileMap) {
-      extendedMessage.files = message.files.map((file) => fileMap[file.file_id ?? ''] ?? file);
-    }
-
-    messageMap[message.messageId] = extendedMessage;
-
-    const parentMessage = messageMap[parentId];
-    if (parentMessage) {
-      parentMessage.children.push(extendedMessage);
-      extendedMessage.depth = parentMessage.depth + 1;
-    } else {
-      rootMessages.push(extendedMessage);
-    }
-  });
-
-  return rootMessages;
-}
+const { getMessages, bulkSaveMessages } = require('./Message');
+const { Message } = require('~/db/models');
 
 let mongod;
-
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   const uri = mongod.getUri();

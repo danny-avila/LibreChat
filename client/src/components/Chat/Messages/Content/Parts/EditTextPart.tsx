@@ -1,29 +1,32 @@
+import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
+import { TextareaAutosize } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
+import type { Agents } from 'librechat-data-provider';
 import type { TEditProps } from '~/common';
+import { useMessagesOperations, useMessagesConversation, useAddedChatContext } from '~/Providers';
 import Container from '~/components/Chat/Messages/Content/Container';
-import { useChatContext, useAddedChatContext } from '~/Providers';
-import { TextareaAutosize } from '~/components/ui';
 import { cn, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 const EditTextPart = ({
-  text,
+  part,
   index,
   messageId,
   isSubmitting,
   enterEdit,
-}: Omit<TEditProps, 'message' | 'ask'> & {
+}: Omit<TEditProps, 'message' | 'ask' | 'text'> & {
   index: number;
   messageId: string;
+  part: Agents.MessageContentText | Agents.ReasoningDeltaUpdate;
 }) => {
   const localize = useLocalize();
   const { addedIndex } = useAddedChatContext();
-  const { getMessages, setMessages, conversation } = useChatContext();
+  const { conversation } = useMessagesConversation();
+  const { ask, getMessages, setMessages } = useMessagesOperations();
   const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
     store.latestMessageFamily(addedIndex),
   );
@@ -34,15 +37,16 @@ const EditTextPart = ({
     [getMessages, messageId],
   );
 
+  const chatDirection = useRecoilValue(store.chatDirection);
+
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const updateMessageContentMutation = useUpdateMessageContentMutation(conversationId ?? '');
 
-  const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
-  const isRTL = chatDirection === 'rtl';
+  const isRTL = chatDirection?.toLowerCase() === 'rtl';
 
   const { register, handleSubmit, setValue } = useForm({
     defaultValues: {
-      text: text ?? '',
+      text: (ContentTypes.THINK in part ? part.think : part.text) || '',
     },
   });
 
@@ -55,17 +59,22 @@ const EditTextPart = ({
     }
   }, []);
 
-  /*
-  const resubmitMessage = () => {
-    showToast({
-      status: 'warning',
-      message: localize('com_warning_resubmit_unsupported'),
-    });
-
-    // const resubmitMessage = (data: { text: string }) => {
-    // Not supported by AWS Bedrock
+  const resubmitMessage = (data: { text: string }) => {
     const messages = getMessages();
     const parentMessage = messages?.find((msg) => msg.messageId === message?.parentMessageId);
+
+    const editedContent =
+      part.type === ContentTypes.THINK
+        ? {
+            index,
+            type: ContentTypes.THINK as const,
+            [ContentTypes.THINK]: data.text,
+          }
+        : {
+            index,
+            type: ContentTypes.TEXT as const,
+            [ContentTypes.TEXT]: data.text,
+          };
 
     if (!parentMessage) {
       return;
@@ -73,17 +82,15 @@ const EditTextPart = ({
     ask(
       { ...parentMessage },
       {
-        editedText: data.text,
+        editedContent,
         editedMessageId: messageId,
         isRegenerate: true,
         isEdited: true,
       },
     );
 
-    setSiblingIdx((siblingIdx ?? 0) - 1);
     enterEdit(true);
   };
-  */
 
   const updateMessage = (data: { text: string }) => {
     const messages = getMessages();
@@ -117,9 +124,9 @@ const EditTextPart = ({
       messages.map((msg) =>
         msg.messageId === messageId
           ? {
-            ...msg,
-            content: updatedContent,
-          }
+              ...msg,
+              content: updatedContent,
+            }
           : msg,
       ),
     );
@@ -167,13 +174,13 @@ const EditTextPart = ({
         />
       </div>
       <div className="mt-2 flex w-full justify-center text-center">
-        {/* <button
+        <button
           className="btn btn-primary relative mr-2"
           disabled={isSubmitting}
           onClick={handleSubmit(resubmitMessage)}
         >
           {localize('com_ui_save_submit')}
-        </button> */}
+        </button>
         <button
           className="btn btn-secondary relative mr-2"
           disabled={isSubmitting}

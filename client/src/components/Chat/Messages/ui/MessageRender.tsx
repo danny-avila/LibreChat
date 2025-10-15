@@ -1,6 +1,6 @@
+import React, { useCallback, useMemo, memo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useCallback, useMemo, memo } from 'react';
-import type { TMessage } from 'librechat-data-provider';
+import { type TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
@@ -51,13 +51,13 @@ const MessageRender = memo(
       copyToClipboard,
       setLatestMessage,
       regenerateMessage,
+      handleFeedback,
     } = useMessageActions({
       message: msg,
       currentEditId,
       isMultiMessage,
       setCurrentEditId,
     });
-
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
     const fontSize = useRecoilValue(store.fontSize);
 
@@ -70,6 +70,9 @@ const MessageRender = memo(
     const isLatestMessage = msg?.messageId === latestMessage?.messageId;
     const showCardRender = isLast && !isSubmittingFamily && isCard;
     const isLatestCard = isCard && !isSubmittingFamily && isLatestMessage;
+
+    /** Only pass isSubmitting to the latest message to prevent unnecessary re-renders */
+    const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
     const iconData: TMessageIcon = useMemo(
       () => ({
@@ -94,10 +97,13 @@ const MessageRender = memo(
       () =>
         showCardRender && !isLatestMessage
           ? () => {
-            logger.log(`Message Card click: Setting ${msg?.messageId} as latest message`);
-            logger.dir(msg);
-            setLatestMessage(msg!);
-          }
+              logger.log(
+                'latest_message',
+                `Message Card click: Setting ${msg?.messageId} as latest message`,
+              );
+              logger.dir(msg);
+              setLatestMessage(msg!);
+            }
           : undefined,
       [showCardRender, isLatestMessage, msg, setLatestMessage],
     );
@@ -166,6 +172,8 @@ const MessageRender = memo(
                   messageId: msg.messageId,
                   conversationId: conversation?.conversationId,
                   isExpanded: false,
+                  isSubmitting: effectiveIsSubmitting,
+                  isLatestMessage,
                 }}
               >
                 {msg.plugin && <Plugin plugin={msg.plugin} />}
@@ -177,7 +185,7 @@ const MessageRender = memo(
                   message={msg}
                   enterEdit={enterEdit}
                   error={!!(msg.error ?? false)}
-                  isSubmitting={isSubmitting}
+                  isSubmitting={effectiveIsSubmitting}
                   unfinished={msg.unfinished ?? false}
                   isCreatedByUser={msg.isCreatedByUser ?? true}
                   siblingIdx={siblingIdx ?? 0}
@@ -186,7 +194,7 @@ const MessageRender = memo(
               </MessageContext.Provider>
             </div>
 
-            {hasNoChildren && (isSubmittingFamily === true || isSubmitting) ? (
+            {hasNoChildren && (isSubmittingFamily === true || effectiveIsSubmitting) ? (
               <PlaceholderRow isCard={isCard} />
             ) : (
               <SubRow classes="text-xs">
@@ -206,6 +214,7 @@ const MessageRender = memo(
                   copyToClipboard={copyToClipboard}
                   handleContinue={handleContinue}
                   latestMessage={latestMessage}
+                  handleFeedback={handleFeedback}
                   isLast={isLast}
                 />
               </SubRow>

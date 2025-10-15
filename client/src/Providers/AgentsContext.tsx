@@ -1,8 +1,8 @@
 import { useForm, FormProvider } from 'react-hook-form';
 import { createContext, useContext } from 'react';
-import { defaultAgentFormValues } from 'librechat-data-provider';
 import type { UseFormReturn } from 'react-hook-form';
 import type { AgentForm } from '~/common';
+import { getDefaultAgentFormValues } from '~/utils';
 
 type AgentsContextType = UseFormReturn<AgentForm>;
 
@@ -20,7 +20,7 @@ export function useAgentsContext() {
 
 export default function AgentsProvider({ children }) {
   const methods = useForm<AgentForm>({
-    defaultValues: defaultAgentFormValues,
+    defaultValues: getDefaultAgentFormValues(),
   });
 
   return <FormProvider {...methods}>{children}</FormProvider>;

@@ -1,9 +1,9 @@
 const sharp = require('sharp');
 const fs = require('fs').promises;
 const fetch = require('node-fetch');
+const { logger } = require('@librechat/data-schemas');
 const { EImageOutputType } = require('librechat-data-provider');
 const { resizeAndConvert } = require('./resize');
-const { logger } = require('~/config');
 
 /**
  * Uploads an avatar image for a user. This function can handle various types of input (URL, Buffer, or File object),
@@ -44,8 +44,25 @@ async function resizeAvatar({ userId, input, desiredFormat = EImageOutputType.PN
       throw new Error('Invalid input type. Expected URL, Buffer, or File.');
     }
 
-    const { width, height } = await sharp(imageBuffer).metadata();
+    const metadata = await sharp(imageBuffer).metadata();
+    const { width, height } = metadata;
     const minSize = Math.min(width, height);
+
+    if (metadata.format === 'gif') {
+      const resizedBuffer = await sharp(imageBuffer, { animated: true })
+        .extract({
+          left: Math.floor((width - minSize) / 2),
+          top: Math.floor((height - minSize) / 2),
+          width: minSize,
+          height: minSize,
+        })
+        .resize(250, 250)
+        .gif()
+        .toBuffer();
+
+      return resizedBuffer;
+    }
+
     const squaredBuffer = await sharp(imageBuffer)
       .extract({
         left: Math.floor((width - minSize) / 2),

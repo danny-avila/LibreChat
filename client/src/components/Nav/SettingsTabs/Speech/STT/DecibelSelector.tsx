@@ -1,9 +1,9 @@
 import React from 'react';
+import { Slider, InputNumber } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { Slider, InputNumber } from '~/components/ui';
+import { cn, defaultTextProps, optionText } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
-import { cn, defaultTextProps, optionText } from '~/utils/';
 
 export default function DecibelSelector() {
   const localize = useLocalize();
@@ -13,9 +13,11 @@ export default function DecibelSelector() {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center justify-between">
-        <div>{localize('com_nav_db_sensitivity')}</div>
+        <div id="decibel-selector-label">{localize('com_nav_db_sensitivity')}</div>
         <div className="w-2" />
-        <small className="opacity-40">({localize('com_endpoint_default_with_num', { 0: '-45' })})</small>
+        <small className="opacity-40">
+          ({localize('com_endpoint_default_with_num', { 0: '-45' })})
+        </small>
       </div>
       <div className="flex items-center justify-between">
         <Slider
@@ -27,6 +29,7 @@ export default function DecibelSelector() {
           step={1}
           className="ml-4 flex h-4 w-24"
           disabled={!speechToText}
+          aria-labelledby="decibel-selector-label"
         />
         <div className="w-2" />
         <InputNumber
@@ -35,6 +38,7 @@ export default function DecibelSelector() {
           onChange={(value) => setDecibelValue(value ? value[0] : 0)}
           min={-100}
           max={-30}
+          aria-labelledby="decibel-selector-label"
           className={cn(
             defaultTextProps,
             cn(

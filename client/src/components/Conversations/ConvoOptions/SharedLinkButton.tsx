@@ -1,20 +1,27 @@
 import { useState, useCallback } from 'react';
 import { QrCode, RotateCw, Trash2 } from 'lucide-react';
+import {
+  Button,
+  OGDialog,
+  Spinner,
+  TooltipAnchor,
+  Label,
+  OGDialogTemplate,
+  useToastContext,
+} from '@librechat/client';
 import type { TSharedLinkGetResponse } from 'librechat-data-provider';
 import {
   useCreateSharedLinkMutation,
   useUpdateSharedLinkMutation,
   useDeleteSharedLinkMutation,
 } from '~/data-provider';
-import { Button, OGDialog, Spinner, TooltipAnchor, Label } from '~/components';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { NotificationSeverity } from '~/common';
-import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 export default function SharedLinkButton({
   share,
   conversationId,
+  targetMessageId,
   setShareDialogOpen,
   showQR,
   setShowQR,
@@ -22,6 +29,7 @@ export default function SharedLinkButton({
 }: {
   share: TSharedLinkGetResponse | undefined;
   conversationId: string;
+  targetMessageId?: string;
   setShareDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
   showQR: boolean;
   setShowQR: (showQR: boolean) => void;
@@ -80,7 +88,7 @@ export default function SharedLinkButton({
   };
 
   const createShareLink = async () => {
-    const share = await mutate({ conversationId });
+    const share = await mutate({ conversationId, targetMessageId });
     const newLink = generateShareLink(share.shareId);
     setSharedLink(newLink);
   };

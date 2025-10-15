@@ -1,8 +1,5 @@
-const mockUser = {
-  _id: 'fakeId',
-  save: jest.fn(),
-  findByIdAndDelete: jest.fn(),
-};
+const mongoose = require('mongoose');
+const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const mockPluginService = {
   updateUserPluginAuth: jest.fn(),
@@ -10,23 +7,38 @@ const mockPluginService = {
   getUserPluginAuthValue: jest.fn(),
 };
 
-jest.mock('~/models/User', () => {
-  return function () {
-    return mockUser;
-  };
-});
-
 jest.mock('~/server/services/PluginService', () => mockPluginService);
 
-const { BaseLLM } = require('@langchain/openai');
+jest.mock('~/server/services/Config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({
+    // Default app config for tool tests
+    paths: { uploads: '/tmp' },
+    fileStrategy: 'local',
+    filteredTools: [],
+    includedTools: [],
+  }),
+  getCachedTools: jest.fn().mockResolvedValue({
+    // Default cached tools for tests
+    dalle: {
+      type: 'function',
+      function: {
+        name: 'dalle',
+        description: 'DALL-E image generation',
+        parameters: {},
+      },
+    },
+  }),
+}));
+
 const { Calculator } = require('@langchain/community/tools/calculator');
 
-const User = require('~/models/User');
+const { User } = require('~/db/models');
 const PluginService = require('~/server/services/PluginService');
 const { validateTools, loadTools, loadToolWithAuth } = require('./handleTools');
 const { StructuredSD, availableTools, DALLE3 } = require('../');
 
 describe('Tool Handlers', () => {
+  let mongoServer;
   let fakeUser;
   const pluginKey = 'dalle';
   const pluginKey2 = 'wolfram';
@@ -37,7 +49,9 @@ describe('Tool Handlers', () => {
   const authConfigs = mainPlugin.authConfig;
 
   beforeAll(async () => {
-    mockUser.save.mockResolvedValue(undefined);
+    mongoServer = await MongoMemoryServer.create();
+    const mongoUri = mongoServer.getUri();
+    await mongoose.connect(mongoUri);
 
     const userAuthValues = {};
     mockPluginService.getUserPluginAuthValue.mockImplementation((userId, authField) => {
@@ -78,9 +92,36 @@ describe('Tool Handlers', () => {
   });
 
   afterAll(async () => {
-    await mockUser.findByIdAndDelete(fakeUser._id);
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(async () => {
+    // Clear mocks but not the database since we need the user to persist
+    jest.clearAllMocks();
+
+    // Reset the mock implementations
+    const userAuthValues = {};
+    mockPluginService.getUserPluginAuthValue.mockImplementation((userId, authField) => {
+      return userAuthValues[`${userId}-${authField}`];
+    });
+    mockPluginService.updateUserPluginAuth.mockImplementation(
+      (userId, authField, _pluginKey, credential) => {
+        const fields = authField.split('||');
+        fields.forEach((field) => {
+          userAuthValues[`${userId}-${field}`] = credential;
+        });
+      },
+    );
+
+    // Re-add the auth configs for the user
     for (const authConfig of authConfigs) {
-      await PluginService.deleteUserPluginAuth(fakeUser._id, authConfig.authField);
+      await PluginService.updateUserPluginAuth(
+        fakeUser._id,
+        authConfig.authField,
+        pluginKey,
+        mockCredential,
+      );
     }
   });
 
@@ -130,7 +171,6 @@ describe('Tool Handlers', () => {
     beforeAll(async () => {
       const toolMap = await loadTools({
         user: fakeUser._id,
-        model: BaseLLM,
         tools: sampleTools,
         returnMap: true,
         useSpecs: true,
@@ -218,14 +258,12 @@ describe('Tool Handlers', () => {
       try {
         await loadTool2();
       } catch (error) {
-        // eslint-disable-next-line jest/no-conditional-expect
         expect(error).toBeDefined();
       }
     });
     it('returns an empty object when no tools are requested', async () => {
       toolFunctions = await loadTools({
         user: fakeUser._id,
-        model: BaseLLM,
         returnMap: true,
         useSpecs: true,
       });
@@ -235,7 +273,6 @@ describe('Tool Handlers', () => {
       process.env.SD_WEBUI_URL = mockCredential;
       toolFunctions = await loadTools({
         user: fakeUser._id,
-        model: BaseLLM,
         tools: ['stable-diffusion'],
         functions: true,
         returnMap: true,

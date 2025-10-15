@@ -1,9 +1,9 @@
 const { fetchModels } = require('~/server/services/ModelService');
-const { getCustomConfig } = require('./getCustomConfig');
 const loadConfigModels = require('./loadConfigModels');
+const { getAppConfig } = require('./app');
 
 jest.mock('~/server/services/ModelService');
-jest.mock('./getCustomConfig');
+jest.mock('./app');
 
 const exampleConfig = {
   endpoints: {
@@ -60,7 +60,7 @@ const exampleConfig = {
 };
 
 describe('loadConfigModels', () => {
-  const mockRequest = { app: { locals: {} }, user: { id: 'testUserId' } };
+  const mockRequest = { user: { id: 'testUserId' } };
 
   const originalEnv = process.env;
 
@@ -68,6 +68,9 @@ describe('loadConfigModels', () => {
     jest.resetAllMocks();
     jest.resetModules();
     process.env = { ...originalEnv };
+
+    // Default mock for getAppConfig
+    getAppConfig.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -75,18 +78,15 @@ describe('loadConfigModels', () => {
   });
 
   it('should return an empty object if customConfig is null', async () => {
-    getCustomConfig.mockResolvedValue(null);
+    getAppConfig.mockResolvedValue(null);
     const result = await loadConfigModels(mockRequest);
     expect(result).toEqual({});
   });
 
   it('handles azure models and endpoint correctly', async () => {
-    mockRequest.app.locals.azureOpenAI = { modelNames: ['model1', 'model2'] };
-    getCustomConfig.mockResolvedValue({
+    getAppConfig.mockResolvedValue({
       endpoints: {
-        azureOpenAI: {
-          models: ['model1', 'model2'],
-        },
+        azureOpenAI: { modelNames: ['model1', 'model2'] },
       },
     });
 
@@ -97,18 +97,16 @@ describe('loadConfigModels', () => {
   it('fetches custom models based on the unique key', async () => {
     process.env.BASE_URL = 'http://example.com';
     process.env.API_KEY = 'some-api-key';
-    const customEndpoints = {
-      custom: [
-        {
-          baseURL: '${BASE_URL}',
-          apiKey: '${API_KEY}',
-          name: 'CustomModel',
-          models: { fetch: true },
-        },
-      ],
-    };
+    const customEndpoints = [
+      {
+        baseURL: '${BASE_URL}',
+        apiKey: '${API_KEY}',
+        name: 'CustomModel',
+        models: { fetch: true },
+      },
+    ];
 
-    getCustomConfig.mockResolvedValue({ endpoints: customEndpoints });
+    getAppConfig.mockResolvedValue({ endpoints: { custom: customEndpoints } });
     fetchModels.mockResolvedValue(['customModel1', 'customModel2']);
 
     const result = await loadConfigModels(mockRequest);
@@ -117,7 +115,7 @@ describe('loadConfigModels', () => {
   });
 
   it('correctly associates models to names using unique keys', async () => {
-    getCustomConfig.mockResolvedValue({
+    getAppConfig.mockResolvedValue({
       endpoints: {
         custom: [
           {
@@ -146,7 +144,7 @@ describe('loadConfigModels', () => {
 
   it('correctly handles multiple endpoints with the same baseURL but different apiKeys', async () => {
     // Mock the custom configuration to simulate the user's scenario
-    getCustomConfig.mockResolvedValue({
+    getAppConfig.mockResolvedValue({
       endpoints: {
         custom: [
           {
@@ -210,7 +208,7 @@ describe('loadConfigModels', () => {
     process.env.MY_OPENROUTER_API_KEY = 'actual_openrouter_api_key';
     // Setup custom configuration with specific API keys for Mistral and OpenRouter
     // and "user_provided" for groq and Ollama, indicating no fetch for the latter two
-    getCustomConfig.mockResolvedValue(exampleConfig);
+    getAppConfig.mockResolvedValue(exampleConfig);
 
     // Assuming fetchModels would be called only for Mistral and OpenRouter
     fetchModels.mockImplementation(({ name }) => {
@@ -256,8 +254,8 @@ describe('loadConfigModels', () => {
     // For groq and ollama, since the apiKey is "user_provided", models should not be fetched
     // Depending on your implementation's behavior regarding "default" models without fetching,
     // you may need to adjust the following assertions:
-    expect(result.groq).toBe(exampleConfig.endpoints.custom[2].models.default);
-    expect(result.ollama).toBe(exampleConfig.endpoints.custom[3].models.default);
+    expect(result.groq).toEqual(exampleConfig.endpoints.custom[2].models.default);
+    expect(result.ollama).toEqual(exampleConfig.endpoints.custom[3].models.default);
 
     // Verifying fetchModels was not called for groq and ollama
     expect(fetchModels).not.toHaveBeenCalledWith(
@@ -273,7 +271,7 @@ describe('loadConfigModels', () => {
   });
 
   it('falls back to default models if fetching returns an empty array', async () => {
-    getCustomConfig.mockResolvedValue({
+    getAppConfig.mockResolvedValue({
       endpoints: {
         custom: [
           {
@@ -306,7 +304,7 @@ describe('loadConfigModels', () => {
   });
 
   it('falls back to default models if fetching returns a falsy value', async () => {
-    getCustomConfig.mockResolvedValue({
+    getAppConfig.mockResolvedValue({
       endpoints: {
         custom: [
           {
@@ -367,7 +365,7 @@ describe('loadConfigModels', () => {
       },
     ];
 
-    getCustomConfig.mockResolvedValue({
+    getAppConfig.mockResolvedValue({
       endpoints: {
         custom: testCases,
       },

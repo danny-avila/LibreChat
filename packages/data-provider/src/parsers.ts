@@ -18,7 +18,6 @@ import {
   compactAssistantSchema,
 } from './schemas';
 import { bedrockInputSchema } from './bedrock';
-import { extractEnvVariable } from './utils';
 import { alternateName } from './config';
 
 type EndpointSchema =
@@ -122,19 +121,6 @@ export function errorsToString(errors: ZodIssue[]) {
     .join(' ');
 }
 
-/** Resolves header values to env variables if detected */
-export function resolveHeaders(headers: Record<string, string> | undefined) {
-  const resolvedHeaders = { ...(headers ?? {}) };
-
-  if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
-    Object.keys(headers).forEach((key) => {
-      resolvedHeaders[key] = extractEnvVariable(headers[key]);
-    });
-  }
-
-  return resolvedHeaders;
-}
-
 export function getFirstDefinedValue(possibleValues: string[]) {
   let returnValue;
   for (const value of possibleValues) {
@@ -225,12 +211,14 @@ const extractOmniVersion = (modelStr: string): string => {
 export const getResponseSender = (endpointOption: t.TEndpointOption): string => {
   const {
     model: _m,
-    endpoint,
+    endpoint: _e,
     endpointType,
     modelDisplayLabel: _mdl,
     chatGptLabel: _cgl,
     modelLabel: _ml,
   } = endpointOption;
+
+  const endpoint = _e as EModelEndpoint;
 
   const model = _m ?? '';
   const modelDisplayLabel = _mdl ?? '';
@@ -273,15 +261,11 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
   if (endpoint === EModelEndpoint.google) {
     if (modelLabel) {
       return modelLabel;
-    } else if (model && (model.includes('gemini') || model.includes('learnlm'))) {
-      return 'Gemini';
     } else if (model?.toLowerCase().includes('gemma') === true) {
       return 'Gemma';
-    } else if (model && model.includes('code')) {
-      return 'Codey';
     }
 
-    return 'PaLM2';
+    return 'Gemini';
   }
 
   if (endpoint === EModelEndpoint.custom || endpointType === EModelEndpoint.custom) {
@@ -385,7 +369,7 @@ export function parseTextParts(
       continue;
     }
     if (part.type === ContentTypes.TEXT) {
-      const textValue = typeof part.text === 'string' ? part.text : part.text.value;
+      const textValue = (typeof part.text === 'string' ? part.text : part.text?.value) || '';
 
       if (
         result.length > 0 &&

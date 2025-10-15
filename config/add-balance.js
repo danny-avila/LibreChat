@@ -1,9 +1,11 @@
 const path = require('path');
+const mongoose = require('mongoose');
+const { isEnabled, getBalanceConfig } = require('@librechat/api');
+const { User } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const { createTransaction } = require('~/models/Transaction');
+const { getAppConfig } = require('~/server/services/Config');
 const { askQuestion, silentExit } = require('./helpers');
-const { isEnabled } = require('~/server/utils/handleText');
-const { Transaction } = require('~/models/Transaction');
-const User = require('~/models/User');
 const connect = require('./connect');
 
 (async () => {
@@ -78,11 +80,14 @@ const connect = require('./connect');
    */
   let result;
   try {
-    result = await Transaction.create({
+    const appConfig = await getAppConfig();
+    const balanceConfig = getBalanceConfig(appConfig);
+    result = await createTransaction({
       user: user._id,
       tokenType: 'credits',
       context: 'admin',
       rawAmount: +amount,
+      balance: balanceConfig,
     });
   } catch (error) {
     console.red('Error: ' + error.message);

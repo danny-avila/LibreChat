@@ -245,7 +245,7 @@ describe('AnthropicClient', () => {
     });
 
     describe('Claude 4 model headers', () => {
-      it('should add "prompt-caching" beta header for claude-sonnet-4 model', () => {
+      it('should add "prompt-caching" and "context-1m" beta headers for claude-sonnet-4 model', () => {
         const client = new AnthropicClient('test-api-key');
         const modelOptions = {
           model: 'claude-sonnet-4-20250514',
@@ -255,28 +255,34 @@ describe('AnthropicClient', () => {
         expect(anthropicClient._options.defaultHeaders).toBeDefined();
         expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
         expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
-          'prompt-caching-2024-07-31',
+          'prompt-caching-2024-07-31,context-1m-2025-08-07',
         );
+      });
+
+      it('should add "prompt-caching" and "context-1m" beta headers for claude-sonnet-4 model formats', () => {
+        const client = new AnthropicClient('test-api-key');
+        const modelVariations = [
+          'claude-sonnet-4-20250514',
+          'claude-sonnet-4-latest',
+          'anthropic/claude-sonnet-4-20250514',
+        ];
+
+        modelVariations.forEach((model) => {
+          const modelOptions = { model };
+          client.setOptions({ modelOptions, promptCache: true });
+          const anthropicClient = client.getClient(modelOptions);
+          expect(anthropicClient._options.defaultHeaders).toBeDefined();
+          expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+          expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+            'prompt-caching-2024-07-31,context-1m-2025-08-07',
+          );
+        });
       });
 
       it('should add "prompt-caching" beta header for claude-opus-4 model', () => {
         const client = new AnthropicClient('test-api-key');
         const modelOptions = {
           model: 'claude-opus-4-20250514',
-        };
-        client.setOptions({ modelOptions, promptCache: true });
-        const anthropicClient = client.getClient(modelOptions);
-        expect(anthropicClient._options.defaultHeaders).toBeDefined();
-        expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
-        expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
-          'prompt-caching-2024-07-31',
-        );
-      });
-
-      it('should add "prompt-caching" beta header for claude-4-sonnet model', () => {
-        const client = new AnthropicClient('test-api-key');
-        const modelOptions = {
-          model: 'claude-4-sonnet-20250514',
         };
         client.setOptions({ modelOptions, promptCache: true });
         const anthropicClient = client.getClient(modelOptions);
@@ -309,7 +315,7 @@ describe('AnthropicClient', () => {
       };
       client.setOptions({ modelOptions, promptCache: true });
       const anthropicClient = client.getClient(modelOptions);
-      expect(anthropicClient.defaultHeaders).not.toHaveProperty('anthropic-beta');
+      expect(anthropicClient._options.defaultHeaders).toBeUndefined();
     });
 
     it('should not add beta header for other models', () => {
@@ -320,7 +326,7 @@ describe('AnthropicClient', () => {
         },
       });
       const anthropicClient = client.getClient();
-      expect(anthropicClient.defaultHeaders).not.toHaveProperty('anthropic-beta');
+      expect(anthropicClient._options.defaultHeaders).toBeUndefined();
     });
   });
 
@@ -507,6 +513,34 @@ describe('AnthropicClient', () => {
       client.setOptions({
         modelOptions: {
           model: 'claude-3.7-sonnet',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(highTokenValue);
+    });
+
+    it('should not cap maxOutputTokens for Claude 4 Sonnet models', () => {
+      const client = new AnthropicClient('test-api-key');
+      const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 10; // 40,960 tokens
+
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-sonnet-4-20250514',
+          maxOutputTokens: highTokenValue,
+        },
+      });
+
+      expect(client.modelOptions.maxOutputTokens).toBe(highTokenValue);
+    });
+
+    it('should not cap maxOutputTokens for Claude 4 Opus models', () => {
+      const client = new AnthropicClient('test-api-key');
+      const highTokenValue = anthropicSettings.legacy.maxOutputTokens.default * 6; // 24,576 tokens (under 32K limit)
+
+      client.setOptions({
+        modelOptions: {
+          model: 'claude-opus-4-20250514',
           maxOutputTokens: highTokenValue,
         },
       });

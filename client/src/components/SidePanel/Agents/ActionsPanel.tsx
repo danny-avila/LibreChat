@@ -1,31 +1,31 @@
 import { useEffect } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
 import {
   AuthTypeEnum,
   AuthorizationTypeEnum,
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
-import { ChevronLeft } from 'lucide-react';
-import type { AgentPanelProps, ActionAuthForm } from '~/common';
+import {
+  Label,
+  OGDialog,
+  TrashIcon,
+  OGDialogTrigger,
+  useToastContext,
+  OGDialogTemplate,
+} from '@librechat/client';
+import type { ActionAuthForm } from '~/common';
 import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
-import { OGDialog, OGDialogTrigger, Label } from '~/components/ui';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
+import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import { useDeleteAgentAction } from '~/data-provider';
-import useLocalize from '~/hooks/useLocalize';
-import { useToastContext } from '~/Providers';
-import { TrashIcon } from '~/components/svg';
+import { Panel, isEphemeralAgent } from '~/common';
 import ActionsInput from './ActionsInput';
-import { Panel } from '~/common';
+import { useLocalize } from '~/hooks';
 
-export default function ActionsPanel({
-  // activePanel,
-  action,
-  setAction,
-  agent_id,
-  setActivePanel,
-}: AgentPanelProps) {
+export default function ActionsPanel() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const { setActivePanel, action, setAction, agent_id } = useAgentPanelContext();
   const deleteAgentAction = useDeleteAgentAction({
     onSuccess: () => {
       showToast({
@@ -62,7 +62,7 @@ export default function ActionsPanel({
     },
   });
 
-  const { reset, watch } = methods;
+  const { reset } = methods;
 
   useEffect(() => {
     if (action?.metadata.auth) {
@@ -108,7 +108,7 @@ export default function ActionsPanel({
                   <div className="absolute right-0 top-6">
                     <button
                       type="button"
-                      disabled={!agent_id || !action.action_id}
+                      disabled={isEphemeralAgent(agent_id) || !action.action_id}
                       className="btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium"
                     >
                       <TrashIcon className="text-red-500" />
@@ -126,15 +126,15 @@ export default function ActionsPanel({
                   }
                   selection={{
                     selectHandler: () => {
-                      if (!agent_id) {
+                      if (isEphemeralAgent(agent_id)) {
                         return showToast({
-                          message: 'No agent_id found, is the agent created?',
+                          message: localize('com_agents_no_agent_id_error'),
                           status: 'error',
                         });
                       }
                       deleteAgentAction.mutate({
                         action_id: action.action_id,
-                        agent_id,
+                        agent_id: agent_id || '',
                       });
                     },
                     selectClasses:

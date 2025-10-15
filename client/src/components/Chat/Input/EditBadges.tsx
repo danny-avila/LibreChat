@@ -1,9 +1,9 @@
 import React, { useCallback } from 'react';
 import { Edit3, Check, X } from 'lucide-react';
+import { Button, Badge } from '@librechat/client';
 import type { LucideIcon } from 'lucide-react';
 import type { BadgeItem } from '~/common';
 import { useChatBadges, useLocalize } from '~/hooks';
-import { Button, Badge } from '~/components/ui';
 
 interface EditBadgesProps {
   isEditingChatBadges: boolean;

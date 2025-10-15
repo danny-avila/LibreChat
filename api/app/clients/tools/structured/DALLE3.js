@@ -1,17 +1,16 @@
 const { z } = require('zod');
 const path = require('path');
 const OpenAI = require('openai');
-const fetch = require('node-fetch');
 const { v4: uuidv4 } = require('uuid');
+const { ProxyAgent, fetch } = require('undici');
 const { Tool } = require('@langchain/core/tools');
-const { HttpsProxyAgent } = require('https-proxy-agent');
+const { logger } = require('@librechat/data-schemas');
+const { getImageBasename } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
-const { getImageBasename } = require('~/server/services/Files/images');
 const extractBaseURL = require('~/utils/extractBaseURL');
-const { logger } = require('~/config');
 
 const displayMessage =
-  'DALL-E displayed an image. All generated images are already plainly visible, so don\'t repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.';
+  "DALL-E displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
 class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();
@@ -46,7 +45,10 @@ class DALLE3 extends Tool {
     }
 
     if (process.env.PROXY) {
-      config.httpAgent = new HttpsProxyAgent(process.env.PROXY);
+      const proxyAgent = new ProxyAgent(process.env.PROXY);
+      config.fetchOptions = {
+        dispatcher: proxyAgent,
+      };
     }
 
     /** @type {OpenAI} */
@@ -163,7 +165,8 @@ Error Message: ${error.message}`);
     if (this.isAgent) {
       let fetchOptions = {};
       if (process.env.PROXY) {
-        fetchOptions.agent = new HttpsProxyAgent(process.env.PROXY);
+        const proxyAgent = new ProxyAgent(process.env.PROXY);
+        fetchOptions.dispatcher = proxyAgent;
       }
       const imageResponse = await fetch(theImageUrl, fetchOptions);
       const arrayBuffer = await imageResponse.arrayBuffer();

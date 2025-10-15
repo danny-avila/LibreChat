@@ -1,25 +1,21 @@
-import { ListFilter, User, Share2 } from 'lucide-react';
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilState } from 'recoil';
+import { ListFilter, User, Share2 } from 'lucide-react';
 import { SystemCategories } from 'librechat-data-provider';
-import { usePromptGroupsNav, useLocalize, useCategories } from '~/hooks';
-import { Dropdown, AnimatedSearchInput } from '~/components/ui';
+import { Dropdown, AnimatedSearchInput } from '@librechat/client';
 import type { Option } from '~/common';
+import { useLocalize, useCategories } from '~/hooks';
+import { usePromptGroupsContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
 
-export default function FilterPrompts({
-  setName,
-  className = '',
-}: Pick<ReturnType<typeof usePromptGroupsNav>, 'setName'> & {
-  className?: string;
-}) {
+export default function FilterPrompts({ className = '' }: { className?: string }) {
   const localize = useLocalize();
-  const [displayName, setDisplayName] = useState('');
-  const setCategory = useSetRecoilState(store.promptsCategory);
-  const categoryFilter = useRecoilValue(store.promptsCategory);
-  const { categories } = useCategories('h-4 w-4');
+  const { name, setName, hasAccess } = usePromptGroupsContext();
+  const { categories } = useCategories({ className: 'h-4 w-4', hasAccess });
+  const [displayName, setDisplayName] = useState(name || '');
   const [isSearching, setIsSearching] = useState(false);
+  const [categoryFilter, setCategory] = useRecoilState(store.promptsCategory);
 
   const filterOptions = useMemo(() => {
     const baseOptions: Option[] = [
@@ -44,11 +40,11 @@ export default function FilterPrompts({
     const categoryOptions = categories
       ? [...categories]
       : [
-        {
-          value: SystemCategories.NO_CATEGORY,
-          label: localize('com_ui_no_category'),
-        },
-      ];
+          {
+            value: SystemCategories.NO_CATEGORY,
+            label: localize('com_ui_no_category'),
+          },
+        ];
 
     return [...baseOptions, ...categoryOptions];
   }, [categories, localize]);
@@ -64,13 +60,26 @@ export default function FilterPrompts({
     [setCategory],
   );
 
+  // Sync displayName with name prop when it changes externally
   useEffect(() => {
+    setDisplayName(name || '');
+  }, [name]);
+
+  useEffect(() => {
+    if (displayName === '') {
+      // Clear immediately when empty
+      setName('');
+      setIsSearching(false);
+      return;
+    }
+
     setIsSearching(true);
     const timeout = setTimeout(() => {
       setIsSearching(false);
+      setName(displayName); // Debounced setName call
     }, 500);
     return () => clearTimeout(timeout);
-  }, [displayName]);
+  }, [displayName, setName]);
 
   return (
     <div className={cn('flex w-full gap-2 text-text-primary', className)}>
@@ -78,7 +87,7 @@ export default function FilterPrompts({
         value={categoryFilter || SystemCategories.ALL}
         onChange={onSelect}
         options={filterOptions}
-        className="bg-transparent"
+        className="rounded-lg bg-transparent"
         icon={<ListFilter className="h-4 w-4" />}
         label="Filter: "
         ariaLabel={localize('com_ui_filter_prompts')}
@@ -88,7 +97,6 @@ export default function FilterPrompts({
         value={displayName}
         onChange={(e) => {
           setDisplayName(e.target.value);
-          setName(e.target.value);
         }}
         isSearching={isSearching}
         placeholder={localize('com_ui_filter_prompts_name')}

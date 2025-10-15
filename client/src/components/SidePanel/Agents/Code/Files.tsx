@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useFormContext } from 'react-hook-form';
+import { AttachmentIcon } from '@librechat/client';
 import {
   EToolResources,
   EModelEndpoint,
@@ -12,8 +13,8 @@ import type { ExtendedFile, AgentForm } from '~/common';
 import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
-import { AttachmentIcon } from '~/components/svg';
 import { useChatContext } from '~/Providers';
+import { isEphemeralAgent } from '~/common';
 
 const tool_resource = EToolResources.execute_code;
 
@@ -85,7 +86,7 @@ export default function Files({
         <div>
           <button
             type="button"
-            disabled={!agent_id || codeChecked === false}
+            disabled={isEphemeralAgent(agent_id) || codeChecked === false}
             className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
             onClick={handleButtonClick}
           >
@@ -96,7 +97,7 @@ export default function Files({
                 style={{ display: 'none' }}
                 tabIndex={-1}
                 ref={fileInputRef}
-                disabled={!agent_id || codeChecked === false}
+                disabled={isEphemeralAgent(agent_id) || codeChecked === false}
                 onChange={handleFileChange}
               />
               <AttachmentIcon className="text-token-text-primary h-4 w-4" />
