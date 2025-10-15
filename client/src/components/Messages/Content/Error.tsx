@@ -123,9 +123,12 @@ const Error = ({ text }: { text: string }) => {
     const subPriceStr = startupConfig?.sellingMessage?.price ?? '';
     const subFaqUrl = startupConfig?.sellingMessage?.faqUrl ?? '#';
     const supportEmail = startupConfig?.sellingMessage?.supportEmail ?? '';
+    const proSupportEmail = startupConfig?.insideSubscription?.proSupportEmail ?? '';
 
     const md = [
       `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`,
+      '',
+      'For te: Pro Support: [${proSupportEmail}](mailto:${proSupportEmail})',
       '',
       `Subscribe and receive an interactive detailed summary of videos you are interested in!`,
       '',
