@@ -3,6 +3,8 @@ import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provid
 import type { LocalizeFunction } from '~/common';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import { useLocalize } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
+import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import CodeBlock from './CodeBlock';
 
 const localizedErrorPrefix = 'com_error';
@@ -97,32 +99,11 @@ const errorMessages = {
       windowInMinutes > 1 ? `${windowInMinutes} minutes` : 'minute'
     }.`;
   },
-  token_balance: (json: TTokenBalance) => {
-    const { balance, tokenCost, promptTokens, generations } = json;
-    const message = `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`;
-    return (
-      <>
-        {message}
-        {generations && (
-          <>
-            <br />
-            <br />
-          </>
-        )}
-        {generations && (
-          <CodeBlock
-            lang="Generations"
-            error={true}
-            codeChildren={formatJSON(JSON.stringify(generations))}
-          />
-        )}
-      </>
-    );
-  },
 };
 
 const Error = ({ text }: { text: string }) => {
   const localize = useLocalize();
+  const { data: startupConfig } = useGetStartupConfig();
   const jsonString = extractJson(text);
   const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
   const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
@@ -134,6 +115,61 @@ const Error = ({ text }: { text: string }) => {
   const json = JSON.parse(jsonString);
   const errorKey = json.code || json.type;
   const keyExists = errorKey && errorMessages[errorKey];
+
+  if (errorKey === ViolationTypes.TOKEN_BALANCE) {
+    const { balance, tokenCost, promptTokens, generations } = json as TTokenBalance;
+    const checkoutUrl = 'https://example-example.com/checkout';
+    const subTrialPeriodStr = startupConfig?.sellingMessage?.trialPeriod ?? '';
+    const subPriceStr = startupConfig?.sellingMessage?.price ?? '';
+    const subFaqUrl = startupConfig?.sellingMessage?.faqUrl ?? '#';
+    const supportEmail = startupConfig?.sellingMessage?.supportEmail ?? '';
+
+    const md = [
+      `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`,
+      '',
+      `Subscribe and receive an interactive detailed summary of videos you are interested in!`,
+      '',
+      `🎁 **Exclusive offer — just for you!**`,
+      `🆓 Enjoy a **${subTrialPeriodStr} FREE trial** (first-time users only)`,
+      '',
+      `👉 [**CLICK HERE TO SUBSCRIBE**](${checkoutUrl})`,
+      '',
+      '',
+      `---`,
+      '',
+      `### Why PRO is a superpower for you:`,
+      '',
+      `✅ 1.5–2 hours of video in one step`,
+      `⚡️ Up to 10× time savings`,
+      `🌐 Support for any platforms`,
+      `💪 You directly support the developer and help improve the service`,
+      '',
+      `💳 **Price:** ${subPriceStr}`,
+      `Payments go directly to the developer, supporting the service.`,
+      '',
+      `---`,
+      '',
+      `ℹ️ [Frequently Asked Questions (FAQ)](${subFaqUrl})`,
+      `📧 Support: [${supportEmail}](mailto:${supportEmail})`,
+    ].join('\n');
+
+    return (
+      <>
+        <MarkdownLite content={md} />
+        {generations && (
+          <>
+            <br />
+            <br />
+            <CodeBlock
+              lang="Generations"
+              error={true}
+              codeChildren={formatJSON(JSON.stringify(generations))}
+            />
+          </>
+        )}
+      </>
+    );
+  }
 
   if (keyExists && typeof errorMessages[errorKey] === 'function') {
     return errorMessages[errorKey](json, localize);
