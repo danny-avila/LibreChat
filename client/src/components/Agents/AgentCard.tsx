@@ -1,5 +1,7 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Label } from '@librechat/client';
+import { QueryKeys } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
 import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
@@ -16,34 +18,55 @@ interface AgentCardProps {
 const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' }) => {
   const localize = useLocalize();
   const { categories } = useAgentCategories();
-  const queryClient: any = (globalThis as any).__REACT_QUERY_CLIENT__;
+  const queryClient = useQueryClient();
 
-  const favoriteData = queryClient?.getQueryData?.(['user', 'favoriteAgents']) as
+  const favoriteData = queryClient?.getQueryData?.([QueryKeys.user, 'favoriteAgents']) as
     | { favoriteAgents: string[] }
     | undefined;
   const favoriteIds = favoriteData?.favoriteAgents ?? [];
   const isFavorite = favoriteIds.includes(agent.id);
   const [favorited, setFavorited] = useState<boolean>(isFavorite);
+  const prevFavoritesKey = useRef<string>('');
 
-  // Ensure initial favorite state reflects server data in Marketplace
+  const favoritesKey = useMemo(() => favoriteIds.join(','), [favoriteIds]);
+
   useEffect(() => {
-    let ignore = false;
-    (async () => {
-      try {
-        const { dataService } = await import('librechat-data-provider');
-        const res = await dataService.getFavoriteAgents();
-        if (!ignore) {
-          const ids = res?.favoriteAgents ?? [];
-          setFavorited(ids.includes(agent.id));
-        }
-      } catch (_err) {
-        // ignore
+    if (prevFavoritesKey.current === favoritesKey) {
+      return;
+    }
+    prevFavoritesKey.current = favoritesKey;
+    setFavorited(isFavorite);
+  }, [favoritesKey, isFavorite]);
+
+  const syncFromCache = useCallback(() => {
+    const latest = queryClient?.getQueryData?.([QueryKeys.user, 'favoriteAgents']) as
+      | { favoriteAgents?: string[] }
+      | undefined;
+    const nextFavorited = latest?.favoriteAgents?.some?.((id) => id === agent.id) ?? false;
+    setFavorited(nextFavorited);
+  }, [agent.id, queryClient]);
+
+  // Listen for global favorite updates
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const customEvent = event as CustomEvent<{ id: string; favorited: boolean }>;
+      if (customEvent?.detail?.id === agent.id) {
+        setFavorited(Boolean(customEvent.detail.favorited));
+        return;
       }
-    })();
-    return () => {
-      ignore = true;
+      syncFromCache();
     };
-  }, [agent.id]);
+
+    window.addEventListener('favoriteAgentsUpdated', handler);
+    const handleStorage = () => {
+      syncFromCache();
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('favoriteAgentsUpdated', handler);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [agent.id, syncFromCache]);
 
   const toggleFavorite = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -51,7 +74,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
       if (favorited) {
         const { dataService } = await import('librechat-data-provider');
         const res = await dataService.removeFavoriteAgent(agent.id);
-        queryClient?.setQueryData?.(['user', 'favoriteAgents'], res);
+        queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
         setFavorited(false);
         try {
           window.dispatchEvent(
@@ -65,7 +88,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
       } else {
         const { dataService } = await import('librechat-data-provider');
         const res = await dataService.addFavoriteAgent(agent.id);
-        queryClient?.setQueryData?.(['user', 'favoriteAgents'], res);
+        queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
         setFavorited(true);
         try {
           window.dispatchEvent(

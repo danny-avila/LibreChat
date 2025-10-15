@@ -1,5 +1,5 @@
-import React from 'react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { isAgentsEndpoint, isAssistantsEndpoint, QueryKeys } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
@@ -14,12 +14,53 @@ interface EndpointModelItemProps {
 export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointModelItemProps) {
   const { handleSelectModel } = useModelSelectorContext();
   const queryClient: any = (globalThis as any).__REACT_QUERY_CLIENT__;
+  const favoritesMap: Record<string, true> | undefined = (endpoint as any).favoriteAgentIds;
+  const initialFavorite = Boolean(favoritesMap && modelId && favoritesMap[modelId]);
+  const [favorited, setFavorited] = useState<boolean>(initialFavorite);
+
+  useEffect(() => {
+    setFavorited(initialFavorite);
+  }, [initialFavorite]);
+
+  const favoriteRef = useRef(favorited);
+  favoriteRef.current = favorited;
+
+  const refreshFromCache = useCallback(() => {
+    if (!modelId) {
+      return;
+    }
+    const latest = queryClient?.getQueryData?.([QueryKeys.user, 'favoriteAgents']) as
+      | { favoriteAgents?: string[] }
+      | undefined;
+    const nextFavorited = latest?.favoriteAgents?.some?.((id) => id === modelId) ?? false;
+    if (favoriteRef.current !== nextFavorited) {
+      setFavorited(nextFavorited);
+    }
+  }, [modelId, queryClient]);
+
+  useEffect(() => {
+    if (!modelId) {
+      return;
+    }
+    const handler = (event: Event) => {
+      const customEvent = event as CustomEvent<{ id: string; favorited: boolean }>;
+      if (customEvent?.detail?.id === modelId) {
+        setFavorited(Boolean(customEvent.detail.favorited));
+        return;
+      }
+      refreshFromCache();
+    };
+    window.addEventListener('favoriteAgentsUpdated', handler);
+    window.addEventListener('storage', handler);
+    return () => {
+      window.removeEventListener('favoriteAgentsUpdated', handler);
+      window.removeEventListener('storage', handler);
+    };
+  }, [modelId, refreshFromCache]);
+
   let isGlobal = false;
   let modelName = modelId;
   const avatarUrl = endpoint?.modelIcons?.[modelId ?? ''] || null;
-  const favoritesMap: Record<string, true> | undefined = (endpoint as any).favoriteAgentIds;
-  const isFavorite = !!(favoritesMap && modelId && favoritesMap[modelId]);
-  const [favorited, setFavorited] = React.useState<boolean>(isFavorite);
 
   // Use custom names if available
   if (endpoint && modelId && isAgentsEndpoint(endpoint.value) && endpoint.agentNames?.[modelId]) {
@@ -68,7 +109,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
             e.stopPropagation();
             try {
               if (favorited) {
-                const { dataService, QueryKeys } = await import('librechat-data-provider');
+                const { dataService } = await import('librechat-data-provider');
                 const res = await dataService.removeFavoriteAgent(modelId);
                 queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
                 setFavorited(false);
@@ -82,7 +123,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
                   void 0;
                 }
               } else {
-                const { dataService, QueryKeys } = await import('librechat-data-provider');
+                const { dataService } = await import('librechat-data-provider');
                 const res = await dataService.addFavoriteAgent(modelId);
                 queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
                 setFavorited(true);
