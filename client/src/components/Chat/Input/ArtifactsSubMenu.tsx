@@ -99,8 +99,9 @@ const ArtifactsSubMenu = React.forwardRef<HTMLDivElement, ArtifactsSubMenuProps>
                   {localize('com_ui_artifacts_options')}
                 </div>
 
+                {/* <Stripe> shadcn/ui components don't work yet */}
                 {/* Include shadcn/ui Option */}
-                <Ariakit.MenuItem
+                {/* <Ariakit.MenuItem
                   hideOnClick={false}
                   onClick={(event) => {
                     event.preventDefault();
@@ -120,7 +121,8 @@ const ArtifactsSubMenu = React.forwardRef<HTMLDivElement, ArtifactsSubMenuProps>
                     <Ariakit.MenuItemCheck checked={isShadcnEnabled} />
                     <span className="text-sm">{localize('com_ui_include_shadcnui' as any)}</span>
                   </div>
-                </Ariakit.MenuItem>
+                </Ariakit.MenuItem> */}
+                {/* </Stripe> */}
 
                 {/* Custom Prompt Mode Option */}
                 <Ariakit.MenuItem

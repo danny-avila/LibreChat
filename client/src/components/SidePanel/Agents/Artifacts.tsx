@@ -8,6 +8,9 @@ import {
   HoverCardTrigger,
   CircleHelpIcon,
 } from '@librechat/client';
+// <Stripe> load the startup config
+import { useGetStartupConfig } from '~/data-provider';
+// </Stripe>
 import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
@@ -38,7 +41,8 @@ export default function Artifacts() {
   };
 
   // <Stripe> added environment variable check
-  if (!process.env.SANDPACK_BUNDLER_URL) {
+  const { data: startupConfig } = useGetStartupConfig();
+  if (!startupConfig.bundlerURL) {
     return null;
   }
   // </Stripe>
@@ -64,14 +68,16 @@ export default function Artifacts() {
           onCheckedChange={handleArtifactsChange}
           hoverCardText={localize('com_nav_info_code_artifacts_agent')}
         />
-        <SwitchItem
+        {/* <Stripe> shadcn/ui components don't work yet */}
+        {/* <SwitchItem
           id="includeShadcnui"
           label={localize('com_ui_include_shadcnui')}
           checked={isShadcnEnabled}
           onCheckedChange={handleShadcnuiChange}
           hoverCardText={localize('com_nav_info_include_shadcnui')}
           disabled={!isEnabled || isCustomEnabled}
-        />
+        /> */}
+        {/* </Stripe> */}
         <SwitchItem
           id="customPromptMode"
           label={localize('com_ui_custom_prompt_mode')}
