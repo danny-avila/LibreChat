@@ -598,11 +598,22 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     if (shouldUseOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
       throw new Error('OCR capability is not enabled for Agents');
     } else if (shouldUseOCR) {
-      const { handleFileUpload: uploadOCR } = getStrategyFunctions(
-        appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
-      );
-      const { text, bytes, filepath: ocrFileURL } = await uploadOCR({ req, file, loadAuthValues });
-      return await createTextFile({ text, bytes, filepath: ocrFileURL });
+      try {
+        const { handleFileUpload: uploadOCR } = getStrategyFunctions(
+          appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
+        );
+        const {
+          text,
+          bytes,
+          filepath: ocrFileURL,
+        } = await uploadOCR({ req, file, loadAuthValues });
+        return await createTextFile({ text, bytes, filepath: ocrFileURL });
+      } catch (ocrError) {
+        logger.error(
+          `[processAgentFileUpload] OCR processing failed for file "${file.originalname}", falling back to text extraction:`,
+          ocrError,
+        );
+      }
     }
 
     const shouldUseSTT = fileConfig.checkType(
