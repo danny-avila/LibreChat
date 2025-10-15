@@ -1333,9 +1333,13 @@ export enum ViolationTypes {
    */
   ILLEGAL_MODEL_REQUEST = 'illegal_model_request',
   /**
-   * Token Limit Violation.
+   * Token balance violation for subscribed users.
    */
-  TOKEN_BALANCE = 'token_balance',
+  TOKEN_BALANCE_SUB = 'token_balance_sub',
+  /**
+   * Token balance violation for users without subscription.
+   */
+  TOKEN_BALANCE_NO_SUB = 'token_balance_no_sub',
   /**
    * An issued ban.
    */

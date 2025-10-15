@@ -1,8 +1,40 @@
+require('ts-node/register');
 const { logger } = require('@librechat/data-schemas');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
-const { Transaction, Balance } = require('~/db/models');
+const { Transaction, Balance, User } = require('~/db/models');
+const { recordUsageAutumn } = require('~/server/services/AutumnService.ts');
 
 const cancelRate = 1.15;
+
+async function recordAutumnTokenUsage(transaction, incrementValue) {
+  if (!transaction || incrementValue >= 0) {
+    return;
+  }
+
+  const usedTokens = Math.abs(incrementValue);
+  if (!usedTokens) {
+    return;
+  }
+
+  try {
+    const userDoc = await User.findById(transaction.user).select('openidId').lean();
+    const openidId = userDoc?.openidId;
+    if (!openidId) {
+      return;
+    }
+
+    await recordUsageAutumn({
+      openidID: openidId,
+      usedTokens,
+      idempotencyKey: `txn-${transaction._id?.toString() ?? Date.now()}`,
+    });
+  } catch (error) {
+    logger.error('[Transaction] Failed to record Autumn usage', {
+      error,
+      transactionId: transaction?._id?.toString?.(),
+    });
+  }
+}
 
 /**
  * Updates a user's token balance based on a transaction using optimistic concurrency control
@@ -213,6 +245,8 @@ async function createTransaction(_txData) {
     incrementValue,
   });
 
+  await recordAutumnTokenUsage(transaction, incrementValue);
+
   return {
     rate: transaction.rate,
     user: transaction.user.toString(),
@@ -250,6 +284,8 @@ async function createStructuredTransaction(_txData) {
     user: transaction.user,
     incrementValue,
   });
+
+  await recordAutumnTokenUsage(transaction, incrementValue);
 
   return {
     rate: transaction.rate,

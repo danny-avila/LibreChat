@@ -27,6 +27,7 @@ type TTokenBalance = {
   violation_count: number;
   date: Date;
   generations?: unknown[];
+  checkoutUrl?: string;
 };
 
 type TExpiredKey = {
@@ -116,9 +117,38 @@ const Error = ({ text }: { text: string }) => {
   const errorKey = json.code || json.type;
   const keyExists = errorKey && errorMessages[errorKey];
 
-  if (errorKey === ViolationTypes.TOKEN_BALANCE) {
+  if (errorKey === ViolationTypes.TOKEN_BALANCE_SUB) {
     const { balance, tokenCost, promptTokens, generations } = json as TTokenBalance;
-    const checkoutUrl = 'https://example-example.com/checkout';
+    const proSupportEmail = startupConfig?.insideSubscription?.proSupportEmail ?? '';
+
+    const md = [
+      `Insufficient Balance! Token Credits Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`,
+      '',
+      `In case if you think that it is a mistake, you can contact: [${proSupportEmail}](mailto:${proSupportEmail})`,
+      'Copy this message to the support and explain why you think it is a mistake.',
+    ].join('\n');
+
+    return (
+      <>
+        <MarkdownLite content={md} />
+        {generations && (
+          <>
+            <br />
+            <br />
+            <CodeBlock
+              lang="Generations"
+              error={true}
+              codeChildren={formatJSON(JSON.stringify(generations))}
+            />
+          </>
+        )}
+      </>
+    );
+  }
+
+  if (errorKey === ViolationTypes.TOKEN_BALANCE_NO_SUB) {
+    const { balance, tokenCost, promptTokens, generations, checkoutUrl } = json as TTokenBalance;
+    const resolvedCheckoutUrl = checkoutUrl';
     const subTrialPeriodStr = startupConfig?.sellingMessage?.trialPeriod ?? '';
     const subPriceStr = startupConfig?.sellingMessage?.price ?? '';
     const subFaqUrl = startupConfig?.sellingMessage?.faqUrl ?? '#';
@@ -126,16 +156,18 @@ const Error = ({ text }: { text: string }) => {
     const proSupportEmail = startupConfig?.insideSubscription?.proSupportEmail ?? '';
 
     const md = [
-      `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`,
-      '',
-      'For te: Pro Support: [${proSupportEmail}](mailto:${proSupportEmail})',
+      `Insufficient Balance! Token Credits Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`,
       '',
       `Subscribe and receive an interactive detailed summary of videos you are interested in!`,
+      '',
       '',
       `🎁 **Exclusive offer — just for you!**`,
       `🆓 Enjoy a **${subTrialPeriodStr} FREE trial** (first-time users only)`,
       '',
-      `👉 [**CLICK HERE TO SUBSCRIBE**](${checkoutUrl})`,
+      '',
+      '',
+      `👉 [**CLICK HERE TO SUBSCRIBE**](${resolvedCheckoutUrl})`,
+      '',
       '',
       '',
       `---`,
@@ -154,6 +186,8 @@ const Error = ({ text }: { text: string }) => {
       '',
       `ℹ️ [Frequently Asked Questions (FAQ)](${subFaqUrl})`,
       `📧 Support: [${supportEmail}](mailto:${supportEmail})`,
+      '',
+      `In case if you think that it is a mistake, you can contact: [${proSupportEmail}](mailto:${proSupportEmail})`,
     ].join('\n');
 
     return (

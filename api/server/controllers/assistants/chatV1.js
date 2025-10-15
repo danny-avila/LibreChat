@@ -133,7 +133,10 @@ const chatV1 = async (req, res) => {
         messageData,
         'Message too long. The Assistants API has a limit of 32,768 characters per message. Please shorten it and try again.',
       );
-    } else if (error?.message?.includes(ViolationTypes.TOKEN_BALANCE)) {
+    } else if (
+      error?.message?.includes(ViolationTypes.TOKEN_BALANCE_SUB) ||
+      error?.message?.includes(ViolationTypes.TOKEN_BALANCE_NO_SUB)
+    ) {
       return sendResponse(req, res, messageData, error.message);
     } else {
       logger.error('[/assistants/chat/]', error);

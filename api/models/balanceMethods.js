@@ -1,12 +1,77 @@
+require('ts-node/register');
 const { logger } = require('@librechat/data-schemas');
 const { ViolationTypes } = require('librechat-data-provider');
 const { createAutoRefillTransaction } = require('./Transaction');
 const { logViolation } = require('~/cache');
 const { getMultiplier } = require('./tx');
-const { Balance } = require('~/db/models');
+const { Balance, User } = require('~/db/models');
+const {
+  fetchTokenBalanceAutumn,
+  hasSubscriptionAutumn,
+  createCheckoutAutumn,
+} = require('~/server/services/AutumnService.ts');
 
 function isInvalidDate(date) {
   return isNaN(date);
+}
+
+async function resolveAutumnUser(req, userId) {
+  const resolved = {
+    openidId: req?.user?.openidId ?? req?.user?.openidID ?? undefined,
+    email: req?.user?.email ?? undefined,
+  };
+
+  if ((resolved.openidId == null || resolved.email == null) && userId) {
+    try {
+      const userDoc = await User.findById(userId).select('openidId email').lean();
+      if (userDoc) {
+        if (!resolved.openidId && userDoc.openidId) {
+          resolved.openidId = userDoc.openidId;
+        }
+        if (!resolved.email && userDoc.email) {
+          resolved.email = userDoc.email;
+        }
+      }
+    } catch (error) {
+      logger.error('[Balance.check] Failed to resolve Autumn identifiers', {
+        error,
+        userId,
+      });
+    }
+  }
+
+  return {
+    openidId: resolved.openidId,
+    email: resolved.email,
+  };
+}
+
+async function synchronizeAutumnBalance(userId, openidId) {
+  if (!userId || !openidId) {
+    return;
+  }
+
+  try {
+    const remoteBalance = await fetchTokenBalanceAutumn(openidId);
+    if (typeof remoteBalance !== 'number' || Number.isNaN(remoteBalance)) {
+      return;
+    }
+
+    await Balance.findOneAndUpdate(
+      { user: userId },
+      { $set: { tokenCredits: remoteBalance } },
+      {
+        upsert: true,
+        setDefaultsOnInsert: true,
+        new: false,
+      },
+    );
+  } catch (error) {
+    logger.error('[Balance.check] Failed to synchronize balance with Autumn', {
+      error,
+      userId,
+    });
+  }
 }
 
 /**
@@ -130,18 +195,58 @@ const addIntervalToDate = (date, value, unit) => {
  * @throws {Error} Throws an error if there's an issue with the balance check.
  */
 const checkBalance = async ({ req, res, txData }) => {
+  const { openidId, email } = await resolveAutumnUser(req, txData?.user);
+
+  await synchronizeAutumnBalance(txData?.user, openidId);
+
   const { canSpend, balance, tokenCost } = await checkBalanceRecord(txData);
   if (canSpend) {
     return true;
   }
 
-  const type = ViolationTypes.TOKEN_BALANCE;
+  let type = ViolationTypes.TOKEN_BALANCE_NO_SUB;
+  let checkoutUrl;
+
+  if (openidId) {
+    try {
+      const subscribed = await hasSubscriptionAutumn(openidId);
+      type = subscribed ? ViolationTypes.TOKEN_BALANCE_SUB : ViolationTypes.TOKEN_BALANCE_NO_SUB;
+
+      if (!subscribed) {
+        if (!email) {
+          logger.warn('[Balance.check] Missing email; unable to create Autumn checkout session', {
+            userId: txData?.user,
+          });
+        } else {
+          checkoutUrl = await createCheckoutAutumn({
+            openidID: openidId,
+            email: email,
+            fingerprint: email,
+          });
+        }
+      }
+    } catch (error) {
+      logger.error('[Balance.check] Failed to determine Autumn subscription status', {
+        error,
+        userId: txData?.user,
+      });
+    }
+  } else {
+    logger.warn('[Balance.check] Missing OpenID identifier; skipping Autumn subscription check', {
+      userId: txData?.user,
+    });
+  }
+
   const errorMessage = {
     type,
     balance,
     tokenCost,
     promptTokens: txData.amount,
   };
+
+  if (checkoutUrl && type === ViolationTypes.TOKEN_BALANCE_NO_SUB) {
+    errorMessage.checkoutUrl = checkoutUrl;
+  }
 
   if (txData.generations && txData.generations.length > 0) {
     errorMessage.generations = txData.generations;
