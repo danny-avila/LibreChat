@@ -11,6 +11,21 @@ const config: PlaywrightTestConfig = {
   globalSetup: undefined,  // Disabled - auth already generated
   globalTeardown: undefined,  // Disabled - using existing container
   webServer: undefined,  // Don't start server - use running instance
+
+  // Always record for demo purposes
+  use: {
+    ...mainConfig.use,
+    video: 'on',  // Always record video
+    trace: 'on',  // Always record trace
+    screenshot: 'on',  // Always take screenshots
+  },
+
+  // Add HTML reporter for better results viewing
+  reporter: [
+    ['list'],  // Console output
+    ['html', { outputFolder: 'playwright-report', open: 'never' }],  // HTML report
+    ['json', { outputFile: 'test-results.json' }],  // JSON for CI/CD
+  ],
   /* webServer: {
     ...mainConfig.webServer,
     command: `node ${absolutePath}`,

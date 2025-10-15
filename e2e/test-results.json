@@ -1,0 +1,254 @@
+{
+  "config": {
+    "configFile": "/Users/wolfgang/workspace/LibreChat/e2e/playwright.config.local.ts",
+    "rootDir": "/Users/wolfgang/workspace/LibreChat/e2e/specs",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "html",
+        {
+          "outputFolder": "playwright-report",
+          "open": "never"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "test-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 15000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/wolfgang/workspace/LibreChat/e2e/specs/.test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/Users/wolfgang/workspace/LibreChat/e2e/specs",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.50.1",
+    "workers": 5,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "demo-integrationsbericht-complete.spec.ts",
+      "file": "demo-integrationsbericht-complete.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Integrationsbericht Demo - Complete Workflow",
+          "file": "demo-integrationsbericht-complete.spec.ts",
+          "line": 113,
+          "column": 6,
+          "specs": [
+            {
+              "title": "Complete Demo: Steps 1-6",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 600000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "status": "failed",
+                      "duration": 115092,
+                      "error": {
+                        "message": "Error: \u001b[31mTimed out 10000ms waiting for \u001b[39m\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nLocator: locator('[class*=\"markdown\"], [data-testid*=\"message\"]').last()\nExpected pattern: \u001b[32m/§|gesetz|aufenthg|sgb/i\u001b[39m\nReceived string:  \u001b[31m\"tool_codeCopy codesearch_entities({\u001b[39m\n\u001b[31m  search: \\\"bericht-integration-baden-wuerttemberg-2025\\\"\u001b[39m\n\u001b[31m})\u001b[39m\n\u001b[31m\"\u001b[39m\nCall log:\n\u001b[2m  - expect.toContainText with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('[class*=\"markdown\"], [data-testid*=\"message\"]').last()\u001b[22m\n\u001b[2m    14 × locator resolved to <div class=\"markdown prose message-content dark:prose-invert light w-full break-words dark:text-gray-100\">…</div>\u001b[22m\n\u001b[2m       - unexpected value \"tool_codeCopy codesearch_entities({\u001b[22m\n\u001b[2m  search: \"bericht-integration-baden-wuerttemberg-2025\"\u001b[22m\n\u001b[2m})\u001b[22m\n\u001b[2m\"\u001b[22m\n",
+                        "stack": "Error: \u001b[31mTimed out 10000ms waiting for \u001b[39m\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nLocator: locator('[class*=\"markdown\"], [data-testid*=\"message\"]').last()\nExpected pattern: \u001b[32m/§|gesetz|aufenthg|sgb/i\u001b[39m\nReceived string:  \u001b[31m\"tool_codeCopy codesearch_entities({\u001b[39m\n\u001b[31m  search: \\\"bericht-integration-baden-wuerttemberg-2025\\\"\u001b[39m\n\u001b[31m})\u001b[39m\n\u001b[31m\"\u001b[39m\nCall log:\n\u001b[2m  - expect.toContainText with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('[class*=\"markdown\"], [data-testid*=\"message\"]').last()\u001b[22m\n\u001b[2m    14 × locator resolved to <div class=\"markdown prose message-content dark:prose-invert light w-full break-words dark:text-gray-100\">…</div>\u001b[22m\n\u001b[2m       - unexpected value \"tool_codeCopy codesearch_entities({\u001b[22m\n\u001b[2m  search: \"bericht-integration-baden-wuerttemberg-2025\"\u001b[22m\n\u001b[2m})\u001b[22m\n\u001b[2m\"\u001b[22m\n\n    at sendMessageAndWait (/Users/wolfgang/workspace/LibreChat/e2e/specs/demo-integrationsbericht-complete.spec.ts:108:31)\n    at /Users/wolfgang/workspace/LibreChat/e2e/specs/demo-integrationsbericht-complete.spec.ts:155:5",
+                        "matcherResult": {
+                          "name": "toContainText",
+                          "expected": {},
+                          "message": "\u001b[31mTimed out 10000ms waiting for \u001b[39m\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nLocator: locator('[class*=\"markdown\"], [data-testid*=\"message\"]').last()\nExpected pattern: \u001b[32m/§|gesetz|aufenthg|sgb/i\u001b[39m\nReceived string:  \u001b[31m\"tool_codeCopy codesearch_entities({\u001b[39m\n\u001b[31m  search: \\\"bericht-integration-baden-wuerttemberg-2025\\\"\u001b[39m\n\u001b[31m})\u001b[39m\n\u001b[31m\"\u001b[39m\nCall log:\n\u001b[2m  - expect.toContainText with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('[class*=\"markdown\"], [data-testid*=\"message\"]').last()\u001b[22m\n\u001b[2m    14 × locator resolved to <div class=\"markdown prose message-content dark:prose-invert light w-full break-words dark:text-gray-100\">…</div>\u001b[22m\n\u001b[2m       - unexpected value \"tool_codeCopy codesearch_entities({\u001b[22m\n\u001b[2m  search: \"bericht-integration-baden-wuerttemberg-2025\"\u001b[22m\n\u001b[2m})\u001b[22m\n\u001b[2m\"\u001b[22m\n",
+                          "pass": false,
+                          "actual": "tool_codeCopy codesearch_entities({\n  search: \"bericht-integration-baden-wuerttemberg-2025\"\n})\n",
+                          "log": [
+                            "  - expect.toContainText with timeout 10000ms",
+                            "  - waiting for locator('[class*=\"markdown\"], [data-testid*=\"message\"]').last()",
+                            "    14 × locator resolved to <div class=\"markdown prose message-content dark:prose-invert light w-full break-words dark:text-gray-100\">…</div>",
+                            "       - unexpected value \"tool_codeCopy codesearch_entities({\n  search: \"bericht-integration-baden-wuerttemberg-2025\"\n})\n\""
+                          ],
+                          "timeout": 10000
+                        },
+                        "location": {
+                          "file": "/Users/wolfgang/workspace/LibreChat/e2e/specs/demo-integrationsbericht-complete.spec.ts",
+                          "column": 31,
+                          "line": 108
+                        },
+                        "snippet": "  106 |     const messages = page.locator('[class*=\"markdown\"], [data-testid*=\"message\"]');\n  107 |     const lastMessage = messages.last();\n> 108 |     await expect(lastMessage).toContainText(checkContent, { timeout: 10000 });\n      |                               ^\n  109 |     console.log(`  ✓ Response contains: \"${checkContent}\"`);\n  110 |   }\n  111 | }"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/Users/wolfgang/workspace/LibreChat/e2e/specs/demo-integrationsbericht-complete.spec.ts",
+                            "column": 31,
+                            "line": 108
+                          },
+                          "message": "Error: \u001b[31mTimed out 10000ms waiting for \u001b[39m\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nLocator: locator('[class*=\"markdown\"], [data-testid*=\"message\"]').last()\nExpected pattern: \u001b[32m/§|gesetz|aufenthg|sgb/i\u001b[39m\nReceived string:  \u001b[31m\"tool_codeCopy codesearch_entities({\u001b[39m\n\u001b[31m  search: \\\"bericht-integration-baden-wuerttemberg-2025\\\"\u001b[39m\n\u001b[31m})\u001b[39m\n\u001b[31m\"\u001b[39m\nCall log:\n\u001b[2m  - expect.toContainText with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('[class*=\"markdown\"], [data-testid*=\"message\"]').last()\u001b[22m\n\u001b[2m    14 × locator resolved to <div class=\"markdown prose message-content dark:prose-invert light w-full break-words dark:text-gray-100\">…</div>\u001b[22m\n\u001b[2m       - unexpected value \"tool_codeCopy codesearch_entities({\u001b[22m\n\u001b[2m  search: \"bericht-integration-baden-wuerttemberg-2025\"\u001b[22m\n\u001b[2m})\u001b[22m\n\u001b[2m\"\u001b[22m\n\n\n  106 |     const messages = page.locator('[class*=\"markdown\"], [data-testid*=\"message\"]');\n  107 |     const lastMessage = messages.last();\n> 108 |     await expect(lastMessage).toContainText(checkContent, { timeout: 10000 });\n      |                               ^\n  109 |     console.log(`  ✓ Response contains: \"${checkContent}\"`);\n  110 |   }\n  111 | }\n    at sendMessageAndWait (/Users/wolfgang/workspace/LibreChat/e2e/specs/demo-integrationsbericht-complete.spec.ts:108:31)\n    at /Users/wolfgang/workspace/LibreChat/e2e/specs/demo-integrationsbericht-complete.spec.ts:155:5"
+                        }
+                      ],
+                      "stdout": [
+                        {
+                          "text": "🔐 Logging in...\n"
+                        },
+                        {
+                          "text": "✅ Logged in successfully\n"
+                        },
+                        {
+                          "text": "🤖 Selecting KI-Referent agent...\n"
+                        },
+                        {
+                          "text": "  → Opened My Agents\n"
+                        },
+                        {
+                          "text": "  → Found 1 KI-Referent options\n"
+                        },
+                        {
+                          "text": "✅ Selected KI-Referent agent\n"
+                        },
+                        {
+                          "text": "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        },
+                        {
+                          "text": "📝 STEP 1: Projekt starten & Honeycomb erstellen\n"
+                        },
+                        {
+                          "text": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                        },
+                        {
+                          "text": "📤 Sending: Ich erstelle den Integrationsbericht Baden-Württemberg 2025 für die Veröffentlic...\n"
+                        },
+                        {
+                          "text": "  ⏳ Waiting for AI response...\n"
+                        },
+                        {
+                          "text": "  ⚠️  No Stop button detected, checking for response...\n"
+                        },
+                        {
+                          "text": "  ✓ Response contains: \"/honeycomb|wissensgraph|erstellt/i\"\n"
+                        },
+                        {
+                          "text": "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        },
+                        {
+                          "text": "🌐 STEP 2: Pressemitteilung einlesen\n"
+                        },
+                        {
+                          "text": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                        },
+                        {
+                          "text": "📤 Sending: Ja, bitte erstelle den Honeycomb und füge die Informationen aus der Pressemittei...\n"
+                        },
+                        {
+                          "text": "  ⏳ Waiting for AI response...\n"
+                        },
+                        {
+                          "text": "  ⚠️  No Stop button detected, checking for response...\n"
+                        },
+                        {
+                          "text": "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        },
+                        {
+                          "text": "⚖️  STEP 3: Rechtliche Grundlagen\n"
+                        },
+                        {
+                          "text": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                        },
+                        {
+                          "text": "📤 Sending: Welche Gesetze regeln Integration in Baden-Württemberg? Ich brauche die rechtlic...\n"
+                        },
+                        {
+                          "text": "  ⏳ Waiting for AI response...\n"
+                        },
+                        {
+                          "text": "  ⚠️  No Stop button detected, checking for response...\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-10-14T18:52:53.940Z",
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/Users/wolfgang/workspace/LibreChat/e2e/specs/.test-results/demo-integrationsbericht-c-93418-low-Complete-Demo-Steps-1-6-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/Users/wolfgang/workspace/LibreChat/e2e/specs/.test-results/demo-integrationsbericht-c-93418-low-Complete-Demo-Steps-1-6-chromium/video.webm"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "/Users/wolfgang/workspace/LibreChat/e2e/specs/.test-results/demo-integrationsbericht-c-93418-low-Complete-Demo-Steps-1-6-chromium/trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/Users/wolfgang/workspace/LibreChat/e2e/specs/demo-integrationsbericht-complete.spec.ts",
+                        "column": 31,
+                        "line": 108
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "86bab1ac4632307a5cc8-a25199e11d7adf105cc9",
+              "file": "demo-integrationsbericht-complete.spec.ts",
+              "line": 116,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2025-10-14T18:52:53.621Z",
+    "duration": 117163.593,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

@@ -4,9 +4,15 @@ This document details the configuration overrides and customizations for the Lib
 
 ## Quick Links
 
+### Core Documentation
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide for the three-repository setup
-- **[FOR-MCP-REPO.md](FOR-MCP-REPO.md)** - Information to add to rechtsinformationen-bund-de-mcp repository
-- **[FOR-PROXY-REPO.md](FOR-PROXY-REPO.md)** - Information to add to aixplain-proxy repository
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical architecture and system design
+- **[E2E-TESTING.md](E2E-TESTING.md)** - End-to-end testing guide and status
+- **[KI-REFERENT-SYSTEM-AGENT.md](KI-REFERENT-SYSTEM-AGENT.md)** - System agent configuration
+
+### Additional Resources
+- **[demos/](demos/)** - Demo scripts and sample data
+- **[archive/](archive/)** - Historical documentation and bug reports
 
 ## Table of Contents
 
@@ -21,6 +27,7 @@ This document details the configuration overrides and customizations for the Lib
 - [File Storage](#file-storage)
 - [Environment Variables Reference](#environment-variables-reference)
 - [Deployment Notes](#deployment-notes)
+- [E2E Testing](#e2e-testing)
 
 ---
 
@@ -677,6 +684,153 @@ npm run user-stats
 - Social OAuth provider credentials
 - Production SSL/TLS setup
 - Redis configuration for scaling
+
+---
+
+## E2E Testing
+
+### Overview
+
+Comprehensive end-to-end tests are available to validate the complete Integrationsbericht demo workflow. These tests ensure the KI-Referent agent works correctly with all MCP tools (Honeycomb, Legal Research, Web Search).
+
+**Test Coverage**: All 6 steps of the demo workflow
+**Duration**: ~3.4 minutes
+**Status**: ✅ Passing
+
+### Running E2E Tests
+
+#### Prerequisites
+
+1. LibreChat container must be running:
+   ```bash
+   podman-compose up -d
+   # or
+   docker compose up -d
+   ```
+
+2. Google Gemini API key must be configured in `.env`:
+   ```bash
+   GOOGLE_KEY=<your-google-api-key>
+   GOOGLE_MODELS=gemini-2.0-flash,gemini-2.5-flash,gemini-2.5-pro,gemini-exp-1206
+   ```
+
+3. KI-Referent system agent must be created:
+   ```bash
+   podman exec LibreChat npm run create-ki-referent:force
+   # or
+   docker exec LibreChat npm run create-ki-referent:force
+   ```
+
+#### Test Commands
+
+**Complete Demo Workflow** (recommended for regression testing):
+```bash
+npm run e2e -- e2e/specs/demo-integrationsbericht-complete.spec.ts -g "Complete Demo" --reporter=line
+```
+
+**Individual Steps** (for debugging specific functionality):
+```bash
+# Step 1: Honeycomb creation
+npm run e2e -- e2e/specs/demo-steps-1-6-focused.spec.ts -g "Step 1" --reporter=line
+
+# Step 2: Press release reading
+npm run e2e -- e2e/specs/demo-steps-1-6-focused.spec.ts -g "Step 2" --reporter=line
+
+# Step 3: Legal research
+npm run e2e -- e2e/specs/demo-steps-1-6-focused.spec.ts -g "Step 3" --reporter=line
+
+# Step 4: Project tracking structure
+npm run e2e -- e2e/specs/demo-steps-1-6-focused.spec.ts -g "Step 4" --reporter=line
+
+# Step 5: Report outline
+npm run e2e -- e2e/specs/demo-steps-1-6-focused.spec.ts -g "Step 5" --reporter=line
+
+# Step 6: Search and analysis
+npm run e2e -- e2e/specs/demo-steps-1-6-focused.spec.ts -g "Step 6" --reporter=line
+```
+
+**Debug Mode** (with browser visible):
+```bash
+npm run e2e -- e2e/specs/demo-integrationsbericht-complete.spec.ts -g "Complete Demo" --headed
+```
+
+**Interactive Debug** (with Playwright Inspector):
+```bash
+npm run e2e:debug -- e2e/specs/demo-integrationsbericht-complete.spec.ts -g "Complete Demo"
+```
+
+### Test Results
+
+Expected output for successful run:
+```
+Running 1 test using 1 worker
+
+[chromium] › e2e/specs/demo-integrationsbericht-complete.spec.ts
+🔐 Logging in... ✅
+🤖 Selecting KI-Referent agent... ✅
+
+━━━ STEP 1: Projekt starten & Honeycomb erstellen ━━━
+✓ Response contains: "honeycomb|wissensgraph|erstellt"
+
+━━━ STEP 2: Pressemitteilung einlesen ━━━
+✓ Response received
+
+━━━ STEP 3: Rechtliche Grundlagen ━━━
+✓ Response contains: "§|gesetz|aufenthg|sgb"
+
+━━━ STEP 4: Projekt-Tracking-Struktur ━━━
+✓ Response contains: "struktur|entit|eigenschaften|template"
+
+━━━ STEP 5: Berichtsgliederung ━━━
+✓ Response contains: "kapitel|gliederung|1.|2.|einleitung"
+
+━━━ STEP 6: Suche & Analyse ━━━
+✓ Response contains: "entit|projekt|honeycomb"
+
+✅ COMPLETE: All 6 steps executed successfully!
+📊 Total messages in conversation: 12
+
+  1 passed (3.4m)
+```
+
+### CI/CD Integration
+
+Add to your CI pipeline to catch regressions:
+
+```bash
+# In your CI script (e.g., .github/workflows/e2e.yml)
+- name: Run E2E Tests
+  run: |
+    npm run e2e -- e2e/specs/demo-integrationsbericht-complete.spec.ts -g "Complete Demo" --reporter=line
+```
+
+### Troubleshooting
+
+**Tests fail with "thinking is not supported":**
+- Ensure agent has `thinking: false` in model_parameters
+- Recreate agent: `podman exec LibreChat npm run create-ki-referent:force`
+
+**Tests fail with "No key found":**
+- Check `.env` has `GOOGLE_KEY` configured
+- Restart LibreChat container after adding API key
+- Verify model is in `GOOGLE_MODELS` list
+
+**Agent not found in UI:**
+- Run agent creation script
+- Check agent permissions: should be PUBLIC
+- Verify in LibreChat UI → Model Selector → My Agents → KI-Referent
+
+**MCP tools not working:**
+- Check container logs: `podman logs LibreChat | grep MCP`
+- Should see: "MCP servers initialized successfully. Added 19 MCP tools"
+- Verify MCP server mounts in docker-compose.override.yml
+
+### Documentation
+
+For detailed test documentation, see:
+- **[E2E-TESTING.md](E2E-TESTING.md)** - Complete test status and troubleshooting
+- **[KI-REFERENT-SYSTEM-AGENT.md](KI-REFERENT-SYSTEM-AGENT.md)** - System agent configuration guide
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical architecture details
 
 ---
 
