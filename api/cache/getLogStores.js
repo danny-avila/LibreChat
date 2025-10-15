@@ -1,9 +1,13 @@
-const { cacheConfig } = require('./cacheConfig');
 const { Keyv } = require('keyv');
-const { CacheKeys, ViolationTypes, Time } = require('librechat-data-provider');
-const { logFile } = require('./keyvFiles');
-const keyvMongo = require('./keyvMongo');
-const { standardCache, sessionCache, violationCache } = require('./cacheFactory');
+const { Time, CacheKeys, ViolationTypes } = require('librechat-data-provider');
+const {
+  logFile,
+  keyvMongo,
+  cacheConfig,
+  sessionCache,
+  standardCache,
+  violationCache,
+} = require('@librechat/api');
 
 const namespaces = {
   [ViolationTypes.GENERAL]: new Keyv({ store: logFile, namespace: 'violations' }),
@@ -38,7 +42,7 @@ const namespaces = {
   [CacheKeys.ABORT_KEYS]: standardCache(CacheKeys.ABORT_KEYS, Time.TEN_MINUTES),
   [CacheKeys.TOKEN_CONFIG]: standardCache(CacheKeys.TOKEN_CONFIG, Time.THIRTY_MINUTES),
   [CacheKeys.GEN_TITLE]: standardCache(CacheKeys.GEN_TITLE, Time.TWO_MINUTES),
-  [CacheKeys.S3_EXPIRY_INTERVAL]: standardCache(CacheKeys.S3_EXPIRY_INTERVAL, Time.THIRTY_MINUTES),
+  [CacheKeys.S3_EXPIRY_INTERVAL]: standardCache(CacheKeys.S3_EXPIRY_INTERVAL, Time.TEN_MINUTES),
   [CacheKeys.MODEL_QUERIES]: standardCache(CacheKeys.MODEL_QUERIES),
   [CacheKeys.AUDIO_RUNS]: standardCache(CacheKeys.AUDIO_RUNS, Time.TEN_MINUTES),
   [CacheKeys.MESSAGES]: standardCache(CacheKeys.MESSAGES, Time.ONE_MINUTE),

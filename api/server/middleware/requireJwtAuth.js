@@ -1,7 +1,7 @@
-const passport = require('passport');
 const cookies = require('cookie');
-const { isEnabled } = require('~/server/utils');
 const { handleForwardedAuth, isForwardedAuthEnabled } = require('~/server/stripe/forwardedAuth');
+const passport = require('passport');
+const { isEnabled } = require('@librechat/api');
 
 /**
  * Custom Middleware to handle authentication

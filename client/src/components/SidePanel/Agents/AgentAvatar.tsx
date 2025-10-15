@@ -182,6 +182,10 @@ function Avatar({
     setMenuOpen(false);
   };
 
+  return null;
+
+  /*
+  <stripe>
   return (
     <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
       <div className="flex w-full items-center justify-center gap-4">
@@ -194,6 +198,8 @@ function Avatar({
       {<AvatarMenu handleFileChange={handleFileChange} />}
     </Popover.Root>
   );
+  </stripe>
+  */
 }
 
 export default Avatar;

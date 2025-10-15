@@ -1,7 +1,7 @@
 const cookies = require('cookie');
-const { isEnabled } = require('~/server/utils');
 const passport = require('passport');
 const { handleForwardedAuth, isForwardedAuthEnabled } = require('~/server/stripe/forwardedAuth');
+const { isEnabled } = require('@librechat/api');
 
 // This middleware does not require authentication,
 // but if the user is authenticated, it will set the user object.

@@ -20,9 +20,11 @@ export default function FontSizeSelector() {
     { value: 'text-xl', label: localize('com_nav_font_size_xl') },
   ];
 
+  const labelId = 'font-size-selector-label';
+
   return (
     <div className="flex w-full items-center justify-between">
-      <div>{localize('com_nav_font_size')}</div>
+      <div id={labelId}>{localize('com_nav_font_size')}</div>
       <Dropdown
         value={fontSize}
         options={options}
@@ -30,6 +32,7 @@ export default function FontSizeSelector() {
         testId="font-size-selector"
         sizeClasses="w-[150px]"
         className="z-50"
+        aria-labelledby={labelId}
       />
     </div>
   );
