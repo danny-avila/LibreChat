@@ -392,13 +392,6 @@ const useFileHandling = (params?: UseFileHandling) => {
         } else {
           // File wasn't processed, proceed with original
           const isImage = originalFile.type.split('/')[0] === 'image';
-          const tool_resource =
-            initialExtendedFile.tool_resource ?? params?.additionalMetadata?.tool_resource;
-          if (isAgentsEndpoint(endpoint) && !isImage && tool_resource == null) {
-            /** Note: this needs to be removed when we can support files to providers */
-            setError('com_error_files_unsupported_capability');
-            continue;
-          }
 
           // Update progress to show ready for upload
           const readyExtendedFile = {

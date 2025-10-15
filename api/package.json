@@ -1,6 +1,6 @@
 {
   "name": "@librechat/backend",
-  "version": "v0.8.0-rc4",
+  "version": "v0.8.0",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -47,9 +47,8 @@
     "@langchain/core": "^0.3.62",
     "@langchain/google-genai": "^0.2.13",
     "@langchain/google-vertexai": "^0.2.13",
-    "@langchain/openai": "^0.5.18",
     "@langchain/textsplitters": "^0.1.0",
-    "@librechat/agents": "^2.4.82",
+    "@librechat/agents": "^2.4.85",
     "@librechat/api": "*",
     "@librechat/data-schemas": "*",
     "@microsoft/microsoft-graph-client": "^3.0.7",
@@ -94,7 +93,7 @@
     "multer": "^2.0.2",
     "nanoid": "^3.3.7",
     "node-fetch": "^2.7.0",
-    "nodemailer": "^6.9.15",
+    "nodemailer": "^7.0.9",
     "ollama": "^0.5.0",
     "openai": "^5.10.1",
     "openid-client": "^6.5.0",

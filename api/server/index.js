@@ -10,7 +10,12 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
-const { isEnabled, ErrorController } = require('@librechat/api');
+const {
+  isEnabled,
+  ErrorController,
+  performStartupChecks,
+  initializeFileStorage,
+} = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
@@ -49,9 +54,11 @@ const startServer = async () => {
   app.set('trust proxy', trusted_proxy);
 
   await seedDatabase();
-
   const appConfig = await getAppConfig();
+  initializeFileStorage(appConfig);
+  await performStartupChecks(appConfig);
   await updateInterfacePermissions(appConfig);
+
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
 
