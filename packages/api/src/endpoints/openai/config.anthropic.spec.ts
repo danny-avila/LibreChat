@@ -548,4 +548,139 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
       });
     });
   });
+
+  describe('Web Search Support via addParams', () => {
+    it('should enable web_search tool when web_search: true in addParams', () => {
+      const apiKey = 'sk-web-search';
+      const endpoint = 'Anthropic (Custom)';
+      const options = {
+        modelOptions: {
+          model: 'claude-3-5-sonnet-latest',
+          user: 'search-user',
+        },
+        customParams: {
+          defaultParamsEndpoint: 'anthropic',
+        },
+        addParams: {
+          web_search: true,
+        },
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result.tools).toEqual([
+        {
+          type: 'web_search_20250305',
+          name: 'web_search',
+        },
+      ]);
+      expect(result.llmConfig).toMatchObject({
+        model: 'claude-3-5-sonnet-latest',
+        stream: true,
+      });
+    });
+
+    it('should disable web_search tool when web_search: false in addParams', () => {
+      const apiKey = 'sk-no-search';
+      const endpoint = 'Anthropic (Custom)';
+      const options = {
+        modelOptions: {
+          model: 'claude-3-opus-20240229',
+          web_search: true, // This should be overridden by addParams
+        },
+        customParams: {
+          defaultParamsEndpoint: 'anthropic',
+        },
+        addParams: {
+          web_search: false,
+        },
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result.tools).toEqual([]);
+    });
+
+    it('should disable web_search when in dropParams', () => {
+      const apiKey = 'sk-drop-search';
+      const endpoint = 'Anthropic (Custom)';
+      const options = {
+        modelOptions: {
+          model: 'claude-3-5-sonnet-latest',
+          web_search: true,
+        },
+        customParams: {
+          defaultParamsEndpoint: 'anthropic',
+        },
+        dropParams: ['web_search'],
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result.tools).toEqual([]);
+    });
+
+    it('should handle web_search with mixed Anthropic and OpenAI params in addParams', () => {
+      const apiKey = 'sk-mixed';
+      const endpoint = 'Anthropic (Custom)';
+      const options = {
+        modelOptions: {
+          model: 'claude-3-opus-20240229',
+          user: 'mixed-user',
+        },
+        customParams: {
+          defaultParamsEndpoint: 'anthropic',
+        },
+        addParams: {
+          web_search: true,
+          temperature: 0.7, // Anthropic native
+          maxRetries: 3, // OpenAI param (known), should go to top level
+          customParam: 'custom', // Unknown param, should go to modelKwargs
+        },
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result.tools).toEqual([
+        {
+          type: 'web_search_20250305',
+          name: 'web_search',
+        },
+      ]);
+      expect(result.llmConfig.temperature).toBe(0.7);
+      expect(result.llmConfig.maxRetries).toBe(3); // Known OpenAI param at top level
+      expect(result.llmConfig.modelKwargs).toMatchObject({
+        customParam: 'custom', // Unknown param in modelKwargs
+        metadata: { user_id: 'mixed-user' }, // From invocationKwargs
+      });
+    });
+
+    it('should handle Anthropic native params in addParams without web_search', () => {
+      const apiKey = 'sk-native';
+      const endpoint = 'Anthropic (Custom)';
+      const options = {
+        modelOptions: {
+          model: 'claude-3-opus-20240229',
+        },
+        customParams: {
+          defaultParamsEndpoint: 'anthropic',
+        },
+        addParams: {
+          temperature: 0.9,
+          topP: 0.95,
+          maxTokens: 4096,
+        },
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result.llmConfig).toMatchObject({
+        model: 'claude-3-opus-20240229',
+        temperature: 0.9,
+        topP: 0.95,
+        maxTokens: 4096,
+      });
+      expect(result.tools).toEqual([]);
+    });
+  });
 });
