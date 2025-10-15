@@ -151,6 +151,114 @@ describe('getOpenAIConfig', () => {
     expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
   });
 
+  it('should handle web_search from addParams overriding modelOptions', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      web_search: false,
+    };
+
+    const addParams = {
+      web_search: true,
+      customParam: 'value',
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions, addParams });
+
+    expect(result.llmConfig.useResponsesApi).toBe(true);
+    expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
+    // web_search should not be in modelKwargs or llmConfig
+    expect((result.llmConfig as Record<string, unknown>).web_search).toBeUndefined();
+    expect(result.llmConfig.modelKwargs).toEqual({ customParam: 'value' });
+  });
+
+  it('should disable web_search when included in dropParams', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      web_search: true,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, {
+      modelOptions,
+      dropParams: ['web_search'],
+    });
+
+    expect(result.llmConfig.useResponsesApi).toBeUndefined();
+    expect(result.tools).toEqual([]);
+  });
+
+  it('should handle web_search false from addParams', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      web_search: true,
+    };
+
+    const addParams = {
+      web_search: false,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions, addParams });
+
+    expect(result.llmConfig.useResponsesApi).toBeUndefined();
+    expect(result.tools).toEqual([]);
+  });
+
+  it('should ignore non-boolean web_search values in addParams', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      web_search: true,
+    };
+
+    const addParams = {
+      web_search: 'string-value' as unknown,
+      temperature: 0.7,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions, addParams });
+
+    // Should keep the original web_search from modelOptions since addParams value is not boolean
+    expect(result.llmConfig.useResponsesApi).toBe(true);
+    expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
+    expect(result.llmConfig.temperature).toBe(0.7);
+    // web_search should not be added to modelKwargs
+    expect(result.llmConfig.modelKwargs).toBeUndefined();
+  });
+
+  it('should handle web_search with both addParams and dropParams', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+    };
+
+    const addParams = {
+      web_search: true,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, {
+      modelOptions,
+      addParams,
+      dropParams: ['web_search'], // dropParams takes precedence
+    });
+
+    expect(result.llmConfig.useResponsesApi).toBeUndefined();
+    expect(result.tools).toEqual([]);
+  });
+
+  it('should not add web_search to modelKwargs or llmConfig', () => {
+    const addParams = {
+      web_search: true,
+      customParam1: 'value1',
+      temperature: 0.5,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { addParams });
+
+    // web_search should trigger the tool but not appear in config
+    expect(result.llmConfig.useResponsesApi).toBe(true);
+    expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
+    expect((result.llmConfig as Record<string, unknown>).web_search).toBeUndefined();
+    expect(result.llmConfig.temperature).toBe(0.5);
+    expect(result.llmConfig.modelKwargs).toEqual({ customParam1: 'value1' });
+  });
+
   it('should drop params for search models', () => {
     const modelOptions = {
       model: 'gpt-4o-search',
@@ -579,6 +687,82 @@ describe('getOpenAIConfig', () => {
       expect(result.provider).toBe('openrouter');
     });
 
+    it('should handle web_search with OpenRouter using plugins format', () => {
+      const modelOptions = {
+        model: 'gpt-4',
+        web_search: true,
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        modelOptions,
+      });
+
+      // Should use plugins format for OpenRouter, not tools
+      expect(result.llmConfig.modelKwargs).toEqual({
+        plugins: [{ id: 'web' }],
+      });
+      expect(result.tools).toEqual([]);
+      // Should NOT set useResponsesApi for OpenRouter
+      expect(result.llmConfig.useResponsesApi).toBeUndefined();
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should handle web_search false with OpenRouter', () => {
+      const modelOptions = {
+        model: 'gpt-4',
+        web_search: false,
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        modelOptions,
+      });
+
+      // Should not have plugins when web_search is false
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+      expect(result.tools).toEqual([]);
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should handle web_search with OpenRouter from addParams', () => {
+      const addParams = {
+        web_search: true,
+        customParam: 'value',
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        addParams,
+      });
+
+      // Should use plugins format and include other params
+      expect(result.llmConfig.modelKwargs).toEqual({
+        plugins: [{ id: 'web' }],
+        customParam: 'value',
+      });
+      expect(result.tools).toEqual([]);
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should handle web_search with OpenRouter and dropParams', () => {
+      const modelOptions = {
+        model: 'gpt-4',
+        web_search: true,
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        modelOptions,
+        dropParams: ['web_search'],
+      });
+
+      // dropParams should disable web_search even for OpenRouter
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+      expect(result.tools).toEqual([]);
+      expect(result.provider).toBe('openrouter');
+    });
+
     it('should handle OpenRouter with reasoning params', () => {
       const modelOptions = {
         reasoning_effort: ReasoningEffort.high,
@@ -886,6 +1070,45 @@ describe('getOpenAIConfig', () => {
           dispatcher: expect.any(Object),
         }),
       });
+    });
+
+    it('should handle all configuration with OpenRouter and web_search', () => {
+      const complexConfig = {
+        modelOptions: {
+          model: 'gpt-4-turbo',
+          temperature: 0.7,
+          max_tokens: 2000,
+          verbosity: Verbosity.medium,
+          reasoning_effort: ReasoningEffort.high,
+          web_search: true,
+        },
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        headers: { 'X-Custom': 'value' },
+        streaming: false,
+        addParams: {
+          customParam: 'custom-value',
+          temperature: 0.8,
+        },
+      };
+
+      const result = getOpenAIConfig(mockApiKey, complexConfig);
+
+      expect(result.llmConfig).toMatchObject({
+        model: 'gpt-4-turbo',
+        temperature: 0.8,
+        streaming: false,
+        include_reasoning: true, // OpenRouter specific
+      });
+      // Should NOT have useResponsesApi for OpenRouter
+      expect(result.llmConfig.useResponsesApi).toBeUndefined();
+      expect(result.llmConfig.maxTokens).toBe(2000);
+      expect(result.llmConfig.modelKwargs).toEqual({
+        verbosity: Verbosity.medium,
+        customParam: 'custom-value',
+        plugins: [{ id: 'web' }], // OpenRouter web search format
+      });
+      expect(result.tools).toEqual([]); // No tools for OpenRouter web search
+      expect(result.provider).toBe('openrouter');
     });
   });
 

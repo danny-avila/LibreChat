@@ -96,7 +96,10 @@ const ContentRender = memo(
       () =>
         showCardRender && !isLatestMessage
           ? () => {
-              logger.log(`Message Card click: Setting ${msg?.messageId} as latest message`);
+              logger.log(
+                'latest_message',
+                `Message Card click: Setting ${msg?.messageId} as latest message`,
+              );
               logger.dir(msg);
               setLatestMessage(msg!);
             }
@@ -173,6 +176,7 @@ const ContentRender = memo(
                 isSubmitting={isSubmitting}
                 searchResults={searchResults}
                 setSiblingIdx={setSiblingIdx}
+                isLatestMessage={isLatestMessage}
                 isCreatedByUser={msg.isCreatedByUser}
                 conversationId={conversation?.conversationId}
                 content={msg.content as Array<TMessageContentParts | undefined>}

@@ -31,6 +31,61 @@ export enum EModelEndpoint {
   gptPlugins = 'gptPlugins',
 }
 
+/** Mirrors `@librechat/agents` providers */
+export enum Providers {
+  OPENAI = 'openAI',
+  ANTHROPIC = 'anthropic',
+  AZURE = 'azureOpenAI',
+  GOOGLE = 'google',
+  VERTEXAI = 'vertexai',
+  BEDROCK = 'bedrock',
+  BEDROCK_LEGACY = 'bedrock_legacy',
+  MISTRALAI = 'mistralai',
+  MISTRAL = 'mistral',
+  OLLAMA = 'ollama',
+  DEEPSEEK = 'deepseek',
+  OPENROUTER = 'openrouter',
+  XAI = 'xai',
+}
+
+/**
+ * Endpoints that support direct PDF processing in the agent system
+ */
+export const documentSupportedProviders = new Set<string>([
+  EModelEndpoint.anthropic,
+  EModelEndpoint.openAI,
+  EModelEndpoint.custom,
+  EModelEndpoint.azureOpenAI,
+  EModelEndpoint.google,
+  Providers.VERTEXAI,
+  Providers.MISTRALAI,
+  Providers.MISTRAL,
+  Providers.OLLAMA,
+  Providers.DEEPSEEK,
+  Providers.OPENROUTER,
+  Providers.XAI,
+]);
+
+const openAILikeProviders = new Set<string>([
+  Providers.OPENAI,
+  Providers.AZURE,
+  EModelEndpoint.custom,
+  Providers.MISTRALAI,
+  Providers.MISTRAL,
+  Providers.OLLAMA,
+  Providers.DEEPSEEK,
+  Providers.OPENROUTER,
+  Providers.XAI,
+]);
+
+export const isOpenAILikeProvider = (provider?: string | null): boolean => {
+  return openAILikeProviders.has(provider ?? '');
+};
+
+export const isDocumentSupportedProvider = (provider?: string | null): boolean => {
+  return documentSupportedProviders.has(provider ?? '');
+};
+
 export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.agents,
   EModelEndpoint.openAI,
@@ -552,20 +607,33 @@ export type MemoryArtifact = {
   type: 'update' | 'delete' | 'error';
 };
 
+export type UIResource = {
+  type?: string;
+  data?: unknown;
+  uri?: string;
+  mimeType?: string;
+  text?: string;
+  [key: string]: unknown;
+};
+
 export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
   toolCallId: string;
+  [Tools.memory]?: MemoryArtifact;
+  [Tools.ui_resources]?: UIResource[];
   [Tools.web_search]?: SearchResultData;
   [Tools.file_search]?: SearchResultData;
-  [Tools.memory]?: MemoryArtifact;
 };
 
 export type TAttachment =
   | (TFile & TAttachmentMetadata)
   | (Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
       expiresAt: number;
-    } & TAttachmentMetadata);
+    } & TAttachmentMetadata)
+  | (Partial<Pick<TFile, 'filename' | 'filepath'>> &
+      Pick<TFile, 'conversationId'> &
+      TAttachmentMetadata);
 
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];

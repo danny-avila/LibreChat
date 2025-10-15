@@ -5,7 +5,6 @@ import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
-  Constants,
   SystemRoles,
   ResourceType,
   EModelEndpoint,
@@ -25,11 +24,11 @@ import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
+import { Panel, isEphemeralAgent } from '~/common';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
 import ModelPanel from './ModelPanel';
-import { Panel } from '~/common';
 
 export default function AgentPanel() {
   const localize = useLocalize();
@@ -47,11 +46,7 @@ export default function AgentPanel() {
   const { onSelect: onSelectAgent } = useSelectAgent();
 
   const modelsQuery = useGetModelsQuery();
-
-  // Basic agent query for initial permission check
-  const basicAgentQuery = useGetAgentByIdQuery(current_agent_id ?? '', {
-    enabled: !!(current_agent_id ?? '') && current_agent_id !== Constants.EPHEMERAL_AGENT_ID,
-  });
+  const basicAgentQuery = useGetAgentByIdQuery(current_agent_id);
 
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
     ResourceType.AGENT,
@@ -61,11 +56,7 @@ export default function AgentPanel() {
   const canEdit = hasPermission(PermissionBits.EDIT);
 
   const expandedAgentQuery = useGetExpandedAgentByIdQuery(current_agent_id ?? '', {
-    enabled:
-      !!(current_agent_id ?? '') &&
-      current_agent_id !== Constants.EPHEMERAL_AGENT_ID &&
-      canEdit &&
-      !permissionsLoading,
+    enabled: !isEphemeralAgent(current_agent_id) && canEdit && !permissionsLoading,
   });
 
   const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
@@ -302,7 +293,7 @@ export default function AgentPanel() {
               </Button>
               <Button
                 variant="submit"
-                disabled={!agent_id || agentQuery.isInitialLoading}
+                disabled={isEphemeralAgent(agent_id) || agentQuery.isInitialLoading}
                 onClick={(e) => {
                   e.preventDefault();
                   handleSelectAgent();

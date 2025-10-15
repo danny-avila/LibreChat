@@ -1,5 +1,5 @@
 import { RefObject } from 'react';
-import { FileSources, EModelEndpoint } from 'librechat-data-provider';
+import { Constants, FileSources, EModelEndpoint } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { SetterOrUpdater, RecoilState } from 'recoil';
@@ -7,6 +7,10 @@ import type { ColumnDef } from '@tanstack/react-table';
 import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks';
+
+export function isEphemeralAgent(agentId: string | null | undefined): boolean {
+  return agentId == null || agentId === '' || agentId === Constants.EPHEMERAL_AGENT_ID;
+}
 
 export interface ConfigFieldDetail {
   title: string;
@@ -232,10 +236,8 @@ export type AgentPanelContextType = {
   mcps?: t.MCP[];
   setMcp: React.Dispatch<React.SetStateAction<t.MCP | undefined>>;
   setMcps: React.Dispatch<React.SetStateAction<t.MCP[] | undefined>>;
-  groupedTools: Record<string, t.AgentToolType & { tools?: t.AgentToolType[] }>;
   activePanel?: string;
-  tools: t.AgentToolType[];
-  pluginTools?: t.TPlugin[];
+  regularTools?: t.TPlugin[];
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   agent_id?: string;
@@ -642,10 +644,3 @@ declare global {
     google_tag_manager?: unknown;
   }
 }
-
-export type UIResource = {
-  uri: string;
-  mimeType: string;
-  text: string;
-  [key: string]: unknown;
-};

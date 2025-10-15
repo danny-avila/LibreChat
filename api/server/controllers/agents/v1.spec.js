@@ -512,6 +512,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       mockReq.params.id = existingAgentId;
       mockReq.body = {
         tool_resources: {
+          /** Legacy conversion from `ocr` to `context` */
           ocr: {
             file_ids: ['ocr1', 'ocr2'],
           },
@@ -531,7 +532,8 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
       const updatedAgent = mockRes.json.mock.calls[0][0];
       expect(updatedAgent.tool_resources).toBeDefined();
-      expect(updatedAgent.tool_resources.ocr).toBeDefined();
+      expect(updatedAgent.tool_resources.ocr).toBeUndefined();
+      expect(updatedAgent.tool_resources.context).toBeDefined();
       expect(updatedAgent.tool_resources.execute_code).toBeDefined();
       expect(updatedAgent.tool_resources.invalid_tool).toBeUndefined();
     });

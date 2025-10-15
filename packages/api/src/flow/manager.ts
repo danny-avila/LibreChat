@@ -74,7 +74,7 @@ export class FlowStateManager<T = unknown> {
       createdAt: Date.now(),
     };
 
-    logger.debug('Creating initial flow state:', flowKey);
+    logger.debug(`[${flowKey}] Creating initial flow state`);
     await this.keyv.set(flowKey, initialState, this.ttl);
     return this.monitorFlow(flowKey, type, signal);
   }
@@ -239,6 +239,21 @@ export class FlowStateManager<T = unknown> {
     } catch (error) {
       await this.failFlow(flowId, type, error instanceof Error ? error : new Error(String(error)));
       throw error;
+    }
+  }
+
+  /**
+   * Deletes a flow state
+   */
+  async deleteFlow(flowId: string, type: string): Promise<boolean> {
+    const flowKey = this.getFlowKey(flowId, type);
+    try {
+      await this.keyv.delete(flowKey);
+      logger.debug(`[${flowKey}] Flow deleted`);
+      return true;
+    } catch (error) {
+      logger.error(`[${flowKey}] Error deleting flow:`, error);
+      return false;
     }
   }
 }

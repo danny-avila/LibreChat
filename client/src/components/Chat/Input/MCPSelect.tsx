@@ -3,22 +3,20 @@ import { MultiSelect, MCPIcon } from '@librechat/client';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { useBadgeRowContext } from '~/Providers';
-import { useMCPServerManager } from '~/hooks';
 
-type MCPSelectProps = { conversationId?: string | null };
-
-function MCPSelectContent({ conversationId }: MCPSelectProps) {
+function MCPSelectContent() {
+  const { conversationId, mcpServerManager } = useBadgeRowContext();
   const {
-    configuredServers,
-    mcpValues,
-    isPinned,
-    placeholderText,
-    batchToggleServers,
-    getServerStatusIconProps,
-    getConfigDialogProps,
-    isInitializing,
     localize,
-  } = useMCPServerManager({ conversationId });
+    isPinned,
+    mcpValues,
+    isInitializing,
+    placeholderText,
+    configuredServers,
+    batchToggleServers,
+    getConfigDialogProps,
+    getServerStatusIconProps,
+  } = mcpServerManager;
 
   const renderSelectedValues = useCallback(
     (values: string[], placeholder?: string) => {
@@ -71,11 +69,7 @@ function MCPSelectContent({ conversationId }: MCPSelectProps) {
     [getServerStatusIconProps, isInitializing],
   );
 
-  if ((!mcpValues || mcpValues.length === 0) && !isPinned) {
-    return null;
-  }
-
-  if (!configuredServers || configuredServers.length === 0) {
+  if (!isPinned && mcpValues?.length === 0) {
     return null;
   }
 
@@ -103,10 +97,15 @@ function MCPSelectContent({ conversationId }: MCPSelectProps) {
   );
 }
 
-function MCPSelect(props: MCPSelectProps) {
-  const { mcpServerNames } = useBadgeRowContext();
-  if ((mcpServerNames?.length ?? 0) === 0) return null;
-  return <MCPSelectContent {...props} />;
+function MCPSelect() {
+  const { mcpServerManager } = useBadgeRowContext();
+  const { configuredServers } = mcpServerManager;
+
+  if (!configuredServers || configuredServers.length === 0) {
+    return null;
+  }
+
+  return <MCPSelectContent />;
 }
 
 export default memo(MCPSelect);

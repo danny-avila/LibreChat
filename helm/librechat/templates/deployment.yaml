@@ -4,6 +4,13 @@ metadata:
   name: {{ include "librechat.fullname" $ }}
   labels:
     {{- include "librechat.labels" . | nindent 4 }}
+    {{- with .Values.deploymentLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.deploymentAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
   replicas: {{ .Values.replicaCount }}
   {{- if .Values.updateStrategy }}
@@ -26,10 +33,22 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      {{- with .Values.hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.dnsPolicy }}
+      dnsPolicy: {{ .Values.dnsPolicy }}
+      {{- end }}
+      {{- with .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      serviceAccountName: {{ include "librechat.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -40,7 +59,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ .Values.service.port }}
+              containerPort: {{ .Values.service.containerPort | default .Values.service.port }}
               protocol: TCP
           lifecycle:
             {{- toYaml .Values.lifecycle | nindent 12 }}
@@ -71,6 +90,10 @@ spec:
           - secretRef:
               name: {{ .Values.global.librechat.existingSecretName }}
               optional: true
+          {{- end }}
+          {{- with .Values.global.librechat.env }}
+          env:
+          {{- toYaml . | nindent 12 }}
           {{- end }}
       volumes:
       {{- if or .Values.librechat.configYamlContent .Values.librechat.existingConfigYaml }}
