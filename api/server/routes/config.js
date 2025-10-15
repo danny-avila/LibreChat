@@ -64,6 +64,13 @@ router.get('/', async function (req, res) {
 
     const balanceConfig = getBalanceConfig(appConfig);
 
+    const sellingMessage = removeNullishValues({
+      trialPeriod: process.env.SUB_TRIAL_PERIOD_STR,
+      price: process.env.SUB_PRICE_STR,
+      faqUrl: process.env.SUB_FAQ_URL,
+      supportEmail: process.env.SUPPORT_EMAIL,
+    });
+
     /** @type {TStartupConfig} */
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
@@ -123,6 +130,10 @@ router.get('/', async function (req, res) {
         ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
         : 0,
     };
+
+    if (Object.keys(sellingMessage).length > 0) {
+      payload.sellingMessage = sellingMessage;
+    }
 
     const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);
     if (minPasswordLength && !isNaN(minPasswordLength)) {

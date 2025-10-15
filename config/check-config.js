@@ -89,3 +89,47 @@ const checkSupplementalUseAutumnEnv = () => {
 };
 
 checkSupplementalUseAutumnEnv();
+
+const sellingMessageEnv = [
+  {
+    name: 'SUB_TRIAL_PERIOD_STR',
+    description: 'Subscription trial period display string',
+  },
+  {
+    name: 'SUB_PRICE_STR',
+    description: 'Subscription price display string',
+  },
+  {
+    name: 'SUB_FAQ_URL',
+    description: 'Subscription FAQ URL',
+  },
+  {
+    name: 'SUPPORT_EMAIL',
+    description: 'Support contact email',
+  },
+];
+
+const checkSellingMessageEnv = () => {
+  console.log('\nSelling message environment variables');
+
+  const rows = sellingMessageEnv.map(({ name, description }) => {
+    const provided = Boolean(process.env?.[name]);
+    return {
+      variable: name,
+      description,
+      provided: yesNo(provided),
+    };
+  });
+
+  console.table(rows);
+
+  const missing = sellingMessageEnv.filter(({ name }) => !process.env?.[name]);
+  if (missing.length > 0) {
+    const list = missing.map(({ name }) => name).join(', ');
+    console.warn(`\n⚠️  The following selling message environment variables are not set: ${list}.`);
+  } else {
+    console.log('\n✅  All selling message environment variables are set.');
+  }
+};
+
+checkSellingMessageEnv();
