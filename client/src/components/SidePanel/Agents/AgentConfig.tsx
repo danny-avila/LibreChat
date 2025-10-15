@@ -249,9 +249,11 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         <div className="mb-4">
           <label className={labelClass} htmlFor="description">
             {localize('com_ui_description')}
+            <span className="text-red-500">*</span>
           </label>
           <Controller
             name="description"
+            rules={{ required: localize('com_ui_field_required') }}
             control={control}
             render={({ field }) => (
               <input
