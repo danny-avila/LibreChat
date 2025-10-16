@@ -89,6 +89,7 @@ const standardDependencies = {
   '@radix-ui/react-slot': '^1.1.0',
   '@radix-ui/react-toggle': '^1.1.0',
   '@radix-ui/react-toggle-group': '^1.1.0',
+  '@radix-ui/react-tooltip': '^1.2.8',
   'embla-carousel-react': '^8.2.0',
   'react-day-picker': '^9.0.8',
   'dat.gui': '^0.7.9',
