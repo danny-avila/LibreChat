@@ -76,7 +76,6 @@ export async function encodeAndFormatDocuments(
             media_type: 'application/pdf',
             data: content,
           },
-          cache_control: { type: 'ephemeral' },
           citations: { enabled: true },
         });
       } else if (useResponsesApi) {
