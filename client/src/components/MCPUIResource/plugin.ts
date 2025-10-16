@@ -3,7 +3,8 @@ import type { Node } from 'unist';
 import type { UIResourceNode } from './types';
 
 export const UI_RESOURCE_MARKER = '\\ui';
-export const UI_RESOURCE_PATTERN = new RegExp(`\\${UI_RESOURCE_MARKER}(\\d+(?:,\\d+)*)`, 'g');
+// Pattern matches: \ui{id1} or \ui{id1,id2,id3} and captures everything between the braces
+export const UI_RESOURCE_PATTERN = /\\ui\{([\w]+(?:,[\w]+)*)\}/g;
 
 /**
  * Process text nodes and replace UI resource markers with components
@@ -25,8 +26,11 @@ function processTree(tree: Node) {
     while ((match = UI_RESOURCE_PATTERN.exec(originalValue)) !== null) {
       const matchIndex = match.index;
       const matchText = match[0];
-      const indicesString = match[1];
-      const indices = indicesString.split(',').map(Number);
+      const idGroup = match[1];
+      const idValues = idGroup
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
 
       if (matchIndex > currentPosition) {
         const textBeforeMatch = originalValue.substring(currentPosition, matchIndex);
@@ -35,26 +39,29 @@ function processTree(tree: Node) {
         }
       }
 
-      if (indices.length === 1) {
+      if (idValues.length === 1) {
         segments.push({
           type: 'mcp-ui-resource',
           data: {
             hName: 'mcp-ui-resource',
             hProperties: {
-              resourceIndex: indices[0],
+              resourceId: idValues[0],
             },
           },
         });
-      } else {
+      } else if (idValues.length > 1) {
         segments.push({
           type: 'mcp-ui-carousel',
           data: {
             hName: 'mcp-ui-carousel',
             hProperties: {
-              resourceIndices: indices,
+              resourceIds: idValues,
             },
           },
         });
+      } else {
+        // Unable to parse marker; keep original text
+        segments.push({ type: 'text', value: matchText });
       }
 
       currentPosition = matchIndex + matchText.length;

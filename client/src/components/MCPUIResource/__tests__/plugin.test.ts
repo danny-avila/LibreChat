@@ -22,26 +22,21 @@ describe('mcpUIResourcePlugin', () => {
 
   describe('single resource markers', () => {
     it('should replace single UI resource marker with mcp-ui-resource node', () => {
-      const tree = createTree([createTextNode(`Here is a resource ${UI_RESOURCE_MARKER}0`)]);
+      const tree = createTree([createTextNode(`Here is a resource ${UI_RESOURCE_MARKER}{abc123}`)]);
       processTree(tree);
 
       const children = (tree as any).children;
       expect(children).toHaveLength(2);
       expect(children[0]).toEqual({ type: 'text', value: 'Here is a resource ' });
-      expect(children[1]).toEqual({
-        type: 'mcp-ui-resource',
-        data: {
-          hName: 'mcp-ui-resource',
-          hProperties: {
-            resourceIndex: 0,
-          },
-        },
+      expect(children[1].type).toBe('mcp-ui-resource');
+      expect(children[1].data.hProperties).toMatchObject({
+        resourceId: 'abc123',
       });
     });
 
     it('should handle multiple single resource markers', () => {
       const tree = createTree([
-        createTextNode(`First ${UI_RESOURCE_MARKER}0 and second ${UI_RESOURCE_MARKER}1`),
+        createTextNode(`First ${UI_RESOURCE_MARKER}{id1} and second ${UI_RESOURCE_MARKER}{id2}`),
       ]);
       processTree(tree);
 
@@ -49,24 +44,24 @@ describe('mcpUIResourcePlugin', () => {
       expect(children).toHaveLength(4);
       expect(children[0]).toEqual({ type: 'text', value: 'First ' });
       expect(children[1].type).toBe('mcp-ui-resource');
-      expect(children[1].data.hProperties.resourceIndex).toBe(0);
+      expect(children[1].data.hProperties).toMatchObject({ resourceId: 'id1' });
       expect(children[2]).toEqual({ type: 'text', value: ' and second ' });
       expect(children[3].type).toBe('mcp-ui-resource');
-      expect(children[3].data.hProperties.resourceIndex).toBe(1);
+      expect(children[3].data.hProperties).toMatchObject({ resourceId: 'id2' });
     });
 
-    it('should handle large index numbers', () => {
-      const tree = createTree([createTextNode(`Resource ${UI_RESOURCE_MARKER}42`)]);
+    it('should handle hex IDs', () => {
+      const tree = createTree([createTextNode(`Resource ${UI_RESOURCE_MARKER}{a3f2b8c1d4}`)]);
       processTree(tree);
 
       const children = (tree as any).children;
-      expect(children[1].data.hProperties.resourceIndex).toBe(42);
+      expect(children[1].data.hProperties).toMatchObject({ resourceId: 'a3f2b8c1d4' });
     });
   });
 
   describe('carousel markers', () => {
     it('should replace carousel marker with mcp-ui-carousel node', () => {
-      const tree = createTree([createTextNode(`Carousel ${UI_RESOURCE_MARKER}0,1,2`)]);
+      const tree = createTree([createTextNode(`Carousel ${UI_RESOURCE_MARKER}{id1,id2,id3}`)]);
       processTree(tree);
 
       const children = (tree as any).children;
@@ -77,25 +72,68 @@ describe('mcpUIResourcePlugin', () => {
         data: {
           hName: 'mcp-ui-carousel',
           hProperties: {
-            resourceIndices: [0, 1, 2],
+            resourceIds: ['id1', 'id2', 'id3'],
           },
         },
       });
     });
 
-    it('should handle large index numbers in carousel', () => {
-      const tree = createTree([createTextNode(`${UI_RESOURCE_MARKER}100,200,300`)]);
+    it('should handle multiple IDs in carousel', () => {
+      const tree = createTree([createTextNode(`${UI_RESOURCE_MARKER}{alpha,beta,gamma}`)]);
       processTree(tree);
 
       const children = (tree as any).children;
-      expect(children[0].data.hProperties.resourceIndices).toEqual([100, 200, 300]);
+      expect(children[0].data.hProperties.resourceIds).toEqual(['alpha', 'beta', 'gamma']);
+    });
+  });
+
+  describe('id-based markers', () => {
+    it('should replace single ID marker with mcp-ui-resource node', () => {
+      const tree = createTree([createTextNode(`Check this ${UI_RESOURCE_MARKER}{abc123}`)]);
+      processTree(tree);
+
+      const children = (tree as any).children;
+      expect(children).toHaveLength(2);
+      expect(children[0]).toEqual({ type: 'text', value: 'Check this ' });
+      expect(children[1].type).toBe('mcp-ui-resource');
+      expect(children[1].data.hProperties).toEqual({
+        resourceId: 'abc123',
+      });
+    });
+
+    it('should replace carousel ID marker with mcp-ui-carousel node', () => {
+      const tree = createTree([createTextNode(`${UI_RESOURCE_MARKER}{one,two,three}`)]);
+      processTree(tree);
+
+      const children = (tree as any).children;
+      expect(children).toHaveLength(1);
+      expect(children[0]).toEqual({
+        type: 'mcp-ui-carousel',
+        data: {
+          hName: 'mcp-ui-carousel',
+          hProperties: {
+            resourceIds: ['one', 'two', 'three'],
+          },
+        },
+      });
+    });
+
+    it('should ignore empty IDs', () => {
+      const tree = createTree([createTextNode(`${UI_RESOURCE_MARKER}{}`)]);
+      processTree(tree);
+
+      const children = (tree as any).children;
+      expect(children).toHaveLength(1);
+      expect(children[0]).toEqual({ type: 'text', value: `${UI_RESOURCE_MARKER}{}` });
     });
   });
 
   describe('mixed content', () => {
     it('should handle text before and after markers', () => {
       const tree = createTree([
-        createTextNode(`Before ${UI_RESOURCE_MARKER}0 middle ${UI_RESOURCE_MARKER}1,2 after`),
+        createTextNode(
+          `Before ${UI_RESOURCE_MARKER}{id1} middle ${UI_RESOURCE_MARKER}{id2,id3} after`,
+        ),
       ]);
       processTree(tree);
 
@@ -109,7 +147,7 @@ describe('mcpUIResourcePlugin', () => {
     });
 
     it('should handle marker at start of text', () => {
-      const tree = createTree([createTextNode(`${UI_RESOURCE_MARKER}0 after`)]);
+      const tree = createTree([createTextNode(`${UI_RESOURCE_MARKER}{id1} after`)]);
       processTree(tree);
 
       const children = (tree as any).children;
@@ -119,7 +157,7 @@ describe('mcpUIResourcePlugin', () => {
     });
 
     it('should handle marker at end of text', () => {
-      const tree = createTree([createTextNode(`Before ${UI_RESOURCE_MARKER}0`)]);
+      const tree = createTree([createTextNode(`Before ${UI_RESOURCE_MARKER}{id1}`)]);
       processTree(tree);
 
       const children = (tree as any).children;
@@ -129,15 +167,17 @@ describe('mcpUIResourcePlugin', () => {
     });
 
     it('should handle consecutive markers', () => {
-      const tree = createTree([createTextNode(`${UI_RESOURCE_MARKER}0${UI_RESOURCE_MARKER}1`)]);
+      const tree = createTree([
+        createTextNode(`${UI_RESOURCE_MARKER}{id1}${UI_RESOURCE_MARKER}{id2}`),
+      ]);
       processTree(tree);
 
       const children = (tree as any).children;
       expect(children).toHaveLength(2);
       expect(children[0].type).toBe('mcp-ui-resource');
-      expect(children[0].data.hProperties.resourceIndex).toBe(0);
+      expect(children[0].data.hProperties).toEqual({ resourceId: 'id1' });
       expect(children[1].type).toBe('mcp-ui-resource');
-      expect(children[1].data.hProperties.resourceIndex).toBe(1);
+      expect(children[1].data.hProperties).toEqual({ resourceId: 'id2' });
     });
   });
 
@@ -175,7 +215,7 @@ describe('mcpUIResourcePlugin', () => {
         children: [
           {
             type: 'paragraph',
-            children: [createTextNode(`Text with ${UI_RESOURCE_MARKER}0`)],
+            children: [createTextNode(`Text with ${UI_RESOURCE_MARKER}{id1}`)],
           },
         ],
       } as Node;
@@ -205,45 +245,57 @@ describe('mcpUIResourcePlugin', () => {
   });
 
   describe('pattern validation', () => {
-    it('should not match invalid patterns', () => {
-      const invalidPatterns = [
-        `${UI_RESOURCE_MARKER}`,
-        `${UI_RESOURCE_MARKER}abc`,
-        `${UI_RESOURCE_MARKER}-1`,
-        `${UI_RESOURCE_MARKER},1`,
-        `ui0`, // missing marker
+    it('should not match marker alone', () => {
+      const tree = createTree([createTextNode(`${UI_RESOURCE_MARKER}`)]);
+      processTree(tree);
+      const children = (tree as any).children;
+      expect(children).toHaveLength(1);
+      expect(children[0].type).toBe('text');
+    });
+
+    it('should not match marker without braces', () => {
+      const tree = createTree([createTextNode(`${UI_RESOURCE_MARKER}abc`)]);
+      processTree(tree);
+      const children = (tree as any).children;
+      expect(children).toHaveLength(1);
+      expect(children[0].type).toBe('text');
+    });
+
+    it('should not match marker with leading comma', () => {
+      const tree = createTree([createTextNode(`${UI_RESOURCE_MARKER}{,id}`)]);
+      processTree(tree);
+      const children = (tree as any).children;
+      expect(children).toHaveLength(1);
+      expect(children[0].type).toBe('text');
+    });
+
+    it('should not match marker without backslash', () => {
+      const tree = createTree([createTextNode('ui{id}')]);
+      processTree(tree);
+      const children = (tree as any).children;
+      expect(children).toHaveLength(1);
+      expect(children[0].type).toBe('text');
+    });
+
+    it('should handle valid hex ID patterns', () => {
+      const validPatterns = [
+        { input: `${UI_RESOURCE_MARKER}{abc123}`, id: 'abc123' },
+        { input: `${UI_RESOURCE_MARKER}{a3f2b8c1d4}`, id: 'a3f2b8c1d4' },
+        { input: `${UI_RESOURCE_MARKER}{1234567890}`, id: '1234567890' },
+        { input: `${UI_RESOURCE_MARKER}{abcdef0123}`, id: 'abcdef0123' },
+        { input: `${UI_RESOURCE_MARKER}{deadbeef}`, id: 'deadbeef' },
+        { input: `${UI_RESOURCE_MARKER}{a1b2c3}`, id: 'a1b2c3' },
       ];
 
-      invalidPatterns.forEach((pattern) => {
-        const tree = createTree([createTextNode(pattern)]);
+      validPatterns.forEach(({ input, id }) => {
+        const tree = createTree([createTextNode(input)]);
         processTree(tree);
 
         const children = (tree as any).children;
-
         expect(children).toHaveLength(1);
-        expect(children[0].type).toBe('text');
-        expect(children[0].value).toBe(pattern);
+        expect(children[0].type).toBe('mcp-ui-resource');
+        expect(children[0].data.hProperties).toEqual({ resourceId: id });
       });
-    });
-
-    it('should handle partial matches correctly', () => {
-      // Test that ui1.2 matches ui1 and leaves .2
-      const tree1 = createTree([createTextNode(`${UI_RESOURCE_MARKER}1.2`)]);
-      processTree(tree1);
-      const children1 = (tree1 as any).children;
-      expect(children1).toHaveLength(2);
-      expect(children1[0].type).toBe('mcp-ui-resource');
-      expect(children1[0].data.hProperties.resourceIndex).toBe(1);
-      expect(children1[1].value).toBe('.2');
-
-      // Test that ui1, matches as single resource followed by comma
-      const tree2 = createTree([createTextNode(`${UI_RESOURCE_MARKER}1,`)]);
-      processTree(tree2);
-      const children2 = (tree2 as any).children;
-      expect(children2).toHaveLength(2);
-      expect(children2[0].type).toBe('mcp-ui-resource');
-      expect(children2[0].data.hProperties.resourceIndex).toBe(1);
-      expect(children2[1].value).toBe(',');
     });
   });
 });

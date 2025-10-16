@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UIResourceRenderer } from '@mcp-ui/client';
 import type { UIResource } from 'librechat-data-provider';
-import useSubmitMessage from '~/hooks/Messages/useSubmitMessage';
+import { useMessagesOperations } from '~/Providers';
 import { handleUIAction } from '~/utils';
 
 interface UIResourceCarouselProps {
@@ -13,7 +13,7 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
   const [showRightArrow, setShowRightArrow] = useState(true);
   const [isContainerHovered, setIsContainerHovered] = useState(false);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
-  const { submitMessage } = useSubmitMessage();
+  const { ask } = useMessagesOperations();
 
   const handleScroll = React.useCallback(() => {
     if (!scrollContainerRef.current) return;
@@ -114,7 +114,7 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
                     mimeType: uiResource.mimeType,
                     text: uiResource.text,
                   }}
-                  onUIAction={async (result) => handleUIAction(result, submitMessage)}
+                  onUIAction={async (result) => handleUIAction(result, ask)}
                   htmlProps={{
                     autoResizeIframe: { width: true, height: true },
                   }}
