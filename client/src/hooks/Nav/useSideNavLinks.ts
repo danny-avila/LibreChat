@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Blocks, MCPIcon, AttachmentIcon } from '@librechat/client';
+import { Blocks, MCPIcon, AttachmentIcon, ArchiveIcon } from '@librechat/client';
 import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote } from 'lucide-react';
 import {
   Permissions,
@@ -19,6 +19,7 @@ import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import MCPPanel from '~/components/SidePanel/MCP/MCPPanel';
+import GeneratedArtifacts from '~/components/SidePanel/GeneratedArtifacts/GeneratedArtifacts';
 import { useGetStartupConfig } from '~/data-provider';
 import { useHasAccess } from '~/hooks';
 
@@ -169,6 +170,14 @@ export default function useSideNavLinks({
         Component: MCPPanel,
       });
     }
+
+    links.push({
+      title: 'com_sidepanel_generated_artifacts',
+      label: '',
+      icon: ArchiveIcon,
+      id: 'generated-artifacts',
+      Component: GeneratedArtifacts,
+    });
 
     links.push({
       title: 'com_sidepanel_hide_panel',
