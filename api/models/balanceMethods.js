@@ -16,7 +16,7 @@ function isInvalidDate(date) {
 
 async function resolveAutumnUser(req, userId) {
   const resolved = {
-    openidId: req?.user?.openidId ?? req?.user?.openidID ?? undefined,
+    openidId: req?.user?.openidId ?? req?.user?.openidId ?? undefined,
     email: req?.user?.email ?? undefined,
   };
 
@@ -213,7 +213,7 @@ const checkBalance = async ({ req, res, txData }) => {
 
       if (!subscribed) {
           checkoutUrl = await createCheckoutAutumn({
-            openidID: openidId,
+            openidId: openidId,
             email: email,
             fingerprint: email,
           });
@@ -225,7 +225,7 @@ const checkBalance = async ({ req, res, txData }) => {
       });
     }
   } else {
-    logger.warn('[Balance.check] Missing OpenidID identifier or/and email; skipping Autumn subscription check', {
+    logger.warn('[Balance.check] Missing openidId identifier or/and email; skipping Autumn subscription check', {
       userId: txData?.user,
     });
   }
