@@ -270,7 +270,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   }
 
   // <Stripe> added environment variable check
-  const showArtifacts = artifactsEnabled && !!process.env.SANDPACK_BUNDLER_URL;
+  const showArtifacts = artifactsEnabled && !!startupConfig.bundlerURL;
   if (showArtifacts) {
     // </Stripe>
     dropdownItems.push({
