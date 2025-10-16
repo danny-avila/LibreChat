@@ -125,7 +125,7 @@ export const normalizeLayout = (layout: number[]) => {
   return normalizedLayout;
 };
 
-export const handleUIAction = async (result: any, submitMessage: any) => {
+export const handleUIAction = async (result: any, ask: any) => {
   const supportedTypes = ['intent', 'tool', 'prompt'];
 
   const { type, payload } = result;
@@ -174,7 +174,7 @@ Execute the intention of the prompt that is mentioned in the message using the t
   console.log('About to submit message:', messageText);
 
   try {
-    await submitMessage({ text: messageText });
+    await ask({ text: messageText });
     console.log('Message submitted successfully');
   } catch (error) {
     console.error('Error submitting message:', error);

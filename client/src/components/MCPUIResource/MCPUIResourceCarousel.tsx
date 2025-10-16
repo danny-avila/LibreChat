@@ -1,43 +1,33 @@
 import React, { useMemo } from 'react';
-import { useGetMessagesByConvoId } from '~/data-provider';
-import { useMessageContext, useChatContext } from '~/Providers';
+import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
+import { useMessagesConversation } from '~/Providers';
 import UIResourceCarousel from '../Chat/Messages/Content/UIResourceCarousel';
-import type { UIResource } from '~/common';
+import type { UIResource } from 'librechat-data-provider';
 
 interface MCPUIResourceCarouselProps {
   node: {
     properties: {
-      resourceIndices: number[];
+      resourceIds?: string[];
     };
   };
 }
 
+/**
+ * Component that renders multiple MCP UI resources in a carousel.
+ * Works in both main app and share view.
+ */
 export function MCPUIResourceCarousel(props: MCPUIResourceCarouselProps) {
-  const { messageId } = useMessageContext();
-  const { conversation } = useChatContext();
-  const { data: messages } = useGetMessagesByConvoId(conversation?.conversationId ?? '', {
-    enabled: !!conversation?.conversationId,
-  });
+  const { conversation } = useMessagesConversation();
+
+  const conversationResourceMap = useConversationUIResources(
+    conversation?.conversationId ?? undefined,
+  );
 
   const uiResources = useMemo(() => {
-    const { resourceIndices } = props.node.properties;
+    const { resourceIds = [] } = props.node.properties;
 
-    const targetMessage = messages?.find((m) => m.messageId === messageId);
-
-    if (!targetMessage?.attachments) {
-      return [];
-    }
-
-    const allResources: UIResource[] = targetMessage.attachments
-      .filter((a) => a.type === 'ui_resources' && a['ui_resources'])
-      .flatMap((a) => a['ui_resources'] as UIResource[]);
-
-    const selectedResources: UIResource[] = resourceIndices
-      .map((i) => allResources[i])
-      .filter(Boolean) as UIResource[];
-
-    return selectedResources;
-  }, [props.node.properties, messages, messageId]);
+    return resourceIds.map((id) => conversationResourceMap.get(id)).filter(Boolean) as UIResource[];
+  }, [props.node.properties, conversationResourceMap]);
 
   if (uiResources.length === 0) {
     return null;

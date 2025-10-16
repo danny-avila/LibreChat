@@ -13,12 +13,11 @@ jest.mock('@mcp-ui/client', () => ({
   ),
 }));
 
-// Mock useSubmitMessage hook
-const mockSubmitMessage = jest.fn();
-jest.mock('~/hooks/Messages/useSubmitMessage', () => ({
-  __esModule: true,
-  default: () => ({
-    submitMessage: mockSubmitMessage,
+// Mock useMessagesOperations hook
+const mockAsk = jest.fn();
+jest.mock('~/Providers', () => ({
+  useMessagesOperations: () => ({
+    ask: mockAsk,
   }),
 }));
 
@@ -47,7 +46,7 @@ describe('UIResourceCarousel', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockSubmitMessage.mockClear();
+    mockAsk.mockClear();
     mockHandleUIAction.mockClear();
     // Reset scroll properties
     Object.defineProperty(HTMLElement.prototype, 'scrollLeft', {
@@ -166,7 +165,7 @@ describe('UIResourceCarousel', () => {
     fireEvent.click(renderer);
 
     await waitFor(() => {
-      expect(mockHandleUIAction).toHaveBeenCalledWith({ action: 'test' }, mockSubmitMessage);
+      expect(mockHandleUIAction).toHaveBeenCalledWith({ action: 'test' }, mockAsk);
     });
   });
 
@@ -179,7 +178,7 @@ describe('UIResourceCarousel', () => {
     fireEvent.click(renderers[1]);
 
     await waitFor(() => {
-      expect(mockHandleUIAction).toHaveBeenCalledWith({ action: 'test' }, mockSubmitMessage);
+      expect(mockHandleUIAction).toHaveBeenCalledWith({ action: 'test' }, mockAsk);
       expect(mockHandleUIAction).toHaveBeenCalledTimes(1);
     });
 
@@ -191,14 +190,14 @@ describe('UIResourceCarousel', () => {
     });
   });
 
-  it('passes correct submitMessage function to handleUIAction', async () => {
+  it('passes correct ask function to handleUIAction', async () => {
     render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 1)} />);
 
     const renderer = screen.getByTestId('ui-resource-renderer');
     fireEvent.click(renderer);
 
     await waitFor(() => {
-      expect(mockHandleUIAction).toHaveBeenCalledWith({ action: 'test' }, mockSubmitMessage);
+      expect(mockHandleUIAction).toHaveBeenCalledWith({ action: 'test' }, mockAsk);
       expect(mockHandleUIAction).toHaveBeenCalledTimes(1);
     });
   });

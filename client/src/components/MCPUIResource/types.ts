@@ -4,8 +4,8 @@ export interface UIResourceNode {
   data?: {
     hName: string;
     hProperties: {
-      resourceIndex?: number;
-      resourceIndices?: number[];
+      resourceId?: string;
+      resourceIds?: string[];
     };
   };
   children?: UIResourceNode[];
