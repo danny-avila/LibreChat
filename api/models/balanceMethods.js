@@ -1,4 +1,3 @@
-require('ts-node/register');
 const { logger } = require('@librechat/data-schemas');
 const { ViolationTypes } = require('librechat-data-provider');
 const { createAutoRefillTransaction } = require('./Transaction');
@@ -9,7 +8,7 @@ const {
   fetchTokenBalanceAutumn,
   hasSubscriptionAutumn,
   createCheckoutAutumn,
-} = require('~/server/services/AutumnService.ts');
+} = require('~/server/services/AutumnService.js');
 
 function isInvalidDate(date) {
   return isNaN(date);
@@ -52,7 +51,7 @@ async function synchronizeAutumnBalance(userId, openidId) {
   }
 
   try {
-    const remoteBalance = await fetchTokenBalanceAutumn(openidId);
+    const remoteBalance = await fetchTokenBalanceAutumn({openidId: openidId});
     if (typeof remoteBalance !== 'number' || Number.isNaN(remoteBalance)) {
       return;
     }
@@ -207,9 +206,9 @@ const checkBalance = async ({ req, res, txData }) => {
   let type = ViolationTypes.TOKEN_BALANCE_NO_SUB;
   let checkoutUrl;
 
-  if (openidId) {
+  if (openidId && email) {
     try {
-      const subscribed = await hasSubscriptionAutumn(openidId);
+      const subscribed = await hasSubscriptionAutumn({openidId: openidId, email: email});
       type = subscribed ? ViolationTypes.TOKEN_BALANCE_SUB : ViolationTypes.TOKEN_BALANCE_NO_SUB;
 
       if (!subscribed) {
@@ -232,7 +231,7 @@ const checkBalance = async ({ req, res, txData }) => {
       });
     }
   } else {
-    logger.warn('[Balance.check] Missing OpenID identifier; skipping Autumn subscription check', {
+    logger.warn('[Balance.check] Missing OpenidID identifier or/and email; skipping Autumn subscription check', {
       userId: txData?.user,
     });
   }
