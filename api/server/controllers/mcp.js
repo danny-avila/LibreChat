@@ -20,8 +20,15 @@ const {
 const {
   findAccessibleResources,
   findPubliclyAccessibleResources,
+  grantPermission,
+  removeAllPermissions,
 } = require('~/server/services/PermissionService');
-const { ResourceType, PermissionBits } = require('librechat-data-provider');
+const {
+  ResourceType,
+  PermissionBits,
+  AccessRoleIds,
+  PrincipalType,
+} = require('librechat-data-provider');
 
 /**
  * Get all MCP tools available to the user
@@ -151,6 +158,18 @@ const createMCPServerController = async (req, res) => {
       options,
       author: userId,
     });
+
+    // Auto-grant owner permission to creator
+    await grantPermission({
+      principalType: PrincipalType.USER,
+      principalId: userId,
+      resourceType: ResourceType.MCPSERVER,
+      resourceId: mcpServer._id,
+      accessRoleId: AccessRoleIds.MCPSERVER_OWNER,
+      grantedBy: userId,
+    });
+
+    logger.info(`[MCP Server] Created: ${mcpServer.id} by ${userId}`);
 
     res.status(201).json(mcpServer);
   } catch (error) {
@@ -321,7 +340,17 @@ const deleteMCPServerController = async (req, res) => {
       return res.status(403).json({ message: 'Forbidden: You do not own this MCP server' });
     }
 
-    await deleteMCPServer(mcp_id);
+    const deletedServer = await deleteMCPServer(mcp_id);
+
+    // Clean up ACL permissions
+    if (deletedServer) {
+      await removeAllPermissions({
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: deletedServer._id,
+      });
+      logger.info(`[MCP Server] Deleted: ${mcp_id} by ${userId}`);
+    }
+
     res.status(200).json({ message: 'MCP server deleted successfully' });
   } catch (error) {
     logger.error('[deleteMCPServer]', error);
