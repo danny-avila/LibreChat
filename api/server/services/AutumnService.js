@@ -25,6 +25,16 @@ const useAutumnProductId = startupConfig.useAutumnProductId;
 const useAutumnTokenCreditsFeatureId = startupConfig.useAutumnTokenCreditsFeatureId;
 const useAutumnHasSubscriptionFeatureId = startupConfig.useAutumnHasSubscriptionFeatureId;
 
+if (
+  [applyUseAutumnKey,
+   useAutumnApiBase,
+   useAutumnProductId,
+   useAutumnTokenCreditsFeatureId,
+   useAutumnHasSubscriptionFeatureId].some(v => v == null)
+) {
+  throw new Error('Missing required Autumn configuration values');
+}
+
 // -----------------------------------------------------------------------------
 // Low-level HTTP helper (no external deps; works on Node and Edge runtimes)
 // -----------------------------------------------------------------------------
