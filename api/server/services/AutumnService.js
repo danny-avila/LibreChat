@@ -191,9 +191,9 @@ function generateUuidV4() {
  * Fetch the user’s remaining token‑credit balance from Autumn.
  * @return Number of remaining credits (0 if the feature is missing).
  */
-export async function fetchTokenBalanceAutumn({openidID}) {
+export async function fetchTokenBalanceAutumn({openidId}) {
   try {
-    const { data } = await withRetry(() => autumn.customers.get(openidID));
+    const { data } = await withRetry(() => autumn.customers.get(openidId));
 
     if (!data) return 0;
 
@@ -231,9 +231,9 @@ export async function fetchTokenBalanceAutumn({openidID}) {
 /**
  * Check if the customer currently has an active subscription.
  */
-export async function hasSubscriptionAutumn({openidID, email}) {
+export async function hasSubscriptionAutumn({openidId, email}) {
   const payload = {
-    customer_id: openidID,
+    customer_id: openidId,
     feature_id: useAutumnHasSubscriptionFeatureId,
   };
 
@@ -250,13 +250,13 @@ export async function hasSubscriptionAutumn({openidID, email}) {
  * Idempotent thanks to the key.
  */
 export async function recordUsageAutumn({
-  openidID,
+  openidId,
   usedTokens,
-  idempotencyKey = buildIdempotencyKey(openidID),
+  idempotencyKey = buildIdempotencyKey(openidId),
 }) {
   await withRetry(() =>
     autumn.track({
-      customer_id: openidID,
+      customer_id: openidId,
       product_id: useAutumnProductId,
       feature_id: useAutumnTokenCreditsFeatureId,
       value: usedTokens,
@@ -270,13 +270,13 @@ export async function recordUsageAutumn({
  * and no existing subscription. Returns the Stripe Checkout URL.
  */
 export async function createCheckoutAutumn({
-  openidID,
+  openidId,
   email,
   fingerprint,
 }) {
   const { data } = await withRetry(() =>
     autumn.attach({
-      customer_id: openidID,
+      customer_id: openidId,
       product_id: useAutumnProductId,
       force_checkout: true,
       customer_data: {
