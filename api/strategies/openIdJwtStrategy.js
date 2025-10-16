@@ -40,13 +40,19 @@ const openIdJwtLogin = (openIdConfig) => {
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKeyProvider: jwksRsa.passportJwtSecret(jwksRsaOptions),
+      passReqToCallback: true, // Pass request to callback to access raw token
     },
     /**
+     * @param {Express.Request} req
      * @param {import('openid-client').IDToken} payload
      * @param {import('passport-jwt').VerifyCallback} done
      */
-    async (payload, done) => {
+    async (req, payload, done) => {
       try {
+        // Extract the raw JWT token from the Authorization header
+        const authHeader = req.headers.authorization;
+        const rawToken = authHeader?.replace('Bearer ', '');
+
         const { user, error, migration } = await findOpenIDUser({
           findUser,
           email: payload?.email,
@@ -76,6 +82,14 @@ const openIdJwtLogin = (openIdConfig) => {
           if (Object.keys(updateData).length > 0) {
             await updateUser(user.id, updateData);
           }
+
+          // Add federated tokens for OIDC placeholder processing
+          // Use the raw JWT token as the access token
+          user.federatedTokens = {
+            access_token: rawToken,
+            refresh_token: payload.refresh_token,
+            expires_at: payload.exp,
+          };
 
           done(null, user);
         } else {
