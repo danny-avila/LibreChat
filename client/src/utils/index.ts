@@ -124,3 +124,59 @@ export const normalizeLayout = (layout: number[]) => {
 
   return normalizedLayout;
 };
+
+export const handleUIAction = async (result: any, submitMessage: any) => {
+  const supportedTypes = ['intent', 'tool', 'prompt'];
+
+  const { type, payload } = result;
+
+  if (!supportedTypes.includes(type)) {
+    return;
+  }
+
+  let messageText = '';
+
+  if (type === 'intent') {
+    const { intent, params } = payload;
+    messageText = `The user clicked a button in an embedded UI Resource, and we got a message of type \`intent\`.
+The intent is \`${intent}\` and the params are:
+
+\`\`\`json
+${JSON.stringify(params, null, 2)}
+\`\`\`
+
+Execute the intent that is mentioned in the message using the tools available to you.
+    `;
+  } else if (type === 'tool') {
+    const { toolName, params } = payload;
+    messageText = `The user clicked a button in an embedded UI Resource, and we got a message of type \`tool\`.
+The tool name is \`${toolName}\` and the params are:
+
+\`\`\`json
+${JSON.stringify(params, null, 2)}
+\`\`\`
+
+Execute the tool that is mentioned in the message using the tools available to you.
+    `;
+  } else if (type === 'prompt') {
+    const { prompt } = payload;
+    messageText = `The user clicked a button in an embedded UI Resource, and we got a message of type \`prompt\`.
+The prompt is:
+
+\`\`\`
+${prompt}
+\`\`\`
+
+Execute the intention of the prompt that is mentioned in the message using the tools available to you.
+    `;
+  }
+
+  console.log('About to submit message:', messageText);
+
+  try {
+    await submitMessage({ text: messageText });
+    console.log('Message submitted successfully');
+  } catch (error) {
+    console.error('Error submitting message:', error);
+  }
+};
