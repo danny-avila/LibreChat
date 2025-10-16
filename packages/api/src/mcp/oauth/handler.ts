@@ -18,6 +18,7 @@ import type {
   OAuthMetadata,
 } from './types';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
+import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 
 /** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
@@ -27,9 +28,28 @@ export class MCPOAuthHandler {
   private static readonly FLOW_TTL = 10 * 60 * 1000; // 10 minutes
 
   /**
+   * Creates a fetch function with custom headers injected
+   */
+  private static createOAuthFetch(headers: Record<string, string>): FetchLike {
+    return async (url: string | URL, init?: RequestInit): Promise<Response> => {
+      const newHeaders = new Headers(init?.headers ?? {});
+      for (const [key, value] of Object.entries(headers)) {
+        newHeaders.set(key, value);
+      }
+      return fetch(url, {
+        ...init,
+        headers: newHeaders,
+      });
+    };
+  }
+
+  /**
    * Discovers OAuth metadata from the server
    */
-  private static async discoverMetadata(serverUrl: string): Promise<{
+  private static async discoverMetadata(
+    serverUrl: string,
+    oauthHeaders: Record<string, string>,
+  ): Promise<{
     metadata: OAuthMetadata;
     resourceMetadata?: OAuthProtectedResourceMetadata;
     authServerUrl: URL;
@@ -41,12 +61,14 @@ export class MCPOAuthHandler {
     let authServerUrl = new URL(serverUrl);
     let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
 
+    const fetchFn = this.createOAuthFetch(oauthHeaders);
+
     try {
       // Try to discover resource metadata first
       logger.debug(
         `[MCPOAuth] Attempting to discover protected resource metadata from ${serverUrl}`,
       );
-      resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl);
+      resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, {}, fetchFn);
 
       if (resourceMetadata?.authorization_servers?.length) {
         authServerUrl = new URL(resourceMetadata.authorization_servers[0]);
@@ -66,7 +88,9 @@ export class MCPOAuthHandler {
     logger.debug(
       `[MCPOAuth] Discovering OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
     );
-    const rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl);
+    const rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl, {
+      fetchFn,
+    });
 
     if (!rawMetadata) {
       logger.error(
@@ -92,6 +116,7 @@ export class MCPOAuthHandler {
   private static async registerOAuthClient(
     serverUrl: string,
     metadata: OAuthMetadata,
+    oauthHeaders: Record<string, string>,
     resourceMetadata?: OAuthProtectedResourceMetadata,
     redirectUri?: string,
   ): Promise<OAuthClientInformation> {
@@ -159,6 +184,7 @@ export class MCPOAuthHandler {
     const clientInfo = await registerClient(serverUrl, {
       metadata: metadata as unknown as SDKOAuthMetadata,
       clientMetadata,
+      fetchFn: this.createOAuthFetch(oauthHeaders),
     });
 
     logger.debug(
@@ -181,7 +207,8 @@ export class MCPOAuthHandler {
     serverName: string,
     serverUrl: string,
     userId: string,
-    config: MCPOptions['oauth'] | undefined,
+    oauthHeaders: Record<string, string>,
+    config?: MCPOptions['oauth'],
   ): Promise<{ authorizationUrl: string; flowId: string; flowMetadata: MCPOAuthFlowMetadata }> {
     logger.debug(
       `[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${sanitizeUrlForLogging(serverUrl)}`,
@@ -259,7 +286,10 @@ export class MCPOAuthHandler {
       logger.debug(
         `[MCPOAuth] Starting auto-discovery of OAuth metadata from ${sanitizeUrlForLogging(serverUrl)}`,
       );
-      const { metadata, resourceMetadata, authServerUrl } = await this.discoverMetadata(serverUrl);
+      const { metadata, resourceMetadata, authServerUrl } = await this.discoverMetadata(
+        serverUrl,
+        oauthHeaders,
+      );
 
       logger.debug(
         `[MCPOAuth] OAuth metadata discovered, auth server URL: ${sanitizeUrlForLogging(authServerUrl)}`,
@@ -272,6 +302,7 @@ export class MCPOAuthHandler {
       const clientInfo = await this.registerOAuthClient(
         authServerUrl.toString(),
         metadata,
+        oauthHeaders,
         resourceMetadata,
         redirectUri,
       );
@@ -365,6 +396,7 @@ export class MCPOAuthHandler {
     flowId: string,
     authorizationCode: string,
     flowManager: FlowStateManager<MCPOAuthTokens>,
+    oauthHeaders: Record<string, string>,
   ): Promise<MCPOAuthTokens> {
     try {
       /** Flow state which contains our metadata */
@@ -404,6 +436,7 @@ export class MCPOAuthHandler {
         codeVerifier: metadata.codeVerifier,
         authorizationCode,
         resource,
+        fetchFn: this.createOAuthFetch(oauthHeaders),
       });
 
       logger.debug('[MCPOAuth] Raw tokens from exchange:', {
@@ -476,6 +509,7 @@ export class MCPOAuthHandler {
   static async refreshOAuthTokens(
     refreshToken: string,
     metadata: { serverName: string; serverUrl?: string; clientInfo?: OAuthClientInformation },
+    oauthHeaders: Record<string, string>,
     config?: MCPOptions['oauth'],
   ): Promise<MCPOAuthTokens> {
     logger.debug(`[MCPOAuth] Refreshing tokens for ${metadata.serverName}`);
@@ -509,7 +543,9 @@ export class MCPOAuthHandler {
           throw new Error('No token URL available for refresh');
         } else {
           /** Auto-discover OAuth configuration for refresh */
-          const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl);
+          const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl, {
+            fetchFn: this.createOAuthFetch(oauthHeaders),
+          });
           if (!oauthMetadata) {
             throw new Error('Failed to discover OAuth metadata for token refresh');
           }
@@ -533,6 +569,7 @@ export class MCPOAuthHandler {
         const headers: HeadersInit = {
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
+          ...oauthHeaders,
         };
 
         /** Handle authentication based on server's advertised methods */
@@ -613,6 +650,7 @@ export class MCPOAuthHandler {
         const headers: HeadersInit = {
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
+          ...oauthHeaders,
         };
 
         /** Handle authentication based on configured methods */
@@ -684,7 +722,9 @@ export class MCPOAuthHandler {
       }
 
       /** Auto-discover OAuth configuration for refresh */
-      const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl);
+      const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl, {
+        fetchFn: this.createOAuthFetch(oauthHeaders),
+      });
 
       if (!oauthMetadata?.token_endpoint) {
         throw new Error('No token endpoint found in OAuth metadata');
@@ -700,6 +740,7 @@ export class MCPOAuthHandler {
       const headers: HeadersInit = {
         'Content-Type': 'application/x-www-form-urlencoded',
         Accept: 'application/json',
+        ...oauthHeaders,
       };
 
       const response = await fetch(tokenUrl, {
@@ -742,6 +783,7 @@ export class MCPOAuthHandler {
       revocationEndpoint?: string;
       revocationEndpointAuthMethodsSupported?: string[];
     },
+    oauthHeaders: Record<string, string> = {},
   ): Promise<void> {
     // build the revoke URL, falling back to the server URL + /revoke if no revocation endpoint is provided
     const revokeUrl: URL =
@@ -759,6 +801,7 @@ export class MCPOAuthHandler {
     // init the request headers
     const headers: Record<string, string> = {
       'Content-Type': 'application/x-www-form-urlencoded',
+      ...oauthHeaders,
     };
 
     // init the request body

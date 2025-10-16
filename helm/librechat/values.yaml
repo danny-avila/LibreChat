@@ -153,6 +153,8 @@ lifecycle: {}
 
 podAnnotations: {}
 podLabels: {}
+deploymentAnnotations: {}
+deploymentLabels: {}
 
 podSecurityContext:
   fsGroup: 2000

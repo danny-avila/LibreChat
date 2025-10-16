@@ -127,8 +127,13 @@ describe('MCP Routes', () => {
         }),
       };
 
+      const mockMcpManager = {
+        getRawConfig: jest.fn().mockReturnValue({}),
+      };
+
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
       MCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
         authorizationUrl: 'https://oauth.example.com/auth',
@@ -146,6 +151,7 @@ describe('MCP Routes', () => {
         'test-server',
         'https://test-server.com',
         'test-user-id',
+        {},
         { clientId: 'test-client-id' },
       );
     });
@@ -314,6 +320,7 @@ describe('MCP Routes', () => {
       };
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue(mockUserConnection),
+        getRawConfig: jest.fn().mockReturnValue({}),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
@@ -336,6 +343,7 @@ describe('MCP Routes', () => {
         'test-flow-id',
         'test-auth-code',
         mockFlowManager,
+        {},
       );
       expect(MCPTokenStorage.storeTokens).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -392,6 +400,11 @@ describe('MCP Routes', () => {
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
+      const mockMcpManager = {
+        getRawConfig: jest.fn().mockReturnValue({}),
+      };
+      require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
+
       const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
         code: 'test-auth-code',
         state: 'test-flow-id',
@@ -427,6 +440,7 @@ describe('MCP Routes', () => {
 
       const mockMcpManager = {
         getUserConnection: jest.fn().mockRejectedValue(new Error('Reconnection failed')),
+        getRawConfig: jest.fn().mockReturnValue({}),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
@@ -1234,6 +1248,7 @@ describe('MCP Routes', () => {
         getUserConnection: jest.fn().mockResolvedValue({
           fetchTools: jest.fn().mockResolvedValue([]),
         }),
+        getRawConfig: jest.fn().mockReturnValue({}),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
@@ -1281,6 +1296,7 @@ describe('MCP Routes', () => {
             .fn()
             .mockResolvedValue([{ name: 'test-tool', description: 'Test tool' }]),
         }),
+        getRawConfig: jest.fn().mockReturnValue({}),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 

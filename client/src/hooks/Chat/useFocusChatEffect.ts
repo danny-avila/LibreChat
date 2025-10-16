@@ -12,12 +12,22 @@ export default function useFocusChatEffect(textAreaRef: React.RefObject<HTMLText
         `Focusing textarea on location state change: ${location.pathname}`,
       );
 
-      /** Check if the device is not a touchscreen */
-      if (!window.matchMedia?.('(pointer: coarse)').matches) {
-        textAreaRef.current?.focus();
+      const hasCoarsePointer = window.matchMedia?.('(pointer: coarse)').matches;
+      const hasHover = window.matchMedia?.('(hover: hover)').matches;
+
+      const path = `${location.pathname}${window.location.search ?? ''}`;
+      /* Early return if mobile-like: has coarse pointer OR lacks hover */
+      if (hasCoarsePointer || !hasHover) {
+        navigate(path, {
+          replace: true,
+          state: {},
+        });
+        return;
       }
 
-      navigate(`${location.pathname}${window.location.search ?? ''}`, {
+      textAreaRef.current?.focus();
+
+      navigate(path, {
         replace: true,
         state: {},
       });

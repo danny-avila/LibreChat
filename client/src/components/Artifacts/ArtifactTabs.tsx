@@ -8,17 +8,14 @@ import { useAutoScroll } from '~/hooks/Artifacts/useAutoScroll';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
 import { useGetStartupConfig } from '~/data-provider';
 import { ArtifactPreview } from './ArtifactPreview';
-import { MermaidMarkdown } from './MermaidMarkdown';
 import { cn } from '~/utils';
 
 export default function ArtifactTabs({
   artifact,
-  isMermaid,
   editorRef,
   previewRef,
 }: {
   artifact: Artifact;
-  isMermaid: boolean;
   editorRef: React.MutableRefObject<CodeEditorRef>;
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
 }) {
@@ -44,26 +41,22 @@ export default function ArtifactTabs({
         value="code"
         id="artifacts-code"
         className={cn('flex-grow overflow-auto')}
+        tabIndex={-1}
       >
-        {isMermaid ? (
-          <MermaidMarkdown content={content} isSubmitting={isSubmitting} />
-        ) : (
-          <ArtifactCodeEditor
-            files={files}
-            fileKey={fileKey}
-            template={template}
-            artifact={artifact}
-            editorRef={editorRef}
-            sharedProps={sharedProps}
-          />
-        )}
+        <ArtifactCodeEditor
+          files={files}
+          fileKey={fileKey}
+          template={template}
+          artifact={artifact}
+          editorRef={editorRef}
+          sharedProps={sharedProps}
+        />
       </Tabs.Content>
-      <Tabs.Content value="preview" className="flex-grow overflow-auto">
+      <Tabs.Content value="preview" className="flex-grow overflow-auto" tabIndex={-1}>
         <ArtifactPreview
           files={files}
           fileKey={fileKey}
           template={template}
-          isMermaid={isMermaid}
           previewRef={previewRef}
           sharedProps={sharedProps}
           currentCode={currentCode}
