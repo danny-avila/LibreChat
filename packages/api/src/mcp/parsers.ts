@@ -1,6 +1,11 @@
+import crypto from 'node:crypto';
 import { Tools } from 'librechat-data-provider';
 import type { UIResource } from 'librechat-data-provider';
 import type * as t from './types';
+
+function generateResourceId(text: string): string {
+  return crypto.createHash('sha256').update(text).digest('hex').substring(0, 10);
+}
 
 const RECOGNIZED_PROVIDERS = new Set([
   'google',
@@ -133,22 +138,33 @@ export function formatToolContent(
 
     resource: (item) => {
       const isUiResource = item.resource.uri.startsWith('ui://');
+      const resourceText: string[] = [];
 
       if (isUiResource) {
-        uiResources.push(item.resource as UIResource);
-      }
+        const contentToHash = item.resource.text || item.resource.uri || '';
+        const resourceId = generateResourceId(contentToHash);
+        const uiResource: UIResource = {
+          ...item.resource,
+          resourceId,
+        };
 
-      const resourceText = [];
-      if (!isUiResource && 'text' in item.resource && item.resource.text) {
+        uiResources.push(uiResource);
+        resourceText.push(`UI Resource ID: ${resourceId}`);
+        resourceText.push(`UI Resource Marker: \\ui{${resourceId}}`);
+      } else if ('text' in item.resource && item.resource.text) {
         resourceText.push(`Resource Text: ${item.resource.text}`);
       }
+
       if (item.resource.uri.length) {
         resourceText.push(`Resource URI: ${item.resource.uri}`);
       }
       if (item.resource.mimeType != null && item.resource.mimeType) {
         resourceText.push(`Resource MIME Type: ${item.resource.mimeType}`);
       }
-      currentTextBlock += (currentTextBlock ? '\n\n' : '') + resourceText.join('\n');
+
+      if (resourceText.length) {
+        currentTextBlock += (currentTextBlock ? '\n\n' : '') + resourceText.join('\n');
+      }
     },
   };
 
@@ -160,6 +176,21 @@ export function formatToolContent(
       const stringified = JSON.stringify(item, null, 2);
       currentTextBlock += (currentTextBlock ? '\n\n' : '') + stringified;
     }
+  }
+
+  if (uiResources.length > 0) {
+    const uiInstructions = `
+
+UI Resource Markers Available:
+- Each resource above includes a stable ID and a marker hint like \`\\ui{abc123}\`
+- You should usually introduce what you're showing before placing the marker
+- For a single resource: \\ui{resource-id}
+- For multiple resources shown separately: \\ui{resource-id-a} \\ui{resource-id-b}
+- For multiple resources in a carousel: \\ui{resource-id-a,resource-id-b,resource-id-c}
+- The UI will be rendered inline where you place the marker
+- Format: \\ui{resource-id} or \\ui{id1,id2,id3} using the IDs provided above`;
+
+    currentTextBlock += uiInstructions;
   }
 
   if (CONTENT_ARRAY_PROVIDERS.has(provider) && currentTextBlock) {
