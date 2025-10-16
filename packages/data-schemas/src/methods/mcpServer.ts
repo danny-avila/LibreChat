@@ -1,16 +1,20 @@
-import type { Model, Types } from 'mongoose';
+import type { Model, RootFilterQuery, Types } from 'mongoose';
 import type { MCPServerDocument } from '~/types';
 import type { MCPOptions } from 'librechat-data-provider';
 import { nanoid } from 'nanoid';
+import { logger } from '..';
+
+const NORMALIZED_LIMIT_DEFAULT = 20;
 
 export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
   /**
    * Create a new MCP server
-   * @param data - Object containing title, options, and author
+   * @param data - Object containing title, description, options, and author
    * @returns The created MCP server document
    */
   async function createMCPServer(data: {
     title: string;
+    description?: string;
     options: MCPOptions;
     author: string | Types.ObjectId;
   }): Promise<MCPServerDocument> {
@@ -21,6 +25,7 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
     const newServer = await MCPServer.create({
       mcp_id,
       title: data.title,
+      description: data.description,
       options: data.options,
       author: data.author,
     });
@@ -63,17 +68,102 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
-   * Find MCP servers by array of ObjectIds
-   * @param ids - Array of MongoDB ObjectIds
-   * @returns Array of MCP server documents
+   * Get a paginated list of MCP servers by IDs with filtering and search
+   * @param ids - Array of ObjectIds to include
+   * @param otherParams - Additional filter parameters (e.g., search)
+   * @param limit - Page size limit (null for no pagination)
+   * @param after - Cursor for pagination
+   * @returns Paginated list of MCP servers
    */
-  async function findMCPServersByIds(
-    ids: (string | Types.ObjectId)[],
-  ): Promise<MCPServerDocument[]> {
+  async function getListMCPServersByIds({
+    ids = [],
+    otherParams = {},
+    limit = null,
+    after = null,
+  }: {
+    ids?: Types.ObjectId[];
+    otherParams?: RootFilterQuery<MCPServerDocument>;
+    limit?: number | null;
+    after?: string | null;
+  }): Promise<{
+    data: MCPServerDocument[];
+    has_more: boolean;
+    after: string | null;
+  }> {
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
-    return await MCPServer.find({ _id: { $in: ids } })
-      .sort({ updatedAt: -1 })
+    const isPaginated = limit !== null && limit !== undefined;
+    const normalizedLimit = isPaginated
+      ? Math.min(Math.max(1, parseInt(String(limit)) || NORMALIZED_LIMIT_DEFAULT), 100)
+      : null;
+
+    // Build base query combining accessible servers with other filters
+    const baseQuery: RootFilterQuery<MCPServerDocument> = { ...otherParams, _id: { $in: ids } };
+
+    // Add cursor condition
+    if (after) {
+      try {
+        const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
+        const { updatedAt, _id } = cursor;
+
+        const cursorCondition = {
+          $or: [
+            { updatedAt: { $lt: new Date(updatedAt) } },
+            { updatedAt: new Date(updatedAt), _id: { $gt: new mongoose.Types.ObjectId(_id) } },
+          ],
+        };
+
+        // Merge cursor condition with base query
+        if (Object.keys(baseQuery).length > 0) {
+          baseQuery.$and = [{ ...baseQuery }, cursorCondition];
+          // Remove the original conditions from baseQuery to avoid duplication
+          Object.keys(baseQuery).forEach((key) => {
+            if (key !== '$and') {
+              delete baseQuery[key];
+            }
+          });
+        }
+      } catch (error) {
+        // Invalid cursor, ignore
+        logger.warn('[getListMCPServersByIds] Invalid cursor provided', error);
+      }
+    }
+
+    if (normalizedLimit === null) {
+      // No pagination - return all matching servers
+      const servers = await MCPServer.find(baseQuery).sort({ updatedAt: -1, _id: 1 }).lean();
+
+      return {
+        data: servers,
+        has_more: false,
+        after: null,
+      };
+    }
+
+    // Paginated query - assign to const to help TypeScript
+    const servers = await MCPServer.find(baseQuery)
+      .sort({ updatedAt: -1, _id: 1 })
+      .limit(normalizedLimit + 1)
       .lean();
+
+    const hasMore = servers.length > normalizedLimit;
+    const data = hasMore ? servers.slice(0, normalizedLimit) : servers;
+
+    let nextCursor = null;
+    if (hasMore && data.length > 0) {
+      const lastItem = data[data.length - 1];
+      nextCursor = Buffer.from(
+        JSON.stringify({
+          updatedAt: lastItem.updatedAt,
+          _id: lastItem._id,
+        }),
+      ).toString('base64');
+    }
+
+    return {
+      data,
+      has_more: hasMore,
+      after: nextCursor,
+    };
   }
 
   /**
@@ -84,7 +174,7 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
    */
   async function updateMCPServer(
     mcp_id: string,
-    updateData: { title?: string; options?: MCPOptions },
+    updateData: { title?: string; description?: string; options?: MCPOptions },
   ): Promise<MCPServerDocument | null> {
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
     return await MCPServer.findOneAndUpdate(
@@ -109,7 +199,7 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
     findMCPServerById,
     findMCPServerByObjectId,
     findMCPServersByAuthor,
-    findMCPServersByIds,
+    getListMCPServersByIds,
     updateMCPServer,
     deleteMCPServer,
   };

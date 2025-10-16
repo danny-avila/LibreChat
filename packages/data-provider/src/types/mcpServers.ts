@@ -7,6 +7,7 @@ import type { MCPOptions } from '../mcp';
 export interface IMcpServer {
   mcp_id: string;
   title: string;
+  description?: string;
   options: MCPOptions;
   author?: string | null;
   createdAt?: Date;
@@ -25,6 +26,7 @@ export type McpServer = IMcpServer;
  */
 export type McpServerCreateParams = {
   title: string;
+  description?: string;
   options: MCPOptions;
 };
 
@@ -33,6 +35,7 @@ export type McpServerCreateParams = {
  */
 export type McpServerUpdateParams = {
   title?: string;
+  description?: string;
   options?: MCPOptions;
 };
 

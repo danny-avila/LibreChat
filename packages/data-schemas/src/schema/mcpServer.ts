@@ -14,6 +14,10 @@ const mcpServerSchema = new Schema<MCPServerDocument>(
       required: true,
       trim: true,
     },
+    description: {
+      type: String,
+      trim: true,
+    },
     options: {
       type: Schema.Types.Mixed,
       required: true,
