@@ -335,6 +335,15 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
       };
       continue;
     } else if (tool && mcpToolPattern.test(tool)) {
+      toolContextMap[tool] = `# MCP Tool \`${tool}\`:
+      When this tool returns UI resources (URIs starting with "ui://"):
+      - You should usually introduce what you're showing before the marker
+      - For a single resource: \\ui0
+      - For multiple resources shown separately: \\ui0 \\ui1
+      - For multiple resources in a carousel: \\ui0,1,2
+      - The UI will be rendered inline where you place the marker
+      - Format: \\ui{index} or \\ui{index1,index2,index3} where indices are 0-based, in the order they appear in the tool response`;
+
       const [toolName, serverName] = tool.split(Constants.mcp_delimiter);
       if (toolName === Constants.mcp_server) {
         /** Placeholder used for UI purposes */
