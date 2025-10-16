@@ -1,8 +1,7 @@
-require('ts-node/register');
 const { logger } = require('@librechat/data-schemas');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { Transaction, Balance, User } = require('~/db/models');
-const { recordUsageAutumn } = require('~/server/services/AutumnService.ts');
+const { recordUsageAutumn } = require('~/server/services/AutumnService.js');
 
 const cancelRate = 1.15;
 
