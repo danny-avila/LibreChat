@@ -1319,6 +1319,8 @@
   "com_ui_trust_app": "I trust this application",
   "com_ui_try_adjusting_search": "Try adjusting your search terms",
   "com_ui_ui_resources": "UI Resources",
+  "com_ui_ui_resource_error": "UI Resource Error ({{0}})",
+  "com_ui_ui_resource_not_found": "UI Resource not found (index: {{0}})",
   "com_ui_unarchive": "Unarchive",
   "com_ui_unarchive_error": "Failed to unarchive conversation",
   "com_ui_unavailable": "Unavailable",
