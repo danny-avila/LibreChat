@@ -1,0 +1,73 @@
+{{- /*
+Copyright Broadcom, Inc. All Rights Reserved.
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+
+{{- if and (eq .Values.architecture "replicaset") .Values.externalAccess.enabled (not (eq .Values.externalAccess.service.type "ClusterIP")) }}
+{{- $fullName := include "mongodb.fullname" . }}
+{{- $replicaCount := .Values.replicaCount | int }}
+{{- $root := . }}
+
+{{- range $i, $e := until $replicaCount }}
+{{- $targetPod := printf "%s-%d" (printf "%s" $fullName) $i }}
+{{- $_ := set $ "targetPod" $targetPod }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-%d-external" $fullName $i }}
+  namespace: {{ include "mongodb.namespace" $ }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $root.Values.commonLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/component: mongodb
+    pod: {{ $targetPod }}
+  {{- if or $root.Values.externalAccess.service.annotations $root.Values.commonAnnotations $root.Values.externalAccess.service.annotationsList }}
+  {{- $exclusiveAnnotations := dict }}
+  {{- if gt (len $root.Values.externalAccess.service.annotationsList) $i }}
+  {{- $exclusiveAnnotations = index $root.Values.externalAccess.service.annotationsList $i }}
+  {{- end }}
+  {{- $annotations := include "common.tplvalues.merge" ( dict "values" ( list $root.Values.externalAccess.service.annotations $root.Values.commonAnnotations $exclusiveAnnotations ) "context" $ ) }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" $annotations "context" $) | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $root.Values.externalAccess.service.type }}
+  {{- if eq $root.Values.externalAccess.service.type "LoadBalancer" }}
+  {{- if not (empty $root.Values.externalAccess.service.loadBalancerIPs) }}
+  loadBalancerIP: {{ index $root.Values.externalAccess.service.loadBalancerIPs $i }}
+  {{- end }}
+  {{- if and (eq $root.Values.externalAccess.service.type "LoadBalancer") $root.Values.externalAccess.service.loadBalancerClass }}
+  loadBalancerClass: {{ $root.Values.externalAccess.service.loadBalancerClass }}
+  {{- end }}
+  {{- if $root.Values.externalAccess.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges: {{- toYaml $root.Values.externalAccess.service.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  allocateLoadBalancerNodePorts: {{ $root.Values.externalAccess.service.allocateLoadBalancerNodePorts }}
+  {{- end }}
+  {{- if (or (eq $root.Values.externalAccess.service.type "LoadBalancer") (eq $root.Values.externalAccess.service.type "NodePort")) }}
+  externalTrafficPolicy: {{ $root.Values.externalAccess.service.externalTrafficPolicy | quote }}
+  {{- end }}
+  {{- if $root.Values.externalAccess.service.sessionAffinity }}
+  sessionAffinity: {{ $root.Values.externalAccess.service.sessionAffinity }}
+  {{- end }}
+  {{- if $root.Values.externalAccess.service.sessionAffinityConfig }}
+  sessionAffinityConfig: {{- include "common.tplvalues.render" (dict "value" $root.Values.externalAccess.service.sessionAffinityConfig "context" $) | nindent 4 }}
+  {{- end }}
+  publishNotReadyAddresses: true
+  ports:
+    - name: {{ $root.Values.externalAccess.service.portName | quote }}
+      port: {{ $root.Values.externalAccess.service.ports.mongodb }}
+      {{- if not (empty $root.Values.externalAccess.service.nodePorts) }}
+      {{- $nodePort := index $root.Values.externalAccess.service.nodePorts $i }}
+      nodePort: {{ $nodePort }}
+      {{- else }}
+      nodePort: null
+      {{- end }}
+      targetPort: mongodb
+    {{- if $root.Values.externalAccess.service.extraPorts }}
+    {{- include "common.tplvalues.render" (dict "value" $root.Values.externalAccess.service.extraPorts "context" $) | nindent 4 }}
+    {{- end }}
+  {{- $podLabels := include "common.tplvalues.merge" ( dict "values" ( list $root.Values.podLabels $root.Values.commonLabels ) "context" $ ) }}
+  selector: {{- include "common.labels.matchLabels" ( dict "customLabels" $podLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/component: mongodb
+    statefulset.kubernetes.io/pod-name: {{ $targetPod }}
+---
+{{- end }}
+{{- end }}

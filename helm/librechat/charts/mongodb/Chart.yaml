@@ -1,0 +1,46 @@
+# Copyright Broadcom, Inc. All Rights Reserved.
+# SPDX-License-Identifier: APACHE-2.0
+
+annotations:
+  category: Database
+  images: |
+    - name: kubectl
+      image: docker.io/bitnami/kubectl:1.33.4-debian-12-r0
+    - name: mongodb
+      image: docker.io/bitnami/mongodb:8.0.13-debian-12-r0
+    - name: mongodb-exporter
+      image: docker.io/bitnami/mongodb-exporter:0.47.0-debian-12-r1
+    - name: nginx
+      image: docker.io/bitnami/nginx:1.29.1-debian-12-r0
+    - name: os-shell
+      image: docker.io/bitnami/os-shell:12-debian-12-r51
+  licenses: Apache-2.0
+  tanzuCategory: service
+apiVersion: v2
+appVersion: 8.0.13
+dependencies:
+  - name: common
+    repository: file://charts/common
+    tags:
+      - bitnami-common
+    version: 2.x.x
+description:
+  MongoDB(R) is a relational open source NoSQL database. Easy to use, it
+  stores data in JSON-like documents. Automated scalability and high-performance.
+  Ideal for developing cloud native applications.
+home: https://bitnami.com
+icon: https://dyltqmyl993wv.cloudfront.net/assets/stacks/mongodb/img/mongodb-stack-220x234.png
+keywords:
+  - mongodb
+  - database
+  - nosql
+  - cluster
+  - replicaset
+  - replication
+maintainers:
+  - name: Broadcom, Inc. All Rights Reserved.
+    url: https://github.com/bitnami/charts
+name: mongodb
+sources:
+  - https://github.com/bitnami/charts/tree/main/bitnami/mongodb
+version: 16.5.45

@@ -1,0 +1,143 @@
+{{- /*
+Copyright Broadcom, Inc. All Rights Reserved.
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-common-scripts" (include "mongodb.fullname" .) }}
+  namespace: {{ include "mongodb.namespace" . | quote }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .Values.commonLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/component: mongodb
+  {{- if .Values.commonAnnotations }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
+  {{- end }}
+data:
+  {{- $fullname := include "mongodb.fullname" . }}
+  startup-probe.sh: |
+    #!/bin/bash
+    {{- if .Values.tls.enabled }}
+    # Probes are using localhost/127.0.0.1 to tests if the service is up, ready or healthy. If TLS is enabled, we shouldn't validate the certificate hostname.
+    TLS_OPTIONS='--tls {{ if .Values.tls.mTLS.enabled }}--tlsCertificateKeyFile=/certs/mongodb.pem {{ end }}--tlsCAFile=/certs/mongodb-ca-cert --tlsAllowInvalidHostnames'
+    {{- end }}
+    exec mongosh  $TLS_OPTIONS --port $MONGODB_PORT_NUMBER --eval 'if (!(db.hello().isWritablePrimary || db.hello().secondary)) { throw new Error("Not ready") }'
+  readiness-probe.sh: |
+    #!/bin/bash
+    {{- if .Values.tls.enabled }}
+    # Probes are using localhost/127.0.0.1 to tests if the service is up, ready or healthy. If TLS is enabled, we shouldn't validate the certificate hostname.
+    TLS_OPTIONS='--tls {{ if .Values.tls.mTLS.enabled }}--tlsCertificateKeyFile=/certs/mongodb.pem {{ end }}--tlsCAFile=/certs/mongodb-ca-cert --tlsAllowInvalidHostnames'
+    {{- end }}
+    # Run the proper check depending on the version
+    [[ $(mongod -version | grep "db version") =~ ([0-9]+\.[0-9]+\.[0-9]+) ]] && VERSION=${BASH_REMATCH[1]}
+    . /opt/bitnami/scripts/libversion.sh
+    VERSION_MAJOR="$(get_sematic_version "$VERSION" 1)"
+    VERSION_MINOR="$(get_sematic_version "$VERSION" 2)"
+    VERSION_PATCH="$(get_sematic_version "$VERSION" 3)"
+    readiness_test='db.isMaster().ismaster || db.isMaster().secondary'
+    if [[ ( "$VERSION_MAJOR" -ge 5 ) || ( "$VERSION_MAJOR" -ge 4 && "$VERSION_MINOR" -ge 4 && "$VERSION_PATCH" -ge 2 ) ]]; then
+        readiness_test='db.hello().isWritablePrimary || db.hello().secondary'
+    fi
+    exec mongosh  $TLS_OPTIONS --port $MONGODB_PORT_NUMBER --eval "if (!(${readiness_test})) { throw new Error(\"Not ready\") }"
+  ping-mongodb.sh: |
+    #!/bin/bash
+    {{- if .Values.tls.enabled }}
+    # Probes are using localhost/127.0.0.1 to tests if the service is up, ready or healthy. If TLS is enabled, we shouldn't validate the certificate hostname.
+    TLS_OPTIONS='--tls {{ if .Values.tls.mTLS.enabled }}--tlsCertificateKeyFile=/certs/mongodb.pem {{ end }}--tlsCAFile=/certs/mongodb-ca-cert --tlsAllowInvalidHostnames'
+    {{- end }}
+    exec mongosh  $TLS_OPTIONS --port $MONGODB_PORT_NUMBER --eval "db.adminCommand('ping')"
+  {{- if .Values.tls.enabled }}
+  generate-certs.sh: |
+    #!/bin/bash
+    {{- if (include "mongodb.autoGenerateCerts" .) }}
+    additional_ips=()
+    additional_names=()
+    while getopts "i:n:s:" flag
+    do
+        case "${flag}" in
+            i) read -a additional_ips <<< ${OPTARG//,/ } ;;
+            n) read -a additional_names <<< ${OPTARG//,/ } ;;
+            s) svc=${OPTARG// /} ;;
+            \?) exit 1 ;;
+        esac
+    done
+
+    my_hostname=$(hostname)
+    cp /certs/CAs/* /certs/
+    cat >/certs/openssl.cnf <<EOL
+    [req]
+    req_extensions = v3_req
+    distinguished_name = req_distinguished_name
+    [req_distinguished_name]
+    [ v3_req ]
+    basicConstraints = CA:FALSE
+    keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+    subjectAltName = @alt_names
+    [alt_names]
+    DNS.1 = $svc
+    DNS.2 = $my_hostname
+    {{- if eq .Values.architecture "replicaset" }}
+    DNS.3 = $my_hostname.$svc.$MY_POD_NAMESPACE.svc.{{ .Values.clusterDomain }}
+    {{- else }}
+    DNS.3 = $svc.$MY_POD_NAMESPACE.svc.{{ .Values.clusterDomain }}
+    {{- end }}
+    EOL
+    index=2
+    for ip in "${additional_ips[@]}"; do
+        cat >>/certs/openssl.cnf <<EOL
+    IP.$index = $ip
+    EOL
+        ((index++))
+    done;
+    index=5
+    for name in "${additional_names[@]}"; do
+        cat >>/certs/openssl.cnf <<EOL
+    DNS.$index = $(eval echo "${name}")
+    EOL
+        ((index++))
+    done;
+
+    export RANDFILE=/certs/.rnd && openssl genrsa -out /certs/mongo.key 2048
+    #Create the client/server cert
+    openssl req -new -key /certs/mongo.key -out /certs/mongo.csr -subj "/C=US/O=My Organisations/OU=IT/CN=$my_hostname" -config /certs/openssl.cnf
+    #Signing the server cert with the CA cert and key
+    openssl x509 -req -in /certs/mongo.csr -CA /certs/mongodb-ca-cert -CAkey /certs/mongodb-ca-key -CAcreateserial -out /certs/mongo.crt -days 3650 -extensions v3_req -extfile /certs/openssl.cnf
+    rm /certs/mongo.csr
+    #Concatenate to a pem file for use as the client PEM file which can be used for both member and client authentication.
+    cat /certs/mongo.crt /certs/mongo.key > /certs/mongodb.pem
+    cd /certs/
+    shopt -s extglob
+    rm -rf !(mongodb-ca-cert|mongodb.pem|CAs|openssl.cnf)
+    chmod 0600 mongodb-ca-cert mongodb.pem
+    {{- else }}
+    {{- if eq .Values.architecture "standalone" }}
+      ID="0"
+    {{- else }}
+    if [[ "$MY_POD_NAME" =~ "arbiter-0"$ ]]; then
+      ID="0"
+    elif [[ "$MY_POD_NAME" =~ "hidden-"[0-9]{1,}$ ]]; then
+      ID="${MY_POD_NAME#"{{ printf "%s-hidden-" $fullname }}"}"
+    else
+      ID="${MY_POD_NAME#"{{ $fullname }}-"}"
+    fi
+    {{- end }}
+
+    {{- if .Values.tls.pemChainIncluded }}
+    #Split the pem chain by the END CERTIFICATE string and store in files /certs/xx00, /certs/xx01 etc.
+    cat /certs-${ID}/tls.crt | csplit - -s -z '/\-*END CERTIFICATE\-*/+1' '{*}' -f /certs/xx
+
+    #Use first certificate as leaf node and combine with key to store in pem file
+    cat "/certs/xx00" "/certs-${ID}/tls.key" > "/certs/mongodb.pem"
+
+    #Use remaining intermediate certificates for ca.crt
+    echo $(find /certs/ -not -name 'xx00' -name 'xx*') | sort | xargs cat > "/certs/mongodb-ca-cert"
+
+    rm -rf /certs/xx*
+    {{- else }}
+    cat "/certs-${ID}/tls.crt" "/certs-${ID}/tls.key" > "/certs/mongodb.pem"
+    cp "/certs-${ID}/ca.crt" "/certs/mongodb-ca-cert"
+    {{- end }}
+
+    chmod 0600 /certs/mongodb-ca-cert /certs/mongodb.pem
+    {{- end }}
+  {{- end }}

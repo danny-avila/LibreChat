@@ -1,0 +1,69 @@
+{{- /*
+Copyright Broadcom, Inc. All Rights Reserved.
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+
+{{- if and (include "mongodb.hidden.enabled" .) .Values.externalAccess.hidden.enabled }}
+{{- $fullName := include "mongodb.fullname" . }}
+{{- $replicaCount := .Values.hidden.replicaCount | int }}
+{{- $root := . }}
+
+{{- range $i, $e := until $replicaCount }}
+{{- $targetPod := printf "%s-hidden-%d" (printf "%s" $fullName) $i }}
+{{- $_ := set $ "targetPod" $targetPod }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-hidden-%d-external" $fullName $i }}
+  namespace: {{ include "mongodb.namespace" $ }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $root.Values.commonLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/component: hidden
+    pod: {{ $targetPod }}
+  {{- if or $root.Values.externalAccess.hidden.service.annotations $root.Values.commonAnnotations }}
+  {{- $annotations := include "common.tplvalues.merge" ( dict "values" ( list $root.Values.externalAccess.hidden.service.annotations $root.Values.commonAnnotations ) "context" $ ) }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" $annotations "context" $) | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $root.Values.externalAccess.hidden.service.type }}
+  {{- if eq $root.Values.externalAccess.hidden.service.type "LoadBalancer" }}
+  {{- if not (empty $root.Values.externalAccess.hidden.service.loadBalancerIPs) }}
+  loadBalancerIP: {{ index $root.Values.externalAccess.hidden.service.loadBalancerIPs $i }}
+  {{- end }}
+  {{- if $root.Values.externalAccess.hidden.service.loadBalancerClass }}
+  loadBalancerClass: {{ $root.Values.externalAccess.hidden.service.loadBalancerClass }}
+  {{- end }}
+  {{- if $root.Values.externalAccess.hidden.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges: {{- toYaml $root.Values.externalAccess.hidden.service.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  allocateLoadBalancerNodePorts: {{ $root.Values.externalAccess.hidden.service.allocateLoadBalancerNodePorts }}
+  {{- end }}
+  {{- if (or (eq $root.Values.externalAccess.hidden.service.type "LoadBalancer") (eq $root.Values.externalAccess.hidden.service.type "NodePort")) }}
+  externalTrafficPolicy: {{ $root.Values.externalAccess.hidden.service.externalTrafficPolicy | quote }}
+  {{- end }}
+  {{- if $root.Values.externalAccess.hidden.service.sessionAffinity }}
+  sessionAffinity: {{ $root.Values.externalAccess.hidden.service.sessionAffinity }}
+  {{- end }}
+  {{- if $root.Values.externalAccess.hidden.service.sessionAffinityConfig }}
+  sessionAffinityConfig: {{- include "common.tplvalues.render" (dict "value" $root.Values.externalAccess.hidden.service.sessionAffinityConfig "context" $) | nindent 4 }}
+  {{- end }}
+  publishNotReadyAddresses: true
+  ports:
+    - name: {{ $root.Values.externalAccess.hidden.service.portName | quote }}
+      port: {{ $root.Values.externalAccess.hidden.service.ports.mongodb }}
+      {{- if not (empty $root.Values.externalAccess.hidden.service.nodePorts) }}
+      {{- $nodePort := index $root.Values.externalAccess.hidden.service.nodePorts $i }}
+      nodePort: {{ $nodePort }}
+      {{- else }}
+      nodePort: null
+      {{- end }}
+      targetPort: mongodb
+    {{- if $root.Values.externalAccess.hidden.service.extraPorts }}
+    {{- include "common.tplvalues.render" (dict "value" $root.Values.externalAccess.hidden.service.extraPorts "context" $) | nindent 4 }}
+    {{- end }}
+  {{- $podLabels := include "common.tplvalues.merge" ( dict "values" ( list $root.Values.hidden.podLabels $root.Values.commonLabels ) "context" $ ) }}
+  selector: {{- include "common.labels.matchLabels" ( dict "customLabels" $podLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/component: hidden
+    statefulset.kubernetes.io/pod-name: {{ $targetPod }}
+---
+{{- end }}
+{{- end }}
