@@ -19,7 +19,7 @@
   - useAutumnTokenCreditsFeatureId   // Feature holding the token‑credit balance
   - useAutumnHasSubscriptionFeatureId// Feature indicating a paid subscription
 */
-
+const applyUseAutumnKey = require('../api/utils/applyUseAutumnKey');
 const useAutumnApiBase = startupConfig.useAutumnApiBase;
 const useAutumnProductId = startupConfig.useAutumnProductId;
 const useAutumnTokenCreditsFeatureId = startupConfig.useAutumnTokenCreditsFeatureId;
