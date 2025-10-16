@@ -1,12 +1,11 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import { RecoilRoot } from 'recoil';
 import { MCPUIResourceCarousel } from '../MCPUIResourceCarousel';
-import { useMessageContext, useChatContext } from '~/Providers';
-import { useGetMessagesByConvoId } from '~/data-provider';
+import { useMessageContext, useMessagesConversation, useMessagesOperations } from '~/Providers';
 
 // Mock dependencies
 jest.mock('~/Providers');
-jest.mock('~/data-provider');
 
 jest.mock('../../Chat/Messages/Content/UIResourceCarousel', () => ({
   __esModule: true,
@@ -20,232 +19,113 @@ jest.mock('../../Chat/Messages/Content/UIResourceCarousel', () => ({
 }));
 
 const mockUseMessageContext = useMessageContext as jest.MockedFunction<typeof useMessageContext>;
-const mockUseChatContext = useChatContext as jest.MockedFunction<typeof useChatContext>;
-const mockUseGetMessagesByConvoId = useGetMessagesByConvoId as jest.MockedFunction<
-  typeof useGetMessagesByConvoId
+const mockUseMessagesConversation = useMessagesConversation as jest.MockedFunction<
+  typeof useMessagesConversation
+>;
+const mockUseMessagesOperations = useMessagesOperations as jest.MockedFunction<
+  typeof useMessagesOperations
 >;
 
 describe('MCPUIResourceCarousel', () => {
+  // Store the current test's messages so getMessages can return them
+  let currentTestMessages: any[] = [];
+
   beforeEach(() => {
     jest.clearAllMocks();
+    currentTestMessages = [];
     mockUseMessageContext.mockReturnValue({ messageId: 'msg123' } as any);
-    mockUseChatContext.mockReturnValue({
+    mockUseMessagesConversation.mockReturnValue({
       conversation: { conversationId: 'conv123' },
+      conversationId: 'conv123',
+    } as any);
+    mockUseMessagesOperations.mockReturnValue({
+      getMessages: () => currentTestMessages,
+      ask: jest.fn(),
+      regenerate: jest.fn(),
+      handleContinue: jest.fn(),
+      setMessages: jest.fn(),
     } as any);
   });
 
+  const renderWithRecoil = (ui: React.ReactNode) => render(<RecoilRoot>{ui}</RecoilRoot>);
+
   describe('multiple resource fetching', () => {
-    it('should fetch multiple resources by indices', () => {
-      const mockMessages = [
+    it('should fetch resources by resourceIds across conversation messages', () => {
+      mockUseMessageContext.mockReturnValue({ messageId: 'msg-current' } as any);
+      currentTestMessages = [
         {
-          messageId: 'msg123',
+          messageId: 'msg-origin',
           attachments: [
             {
               type: 'ui_resources',
               ui_resources: [
                 {
-                  uri: 'ui://test/resource0',
+                  resourceId: 'id-1',
+                  uri: 'ui://test/resource-id1',
                   mimeType: 'text/html',
-                  text: '<p>Resource 0 content</p>',
+                  text: '<p>Resource via ID 1</p>',
                 },
                 {
-                  uri: 'ui://test/resource1',
+                  resourceId: 'id-2',
+                  uri: 'ui://test/resource-id2',
                   mimeType: 'text/html',
-                  text: '<p>Resource 1 content</p>',
-                },
-                {
-                  uri: 'ui://test/resource2',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 2 content</p>',
-                },
-                {
-                  uri: 'ui://test/resource3',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 3 content</p>',
+                  text: '<p>Resource via ID 2</p>',
                 },
               ],
             },
           ],
         },
-      ];
-
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: mockMessages,
-      } as any);
-
-      render(<MCPUIResourceCarousel node={{ properties: { resourceIndices: [0, 2, 3] } }} />);
-
-      const carousel = screen.getByTestId('ui-resource-carousel');
-      expect(carousel).toBeInTheDocument();
-      expect(carousel).toHaveAttribute('data-resource-count', '3');
-
-      expect(screen.getByTestId('resource-0')).toHaveAttribute(
-        'data-resource-uri',
-        'ui://test/resource0',
-      );
-      expect(screen.getByTestId('resource-1')).toHaveAttribute(
-        'data-resource-uri',
-        'ui://test/resource2',
-      );
-      expect(screen.getByTestId('resource-2')).toHaveAttribute(
-        'data-resource-uri',
-        'ui://test/resource3',
-      );
-      expect(screen.queryByTestId('resource-3')).not.toBeInTheDocument();
-    });
-
-    it('should preserve resource order based on indices', () => {
-      const mockMessages = [
         {
-          messageId: 'msg123',
-          attachments: [
-            {
-              type: 'ui_resources',
-              ui_resources: [
-                {
-                  uri: 'ui://test/resource0',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 0 content</p>',
-                },
-                {
-                  uri: 'ui://test/resource1',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 1 content</p>',
-                },
-                {
-                  uri: 'ui://test/resource2',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 2 content</p>',
-                },
-              ],
-            },
-          ],
+          messageId: 'msg-current',
+          attachments: [],
         },
       ];
 
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: mockMessages,
-      } as any);
-
-      render(<MCPUIResourceCarousel node={{ properties: { resourceIndices: [2, 0, 1] } }} />);
-
-      const resources = screen.getAllByTestId(/resource-\d/);
-      expect(resources[0]).toHaveAttribute('data-resource-uri', 'ui://test/resource2');
-      expect(resources[1]).toHaveAttribute('data-resource-uri', 'ui://test/resource0');
-      expect(resources[2]).toHaveAttribute('data-resource-uri', 'ui://test/resource1');
-    });
-  });
-
-  describe('partial matches', () => {
-    it('should only include valid resource indices', () => {
-      const mockMessages = [
-        {
-          messageId: 'msg123',
-          attachments: [
-            {
-              type: 'ui_resources',
-              ui_resources: [
-                {
-                  uri: 'ui://test/resource0',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 0 content</p>',
-                },
-                {
-                  uri: 'ui://test/resource1',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 1 content</p>',
-                },
-              ],
-            },
-          ],
-        },
-      ];
-
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: mockMessages,
-      } as any);
-
-      // Request indices 0, 1, 2, 3 but only 0 and 1 exist
-      render(<MCPUIResourceCarousel node={{ properties: { resourceIndices: [0, 1, 2, 3] } }} />);
+      renderWithRecoil(
+        <MCPUIResourceCarousel node={{ properties: { resourceIds: ['id-2', 'id-1'] } }} />,
+      );
 
       const carousel = screen.getByTestId('ui-resource-carousel');
       expect(carousel).toHaveAttribute('data-resource-count', '2');
 
       expect(screen.getByTestId('resource-0')).toHaveAttribute(
         'data-resource-uri',
-        'ui://test/resource0',
+        'ui://test/resource-id2',
       );
       expect(screen.getByTestId('resource-1')).toHaveAttribute(
         'data-resource-uri',
-        'ui://test/resource1',
+        'ui://test/resource-id1',
       );
-    });
-
-    it('should handle all invalid indices', () => {
-      const mockMessages = [
-        {
-          messageId: 'msg123',
-          attachments: [
-            {
-              type: 'ui_resources',
-              ui_resources: [
-                {
-                  uri: 'ui://test/resource0',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 0 content</p>',
-                },
-                {
-                  uri: 'ui://test/resource1',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 1 content</p>',
-                },
-              ],
-            },
-          ],
-        },
-      ];
-
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: mockMessages,
-      } as any);
-
-      // Request indices that don't exist
-      render(<MCPUIResourceCarousel node={{ properties: { resourceIndices: [5, 6, 7] } }} />);
-
-      expect(screen.queryByTestId('ui-resource-carousel')).not.toBeInTheDocument();
     });
   });
 
   describe('error handling', () => {
     it('should return null when no attachments', () => {
-      const mockMessages = [
+      currentTestMessages = [
         {
           messageId: 'msg123',
           attachments: undefined,
         },
       ];
 
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: mockMessages,
-      } as any);
-
-      const { container } = render(
-        <MCPUIResourceCarousel node={{ properties: { resourceIndices: [0, 1] } }} />,
+      const { container } = renderWithRecoil(
+        <MCPUIResourceCarousel node={{ properties: { resourceIds: ['id1', 'id2'] } }} />,
       );
 
       expect(container.firstChild).toBeNull();
       expect(screen.queryByTestId('ui-resource-carousel')).not.toBeInTheDocument();
     });
 
-    it('should return null when message not found', () => {
-      const mockMessages = [
+    it('should return null when resources not found', () => {
+      currentTestMessages = [
         {
-          messageId: 'different-msg',
+          messageId: 'msg123',
           attachments: [
             {
               type: 'ui_resources',
               ui_resources: [
                 {
+                  resourceId: 'existing-id',
                   uri: 'ui://test/resource',
                   mimeType: 'text/html',
                   text: '<p>Resource content</p>',
@@ -256,19 +136,15 @@ describe('MCPUIResourceCarousel', () => {
         },
       ];
 
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: mockMessages,
-      } as any);
-
-      const { container } = render(
-        <MCPUIResourceCarousel node={{ properties: { resourceIndices: [0] } }} />,
+      const { container } = renderWithRecoil(
+        <MCPUIResourceCarousel node={{ properties: { resourceIds: ['non-existent-id'] } }} />,
       );
 
       expect(container.firstChild).toBeNull();
     });
 
     it('should return null when no ui_resources attachments', () => {
-      const mockMessages = [
+      currentTestMessages = [
         {
           messageId: 'msg123',
           attachments: [
@@ -280,12 +156,8 @@ describe('MCPUIResourceCarousel', () => {
         },
       ];
 
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: mockMessages,
-      } as any);
-
-      const { container } = render(
-        <MCPUIResourceCarousel node={{ properties: { resourceIndices: [0, 1] } }} />,
+      const { container } = renderWithRecoil(
+        <MCPUIResourceCarousel node={{ properties: { resourceIds: ['id1', 'id2'] } }} />,
       );
 
       expect(container.firstChild).toBeNull();
@@ -293,8 +165,8 @@ describe('MCPUIResourceCarousel', () => {
   });
 
   describe('edge cases', () => {
-    it('should handle empty resourceIndices array', () => {
-      const mockMessages = [
+    it('should handle empty resourceIds array', () => {
+      currentTestMessages = [
         {
           messageId: 'msg123',
           attachments: [
@@ -302,6 +174,7 @@ describe('MCPUIResourceCarousel', () => {
               type: 'ui_resources',
               ui_resources: [
                 {
+                  resourceId: 'test-id',
                   uri: 'ui://test/resource',
                   mimeType: 'text/html',
                   text: '<p>Resource content</p>',
@@ -312,19 +185,15 @@ describe('MCPUIResourceCarousel', () => {
         },
       ];
 
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: mockMessages,
-      } as any);
-
-      const { container } = render(
-        <MCPUIResourceCarousel node={{ properties: { resourceIndices: [] } }} />,
+      const { container } = renderWithRecoil(
+        <MCPUIResourceCarousel node={{ properties: { resourceIds: [] } }} />,
       );
 
       expect(container.firstChild).toBeNull();
     });
 
-    it('should handle duplicate indices', () => {
-      const mockMessages = [
+    it('should handle duplicate resource IDs', () => {
+      currentTestMessages = [
         {
           messageId: 'msg123',
           attachments: [
@@ -332,14 +201,16 @@ describe('MCPUIResourceCarousel', () => {
               type: 'ui_resources',
               ui_resources: [
                 {
-                  uri: 'ui://test/resource0',
+                  resourceId: 'id-a',
+                  uri: 'ui://test/resource-a',
                   mimeType: 'text/html',
-                  text: '<p>Resource 0 content</p>',
+                  text: '<p>Resource A content</p>',
                 },
                 {
-                  uri: 'ui://test/resource1',
+                  resourceId: 'id-b',
+                  uri: 'ui://test/resource-b',
                   mimeType: 'text/html',
-                  text: '<p>Resource 1 content</p>',
+                  text: '<p>Resource B content</p>',
                 },
               ],
             },
@@ -347,105 +218,43 @@ describe('MCPUIResourceCarousel', () => {
         },
       ];
 
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: mockMessages,
-      } as any);
+      renderWithRecoil(
+        <MCPUIResourceCarousel
+          node={{ properties: { resourceIds: ['id-a', 'id-a', 'id-b', 'id-b', 'id-a'] } }}
+        />,
+      );
 
-      // Request same index multiple times
-      render(<MCPUIResourceCarousel node={{ properties: { resourceIndices: [0, 0, 1, 1, 0] } }} />);
-
-      // Should render each resource multiple times
       const carousel = screen.getByTestId('ui-resource-carousel');
       expect(carousel).toHaveAttribute('data-resource-count', '5');
 
       const resources = screen.getAllByTestId(/resource-\d/);
       expect(resources).toHaveLength(5);
-      expect(resources[0]).toHaveAttribute('data-resource-uri', 'ui://test/resource0');
-      expect(resources[1]).toHaveAttribute('data-resource-uri', 'ui://test/resource0');
-      expect(resources[2]).toHaveAttribute('data-resource-uri', 'ui://test/resource1');
-      expect(resources[3]).toHaveAttribute('data-resource-uri', 'ui://test/resource1');
-      expect(resources[4]).toHaveAttribute('data-resource-uri', 'ui://test/resource0');
-    });
-
-    it('should handle multiple ui_resources attachments', () => {
-      const mockMessages = [
-        {
-          messageId: 'msg123',
-          attachments: [
-            {
-              type: 'ui_resources',
-              ui_resources: [
-                {
-                  uri: 'ui://test/resource0',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 0 content</p>',
-                },
-                {
-                  uri: 'ui://test/resource1',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 1 content</p>',
-                },
-              ],
-            },
-            {
-              type: 'ui_resources',
-              ui_resources: [
-                { uri: 'ui://test/resource2', mimeType: 'text/html', text: '<p>Resource 2</p>' },
-                { uri: 'ui://test/resource3', mimeType: 'text/html', text: '<p>Resource 3</p>' },
-              ],
-            },
-          ],
-        },
-      ];
-
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: mockMessages,
-      } as any);
-
-      // Resources from both attachments should be accessible
-      render(<MCPUIResourceCarousel node={{ properties: { resourceIndices: [0, 2, 3] } }} />);
-
-      const carousel = screen.getByTestId('ui-resource-carousel');
-      expect(carousel).toHaveAttribute('data-resource-count', '3');
-
-      // Note: indices 2 and 3 are from the second attachment and become accessible in the flattened array
-      expect(screen.getByTestId('resource-0')).toHaveAttribute(
-        'data-resource-uri',
-        'ui://test/resource0',
-      );
-      expect(screen.getByTestId('resource-1')).toHaveAttribute(
-        'data-resource-uri',
-        'ui://test/resource2',
-      );
-      expect(screen.getByTestId('resource-2')).toHaveAttribute(
-        'data-resource-uri',
-        'ui://test/resource3',
-      );
+      expect(resources[0]).toHaveAttribute('data-resource-uri', 'ui://test/resource-a');
+      expect(resources[1]).toHaveAttribute('data-resource-uri', 'ui://test/resource-a');
+      expect(resources[2]).toHaveAttribute('data-resource-uri', 'ui://test/resource-b');
+      expect(resources[3]).toHaveAttribute('data-resource-uri', 'ui://test/resource-b');
+      expect(resources[4]).toHaveAttribute('data-resource-uri', 'ui://test/resource-a');
     });
 
     it('should handle null messages data', () => {
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: null,
-      } as any);
+      currentTestMessages = [];
 
-      const { container } = render(
-        <MCPUIResourceCarousel node={{ properties: { resourceIndices: [0] } }} />,
+      const { container } = renderWithRecoil(
+        <MCPUIResourceCarousel node={{ properties: { resourceIds: ['test-id'] } }} />,
       );
 
       expect(container.firstChild).toBeNull();
     });
 
     it('should handle missing conversation', () => {
-      mockUseChatContext.mockReturnValue({
+      mockUseMessagesConversation.mockReturnValue({
         conversation: null,
+        conversationId: null,
       } as any);
+      currentTestMessages = [];
 
-      mockUseGetMessagesByConvoId.mockReturnValue({
-        data: null,
-      } as any);
-
-      const { container } = render(
-        <MCPUIResourceCarousel node={{ properties: { resourceIndices: [0] } }} />,
+      const { container } = renderWithRecoil(
+        <MCPUIResourceCarousel node={{ properties: { resourceIds: ['test-id'] } }} />,
       );
 
       expect(container.firstChild).toBeNull();
