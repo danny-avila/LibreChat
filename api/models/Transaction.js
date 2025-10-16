@@ -23,7 +23,7 @@ async function recordAutumnTokenUsage(transaction, incrementValue) {
     }
 
     await recordUsageAutumn({
-      openidID: openidId,
+      openidId: openidId,
       usedTokens,
       idempotencyKey: `txn-${transaction._id?.toString() ?? Date.now()}`,
     });
