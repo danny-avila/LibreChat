@@ -25,10 +25,12 @@ export const useHealthCheck = (isAuthenticated = false) => {
     const initTimer = setTimeout(() => {
       const performHealthCheck = async () => {
         try {
-          await queryClient.fetchQuery([QueryKeys.health], () => dataService.healthCheck(), {
+          await queryClient.fetchQuery({
+            queryKey: [QueryKeys.health],
+            queryFn: () => dataService.healthCheck(),
             retry: false,
             cacheTime: 0,
-            staleTime: 0,
+            staleTime: 0
           });
         } catch (error) {
           console.error('Health check failed:', error);
@@ -92,7 +94,9 @@ export const useInteractionHealthCheck = () => {
         'Checking health on interaction. Time elapsed:',
         currentTime - lastInteractionTimeRef.current,
       );
-      queryClient.invalidateQueries([QueryKeys.health]);
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.health]
+      });
       lastInteractionTimeRef.current = currentTime;
     }
   }, [queryClient]);

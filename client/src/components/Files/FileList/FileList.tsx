@@ -14,12 +14,12 @@ export default function FileList({ files, deleteFile, attachedVectorStores }: Fi
     <div className="h-[85vh] overflow-y-auto">
       {files.map((file) => (
         // <FileListItem key={file._id} file={file} deleteFile={deleteFile} width="100%" />
-        <FileListItem2
+        (<FileListItem2
           key={file._id}
           file={file}
           deleteFile={deleteFile}
           attachedVectorStores={attachedVectorStores}
-        />
+        />)
       ))}
     </div>
   );

@@ -224,8 +224,13 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
       window.open('/c/new', '_blank');
       return;
     }
-    clearMessagesCache(queryClient, conversation?.conversationId);
-    queryClient.invalidateQueries([QueryKeys.messages]);
+    queryClient.setQueryData<t.TMessage[]>(
+      [QueryKeys.messages, conversation?.conversationId],
+      [],
+    );
+    queryClient.invalidateQueries({
+      queryKey: [QueryKeys.messages]
+    });
     newConversation();
   };
 
@@ -305,7 +310,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                       </>
                     ) : (
                       // Invisible placeholder to maintain height
-                      <div className="h-10 w-10" />
+                      (<div className="h-10 w-10" />)
                     )}
                   </div>
                 </div>

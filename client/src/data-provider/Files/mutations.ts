@@ -23,7 +23,9 @@ export const useUploadFileMutation = (
 > => {
   const queryClient = useQueryClient();
   const { onSuccess, ...options } = _options || {};
-  return useMutation([MutationKeys.fileUpload], {
+  return useMutation({
+    mutationKey: [MutationKeys.fileUpload],
+
     mutationFn: (body: FormData) => {
       const width = body.get('width') ?? '';
       const height = body.get('height') ?? '';
@@ -39,7 +41,9 @@ export const useUploadFileMutation = (
 
       return dataService.uploadFile(body, signal);
     },
+
     ...options,
+
     onSuccess: (data, formData, context) => {
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (_files) => [
         data,
@@ -134,7 +138,7 @@ export const useUploadFileMutation = (
         },
       );
       onSuccess?.(data, formData, context);
-    },
+    }
   });
 };
 
@@ -150,9 +154,11 @@ export const useDeleteFilesMutation = (
   const { showToast } = useToastContext();
   const localize = useLocalize();
   const { onSuccess, onError, ...options } = _options || {};
-  return useMutation([MutationKeys.fileDelete], {
+  return useMutation({
+    mutationKey: [MutationKeys.fileDelete],
     mutationFn: (body: t.DeleteFilesBody) => dataService.deleteFiles(body),
     ...options,
+
     onError: (error, vars, context) => {
       if (error && typeof error === 'object' && 'response' in error) {
         const errorWithResponse = error as { response?: { status?: number } };
@@ -165,6 +171,7 @@ export const useDeleteFilesMutation = (
       }
       onError?.(error, vars, context);
     },
+
     onSuccess: (data, vars, context) => {
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (cachefiles) => {
         const { files: filesDeleted } = vars;
@@ -184,8 +191,10 @@ export const useDeleteFilesMutation = (
 
       onSuccess?.(data, vars, context);
       if (vars.agent_id != null && vars.agent_id) {
-        queryClient.refetchQueries([QueryKeys.agent, vars.agent_id]);
+        queryClient.refetchQueries({
+          queryKey: [QueryKeys.agent, vars.agent_id]
+        });
       }
-    },
+    }
   });
 };

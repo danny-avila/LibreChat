@@ -88,22 +88,31 @@ export function useSearchResultsByTurn(attachments?: TAttachment[]) {
           images: [], // No images for file search
           references: Array.from(deduplicatedSources.values()).map(
             (source) =>
-              ({
+              (({
                 title: source.fileName || localize('com_file_unknown'),
-                link: `#file-${source.fileId}`, // Create a pseudo-link for file references
-                attribution: source.fileName || localize('com_file_unknown'), // Show filename in inline display
+
+                // Create a pseudo-link for file references
+                link: `#file-${source.fileId}`,
+
+                // Show filename in inline display
+                attribution: source.fileName || localize('com_file_unknown'),
+
+                // Only page numbers for hover
                 snippet:
                   source.pages && source.pages.length > 0
                     ? localize('com_file_pages', { pages: source.pages.join(', ') })
-                    : '', // Only page numbers for hover
+                    : '',
+
                 type: 'file' as const,
+
                 // Store additional agent-specific data as properties on the reference
                 fileId: source.fileId,
+
                 fileName: source.fileName,
                 pages: source.pages,
                 pageRelevance: source.pageRelevance,
-                metadata: source.metadata,
-              }) as any,
+                metadata: source.metadata
+              }) as any),
           ),
         };
 
