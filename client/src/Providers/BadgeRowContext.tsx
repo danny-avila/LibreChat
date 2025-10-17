@@ -9,6 +9,7 @@ import {
   useCodeApiKeyForm,
   useToolToggle,
 } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 import { getTimestampedValue, setTimestamp } from '~/utils/timestamps';
 import { ephemeralAgentByConvoId } from '~/store';
 
@@ -48,6 +49,7 @@ export default function BadgeRowProvider({
   const lastKeyRef = useRef<string>('');
   const hasInitializedRef = useRef(false);
   const { agentsConfig } = useGetAgentsConfig();
+  const { data: config } = useGetStartupConfig();
   const key = conversationId ?? Constants.NEW_CONVO;
 
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(key));
@@ -110,10 +112,12 @@ export default function BadgeRowProvider({
        * Always set values for all tools (use defaults if not in `localStorage`)
        * If `ephemeralAgent` is `null`, create a new object with just our tool values
        */
+      const fileSearchSelected = config?.interface?.fileSearchSelected ?? false;
+
       const finalValues = {
         [Tools.execute_code]: initialValues[Tools.execute_code] ?? false,
         [Tools.web_search]: initialValues[Tools.web_search] ?? false,
-        [Tools.file_search]: initialValues[Tools.file_search] ?? false,
+        [Tools.file_search]: initialValues[Tools.file_search] ?? fileSearchSelected,
         [AgentCapabilities.artifacts]: initialValues[AgentCapabilities.artifacts] ?? false,
       };
 
