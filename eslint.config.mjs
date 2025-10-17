@@ -1,5 +1,3 @@
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 import typescriptEslintEslintPlugin from '@typescript-eslint/eslint-plugin';
 import { fixupConfigRules, fixupPluginRules } from '@eslint/compat';
 import reactHooks from 'eslint-plugin-react-hooks';
@@ -9,10 +7,13 @@ import prettier from 'eslint-plugin-prettier';
 import { FlatCompat } from '@eslint/eslintrc';
 import jsxA11Y from 'eslint-plugin-jsx-a11y';
 import i18next from 'eslint-plugin-i18next';
+import { fileURLToPath } from 'node:url';
 import react from 'eslint-plugin-react';
 import jest from 'eslint-plugin-jest';
 import globals from 'globals';
+import path from 'node:path';
 import js from '@eslint/js';
+import localRules from './eslint-local-rules/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,6 +63,7 @@ export default [
       'import/parsers': tsParser,
       i18next,
       prettier: fixupPluginRules(prettier),
+      local: localRules,
     },
 
     languageOptions: {
@@ -137,6 +139,7 @@ export default [
       'no-restricted-syntax': 'off',
       'react/prop-types': 'off',
       'react/display-name': 'off',
+      'local/import-order': 'error',
     },
   },
   {
