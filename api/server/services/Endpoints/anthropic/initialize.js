@@ -1,5 +1,5 @@
-const { getLLMConfig } = require('@librechat/api');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { getLLMConfig, loadAnthropicVertexCredentials, isEnabled } = require('@librechat/api');
+const { EModelEndpoint, AuthKeys } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const AnthropicClient = require('~/app/clients/AnthropicClient');
 
@@ -7,18 +7,26 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
   const appConfig = req.config;
   const { ANTHROPIC_API_KEY, ANTHROPIC_REVERSE_PROXY, PROXY } = process.env;
   const expiresAt = req.body.key;
-  const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
 
-  const anthropicApiKey = isUserProvided
-    ? await getUserKey({ userId: req.user.id, name: EModelEndpoint.anthropic })
-    : ANTHROPIC_API_KEY;
+  let credentials = {};
+  let anthropicApiKey = null;
 
-  if (!anthropicApiKey) {
-    throw new Error('Anthropic API key not provided. Please provide it again.');
-  }
+  if (isEnabled(process.env.ANTHROPIC_USE_VERTEX)) {
+    credentials = await loadAnthropicVertexCredentials();
+  } else {
+    const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
+    anthropicApiKey = isUserProvided
+      ? await getUserKey({ userId: req.user.id, name: EModelEndpoint.anthropic })
+      : ANTHROPIC_API_KEY;
 
-  if (expiresAt && isUserProvided) {
-    checkUserKeyExpiry(expiresAt, EModelEndpoint.anthropic);
+    if (!anthropicApiKey) {
+      throw new Error('Anthropic API key not provided. Please provide it again.');
+    }
+
+    if (expiresAt && isUserProvided) {
+      checkUserKeyExpiry(expiresAt, EModelEndpoint.anthropic);
+    }
+    credentials[AuthKeys.ANTHROPIC_API_KEY] = anthropicApiKey;
   }
 
   let clientOptions = {};
@@ -49,7 +57,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
       clientOptions.modelOptions.model = overrideModel;
     }
     clientOptions.modelOptions.user = req.user.id;
-    return getLLMConfig(anthropicApiKey, clientOptions);
+    return getLLMConfig(credentials, clientOptions);
   }
 
   const client = new AnthropicClient(anthropicApiKey, {
