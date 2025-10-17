@@ -46,29 +46,51 @@ export interface VideoResult {
   }>;
 }
 
+/** Anthropic document block format */
+export interface AnthropicDocumentBlock {
+  type: 'document';
+  source: {
+    type: string;
+    media_type: string;
+    data: string;
+  };
+  context?: string;
+  title?: string;
+  cache_control?: { type: string };
+  citations?: { enabled: boolean };
+}
+
+/** Google document block format */
+export interface GoogleDocumentBlock {
+  type: 'document';
+  mimeType: string;
+  data: string;
+}
+
+/** OpenAI file block format */
+export interface OpenAIFileBlock {
+  type: 'file';
+  file: {
+    filename: string;
+    file_data: string;
+  };
+}
+
+/** OpenAI Responses API file format */
+export interface OpenAIInputFileBlock {
+  type: 'input_file';
+  filename: string;
+  file_data: string;
+}
+
+export type DocumentBlock =
+  | AnthropicDocumentBlock
+  | GoogleDocumentBlock
+  | OpenAIFileBlock
+  | OpenAIInputFileBlock;
+
 export interface DocumentResult {
-  documents: Array<{
-    type: 'document' | 'file' | 'input_file';
-    /** Anthropic File Format, `document` */
-    source?: {
-      type: string;
-      media_type: string;
-      data: string;
-    };
-    cache_control?: { type: string };
-    citations?: { enabled: boolean };
-    /** Google File Format, `document` */
-    mimeType?: string;
-    data?: string;
-    /** OpenAI File Format, `file` */
-    file?: {
-      filename?: string;
-      file_data?: string;
-    };
-    /** OpenAI Responses API File Format, `input_file` */
-    filename?: string;
-    file_data?: string;
-  }>;
+  documents: DocumentBlock[];
   files: Array<{
     file_id?: string;
     temp_file_id?: string;
