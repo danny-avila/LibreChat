@@ -264,6 +264,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
           category: getCategoryDisplayName(category),
         })}
       </div>
+
       {/* Virtualized grid with external scroll integration */}
       <div
         role="grid"
@@ -307,7 +308,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
           </WindowScroller>
         ) : (
           // Fallback for when no external scroll element is provided
-          (<div style={{ height: 600 }}>
+          <div style={{ height: 600 }}>
             <AutoSizer>
               {({ width, height }) => {
                 const cardsPerRow = getCardsPerRow(width);
@@ -330,9 +331,10 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
                 );
               }}
             </AutoSizer>
-          </div>)
+          </div>
         )}
       </div>
+
       {/* End of results indicator */}
       {!hasNextPage && currentAgents && currentAgents.length > 0 && (
         <div className="mt-8 text-center">

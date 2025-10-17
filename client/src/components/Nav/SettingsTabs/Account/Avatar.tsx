@@ -55,10 +55,7 @@ function Avatar() {
   const { mutate: uploadAvatar, isLoading: isUploading } = useUploadAvatarMutation({
     onSuccess: (data) => {
       showToast({ message: localize('com_ui_upload_success') });
-      setUser((prev) => (({
-        ...prev,
-        avatar: data.url
-      }) as TUser));
+      setUser((prev) => ({ ...prev, avatar: data.url }) as TUser);
     },
     onError: (error) => {
       console.error('Error:', error);
