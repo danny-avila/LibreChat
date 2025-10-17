@@ -14,6 +14,9 @@ import type { Browser, Page, BrowserContext } from '@playwright/test';
 const BASE_URL = 'http://localhost:3080';
 const FULL_JOURNEY_TIMEOUT = 1200000; // 20 minutes for complete journey
 
+// Agent ID for KI-Referent (system agent created by script)
+const KI_REFERENT_AGENT_ID = 'agent_ki_referent_system';
+
 // Dedicated demo user for sales demonstrations
 const DEMO_USER = {
   email: 'sales-demo@senticor.de',
@@ -56,6 +59,9 @@ async function loginOrRegisterDemoUser(page: Page) {
 }
 
 async function sendMessageAndWaitForResponse(page: Page, message: string, waitForText?: string | RegExp) {
+  // Count messages before sending
+  const messagesBefore = await page.locator('[class*="markdown"]').count();
+
   const textbox = page.locator('form').getByRole('textbox');
   await textbox.click();
   await textbox.fill(message);
@@ -63,8 +69,15 @@ async function sendMessageAndWaitForResponse(page: Page, message: string, waitFo
 
   console.log(`📤 Sent: ${message.substring(0, 80)}...`);
 
-  // Wait for message to appear
-  await page.waitForTimeout(2000);
+  // Wait for NEW message to appear (count increases)
+  await page.waitForFunction(
+    (prevCount) => {
+      const messages = document.querySelectorAll('[class*="markdown"]');
+      return messages.length > prevCount;
+    },
+    messagesBefore,
+    { timeout: 10000 }
+  );
 
   // Wait for response to complete (stop button disappears)
   try {
@@ -78,10 +91,10 @@ async function sendMessageAndWaitForResponse(page: Page, message: string, waitFo
   // Additional wait for UI to settle
   await page.waitForTimeout(2000);
 
-  // If specific text expected, verify it
+  // If specific text expected, verify it in the LAST message
   if (waitForText) {
-    const lastMessage = page.locator('[data-testid="message-content"]').last();
-    await expect(lastMessage).toContainText(waitForText, { timeout: 10000 });
+    const lastMessage = page.locator('[class*="markdown"]').last();
+    await expect(lastMessage).toContainText(waitForText, { timeout: 30000 }); // 30 seconds for AI response
     console.log(`✅ Response received containing: ${waitForText}`);
   } else {
     console.log('✅ Response received');
@@ -117,19 +130,23 @@ test.describe('Integrationsbericht BW 2025 - Complete Sales Demo Journey', () =>
 
     console.log('\n🎬 Starting Complete Integrationsbericht BW 2025 Demo Journey\n');
 
-    // Navigate to new conversation
-    await page.goto(`${BASE_URL}/c/new`);
+    // Navigate directly to new conversation with KI-Referent agent
+    console.log(`\n📋 Step 0: Opening conversation with KI-Referent agent (${KI_REFERENT_AGENT_ID})...\n`);
+    await page.goto(`${BASE_URL}/c/new?agent_id=${KI_REFERENT_AGENT_ID}`);
     await page.waitForTimeout(2000);
 
-    // Select Agents endpoint
-    console.log('\n📋 Step 0: Selecting Agents endpoint...');
-    // Click the model selector button (shows current model like "gpt-5")
-    await page.locator('button:has-text("gpt-5")').first().click();
-    await page.waitForTimeout(500);
-    // Click on "My Agents" option in the dropdown
-    await page.locator('[role="option"]:has-text("My Agents")').click();
-    await page.waitForTimeout(1000);
-    console.log('✅ Agents endpoint selected\n');
+    // Verify agent is loaded
+    const inputBox = page.locator('form').getByRole('textbox');
+    const placeholder = await inputBox.getAttribute('placeholder');
+    if (placeholder?.includes('Please select')) {
+      console.log('⚠️  Agent not loaded via URL parameter. Trying manual selection...');
+      const agentSelector = page.locator('button:has-text("Select"), button:has-text("Agent")').first();
+      await agentSelector.click();
+      await page.waitForTimeout(500);
+      await page.locator(`[role="option"]:has-text("KI-Referent")`).click();
+      await page.waitForTimeout(1000);
+    }
+    console.log('✅ KI-Referent agent loaded\n');
 
     // ========================================================================
     // STEP 1: Project Start - Honeycomb Creation
@@ -289,15 +306,59 @@ test.describe('Integrationsbericht BW 2025 - Complete Sales Demo Journey', () =>
 
     console.log('\n🔧 Running quick smoke test for MCP servers...\n');
 
-    await page.goto(`${BASE_URL}/c/new`);
-    await page.locator('button:has-text("gpt-5")').first().click();
-    await page.waitForTimeout(500);
-    await page.locator('[role="option"]:has-text("My Agents")').click();
+    await page.goto(`${BASE_URL}/c/new?agent_id=${KI_REFERENT_AGENT_ID}`);
+
+    // Wait for page to load and agent to initialize
+    await page.waitForTimeout(5000);
+
+    // Check if agent is loaded by looking at the input placeholder
+    const inputBox = page.locator('form').getByRole('textbox');
+    let placeholder = await inputBox.getAttribute('placeholder');
+    console.log(`Input placeholder: "${placeholder}"`);
+
+    // If agent didn't load from URL, the page might need a refresh or the agent doesn't exist
+    if (placeholder?.includes('Please select')) {
+      console.log('⚠️  Agent not loaded from URL. This agent may not exist or URL parameter not working.');
+      console.log('Taking screenshot for debugging...');
+      await page.screenshot({ path: '/tmp/agent-not-loaded.png', fullPage: true });
+      throw new Error(`Agent ${KI_REFERENT_AGENT_ID} could not be loaded`);
+    }
+
+    console.log('✅ Agent ready');
 
     const smokeMessage = 'Welche MCP-Tools hast du verfügbar?';
     await sendMessageAndWaitForResponse(page, smokeMessage);
 
-    const lastMessage = await page.locator('[data-testid="message-content"]').last().innerText();
+    // Try multiple selectors to find message content
+    let lastMessage = '';
+
+    // Try different selectors
+    const selectors = [
+      '[data-testid="message-content"]',
+      '[class*="markdown"]',
+      '.markdown',
+      '[role="article"]',
+      '.message-content'
+    ];
+
+    for (const selector of selectors) {
+      const messages = page.locator(selector);
+      const count = await messages.count();
+      if (count > 0) {
+        console.log(`📊 Found ${count} message(s) using selector: ${selector}`);
+        lastMessage = await messages.last().innerText();
+        break;
+      }
+    }
+
+    if (!lastMessage) {
+      console.log('⚠️  No messages found with any selector! Taking screenshot...');
+      await page.screenshot({ path: '/tmp/smoke-test-no-messages.png', fullPage: true });
+      // Try getting all text from the page for debugging
+      const pageText = await page.locator('body').innerText();
+      console.log('Page text:', pageText.substring(0, 500));
+      throw new Error('No message content found on page');
+    }
 
     // Check for all three MCP servers
     const mcpServers = ['honeycomb', 'rechtsinformationen', 'fetch'];

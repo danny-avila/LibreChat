@@ -157,5 +157,13 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "@smithy/eventstream-codec": "^4.2.3",
+    "@smithy/protocol-http": "^5.3.3",
+    "@smithy/signature-v4": "^5.3.3",
+    "@smithy/types": "^4.8.0",
+    "@smithy/util-stream": "^4.5.3",
+    "@smithy/util-utf8": "^4.2.0"
   }
 }
