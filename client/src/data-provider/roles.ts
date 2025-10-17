@@ -25,7 +25,7 @@ export const useGetRole = (
     refetchOnReconnect: false,
     refetchOnMount: false,
     retry: false,
-    ...config
+    ...config,
   });
 };
 
@@ -44,7 +44,6 @@ export const useUpdatePromptPermissionsMutation = (
       promptPermissionsSchema.partial().parse(variables.updates);
       return dataService.updatePromptPermissions(variables);
     },
-
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.roles, variables.roleName]
@@ -53,7 +52,6 @@ export const useUpdatePromptPermissionsMutation = (
         onSuccess(data, variables, context);
       }
     },
-
     onError: (...args) => {
       const error = args[0];
       if (error != null) {
@@ -63,8 +61,7 @@ export const useUpdatePromptPermissionsMutation = (
         onError(...args);
       }
     },
-
-    onMutate
+    onMutate,
   });
 };
 
@@ -83,7 +80,6 @@ export const useUpdateAgentPermissionsMutation = (
       promptPermissionsSchema.partial().parse(variables.updates);
       return dataService.updateAgentPermissions(variables);
     },
-
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.roles, variables.roleName]
@@ -92,7 +88,6 @@ export const useUpdateAgentPermissionsMutation = (
         onSuccess(data, variables, context);
       }
     },
-
     onError: (...args) => {
       const error = args[0];
       if (error != null) {
@@ -102,8 +97,7 @@ export const useUpdateAgentPermissionsMutation = (
         onError(...args);
       }
     },
-
-    onMutate
+    onMutate,
   });
 };
 
@@ -122,7 +116,6 @@ export const useUpdateMemoryPermissionsMutation = (
       memoryPermissionsSchema.partial().parse(variables.updates);
       return dataService.updateMemoryPermissions(variables);
     },
-
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.roles, variables.roleName]
@@ -131,7 +124,6 @@ export const useUpdateMemoryPermissionsMutation = (
         onSuccess(data, variables, context);
       }
     },
-
     onError: (...args) => {
       const error = args[0];
       if (error != null) {
@@ -141,8 +133,7 @@ export const useUpdateMemoryPermissionsMutation = (
         onError(...args);
       }
     },
-
-    onMutate
+    onMutate,
   });
 };
 
@@ -161,7 +152,6 @@ export const useUpdatePeoplePickerPermissionsMutation = (
       peoplePickerPermissionsSchema.partial().parse(variables.updates);
       return dataService.updatePeoplePickerPermissions(variables);
     },
-
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.roles, variables.roleName]
@@ -170,7 +160,6 @@ export const useUpdatePeoplePickerPermissionsMutation = (
         onSuccess(data, variables, context);
       }
     },
-
     onError: (...args) => {
       const error = args[0];
       if (error != null) {
@@ -180,8 +169,7 @@ export const useUpdatePeoplePickerPermissionsMutation = (
         onError(...args);
       }
     },
-
-    onMutate
+    onMutate,
   });
 };
 
@@ -200,7 +188,6 @@ export const useUpdateMarketplacePermissionsMutation = (
       marketplacePermissionsSchema.partial().parse(variables.updates);
       return dataService.updateMarketplacePermissions(variables);
     },
-
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.roles, variables.roleName]
@@ -209,7 +196,6 @@ export const useUpdateMarketplacePermissionsMutation = (
         onSuccess(data, variables, context);
       }
     },
-
     onError: (...args) => {
       const error = args[0];
       if (error != null) {
@@ -219,7 +205,6 @@ export const useUpdateMarketplacePermissionsMutation = (
         onError(...args);
       }
     },
-
-    onMutate
+    onMutate,
   });
 };

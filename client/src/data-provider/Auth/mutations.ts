@@ -20,14 +20,13 @@ export const useLogoutUserMutation = (
     mutationKey: [MutationKeys.logoutUser],
     mutationFn: () => dataService.logout(),
     ...(options || {}),
-
     onSuccess: (...args) => {
       setQueriesEnabled(false);
       resetDefaultPreset();
       clearStates();
       queryClient.removeQueries();
       options?.onSuccess?.(...args);
-    }
+    },
   });
 };
 
@@ -42,18 +41,16 @@ export const useLoginUserMutation = (
     mutationKey: [MutationKeys.loginUser],
     mutationFn: (payload: t.TLoginUser) => dataService.login(payload),
     ...(options || {}),
-
     onMutate: (vars) => {
       resetDefaultPreset();
       clearStates();
       queryClient.removeQueries();
       options?.onMutate?.(vars);
     },
-
     onSuccess: (...args) => {
       setQueriesEnabled(true);
       options?.onSuccess?.(...args);
-    }
+    },
   });
 };
 
@@ -65,11 +62,10 @@ export const useRefreshTokenMutation = (
     mutationKey: [MutationKeys.refreshToken],
     mutationFn: () => request.refreshToken(),
     ...(options || {}),
-
     onMutate: (vars) => {
       queryClient.removeQueries();
       options?.onMutate?.(vars);
-    }
+    },
   });
 };
 
@@ -85,14 +81,13 @@ export const useDeleteUserMutation = (
     mutationKey: [MutationKeys.deleteUser],
     mutationFn: () => dataService.deleteUser(),
     ...(options || {}),
-
     onSuccess: (...args) => {
       resetDefaultPreset();
       clearStates();
       clearAllConversationStorage();
       queryClient.removeQueries();
       options?.onSuccess?.(...args);
-    }
+    },
   });
 };
 
@@ -105,10 +100,9 @@ export const useEnableTwoFactorMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => dataService.enableTwoFactor(),
-
     onSuccess: (data) => {
       queryClient.setQueryData([QueryKeys.user, '2fa'], data);
-    }
+    },
   });
 };
 
@@ -121,10 +115,9 @@ export const useVerifyTwoFactorMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: t.TVerify2FARequest) => dataService.verifyTwoFactor(payload),
-
     onSuccess: (data) => {
       queryClient.setQueryData([QueryKeys.user, '2fa'], data);
-    }
+    },
   });
 };
 
@@ -137,10 +130,9 @@ export const useConfirmTwoFactorMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: t.TVerify2FARequest) => dataService.confirmTwoFactor(payload),
-
     onSuccess: (data) => {
       queryClient.setQueryData([QueryKeys.user, '2fa'], data);
-    }
+    },
   });
 };
 
@@ -153,10 +145,9 @@ export const useDisableTwoFactorMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload?: t.TDisable2FARequest) => dataService.disableTwoFactor(payload),
-
     onSuccess: () => {
       queryClient.setQueryData([QueryKeys.user, '2fa'], null);
-    }
+    },
   });
 };
 
@@ -169,10 +160,9 @@ export const useRegenerateBackupCodesMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => dataService.regenerateBackupCodes(),
-
     onSuccess: (data) => {
       queryClient.setQueryData([QueryKeys.user, '2fa', 'backup'], data);
-    }
+    },
   });
 };
 
@@ -183,10 +173,9 @@ export const useVerifyTwoFactorTempMutation = (
   return useMutation({
     mutationFn: (payload: t.TVerify2FATempRequest) => dataService.verifyTwoFactorTemp(payload),
     ...(options || {}),
-
     onSuccess: (data, ...args) => {
       queryClient.setQueryData([QueryKeys.user, '2fa'], data);
       options?.onSuccess?.(data, ...args);
-    }
+    },
   });
 };

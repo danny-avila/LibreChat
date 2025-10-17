@@ -21,7 +21,6 @@ export const useCreateAgentMutation = (
     mutationFn: (newAgentData: t.AgentCreateParams) => dataService.createAgent(newAgentData),
     onMutate: (variables) => options?.onMutate?.(variables),
     onError: (error, variables, context) => options?.onError?.(error, variables, context),
-
     onSuccess: (newAgent, variables, context) => {
       ((keys: t.AgentListParams[]) => {
         keys.forEach((key) => {
@@ -40,7 +39,7 @@ export const useCreateAgentMutation = (
       invalidateAgentMarketplaceQueries(queryClient);
 
       return options?.onSuccess?.(newAgent, variables, context);
-    }
+    },
   });
 };
 
@@ -197,7 +196,7 @@ export const useUploadAgentAvatarMutation = (
   return useMutation({
     mutationKey: [MutationKeys.agentAvatarUpload],
     mutationFn: (variables: t.AgentAvatarVariables) => dataService.uploadAgentAvatar(variables),
-    ...(options || {})
+    ...(options || {}),
   });
 };
 
@@ -266,7 +265,7 @@ export const useUpdateAgentAction = (
         updatedAgent,
       );
       return options?.onSuccess?.(updateAgentActionResponse, variables, context);
-    }
+    },
   });
 };
 
@@ -280,16 +279,13 @@ export const useDeleteAgentAction = (
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: [MutationKeys.deleteAgentAction],
-
     mutationFn: (variables: t.DeleteAgentActionVariables) => {
       return dataService.deleteAgentAction({
         ...variables,
       });
     },
-
     onMutate: (variables) => options?.onMutate?.(variables),
     onError: (error, variables, context) => options?.onError?.(error, variables, context),
-
     onSuccess: (_data, variables, context) => {
       let domain: string | undefined = '';
       queryClient.setQueryData<t.Action[]>([QueryKeys.actions], (prev) => {
@@ -336,7 +332,7 @@ export const useDeleteAgentAction = (
         updaterFn,
       );
       return options?.onSuccess?.(_data, variables, context);
-    }
+    },
   });
 };
 

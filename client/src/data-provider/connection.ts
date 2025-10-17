@@ -30,7 +30,7 @@ export const useHealthCheck = (isAuthenticated = false) => {
             queryFn: () => dataService.healthCheck(),
             retry: false,
             cacheTime: 0,
-            staleTime: 0
+            staleTime: 0,
           });
         } catch (error) {
           console.error('Health check failed:', error);
