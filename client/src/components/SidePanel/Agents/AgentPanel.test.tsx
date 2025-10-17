@@ -265,12 +265,12 @@ const mockAgentQuery = (
 };
 
 const createMockAgent = (overrides: Partial<Agent> = {}): Agent =>
-  (({
+  ({
     id: 'agent-123',
     provider: 'openai',
     model: 'gpt-4',
-    ...overrides
-  }) as Agent);
+    ...overrides,
+  }) as Agent;
 
 const renderAndSubmitForm = async () => {
   const Wrapper = createWrapper();

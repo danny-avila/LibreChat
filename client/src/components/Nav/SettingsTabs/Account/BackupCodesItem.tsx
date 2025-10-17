@@ -36,10 +36,7 @@ const BackupCodesItem: React.FC = () => {
           usedAt: null,
         }));
 
-        setUser((prev) => (({
-          ...prev,
-          backupCodes: newBackupCodes
-        }) as TUser));
+        setUser((prev) => ({ ...prev, backupCodes: newBackupCodes }) as TUser);
         showToast({
           message: localize('com_ui_backup_codes_regenerated'),
           status: 'success',

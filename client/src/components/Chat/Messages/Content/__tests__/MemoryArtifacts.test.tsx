@@ -32,9 +32,8 @@ jest.mock('../MemoryInfo', () => ({
 
 describe('MemoryArtifacts', () => {
   const createMemoryAttachment = (type: 'update' | 'delete' | 'error', key: string): TAttachment =>
-    (({
+    ({
       type: Tools.memory,
-
       [Tools.memory]: {
         type,
         key,
@@ -42,8 +41,8 @@ describe('MemoryArtifacts', () => {
           type === 'error'
             ? JSON.stringify({ errorType: 'exceeded', tokenCount: 100 })
             : 'test value',
-      } as MemoryArtifact
-    }) as TAttachment);
+      } as MemoryArtifact,
+    }) as TAttachment;
 
   describe('Error State Handling', () => {
     test('displays error styling when memory artifacts contain errors', () => {

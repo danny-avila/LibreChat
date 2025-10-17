@@ -39,10 +39,9 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
         .filter((agent) => agent?.id !== currentAgentId)
         .map(
           (agent) =>
-            (({
+            ({
               label: agent?.name || '',
               value: agent?.id,
-
               icon: (
                 <MessageIcon
                   message={
@@ -53,8 +52,8 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
                   }
                   agent={agent}
                 />
-              )
-            }) as OptionWithIcon),
+              ),
+            }) as OptionWithIcon,
         ),
     [agents, currentAgentId],
   );

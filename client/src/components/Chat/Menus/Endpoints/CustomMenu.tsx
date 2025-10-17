@@ -196,7 +196,7 @@ export const CustomMenuItem = React.forwardRef<HTMLDivElement, CustomMenuItemPro
             // state, which isn't the case. Therefore, we use a visually hidden
             // element to indicate whether the item is checked or not, ensuring
             // cross-browser/AT compatibility.
-            (<Ariakit.VisuallyHidden>{checked ? 'checked' : 'not checked'}</Ariakit.VisuallyHidden>)
+            <Ariakit.VisuallyHidden>{checked ? 'checked' : 'not checked'}</Ariakit.VisuallyHidden>
           )}
         </React.Fragment>
       );
