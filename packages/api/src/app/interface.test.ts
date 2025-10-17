@@ -1,5 +1,4 @@
-import { logger } from '@librechat/data-schemas';
-import { loadDefaultInterface } from './interface';
+import { logger, loadDefaultInterface } from '@librechat/data-schemas';
 import type { TCustomConfig, TConfigDefaults } from 'librechat-data-provider';
 
 // Mock the logger
@@ -8,10 +7,11 @@ jest.mock('@librechat/data-schemas', () => ({
     error: jest.fn(),
     warn: jest.fn(),
   },
+  loadDefaultInterface: jest.requireActual('@librechat/data-schemas').loadDefaultInterface,
 }));
 
 // Mock isMemoryEnabled
-jest.mock('./memory', () => ({
+jest.mock('@librechat/data-schemas/dist/app/memory', () => ({
   isMemoryEnabled: jest.fn((config) => !!config?.agent),
 }));
 

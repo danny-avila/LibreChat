@@ -1,4 +1,4 @@
-import { loadDefaultInterface } from '../interface';
+import { loadDefaultInterface } from '@librechat/data-schemas';
 import { updateInterfacePermissions } from '../permissions';
 import type { TCustomConfig, TConfigDefaults } from 'librechat-data-provider';
 import type { AppConfig } from '~/types/config';
@@ -13,7 +13,7 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-jest.mock('~/memory/config', () => ({
+jest.mock('@librechat/data-schemas/dist/app/memory', () => ({
   isMemoryEnabled: jest.fn(() => false),
 }));
 
