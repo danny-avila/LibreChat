@@ -3,6 +3,7 @@ import { CustomMinimalIcon, XAIcon } from '@librechat/client';
 import { EModelEndpoint, KnownEndpoints } from 'librechat-data-provider';
 import { IconContext } from '~/common';
 import { cn } from '~/utils';
+import { URLIcon } from '~/components/Endpoints/URLIcon';
 
 const knownEndpointAssets = {
   [KnownEndpoints.anyscale]: 'assets/anyscale.png',
@@ -84,7 +85,14 @@ function UnknownIcon({
   }
 
   if (iconURL) {
-    return <img className={className} src={iconURL} alt={`${endpoint} Icon`} />;
+    return (
+      <URLIcon
+        iconURL={iconURL}
+        endpoint={endpoint}
+        className={className}
+        altName={`${endpoint} Icon`}
+      />
+    );
   }
 
   const assetPath: string = knownEndpointAssets[currentEndpoint] ?? '';
