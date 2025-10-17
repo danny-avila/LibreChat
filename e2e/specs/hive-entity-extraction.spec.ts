@@ -15,14 +15,9 @@ import type { Browser, Page, BrowserContext } from '@playwright/test';
  * - HIVE MCP Phase 2 implementation
  */
 
-const BASE_URL = 'http://localhost:3080';
+const { DEMO_USER } = require('../test-user');
+const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:3080';
 const TEST_TIMEOUT = 600000; // 10 minutes
-
-// Demo user credentials
-const DEMO_USER = {
-  email: 'sales-demo@senticor.de',
-  password: 'SalesDemo2025!Secure',
-};
 
 // Sample German press release for entity extraction
 const SAMPLE_GERMAN_TEXT = `

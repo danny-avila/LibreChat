@@ -164,13 +164,34 @@ npm run e2e -- e2e/specs/demo-integrationsbericht-complete.spec.ts -g "Complete 
 
 ## 🎯 Configuration Details
 
-### Environment Setup (.env)
+### Environment Setup
+
+#### Main Environment (.env)
 
 ```bash
 # Google Gemini API Key (for testing - NOT committed to git)
 GOOGLE_KEY=<your-api-key>
 GOOGLE_MODELS=gemini-2.0-flash,gemini-2.5-flash,gemini-2.5-pro,gemini-exp-1206
 ```
+
+#### E2E Test Credentials (.env.e2e)
+
+**IMPORTANT: Test credentials are now stored in `.env.e2e` (not committed to git)**
+
+```bash
+# 1. Copy the example file
+cp .env.e2e.example .env.e2e
+
+# 2. Edit .env.e2e and set your test credentials:
+E2E_USER_EMAIL=sales-demo@senticor.de
+E2E_USER_PASSWORD=<your-test-password>
+E2E_BASE_URL=http://localhost:3080
+```
+
+**Security Notes:**
+- `.env.e2e` is gitignored and will NOT be committed
+- Use a test-only password, not a production password
+- All E2E tests and `generate-auth.js` read from this file
 
 ### Agent Configuration (config/create-ki-referent-agent.js)
 

@@ -137,15 +137,19 @@ Wenn ein Schritt fehlschlägt, zeigt der Test genau wo:
 
 ### Test-Benutzer
 
-Der Test erstellt automatisch einen dedizierten Demo-Benutzer:
+Der Test verwendet Demo-Benutzer-Credentials aus `.env.e2e`:
 
-```typescript
-const DEMO_USER = {
-  email: 'sales-demo@senticor.de',
-  name: 'Senticor Sales Demo',
-  password: 'SalesDemo2025!Secure',
-};
+```bash
+# Copy the example file and set your test credentials
+cp .env.e2e.example .env.e2e
+
+# Edit .env.e2e and set:
+E2E_USER_EMAIL=sales-demo@senticor.de
+E2E_USER_PASSWORD=<your-test-password>
+E2E_BASE_URL=http://localhost:3080
 ```
+
+**Wichtig:** Die `.env.e2e` Datei ist in `.gitignore` und wird NICHT ins Repository committed.
 
 Dieser Benutzer wird **automatisch registriert** beim ersten Testlauf.
 

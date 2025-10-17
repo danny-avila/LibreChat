@@ -1,11 +1,18 @@
 // Generate E2E authentication storage state automatically
 const { chromium } = require('@playwright/test');
 const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env.e2e') });
 
 const user = {
-  email: 'sales-demo@senticor.de',
-  password: 'SalesDemo2025!Secure'
+  email: process.env.E2E_USER_EMAIL || 'sales-demo@senticor.de',
+  password: process.env.E2E_USER_PASSWORD
 };
+
+if (!user.password) {
+  console.error('❌ E2E_USER_PASSWORD not set in .env.e2e file');
+  console.error('   Please copy .env.e2e.example to .env.e2e and set the password');
+  process.exit(1);
+}
 
 async function generateAuth() {
   console.log('🔐 Generating E2E authentication...');

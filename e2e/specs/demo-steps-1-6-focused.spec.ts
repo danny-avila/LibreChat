@@ -7,11 +7,8 @@ import type { Page } from '@playwright/test';
  * Runs headless by default, uses existing LibreChat + HIVE
  */
 
-const BASE_URL = 'http://localhost:3080';
-const DEMO_USER = {
-  email: 'sales-demo@senticor.de',
-  password: 'SalesDemo2025!Secure',
-};
+const { DEMO_USER } = require('../test-user');
+const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:3080';
 
 async function loginUser(page: Page) {
   await page.goto(`${BASE_URL}/login`, { timeout: 10000 });

@@ -12,11 +12,8 @@ import type { Page } from '@playwright/test';
  * - Demo user: sales-demo@senticor.de exists
  */
 
-const BASE_URL = 'http://localhost:3080';
-const DEMO_USER = {
-  email: 'sales-demo@senticor.de',
-  password: 'SalesDemo2025!Secure',
-};
+const { DEMO_USER } = require('../test-user');
+const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:3080';
 
 async function loginUser(page: Page) {
   console.log('🔐 Logging in...');

@@ -11,18 +11,12 @@ import type { Browser, Page, BrowserContext } from '@playwright/test';
  * Duration: ~20 minutes (includes real AI responses)
  */
 
-const BASE_URL = 'http://localhost:3080';
+const { DEMO_USER } = require('../test-user');
+const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:3080';
 const FULL_JOURNEY_TIMEOUT = 1200000; // 20 minutes for complete journey
 
 // Agent ID for KI-Referent (system agent created by script)
 const KI_REFERENT_AGENT_ID = 'agent_ki_referent_system';
-
-// Dedicated demo user for sales demonstrations
-const DEMO_USER = {
-  email: 'sales-demo@senticor.de',
-  name: 'Senticor Sales Demo',
-  password: 'SalesDemo2025!Secure',
-};
 
 async function loginOrRegisterDemoUser(page: Page) {
   try {
