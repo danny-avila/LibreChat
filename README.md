@@ -9,3 +9,9 @@ Helm repo: oci://ghcr.io/aron-muon/librechat-chart
 Helm chart: librechat
 Helm version: 1.9.1
 ```
+
+```
+Docker repo: aronmuon/librechat
+Docker registry: ghcr.io
+Docker tag: chart-1.9.1
+```
