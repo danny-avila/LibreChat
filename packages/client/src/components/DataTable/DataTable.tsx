@@ -465,6 +465,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
           aria-label={localize('com_ui_data_table')}
           aria-rowcount={data.length}
           className="table-fixed"
+          unwrapped={true}
         >
           <TableHeader className="sticky top-0 z-10 bg-surface-secondary">
             {headerGroups.map((headerGroup) => (
@@ -516,7 +517,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                           width: `${metaWidth}%`,
                           maxWidth: `${metaWidth}%`,
                           minWidth: isSmallScreen
-                            ? `${Math.max(metaWidth * 0.8, 60)}px`
+                            ? `${Math.max(metaWidth * 0.7, 10)}%`
                             : `${metaWidth}%`,
                         }
                       : {};

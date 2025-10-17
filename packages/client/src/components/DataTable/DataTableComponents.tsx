@@ -76,7 +76,7 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
               ? {
                   width: `${percent}%`,
                   maxWidth: `${percent}%`,
-                  minWidth: isSmallScreen ? `${Math.max(percent * 0.8, 60)}px` : `${percent}%`,
+                  minWidth: isSmallScreen ? `${Math.max(percent * 0.7, 10)}%` : `${percent}%`,
                 }
               : undefined;
 
