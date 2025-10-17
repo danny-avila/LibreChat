@@ -1,18 +1,41 @@
 import { Dispatcher, ProxyAgent } from 'undici';
 import { AnthropicClientOptions } from '@librechat/agents';
-import { anthropicSettings, removeNullishValues } from 'librechat-data-provider';
-import type { AnthropicLLMConfigResult, AnthropicConfigOptions } from '~/types/anthropic';
+import { anthropicSettings, removeNullishValues, AuthKeys } from 'librechat-data-provider';
+import type {
+  AnthropicLLMConfigResult,
+  AnthropicConfigOptions,
+  AnthropicCredentials,
+} from '~/types/anthropic';
 import { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } from './helpers';
+import { createAnthropicVertexClient, isAnthropicVertexCredentials } from './vertex';
+
+/**
+ * Parses credentials from string or object format
+ */
+function parseCredentials(
+  credentials: string | AnthropicCredentials | undefined,
+): AnthropicCredentials {
+  if (typeof credentials === 'string') {
+    try {
+      return JSON.parse(credentials);
+    } catch (err: unknown) {
+      throw new Error(
+        `Error parsing string credentials: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      );
+    }
+  }
+  return credentials && typeof credentials === 'object' ? credentials : {};
+}
 
 /**
  * Generates configuration options for creating an Anthropic language model (LLM) instance.
- * @param apiKey - The API key for authentication with Anthropic.
+ * @param credentials - The API key for authentication with Anthropic, or credentials object for Vertex AI.
  * @param options={} - Additional options for configuring the LLM.
  * @returns Configuration options for creating an Anthropic LLM instance, with null and undefined values removed.
  */
 function getLLMConfig(
-  apiKey?: string,
-  options: AnthropicConfigOptions = {} as AnthropicConfigOptions,
+  credentials: string | AnthropicCredentials | undefined,
+  options: AnthropicConfigOptions = {},
 ): AnthropicLLMConfigResult {
   const systemOptions = {
     thinking: options.modelOptions?.thinking ?? anthropicSettings.thinking.default,
@@ -41,7 +64,6 @@ function getLLMConfig(
   const mergedOptions = Object.assign(defaultOptions, options.modelOptions);
 
   let requestOptions: AnthropicClientOptions & { stream?: boolean } = {
-    apiKey,
     model: mergedOptions.model,
     stream: mergedOptions.stream,
     temperature: mergedOptions.temperature,
@@ -55,6 +77,21 @@ function getLLMConfig(
       },
     },
   };
+
+  const creds = parseCredentials(credentials);
+  const apiKey = creds[AuthKeys.ANTHROPIC_API_KEY] ?? null;
+
+  if (isAnthropicVertexCredentials(creds)) {
+    // Vertex AI configuration - use custom client
+    requestOptions.createClient = () => createAnthropicVertexClient(creds);
+  } else if (apiKey) {
+    // Direct API configuration
+    requestOptions.apiKey = apiKey;
+  } else {
+    throw new Error(
+      'Invalid credentials provided. Please provide either a valid Anthropic API key or service account credentials for Vertex AI.',
+    );
+  }
 
   requestOptions = configureReasoning(requestOptions, systemOptions);
 
