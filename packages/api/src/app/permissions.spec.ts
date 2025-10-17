@@ -26,6 +26,7 @@ describe('updateInterfacePermissions - permissions', () => {
         runCode: true,
         webSearch: true,
         fileSearch: true,
+        fileSearchSelected: true,
         fileCitations: true,
         peoplePicker: {
           users: true,
@@ -1532,6 +1533,101 @@ describe('updateInterfacePermissions - permissions', () => {
       permissions: expect.objectContaining({
         [PermissionTypes.MEMORIES]: expect.any(Object),
       }),
+    });
+  });
+
+  describe('fileSearchSelected validation errors', () => {
+    it('should handle validation error when fileSearch is false but fileSearchSelected is true', async () => {
+      const config = {
+        interface: {
+          fileSearch: false,
+          fileSearchSelected: true,
+        },
+      };
+      const configDefaults = { interface: {} } as TConfigDefaults;
+
+      // This should trigger an error in loadDefaultInterface before reaching updateInterfacePermissions
+      await expect(async () => {
+        const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+        const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+        await updateInterfacePermissions({
+          appConfig,
+          getRoleByName: mockGetRoleByName,
+          updateAccessPermissions: mockUpdateAccessPermissions,
+        });
+      }).rejects.toThrow(
+        'Configuration error: fileSearchSelected cannot be enabled when fileSearch is disabled',
+      );
+
+      // updateInterfacePermissions should not be called due to the error
+      expect(mockUpdateAccessPermissions).not.toHaveBeenCalled();
+    });
+
+    it('should proceed normally when fileSearch is true and fileSearchSelected is true', async () => {
+      const config = {
+        interface: {
+          fileSearch: true,
+          fileSearchSelected: true,
+        },
+      };
+      const configDefaults = { interface: {} } as TConfigDefaults;
+      const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+      const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+      await updateInterfacePermissions({
+        appConfig,
+        getRoleByName: mockGetRoleByName,
+        updateAccessPermissions: mockUpdateAccessPermissions,
+      });
+
+      // Should proceed normally and call updateAccessPermissions
+      expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
+    });
+
+    it('should proceed normally when fileSearch is false and fileSearchSelected is false', async () => {
+      const config = {
+        interface: {
+          fileSearch: false,
+          fileSearchSelected: false,
+        },
+      };
+      const configDefaults = { interface: {} } as TConfigDefaults;
+      const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+      const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+      await updateInterfacePermissions({
+        appConfig,
+        getRoleByName: mockGetRoleByName,
+        updateAccessPermissions: mockUpdateAccessPermissions,
+      });
+
+      // Should proceed normally and call updateAccessPermissions
+      expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
+    });
+
+    it('should proceed normally when only fileSearchSelected is configured without fileSearch', async () => {
+      const config = {
+        interface: {
+          fileSearchSelected: true,
+          // fileSearch not specified, should use defaults
+        },
+      };
+      const configDefaults = {
+        interface: {
+          fileSearch: true, // Default allows fileSearchSelected to be true
+        },
+      } as TConfigDefaults;
+      const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+      const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+      await updateInterfacePermissions({
+        appConfig,
+        getRoleByName: mockGetRoleByName,
+        updateAccessPermissions: mockUpdateAccessPermissions,
+      });
+
+      // Should proceed normally and call updateAccessPermissions
+      expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
     });
   });
 });
