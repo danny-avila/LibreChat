@@ -2,7 +2,7 @@ import { Providers } from '@librechat/agents';
 import { isOpenAILikeProvider, isDocumentSupportedProvider } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Request } from 'express';
-import type { StrategyFunctions, DocumentResult } from '~/types/files';
+import type { StrategyFunctions, DocumentResult, AnthropicDocumentBlock } from '~/types/files';
 import { validatePdf } from '~/files/validation';
 import { getFileStream } from './utils';
 
@@ -69,16 +69,21 @@ export async function encodeAndFormatDocuments(
       }
 
       if (provider === Providers.ANTHROPIC) {
-        result.documents.push({
+        const document: AnthropicDocumentBlock = {
           type: 'document',
           source: {
             type: 'base64',
             media_type: 'application/pdf',
             data: content,
           },
-          cache_control: { type: 'ephemeral' },
           citations: { enabled: true },
-        });
+        };
+
+        if (file.filename) {
+          document.context = `File: "${file.filename}"`;
+        }
+
+        result.documents.push(document);
       } else if (useResponsesApi) {
         result.documents.push({
           type: 'input_file',
