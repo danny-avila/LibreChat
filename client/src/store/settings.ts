@@ -1,4 +1,5 @@
 import { atom } from 'recoil';
+import { applyFontSize } from '@librechat/client';
 import { SettingsViews, LocalStorageKeys } from 'librechat-data-provider';
 import { atomWithLocalStorage } from '~/store/utils';
 import type { TOptionSettings } from '~/common';
@@ -17,11 +18,65 @@ const staticAtoms = {
   showPopover: atom<boolean>({ key: 'showPopover', default: false }),
 };
 
+const fontSize = atom<string>({
+  key: 'fontSize',
+  default: 'text-base',
+  effects_UNSTABLE: [
+    ({ setSelf, onSet, trigger }) => {
+      if (typeof window === 'undefined' || typeof document === 'undefined') {
+        return;
+      }
+
+      const hydrate = () => {
+        const savedValue = localStorage.getItem('fontSize');
+
+        if (savedValue !== null) {
+          try {
+            const parsedValue = JSON.parse(savedValue);
+            setSelf(parsedValue);
+            applyFontSize(parsedValue);
+            return;
+          } catch (error) {
+            console.error(
+              'Error parsing localStorage key "fontSize", savedValue: defaultValue, error:',
+              error,
+            );
+            localStorage.setItem('fontSize', JSON.stringify('text-base'));
+            setSelf('text-base');
+          }
+        }
+
+        applyFontSize('text-base');
+      };
+
+      if (trigger === 'get') {
+        hydrate();
+      } else {
+        const currentValue = localStorage.getItem('fontSize');
+        if (currentValue !== null) {
+          try {
+            applyFontSize(JSON.parse(currentValue));
+          } catch {
+            applyFontSize('text-base');
+          }
+        } else {
+          applyFontSize('text-base');
+        }
+      }
+
+      onSet((newValue) => {
+        localStorage.setItem('fontSize', JSON.stringify(newValue));
+        applyFontSize(newValue);
+      });
+    },
+  ],
+});
+
 const localStorageAtoms = {
   // General settings
   autoScroll: atomWithLocalStorage('autoScroll', false),
   hideSidePanel: atomWithLocalStorage('hideSidePanel', false),
-  fontSize: atomWithLocalStorage('fontSize', 'text-base'),
+  fontSize,
   enableUserMsgMarkdown: atomWithLocalStorage<boolean>(
     LocalStorageKeys.ENABLE_USER_MSG_MARKDOWN,
     true,
