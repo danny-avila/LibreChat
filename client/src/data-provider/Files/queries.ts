@@ -11,12 +11,14 @@ export const useGetFiles = <TData = t.TFile[] | boolean>(
   config?: UseQueryOptions<t.TFile[], unknown, TData>,
 ): QueryObserverResult<TData, unknown> => {
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
-  return useQuery<t.TFile[], unknown, TData>([QueryKeys.files], () => dataService.getFiles(), {
+  return useQuery({
+    queryKey: [QueryKeys.files],
+    queryFn: () => dataService.getFiles(),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
     ...config,
-    enabled: (config?.enabled ?? true) === true && queriesEnabled,
+    enabled: (config?.enabled ?? true) === true && queriesEnabled
   });
 };
 
@@ -25,39 +27,37 @@ export const useGetAgentFiles = <TData = t.TFile[]>(
   config?: UseQueryOptions<t.TFile[], unknown, TData>,
 ): QueryObserverResult<TData, unknown> => {
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
-  return useQuery<t.TFile[], unknown, TData>(
-    DynamicQueryKeys.agentFiles(agentId ?? ''),
-    () => (agentId ? dataService.getAgentFiles(agentId) : Promise.resolve([])),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-      enabled: (config?.enabled ?? true) === true && queriesEnabled && !isEphemeralAgent(agentId),
-    },
-  );
+  return useQuery({
+    queryKey: DynamicQueryKeys.agentFiles(agentId ?? ''),
+    queryFn: () => (agentId ? dataService.getAgentFiles(agentId) : Promise.resolve([]))
+  }, {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+    enabled: (config?.enabled ?? true) === true && queriesEnabled && !isEphemeralAgent(agentId),
+  });
 };
 
 export const useGetFileConfig = <TData = t.FileConfig>(
   config?: UseQueryOptions<t.FileConfig, unknown, TData>,
 ): QueryObserverResult<TData, unknown> => {
-  return useQuery<t.FileConfig, unknown, TData>(
-    [QueryKeys.fileConfig],
-    () => dataService.getFileConfig(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.fileConfig],
+    queryFn: () => dataService.getFileConfig(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config
+  });
 };
 
 export const useFileDownload = (userId?: string, file_id?: string): QueryObserverResult<string> => {
   const queryClient = useQueryClient();
-  return useQuery(
-    [QueryKeys.fileDownload, file_id],
-    async () => {
+  return useQuery({
+    queryKey: [QueryKeys.fileDownload, file_id],
+
+    queryFn: async () => {
       if (!userId || !file_id) {
         console.warn('No user ID provided for file download');
         return;
@@ -79,17 +79,17 @@ export const useFileDownload = (userId?: string, file_id?: string): QueryObserve
 
       return downloadURL;
     },
-    {
-      enabled: false,
-      retry: false,
-    },
-  );
+
+    enabled: false,
+    retry: false
+  });
 };
 
 export const useCodeOutputDownload = (url = ''): QueryObserverResult<string> => {
-  return useQuery(
-    [QueryKeys.fileDownload, url],
-    async () => {
+  return useQuery({
+    queryKey: [QueryKeys.fileDownload, url],
+
+    queryFn: async () => {
       if (!url) {
         console.warn('No user ID provided for file download');
         return;
@@ -99,9 +99,8 @@ export const useCodeOutputDownload = (url = ''): QueryObserverResult<string> => 
       const downloadURL = window.URL.createObjectURL(blob);
       return downloadURL;
     },
-    {
-      enabled: false,
-      retry: false,
-    },
-  );
+
+    enabled: false,
+    retry: false
+  });
 };

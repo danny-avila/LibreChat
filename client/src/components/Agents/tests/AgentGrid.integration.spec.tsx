@@ -91,7 +91,7 @@ const createMockResponse = (
   object: 'list',
   data: agentIds.map(
     (id) =>
-      ({
+      (({
         id,
         name: `Agent ${id}`,
         description: `Description for ${id}`,
@@ -101,6 +101,7 @@ const createMockResponse = (
         instructions: '',
         avatar: null,
         provider: 'openai',
+
         model_parameters: {
           temperature: 0.7,
           top_p: 1,
@@ -109,8 +110,8 @@ const createMockResponse = (
           maxContextTokens: 2000,
           max_context_tokens: 2000,
           max_output_tokens: 2000,
-        },
-      }) as t.Agent,
+        }
+      }) as t.Agent),
   ),
   first_id: agentIds[0] || '',
   last_id: agentIds[agentIds.length - 1] || '',
@@ -156,11 +157,12 @@ const createMockInfiniteQuery = (
     isFetchingNextPage?: boolean;
   },
 ) =>
-  ({
+  (({
     data: {
       pages,
       pageParams: pages.map((_, i) => (i === 0 ? undefined : `cursor-${i * 6}`)),
     },
+
     isLoading: options?.isLoading ?? false,
     error: null,
     isFetching: false,
@@ -168,8 +170,10 @@ const createMockInfiniteQuery = (
     isFetchingNextPage: options?.isFetchingNextPage ?? false,
     fetchNextPage: options?.fetchNextPage ?? jest.fn(),
     refetch: jest.fn(),
+
     // Add missing required properties for UseInfiniteQueryResult
     isError: false,
+
     isLoadingError: false,
     isRefetchError: false,
     isSuccess: true,
@@ -188,8 +192,8 @@ const createMockInfiniteQuery = (
     isPending: false,
     isRefetching: false,
     isStale: false,
-    remove: jest.fn(),
-  }) as any;
+    remove: jest.fn()
+  }) as any);
 
 describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
   const mockOnSelectAgent = jest.fn();

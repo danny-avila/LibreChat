@@ -14,10 +14,14 @@ const useAuthCodeTool = (options?: { isEntityTool: boolean }) => {
       }));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.toolAuth, Tools.execute_code]);
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.toolAuth, Tools.execute_code]
+      });
     },
     onError: () => {
-      queryClient.invalidateQueries([QueryKeys.toolAuth, Tools.execute_code]);
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.toolAuth, Tools.execute_code]
+      });
     },
   });
 

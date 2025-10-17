@@ -90,7 +90,9 @@ function MCPToolSelectDialog({
         });
 
         // Invalidate auth values query to ensure fresh data
-        await queryClient.invalidateQueries([QueryKeys.mcpAuthValues, serverName]);
+        await queryClient.invalidateQueries({
+          queryKey: [QueryKeys.mcpAuthValues, serverName]
+        });
 
         // Small delay to ensure backend has processed the auth
         await new Promise((resolve) => setTimeout(resolve, 500));

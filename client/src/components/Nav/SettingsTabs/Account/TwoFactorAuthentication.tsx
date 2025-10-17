@@ -134,16 +134,18 @@ const TwoFactorAuthentication: React.FC = () => {
     showToast({ message: localize('com_ui_2fa_enabled') });
     setUser(
       (prev) =>
-        ({
+        (({
           ...prev,
+
           backupCodes: backupCodes.map((code) => ({
             code,
             codeHash: code,
             used: false,
             usedAt: null,
           })),
-          twoFactorEnabled: true,
-        }) as TUser,
+
+          twoFactorEnabled: true
+        }) as TUser),
     );
   }, [setUser, localize, showToast, backupCodes]);
 
@@ -172,12 +174,12 @@ const TwoFactorAuthentication: React.FC = () => {
           setDialogOpen(false);
           setUser(
             (prev) =>
-              ({
+              (({
                 ...prev,
                 totpSecret: '',
                 backupCodes: [],
-                twoFactorEnabled: false,
-              }) as TUser,
+                twoFactorEnabled: false
+              }) as TUser),
           );
           setPhase('setup');
           setOtpauthUrl('');

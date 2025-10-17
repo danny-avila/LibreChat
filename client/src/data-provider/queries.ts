@@ -36,12 +36,14 @@ import { findConversationInInfinite } from '~/utils';
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
 ): QueryObserverResult<TPreset[], unknown> => {
-  return useQuery<TPreset[]>([QueryKeys.presets], () => dataService.getPresets(), {
+  return useQuery({
+    queryKey: [QueryKeys.presets],
+    queryFn: () => dataService.getPresets(),
     staleTime: 1000 * 10,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config,
+    ...config
   });
 };
 
@@ -51,9 +53,10 @@ export const useGetConvoIdQuery = (
 ): QueryObserverResult<t.TConversation> => {
   const queryClient = useQueryClient();
 
-  return useQuery<t.TConversation>(
-    [QueryKeys.conversation, id],
-    () => {
+  return useQuery({
+    queryKey: [QueryKeys.conversation, id],
+
+    queryFn: () => {
       // Try to find in all fetched infinite pages
       const convosQuery = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(
         [QueryKeys.allConversations],
@@ -67,13 +70,12 @@ export const useGetConvoIdQuery = (
       // Otherwise, fetch from API
       return dataService.getConversationById(id);
     },
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
+
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config
+  });
 };
 
 export const useConversationsInfiniteQuery = (
@@ -161,16 +163,14 @@ export const useSharedLinksQuery = (
 export const useConversationTagsQuery = (
   config?: UseQueryOptions<t.TConversationTagsResponse>,
 ): QueryObserverResult<t.TConversationTagsResponse> => {
-  return useQuery<t.TConversationTag[]>(
-    [QueryKeys.conversationTags],
-    () => dataService.getConversationTags(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.conversationTags],
+    queryFn: () => dataService.getConversationTags(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config
+  });
 };
 
 /**
@@ -193,17 +193,15 @@ export const useAvailableToolsQuery = <TData = t.TPlugin[]>(
   const enabled = isAgentsEndpoint(endpoint) ? true : !!endpointsConfig?.[endpoint] && keyProvided;
   const version: string | number | undefined =
     endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-  return useQuery<t.TPlugin[], unknown, TData>(
-    [QueryKeys.tools],
-    () => dataService.getAvailableTools(endpoint, version),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      enabled,
-      ...config,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.tools],
+    queryFn: () => dataService.getAvailableTools(endpoint, version),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    enabled,
+    ...config
+  });
 };
 
 /**
@@ -221,23 +219,23 @@ export const useListAssistantsQuery = <TData = AssistantListResponse>(
   const keyProvided = userProvidesKey ? !!(keyExpiry?.expiresAt ?? '') : true;
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-  return useQuery<AssistantListResponse, unknown, TData>(
-    [QueryKeys.assistants, endpoint, params],
-    () => dataService.listAssistants({ ...params, endpoint }, version),
-    {
-      // Example selector to sort them by created_at
-      // select: (res) => {
-      //   return res.data.sort((a, b) => a.created_at - b.created_at);
-      // },
-      staleTime: 1000 * 5,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.assistants, endpoint, params],
+    queryFn: () => dataService.listAssistants({ ...params, endpoint }, version),
+
+    // Example selector to sort them by created_at
+    // select: (res) => {
+    //   return res.data.sort((a, b) => a.created_at - b.created_at);
+    // },
+    staleTime: 1000 * 5,
+
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled
+  });
 };
 
 /*
@@ -287,24 +285,25 @@ export const useGetAssistantByIdQuery = (
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-  return useQuery<Assistant>(
-    [QueryKeys.assistant, assistant_id],
-    () =>
+  return useQuery({
+    queryKey: [QueryKeys.assistant, assistant_id],
+
+    queryFn: () =>
       dataService.getAssistantById({
         endpoint,
         assistant_id,
         version,
       }),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      // Query will not execute until the assistant_id exists
-      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
-    },
-  );
+
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+
+    // Query will not execute until the assistant_id exists
+    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled
+  });
 };
 
 /**
@@ -322,12 +321,14 @@ export const useGetActionsQuery = <TData = Action[]>(
   const enabled =
     (!!endpointsConfig?.[endpoint] && keyProvided) || endpoint === EModelEndpoint.agents;
 
-  return useQuery<Action[], unknown, TData>([QueryKeys.actions], () => dataService.getActions(), {
+  return useQuery({
+    queryKey: [QueryKeys.actions],
+    queryFn: () => dataService.getActions(),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
     ...config,
-    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
+    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled
   });
 };
 
@@ -346,21 +347,21 @@ export const useGetAssistantDocsQuery = <TData = AssistantDocument[]>(
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
 
-  return useQuery<AssistantDocument[], unknown, TData>(
-    [QueryKeys.assistantDocs, endpoint],
-    () =>
+  return useQuery({
+    queryKey: [QueryKeys.assistantDocs, endpoint],
+
+    queryFn: () =>
       dataService.getAssistantDocs({
         endpoint,
         version,
       }),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
-    },
-  );
+
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled
+  });
 };
 
 /** STT/TTS */
@@ -369,12 +370,14 @@ export const useGetAssistantDocsQuery = <TData = AssistantDocument[]>(
 export const useVoicesQuery = (
   config?: UseQueryOptions<t.VoiceResponse>,
 ): QueryObserverResult<t.VoiceResponse> => {
-  return useQuery<t.VoiceResponse>([QueryKeys.voices], () => dataService.getVoices(), {
+  return useQuery({
+    queryKey: [QueryKeys.voices],
+    queryFn: () => dataService.getVoices(),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
     retry: false,
-    ...config,
+    ...config
   });
 };
 
@@ -382,17 +385,15 @@ export const useVoicesQuery = (
 export const useCustomConfigSpeechQuery = (
   config?: UseQueryOptions<t.TCustomConfigSpeechResponse>,
 ): QueryObserverResult<t.TCustomConfigSpeechResponse> => {
-  return useQuery<t.TCustomConfigSpeechResponse>(
-    [QueryKeys.customConfigSpeech],
-    () => dataService.getCustomConfigSpeech(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.customConfigSpeech],
+    queryFn: () => dataService.getCustomConfigSpeech(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config
+  });
 };
 
 /** Prompt */
@@ -435,97 +436,89 @@ export const useGetPromptGroup = (
   id: string,
   config?: UseQueryOptions<t.TPromptGroup>,
 ): QueryObserverResult<t.TPromptGroup> => {
-  return useQuery<t.TPromptGroup>(
-    [QueryKeys.promptGroup, id],
-    () => dataService.getPromptGroup(id),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled : true,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.promptGroup, id],
+    queryFn: () => dataService.getPromptGroup(id),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled : true
+  });
 };
 
 export const useGetPrompts = (
   filter: t.TPromptsWithFilterRequest,
   config?: UseQueryOptions<t.TPrompt[]>,
 ): QueryObserverResult<t.TPrompt[]> => {
-  return useQuery<t.TPrompt[]>(
-    [QueryKeys.prompts, filter.groupId ?? ''],
-    () => dataService.getPrompts(filter),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled : true,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.prompts, filter.groupId ?? ''],
+    queryFn: () => dataService.getPrompts(filter),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled : true
+  });
 };
 
 export const useGetAllPromptGroups = <TData = t.AllPromptGroupsResponse>(
   filter?: t.AllPromptGroupsFilterRequest,
   config?: UseQueryOptions<t.AllPromptGroupsResponse, unknown, TData>,
 ): QueryObserverResult<TData> => {
-  return useQuery<t.AllPromptGroupsResponse, unknown, TData>(
-    [QueryKeys.allPromptGroups],
-    () => dataService.getAllPromptGroups(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.allPromptGroups],
+    queryFn: () => dataService.getAllPromptGroups(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config
+  });
 };
 
 export const useGetCategories = <TData = t.TGetCategoriesResponse>(
   config?: UseQueryOptions<t.TGetCategoriesResponse, unknown, TData>,
 ): QueryObserverResult<TData> => {
-  return useQuery<t.TGetCategoriesResponse, unknown, TData>(
-    [QueryKeys.categories],
-    () => dataService.getCategories(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled : true,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.categories],
+    queryFn: () => dataService.getCategories(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled : true
+  });
 };
 
 export const useGetRandomPrompts = (
   filter: t.TGetRandomPromptsRequest,
   config?: UseQueryOptions<t.TGetRandomPromptsResponse>,
 ): QueryObserverResult<t.TGetRandomPromptsResponse> => {
-  return useQuery<t.TGetRandomPromptsResponse>(
-    [QueryKeys.randomPrompts],
-    () => dataService.getRandomPrompts(filter),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled : true,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.randomPrompts],
+    queryFn: () => dataService.getRandomPrompts(filter),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled : true
+  });
 };
 
 export const useUserTermsQuery = (
   config?: UseQueryOptions<t.TUserTermsResponse>,
 ): QueryObserverResult<t.TUserTermsResponse> => {
-  return useQuery<t.TUserTermsResponse>([QueryKeys.userTerms], () => dataService.getUserTerms(), {
+  return useQuery({
+    queryKey: [QueryKeys.userTerms],
+    queryFn: () => dataService.getUserTerms(),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config,
+    ...config
   });
 };

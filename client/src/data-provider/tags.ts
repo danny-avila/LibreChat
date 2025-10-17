@@ -6,14 +6,12 @@ import { QueryKeys, dataService } from 'librechat-data-provider';
 export const useGetConversationTags = (
   config?: UseQueryOptions<TConversationTagsResponse>,
 ): QueryObserverResult<TConversationTagsResponse> => {
-  return useQuery<TConversationTagsResponse>(
-    [QueryKeys.conversationTags],
-    () => dataService.getConversationTags(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.conversationTags],
+    queryFn: () => dataService.getConversationTags(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config
+  });
 };
