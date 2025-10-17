@@ -101,6 +101,17 @@ export async function loadDefaultInterface({
     if (i === 0) i++;
   }
 
+  // Validate fileSearchSelected configuration
+  if (loadedInterface.fileSearch === false && loadedInterface.fileSearchSelected === true) {
+    logger.error(
+      'Invalid configuration: fileSearchSelected cannot be true when fileSearch is false. ' +
+        'Either enable fileSearch or disable fileSearchSelected.',
+    );
+    throw new Error(
+      'Configuration error: fileSearchSelected cannot be enabled when fileSearch is disabled',
+    );
+  }
+
   if (i > 0) {
     logSettings();
   }
