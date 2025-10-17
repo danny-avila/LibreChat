@@ -6,14 +6,12 @@ import { SystemRoles, Permissions, PermissionTypes } from 'librechat-data-provid
 
 // Mock the logger and memory modules
 jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
   logger: {
     error: jest.fn(),
     warn: jest.fn(),
     debug: jest.fn(),
   },
-}));
-
-jest.mock('@librechat/data-schemas/dist/app/memory', () => ({
   isMemoryEnabled: jest.fn(() => false),
 }));
 
