@@ -27,6 +27,8 @@ const fontSize = atom<string>({
         return;
       }
 
+      const DEFAULT_FONT_SIZE = 'text-base';
+
       const hydrate = () => {
         const savedValue = localStorage.getItem('fontSize');
 
@@ -38,30 +40,21 @@ const fontSize = atom<string>({
             return;
           } catch (error) {
             console.error(
-              'Error parsing localStorage key "fontSize", savedValue: defaultValue, error:',
+              'Error parsing localStorage key "fontSize", resetting to default. Error:',
               error,
             );
-            localStorage.setItem('fontSize', JSON.stringify('text-base'));
-            setSelf('text-base');
+            localStorage.setItem('fontSize', JSON.stringify(DEFAULT_FONT_SIZE));
+            setSelf(DEFAULT_FONT_SIZE);
+            applyFontSize(DEFAULT_FONT_SIZE);
+            return;
           }
         }
 
-        applyFontSize('text-base');
+        applyFontSize(DEFAULT_FONT_SIZE);
       };
 
       if (trigger === 'get') {
         hydrate();
-      } else {
-        const currentValue = localStorage.getItem('fontSize');
-        if (currentValue !== null) {
-          try {
-            applyFontSize(JSON.parse(currentValue));
-          } catch {
-            applyFontSize('text-base');
-          }
-        } else {
-          applyFontSize('text-base');
-        }
       }
 
       onSet((newValue) => {
