@@ -13,7 +13,7 @@ export const useVerifyAgentToolAuth = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };
 
@@ -28,14 +28,12 @@ export const useGetToolCalls = <TData = t.ToolCallResults>(
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-
     enabled:
       conversationId.length > 0 &&
       conversationId !== Constants.NEW_CONVO &&
       conversationId !== Constants.PENDING_CONVO &&
       conversationId !== Constants.SEARCH,
-
-    ...config
+    ...config,
   });
 };
 
@@ -48,11 +46,9 @@ export const useMCPConnectionStatusQuery = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-
     // 10 seconds
     staleTime: 10000,
-
-    ...config
+    ...config,
   });
 };
 
@@ -67,6 +63,6 @@ export const useMCPAuthValuesQuery = (
     refetchOnReconnect: false,
     refetchOnMount: false,
     enabled: !!serverName,
-    ...config
+    ...config,
   });
 };

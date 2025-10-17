@@ -12,6 +12,6 @@ export const useGetConversationTags = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };

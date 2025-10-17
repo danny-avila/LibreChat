@@ -28,7 +28,7 @@ export const useGetSharedMessages = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };
 
@@ -40,24 +40,20 @@ export const useGetSharedLinkQuery = (
   return useQuery({
     queryKey: [QueryKeys.sharedLinks, conversationId],
     queryFn: () => dataService.getSharedLink(conversationId),
-
     enabled:
       !!conversationId &&
       conversationId !== Constants.NEW_CONVO &&
       conversationId !== Constants.PENDING_CONVO,
-
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-
     onSuccess: (data) => {
       queryClient.setQueryData([QueryKeys.sharedLinks, conversationId], {
         conversationId: data.conversationId,
         shareId: data.shareId,
       });
     },
-
-    ...config
+    ...config,
   });
 };
 
@@ -71,7 +67,7 @@ export const useGetConversationByIdQuery = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };
 
@@ -81,13 +77,12 @@ export const useGetConversationByIdMutation = (id: string): UseMutationResult<s.
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => dataService.getConversationById(id),
-
     // onSuccess: (res: s.TConversation) => {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.conversation, id]
       });
-    }
+    },
   });
 };
 
@@ -97,12 +92,11 @@ export const useUpdateMessageMutation = (
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: t.TUpdateMessageRequest) => dataService.updateMessage(payload),
-
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.messages, id]
       });
-    }
+    },
   });
 };
 
@@ -112,12 +106,11 @@ export const useUpdateMessageContentMutation = (
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: t.TUpdateMessageContent) => dataService.updateMessageContent(payload),
-
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.messages, conversationId]
       });
-    }
+    },
   });
 };
 
@@ -130,12 +123,11 @@ export const useUpdateUserKeysMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: t.TUpdateUserKeyRequest) => dataService.updateUserKey(payload),
-
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.name, variables.name]
       });
-    }
+    },
   });
 };
 
@@ -143,12 +135,11 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => dataService.clearAllConversations(),
-
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.allConversations]
       });
-    }
+    },
   });
 };
 
@@ -156,7 +147,6 @@ export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknow
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => dataService.revokeUserKey(name),
-
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.name, name]
@@ -184,7 +174,7 @@ export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknow
           queryKey: [QueryKeys.tools]
         });
       }
-    }
+    },
   });
 };
 
@@ -192,7 +182,6 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => dataService.revokeAllUserKeys(),
-
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.name]
@@ -229,7 +218,7 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.tools]
       });
-    }
+    },
   });
 };
 
@@ -244,7 +233,7 @@ export const useGetModelsQuery = (
     refetchOnReconnect: false,
     refetchOnMount: false,
     staleTime: Infinity,
-    ...config
+    ...config,
   });
 };
 
@@ -257,12 +246,11 @@ export const useCreatePresetMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: s.TPreset) => dataService.createPreset(payload),
-
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.presets]
       });
-    }
+    },
   });
 };
 
@@ -275,12 +263,11 @@ export const useDeletePresetMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: s.TPreset | undefined) => dataService.deletePreset(payload),
-
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.presets]
       });
-    }
+    },
   });
 };
 
@@ -293,12 +280,11 @@ export const useUpdateTokenCountMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ text }: { text: string }) => dataService.updateTokenCount(text),
-
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.tokenCount]
       });
-    }
+    },
   });
 };
 
@@ -309,7 +295,6 @@ export const useRegisterUserMutation = (
   return useMutation({
     mutationFn: (payload: t.TRegisterUser) => dataService.register(payload),
     ...options,
-
     onSuccess: (...args) => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.user]
@@ -317,7 +302,7 @@ export const useRegisterUserMutation = (
       if (options?.onSuccess) {
         options.onSuccess(...args);
       }
-    }
+    },
   });
 };
 
@@ -327,19 +312,17 @@ export const useUserKeyQuery = (
 ): QueryObserverResult<t.TCheckUserKeyResponse> => {
   return useQuery({
     queryKey: [QueryKeys.name, name],
-
     queryFn: () => {
       if (!name) {
         return Promise.resolve({ expiresAt: '' });
       }
       return dataService.userKeyQuery(name);
     },
-
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
     retry: false,
-    ...config
+    ...config,
   });
 };
 
@@ -375,7 +358,7 @@ export const useAvailablePluginsQuery = <TData = s.TPlugin[]>(
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };
 
@@ -387,7 +370,6 @@ export const useUpdateUserPluginsMutation = (
   return useMutation({
     mutationFn: (payload: t.TUpdateUserPlugins) => dataService.updateUserPlugins(payload),
     ...options,
-
     onSuccess: (...args) => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.user]
@@ -399,7 +381,7 @@ export const useUpdateUserPluginsMutation = (
           queryKey: [QueryKeys.mcpAuthValues, serverName]
         });
       }
-    }
+    },
   });
 };
 
@@ -418,12 +400,11 @@ export const useReinitializeMCPServerMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (serverName: string) => dataService.reinitializeMCPServer(serverName),
-
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.mcpTools]
       });
-    }
+    },
   });
 };
 
@@ -436,12 +417,11 @@ export const useCancelMCPOAuthMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (serverName: string) => dataService.cancelMCPOAuth(serverName),
-
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.mcpConnectionStatus]
       });
-    }
+    },
   });
 };
 
@@ -454,7 +434,7 @@ export const useGetCustomConfigSpeechQuery = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };
 
@@ -466,12 +446,11 @@ export const useUpdateFeedbackMutation = (
   return useMutation({
     mutationFn: (payload: t.TUpdateFeedbackRequest) =>
       dataService.updateFeedback(conversationId, messageId, payload),
-
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.messages, messageId]
       });
-    }
+    },
   });
 };
 
@@ -487,7 +466,7 @@ export const useSearchPrincipalsQuery = (
     refetchOnReconnect: false,
     refetchOnMount: false,
     staleTime: 30000,
-    ...config
+    ...config,
   });
 };
 
@@ -502,11 +481,8 @@ export const useGetAccessRolesQuery = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-
-    // Cache for 5 minutes
-    staleTime: 5 * 60 * 1000,
-
-    ...config
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    ...config,
   });
 };
 
@@ -522,11 +498,8 @@ export const useGetResourcePermissionsQuery = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-
-    // Cache for 2 minutes
-    staleTime: 2 * 60 * 1000,
-
-    ...config
+    staleTime: 2 * 60 * 1000, // Cache for 2 minutes
+    ...config,
   });
 };
 
@@ -585,11 +558,8 @@ export const useMCPServerConnectionStatusQuery = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-
-    // 10 seconds
-    staleTime: 10000,
-
+    staleTime: 10000, // 10 seconds
     enabled: !!serverName,
-    ...config
+    ...config,
   });
 };

@@ -17,7 +17,7 @@ export const useMemoriesQuery = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };
 
@@ -25,12 +25,11 @@ export const useDeleteMemoryMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (key: string) => dataService.deleteMemory(key),
-
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.memories]
       });
-    }
+    },
   });
 };
 
@@ -42,15 +41,13 @@ export const useUpdateMemoryMutation = (
   return useMutation({
     mutationFn: ({ key, value, originalKey }: UpdateMemoryParams) =>
       dataService.updateMemory(key, value, originalKey),
-
     ...options,
-
     onSuccess: (...params) => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.memories]
       });
       options?.onSuccess?.(...params);
-    }
+    },
   });
 };
 
@@ -73,15 +70,13 @@ export const useUpdateMemoryPreferencesMutation = (
 
     mutationFn: (preferences: UpdateMemoryPreferencesParams) =>
       dataService.updateMemoryPreferences(preferences),
-
     ...options,
-
     onSuccess: (...params) => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.user]
       });
       options?.onSuccess?.(...params);
-    }
+    },
   });
 };
 
@@ -95,7 +90,6 @@ export const useCreateMemoryMutation = (
   return useMutation({
     mutationFn: ({ key, value }: CreateMemoryParams) => dataService.createMemory({ key, value }),
     ...options,
-
     onSuccess: (data, variables, context) => {
       queryClient.setQueryData<MemoriesResponse>([QueryKeys.memories], (oldData) => {
         if (!oldData) return oldData;
@@ -121,6 +115,6 @@ export const useCreateMemoryMutation = (
       });
 
       options?.onSuccess?.(data, variables, context);
-    }
+    },
   });
 };

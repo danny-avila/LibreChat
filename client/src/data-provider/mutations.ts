@@ -29,7 +29,6 @@ export const useGenTitleMutation = (): TGenTitleMutation => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: t.TGenTitleRequest) => dataService.genTitle(payload),
-
     onSuccess: (response, vars) => {
       queryClient.setQueryData(
         [QueryKeys.conversation, vars.conversationId],
@@ -41,7 +40,7 @@ export const useGenTitleMutation = (): TGenTitleMutation => {
         title: response.title,
       }));
       document.title = response.title;
-    }
+    },
   });
 };
 
@@ -56,12 +55,11 @@ export const useUpdateConversationMutation = (
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: t.TUpdateConversationRequest) => dataService.updateConversation(payload),
-
     onSuccess: (updatedConvo, payload) => {
       const targetId = payload.conversationId || id;
       queryClient.setQueryData([QueryKeys.conversation, targetId], updatedConvo);
       updateConvoInAllQueries(queryClient, targetId, () => updatedConvo);
-    }
+    },
   });
 };
 
@@ -74,15 +72,13 @@ export const useTagConversationMutation = (
   return useMutation({
     mutationFn: (payload: t.TTagConversationRequest) =>
       dataService.addTagToConversation(conversationId, payload),
-
     onSuccess: (updatedTags, ...rest) => {
       query.refetch();
       updateTagsInConversation(conversationId, updatedTags);
       options?.onSuccess?.(updatedTags, ...rest);
     },
-
     onError: options?.onError,
-    onMutate: options?.onMutate
+    onMutate: options?.onMutate,
   });
 };
 
@@ -153,9 +149,7 @@ export const useArchiveConvoMutation = (
 
       onSuccess?.(_data, vars, context);
     },
-
     onError,
-
     onSettled: () => {
       queryClient.invalidateQueries({
         queryKey: convoQueryKey,
@@ -166,8 +160,7 @@ export const useArchiveConvoMutation = (
         refetchPage: (_, index) => index === 0,
       });
     },
-
-    ..._options
+    ..._options,
   });
 };
 
@@ -193,14 +186,12 @@ export const useCreateSharedLinkMutation = (
 
       return dataService.createSharedLink(conversationId, targetMessageId);
     },
-
     onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
       queryClient.setQueryData([QueryKeys.sharedLinks, _data.conversationId], _data);
 
       onSuccess?.(_data, vars, context);
     },
-
-    ..._options
+    ..._options,
   });
 };
 
@@ -241,7 +232,6 @@ export const useDeleteSharedLinkMutation = (
 
   return useMutation({
     mutationFn: (vars) => dataService.deleteSharedLink(vars.shareId),
-
     onMutate: async (vars) => {
       await queryClient.cancelQueries({
         queryKey: [QueryKeys.sharedLinks],
@@ -303,7 +293,7 @@ export const useDeleteSharedLinkMutation = (
         queryKey: [QueryKeys.sharedLinks],
         exact: true,
       });
-    }
+    },
   });
 };
 
@@ -391,8 +381,7 @@ export const useConversationTagMutation = ({
       onMutationSuccess(...args);
       onSuccess?.(...args);
     },
-
-    ..._options
+    ..._options,
   });
 };
 
@@ -483,8 +472,7 @@ export const useDeleteConversationTagMutation = (
       deleteTagInAllConversations(tagToDelete);
       onSuccess?.(_data, tagToDelete, context);
     },
-
-    ..._options
+    ..._options,
   });
 };
 
@@ -575,7 +563,6 @@ export const useDuplicateConversationMutation = (
   const { onSuccess, ..._options } = options ?? {};
   return useMutation({
     mutationFn: (payload) => dataService.duplicateConversation(payload),
-
     onSuccess: (data, vars, context) => {
       const duplicatedConversation = data.conversation;
       if (!duplicatedConversation?.conversationId) {
@@ -609,8 +596,7 @@ export const useDuplicateConversationMutation = (
 
       onSuccess?.(data, vars, context);
     },
-
-    ..._options
+    ..._options,
   });
 };
 
@@ -622,7 +608,6 @@ export const useForkConvoMutation = (
 
   return useMutation({
     mutationFn: (payload: t.TForkConvoRequest) => dataService.forkConversation(payload),
-
     onSuccess: (data, vars, context) => {
       if (!vars.conversationId) {
         return;
@@ -655,8 +640,7 @@ export const useForkConvoMutation = (
 
       onSuccess?.(data, vars, context);
     },
-
-    ..._options
+    ..._options,
   });
 };
 
@@ -697,7 +681,7 @@ export const useUpdatePresetMutation = (
   return useMutation({
     mutationKey: [MutationKeys.updatePreset],
     mutationFn: (preset: t.TPreset) => dataService.updatePreset(preset),
-    ...(options || {})
+    ...(options || {}),
   });
 };
 
@@ -712,7 +696,7 @@ export const useDeletePresetMutation = (
   return useMutation({
     mutationKey: [MutationKeys.deletePreset],
     mutationFn: (preset: t.TPreset | undefined) => dataService.deletePreset(preset),
-    ...(options || {})
+    ...(options || {}),
   });
 };
 
@@ -728,7 +712,7 @@ export const useUploadAvatarMutation = (
   return useMutation({
     mutationKey: [MutationKeys.avatarUpload],
     mutationFn: (variables: FormData) => dataService.uploadAvatar(variables),
-    ...(options || {})
+    ...(options || {}),
   });
 };
 
@@ -744,7 +728,7 @@ export const useSpeechToTextMutation = (
   return useMutation({
     mutationKey: [MutationKeys.speechToText],
     mutationFn: (variables: FormData) => dataService.speechToText(variables),
-    ...(options || {})
+    ...(options || {}),
   });
 };
 
@@ -760,7 +744,7 @@ export const useTextToSpeechMutation = (
   return useMutation({
     mutationKey: [MutationKeys.textToSpeech],
     mutationFn: (variables: FormData) => dataService.textToSpeech(variables),
-    ...(options || {})
+    ...(options || {}),
   });
 };
 
@@ -779,7 +763,6 @@ export const useCreateAssistantMutation = (
     mutationFn: (newAssistantData: t.AssistantCreateParams) => dataService.createAssistant(newAssistantData),
     onMutate: (variables) => options?.onMutate?.(variables),
     onError: (error, variables, context) => options?.onError?.(error, variables, context),
-
     onSuccess: (newAssistant, variables, context) => {
       const listRes = queryClient.getQueryData<t.AssistantListResponse>([
         QueryKeys.assistants,
@@ -828,10 +811,8 @@ export const useUpdateAssistantMutation = (
         assistant_id,
       });
     },
-
     onMutate: (variables) => options?.onMutate?.(variables),
     onError: (error, variables, context) => options?.onError?.(error, variables, context),
-
     onSuccess: (updatedAssistant, variables, context) => {
       const listRes = queryClient.getQueryData<t.AssistantListResponse>([
         QueryKeys.assistants,
@@ -875,7 +856,7 @@ export const useUpdateAssistantMutation = (
         },
       );
       return options?.onSuccess?.(updatedAssistant, variables, context);
-    }
+    },
   });
 };
 
@@ -892,10 +873,8 @@ export const useDeleteAssistantMutation = (
       const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
       return dataService.deleteAssistant({ assistant_id, model, version, endpoint });
     },
-
     onMutate: (variables) => options?.onMutate?.(variables),
     onError: (error, variables, context) => options?.onError?.(error, variables, context),
-
     onSuccess: (_data, variables, context) => {
       const listRes = queryClient.getQueryData<t.AssistantListResponse>([
         QueryKeys.assistants,
@@ -918,7 +897,7 @@ export const useDeleteAssistantMutation = (
       );
 
       return options?.onSuccess?.(_data, variables, data);
-    }
+    },
   });
 };
 
@@ -938,8 +917,7 @@ export const useUploadAssistantAvatarMutation = (
 
     mutationFn: ({ postCreation: _postCreation, ...variables }: t.AssistantAvatarVariables) =>
       dataService.uploadAssistantAvatar(variables),
-
-    ...(options || {})
+    ...(options || {}),
   });
 };
 
@@ -1001,7 +979,7 @@ export const useUpdateAction = (
       });
 
       return options?.onSuccess?.(updateActionResponse, variables, context);
-    }
+    },
   });
 };
 
@@ -1019,7 +997,6 @@ export const useDeleteAction = (
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: [MutationKeys.deleteAction],
-
     mutationFn: (variables: t.DeleteActionVariables) => {
       const { endpoint } = variables;
       const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
@@ -1029,10 +1006,8 @@ export const useDeleteAction = (
         version,
       });
     },
-
     onMutate: (variables) => options?.onMutate?.(variables),
     onError: (error, variables, context) => options?.onError?.(error, variables, context),
-
     onSuccess: (_data, variables, context) => {
       let domain: string | undefined = '';
       queryClient.setQueryData<t.Action[]>([QueryKeys.actions], (prev) => {
@@ -1067,7 +1042,7 @@ export const useDeleteAction = (
       );
 
       return options?.onSuccess?.(_data, variables, context);
-    }
+    },
   });
 };
 
@@ -1111,6 +1086,6 @@ export const useAcceptTermsMutation = (
     },
 
     onError: options?.onError,
-    onMutate: options?.onMutate
+    onMutate: options?.onMutate,
   });
 };

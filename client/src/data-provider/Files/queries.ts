@@ -48,7 +48,7 @@ export const useGetFileConfig = <TData = t.FileConfig>(
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };
 
@@ -56,7 +56,6 @@ export const useFileDownload = (userId?: string, file_id?: string): QueryObserve
   const queryClient = useQueryClient();
   return useQuery({
     queryKey: [QueryKeys.fileDownload, file_id],
-
     queryFn: async () => {
       if (!userId || !file_id) {
         console.warn('No user ID provided for file download');
@@ -81,14 +80,13 @@ export const useFileDownload = (userId?: string, file_id?: string): QueryObserve
     },
 
     enabled: false,
-    retry: false
+    retry: false,
   });
 };
 
 export const useCodeOutputDownload = (url = ''): QueryObserverResult<string> => {
   return useQuery({
     queryKey: [QueryKeys.fileDownload, url],
-
     queryFn: async () => {
       if (!url) {
         console.warn('No user ID provided for file download');
@@ -101,6 +99,6 @@ export const useCodeOutputDownload = (url = ''): QueryObserverResult<string> => 
     },
 
     enabled: false,
-    retry: false
+    retry: false,
   });
 };

@@ -15,10 +15,8 @@ export const useToolCallMutation = <T extends t.ToolId>(
         toolParams,
       });
     },
-
     onMutate: (variables) => options?.onMutate?.(variables),
     onError: (error, variables, context) => options?.onError?.(error, variables, context),
-
     onSuccess: (response, variables, context) => {
       queryClient.setQueryData<t.ToolCallResults>(
         [QueryKeys.toolCalls, variables.conversationId],
@@ -37,6 +35,6 @@ export const useToolCallMutation = <T extends t.ToolId>(
         ],
       );
       return options?.onSuccess?.(response, variables, context);
-    }
+    },
   });
 };

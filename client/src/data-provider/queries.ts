@@ -43,7 +43,7 @@ export const useGetPresetsQuery = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };
 
@@ -55,7 +55,6 @@ export const useGetConvoIdQuery = (
 
   return useQuery({
     queryKey: [QueryKeys.conversation, id],
-
     queryFn: () => {
       // Try to find in all fetched infinite pages
       const convosQuery = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(
@@ -70,11 +69,10 @@ export const useGetConvoIdQuery = (
       // Otherwise, fetch from API
       return dataService.getConversationById(id);
     },
-
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };
 
@@ -169,7 +167,7 @@ export const useConversationTagsQuery = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };
 
@@ -200,7 +198,7 @@ export const useAvailableToolsQuery = <TData = t.TPlugin[]>(
     refetchOnReconnect: false,
     refetchOnMount: false,
     enabled,
-    ...config
+    ...config,
   });
 };
 
@@ -287,22 +285,19 @@ export const useGetAssistantByIdQuery = (
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
   return useQuery({
     queryKey: [QueryKeys.assistant, assistant_id],
-
     queryFn: () =>
       dataService.getAssistantById({
         endpoint,
         assistant_id,
         version,
       }),
-
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
     retry: false,
     ...config,
-
     // Query will not execute until the assistant_id exists
-    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled
+    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
   });
 };
 
@@ -349,13 +344,11 @@ export const useGetAssistantDocsQuery = <TData = AssistantDocument[]>(
 
   return useQuery({
     queryKey: [QueryKeys.assistantDocs, endpoint],
-
     queryFn: () =>
       dataService.getAssistantDocs({
         endpoint,
         version,
       }),
-
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -377,7 +370,7 @@ export const useVoicesQuery = (
     refetchOnReconnect: false,
     refetchOnMount: false,
     retry: false,
-    ...config
+    ...config,
   });
 };
 
@@ -392,7 +385,7 @@ export const useCustomConfigSpeechQuery = (
     refetchOnReconnect: false,
     refetchOnMount: false,
     retry: false,
-    ...config
+    ...config,
   });
 };
 
@@ -444,7 +437,7 @@ export const useGetPromptGroup = (
     refetchOnMount: false,
     retry: false,
     ...config,
-    enabled: config?.enabled !== undefined ? config.enabled : true
+    enabled: config?.enabled !== undefined ? config.enabled : true,
   });
 };
 
@@ -460,7 +453,7 @@ export const useGetPrompts = (
     refetchOnMount: false,
     retry: false,
     ...config,
-    enabled: config?.enabled !== undefined ? config.enabled : true
+    enabled: config?.enabled !== undefined ? config.enabled : true,
   });
 };
 
@@ -475,7 +468,7 @@ export const useGetAllPromptGroups = <TData = t.AllPromptGroupsResponse>(
     refetchOnReconnect: false,
     refetchOnMount: false,
     retry: false,
-    ...config
+    ...config,
   });
 };
 
@@ -490,7 +483,7 @@ export const useGetCategories = <TData = t.TGetCategoriesResponse>(
     refetchOnMount: false,
     retry: false,
     ...config,
-    enabled: config?.enabled !== undefined ? config.enabled : true
+    enabled: config?.enabled !== undefined ? config.enabled : true,
   });
 };
 
@@ -506,7 +499,7 @@ export const useGetRandomPrompts = (
     refetchOnMount: false,
     retry: false,
     ...config,
-    enabled: config?.enabled !== undefined ? config.enabled : true
+    enabled: config?.enabled !== undefined ? config.enabled : true,
   });
 };
 
@@ -519,6 +512,6 @@ export const useUserTermsQuery = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };

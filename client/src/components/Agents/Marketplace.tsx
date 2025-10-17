@@ -310,7 +310,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                       </>
                     ) : (
                       // Invisible placeholder to maintain height
-                      (<div className="h-10 w-10" />)
+                      <div className="h-10 w-10" />
                     )}
                   </div>
                 </div>

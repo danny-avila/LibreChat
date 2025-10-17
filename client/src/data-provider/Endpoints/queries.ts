@@ -33,6 +33,6 @@ export const useGetStartupConfig = (
     refetchOnReconnect: false,
     refetchOnMount: false,
     ...config,
-    enabled: (config?.enabled ?? true) === true && queriesEnabled
+    enabled: (config?.enabled ?? true) === true && queriesEnabled,
   });
 };

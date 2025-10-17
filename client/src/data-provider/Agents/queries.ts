@@ -29,7 +29,7 @@ export const useAvailableAgentToolsQuery = (): QueryObserverResult<t.TPlugin[]> 
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    enabled
+    enabled,
   });
 };
 
@@ -59,7 +59,7 @@ export const useListAgentsQuery = <TData = t.AgentListResponse>(
     refetchOnMount: false,
     retry: false,
     ...config,
-    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled
+    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
   });
 };
 
@@ -108,7 +108,7 @@ export const useGetExpandedAgentByIdQuery = (
     refetchOnReconnect: false,
     refetchOnMount: false,
     retry: false,
-    ...config
+    ...config,
   });
 };
 
@@ -131,7 +131,7 @@ export const useGetAgentCategoriesQuery = (
     // Cache for 5 minutes
     staleTime: 5 * 60 * 1000,
 
-    ...config
+    ...config,
   });
 };
 

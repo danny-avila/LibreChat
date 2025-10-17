@@ -17,7 +17,7 @@ export const useGetUserQuery = (
     refetchOnMount: false,
     retry: false,
     ...config,
-    enabled: (config?.enabled ?? true) === true && queriesEnabled
+    enabled: (config?.enabled ?? true) === true && queriesEnabled,
   });
 };
 

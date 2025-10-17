@@ -13,7 +13,6 @@ export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
   const queryClient = useQueryClient();
   return useQuery({
     queryKey: [QueryKeys.messages, id],
-
     queryFn: async () => {
       const result = await dataService.getMessagesByConvoId(id);
       if (!location.pathname.includes('/c/new') && result?.length === 1) {
@@ -37,6 +36,6 @@ export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    ...config
+    ...config,
   });
 };
