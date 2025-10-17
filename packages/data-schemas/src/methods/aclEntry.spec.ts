@@ -1,4 +1,3 @@
-import mongoose from 'mongoose';
 import {
   ResourceType,
   PrincipalType,
@@ -6,6 +5,7 @@ import {
   PermissionBits,
 } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import mongoose from 'mongoose';
 import type * as t from '~/types';
 import { createAclEntryMethods } from './aclEntry';
 import aclEntrySchema from '~/schema/aclEntry';

@@ -1,8 +1,8 @@
-import { EarthIcon } from 'lucide-react';
-import { ControlCombobox } from '@librechat/client';
-import { useCallback, useEffect, useRef } from 'react';
-import { useFormContext, Controller } from 'react-hook-form';
 import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
+import { useFormContext, Controller } from 'react-hook-form';
+import { useCallback, useEffect, useRef } from 'react';
+import { ControlCombobox } from '@librechat/client';
+import { EarthIcon } from 'lucide-react';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { TAgentCapabilities, AgentForm } from '~/common';

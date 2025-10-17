@@ -1,7 +1,10 @@
-import i18n from 'i18next';
-import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
-
+import { initReactI18next } from 'react-i18next';
+import i18n from 'i18next';
+import translationZh_Hans from './zh-Hans/translation.json';
+import translationZh_Hant from './zh-Hant/translation.json';
+import translationPt_BR from './pt-BR/translation.json';
+import translationPt_PT from './pt-PT/translation.json';
 import translationEn from './en/translation.json';
 import translationAr from './ar/translation.json';
 import translationCa from './ca/translation.json';
@@ -14,8 +17,6 @@ import translationFa from './fa/translation.json';
 import translationFr from './fr/translation.json';
 import translationIt from './it/translation.json';
 import translationPl from './pl/translation.json';
-import translationPt_BR from './pt-BR/translation.json';
-import translationPt_PT from './pt-PT/translation.json';
 import translationRu from './ru/translation.json';
 import translationJa from './ja/translation.json';
 import translationKa from './ka/translation.json';
@@ -29,8 +30,6 @@ import translationId from './id/translation.json';
 import translationHe from './he/translation.json';
 import translationHu from './hu/translation.json';
 import translationFi from './fi/translation.json';
-import translationZh_Hans from './zh-Hans/translation.json';
-import translationZh_Hant from './zh-Hant/translation.json';
 
 export const defaultNS = 'translation';
 

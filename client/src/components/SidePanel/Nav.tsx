@@ -1,4 +1,3 @@
-import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import {
   AccordionContent,
   AccordionItem,
@@ -6,6 +5,7 @@ import {
   Accordion,
   Button,
 } from '@librechat/client';
+import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import type { NavLink, NavProps } from '~/common';
 import { ActivePanelProvider, useActivePanel } from '~/Providers';
 import { useLocalize } from '~/hooks';

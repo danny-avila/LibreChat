@@ -1,8 +1,8 @@
-import React from 'react';
-import { motion } from 'framer-motion';
-import { TooltipAnchor } from '@librechat/client';
-import { MessageCircleDashed } from 'lucide-react';
 import { useRecoilState, useRecoilCallback } from 'recoil';
+import { MessageCircleDashed } from 'lucide-react';
+import { TooltipAnchor } from '@librechat/client';
+import { motion } from 'framer-motion';
+import React from 'react';
 import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';

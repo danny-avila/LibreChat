@@ -1,4 +1,3 @@
-import { Control, Controller, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
 import {
   CircleHelpIcon,
   HoverCard,
@@ -7,6 +6,7 @@ import {
   HoverCardTrigger,
   Checkbox,
 } from '@librechat/client';
+import { Control, Controller, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
 import type { AssistantForm } from '~/common';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';

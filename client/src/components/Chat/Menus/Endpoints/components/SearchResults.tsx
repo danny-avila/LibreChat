@@ -1,6 +1,6 @@
-import React, { Fragment } from 'react';
-import { EarthIcon } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EarthIcon } from 'lucide-react';
+import React, { Fragment } from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';

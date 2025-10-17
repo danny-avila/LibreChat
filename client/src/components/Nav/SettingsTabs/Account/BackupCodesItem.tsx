@@ -1,7 +1,3 @@
-import React, { useState } from 'react';
-import { RefreshCcw } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { TBackupCode, TRegenerateBackupCodesResponse, type TUser } from 'librechat-data-provider';
 import {
   OGDialog,
   OGDialogContent,
@@ -13,9 +9,13 @@ import {
   TooltipAnchor,
   useToastContext,
 } from '@librechat/client';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useSetRecoilState } from 'recoil';
+import { RefreshCcw } from 'lucide-react';
+import React, { useState } from 'react';
+import { TBackupCode, TRegenerateBackupCodesResponse, type TUser } from 'librechat-data-provider';
 import { useRegenerateBackupCodesMutation } from '~/data-provider';
 import { useAuthContext, useLocalize } from '~/hooks';
-import { useSetRecoilState } from 'recoil';
 import store from '~/store';
 
 const BackupCodesItem: React.FC = () => {

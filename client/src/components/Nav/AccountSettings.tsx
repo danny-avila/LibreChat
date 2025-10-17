@@ -1,8 +1,8 @@
-import { useState, memo } from 'react';
-import { useRecoilState } from 'recoil';
+import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import * as Select from '@ariakit/react/select';
 import { FileText, LogOut } from 'lucide-react';
-import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
+import { useRecoilState } from 'recoil';
+import { useState, memo } from 'react';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';

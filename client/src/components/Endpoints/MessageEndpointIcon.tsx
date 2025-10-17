@@ -1,6 +1,3 @@
-import { memo } from 'react';
-import { Feather } from 'lucide-react';
-import { EModelEndpoint, isAssistantsEndpoint, alternateName } from 'librechat-data-provider';
 import {
   Plugin,
   GPTIcon,
@@ -13,6 +10,9 @@ import {
   AzureMinimalIcon,
   CustomMinimalIcon,
 } from '@librechat/client';
+import { EModelEndpoint, isAssistantsEndpoint, alternateName } from 'librechat-data-provider';
+import { Feather } from 'lucide-react';
+import { memo } from 'react';
 import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';

@@ -1,7 +1,7 @@
-import React, { ReactNode } from 'react';
-import * as Ariakit from '@ariakit/react';
 import { ChevronDown, Paperclip } from 'lucide-react';
 import { VisuallyHidden } from '@ariakit/react';
+import * as Ariakit from '@ariakit/react';
+import React, { ReactNode } from 'react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

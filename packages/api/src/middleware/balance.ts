@@ -1,8 +1,8 @@
 import { logger } from '@librechat/data-schemas';
-import type { NextFunction, Request as ServerRequest, Response as ServerResponse } from 'express';
 import type { IBalance, IUser, BalanceConfig, ObjectId, AppConfig } from '@librechat/data-schemas';
-import type { Model } from 'mongoose';
+import type { NextFunction, Request as ServerRequest, Response as ServerResponse } from 'express';
 import type { BalanceUpdateFields } from '~/types';
+import type { Model } from 'mongoose';
 import { getBalanceConfig } from '~/app/config';
 
 export interface BalanceMiddlewareOptions {

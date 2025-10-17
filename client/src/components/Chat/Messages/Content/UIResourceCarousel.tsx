@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
 import { UIResourceRenderer } from '@mcp-ui/client';
+import React, { useState } from 'react';
 import type { UIResource } from 'librechat-data-provider';
 
 interface UIResourceCarouselProps {

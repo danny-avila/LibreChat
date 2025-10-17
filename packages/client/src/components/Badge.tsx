@@ -1,8 +1,8 @@
-import type React from 'react';
 import { X, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { ButtonHTMLAttributes } from 'react';
 import type { LucideIcon } from 'lucide-react';
+import type React from 'react';
 import { cn } from '~/utils';
 
 interface BadgeProps

@@ -1,5 +1,5 @@
-import React from 'react';
 import { Skeleton } from '@librechat/client';
+import React from 'react';
 
 export default function MCPPanelSkeleton() {
   return (

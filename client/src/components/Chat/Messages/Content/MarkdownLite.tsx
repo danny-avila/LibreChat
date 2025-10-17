@@ -1,10 +1,10 @@
-import { memo } from 'react';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
+import rehypeHighlight from 'rehype-highlight';
+import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import supersub from 'remark-supersub';
-import ReactMarkdown from 'react-markdown';
-import rehypeHighlight from 'rehype-highlight';
+import remarkMath from 'remark-math';
+import remarkGfm from 'remark-gfm';
+import { memo } from 'react';
 import type { PluggableList } from 'unified';
 import { code, codeNoExecution, a, p } from './MarkdownComponents';
 import { CodeBlockProvider, ArtifactProvider } from '~/Providers';

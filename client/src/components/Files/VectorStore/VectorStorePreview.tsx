@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import DeleteIconButton from '../DeleteIconButton';
-import { TrashIcon, Button } from '@librechat/client';
+import { BarChart4Icon, Clock3, FileClock, FileIcon, InfoIcon, PlusIcon } from 'lucide-react';
 import { TFile } from 'librechat-data-provider/dist/types';
+import { TrashIcon, Button } from '@librechat/client';
+import { useParams } from 'react-router-dom';
+import React, { useState } from 'react';
 import UploadFileButton from '../FileList/UploadFileButton';
 import UploadFileModal from '../FileList/UploadFileModal';
-import { BarChart4Icon, Clock3, FileClock, FileIcon, InfoIcon, PlusIcon } from 'lucide-react';
-import { useParams } from 'react-router-dom';
+import DeleteIconButton from '../DeleteIconButton';
 
 const tempVectorStore = {
   _id: 'vs_NeHK4JidLKJ2qo23dKLLK',

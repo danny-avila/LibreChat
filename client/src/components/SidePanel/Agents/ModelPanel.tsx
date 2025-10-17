@@ -1,9 +1,3 @@
-import React, { useMemo, useEffect } from 'react';
-import keyBy from 'lodash/keyBy';
-import { ControlCombobox } from '@librechat/client';
-import { ChevronLeft, RotateCcw } from 'lucide-react';
-import { useFormContext, useWatch, Controller } from 'react-hook-form';
-import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import {
   alternateName,
   getSettingsKeys,
@@ -11,8 +5,14 @@ import {
   SettingDefinition,
   agentParamSettings,
 } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
+import { useFormContext, useWatch, Controller } from 'react-hook-form';
+import { ChevronLeft, RotateCcw } from 'lucide-react';
+import { ControlCombobox } from '@librechat/client';
+import React, { useMemo, useEffect } from 'react';
+import keyBy from 'lodash/keyBy';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
+import type * as t from 'librechat-data-provider';
+import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { getEndpointField, cn } from '~/utils';
 import { useLocalize } from '~/hooks';

@@ -1,5 +1,5 @@
-import fs from 'fs';
 import path from 'path';
+import fs from 'fs';
 
 const baseDirPath = './client/src/localization/languages';
 const promptsDirPath = './client/src/localization/prompts/instructions';

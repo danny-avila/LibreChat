@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
-import { Search, X } from 'lucide-react';
-import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
-import { useFormContext } from 'react-hook-form';
-import { isAgentsEndpoint } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
+import { isAgentsEndpoint } from 'librechat-data-provider';
+import { useFormContext } from 'react-hook-form';
+import { Search, X } from 'lucide-react';
+import { useEffect } from 'react';
 import type {
   AssistantsEndpoint,
   EModelEndpoint,

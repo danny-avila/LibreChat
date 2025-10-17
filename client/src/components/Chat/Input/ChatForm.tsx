@@ -1,14 +1,8 @@
-import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
-import { useWatch } from 'react-hook-form';
-import { TextareaAutosize } from '@librechat/client';
-import { useRecoilState, useRecoilValue } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
-import {
-  useChatContext,
-  useChatFormContext,
-  useAddedChatContext,
-  useAssistantsMapContext,
-} from '~/Providers';
+import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import { TextareaAutosize } from '@librechat/client';
+import { useWatch } from 'react-hook-form';
 import {
   useTextarea,
   useAutoSave,
@@ -18,6 +12,12 @@ import {
   useSubmitMessage,
   useFocusChatEffect,
 } from '~/hooks';
+import {
+  useChatContext,
+  useChatFormContext,
+  useAddedChatContext,
+  useAssistantsMapContext,
+} from '~/Providers';
 import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';

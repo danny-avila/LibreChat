@@ -1,5 +1,3 @@
-import { Feather } from 'lucide-react';
-import { EModelEndpoint, alternateName } from 'librechat-data-provider';
 import {
   AzureMinimalIcon,
   OpenAIMinimalIcon,
@@ -11,6 +9,8 @@ import {
   BedrockIcon,
   Sparkles,
 } from '@librechat/client';
+import { EModelEndpoint, alternateName } from 'librechat-data-provider';
+import { Feather } from 'lucide-react';
 import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';

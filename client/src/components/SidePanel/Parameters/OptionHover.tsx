@@ -1,5 +1,5 @@
-import React from 'react';
 import { HoverCardPortal, HoverCardContent } from '@librechat/client';
+import React from 'react';
 import { TranslationKeys, useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 

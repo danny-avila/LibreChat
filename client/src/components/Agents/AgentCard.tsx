@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
 import { Label } from '@librechat/client';
+import React, { useMemo } from 'react';
 import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
 import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';

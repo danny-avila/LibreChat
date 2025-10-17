@@ -1,8 +1,8 @@
-import '@testing-library/jest-dom/extend-expect';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { Panel } from '~/common/types';
+import '@testing-library/jest-dom/extend-expect';
 import VersionContent from '../VersionContent';
 import VersionPanel from '../VersionPanel';
+import { Panel } from '~/common/types';
 
 const mockAgentData = {
   name: 'Test Agent',

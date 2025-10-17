@@ -1,5 +1,5 @@
-import { webSearchAuth } from '@librechat/data-schemas';
 import { SafeSearchTypes, AuthType } from 'librechat-data-provider';
+import { webSearchAuth } from '@librechat/data-schemas';
 import type {
   ScraperProviders,
   TWebSearchConfig,

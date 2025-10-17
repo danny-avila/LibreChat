@@ -1,11 +1,3 @@
-import { useState } from 'react';
-import { useFormContext } from 'react-hook-form';
-import * as RadioGroup from '@radix-ui/react-radio-group';
-import {
-  AuthTypeEnum,
-  AuthorizationTypeEnum,
-  TokenExchangeMethodEnum,
-} from 'librechat-data-provider';
 import {
   OGDialog,
   OGDialogClose,
@@ -14,6 +6,14 @@ import {
   OGDialogContent,
   OGDialogTrigger,
 } from '@librechat/client';
+import {
+  AuthTypeEnum,
+  AuthorizationTypeEnum,
+  TokenExchangeMethodEnum,
+} from 'librechat-data-provider';
+import * as RadioGroup from '@radix-ui/react-radio-group';
+import { useFormContext } from 'react-hook-form';
+import { useState } from 'react';
 import { TranslationKeys, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

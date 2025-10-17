@@ -1,8 +1,4 @@
 /* Memories */
-import { useMemo, useState, useRef, useEffect } from 'react';
-import { Plus } from 'lucide-react';
-import { matchSorter } from 'match-sorter';
-import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   Table,
   Input,
@@ -23,6 +19,10 @@ import {
   OGDialogTrigger,
   OGDialogTemplate,
 } from '@librechat/client';
+import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { useMemo, useState, useRef, useEffect } from 'react';
+import { matchSorter } from 'match-sorter';
+import { Plus } from 'lucide-react';
 import type { TUserMemory } from 'librechat-data-provider';
 import {
   useUpdateMemoryPreferencesMutation,

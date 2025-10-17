@@ -1,13 +1,13 @@
-import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
-import throttle from 'lodash/throttle';
-import { useRecoilValue } from 'recoil';
-import { getConfigDefaults } from 'librechat-data-provider';
 import {
   ResizableHandleAlt,
   ResizablePanel,
   ResizablePanelGroup,
   useMediaQuery,
 } from '@librechat/client';
+import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
+import { getConfigDefaults } from 'librechat-data-provider';
+import { useRecoilValue } from 'recoil';
+import throttle from 'lodash/throttle';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { useGetStartupConfig } from '~/data-provider';
 import { normalizeLayout } from '~/utils';

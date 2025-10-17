@@ -1,8 +1,8 @@
-import path from 'path';
 import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
 import alias from '@rollup/plugin-alias';
 import json from '@rollup/plugin-json';
+import path from 'path';
 
 const rootPath = path.resolve(__dirname, '../../');
 const rootServerPath = path.resolve(__dirname, '../../api');

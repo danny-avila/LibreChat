@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-import React from 'react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { EModelEndpoint } from 'librechat-data-provider';
+import React from 'react';
 import { MarketplaceProvider } from '../MarketplaceContext';
 import { useChatContext } from '~/Providers';
 
@@ -78,7 +78,7 @@ describe('MarketplaceProvider', () => {
   it('creates ChatContext.Provider with correct structure', () => {
     render(
       <MarketplaceProvider>
-        <div>{/* eslint-disable-line i18next/no-literal-string */}Test Child</div>
+        <div>{ }Test Child</div>
       </MarketplaceProvider>,
     );
 
@@ -97,7 +97,7 @@ describe('MarketplaceProvider', () => {
     render(
       <MarketplaceProvider>
         <div data-testid="test-child">
-          {/* eslint-disable-line i18next/no-literal-string */}Test Content
+          { }Test Content
         </div>
       </MarketplaceProvider>,
     );
@@ -132,7 +132,7 @@ describe('MarketplaceProvider', () => {
   it('provides minimal context without bloated functions', () => {
     render(
       <MarketplaceProvider>
-        <div>{/* eslint-disable-line i18next/no-literal-string */}Test</div>
+        <div>{ }Test</div>
       </MarketplaceProvider>,
     );
 

@@ -1,5 +1,3 @@
-import { LockIcon, Trash } from 'lucide-react';
-import React, { useState, useCallback } from 'react';
 import {
   Label,
   Input,
@@ -11,6 +9,8 @@ import {
   OGDialogHeader,
   OGDialogTitle,
 } from '@librechat/client';
+import React, { useState, useCallback } from 'react';
+import { LockIcon, Trash } from 'lucide-react';
 import { useDeleteUserMutation } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { LocalizeFunction } from '~/common';

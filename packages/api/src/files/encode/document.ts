@@ -1,8 +1,8 @@
-import { Providers } from '@librechat/agents';
 import { isOpenAILikeProvider, isDocumentSupportedProvider } from 'librechat-data-provider';
+import { Providers } from '@librechat/agents';
+import type { StrategyFunctions, DocumentResult, AnthropicDocumentBlock } from '~/types/files';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Request } from 'express';
-import type { StrategyFunctions, DocumentResult, AnthropicDocumentBlock } from '~/types/files';
 import { validatePdf } from '~/files/validation';
 import { getFileStream } from './utils';
 

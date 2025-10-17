@@ -1,7 +1,7 @@
-import { useRef, useState, useEffect } from 'react';
-import { useSetRecoilState } from 'recoil';
-import * as Tabs from '@radix-ui/react-tabs';
 import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, X } from 'lucide-react';
+import { useRef, useState, useEffect } from 'react';
+import * as Tabs from '@radix-ui/react-tabs';
+import { useSetRecoilState } from 'recoil';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';

@@ -1,5 +1,5 @@
-import sessionSchema from '~/schema/session';
 import type * as t from '~/types';
+import sessionSchema from '~/schema/session';
 
 /**
  * Creates or returns the Session model using the provided mongoose instance and schema

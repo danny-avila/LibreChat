@@ -8,8 +8,8 @@ jest.mock('react-router-dom', () => ({
 }));
 
 // Import the component under test and its dependencies
-import { renderHook } from '@testing-library/react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { renderHook } from '@testing-library/react';
 import useFocusChatEffect from '../useFocusChatEffect';
 import { logger } from '~/utils';
 

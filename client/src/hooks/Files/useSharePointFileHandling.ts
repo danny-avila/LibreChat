@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
-import useFileHandling from './useFileHandling';
-import useSharePointDownload from './useSharePointDownload';
 import type { SharePointFile } from '~/data-provider/Files/sharepoint';
+import useSharePointDownload from './useSharePointDownload';
+import useFileHandling from './useFileHandling';
 
 interface UseSharePointFileHandlingProps {
   fileSetter?: any;

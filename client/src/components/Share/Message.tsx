@@ -7,13 +7,11 @@ import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { MessageContext } from '~/Providers';
-import { useAttachments } from '~/hooks';
-
 import MultiMessage from './MultiMessage';
+import { useAttachments } from '~/hooks';
+import Icon from './MessageIcon';
 import { cn } from '~/utils';
 import store from '~/store';
-
-import Icon from './MessageIcon';
 export default function Message(props: TMessageProps) {
   const fontSize = useRecoilValue(store.fontSize);
   const {

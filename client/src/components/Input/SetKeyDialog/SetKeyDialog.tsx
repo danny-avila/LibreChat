@@ -1,5 +1,3 @@
-import React, { useState } from 'react';
-import { useForm, FormProvider } from 'react-hook-form';
 import {
   OGDialog,
   OGDialogContent,
@@ -13,11 +11,13 @@ import {
   OGDialogTrigger,
   Spinner,
 } from '@librechat/client';
-import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
 import {
   useRevokeAllUserKeysMutation,
   useRevokeUserKeyMutation,
 } from 'librechat-data-provider/react-query';
+import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
+import { useForm, FormProvider } from 'react-hook-form';
+import React, { useState } from 'react';
 import type { TDialogProps } from '~/common';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { useUserKey, useLocalize } from '~/hooks';

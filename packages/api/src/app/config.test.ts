@@ -1,8 +1,8 @@
-import { getTransactionsConfig, getBalanceConfig } from './config';
-import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
+import { logger } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import { getTransactionsConfig, getBalanceConfig } from './config';
 
 // Helper function to create a minimal AppConfig for testing
 const createTestAppConfig = (overrides: Partial<AppConfig> = {}): AppConfig => {

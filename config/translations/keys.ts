@@ -1,5 +1,5 @@
-import fs from 'fs';
 import path from 'path';
+import fs from 'fs';
 
 async function readKeysFromFile(filePath: string): Promise<string[]> {
   const languageModule = await import(filePath);

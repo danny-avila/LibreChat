@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { EModelEndpoint } from './schemas';
 import type { EndpointFileConfig, FileConfig } from './types/files';
+import { EModelEndpoint } from './schemas';
 
 export const supportsFiles = {
   [EModelEndpoint.openAI]: true,

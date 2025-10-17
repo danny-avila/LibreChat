@@ -1,8 +1,3 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import * as Ariakit from '@ariakit/react';
-import { Globe, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
-import { TooltipAnchor, DropdownPopup, PinIcon, VectorIcon } from '@librechat/client';
-import type { MenuItemProps } from '~/common';
 import {
   AuthType,
   Permissions,
@@ -10,6 +5,11 @@ import {
   PermissionTypes,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
+import { TooltipAnchor, DropdownPopup, PinIcon, VectorIcon } from '@librechat/client';
+import { Globe, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
+import React, { useState, useMemo, useCallback } from 'react';
+import * as Ariakit from '@ariakit/react';
+import type { MenuItemProps } from '~/common';
 import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
 import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';

@@ -1,6 +1,6 @@
 import { renderHook, act } from '@testing-library/react';
-import copy from 'copy-to-clipboard';
 import { ContentTypes } from 'librechat-data-provider';
+import copy from 'copy-to-clipboard';
 import type {
   SearchResultData,
   ProcessedOrganic,

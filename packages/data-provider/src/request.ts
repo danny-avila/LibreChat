@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
-import * as endpoints from './api-endpoints';
-import { setTokenHeader } from './headers-helpers';
 import type * as t from './types';
+import { setTokenHeader } from './headers-helpers';
+import * as endpoints from './api-endpoints';
 
 async function _get<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
   const response = await axios.get(url, { ...options });

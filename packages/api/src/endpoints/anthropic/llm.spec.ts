@@ -1,5 +1,5 @@
-import { getLLMConfig } from './llm';
 import type * as t from '~/types';
+import { getLLMConfig } from './llm';
 
 jest.mock('https-proxy-agent', () => ({
   HttpsProxyAgent: jest.fn().mockImplementation((proxy) => ({ proxy })),

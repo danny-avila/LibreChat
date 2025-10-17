@@ -1,8 +1,3 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
-import { useDrop } from 'react-dnd';
-import { NativeTypes } from 'react-dnd-html5-backend';
-import { useQueryClient } from '@tanstack/react-query';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
 import {
   Tools,
   QueryKeys,
@@ -13,6 +8,11 @@ import {
   isAssistantsEndpoint,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
+import { useState, useMemo, useCallback, useRef } from 'react';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useQueryClient } from '@tanstack/react-query';
+import { NativeTypes } from 'react-dnd-html5-backend';
+import { useDrop } from 'react-dnd';
 import type { DropTargetMonitor } from 'react-dnd';
 import type * as t from 'librechat-data-provider';
 import store, { ephemeralAgentByConvoId } from '~/store';

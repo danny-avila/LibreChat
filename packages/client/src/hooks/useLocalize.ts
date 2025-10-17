@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
-import { TOptions } from 'i18next';
-import { useAtomValue } from 'jotai';
 import { useTranslation } from 'react-i18next';
+import { useAtomValue } from 'jotai';
+import { TOptions } from 'i18next';
+import { useEffect } from 'react';
 import { resources } from '~/locales/i18n';
 import { langAtom } from '~/store';
 

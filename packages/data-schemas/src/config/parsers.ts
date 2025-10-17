@@ -1,7 +1,7 @@
 import { klona } from 'klona';
 import winston from 'winston';
-import traverse from '../utils/object-traverse';
 import type { TraverseContext } from '../utils/object-traverse';
+import traverse from '../utils/object-traverse';
 
 const SPLAT_SYMBOL = Symbol.for('splat');
 const MESSAGE_SYMBOL = Symbol.for('message');

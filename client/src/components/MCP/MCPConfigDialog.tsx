@@ -1,5 +1,3 @@
-import React from 'react';
-import { KeyRound, PlugZap, AlertTriangle } from 'lucide-react';
 import {
   Spinner,
   OGDialog,
@@ -7,6 +5,8 @@ import {
   OGDialogHeader,
   OGDialogContent,
 } from '@librechat/client';
+import { KeyRound, PlugZap, AlertTriangle } from 'lucide-react';
+import React from 'react';
 import type { MCPServerStatus } from 'librechat-data-provider';
 import type { ConfigFieldDetail } from '~/common';
 import ServerInitializationSection from './ServerInitializationSection';

@@ -1,5 +1,3 @@
-import React from 'react';
-import { motion } from 'framer-motion';
 import {
   Button,
   InputOTP,
@@ -8,6 +6,8 @@ import {
   InputOTPSlot,
 } from '@librechat/client';
 import { REGEXP_ONLY_DIGITS } from 'input-otp';
+import { motion } from 'framer-motion';
+import React from 'react';
 import { useLocalize } from '~/hooks';
 
 const fadeAnimation = {

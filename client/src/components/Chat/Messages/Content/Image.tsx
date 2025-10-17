@@ -1,6 +1,6 @@
+import { LazyLoadImage } from 'react-lazy-load-image-component';
 import React, { useState, useRef, useMemo } from 'react';
 import { Skeleton } from '@librechat/client';
-import { LazyLoadImage } from 'react-lazy-load-image-component';
 import { cn, scaleImage } from '~/utils';
 import DialogImage from './DialogImage';
 

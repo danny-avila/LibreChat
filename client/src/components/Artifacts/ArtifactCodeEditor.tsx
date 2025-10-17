@@ -1,10 +1,10 @@
-import debounce from 'lodash/debounce';
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   useSandpack,
   SandpackCodeEditor,
   SandpackProvider as StyledProvider,
 } from '@codesandbox/sandpack-react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import debounce from 'lodash/debounce';
 import type { SandpackProviderProps } from '@codesandbox/sandpack-react/unstyled';
 import type { SandpackBundlerFile } from '@codesandbox/sandpack-client';
 import type { CodeEditorRef } from '@codesandbox/sandpack-react';

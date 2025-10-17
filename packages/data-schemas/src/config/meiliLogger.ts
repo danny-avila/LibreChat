@@ -1,5 +1,5 @@
-import winston from 'winston';
 import 'winston-daily-rotate-file';
+import winston from 'winston';
 import { getLogDirectory } from './utils';
 
 const logDir = getLogDirectory();

@@ -1,4 +1,3 @@
-import { memo, useMemo } from 'react';
 import {
   Constants,
   supportsFiles,
@@ -8,6 +7,7 @@ import {
   isAssistantsEndpoint,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
+import { memo, useMemo } from 'react';
 import type { EndpointFileConfig, TConversation } from 'librechat-data-provider';
 import { useGetFileConfig, useGetEndpointsQuery } from '~/data-provider';
 import { getEndpointField } from '~/utils/endpoints';

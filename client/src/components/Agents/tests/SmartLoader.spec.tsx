@@ -1,5 +1,5 @@
-import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
+import React from 'react';
 import { SmartLoader, useHasData } from '../SmartLoader';
 
 // Mock setTimeout and clearTimeout for testing
@@ -9,7 +9,7 @@ describe('SmartLoader', () => {
   const LoadingComponent = () => <div data-testid="loading">Loading...</div>;
   const ContentComponent = () => (
     <div data-testid="content">
-      {/* eslint-disable-line i18next/no-literal-string */}Content loaded
+      { }Content loaded
     </div>
   );
 

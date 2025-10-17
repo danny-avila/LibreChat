@@ -1,5 +1,5 @@
-import { createReadStream } from 'fs';
 import { readFile, stat } from 'fs/promises';
+import { createReadStream } from 'fs';
 import { Readable } from 'stream';
 import { readFileAsString, readFileAsBuffer, readJsonFile } from '../files';
 

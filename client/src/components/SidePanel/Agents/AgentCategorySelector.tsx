@@ -1,5 +1,3 @@
-import React, { useState } from 'react';
-import { ControlCombobox } from '@librechat/client';
 import {
   useWatch,
   FieldPath,
@@ -8,6 +6,8 @@ import {
   useFormContext,
   ControllerRenderProps,
 } from 'react-hook-form';
+import { ControlCombobox } from '@librechat/client';
+import React, { useState } from 'react';
 import { TranslationKeys, useLocalize, useAgentCategories } from '~/hooks';
 import { cn } from '~/utils';
 

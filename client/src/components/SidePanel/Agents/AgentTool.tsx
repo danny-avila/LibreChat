@@ -1,6 +1,3 @@
-import React, { useState } from 'react';
-import { useFormContext } from 'react-hook-form';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import {
   OGDialog,
   TrashIcon,
@@ -9,6 +6,9 @@ import {
   OGDialogTrigger,
   OGDialogTemplate,
 } from '@librechat/client';
+import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { useFormContext } from 'react-hook-form';
+import React, { useState } from 'react';
 import type { TPlugin } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';

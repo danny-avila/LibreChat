@@ -1,11 +1,3 @@
-import { useEffect } from 'react';
-import { ChevronLeft } from 'lucide-react';
-import { useForm, FormProvider } from 'react-hook-form';
-import {
-  AuthTypeEnum,
-  AuthorizationTypeEnum,
-  TokenExchangeMethodEnum,
-} from 'librechat-data-provider';
 import {
   OGDialog,
   OGDialogTrigger,
@@ -14,6 +6,14 @@ import {
   useToastContext,
   TrashIcon,
 } from '@librechat/client';
+import {
+  AuthTypeEnum,
+  AuthorizationTypeEnum,
+  TokenExchangeMethodEnum,
+} from 'librechat-data-provider';
+import { useForm, FormProvider } from 'react-hook-form';
+import { ChevronLeft } from 'lucide-react';
+import { useEffect } from 'react';
 import type { AssistantPanelProps, ActionAuthForm } from '~/common';
 import { useAssistantsMapContext } from '~/Providers';
 import { useDeleteAction } from '~/data-provider';

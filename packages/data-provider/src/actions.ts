@@ -1,12 +1,12 @@
-import { z } from 'zod';
+import { load } from 'js-yaml';
+import crypto from 'crypto';
 import _axios from 'axios';
 import { URL } from 'url';
-import crypto from 'crypto';
-import { load } from 'js-yaml';
+import { z } from 'zod';
 import type { ActionMetadata, ActionMetadataRuntime } from './types/agents';
 import type { FunctionTool, Schema, Reference } from './types/assistants';
-import { AuthTypeEnum, AuthorizationTypeEnum } from './types/agents';
 import type { OpenAPIV3 } from 'openapi-types';
+import { AuthTypeEnum, AuthorizationTypeEnum } from './types/agents';
 import { Tools } from './types/assistants';
 
 export type ParametersSchema = {

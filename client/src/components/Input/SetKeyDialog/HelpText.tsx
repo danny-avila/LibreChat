@@ -1,5 +1,5 @@
-import { memo } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
+import { memo } from 'react';
 import { useLocalize } from '~/hooks';
 
 function HelpText({ endpoint }: { endpoint: string }) {

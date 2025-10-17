@@ -1,7 +1,3 @@
-import { memo, useState, useRef, useMemo, useCallback, KeyboardEvent } from 'react';
-import { EarthIcon, Pen } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { PermissionBits, type TPromptGroup } from 'librechat-data-provider';
 import {
   Input,
   Label,
@@ -11,6 +7,10 @@ import {
   OGDialogTemplate,
   TrashIcon,
 } from '@librechat/client';
+import { memo, useState, useRef, useMemo, useCallback, KeyboardEvent } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { EarthIcon, Pen } from 'lucide-react';
+import { PermissionBits, type TPromptGroup } from 'librechat-data-provider';
 import { useDeletePromptGroup, useUpdatePromptGroup } from '~/data-provider';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import { useLocalize, useResourcePermissions } from '~/hooks';

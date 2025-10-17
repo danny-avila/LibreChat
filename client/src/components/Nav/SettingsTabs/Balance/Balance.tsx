@@ -1,8 +1,8 @@
 import React from 'react';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext, useLocalize } from '~/hooks';
-import TokenCreditsItem from './TokenCreditsItem';
 import AutoRefillSettings from './AutoRefillSettings';
+import TokenCreditsItem from './TokenCreditsItem';
 
 function Balance() {
   const localize = useLocalize();

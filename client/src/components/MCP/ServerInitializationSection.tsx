@@ -1,6 +1,6 @@
-import React from 'react';
-import { RefreshCw } from 'lucide-react';
 import { Button, Spinner } from '@librechat/client';
+import { RefreshCw } from 'lucide-react';
+import React from 'react';
 import { useLocalize, useMCPServerManager, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 

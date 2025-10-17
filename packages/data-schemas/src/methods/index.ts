@@ -1,18 +1,14 @@
-import { createSessionMethods, type SessionMethods } from './session';
-import { createTokenMethods, type TokenMethods } from './token';
-import { createRoleMethods, type RoleMethods } from './role';
-import { createUserMethods, type UserMethods } from './user';
-/* Memories */
-import { createMemoryMethods, type MemoryMethods } from './memory';
-/* Agent Categories */
 import { createAgentCategoryMethods, type AgentCategoryMethods } from './agentCategory';
-/* Plugin Auth */
 import { createPluginAuthMethods, type PluginAuthMethods } from './pluginAuth';
-/* Permissions */
 import { createAccessRoleMethods, type AccessRoleMethods } from './accessRole';
 import { createUserGroupMethods, type UserGroupMethods } from './userGroup';
 import { createAclEntryMethods, type AclEntryMethods } from './aclEntry';
+import { createSessionMethods, type SessionMethods } from './session';
+import { createMemoryMethods, type MemoryMethods } from './memory';
+import { createTokenMethods, type TokenMethods } from './token';
 import { createShareMethods, type ShareMethods } from './share';
+import { createRoleMethods, type RoleMethods } from './role';
+import { createUserMethods, type UserMethods } from './user';
 
 export type AllMethods = UserMethods &
   SessionMethods &

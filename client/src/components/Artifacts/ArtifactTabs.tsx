@@ -1,5 +1,5 @@
-import { useRef, useEffect } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
+import { useRef, useEffect } from 'react';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
 import type { Artifact } from '~/common';
 import { useEditorContext, useArtifactsContext } from '~/Providers';

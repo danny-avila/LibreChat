@@ -1,5 +1,5 @@
-import roleSchema from '~/schema/role';
 import type { IRole } from '~/types';
+import roleSchema from '~/schema/role';
 
 /**
  * Creates or returns the Role model using the provided mongoose instance and schema

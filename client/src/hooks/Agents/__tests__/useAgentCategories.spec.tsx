@@ -1,8 +1,8 @@
-import React from 'react';
-import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import useAgentCategories from '../useAgentCategories';
+import { renderHook, waitFor } from '@testing-library/react';
+import React from 'react';
 import { EMPTY_AGENT_CATEGORY } from '~/constants/agentCategories';
+import useAgentCategories from '../useAgentCategories';
 
 // Mock the useLocalize hook
 jest.mock('~/hooks/useLocalize', () => ({

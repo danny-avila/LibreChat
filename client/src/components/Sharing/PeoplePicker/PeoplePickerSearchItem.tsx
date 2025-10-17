@@ -1,5 +1,5 @@
-import React, { forwardRef } from 'react';
 import { PrincipalType } from 'librechat-data-provider';
+import React, { forwardRef } from 'react';
 import type { TPrincipal } from 'librechat-data-provider';
 import PrincipalAvatar from '~/components/Sharing/PrincipalAvatar';
 import { useLocalize } from '~/hooks';

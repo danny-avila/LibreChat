@@ -1,9 +1,9 @@
-import { useCallback } from 'react';
-import { useLocalize } from '~/hooks';
 import { useToastContext } from '@librechat/client';
+import { useCallback } from 'react';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import MCP from '~/components/SidePanel/Builder/MCP';
 import { Panel, isEphemeralAgent } from '~/common';
+import { useLocalize } from '~/hooks';
 
 export default function MCPSection() {
   const localize = useLocalize();

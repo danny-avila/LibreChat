@@ -1,9 +1,9 @@
-import 'test/matchMedia.mock';
 import { render, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
-import DialogTemplate from './DialogTemplate';
 import { Dialog } from '@radix-ui/react-dialog';
 import { Provider } from 'jotai';
+import 'test/matchMedia.mock';
+import DialogTemplate from './DialogTemplate';
 
 describe('DialogTemplate', () => {
   let mockSelectHandler: jest.Mock;

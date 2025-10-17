@@ -1,4 +1,3 @@
-import React, { useRef } from 'react';
 import {
   Label,
   Listbox,
@@ -7,6 +6,7 @@ import {
   ListboxOption,
   ListboxOptions,
 } from '@headlessui/react';
+import React, { useRef } from 'react';
 import type { Option, OptionWithIcon, DropdownValueSetter } from '~/common';
 import { useMultiSearch } from './MultiSearch';
 import { CheckMark } from '~/svgs';

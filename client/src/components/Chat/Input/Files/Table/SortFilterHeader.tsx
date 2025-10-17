@@ -1,6 +1,3 @@
-import { Column } from '@tanstack/react-table';
-import { ListFilter, FilterX } from 'lucide-react';
-import { ArrowDownIcon, ArrowUpIcon, CaretSortIcon } from '@radix-ui/react-icons';
 import {
   Button,
   DropdownMenu,
@@ -9,6 +6,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@librechat/client';
+import { ArrowDownIcon, ArrowUpIcon, CaretSortIcon } from '@radix-ui/react-icons';
+import { ListFilter, FilterX } from 'lucide-react';
+import { Column } from '@tanstack/react-table';
 import { useLocalize, TranslationKeys } from '~/hooks';
 import { cn } from '~/utils';
 

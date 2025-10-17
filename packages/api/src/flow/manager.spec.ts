@@ -1,6 +1,6 @@
 import { Keyv } from 'keyv';
-import { FlowStateManager } from './manager';
 import type { FlowState } from './types';
+import { FlowStateManager } from './manager';
 
 /** Mock class without extending Keyv */
 class MockKeyv {

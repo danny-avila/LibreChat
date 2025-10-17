@@ -1,8 +1,3 @@
-import { Plus } from 'lucide-react';
-import React, { useMemo, useCallback, useRef } from 'react';
-import { Button, useToastContext } from '@librechat/client';
-import { useWatch, useForm, FormProvider } from 'react-hook-form';
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
   SystemRoles,
@@ -11,6 +6,11 @@ import {
   PermissionBits,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { useWatch, useForm, FormProvider } from 'react-hook-form';
+import React, { useMemo, useCallback, useRef } from 'react';
+import { Button, useToastContext } from '@librechat/client';
+import { Plus } from 'lucide-react';
 import type { AgentForm, StringOption } from '~/common';
 import {
   useCreateAgentMutation,

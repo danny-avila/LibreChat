@@ -1,5 +1,3 @@
-import { useState, useMemo, memo } from 'react';
-import { Menu as MenuIcon, Edit as EditIcon, EarthIcon, TextSearch } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuItem,
@@ -7,7 +5,9 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@librechat/client';
+import { Menu as MenuIcon, Edit as EditIcon, EarthIcon, TextSearch } from 'lucide-react';
 import { PermissionBits } from 'librechat-data-provider';
+import { useState, useMemo, memo } from 'react';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useLocalize, useSubmitMessage, useCustomLink, useResourcePermissions } from '~/hooks';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';

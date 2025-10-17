@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
-import useArtifactProps from '../useArtifactProps';
 import type { Artifact } from '~/common';
+import useArtifactProps from '../useArtifactProps';
 
 describe('useArtifactProps', () => {
   const createArtifact = (partial: Partial<Artifact>): Artifact => ({

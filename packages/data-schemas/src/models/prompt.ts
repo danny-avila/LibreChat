@@ -1,5 +1,5 @@
-import promptSchema from '~/schema/prompt';
 import type { IPrompt } from '~/types/prompts';
+import promptSchema from '~/schema/prompt';
 
 /**
  * Creates or returns the Prompt model using the provided mongoose instance and schema

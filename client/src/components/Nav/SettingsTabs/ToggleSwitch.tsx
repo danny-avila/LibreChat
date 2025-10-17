@@ -1,5 +1,5 @@
-import { RecoilState, useRecoilState } from 'recoil';
 import { Switch, InfoHoverCard, ESide } from '@librechat/client';
+import { RecoilState, useRecoilState } from 'recoil';
 import { useLocalize } from '~/hooks';
 
 type LocalizeFn = ReturnType<typeof useLocalize>;

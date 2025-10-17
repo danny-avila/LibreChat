@@ -1,8 +1,8 @@
-import IoRedis from 'ioredis';
-import type { Redis, Cluster } from 'ioredis';
-import { logger } from '@librechat/data-schemas';
 import { createClient, createCluster } from '@keyv/redis';
+import { logger } from '@librechat/data-schemas';
+import IoRedis from 'ioredis';
 import type { RedisClientType, RedisClusterType } from '@redis/client';
+import type { Redis, Cluster } from 'ioredis';
 import { cacheConfig } from './cacheConfig';
 
 const GLOBAL_PREFIX_SEPARATOR = '::';

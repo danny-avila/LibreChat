@@ -1,6 +1,6 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import React from 'react';
 import SourcesErrorBoundary from '../SourcesErrorBoundary';
 
 // Component that throws an error for testing

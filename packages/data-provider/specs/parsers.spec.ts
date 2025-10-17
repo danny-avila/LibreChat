@@ -1,6 +1,6 @@
+import type { TUser } from '../src/types';
 import { replaceSpecialVars } from '../src/parsers';
 import { specialVariables } from '../src/config';
-import type { TUser } from '../src/types';
 
 // Mock dayjs module with consistent date/time values regardless of environment
 jest.mock('dayjs', () => {

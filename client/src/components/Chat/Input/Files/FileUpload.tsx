@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { FileUp } from 'lucide-react';
-import { cn } from '~/utils/';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils/';
 
 type FileUploadProps = {
   onFileSelected: (jsonData: Record<string, unknown>) => void;

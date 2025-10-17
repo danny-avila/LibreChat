@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
+import type * as t from './types';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from './connection';
-import type * as t from './types';
 
 /**
  * Manages MCP connections with lazy loading and reconnection.

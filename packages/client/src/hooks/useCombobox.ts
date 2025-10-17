@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
 import { matchSorter } from 'match-sorter';
+import { useMemo, useState } from 'react';
 import type { OptionWithIcon, MentionOption } from '~/common';
 
 export default function useCombobox({

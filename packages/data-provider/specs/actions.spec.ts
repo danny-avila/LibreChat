@@ -1,8 +1,8 @@
-import { z } from 'zod';
 import axios from 'axios';
-import type { OpenAPIV3 } from 'openapi-types';
+import { z } from 'zod';
 import type { ParametersSchema } from '../src/actions';
 import type { FlowchartSchema } from './openapiSpecs';
+import type { OpenAPIV3 } from 'openapi-types';
 import {
   createURL,
   resolveRef,

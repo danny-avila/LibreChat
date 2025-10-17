@@ -1,5 +1,5 @@
-import pluginAuthSchema from '~/schema/pluginAuth';
 import type { IPluginAuth } from '~/types/pluginAuth';
+import pluginAuthSchema from '~/schema/pluginAuth';
 
 /**
  * Creates or returns the PluginAuth model using the provided mongoose instance and schema

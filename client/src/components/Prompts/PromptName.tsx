@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef } from 'react';
 import { Button, Label, Input, EditIcon, SaveIcon } from '@librechat/client';
+import React, { useEffect, useState, useRef } from 'react';
 
 type Props = {
   name?: string;

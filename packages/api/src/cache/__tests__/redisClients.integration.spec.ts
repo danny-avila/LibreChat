@@ -1,5 +1,5 @@
-import type { Redis, Cluster } from 'ioredis';
 import type { RedisClientType, RedisClusterType } from '@redis/client';
+import type { Redis, Cluster } from 'ioredis';
 
 type RedisClient = RedisClientType | RedisClusterType | Redis | Cluster;
 

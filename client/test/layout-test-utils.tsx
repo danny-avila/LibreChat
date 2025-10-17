@@ -1,10 +1,10 @@
-import './matchMedia.mock';
-import React from 'react';
-import { render as rtlRender } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AuthContextProvider } from '~/hooks/AuthContext';
+import { render as rtlRender } from '@testing-library/react';
 import { BrowserRouter as Router } from 'react-router-dom';
 import { RecoilRoot } from 'recoil';
+import React from 'react';
+import { AuthContextProvider } from '~/hooks/AuthContext';
+import './matchMedia.mock';
 
 const client = new QueryClient();
 

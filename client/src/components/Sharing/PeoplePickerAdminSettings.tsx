@@ -1,8 +1,3 @@
-import { useMemo, useEffect, useState } from 'react';
-import * as Ariakit from '@ariakit/react';
-import { ShieldEllipsis } from 'lucide-react';
-import { useForm, Controller } from 'react-hook-form';
-import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'librechat-data-provider';
 import {
   Button,
   Switch,
@@ -13,6 +8,11 @@ import {
   OGDialogTrigger,
   useToastContext,
 } from '@librechat/client';
+import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'librechat-data-provider';
+import { useForm, Controller } from 'react-hook-form';
+import { useMemo, useEffect, useState } from 'react';
+import { ShieldEllipsis } from 'lucide-react';
+import * as Ariakit from '@ariakit/react';
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
 import { useUpdatePeoplePickerPermissionsMutation } from '~/data-provider';
 import { useLocalize, useAuthContext } from '~/hooks';

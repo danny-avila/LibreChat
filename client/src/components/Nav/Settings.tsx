@@ -1,8 +1,3 @@
-import React, { useState, useRef } from 'react';
-import * as Tabs from '@radix-ui/react-tabs';
-import { SettingsTabValues } from 'librechat-data-provider';
-import { MessageSquare, Command, DollarSign } from 'lucide-react';
-import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import {
   GearIcon,
   DataIcon,
@@ -11,6 +6,11 @@ import {
   useMediaQuery,
   PersonalizationIcon,
 } from '@librechat/client';
+import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
+import { MessageSquare, Command, DollarSign } from 'lucide-react';
+import { SettingsTabValues } from 'librechat-data-provider';
+import React, { useState, useRef } from 'react';
+import * as Tabs from '@radix-ui/react-tabs';
 import type { TDialogProps } from '~/common';
 import {
   General,

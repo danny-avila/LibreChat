@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
-import logger from '~/config/winston';
 import type * as t from '~/types';
+import logger from '~/config/winston';
 
 /**
  * Formats a date in YYYY-MM-DD format

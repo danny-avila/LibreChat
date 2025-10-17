@@ -1,21 +1,3 @@
-import { useState } from 'react';
-import { ListFilter } from 'lucide-react';
-import { useSetRecoilState } from 'recoil';
-import {
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import type {
-  ColumnDef,
-  SortingState,
-  VisibilityState,
-  ColumnFiltersState,
-} from '@tanstack/react-table';
-import { FileContext } from 'librechat-data-provider';
 import {
   Button,
   Input,
@@ -33,6 +15,24 @@ import {
   Spinner,
   useMediaQuery,
 } from '@librechat/client';
+import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
+import { FileContext } from 'librechat-data-provider';
+import { useSetRecoilState } from 'recoil';
+import { ListFilter } from 'lucide-react';
+import { useState } from 'react';
+import type {
+  ColumnDef,
+  SortingState,
+  VisibilityState,
+  ColumnFiltersState,
+} from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
 import type { AugmentedColumnDef } from '~/common';
 import { useDeleteFilesFromTable } from '~/hooks/Files';

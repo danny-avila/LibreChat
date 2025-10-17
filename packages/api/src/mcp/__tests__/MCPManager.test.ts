@@ -1,8 +1,8 @@
 import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
-import { MCPManager } from '~/mcp/MCPManager';
-import { MCPServersRegistry } from '~/mcp/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
+import { MCPServersRegistry } from '~/mcp/MCPServersRegistry';
+import { MCPManager } from '~/mcp/MCPManager';
 import { MCPConnection } from '../connection';
 
 // Mock external dependencies

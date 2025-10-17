@@ -1,7 +1,7 @@
 import React from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
-import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
+import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
 

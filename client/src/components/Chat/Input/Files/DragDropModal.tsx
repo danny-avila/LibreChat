@@ -1,6 +1,3 @@
-import React, { useMemo } from 'react';
-import { useRecoilValue } from 'recoil';
-import { OGDialog, OGDialogTemplate } from '@librechat/client';
 import {
   EToolResources,
   EModelEndpoint,
@@ -14,6 +11,9 @@ import {
   FileImageIcon,
   TerminalSquareIcon,
 } from 'lucide-react';
+import { OGDialog, OGDialogTemplate } from '@librechat/client';
+import { useRecoilValue } from 'recoil';
+import React, { useMemo } from 'react';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,

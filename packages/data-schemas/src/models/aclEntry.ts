@@ -1,5 +1,5 @@
-import aclEntrySchema from '~/schema/aclEntry';
 import type * as t from '~/types';
+import aclEntrySchema from '~/schema/aclEntry';
 
 /**
  * Creates or returns the AclEntry model using the provided mongoose instance and schema

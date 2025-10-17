@@ -1,5 +1,5 @@
-import { useLocalize } from '~/hooks';
 import type { VersionRecord } from './types';
+import { useLocalize } from '~/hooks';
 
 type VersionItemProps = {
   version: VersionRecord;

@@ -1,4 +1,3 @@
-import React, { useRef } from 'react';
 import {
   Select,
   SelectArrow,
@@ -8,6 +7,7 @@ import {
   SelectPopover,
   SelectProvider,
 } from '@ariakit/react';
+import React, { useRef } from 'react';
 import './AnimatePopover.css';
 import { cn } from '~/utils';
 

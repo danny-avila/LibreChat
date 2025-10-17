@@ -1,6 +1,6 @@
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { FC } from 'react';
 import type { TModelSelectProps } from '~/common';
+import type { FC } from 'react';
 import { GoogleSettings, PluginSettings } from './MultiView';
 import AssistantsSettings from './Assistants';
 import AnthropicSettings from './Anthropic';

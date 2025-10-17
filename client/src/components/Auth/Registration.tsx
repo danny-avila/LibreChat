@@ -1,9 +1,9 @@
-import { useForm } from 'react-hook-form';
-import React, { useContext, useState } from 'react';
-import { Turnstile } from '@marsidev/react-turnstile';
-import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
 import { useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import { useRegisterUserMutation } from 'librechat-data-provider/react-query';
+import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
+import { Turnstile } from '@marsidev/react-turnstile';
+import React, { useContext, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import type { TRegisterUser, TError } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
 import { useLocalize, TranslationKeys } from '~/hooks';

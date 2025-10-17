@@ -1,5 +1,5 @@
-import groupSchema from '~/schema/group';
 import type * as t from '~/types';
+import groupSchema from '~/schema/group';
 
 /**
  * Creates or returns the Group model using the provided mongoose instance and schema

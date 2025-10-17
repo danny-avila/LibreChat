@@ -1,5 +1,5 @@
-import fs from 'fs';
 import path from 'path';
+import fs from 'fs';
 import main from './main';
 
 async function scanDirectory(baseFilePath: string, languagesDir: string) {

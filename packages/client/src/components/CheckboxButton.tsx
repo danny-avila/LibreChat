@@ -1,6 +1,6 @@
-import * as React from 'react';
-import { useEffect } from 'react';
 import { Checkbox, useStoreState, useCheckboxStore } from '@ariakit/react';
+import { useEffect } from 'react';
+import * as React from 'react';
 import { cn } from '~/utils';
 
 const CheckboxButton = React.forwardRef<

@@ -1,6 +1,6 @@
+import { ContentTypes, SearchResultData } from 'librechat-data-provider';
 import { useCallback, useEffect, useRef } from 'react';
 import copy from 'copy-to-clipboard';
-import { ContentTypes, SearchResultData } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import {
   SPAN_REGEX,

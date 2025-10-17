@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import mongoose from 'mongoose';
 import type * as t from '~/types';
 import { createUserGroupMethods } from './userGroup';
 import groupSchema from '~/schema/group';

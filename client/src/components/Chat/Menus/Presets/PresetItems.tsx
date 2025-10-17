@@ -1,6 +1,3 @@
-import { useRecoilValue } from 'recoil';
-import { Close } from '@radix-ui/react-popover';
-import { Flipper, Flipped } from 'react-flip-toolkit';
 import {
   Dialog,
   DialogTrigger,
@@ -10,6 +7,9 @@ import {
   EditIcon,
   TrashIcon,
 } from '@librechat/client';
+import { Flipper, Flipped } from 'react-flip-toolkit';
+import { Close } from '@radix-ui/react-popover';
+import { useRecoilValue } from 'recoil';
 import type { TPreset } from 'librechat-data-provider';
 import type { FC } from 'react';
 import { getPresetTitle, getEndpointField, getIconKey } from '~/utils';

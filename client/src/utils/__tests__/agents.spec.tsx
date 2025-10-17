@@ -1,14 +1,14 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { getAgentAvatarUrl, renderAgentAvatar, getContactDisplayName } from '../agents';
+import React from 'react';
 import type t from 'librechat-data-provider';
+import { getAgentAvatarUrl, renderAgentAvatar, getContactDisplayName } from '../agents';
 
 // Mock the Bot icon from lucide-react
 jest.mock('lucide-react', () => ({
   Bot: ({ className, strokeWidth, ...props }: any) => (
     <svg data-testid="bot-icon" className={className} data-stroke-width={strokeWidth} {...props}>
-      <title>{/* eslint-disable-line i18next/no-literal-string */}Bot Icon</title>
+      <title>{ }Bot Icon</title>
     </svg>
   ),
 }));

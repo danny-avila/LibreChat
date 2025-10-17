@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { XIcon } from 'lucide-react';
 import { useRecoilState } from 'recoil';
+import { XIcon } from 'lucide-react';
 import { useGetBannerQuery } from '~/data-provider';
 import store from '~/store';
 

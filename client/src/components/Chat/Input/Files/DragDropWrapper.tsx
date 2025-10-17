@@ -1,7 +1,7 @@
-import { useDragHelpers } from '~/hooks';
 import DragDropOverlay from '~/components/Chat/Input/Files/DragDropOverlay';
 import DragDropModal from '~/components/Chat/Input/Files/DragDropModal';
 import { DragDropProvider } from '~/Providers';
+import { useDragHelpers } from '~/hooks';
 import { cn } from '~/utils';
 
 interface DragDropWrapperProps {

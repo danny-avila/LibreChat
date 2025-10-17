@@ -1,14 +1,12 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { RecoilRoot } from 'recoil';
-
-import type t from 'librechat-data-provider';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
-
+import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
+import { RecoilRoot } from 'recoil';
+import React from 'react';
+import type t from 'librechat-data-provider';
 import AgentDetail from '../AgentDetail';
 
 // Mock dependencies

@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
-import TextareaAutosize from 'react-textarea-autosize';
 import { Label, HoverCard, SelectDropDown, HoverCardTrigger } from '@librechat/client';
+import TextareaAutosize from 'react-textarea-autosize';
+import { useState, useMemo, useEffect } from 'react';
 import type { Assistant, TPreset } from 'librechat-data-provider';
 import type { TModelSelectProps, Option } from '~/common';
 import {

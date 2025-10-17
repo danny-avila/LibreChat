@@ -1,9 +1,3 @@
-import React, { useState } from 'react';
-import * as Ariakit from '@ariakit/react';
-import { ChevronDown } from 'lucide-react';
-import { useFormContext } from 'react-hook-form';
-import { Constants } from 'librechat-data-provider';
-import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import {
   Label,
   Checkbox,
@@ -16,6 +10,12 @@ import {
   AccordionContent,
   OGDialogTemplate,
 } from '@librechat/client';
+import * as AccordionPrimitive from '@radix-ui/react-accordion';
+import { Constants } from 'librechat-data-provider';
+import { useFormContext } from 'react-hook-form';
+import { ChevronDown } from 'lucide-react';
+import * as Ariakit from '@ariakit/react';
+import React, { useState } from 'react';
 import type { AgentForm, MCPServerInfo } from '~/common';
 import { useLocalize, useMCPServerManager, useRemoveMCPTool } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';

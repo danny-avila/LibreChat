@@ -1,5 +1,5 @@
-import type { Model, Types } from 'mongoose';
 import type { IAgentCategory } from '~/types';
+import type { Model, Types } from 'mongoose';
 
 export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) {
   /**

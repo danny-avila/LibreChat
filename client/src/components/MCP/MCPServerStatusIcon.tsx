@@ -1,6 +1,6 @@
-import React from 'react';
-import { Spinner } from '@librechat/client';
 import { SettingsIcon, AlertTriangle, KeyRound, PlugZap, X } from 'lucide-react';
+import { Spinner } from '@librechat/client';
+import React from 'react';
 import type { MCPServerStatus, TPlugin } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 

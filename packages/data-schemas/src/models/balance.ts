@@ -1,5 +1,5 @@
-import balanceSchema from '~/schema/balance';
 import type * as t from '~/types';
+import balanceSchema from '~/schema/balance';
 
 /**
  * Creates or returns the Balance model using the provided mongoose instance and schema

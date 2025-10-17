@@ -1,6 +1,6 @@
-import { useAtomValue } from 'jotai';
 import { forwardRef, useLayoutEffect, useState } from 'react';
 import ReactTextareaAutosize from 'react-textarea-autosize';
+import { useAtomValue } from 'jotai';
 import type { TextareaAutosizeProps } from 'react-textarea-autosize';
 import { chatDirectionAtom } from '~/store';
 

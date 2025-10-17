@@ -1,5 +1,5 @@
-import bannerSchema from '~/schema/banner';
 import type { IBanner } from '~/types';
+import bannerSchema from '~/schema/banner';
 
 /**
  * Creates or returns the Banner model using the provided mongoose instance and schema

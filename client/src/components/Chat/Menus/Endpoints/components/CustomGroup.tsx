@@ -1,8 +1,8 @@
 import React from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
+import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenu as Menu } from '../CustomMenu';
 import { ModelSpecItem } from './ModelSpecItem';
-import { useModelSelectorContext } from '../ModelSelectorContext';
 
 interface CustomGroupProps {
   groupName: string;

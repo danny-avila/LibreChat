@@ -1,7 +1,7 @@
+import { ContentTypes } from 'librechat-data-provider';
+import { DelayedRender } from '@librechat/client';
 import { Suspense, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { DelayedRender } from '@librechat/client';
-import { ContentTypes } from 'librechat-data-provider';
 import type {
   Agents,
   TMessage,

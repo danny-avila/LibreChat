@@ -1,5 +1,5 @@
-import fs from 'fs';
 import yaml from 'js-yaml';
+import fs from 'fs';
 
 export function loadYaml(filepath: string) {
   try {

@@ -1,5 +1,3 @@
-import TextareaAutosize from 'react-textarea-autosize';
-import { EModelEndpoint, endpointSettings } from 'librechat-data-provider';
 import {
   Input,
   Label,
@@ -9,6 +7,8 @@ import {
   SelectDropDown,
   HoverCardTrigger,
 } from '@librechat/client';
+import { EModelEndpoint, endpointSettings } from 'librechat-data-provider';
+import TextareaAutosize from 'react-textarea-autosize';
 import type { TModelSelectProps, OnInputNumberChange } from '~/common';
 import { cn, defaultTextProps, optionText, removeFocusOutlines, removeFocusRings } from '~/utils';
 import OptionHoverAlt from '~/components/SidePanel/Parameters/OptionHover';

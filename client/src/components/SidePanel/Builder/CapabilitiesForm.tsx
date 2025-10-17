@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
-import { Capabilities } from 'librechat-data-provider';
 import { useFormContext, useWatch } from 'react-hook-form';
+import { Capabilities } from 'librechat-data-provider';
+import { useMemo } from 'react';
 import type { TConfig, AssistantsEndpoint } from 'librechat-data-provider';
 import type { AssistantForm } from '~/common';
 import ImageVision from './ImageVision';

@@ -1,6 +1,6 @@
-import React from 'react';
-import { Users, User, Shield } from 'lucide-react';
 import { PrincipalType } from 'librechat-data-provider';
+import { Users, User, Shield } from 'lucide-react';
+import React from 'react';
 import type { TPrincipal } from 'librechat-data-provider';
 import { cn } from '~/utils';
 

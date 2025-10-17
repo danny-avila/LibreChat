@@ -1,5 +1,5 @@
-import jwt from 'jsonwebtoken';
 import { webcrypto } from 'node:crypto';
+import jwt from 'jsonwebtoken';
 import { SignPayloadParams } from '~/types';
 
 export async function signPayload({

@@ -1,8 +1,3 @@
-import { useState, useRef } from 'react';
-import { Folder } from 'lucide-react';
-import * as Ariakit from '@ariakit/react';
-import { useFormContext } from 'react-hook-form';
-import { SharePointIcon, AttachmentIcon, DropdownPopup } from '@librechat/client';
 import {
   EModelEndpoint,
   EToolResources,
@@ -10,6 +5,11 @@ import {
   AgentCapabilities,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
+import { SharePointIcon, AttachmentIcon, DropdownPopup } from '@librechat/client';
+import { useFormContext } from 'react-hook-form';
+import * as Ariakit from '@ariakit/react';
+import { useState, useRef } from 'react';
+import { Folder } from 'lucide-react';
 import type { ExtendedFile, AgentForm } from '~/common';
 import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
 import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';

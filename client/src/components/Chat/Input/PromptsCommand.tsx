@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
-import { AutoSizer, List } from 'react-virtualized';
-import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
+import { Spinner, useCombobox } from '@librechat/client';
+import { AutoSizer, List } from 'react-virtualized';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
-import { removeCharIfLast, detectVariables } from '~/utils';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
+import { removeCharIfLast, detectVariables } from '~/utils';
 import { usePromptGroupsContext } from '~/Providers';
 import MentionItem from './MentionItem';
 import { useLocalize } from '~/hooks';

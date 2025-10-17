@@ -1,5 +1,5 @@
-import { TPlugin } from 'librechat-data-provider';
 import { XCircle, DownloadCloud } from 'lucide-react';
+import { TPlugin } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 
 type TPluginStoreItemProps = {

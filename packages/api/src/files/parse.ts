@@ -1,5 +1,5 @@
-import path from 'path';
 import { URL } from 'url';
+import path from 'path';
 
 const imageExtensionRegex = /\.(jpg|jpeg|png|gif|bmp|tiff|svg|webp)$/i;
 

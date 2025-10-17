@@ -1,16 +1,14 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import FormData from 'form-data';
-import { logger } from '@librechat/data-schemas';
-import { HttpsProxyAgent } from 'https-proxy-agent';
 import {
   FileSources,
   envVarRegex,
   extractEnvVariable,
   extractVariableName,
 } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
-import type { AxiosError, AxiosRequestConfig } from 'axios';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { logger } from '@librechat/data-schemas';
+import FormData from 'form-data';
+import * as path from 'path';
+import * as fs from 'fs';
 import type {
   MistralFileUploadResponse,
   MistralSignedUrlResponse,
@@ -21,6 +19,8 @@ import type {
   OCRResult,
   OCRImage,
 } from '~/types';
+import type { TCustomConfig } from 'librechat-data-provider';
+import type { AxiosError, AxiosRequestConfig } from 'axios';
 import { logAxiosError, createAxiosInstance } from '~/utils/axios';
 import { readFileAsBuffer } from '~/utils/files';
 import { loadServiceKey } from '~/utils/key';

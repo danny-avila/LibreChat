@@ -1,8 +1,8 @@
 import React from 'react';
+import { fileTableColumns } from './../FileList/FileTableColumns';
+import { files } from '../../Chat/Input/Files/Table';
 import DataTableFile from './DataTableFile';
 import { TVectorStore } from '~/common';
-import { files } from '../../Chat/Input/Files/Table';
-import { fileTableColumns } from './../FileList/FileTableColumns';
 
 const vectorStoresAttached: TVectorStore[] = [
   {

@@ -1,7 +1,3 @@
-import { useRecoilValue } from 'recoil';
-import { ChevronDownIcon } from 'lucide-react';
-import { useState, useEffect, useMemo } from 'react';
-import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import {
   Button,
   SelectDropDown,
@@ -9,6 +5,10 @@ import {
   MultiSelectDropDown,
   useMediaQuery,
 } from '@librechat/client';
+import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
+import { useState, useEffect, useMemo } from 'react';
+import { ChevronDownIcon } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
 import type { TPlugin } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import { useSetIndexOptions, useAuthContext, useLocalize } from '~/hooks';

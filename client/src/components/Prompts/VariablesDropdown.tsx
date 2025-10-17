@@ -1,9 +1,9 @@
-import { useState, useId } from 'react';
-import { PlusCircle } from 'lucide-react';
-import * as Menu from '@ariakit/react/menu';
-import { useFormContext } from 'react-hook-form';
-import { DropdownPopup } from '@librechat/client';
 import { specialVariables } from 'librechat-data-provider';
+import { DropdownPopup } from '@librechat/client';
+import { useFormContext } from 'react-hook-form';
+import * as Menu from '@ariakit/react/menu';
+import { PlusCircle } from 'lucide-react';
+import { useState, useId } from 'react';
 import type { TSpecialVarLabel } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 

@@ -1,7 +1,7 @@
+import { useRecoilState, useSetRecoilState, useResetRecoilState } from 'recoil';
+import { useLocation } from 'react-router-dom';
 import { useEffect, useRef } from 'react';
 import debounce from 'lodash/debounce';
-import { useLocation } from 'react-router-dom';
-import { useRecoilState, useSetRecoilState, useResetRecoilState } from 'recoil';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { getFileType, logger } from '~/utils';

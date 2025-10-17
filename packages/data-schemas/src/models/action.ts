@@ -1,5 +1,5 @@
-import actionSchema from '~/schema/action';
 import type { IAction } from '~/types';
+import actionSchema from '~/schema/action';
 
 /**
  * Creates or returns the Action model using the provided mongoose instance and schema

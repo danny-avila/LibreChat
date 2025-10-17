@@ -1,9 +1,9 @@
-import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor } from '@testing-library/react';
 import { jest } from '@jest/globals';
-import VirtualizedAgentGrid from '../VirtualizedAgentGrid';
+import React from 'react';
 import type t from 'librechat-data-provider';
+import VirtualizedAgentGrid from '../VirtualizedAgentGrid';
 
 // Mock react-virtualized
 jest.mock('react-virtualized', () => ({

@@ -1,5 +1,5 @@
-import path from 'path';
 import axios from 'axios';
+import path from 'path';
 import { readFileAsString } from './files';
 import { loadServiceKey } from './key';
 

@@ -1,9 +1,9 @@
-import React, { useState, useId } from 'react';
-import { PlusCircle } from 'lucide-react';
-import * as Menu from '@ariakit/react/menu';
-import { DropdownPopup } from '@librechat/client';
-import { specialVariables } from 'librechat-data-provider';
 import { Controller, useFormContext } from 'react-hook-form';
+import { specialVariables } from 'librechat-data-provider';
+import { DropdownPopup } from '@librechat/client';
+import React, { useState, useId } from 'react';
+import * as Menu from '@ariakit/react/menu';
+import { PlusCircle } from 'lucide-react';
 import type { TSpecialVarLabel } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';

@@ -1,10 +1,10 @@
 import React from 'react';
 import DisplayUsernameMessages from './DisplayUsernameMessages';
-import DeleteAccount from './DeleteAccount';
-import Avatar from './Avatar';
 import EnableTwoFactorItem from './TwoFactorAuthentication';
 import BackupCodesItem from './BackupCodesItem';
+import DeleteAccount from './DeleteAccount';
 import { useAuthContext } from '~/hooks';
+import Avatar from './Avatar';
 
 function Account() {
   const { user } = useAuthContext();

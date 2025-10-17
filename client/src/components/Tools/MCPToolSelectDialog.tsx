@@ -1,10 +1,10 @@
-import { useEffect, useState, useMemo } from 'react';
-import { Search, X } from 'lucide-react';
-import { useFormContext } from 'react-hook-form';
-import { useQueryClient } from '@tanstack/react-query';
-import { Constants, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
-import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
+import { Constants, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState, useMemo } from 'react';
+import { useFormContext } from 'react-hook-form';
+import { Search, X } from 'lucide-react';
 import type { TError, AgentToolType } from 'librechat-data-provider';
 import type { AgentForm, TPluginStoreDialogProps } from '~/common';
 import {

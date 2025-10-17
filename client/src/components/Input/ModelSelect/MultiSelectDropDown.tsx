@@ -1,6 +1,3 @@
-import React, { useState, useRef } from 'react';
-import { Wrench, ArrowRight } from 'lucide-react';
-import { CheckMark, useOnClickOutside, useMultiSearch } from '@librechat/client';
 import {
   Listbox,
   ListboxButton,
@@ -9,6 +6,9 @@ import {
   ListboxOption,
   Transition,
 } from '@headlessui/react';
+import { CheckMark, useOnClickOutside, useMultiSearch } from '@librechat/client';
+import { Wrench, ArrowRight } from 'lucide-react';
+import React, { useState, useRef } from 'react';
 import type { TPlugin } from 'librechat-data-provider';
 import { cn } from '~/utils/';
 

@@ -1,8 +1,8 @@
-import getStream from 'get-stream';
 import { FileSources } from 'librechat-data-provider';
+import getStream from 'get-stream';
+import type { StrategyFunctions, ProcessedFile } from '~/types/files';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Request } from 'express';
-import type { StrategyFunctions, ProcessedFile } from '~/types/files';
 
 /**
  * Processes a file by downloading and encoding it to base64

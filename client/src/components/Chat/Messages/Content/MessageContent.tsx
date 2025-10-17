@@ -1,8 +1,8 @@
+import { DelayedRender } from '@librechat/client';
 import { memo, Suspense, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { DelayedRender } from '@librechat/client';
-import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
+import type { TMessage } from 'librechat-data-provider';
 import Error from '~/components/Messages/Content/Error';
 import Thinking from '~/components/Artifacts/Thinking';
 import { useMessageContext } from '~/Providers';

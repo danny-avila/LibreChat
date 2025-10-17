@@ -1,5 +1,5 @@
-import { History } from 'lucide-react';
 import { Button } from '@librechat/client';
+import { History } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 

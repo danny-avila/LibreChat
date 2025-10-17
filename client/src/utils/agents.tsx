@@ -1,5 +1,5 @@
-import React from 'react';
 import { Bot } from 'lucide-react';
+import React from 'react';
 import type t from 'librechat-data-provider';
 
 /**

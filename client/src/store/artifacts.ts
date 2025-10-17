@@ -1,6 +1,6 @@
 import { atom } from 'recoil';
-import { logger } from '~/utils';
 import type { Artifact } from '~/common';
+import { logger } from '~/utils';
 
 export const artifactsState = atom<Record<string, Artifact | undefined> | null>({
   key: 'artifactsState',

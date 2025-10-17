@@ -1,5 +1,3 @@
-import { Capabilities } from 'librechat-data-provider';
-import { useFormContext, Controller } from 'react-hook-form';
 import {
   Checkbox,
   HoverCard,
@@ -8,6 +6,8 @@ import {
   HoverCardTrigger,
   CircleHelpIcon,
 } from '@librechat/client';
+import { useFormContext, Controller } from 'react-hook-form';
+import { Capabilities } from 'librechat-data-provider';
 import type { AssistantForm } from '~/common';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';

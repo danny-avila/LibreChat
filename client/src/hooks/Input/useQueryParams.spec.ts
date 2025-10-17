@@ -18,13 +18,13 @@ jest.mock('~/store', () => ({
 }));
 
 import { renderHook, act } from '@testing-library/react';
-import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
-import useQueryParams from './useQueryParams';
+import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useChatContext, useChatFormContext } from '~/Providers';
 import useSubmitMessage from '~/hooks/Messages/useSubmitMessage';
-import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
+import useQueryParams from './useQueryParams';
 import store from '~/store';
 
 // Other mocks

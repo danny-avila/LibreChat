@@ -1,4 +1,3 @@
-import type { DeleteResult, Model } from 'mongoose';
 import type {
   FindPluginAuthsByKeysParams,
   UpdatePluginAuthParams,
@@ -6,6 +5,7 @@ import type {
   FindPluginAuthParams,
   IPluginAuth,
 } from '~/types';
+import type { DeleteResult, Model } from 'mongoose';
 
 // Factory function that takes mongoose instance and returns the methods
 export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {

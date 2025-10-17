@@ -1,7 +1,7 @@
-import { useRecoilValue } from 'recoil';
-import { useCallback, useRef, useEffect } from 'react';
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { LocalStorageKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { useCallback, useRef, useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import type {
   TPreset,
   TModelsConfig,
@@ -9,8 +9,8 @@ import type {
   TEndpointsConfig,
   EModelEndpoint,
 } from 'librechat-data-provider';
-import type { SetterOrUpdater } from 'recoil';
 import type { AssistantListItem } from '~/common';
+import type { SetterOrUpdater } from 'recoil';
 import { getEndpointField, buildDefaultConvo, getDefaultEndpoint, logger } from '~/utils';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
 import { useGetEndpointsQuery } from '~/data-provider';

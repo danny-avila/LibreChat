@@ -1,5 +1,5 @@
-import { Terminal, Type, Database } from 'lucide-react';
 import { EModelEndpoint, FileSources } from 'librechat-data-provider';
+import { Terminal, Type, Database } from 'lucide-react';
 import { MinimalIcon } from '~/components/Endpoints';
 import { cn } from '~/utils';
 

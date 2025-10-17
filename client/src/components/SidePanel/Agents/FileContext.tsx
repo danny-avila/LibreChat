@@ -1,12 +1,3 @@
-import { useState, useRef } from 'react';
-import { Folder } from 'lucide-react';
-import * as Ariakit from '@ariakit/react';
-import {
-  EModelEndpoint,
-  EToolResources,
-  mergeFileConfig,
-  fileConfig as defaultFileConfig,
-} from 'librechat-data-provider';
 import {
   HoverCard,
   DropdownPopup,
@@ -17,6 +8,15 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@librechat/client';
+import {
+  EModelEndpoint,
+  EToolResources,
+  mergeFileConfig,
+  fileConfig as defaultFileConfig,
+} from 'librechat-data-provider';
+import * as Ariakit from '@ariakit/react';
+import { useState, useRef } from 'react';
+import { Folder } from 'lucide-react';
 import type { ExtendedFile } from '~/common';
 import { useFileHandling, useLocalize, useLazyEffect, useSharePointFileHandling } from '~/hooks';
 import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';

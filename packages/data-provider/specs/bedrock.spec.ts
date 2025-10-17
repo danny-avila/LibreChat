@@ -1,5 +1,5 @@
-import { bedrockInputParser } from '../src/bedrock';
 import type { BedrockConverseInput } from '../src/bedrock';
+import { bedrockInputParser } from '../src/bedrock';
 
 describe('bedrockInputParser', () => {
   describe('Model Matching for Reasoning Configuration', () => {

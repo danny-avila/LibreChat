@@ -1,5 +1,5 @@
-import 'dotenv/config';
 import crypto from 'node:crypto';
+import 'dotenv/config';
 const { webcrypto } = crypto;
 
 // Use hex decoding for both key and IV for legacy methods.

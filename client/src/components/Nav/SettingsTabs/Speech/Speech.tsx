@@ -1,9 +1,9 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
-import * as Tabs from '@radix-ui/react-tabs';
-import { Lightbulb, Cog } from 'lucide-react';
-import { useOnClickOutside, useMediaQuery } from '@librechat/client';
 import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useOnClickOutside, useMediaQuery } from '@librechat/client';
+import { Lightbulb, Cog } from 'lucide-react';
+import * as Tabs from '@radix-ui/react-tabs';
+import { useRecoilState } from 'recoil';
 import {
   CloudBrowserVoicesSwitch,
   AutomaticPlaybackSwitch,

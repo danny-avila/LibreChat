@@ -49,18 +49,17 @@ jest.mock('~/utils/files', () => ({
   readFileAsBuffer: jest.fn(),
 }));
 
-import * as fs from 'fs';
-import axios from 'axios';
+import { logger as mockLogger } from '@librechat/data-schemas';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import type { Readable } from 'stream';
+import axios from 'axios';
+import * as fs from 'fs';
 import type {
   MistralFileUploadResponse,
   MistralSignedUrlResponse,
   ServerRequest,
   OCRResult,
 } from '~/types';
-import { logger as mockLogger } from '@librechat/data-schemas';
-import { readFileAsBuffer } from '~/utils/files';
+import type { Readable } from 'stream';
 import {
   uploadDocumentToMistral,
   uploadAzureMistralOCR,
@@ -69,6 +68,7 @@ import {
   getSignedUrl,
   performOCR,
 } from './crud';
+import { readFileAsBuffer } from '~/utils/files';
 
 interface MockReadStream extends Partial<Readable> {
   on: jest.Mock;

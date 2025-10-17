@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Dices,
   BoxIcon,
@@ -14,6 +13,7 @@ import {
   Beaker as BeakerIcon,
   Settings as SettingsIcon,
 } from 'lucide-react';
+import React from 'react';
 import { cn } from '~/utils';
 
 const categoryIconMap: Record<string, React.ElementType> = {

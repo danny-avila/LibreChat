@@ -1,9 +1,3 @@
-import React, { useMemo, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
-import * as Ariakit from '@ariakit/react';
-import { VisuallyHidden } from '@ariakit/react';
-import { Tools } from 'librechat-data-provider';
-import { X, Globe, Newspaper, Image, ChevronDown, File, Download } from 'lucide-react';
 import {
   OGDialog,
   AnimatedTabs,
@@ -13,6 +7,12 @@ import {
   OGDialogTrigger,
   useToastContext,
 } from '@librechat/client';
+import { X, Globe, Newspaper, Image, ChevronDown, File, Download } from 'lucide-react';
+import React, { useMemo, useCallback } from 'react';
+import { VisuallyHidden } from '@ariakit/react';
+import { Tools } from 'librechat-data-provider';
+import * as Ariakit from '@ariakit/react';
+import { useRecoilValue } from 'recoil';
 import type { ValidSource, ImageResult } from 'librechat-data-provider';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import SourcesErrorBoundary from './SourcesErrorBoundary';

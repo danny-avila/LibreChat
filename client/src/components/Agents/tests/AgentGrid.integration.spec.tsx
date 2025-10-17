@@ -1,10 +1,9 @@
-import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-
-import '@testing-library/jest-dom';
-import AgentGrid from '../AgentGrid';
-import type t from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import '@testing-library/jest-dom';
+import React from 'react';
+import type t from 'librechat-data-provider';
+import AgentGrid from '../AgentGrid';
 
 // Mock the marketplace agent query hook
 jest.mock('~/data-provider/Agents', () => ({

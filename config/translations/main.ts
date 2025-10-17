@@ -1,5 +1,5 @@
-import fs from 'fs';
 import path from 'path';
+import fs from 'fs';
 import { processLanguageModule, processMissingKey } from './process';
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

@@ -1,8 +1,8 @@
-import React from 'react';
-import { FileIcon, PlusIcon } from 'lucide-react';
 import { Button, DotsIcon, TrashIcon } from '@librechat/client';
-import type { TFile } from 'librechat-data-provider';
+import { FileIcon, PlusIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import React from 'react';
+import type { TFile } from 'librechat-data-provider';
 
 type FileListItemProps = {
   file: TFile;

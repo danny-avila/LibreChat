@@ -1,4 +1,3 @@
-import { EarthIcon } from 'lucide-react';
 import {
   FileSources,
   alternateName,
@@ -7,8 +6,9 @@ import {
   LocalStorageKeys,
   defaultAgentFormValues,
 } from 'librechat-data-provider';
-import type { Agent, TFile } from 'librechat-data-provider';
+import { EarthIcon } from 'lucide-react';
 import type { DropdownValueSetter, TAgentOption, ExtendedFile } from '~/common';
+import type { Agent, TFile } from 'librechat-data-provider';
 
 /**
  * Creates a Dropdown value setter that always passes a string value,

@@ -1,5 +1,3 @@
-import { Feather } from 'lucide-react';
-import { EModelEndpoint } from 'librechat-data-provider';
 import {
   MinimalPlugin,
   GPTIcon,
@@ -12,6 +10,8 @@ import {
   BedrockIcon,
   Sparkles,
 } from '@librechat/client';
+import { EModelEndpoint } from 'librechat-data-provider';
+import { Feather } from 'lucide-react';
 import type { IconMapProps, AgentIconMapProps, IconsRecord } from '~/common';
 import UnknownIcon from './UnknownIcon';
 import { cn } from '~/utils';

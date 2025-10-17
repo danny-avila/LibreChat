@@ -1,7 +1,3 @@
-import { startTransition } from 'react';
-import { Search as SearchIcon } from 'lucide-react';
-import * as RadixSelect from '@radix-ui/react-select';
-import { CheckIcon, ChevronDownIcon } from '@radix-ui/react-icons';
 import {
   Combobox,
   ComboboxItem,
@@ -9,6 +5,10 @@ import {
   ComboboxProvider,
   ComboboxCancel,
 } from '@ariakit/react';
+import { CheckIcon, ChevronDownIcon } from '@radix-ui/react-icons';
+import * as RadixSelect from '@radix-ui/react-select';
+import { Search as SearchIcon } from 'lucide-react';
+import { startTransition } from 'react';
 import type { OptionWithIcon } from '~/common';
 import { SelectTrigger, SelectValue, SelectScrollDownButton } from './Select';
 import { useCombobox } from '~/hooks';

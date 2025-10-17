@@ -1,11 +1,3 @@
-import { useEffect } from 'react';
-import { ChevronLeft } from 'lucide-react';
-import { useForm, FormProvider } from 'react-hook-form';
-import {
-  AuthTypeEnum,
-  AuthorizationTypeEnum,
-  TokenExchangeMethodEnum,
-} from 'librechat-data-provider';
 import {
   Label,
   OGDialog,
@@ -14,6 +6,14 @@ import {
   useToastContext,
   OGDialogTemplate,
 } from '@librechat/client';
+import {
+  AuthTypeEnum,
+  AuthorizationTypeEnum,
+  TokenExchangeMethodEnum,
+} from 'librechat-data-provider';
+import { useForm, FormProvider } from 'react-hook-form';
+import { ChevronLeft } from 'lucide-react';
+import { useEffect } from 'react';
 import type { ActionAuthForm } from '~/common';
 import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';

@@ -1,7 +1,7 @@
-import React from 'react';
-import FileSidePanel from './FileList/FileSidePanel';
 import { Outlet, useNavigate, useParams } from 'react-router-dom';
+import React from 'react';
 import FilesSectionSelector from './FilesSectionSelector';
+import FileSidePanel from './FileList/FileSidePanel';
 import { useLocalize } from '~/hooks';
 import { Button } from '../ui';
 

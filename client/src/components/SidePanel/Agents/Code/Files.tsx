@@ -1,6 +1,3 @@
-import { useState, useRef } from 'react';
-import { useFormContext } from 'react-hook-form';
-import { AttachmentIcon } from '@librechat/client';
 import {
   EToolResources,
   EModelEndpoint,
@@ -8,6 +5,9 @@ import {
   AgentCapabilities,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
+import { AttachmentIcon } from '@librechat/client';
+import { useFormContext } from 'react-hook-form';
+import { useState, useRef } from 'react';
 import type { EndpointFileConfig } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
 import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';

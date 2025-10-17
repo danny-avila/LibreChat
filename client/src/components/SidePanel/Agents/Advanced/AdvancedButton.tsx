@@ -1,6 +1,6 @@
-import React from 'react';
-import { Settings2 } from 'lucide-react';
 import { Button } from '@librechat/client';
+import { Settings2 } from 'lucide-react';
+import React from 'react';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 

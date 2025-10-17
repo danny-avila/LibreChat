@@ -1,5 +1,3 @@
-import { randomBytes } from 'crypto';
-import { logger } from '@librechat/data-schemas';
 import {
   registerClient,
   startAuthorization,
@@ -8,8 +6,9 @@ import {
   discoverOAuthProtectedResourceMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
 import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
-import type { MCPOptions } from 'librechat-data-provider';
-import type { FlowStateManager } from '~/flow/manager';
+import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
+import { logger } from '@librechat/data-schemas';
+import { randomBytes } from 'crypto';
 import type {
   OAuthClientInformation,
   OAuthProtectedResourceMetadata,
@@ -17,8 +16,9 @@ import type {
   MCPOAuthTokens,
   OAuthMetadata,
 } from './types';
+import type { MCPOptions } from 'librechat-data-provider';
+import type { FlowStateManager } from '~/flow/manager';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
-import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 
 /** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];

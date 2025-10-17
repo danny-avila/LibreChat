@@ -1,13 +1,13 @@
 import React, { useMemo } from 'react';
 import type { ModelSelectorProps } from '~/common';
-import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
-import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
 import {
   renderModelSpecs,
   renderEndpoints,
   renderSearchResults,
   renderCustomGroups,
 } from './components';
+import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
+import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';

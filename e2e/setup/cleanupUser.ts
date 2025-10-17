@@ -1,10 +1,10 @@
-import { connectDb } from '@librechat/backend/db/connect';
 import {
   findUser,
   deleteConvos,
   deleteMessages,
   deleteAllUserSessions,
 } from '@librechat/backend/models';
+import { connectDb } from '@librechat/backend/db/connect';
 
 type TUser = { email: string; password: string };
 

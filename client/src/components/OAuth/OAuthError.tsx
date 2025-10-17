@@ -1,5 +1,5 @@
-import React from 'react';
 import { useSearchParams } from 'react-router-dom';
+import React from 'react';
 import { useLocalize } from '~/hooks';
 
 export default function OAuthError() {

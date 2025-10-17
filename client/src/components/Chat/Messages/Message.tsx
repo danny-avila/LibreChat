@@ -1,9 +1,8 @@
-import React from 'react';
 import { useRecoilValue } from 'recoil';
-import { useMessageProcess } from '~/hooks';
+import React from 'react';
 import type { TMessageProps } from '~/common';
 import MessageRender from './ui/MessageRender';
-// eslint-disable-next-line import/no-cycle
+import { useMessageProcess } from '~/hooks';
 import MultiMessage from './MultiMessage';
 import { cn } from '~/utils';
 import store from '~/store';

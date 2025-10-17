@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useAuthContext, useLocalize } from '~/hooks';
+import { useMemo } from 'react';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
 import Icon from '~/components/Chat/Messages/MessageIcon';
+import { useAuthContext, useLocalize } from '~/hooks';
 import SearchContent from './Content/SearchContent';
 import SearchButtons from './SearchButtons';
 import SubRow from './SubRow';

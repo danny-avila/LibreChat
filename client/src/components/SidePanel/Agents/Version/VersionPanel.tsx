@@ -1,8 +1,8 @@
-import { ChevronLeft } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
 import { useToastContext } from '@librechat/client';
-import { useGetAgentByIdQuery, useRevertAgentVersionMutation } from '~/data-provider';
+import { useCallback, useMemo } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import type { AgentWithVersions, VersionContext } from './types';
+import { useGetAgentByIdQuery, useRevertAgentVersionMutation } from '~/data-provider';
 import { isActiveVersion } from './isActiveVersion';
 import { useAgentPanelContext } from '~/Providers';
 import VersionContent from './VersionContent';

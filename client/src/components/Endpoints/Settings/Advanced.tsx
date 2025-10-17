@@ -1,5 +1,3 @@
-import TextareaAutosize from 'react-textarea-autosize';
-import { ImageDetail, imageDetailNumeric, imageDetailValue } from 'librechat-data-provider';
 import {
   Input,
   Label,
@@ -9,6 +7,8 @@ import {
   InputNumber,
   HoverCardTrigger,
 } from '@librechat/client';
+import { ImageDetail, imageDetailNumeric, imageDetailValue } from 'librechat-data-provider';
+import TextareaAutosize from 'react-textarea-autosize';
 import type { ValueType } from '@rc-component/mini-decimal';
 import type { TModelSelectProps } from '~/common';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils';

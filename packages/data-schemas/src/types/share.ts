@@ -1,5 +1,5 @@
-import type { Types } from 'mongoose';
 import type { IMessage } from './message';
+import type { Types } from 'mongoose';
 
 export interface ISharedLink {
   _id?: Types.ObjectId;

@@ -1,4 +1,3 @@
-import type { ZodError } from 'zod';
 import type {
   TAzureGroups,
   TAzureGroupMap,
@@ -6,6 +5,7 @@ import type {
   TValidatedAzureConfig,
   TAzureConfigValidationResult,
 } from '../src/config';
+import type { ZodError } from 'zod';
 import { extractEnvVariable, envVarRegex } from '../src/utils';
 import { azureGroupConfigsSchema } from '../src/config';
 import { errorsToString } from '../src/parsers';

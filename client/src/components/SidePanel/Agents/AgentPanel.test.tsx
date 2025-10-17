@@ -1,10 +1,10 @@
 /**
  * @jest-environment jsdom
  */
-import * as React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { render, waitFor, fireEvent } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import * as React from 'react';
 import type { Agent } from 'librechat-data-provider';
 
 // Mock toast context - define this after all mocks

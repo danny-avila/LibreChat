@@ -1,4 +1,3 @@
-import type { InfiniteData } from '@tanstack/react-query';
 import type {
   TBanner,
   TMessage,
@@ -9,6 +8,7 @@ import type {
   TConversationTag,
   TAttachment,
 } from './schemas';
+import type { InfiniteData } from '@tanstack/react-query';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';

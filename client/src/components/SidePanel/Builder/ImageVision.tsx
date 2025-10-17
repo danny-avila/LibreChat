@@ -1,6 +1,6 @@
-import { Checkbox } from '@librechat/client';
-import { Capabilities } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
+import { Capabilities } from 'librechat-data-provider';
+import { Checkbox } from '@librechat/client';
 import type { AssistantForm } from '~/common';
 import { useLocalize } from '~/hooks';
 

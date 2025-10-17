@@ -1,5 +1,5 @@
-import agentSchema from '~/schema/agent';
 import type { IAgent } from '~/types';
+import agentSchema from '~/schema/agent';
 
 /**
  * Creates or returns the Agent model using the provided mongoose instance and schema

@@ -1,5 +1,3 @@
-import React, { useCallback, useEffect, useRef, useState, memo, useMemo } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Row,
   ColumnDef,
@@ -12,6 +10,8 @@ import {
   ColumnFiltersState,
   getFilteredRowModel,
 } from '@tanstack/react-table';
+import React, { useCallback, useEffect, useRef, useState, memo, useMemo } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Table as TTable } from '@tanstack/react-table';
 import { Table, TableRow, TableBody, TableCell, TableHead, TableHeader } from './Table';
 import AnimatedSearchInput from './AnimatedSearchInput';

@@ -1,5 +1,3 @@
-import { useState } from 'react';
-import { Button, OGDialog, OGDialogTemplate } from '@librechat/client';
 import {
   AuthType,
   RerankerTypes,
@@ -7,6 +5,8 @@ import {
   ScraperProviders,
   SearchCategories,
 } from 'librechat-data-provider';
+import { Button, OGDialog, OGDialogTemplate } from '@librechat/client';
+import { useState } from 'react';
 import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
 import InputSection, { type DropdownOption } from './InputSection';

@@ -1,5 +1,5 @@
-import { atom, selector } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
+import { atom, selector } from 'recoil';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 
 const defaultConfig: TEndpointsConfig = {

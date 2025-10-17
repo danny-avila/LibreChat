@@ -1,6 +1,6 @@
-import logger from '~/config/winston';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
+import logger from '~/config/winston';
 
 /**
  * Normalize the endpoint name to system-expected value.

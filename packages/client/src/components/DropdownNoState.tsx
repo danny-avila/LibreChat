@@ -1,4 +1,3 @@
-import React, { FC } from 'react';
 import {
   Listbox,
   ListboxButton,
@@ -6,6 +5,7 @@ import {
   ListboxOptions,
   Transition,
 } from '@headlessui/react';
+import React, { FC } from 'react';
 import type { Option } from '~/common';
 import { cn } from '~/utils/';
 

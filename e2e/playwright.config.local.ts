@@ -1,6 +1,6 @@
 import { PlaywrightTestConfig } from '@playwright/test';
-import mainConfig from './playwright.config';
 import path from 'path';
+import mainConfig from './playwright.config';
 const absolutePath = path.resolve(process.cwd(), 'api/server/index.js');
 import dotenv from 'dotenv';
 dotenv.config();

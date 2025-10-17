@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import { useEffect } from 'react';
 import { useAuthContext } from '~/hooks/AuthContext';
 import StartupLayout from './Startup';
 import store from '~/store';

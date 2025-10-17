@@ -1,6 +1,3 @@
-import React, { useState, useEffect } from 'react';
-import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
-import { Share2Icon, Users, Link, CopyCheck, UserX, UserCheck } from 'lucide-react';
 import {
   Label,
   Button,
@@ -13,6 +10,9 @@ import {
   OGDialogTrigger,
   useToastContext,
 } from '@librechat/client';
+import { Share2Icon, Users, Link, CopyCheck, UserX, UserCheck } from 'lucide-react';
+import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
+import React, { useState, useEffect } from 'react';
 import type { TPrincipal } from 'librechat-data-provider';
 import {
   usePeoplePickerPermissions,

@@ -1,6 +1,6 @@
-import { resolveHeaders, processMCPEnv } from './env';
 import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 import type { TUser, MCPOptions } from 'librechat-data-provider';
+import { resolveHeaders, processMCPEnv } from './env';
 
 function isStdioOptions(options: MCPOptions): options is Extract<MCPOptions, { type?: 'stdio' }> {
   return !options.type || options.type === 'stdio';

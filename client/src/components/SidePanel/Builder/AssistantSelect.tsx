@@ -1,6 +1,3 @@
-import { useMemo, useCallback, useEffect, useRef } from 'react';
-import { Plus } from 'lucide-react';
-import { SelectDropDown } from '@librechat/client';
 import {
   Tools,
   FileSources,
@@ -10,6 +7,9 @@ import {
   isImageVisionTool,
   defaultAssistantFormValues,
 } from 'librechat-data-provider';
+import { useMemo, useCallback, useEffect, useRef } from 'react';
+import { SelectDropDown } from '@librechat/client';
+import { Plus } from 'lucide-react';
 import type {
   TPlugin,
   Assistant,

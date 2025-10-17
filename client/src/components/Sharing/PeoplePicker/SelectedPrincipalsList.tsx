@@ -1,7 +1,7 @@
-import React from 'react';
 import { Button, useMediaQuery } from '@librechat/client';
-import { Users, X, ExternalLink } from 'lucide-react';
 import { ResourceType } from 'librechat-data-provider';
+import { Users, X, ExternalLink } from 'lucide-react';
+import React from 'react';
 import type { TPrincipal, AccessRoleIds } from 'librechat-data-provider';
 import AccessRolesPicker from '~/components/Sharing/AccessRolesPicker';
 import PrincipalAvatar from '~/components/Sharing/PrincipalAvatar';

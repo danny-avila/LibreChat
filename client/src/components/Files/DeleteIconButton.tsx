@@ -1,5 +1,5 @@
-import React from 'react';
 import { Button, TrashIcon } from '@librechat/client';
+import React from 'react';
 
 type DeleteIconButtonProps = {
   onClick: () => void;

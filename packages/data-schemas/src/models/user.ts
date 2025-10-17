@@ -1,5 +1,5 @@
-import userSchema from '~/schema/user';
 import type * as t from '~/types';
+import userSchema from '~/schema/user';
 
 /**
  * Creates or returns the User model using the provided mongoose instance and schema

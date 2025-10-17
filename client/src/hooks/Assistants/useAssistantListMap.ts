@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
+import { useMemo } from 'react';
 import type { AssistantListResponse, AssistantsEndpoint } from 'librechat-data-provider';
 import type { AssistantListItem } from '~/common';
 import { useListAssistantsQuery } from '~/data-provider';

@@ -1,5 +1,5 @@
-import * as Ariakit from '@ariakit/react';
 import { forwardRef, useEffect, useRef } from 'react';
+import * as Ariakit from '@ariakit/react';
 import type { ElementRef } from 'react';
 import { cn } from '~/utils';
 import './AnimatedTabs.css';

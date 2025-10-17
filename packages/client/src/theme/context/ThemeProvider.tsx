@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAtom } from 'jotai';
-import { IThemeRGB } from '../types';
-import applyTheme from '../utils/applyTheme';
 import { themeModeAtom, themeColorsAtom, themeNameAtom } from '../atoms/themeAtoms';
+import applyTheme from '../utils/applyTheme';
+import { IThemeRGB } from '../types';
 
 type ThemeContextType = {
   theme: string; // 'light' | 'dark' | 'system'

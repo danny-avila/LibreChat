@@ -1,6 +1,6 @@
 import { visit } from 'unist-util-visit';
-import type { Node } from 'unist';
 import type { Citation, CitationNode } from './types';
+import type { Node } from 'unist';
 import { SPAN_REGEX, STANDALONE_PATTERN, CLEANUP_REGEX, COMPOSITE_REGEX } from '~/utils/citations';
 
 /**

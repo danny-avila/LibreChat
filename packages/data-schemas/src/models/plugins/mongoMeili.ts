@@ -1,6 +1,5 @@
-import _ from 'lodash';
 import { MeiliSearch } from 'meilisearch';
-import type { SearchResponse, SearchParams, Index } from 'meilisearch';
+import _ from 'lodash';
 import type {
   CallbackWithoutResultAndOptionalError,
   FilterQuery,
@@ -10,6 +9,7 @@ import type {
   Types,
   Model,
 } from 'mongoose';
+import type { SearchResponse, SearchParams, Index } from 'meilisearch';
 import type { IConversation, IMessage } from '~/types';
 import logger from '~/config/meiliLogger';
 

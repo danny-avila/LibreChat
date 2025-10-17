@@ -1,7 +1,3 @@
-import React, { useCallback, useState } from 'react';
-import { useSetRecoilState } from 'recoil';
-import { SmartphoneIcon } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   OGDialog,
   useToastContext,
@@ -10,6 +6,10 @@ import {
   OGDialogTitle,
   Progress,
 } from '@librechat/client';
+import { motion, AnimatePresence } from 'framer-motion';
+import React, { useCallback, useState } from 'react';
+import { SmartphoneIcon } from 'lucide-react';
+import { useSetRecoilState } from 'recoil';
 import type { TUser, TVerify2FARequest } from 'librechat-data-provider';
 import {
   useConfirmTwoFactorMutation,

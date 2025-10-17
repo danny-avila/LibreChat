@@ -1,6 +1,6 @@
-import React from 'react';
-import { Bot } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { Bot } from 'lucide-react';
+import React from 'react';
 import type {
   TModelSpec,
   TAgentsMap,

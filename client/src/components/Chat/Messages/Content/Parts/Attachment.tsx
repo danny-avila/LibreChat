@@ -1,5 +1,5 @@
-import { memo, useState, useEffect } from 'react';
 import { imageExtRegex, Tools } from 'librechat-data-provider';
+import { memo, useState, useEffect } from 'react';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';

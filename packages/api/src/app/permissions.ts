@@ -1,4 +1,3 @@
-import { logger } from '@librechat/data-schemas';
 import {
   SystemRoles,
   Permissions,
@@ -6,6 +5,7 @@ import {
   PermissionTypes,
   getConfigDefaults,
 } from 'librechat-data-provider';
+import { logger } from '@librechat/data-schemas';
 import type { IRole, AppConfig } from '@librechat/data-schemas';
 import { isMemoryEnabled } from '~/memory/config';
 

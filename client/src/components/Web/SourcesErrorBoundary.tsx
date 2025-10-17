@@ -31,7 +31,7 @@ class SourcesErrorBoundary extends Component<Props, State> {
       }
 
       // Default simple error UI (using localized strings from Sources.tsx fallback)
-      /* eslint-disable i18next/no-literal-string */
+       
       return (
         <div
           className="flex flex-col items-center justify-center rounded-lg border border-border-medium bg-surface-secondary p-4 text-center"
@@ -48,7 +48,7 @@ class SourcesErrorBoundary extends Component<Props, State> {
           </button>
         </div>
       );
-      /* eslint-enable i18next/no-literal-string */
+       
     }
 
     return this.props.children;

@@ -1,5 +1,5 @@
-import winston from 'winston';
 import 'winston-daily-rotate-file';
+import winston from 'winston';
 import { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat } from './parsers';
 import { getLogDirectory } from './utils';
 

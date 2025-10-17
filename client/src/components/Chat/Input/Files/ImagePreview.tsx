@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Maximize2 } from 'lucide-react';
-import { FileSources } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent } from '@librechat/client';
+import { useState, useEffect, useCallback } from 'react';
+import { FileSources } from 'librechat-data-provider';
+import { Maximize2 } from 'lucide-react';
 import ProgressCircle from './ProgressCircle';
 import SourceIcon from './SourceIcon';
 import { cn } from '~/utils';

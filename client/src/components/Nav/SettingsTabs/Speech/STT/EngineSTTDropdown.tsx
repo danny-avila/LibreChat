@@ -1,6 +1,6 @@
-import React from 'react';
-import { useRecoilState } from 'recoil';
 import { Dropdown } from '@librechat/client';
+import { useRecoilState } from 'recoil';
+import React from 'react';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 

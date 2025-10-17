@@ -1,6 +1,6 @@
-import * as React from 'react';
-import * as SelectPrimitive from '@radix-ui/react-select';
 import { CaretSortIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon } from '@radix-ui/react-icons';
+import * as SelectPrimitive from '@radix-ui/react-select';
+import * as React from 'react';
 import { cn } from '~/utils';
 
 // @ts-ignore - Radix UI type conflicts with React types

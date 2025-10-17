@@ -1,9 +1,9 @@
-import React from 'react';
-import { useLocalize } from '~/hooks';
-import { Tools } from 'librechat-data-provider';
 import { UIResourceRenderer } from '@mcp-ui/client';
-import UIResourceCarousel from './UIResourceCarousel';
+import { Tools } from 'librechat-data-provider';
+import React from 'react';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
+import UIResourceCarousel from './UIResourceCarousel';
+import { useLocalize } from '~/hooks';
 
 function OptimizedCodeBlock({ text, maxHeight = 320 }: { text: string; maxHeight?: number }) {
   return (

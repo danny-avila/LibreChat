@@ -1,6 +1,5 @@
 import { mergeFileConfig } from 'librechat-data-provider';
 import { useCallback } from 'react';
-import { useGetFileConfig } from '~/data-provider';
 import {
   resizeImage,
   shouldResizeImage,
@@ -8,6 +7,7 @@ import {
   type ResizeOptions,
   type ResizeResult,
 } from '~/utils/imageResize';
+import { useGetFileConfig } from '~/data-provider';
 
 /**
  * Hook for client-side image resizing functionality

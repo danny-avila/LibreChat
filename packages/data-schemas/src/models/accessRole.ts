@@ -1,5 +1,5 @@
-import accessRoleSchema from '~/schema/accessRole';
 import type * as t from '~/types';
+import accessRoleSchema from '~/schema/accessRole';
 
 /**
  * Creates or returns the AccessRole model using the provided mongoose instance and schema

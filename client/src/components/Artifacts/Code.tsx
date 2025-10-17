@@ -1,9 +1,9 @@
 import React, { memo, useEffect, useRef, useState } from 'react';
-import copy from 'copy-to-clipboard';
-import rehypeKatex from 'rehype-katex';
-import ReactMarkdown from 'react-markdown';
-import rehypeHighlight from 'rehype-highlight';
 import { Clipboard, CheckMark } from '@librechat/client';
+import rehypeHighlight from 'rehype-highlight';
+import ReactMarkdown from 'react-markdown';
+import rehypeKatex from 'rehype-katex';
+import copy from 'copy-to-clipboard';
 import { handleDoubleClick, langSubset } from '~/utils';
 import { useLocalize } from '~/hooks';
 

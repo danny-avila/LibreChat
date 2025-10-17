@@ -1,6 +1,6 @@
-import AddedConvo from './AddedConvo';
 import type { TConversation } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
+import AddedConvo from './AddedConvo';
 
 export default function TextareaHeader({
   addedConvo,

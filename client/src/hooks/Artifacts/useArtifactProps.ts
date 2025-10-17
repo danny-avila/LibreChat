@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
 import { removeNullishValues } from 'librechat-data-provider';
+import { useMemo } from 'react';
 import type { Artifact } from '~/common';
 import { getKey, getProps, getTemplate, getArtifactFilename } from '~/utils/artifacts';
-import { getMermaidFiles } from '~/utils/mermaid';
 import { getMarkdownFiles } from '~/utils/markdown';
+import { getMermaidFiles } from '~/utils/mermaid';
 
 export default function useArtifactProps({ artifact }: { artifact: Artifact }) {
   const [fileKey, files] = useMemo(() => {
