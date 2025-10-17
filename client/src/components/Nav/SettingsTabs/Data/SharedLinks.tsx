@@ -286,11 +286,13 @@ export default function SharedLinks() {
 
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_shared_links')}</div>
+      <Label id="shared-links-label">{localize('com_nav_shared_links')}</Label>
 
       <OGDialog open={isOpen} onOpenChange={setIsOpen}>
         <OGDialogTrigger asChild onClick={() => setIsOpen(true)}>
-          <Button variant="outline">{localize('com_ui_manage')}</Button>
+          <Button aria-labelledby="shared-links-label" variant="outline">
+            {localize('com_ui_manage')}
+          </Button>
         </OGDialogTrigger>
 
         <OGDialogContent

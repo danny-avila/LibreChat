@@ -508,7 +508,10 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
-  if (agent_id && !tool_resource) {
+
+  let messageAttachment = !!metadata.message_file;
+
+  if (agent_id && !tool_resource && !messageAttachment) {
     throw new Error('No tool resource provided for agent file upload');
   }
 
@@ -516,7 +519,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     throw new Error('Image uploads are not supported for file search tool resources');
   }
 
-  let messageAttachment = !!metadata.message_file;
   if (!messageAttachment && !agent_id) {
     throw new Error('No agent ID provided for agent file upload');
   }
@@ -596,11 +598,22 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     if (shouldUseOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
       throw new Error('OCR capability is not enabled for Agents');
     } else if (shouldUseOCR) {
-      const { handleFileUpload: uploadOCR } = getStrategyFunctions(
-        appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
-      );
-      const { text, bytes, filepath: ocrFileURL } = await uploadOCR({ req, file, loadAuthValues });
-      return await createTextFile({ text, bytes, filepath: ocrFileURL });
+      try {
+        const { handleFileUpload: uploadOCR } = getStrategyFunctions(
+          appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
+        );
+        const {
+          text,
+          bytes,
+          filepath: ocrFileURL,
+        } = await uploadOCR({ req, file, loadAuthValues });
+        return await createTextFile({ text, bytes, filepath: ocrFileURL });
+      } catch (ocrError) {
+        logger.error(
+          `[processAgentFileUpload] OCR processing failed for file "${file.originalname}", falling back to text extraction:`,
+          ocrError,
+        );
+      }
     }
 
     const shouldUseSTT = fileConfig.checkType(

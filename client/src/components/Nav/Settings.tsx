@@ -182,7 +182,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <line x1="18" x2="6" y1="6" y2="18"></line>
                     <line x1="6" x2="18" y1="6" y2="18"></line>
                   </svg>
-                  <span className="sr-only">{localize('com_ui_close')}</span>
+                  <span className="sr-only">{localize('com_ui_close_settings')}</span>
                 </button>
               </DialogTitle>
               <div className="max-h-[550px] overflow-auto px-6 md:max-h-[400px] md:min-h-[400px] md:w-[680px]">
@@ -220,35 +220,35 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     ))}
                   </Tabs.List>
                   <div className="overflow-auto sm:w-full sm:max-w-none md:pr-0.5 md:pt-0.5">
-                    <Tabs.Content value={SettingsTabValues.GENERAL}>
+                    <Tabs.Content value={SettingsTabValues.GENERAL} tabIndex={-1}>
                       <General />
                     </Tabs.Content>
-                    <Tabs.Content value={SettingsTabValues.CHAT}>
+                    <Tabs.Content value={SettingsTabValues.CHAT} tabIndex={-1}>
                       <Chat />
                     </Tabs.Content>
-                    <Tabs.Content value={SettingsTabValues.COMMANDS}>
+                    <Tabs.Content value={SettingsTabValues.COMMANDS} tabIndex={-1}>
                       <Commands />
                     </Tabs.Content>
-                    <Tabs.Content value={SettingsTabValues.SPEECH}>
+                    <Tabs.Content value={SettingsTabValues.SPEECH} tabIndex={-1}>
                       <Speech />
                     </Tabs.Content>
                     {hasAnyPersonalizationFeature && (
-                      <Tabs.Content value={SettingsTabValues.PERSONALIZATION}>
+                      <Tabs.Content value={SettingsTabValues.PERSONALIZATION} tabIndex={-1}>
                         <Personalization
                           hasMemoryOptOut={hasMemoryOptOut}
                           hasAnyPersonalizationFeature={hasAnyPersonalizationFeature}
                         />
                       </Tabs.Content>
                     )}
-                    <Tabs.Content value={SettingsTabValues.DATA}>
+                    <Tabs.Content value={SettingsTabValues.DATA} tabIndex={-1}>
                       <Data />
                     </Tabs.Content>
                     {startupConfig?.balance?.enabled && (
-                      <Tabs.Content value={SettingsTabValues.BALANCE}>
+                      <Tabs.Content value={SettingsTabValues.BALANCE} tabIndex={-1}>
                         <Balance />
                       </Tabs.Content>
                     )}
-                    <Tabs.Content value={SettingsTabValues.ACCOUNT}>
+                    <Tabs.Content value={SettingsTabValues.ACCOUNT} tabIndex={-1}>
                       <Account />
                     </Tabs.Content>
                   </div>
