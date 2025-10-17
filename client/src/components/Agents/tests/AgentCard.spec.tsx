@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom';
 import AgentCard from '../AgentCard';
 import type t from 'librechat-data-provider';
@@ -70,13 +71,19 @@ describe('AgentCard', () => {
   };
 
   const mockOnClick = jest.fn();
+  const queryClient = new QueryClient();
 
   beforeEach(() => {
     mockOnClick.mockClear();
+    queryClient.clear();
   });
 
   it('renders agent information correctly', () => {
-    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={mockAgent} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('Test Agent')).toBeInTheDocument();
     expect(screen.getByText('A test agent for testing purposes')).toBeInTheDocument();
@@ -84,7 +91,11 @@ describe('AgentCard', () => {
   });
 
   it('displays avatar when provided as object', () => {
-    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={mockAgent} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     const avatarImg = screen.getByAltText('Test Agent avatar');
     expect(avatarImg).toBeInTheDocument();
@@ -97,7 +108,11 @@ describe('AgentCard', () => {
       avatar: '/string-avatar.png' as any, // Legacy support for string avatars
     };
 
-    render(<AgentCard agent={agentWithStringAvatar} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithStringAvatar} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     const avatarImg = screen.getByAltText('Test Agent avatar');
     expect(avatarImg).toBeInTheDocument();
@@ -110,7 +125,11 @@ describe('AgentCard', () => {
       avatar: undefined,
     };
 
-    render(<AgentCard agent={agentWithoutAvatar as any as t.Agent} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithoutAvatar as any as t.Agent} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     // Check for Bot icon presence by looking for the svg with lucide-bot class
     const botIcon = document.querySelector('.lucide-bot');
@@ -118,7 +137,11 @@ describe('AgentCard', () => {
   });
 
   it('calls onClick when card is clicked', () => {
-    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={mockAgent} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     const card = screen.getByRole('button');
     fireEvent.click(card);
@@ -127,7 +150,11 @@ describe('AgentCard', () => {
   });
 
   it('calls onClick when Enter key is pressed', () => {
-    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={mockAgent} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     const card = screen.getByRole('button');
     fireEvent.keyDown(card, { key: 'Enter' });
@@ -136,7 +163,11 @@ describe('AgentCard', () => {
   });
 
   it('calls onClick when Space key is pressed', () => {
-    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={mockAgent} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     const card = screen.getByRole('button');
     fireEvent.keyDown(card, { key: ' ' });
@@ -145,7 +176,11 @@ describe('AgentCard', () => {
   });
 
   it('does not call onClick for other keys', () => {
-    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={mockAgent} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     const card = screen.getByRole('button');
     fireEvent.keyDown(card, { key: 'Escape' });
@@ -154,7 +189,11 @@ describe('AgentCard', () => {
   });
 
   it('applies additional className when provided', () => {
-    render(<AgentCard agent={mockAgent} onClick={mockOnClick} className="custom-class" />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={mockAgent} onClick={mockOnClick} className="custom-class" />
+      </QueryClientProvider>,
+    );
 
     const card = screen.getByRole('button');
     expect(card).toHaveClass('custom-class');
@@ -167,7 +206,11 @@ describe('AgentCard', () => {
       authorName: undefined,
     };
 
-    render(<AgentCard agent={agentWithoutContact} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithoutContact} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('Test Agent')).toBeInTheDocument();
     expect(screen.getByText('A test agent for testing purposes')).toBeInTheDocument();
@@ -181,7 +224,11 @@ describe('AgentCard', () => {
       authorName: 'John Doe',
     };
 
-    render(<AgentCard agent={agentWithAuthorName} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithAuthorName} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('John Doe')).toBeInTheDocument();
   });
@@ -193,7 +240,11 @@ describe('AgentCard', () => {
       authorName: undefined,
     };
 
-    render(<AgentCard agent={agentWithEmailOnly} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithEmailOnly} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('contact@example.com')).toBeInTheDocument();
   });
@@ -205,7 +256,11 @@ describe('AgentCard', () => {
       authorName: 'John Doe',
     };
 
-    render(<AgentCard agent={agentWithBoth} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithBoth} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('Support Team')).toBeInTheDocument();
     expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
@@ -221,14 +276,22 @@ describe('AgentCard', () => {
       authorName: undefined,
     };
 
-    render(<AgentCard agent={agentWithNameAndEmail} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithNameAndEmail} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('Support Team')).toBeInTheDocument();
     expect(screen.queryByText('support@example.com')).not.toBeInTheDocument();
   });
 
   it('has proper accessibility attributes', () => {
-    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={mockAgent} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     const card = screen.getByRole('button');
     expect(card).toHaveAttribute('tabIndex', '0');
@@ -244,7 +307,11 @@ describe('AgentCard', () => {
       category: 'general',
     };
 
-    render(<AgentCard agent={agentWithCategory} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithCategory} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('General')).toBeInTheDocument();
   });
@@ -255,7 +322,11 @@ describe('AgentCard', () => {
       category: 'custom',
     };
 
-    render(<AgentCard agent={agentWithCustomCategory} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithCustomCategory} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('Custom Category')).toBeInTheDocument();
   });
@@ -266,13 +337,21 @@ describe('AgentCard', () => {
       category: 'unknown',
     };
 
-    render(<AgentCard agent={agentWithUnknownCategory} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={agentWithUnknownCategory} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.getByText('Unknown')).toBeInTheDocument();
   });
 
   it('does not display category tag when category is not provided', () => {
-    render(<AgentCard agent={mockAgent} onClick={mockOnClick} />);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AgentCard agent={mockAgent} onClick={mockOnClick} />
+      </QueryClientProvider>,
+    );
 
     expect(screen.queryByText('General')).not.toBeInTheDocument();
     expect(screen.queryByText('Unknown')).not.toBeInTheDocument();

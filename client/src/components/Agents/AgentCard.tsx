@@ -1,5 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Label } from '@librechat/client';
+import { QueryKeys } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
 import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
@@ -16,6 +18,92 @@ interface AgentCardProps {
 const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' }) => {
   const localize = useLocalize();
   const { categories } = useAgentCategories();
+  const queryClient = useQueryClient();
+
+  const favoriteData = queryClient?.getQueryData?.([QueryKeys.user, 'favoriteAgents']) as
+    | { favoriteAgents: string[] }
+    | undefined;
+  const favoriteIds = favoriteData?.favoriteAgents ?? [];
+  const isFavorite = favoriteIds.includes(agent.id);
+  const [favorited, setFavorited] = useState<boolean>(isFavorite);
+  const prevFavoritesKey = useRef<string>('');
+
+  const favoritesKey = useMemo(() => favoriteIds.join(','), [favoriteIds]);
+
+  useEffect(() => {
+    if (prevFavoritesKey.current === favoritesKey) {
+      return;
+    }
+    prevFavoritesKey.current = favoritesKey;
+    setFavorited(isFavorite);
+  }, [favoritesKey, isFavorite]);
+
+  const syncFromCache = useCallback(() => {
+    const latest = queryClient?.getQueryData?.([QueryKeys.user, 'favoriteAgents']) as
+      | { favoriteAgents?: string[] }
+      | undefined;
+    const nextFavorited = latest?.favoriteAgents?.some?.((id) => id === agent.id) ?? false;
+    setFavorited(nextFavorited);
+  }, [agent.id, queryClient]);
+
+  // Listen for global favorite updates
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const customEvent = event as CustomEvent<{ id: string; favorited: boolean }>;
+      if (customEvent?.detail?.id === agent.id) {
+        setFavorited(Boolean(customEvent.detail.favorited));
+        return;
+      }
+      syncFromCache();
+    };
+
+    window.addEventListener('favoriteAgentsUpdated', handler);
+    const handleStorage = () => {
+      syncFromCache();
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('favoriteAgentsUpdated', handler);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [agent.id, syncFromCache]);
+
+  const toggleFavorite = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (favorited) {
+        const { dataService } = await import('librechat-data-provider');
+        const res = await dataService.removeFavoriteAgent(agent.id);
+        queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
+        setFavorited(false);
+        try {
+          window.dispatchEvent(
+            new CustomEvent('favoriteAgentsUpdated', {
+              detail: { id: agent.id, favorited: false },
+            }),
+          );
+        } catch (_err) {
+          void 0;
+        }
+      } else {
+        const { dataService } = await import('librechat-data-provider');
+        const res = await dataService.addFavoriteAgent(agent.id);
+        queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
+        setFavorited(true);
+        try {
+          window.dispatchEvent(
+            new CustomEvent('favoriteAgentsUpdated', {
+              detail: { id: agent.id, favorited: true },
+            }),
+          );
+        } catch (_err) {
+          void 0;
+        }
+      }
+    } catch (_err) {
+      // ignore
+    }
+  };
 
   const categoryLabel = useMemo(() => {
     if (!agent.category) return '';
@@ -55,6 +143,26 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
         }
       }}
     >
+      {/* Favorite toggle */}
+      <button
+        role="switch"
+        aria-checked={favorited}
+        aria-label={favorited ? 'Unfavorite agent' : 'Favorite agent'}
+        onClick={toggleFavorite}
+        className="absolute right-3 top-3 rounded-full p-1 hover:bg-surface-hover"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+          className={`size-5 ${favorited ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary'}`}
+          aria-hidden="true"
+        >
+          <path
+            d="M12 17.27l-5.197 3.084 1.39-5.96L3 9.82l6.02-.52L12 3l2.98 6.3L21 9.82l-5.193 4.574 1.39 5.96z"
+            fill="currentColor"
+          />
+        </svg>
+      </button>
       {/* Two column layout */}
       <div className="flex h-full items-start gap-3">
         {/* Left column: Avatar and Category */}

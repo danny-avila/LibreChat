@@ -1,9 +1,9 @@
-import React from 'react';
-import { EarthIcon } from 'lucide-react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { isAgentsEndpoint, isAssistantsEndpoint, QueryKeys } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
+import { EarthIcon } from 'lucide-react';
 
 interface EndpointModelItemProps {
   modelId: string | null;
@@ -13,6 +13,51 @@ interface EndpointModelItemProps {
 
 export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointModelItemProps) {
   const { handleSelectModel } = useModelSelectorContext();
+  const queryClient: any = (globalThis as any).__REACT_QUERY_CLIENT__;
+  const favoritesMap: Record<string, true> | undefined = (endpoint as any).favoriteAgentIds;
+  const initialFavorite = Boolean(favoritesMap && modelId && favoritesMap[modelId]);
+  const [favorited, setFavorited] = useState<boolean>(initialFavorite);
+
+  useEffect(() => {
+    setFavorited(initialFavorite);
+  }, [initialFavorite]);
+
+  const favoriteRef = useRef(favorited);
+  favoriteRef.current = favorited;
+
+  const refreshFromCache = useCallback(() => {
+    if (!modelId) {
+      return;
+    }
+    const latest = queryClient?.getQueryData?.([QueryKeys.user, 'favoriteAgents']) as
+      | { favoriteAgents?: string[] }
+      | undefined;
+    const nextFavorited = latest?.favoriteAgents?.some?.((id) => id === modelId) ?? false;
+    if (favoriteRef.current !== nextFavorited) {
+      setFavorited(nextFavorited);
+    }
+  }, [modelId, queryClient]);
+
+  useEffect(() => {
+    if (!modelId) {
+      return;
+    }
+    const handler = (event: Event) => {
+      const customEvent = event as CustomEvent<{ id: string; favorited: boolean }>;
+      if (customEvent?.detail?.id === modelId) {
+        setFavorited(Boolean(customEvent.detail.favorited));
+        return;
+      }
+      refreshFromCache();
+    };
+    window.addEventListener('favoriteAgentsUpdated', handler);
+    window.addEventListener('storage', handler);
+    return () => {
+      window.removeEventListener('favoriteAgentsUpdated', handler);
+      window.removeEventListener('storage', handler);
+    };
+  }, [modelId, refreshFromCache]);
+
   let isGlobal = false;
   let modelName = modelId;
   const avatarUrl = endpoint?.modelIcons?.[modelId ?? ''] || null;
@@ -54,6 +99,62 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
           <EarthIcon className="ml-auto size-4 flex-shrink-0 self-center text-green-400" />
         )}
       </div>
+      {isAgentsEndpoint(endpoint.value) && modelId && (
+        <button
+          role="switch"
+          aria-checked={favorited}
+          aria-label={favorited ? 'Unfavorite agent' : 'Favorite agent'}
+          className="ml-2"
+          onClick={async (e) => {
+            e.stopPropagation();
+            try {
+              if (favorited) {
+                const { dataService } = await import('librechat-data-provider');
+                const res = await dataService.removeFavoriteAgent(modelId);
+                queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
+                setFavorited(false);
+                try {
+                  window.dispatchEvent(
+                    new CustomEvent('favoriteAgentsUpdated', {
+                      detail: { id: modelId, favorited: false },
+                    }),
+                  );
+                } catch (_err) {
+                  void 0;
+                }
+              } else {
+                const { dataService } = await import('librechat-data-provider');
+                const res = await dataService.addFavoriteAgent(modelId);
+                queryClient?.setQueryData?.([QueryKeys.user, 'favoriteAgents'], res);
+                setFavorited(true);
+                try {
+                  window.dispatchEvent(
+                    new CustomEvent('favoriteAgentsUpdated', {
+                      detail: { id: modelId, favorited: true },
+                    }),
+                  );
+                } catch (_err) {
+                  void 0;
+                }
+              }
+            } catch (_err) {
+              // ignore
+            }
+          }}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+            className={`size-5 ${favorited ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary'}`}
+            aria-hidden="true"
+          >
+            <path
+              d="M12 17.27l-5.197 3.084 1.39-5.96L3 9.82l6.02-.52L12 3l2.98 6.3L21 9.82l-5.193 4.574 1.39 5.96z"
+              fill="currentColor"
+            />
+          </svg>
+        </button>
+      )}
       {isSelected && (
         <div className="flex-shrink-0 self-center">
           <svg
@@ -83,7 +184,16 @@ export function renderEndpointModels(
   selectedModel: string | null,
   filteredModels?: string[],
 ) {
-  const modelsToRender = filteredModels || models.map((model) => model.name);
+  let modelsToRender = filteredModels || models.map((model) => model.name);
+  const favoritesMap: Record<string, true> | undefined = (endpoint as any)?.favoriteAgentIds;
+  if (favoritesMap) {
+    modelsToRender = [...modelsToRender].sort((a, b) => {
+      const af = favoritesMap[a] ? 1 : 0;
+      const bf = favoritesMap[b] ? 1 : 0;
+      if (af !== bf) return bf - af; // favorites first
+      return a.localeCompare(b);
+    });
+  }
 
   return modelsToRender.map(
     (modelId) =>

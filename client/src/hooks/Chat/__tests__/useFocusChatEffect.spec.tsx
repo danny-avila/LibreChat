@@ -20,10 +20,10 @@ describe('useFocusChatEffect', () => {
     jest.clearAllMocks();
     (useNavigate as jest.Mock).mockReturnValue(mockNavigate);
 
-    // Mock window.matchMedia
-    window.matchMedia = jest.fn().mockImplementation(() => ({
-      matches: false,
-      media: '',
+    // Mock window.matchMedia to simulate a non-touch device with hover capability
+    window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+      matches: query === '(hover: hover)', // true for hover query, false for coarse pointer
+      media: query,
       onchange: null,
       addListener: jest.fn(),
       removeListener: jest.fn(),
@@ -83,9 +83,9 @@ describe('useFocusChatEffect', () => {
     });
 
     test('should not focus textarea on touchscreen devices', () => {
-      window.matchMedia = jest.fn().mockImplementation(() => ({
-        matches: true, // This indicates a touchscreen
-        media: '',
+      window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+        matches: query === '(pointer: coarse)', // true for coarse pointer (touchscreen)
+        media: query,
         onchange: null,
         addListener: jest.fn(),
         removeListener: jest.fn(),

@@ -138,6 +138,10 @@ const userSchema = new Schema<IUser>(
           type: Boolean,
           default: true,
         },
+        favoriteAgents: {
+          type: [String],
+          default: [],
+        },
       },
       default: {},
     },

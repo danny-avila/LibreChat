@@ -33,6 +33,7 @@ export interface IUser extends Document {
   termsAccepted?: boolean;
   personalization?: {
     memories?: boolean;
+    favoriteAgents?: string[];
   };
   createdAt?: Date;
   updatedAt?: Date;

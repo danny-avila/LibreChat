@@ -299,7 +299,12 @@ describe('Accessibility Improvements', () => {
     };
 
     it('provides comprehensive ARIA labels', () => {
-      render(<AgentCard agent={mockAgent as t.Agent} onClick={jest.fn()} />);
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentCard agent={mockAgent as t.Agent} onClick={jest.fn()} />
+        </Wrapper>,
+      );
 
       const card = screen.getByRole('button');
       expect(card).toHaveAttribute('aria-label', 'Test Agent agent. A test agent for testing');
@@ -309,7 +314,12 @@ describe('Accessibility Improvements', () => {
 
     it('supports keyboard interaction', () => {
       const onClick = jest.fn();
-      render(<AgentCard agent={mockAgent as t.Agent} onClick={onClick} />);
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentCard agent={mockAgent as t.Agent} onClick={onClick} />
+        </Wrapper>,
+      );
 
       const card = screen.getByRole('button');
 
