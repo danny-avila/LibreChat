@@ -66,16 +66,19 @@ const bedrockValues = {
   'mistral-large-2407': { prompt: 3.0, completion: 9.0 },
   'command-text': { prompt: 1.5, completion: 2.0 },
   'command-light': { prompt: 0.3, completion: 0.6 },
-  'ai21.j2-mid-v1': { prompt: 12.5, completion: 12.5 },
-  'ai21.j2-ultra-v1': { prompt: 18.8, completion: 18.8 },
-  'ai21.jamba-instruct-v1:0': { prompt: 0.5, completion: 0.7 },
-  'amazon.titan-text-lite-v1': { prompt: 0.15, completion: 0.2 },
-  'amazon.titan-text-express-v1': { prompt: 0.2, completion: 0.6 },
-  'amazon.titan-text-premier-v1:0': { prompt: 0.5, completion: 1.5 },
-  'amazon.nova-micro-v1:0': { prompt: 0.035, completion: 0.14 },
-  'amazon.nova-lite-v1:0': { prompt: 0.06, completion: 0.24 },
-  'amazon.nova-pro-v1:0': { prompt: 0.8, completion: 3.2 },
-  'amazon.nova-premier-v1:0': { prompt: 0.8, completion: 3.2 }, // Default to nova-pro pricing
+  // AI21 models
+  'j2-mid': { prompt: 12.5, completion: 12.5 },
+  'j2-ultra': { prompt: 18.8, completion: 18.8 },
+  'jamba-instruct': { prompt: 0.5, completion: 0.7 },
+  // Amazon Titan models
+  'titan-text-lite': { prompt: 0.15, completion: 0.2 },
+  'titan-text-express': { prompt: 0.2, completion: 0.6 },
+  'titan-text-premier': { prompt: 0.5, completion: 1.5 },
+  // Amazon Nova models
+  'nova-micro': { prompt: 0.035, completion: 0.14 },
+  'nova-lite': { prompt: 0.06, completion: 0.24 },
+  'nova-pro': { prompt: 0.8, completion: 3.2 },
+  'nova-premier': { prompt: 2.5, completion: 12.5 },
   'deepseek.r1': { prompt: 1.35, completion: 5.4 },
   qwen: { prompt: 0.08, completion: 0.33 }, // Qwen base pattern (using qwen2.5-72b pricing)
   'qwen2.5': { prompt: 0.08, completion: 0.33 }, // Qwen 2.5 base pattern

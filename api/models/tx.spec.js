@@ -494,6 +494,249 @@ describe('AWS Bedrock Model Tests', () => {
   });
 });
 
+describe('Amazon Model Tests', () => {
+  describe('Amazon Nova Models', () => {
+    it('should return correct pricing for nova-premier', () => {
+      expect(getMultiplier({ model: 'nova-premier', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-premier'].prompt,
+      );
+      expect(getMultiplier({ model: 'nova-premier', tokenType: 'completion' })).toBe(
+        tokenValues['nova-premier'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-premier-v1:0', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-premier'].prompt,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-premier-v1:0', tokenType: 'completion' })).toBe(
+        tokenValues['nova-premier'].completion,
+      );
+    });
+
+    it('should return correct pricing for nova-pro', () => {
+      expect(getMultiplier({ model: 'nova-pro', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-pro'].prompt,
+      );
+      expect(getMultiplier({ model: 'nova-pro', tokenType: 'completion' })).toBe(
+        tokenValues['nova-pro'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-pro-v1:0', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-pro'].prompt,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-pro-v1:0', tokenType: 'completion' })).toBe(
+        tokenValues['nova-pro'].completion,
+      );
+    });
+
+    it('should return correct pricing for nova-lite', () => {
+      expect(getMultiplier({ model: 'nova-lite', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-lite'].prompt,
+      );
+      expect(getMultiplier({ model: 'nova-lite', tokenType: 'completion' })).toBe(
+        tokenValues['nova-lite'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-lite-v1:0', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-lite'].prompt,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-lite-v1:0', tokenType: 'completion' })).toBe(
+        tokenValues['nova-lite'].completion,
+      );
+    });
+
+    it('should return correct pricing for nova-micro', () => {
+      expect(getMultiplier({ model: 'nova-micro', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-micro'].prompt,
+      );
+      expect(getMultiplier({ model: 'nova-micro', tokenType: 'completion' })).toBe(
+        tokenValues['nova-micro'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-micro-v1:0', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-micro'].prompt,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-micro-v1:0', tokenType: 'completion' })).toBe(
+        tokenValues['nova-micro'].completion,
+      );
+    });
+
+    it('should match both short and full model names to the same pricing', () => {
+      const models = ['nova-micro', 'nova-lite', 'nova-pro', 'nova-premier'];
+      const fullModels = [
+        'amazon.nova-micro-v1:0',
+        'amazon.nova-lite-v1:0',
+        'amazon.nova-pro-v1:0',
+        'amazon.nova-premier-v1:0',
+      ];
+
+      models.forEach((shortModel, i) => {
+        const fullModel = fullModels[i];
+        const shortPrompt = getMultiplier({ model: shortModel, tokenType: 'prompt' });
+        const fullPrompt = getMultiplier({ model: fullModel, tokenType: 'prompt' });
+        const shortCompletion = getMultiplier({ model: shortModel, tokenType: 'completion' });
+        const fullCompletion = getMultiplier({ model: fullModel, tokenType: 'completion' });
+
+        expect(shortPrompt).toBe(fullPrompt);
+        expect(shortCompletion).toBe(fullCompletion);
+        expect(shortPrompt).toBe(tokenValues[shortModel].prompt);
+        expect(shortCompletion).toBe(tokenValues[shortModel].completion);
+      });
+    });
+  });
+
+  describe('Amazon Titan Models', () => {
+    it('should return correct pricing for titan-text-premier', () => {
+      expect(getMultiplier({ model: 'titan-text-premier', tokenType: 'prompt' })).toBe(
+        tokenValues['titan-text-premier'].prompt,
+      );
+      expect(getMultiplier({ model: 'titan-text-premier', tokenType: 'completion' })).toBe(
+        tokenValues['titan-text-premier'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.titan-text-premier-v1:0', tokenType: 'prompt' })).toBe(
+        tokenValues['titan-text-premier'].prompt,
+      );
+      expect(
+        getMultiplier({ model: 'amazon.titan-text-premier-v1:0', tokenType: 'completion' }),
+      ).toBe(tokenValues['titan-text-premier'].completion);
+    });
+
+    it('should return correct pricing for titan-text-express', () => {
+      expect(getMultiplier({ model: 'titan-text-express', tokenType: 'prompt' })).toBe(
+        tokenValues['titan-text-express'].prompt,
+      );
+      expect(getMultiplier({ model: 'titan-text-express', tokenType: 'completion' })).toBe(
+        tokenValues['titan-text-express'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.titan-text-express-v1', tokenType: 'prompt' })).toBe(
+        tokenValues['titan-text-express'].prompt,
+      );
+      expect(
+        getMultiplier({ model: 'amazon.titan-text-express-v1', tokenType: 'completion' }),
+      ).toBe(tokenValues['titan-text-express'].completion);
+    });
+
+    it('should return correct pricing for titan-text-lite', () => {
+      expect(getMultiplier({ model: 'titan-text-lite', tokenType: 'prompt' })).toBe(
+        tokenValues['titan-text-lite'].prompt,
+      );
+      expect(getMultiplier({ model: 'titan-text-lite', tokenType: 'completion' })).toBe(
+        tokenValues['titan-text-lite'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.titan-text-lite-v1', tokenType: 'prompt' })).toBe(
+        tokenValues['titan-text-lite'].prompt,
+      );
+      expect(getMultiplier({ model: 'amazon.titan-text-lite-v1', tokenType: 'completion' })).toBe(
+        tokenValues['titan-text-lite'].completion,
+      );
+    });
+
+    it('should match both short and full model names to the same pricing', () => {
+      const models = ['titan-text-lite', 'titan-text-express', 'titan-text-premier'];
+      const fullModels = [
+        'amazon.titan-text-lite-v1',
+        'amazon.titan-text-express-v1',
+        'amazon.titan-text-premier-v1:0',
+      ];
+
+      models.forEach((shortModel, i) => {
+        const fullModel = fullModels[i];
+        const shortPrompt = getMultiplier({ model: shortModel, tokenType: 'prompt' });
+        const fullPrompt = getMultiplier({ model: fullModel, tokenType: 'prompt' });
+        const shortCompletion = getMultiplier({ model: shortModel, tokenType: 'completion' });
+        const fullCompletion = getMultiplier({ model: fullModel, tokenType: 'completion' });
+
+        expect(shortPrompt).toBe(fullPrompt);
+        expect(shortCompletion).toBe(fullCompletion);
+        expect(shortPrompt).toBe(tokenValues[shortModel].prompt);
+        expect(shortCompletion).toBe(tokenValues[shortModel].completion);
+      });
+    });
+  });
+});
+
+describe('AI21 Model Tests', () => {
+  describe('AI21 J2 Models', () => {
+    it('should return correct pricing for j2-mid', () => {
+      expect(getMultiplier({ model: 'j2-mid', tokenType: 'prompt' })).toBe(
+        tokenValues['j2-mid'].prompt,
+      );
+      expect(getMultiplier({ model: 'j2-mid', tokenType: 'completion' })).toBe(
+        tokenValues['j2-mid'].completion,
+      );
+      expect(getMultiplier({ model: 'ai21.j2-mid-v1', tokenType: 'prompt' })).toBe(
+        tokenValues['j2-mid'].prompt,
+      );
+      expect(getMultiplier({ model: 'ai21.j2-mid-v1', tokenType: 'completion' })).toBe(
+        tokenValues['j2-mid'].completion,
+      );
+    });
+
+    it('should return correct pricing for j2-ultra', () => {
+      expect(getMultiplier({ model: 'j2-ultra', tokenType: 'prompt' })).toBe(
+        tokenValues['j2-ultra'].prompt,
+      );
+      expect(getMultiplier({ model: 'j2-ultra', tokenType: 'completion' })).toBe(
+        tokenValues['j2-ultra'].completion,
+      );
+      expect(getMultiplier({ model: 'ai21.j2-ultra-v1', tokenType: 'prompt' })).toBe(
+        tokenValues['j2-ultra'].prompt,
+      );
+      expect(getMultiplier({ model: 'ai21.j2-ultra-v1', tokenType: 'completion' })).toBe(
+        tokenValues['j2-ultra'].completion,
+      );
+    });
+
+    it('should match both short and full model names to the same pricing', () => {
+      const models = ['j2-mid', 'j2-ultra'];
+      const fullModels = ['ai21.j2-mid-v1', 'ai21.j2-ultra-v1'];
+
+      models.forEach((shortModel, i) => {
+        const fullModel = fullModels[i];
+        const shortPrompt = getMultiplier({ model: shortModel, tokenType: 'prompt' });
+        const fullPrompt = getMultiplier({ model: fullModel, tokenType: 'prompt' });
+        const shortCompletion = getMultiplier({ model: shortModel, tokenType: 'completion' });
+        const fullCompletion = getMultiplier({ model: fullModel, tokenType: 'completion' });
+
+        expect(shortPrompt).toBe(fullPrompt);
+        expect(shortCompletion).toBe(fullCompletion);
+        expect(shortPrompt).toBe(tokenValues[shortModel].prompt);
+        expect(shortCompletion).toBe(tokenValues[shortModel].completion);
+      });
+    });
+  });
+
+  describe('AI21 Jamba Models', () => {
+    it('should return correct pricing for jamba-instruct', () => {
+      expect(getMultiplier({ model: 'jamba-instruct', tokenType: 'prompt' })).toBe(
+        tokenValues['jamba-instruct'].prompt,
+      );
+      expect(getMultiplier({ model: 'jamba-instruct', tokenType: 'completion' })).toBe(
+        tokenValues['jamba-instruct'].completion,
+      );
+      expect(getMultiplier({ model: 'ai21.jamba-instruct-v1:0', tokenType: 'prompt' })).toBe(
+        tokenValues['jamba-instruct'].prompt,
+      );
+      expect(getMultiplier({ model: 'ai21.jamba-instruct-v1:0', tokenType: 'completion' })).toBe(
+        tokenValues['jamba-instruct'].completion,
+      );
+    });
+
+    it('should match both short and full model names to the same pricing', () => {
+      const shortPrompt = getMultiplier({ model: 'jamba-instruct', tokenType: 'prompt' });
+      const fullPrompt = getMultiplier({
+        model: 'ai21.jamba-instruct-v1:0',
+        tokenType: 'prompt',
+      });
+      const shortCompletion = getMultiplier({ model: 'jamba-instruct', tokenType: 'completion' });
+      const fullCompletion = getMultiplier({
+        model: 'ai21.jamba-instruct-v1:0',
+        tokenType: 'completion',
+      });
+
+      expect(shortPrompt).toBe(fullPrompt);
+      expect(shortCompletion).toBe(fullCompletion);
+      expect(shortPrompt).toBe(tokenValues['jamba-instruct'].prompt);
+      expect(shortCompletion).toBe(tokenValues['jamba-instruct'].completion);
+    });
+  });
+});
+
 describe('Deepseek Model Tests', () => {
   const deepseekModels = ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner', 'deepseek.r1'];
 

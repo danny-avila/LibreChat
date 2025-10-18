@@ -215,20 +215,22 @@ const ollamaModels = {
 };
 
 const ai21Models = {
-  'ai21.j2-mid-v1': 8182, // -10 from max
-  'ai21.j2-ultra-v1': 8182, // -10 from max
-  'ai21.jamba-instruct-v1:0': 255500, // -500 from max
+  'j2-mid': 8182, // -10 from max
+  'j2-ultra': 8182, // -10 from max
+  'jamba-instruct': 255500, // -500 from max
 };
 
 const amazonModels = {
-  'amazon.titan-text-lite-v1': 4000,
-  'amazon.titan-text-express-v1': 8000,
-  'amazon.titan-text-premier-v1:0': 31500, // -500 from max
+  // Amazon Titan models
+  'titan-text-lite': 4000,
+  'titan-text-express': 8000,
+  'titan-text-premier': 31500, // -500 from max
+  // Amazon Nova models
   // https://aws.amazon.com/ai/generative-ai/nova/
-  'amazon.nova-micro-v1:0': 127000, // -1000 from max,
-  'amazon.nova-lite-v1:0': 295000, // -5000 from max,
-  'amazon.nova-pro-v1:0': 295000, // -5000 from max,
-  'amazon.nova-premier-v1:0': 995000, // -5000 from max,
+  'nova-micro': 127000, // -1000 from max
+  'nova-lite': 295000, // -5000 from max
+  'nova-pro': 295000, // -5000 from max
+  'nova-premier': 995000, // -5000 from max
 };
 
 const bedrockModels = {
