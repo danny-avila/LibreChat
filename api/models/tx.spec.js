@@ -184,6 +184,16 @@ describe('getValueKey', () => {
     expect(getValueKey('claude-3.5-haiku-turbo')).toBe('claude-3.5-haiku');
     expect(getValueKey('claude-3.5-haiku-0125')).toBe('claude-3.5-haiku');
   });
+
+  it('should return expected value keys for "gpt-oss" models', () => {
+    expect(getValueKey('openai/gpt-oss-120b')).toBe('gpt-oss-120b');
+    expect(getValueKey('openai/gpt-oss:120b')).toBe('gpt-oss:120b');
+    expect(getValueKey('openai/gpt-oss-570b')).toBe('gpt-oss');
+    expect(getValueKey('gpt-oss-570b')).toBe('gpt-oss');
+    expect(getValueKey('groq/gpt-oss-1080b')).toBe('gpt-oss');
+    expect(getValueKey('gpt-oss-20b')).toBe('gpt-oss-20b');
+    expect(getValueKey('oai/gpt-oss:20b')).toBe('gpt-oss:20b');
+  });
 });
 
 describe('getMultiplier', () => {
@@ -385,6 +395,18 @@ describe('getMultiplier', () => {
 
   it('should return correct multipliers for GPT-OSS models', () => {
     const models = ['gpt-oss-20b', 'gpt-oss-120b'];
+    models.forEach((key) => {
+      const expectedPrompt = tokenValues[key].prompt;
+      const expectedCompletion = tokenValues[key].completion;
+      expect(getMultiplier({ valueKey: key, tokenType: 'prompt' })).toBe(expectedPrompt);
+      expect(getMultiplier({ valueKey: key, tokenType: 'completion' })).toBe(expectedCompletion);
+      expect(getMultiplier({ model: key, tokenType: 'prompt' })).toBe(expectedPrompt);
+      expect(getMultiplier({ model: key, tokenType: 'completion' })).toBe(expectedCompletion);
+    });
+  });
+
+  it('should return correct multipliers for GLM models', () => {
+    const models = ['glm-4.6', 'glm-4.5v', 'glm-4.5-air', 'glm-4.5', 'glm-4-32b', 'glm-4', 'glm4'];
     models.forEach((key) => {
       const expectedPrompt = tokenValues[key].prompt;
       const expectedCompletion = tokenValues[key].completion;
@@ -769,6 +791,110 @@ describe('Grok Model Tests - Pricing', () => {
         tokenValues['grok-4'].completion,
       );
     });
+  });
+});
+
+describe('GLM Model Tests', () => {
+  it('should return expected value keys for GLM models', () => {
+    expect(getValueKey('glm-4.6')).toBe('glm-4.6');
+    expect(getValueKey('glm-4.5')).toBe('glm-4.5');
+    expect(getValueKey('glm-4.5v')).toBe('glm-4.5v');
+    expect(getValueKey('glm-4.5-air')).toBe('glm-4.5-air');
+    expect(getValueKey('glm-4-32b')).toBe('glm-4-32b');
+    expect(getValueKey('glm-4')).toBe('glm-4');
+    expect(getValueKey('glm4')).toBe('glm4');
+  });
+
+  it('should match GLM model variations with provider prefixes', () => {
+    expect(getValueKey('z-ai/glm-4.6')).toBe('glm-4.6');
+    expect(getValueKey('z-ai/glm-4.5')).toBe('glm-4.5');
+    expect(getValueKey('z-ai/glm-4.5-air')).toBe('glm-4.5-air');
+    expect(getValueKey('z-ai/glm-4.5v')).toBe('glm-4.5v');
+    expect(getValueKey('z-ai/glm-4-32b')).toBe('glm-4-32b');
+
+    expect(getValueKey('zai/glm-4.6')).toBe('glm-4.6');
+    expect(getValueKey('zai/glm-4.5')).toBe('glm-4.5');
+    expect(getValueKey('zai/glm-4.5-air')).toBe('glm-4.5-air');
+    expect(getValueKey('zai/glm-4.5v')).toBe('glm-4.5v');
+
+    expect(getValueKey('zai-org/GLM-4.6')).toBe('glm-4.6');
+    expect(getValueKey('zai-org/GLM-4.5')).toBe('glm-4.5');
+    expect(getValueKey('zai-org/GLM-4.5-Air')).toBe('glm-4.5-air');
+    expect(getValueKey('zai-org/GLM-4.5V')).toBe('glm-4.5v');
+    expect(getValueKey('zai-org/GLM-4-32B-0414')).toBe('glm-4-32b');
+  });
+
+  it('should match GLM model variations with suffixes', () => {
+    expect(getValueKey('glm-4.6-fp8')).toBe('glm-4.6');
+    expect(getValueKey('zai-org/GLM-4.6-FP8')).toBe('glm-4.6');
+    expect(getValueKey('zai-org/GLM-4.5-Air-FP8')).toBe('glm-4.5-air');
+  });
+
+  it('should prioritize more specific GLM model patterns', () => {
+    expect(getValueKey('glm-4.5-air-something')).toBe('glm-4.5-air');
+    expect(getValueKey('glm-4.5-something')).toBe('glm-4.5');
+    expect(getValueKey('glm-4.5v-something')).toBe('glm-4.5v');
+  });
+
+  it('should return correct multipliers for all GLM models', () => {
+    expect(getMultiplier({ model: 'glm-4.6', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4.6'].prompt,
+    );
+    expect(getMultiplier({ model: 'glm-4.6', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4.6'].completion,
+    );
+
+    expect(getMultiplier({ model: 'glm-4.5v', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4.5v'].prompt,
+    );
+    expect(getMultiplier({ model: 'glm-4.5v', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4.5v'].completion,
+    );
+
+    expect(getMultiplier({ model: 'glm-4.5-air', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4.5-air'].prompt,
+    );
+    expect(getMultiplier({ model: 'glm-4.5-air', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4.5-air'].completion,
+    );
+
+    expect(getMultiplier({ model: 'glm-4.5', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4.5'].prompt,
+    );
+    expect(getMultiplier({ model: 'glm-4.5', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4.5'].completion,
+    );
+
+    expect(getMultiplier({ model: 'glm-4-32b', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4-32b'].prompt,
+    );
+    expect(getMultiplier({ model: 'glm-4-32b', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4-32b'].completion,
+    );
+
+    expect(getMultiplier({ model: 'glm-4', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4'].prompt,
+    );
+    expect(getMultiplier({ model: 'glm-4', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4'].completion,
+    );
+
+    expect(getMultiplier({ model: 'glm4', tokenType: 'prompt' })).toBe(tokenValues['glm4'].prompt);
+    expect(getMultiplier({ model: 'glm4', tokenType: 'completion' })).toBe(
+      tokenValues['glm4'].completion,
+    );
+  });
+
+  it('should return correct multipliers for GLM models with provider prefixes', () => {
+    expect(getMultiplier({ model: 'z-ai/glm-4.6', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4.6'].prompt,
+    );
+    expect(getMultiplier({ model: 'zai/glm-4.5-air', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4.5-air'].completion,
+    );
+    expect(getMultiplier({ model: 'zai-org/GLM-4.5V', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4.5v'].prompt,
+    );
   });
 });
 

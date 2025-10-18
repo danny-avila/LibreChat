@@ -13,12 +13,10 @@ import { cn } from '~/utils';
 
 export default function ArtifactTabs({
   artifact,
-  isMermaid,
   editorRef,
   previewRef,
 }: {
   artifact: Artifact;
-  isMermaid: boolean;
   editorRef: React.MutableRefObject<CodeEditorRef>;
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
 }) {
@@ -44,6 +42,7 @@ export default function ArtifactTabs({
         value="code"
         id="artifacts-code"
         className={cn('flex-grow overflow-auto')}
+        tabIndex={-1}
       >
         {isMermaid ? (
           <MermaidMarkdown content={content} isSubmitting={isSubmitting} />
@@ -58,7 +57,7 @@ export default function ArtifactTabs({
           />
         )}
       </Tabs.Content>
-      <Tabs.Content value="preview" className="flex-grow overflow-auto">
+      <Tabs.Content value="preview" className="flex-grow overflow-auto" tabIndex={-1}>
         <ArtifactPreview
           files={files}
           fileKey={fileKey}

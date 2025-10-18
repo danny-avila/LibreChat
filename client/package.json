@@ -136,6 +136,7 @@
     "babel-plugin-transform-import-meta": "^2.3.2",
     "babel-plugin-transform-vite-meta-env": "^1.0.3",
     "eslint-plugin-jest": "^28.11.0",
+    "fs-extra": "^11.3.2",
     "identity-obj-proxy": "^3.0.0",
     "jest": "^29.7.0",
     "jest-canvas-mock": "^2.5.2",

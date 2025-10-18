@@ -339,6 +339,7 @@ export default function useEventHandlers({
 
       setShowStopButton(true);
       if (resetLatestMessage) {
+        logger.log('latest_message', 'syncHandler: resetting latest message');
         resetLatestMessage();
       }
     },
@@ -418,6 +419,7 @@ export default function useEventHandlers({
       }
 
       if (resetLatestMessage) {
+        logger.log('latest_message', 'createdHandler: resetting latest message');
         resetLatestMessage();
       }
       scrollToEnd(() => setAbortScroll(false));
