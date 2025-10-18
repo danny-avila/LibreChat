@@ -1098,4 +1098,35 @@ describe('tokens.ts and tx.js sync validation', () => {
 
     expect(redundant).toEqual([]);
   });
+
+  it('should have context windows in tokens.ts for all models with pricing in tx.js (openAI catch-all)', () => {
+    const txKeys = Object.keys(tokenValues);
+    const missingContext = [];
+
+    txKeys.forEach((key) => {
+      // Skip legacy token size mappings (4k, 8k, 16k, 32k)
+      if (/^\d+k$/.test(key)) return;
+
+      // Check if this model has a context window defined
+      const context = maxTokensMap[EModelEndpoint.openAI][key];
+
+      if (!context) {
+        const pricing = tokenValues[key];
+        missingContext.push({
+          key,
+          pricing: `${pricing.prompt}/${pricing.completion}`,
+        });
+      }
+    });
+
+    if (missingContext.length > 0) {
+      console.log('\nModels with pricing but missing context in tokens.ts:');
+      missingContext.forEach(({ key, pricing }) => {
+        console.log(`  - '${key}' (pricing: ${pricing})`);
+        console.log(`    Add to tokens.ts openAIModels/bedrockModels/etc.`);
+      });
+    }
+
+    expect(missingContext).toEqual([]);
+  });
 });

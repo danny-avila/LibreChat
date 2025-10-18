@@ -10,7 +10,6 @@ const bedrockValues = {
   llama2: { prompt: 0.75, completion: 1.0 },
   'llama-2': { prompt: 0.75, completion: 1.0 },
   'llama2-13b': { prompt: 0.75, completion: 1.0 },
-  'llama2:13b': { prompt: 0.75, completion: 1.0 },
   'llama2:70b': { prompt: 1.95, completion: 2.56 },
   'llama2-70b': { prompt: 1.95, completion: 2.56 },
 
@@ -142,7 +141,7 @@ const tokenValues = Object.assign(
     'claude-sonnet-4': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
     'command-r-plus': { prompt: 3, completion: 15 },
-    'deepseek-chat': { prompt: 0.28, completion: 0.42 },
+    'command-text': { prompt: 1.5, completion: 2.0 },
     'deepseek-reasoner': { prompt: 0.28, completion: 0.42 },
     'deepseek-r1': { prompt: 0.4, completion: 2.0 },
     'deepseek-v3': { prompt: 0.2, completion: 0.8 },
@@ -183,7 +182,6 @@ const tokenValues = Object.assign(
     'mistral-large': { prompt: 2.0, completion: 6.0 },
     'mixtral-8x22b': { prompt: 0.65, completion: 0.65 },
     kimi: { prompt: 0.14, completion: 2.49 }, // Base pattern (using kimi-k2 pricing)
-    'kimi-k2': { prompt: 0.14, completion: 2.49 },
     // GPT-OSS models (specific sizes)
     'gpt-oss:20b': { prompt: 0.05, completion: 0.2 },
     'gpt-oss-20b': { prompt: 0.05, completion: 0.2 },

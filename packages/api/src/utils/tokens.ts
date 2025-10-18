@@ -77,6 +77,7 @@ const cohereModels = {
   'command-light-nightly': 8182, // -10 from max
   command: 4086, // -10 from max
   'command-nightly': 8182, // -10 from max
+  'command-text': 4086, // -10 from max
   'command-r': 127500, // -500 from max
   'command-r-plus': 127500, // -500 from max
 };
