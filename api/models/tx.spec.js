@@ -1,3 +1,4 @@
+const { maxTokensMap } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
 const {
   defaultRate,
@@ -1011,5 +1012,90 @@ describe('Claude Model Tests', () => {
         cacheTokenValues[expectedKey].read,
       );
     });
+  });
+});
+
+describe('tokens.ts and tx.js sync validation', () => {
+  it('should have pricing defined in tx.js for all OpenAI models with context in tokens.ts', () => {
+    const tokensKeys = Object.keys(maxTokensMap[EModelEndpoint.openAI]);
+    const txKeys = Object.keys(tokenValues);
+
+    const missingPricing = [];
+
+    tokensKeys.forEach((key) => {
+      // Skip if already in tokenValues (has pricing)
+      if (txKeys.includes(key)) return;
+
+      // Skip legacy token size mappings (e.g., '4k', '8k', '16k', '32k')
+      if (/^\d+k$/.test(key)) return;
+
+      // Check if getValueKey would successfully resolve this model
+      const resolvedKey = getValueKey(key);
+
+      // If it resolves to a key that has pricing, we're good
+      if (resolvedKey && txKeys.includes(resolvedKey)) return;
+
+      // If it resolves to a legacy key (4k, 8k, etc), that's also fine
+      if (resolvedKey && /^\d+k$/.test(resolvedKey)) return;
+
+      // If we get here, this model isn't handled - flag it
+      missingPricing.push({
+        key,
+        resolvedKey: resolvedKey || 'undefined',
+        context: maxTokensMap[EModelEndpoint.openAI][key],
+      });
+    });
+
+    if (missingPricing.length > 0) {
+      console.log('\nOpenAI models missing pricing in tx.js:');
+      missingPricing.forEach(({ key, resolvedKey, context }) => {
+        console.log(`  - '${key}' → '${resolvedKey}' (context: ${context})`);
+      });
+    }
+
+    expect(missingPricing).toEqual([]);
+  });
+
+  it('should not have redundant dated variants with same pricing and context as base model', () => {
+    const txKeys = Object.keys(tokenValues);
+    const redundant = [];
+
+    txKeys.forEach((key) => {
+      // Check if this is a dated variant (ends with -YYYY-MM-DD)
+      if (key.match(/.*-\d{4}-\d{2}-\d{2}$/)) {
+        const baseKey = key.replace(/-\d{4}-\d{2}-\d{2}$/, '');
+
+        if (txKeys.includes(baseKey)) {
+          const variantPricing = tokenValues[key];
+          const basePricing = tokenValues[baseKey];
+          const variantContext = maxTokensMap[EModelEndpoint.openAI][key];
+          const baseContext = maxTokensMap[EModelEndpoint.openAI][baseKey];
+
+          const samePricing =
+            variantPricing.prompt === basePricing.prompt &&
+            variantPricing.completion === basePricing.completion;
+          const sameContext = variantContext === baseContext;
+
+          if (samePricing && sameContext) {
+            redundant.push({
+              key,
+              baseKey,
+              pricing: `${variantPricing.prompt}/${variantPricing.completion}`,
+              context: variantContext,
+            });
+          }
+        }
+      }
+    });
+
+    if (redundant.length > 0) {
+      console.log('\nRedundant dated variants found (same pricing and context as base):');
+      redundant.forEach(({ key, baseKey, pricing, context }) => {
+        console.log(`  - '${key}' → '${baseKey}' (pricing: ${pricing}, context: ${context})`);
+        console.log(`    Can be removed - pattern matching will handle it`);
+      });
+    }
+
+    expect(redundant).toEqual([]);
   });
 });

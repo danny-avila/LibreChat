@@ -44,7 +44,6 @@ const openAIModels = {
   'gpt-4o': 127500, // -500 from max
   'gpt-4o-mini': 127500, // -500 from max
   'gpt-4o-2024-05-13': 127500, // -500 from max
-  'gpt-4o-2024-08-06': 127500, // -500 from max
   'gpt-4-turbo': 127500, // -500 from max
   'gpt-4-vision': 127500, // -500 from max
   'gpt-3.5-turbo': 16375, // -10 from max
