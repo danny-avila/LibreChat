@@ -60,9 +60,11 @@ const mistralModels = {
   'mistral-7b': 31990, // -10 from max
   'mistral-small': 31990, // -10 from max
   'mixtral-8x7b': 31990, // -10 from max
+  'mixtral-8x22b': 65536,
   'mistral-large': 131000,
   'mistral-large-2402': 127500,
   'mistral-large-2407': 127500,
+  'mistral-nemo': 131000,
   'pixtral-large': 131000,
   'mistral-saba': 32000,
   codestral: 256000,
@@ -133,8 +135,10 @@ const anthropicModels = {
 };
 
 const deepseekModels = {
-  'deepseek-reasoner': 128000,
   deepseek: 128000,
+  'deepseek-reasoner': 128000,
+  'deepseek-r1': 128000,
+  'deepseek-v3': 128000,
   'deepseek.r1': 128000,
 };
 
@@ -201,7 +205,12 @@ const metaModels = {
 };
 
 const ollamaModels = {
+  qwen: 32000,
   'qwen2.5': 32000,
+  'qwen-turbo': 1000000,
+  'qwen-plus': 131000,
+  'qwen-max': 32000,
+  'qwq-32b': 32000,
 };
 
 const ai21Models = {
