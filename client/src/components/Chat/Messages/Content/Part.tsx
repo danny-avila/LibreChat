@@ -57,7 +57,7 @@ const Part = memo(
         </>
       );
     } else if (part.type === ContentTypes.TEXT) {
-      const text = typeof part.text === 'string' ? part.text : part.text.value;
+      const text = typeof part.text === 'string' ? part.text : part.text?.value;
 
       if (typeof text !== 'string') {
         return null;
@@ -71,7 +71,7 @@ const Part = memo(
         </Container>
       );
     } else if (part.type === ContentTypes.THINK) {
-      const reasoning = typeof part.think === 'string' ? part.think : part.think.value;
+      const reasoning = typeof part.think === 'string' ? part.think : part.think?.value;
       if (typeof reasoning !== 'string') {
         return null;
       }

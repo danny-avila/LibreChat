@@ -257,8 +257,19 @@ const aggregateModels = {
   // misc.
   kimi: 131000,
   // GPT-OSS
+  'gpt-oss': 131000,
+  'gpt-oss:20b': 131000,
   'gpt-oss-20b': 131000,
+  'gpt-oss:120b': 131000,
   'gpt-oss-120b': 131000,
+  // GLM models (Zhipu AI)
+  glm4: 128000,
+  'glm-4': 128000,
+  'glm-4-32b': 128000,
+  'glm-4.5': 131000,
+  'glm-4.5-air': 131000,
+  'glm-4.5v': 66000,
+  'glm-4.6': 200000,
 };
 
 export const maxTokensMap = {
@@ -314,9 +325,10 @@ export function findMatchingPattern(
   tokensMap: Record<string, number> | EndpointTokenConfig,
 ): string | null {
   const keys = Object.keys(tokensMap);
+  const lowerModelName = modelName.toLowerCase();
   for (let i = keys.length - 1; i >= 0; i--) {
     const modelKey = keys[i];
-    if (modelName.includes(modelKey)) {
+    if (lowerModelName.includes(modelKey)) {
       return modelKey;
     }
   }
