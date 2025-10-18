@@ -1,5 +1,4 @@
 import { atom } from 'recoil';
-import { applyFontSize } from '@librechat/client';
 import { SettingsViews, LocalStorageKeys } from 'librechat-data-provider';
 import { atomWithLocalStorage } from '~/store/utils';
 import type { TOptionSettings } from '~/common';
@@ -18,58 +17,10 @@ const staticAtoms = {
   showPopover: atom<boolean>({ key: 'showPopover', default: false }),
 };
 
-const fontSize = atom<string>({
-  key: 'fontSize',
-  default: 'text-base',
-  effects_UNSTABLE: [
-    ({ setSelf, onSet, trigger }) => {
-      if (typeof window === 'undefined' || typeof document === 'undefined') {
-        return;
-      }
-
-      const DEFAULT_FONT_SIZE = 'text-base';
-
-      const hydrate = () => {
-        const savedValue = localStorage.getItem('fontSize');
-
-        if (savedValue !== null) {
-          try {
-            const parsedValue = JSON.parse(savedValue);
-            setSelf(parsedValue);
-            applyFontSize(parsedValue);
-            return;
-          } catch (error) {
-            console.error(
-              'Error parsing localStorage key "fontSize", resetting to default. Error:',
-              error,
-            );
-            localStorage.setItem('fontSize', JSON.stringify(DEFAULT_FONT_SIZE));
-            setSelf(DEFAULT_FONT_SIZE);
-            applyFontSize(DEFAULT_FONT_SIZE);
-            return;
-          }
-        }
-
-        applyFontSize(DEFAULT_FONT_SIZE);
-      };
-
-      if (trigger === 'get') {
-        hydrate();
-      }
-
-      onSet((newValue) => {
-        localStorage.setItem('fontSize', JSON.stringify(newValue));
-        applyFontSize(newValue);
-      });
-    },
-  ],
-});
-
 const localStorageAtoms = {
   // General settings
   autoScroll: atomWithLocalStorage('autoScroll', false),
   hideSidePanel: atomWithLocalStorage('hideSidePanel', false),
-  fontSize,
   enableUserMsgMarkdown: atomWithLocalStorage<boolean>(
     LocalStorageKeys.ENABLE_USER_MSG_MARKDOWN,
     true,
