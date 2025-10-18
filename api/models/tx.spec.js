@@ -1016,44 +1016,44 @@ describe('Claude Model Tests', () => {
 });
 
 describe('tokens.ts and tx.js sync validation', () => {
-  it('should have pricing defined in tx.js for all OpenAI models with context in tokens.ts', () => {
+  it('should resolve all models in maxTokensMap to pricing via getValueKey', () => {
     const tokensKeys = Object.keys(maxTokensMap[EModelEndpoint.openAI]);
     const txKeys = Object.keys(tokenValues);
 
-    const missingPricing = [];
+    const unresolved = [];
 
     tokensKeys.forEach((key) => {
-      // Skip if already in tokenValues (has pricing)
-      if (txKeys.includes(key)) return;
-
       // Skip legacy token size mappings (e.g., '4k', '8k', '16k', '32k')
       if (/^\d+k$/.test(key)) return;
 
-      // Check if getValueKey would successfully resolve this model
+      // Skip generic pattern keys (end with '-' or ':')
+      if (key.endsWith('-') || key.endsWith(':')) return;
+
+      // Try to resolve via getValueKey
       const resolvedKey = getValueKey(key);
 
-      // If it resolves to a key that has pricing, we're good
+      // If it resolves and the resolved key has pricing, success
       if (resolvedKey && txKeys.includes(resolvedKey)) return;
 
-      // If it resolves to a legacy key (4k, 8k, etc), that's also fine
+      // If it resolves to a legacy key (4k, 8k, etc), also OK
       if (resolvedKey && /^\d+k$/.test(resolvedKey)) return;
 
-      // If we get here, this model isn't handled - flag it
-      missingPricing.push({
+      // If we get here, this model can't get pricing - flag it
+      unresolved.push({
         key,
         resolvedKey: resolvedKey || 'undefined',
         context: maxTokensMap[EModelEndpoint.openAI][key],
       });
     });
 
-    if (missingPricing.length > 0) {
-      console.log('\nOpenAI models missing pricing in tx.js:');
-      missingPricing.forEach(({ key, resolvedKey, context }) => {
+    if (unresolved.length > 0) {
+      console.log('\nModels that cannot resolve to pricing via getValueKey:');
+      unresolved.forEach(({ key, resolvedKey, context }) => {
         console.log(`  - '${key}' → '${resolvedKey}' (context: ${context})`);
       });
     }
 
-    expect(missingPricing).toEqual([]);
+    expect(unresolved).toEqual([]);
   });
 
   it('should not have redundant dated variants with same pricing and context as base model', () => {

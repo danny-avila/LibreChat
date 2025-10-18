@@ -6,44 +6,59 @@ const defaultRate = 6;
  * source: https://aws.amazon.com/bedrock/pricing/
  * */
 const bedrockValues = {
-  // Basic llama2 patterns
+  // Basic llama2 patterns (base defaults to smallest variant)
+  llama2: { prompt: 0.75, completion: 1.0 },
+  'llama-2': { prompt: 0.75, completion: 1.0 },
   'llama2-13b': { prompt: 0.75, completion: 1.0 },
   'llama2:13b': { prompt: 0.75, completion: 1.0 },
   'llama2:70b': { prompt: 1.95, completion: 2.56 },
   'llama2-70b': { prompt: 1.95, completion: 2.56 },
 
-  // Basic llama3 patterns
+  // Basic llama3 patterns (base defaults to smallest variant)
+  llama3: { prompt: 0.3, completion: 0.6 },
+  'llama-3': { prompt: 0.3, completion: 0.6 },
   'llama3-8b': { prompt: 0.3, completion: 0.6 },
   'llama3:8b': { prompt: 0.3, completion: 0.6 },
   'llama3-70b': { prompt: 2.65, completion: 3.5 },
   'llama3:70b': { prompt: 2.65, completion: 3.5 },
 
-  // llama3-x-Nb pattern
+  // llama3-x-Nb pattern (base defaults to smallest variant)
+  'llama3-1': { prompt: 0.22, completion: 0.22 },
   'llama3-1-8b': { prompt: 0.22, completion: 0.22 },
   'llama3-1-70b': { prompt: 0.72, completion: 0.72 },
   'llama3-1-405b': { prompt: 2.4, completion: 2.4 },
+  'llama3-2': { prompt: 0.1, completion: 0.1 },
   'llama3-2-1b': { prompt: 0.1, completion: 0.1 },
   'llama3-2-3b': { prompt: 0.15, completion: 0.15 },
   'llama3-2-11b': { prompt: 0.16, completion: 0.16 },
   'llama3-2-90b': { prompt: 0.72, completion: 0.72 },
+  'llama3-3': { prompt: 2.65, completion: 3.5 },
+  'llama3-3-70b': { prompt: 2.65, completion: 3.5 },
 
-  // llama3.x:Nb pattern
+  // llama3.x:Nb pattern (base defaults to smallest variant)
+  'llama3.1': { prompt: 0.22, completion: 0.22 },
   'llama3.1:8b': { prompt: 0.22, completion: 0.22 },
   'llama3.1:70b': { prompt: 0.72, completion: 0.72 },
   'llama3.1:405b': { prompt: 2.4, completion: 2.4 },
+  'llama3.2': { prompt: 0.1, completion: 0.1 },
   'llama3.2:1b': { prompt: 0.1, completion: 0.1 },
   'llama3.2:3b': { prompt: 0.15, completion: 0.15 },
   'llama3.2:11b': { prompt: 0.16, completion: 0.16 },
   'llama3.2:90b': { prompt: 0.72, completion: 0.72 },
+  'llama3.3': { prompt: 2.65, completion: 3.5 },
+  'llama3.3:70b': { prompt: 2.65, completion: 3.5 },
 
-  // llama-3.x-Nb pattern
+  // llama-3.x-Nb pattern (base defaults to smallest variant)
+  'llama-3.1': { prompt: 0.22, completion: 0.22 },
   'llama-3.1-8b': { prompt: 0.22, completion: 0.22 },
   'llama-3.1-70b': { prompt: 0.72, completion: 0.72 },
   'llama-3.1-405b': { prompt: 2.4, completion: 2.4 },
+  'llama-3.2': { prompt: 0.1, completion: 0.1 },
   'llama-3.2-1b': { prompt: 0.1, completion: 0.1 },
   'llama-3.2-3b': { prompt: 0.15, completion: 0.15 },
   'llama-3.2-11b': { prompt: 0.16, completion: 0.16 },
   'llama-3.2-90b': { prompt: 0.72, completion: 0.72 },
+  'llama-3.3': { prompt: 2.65, completion: 3.5 },
   'llama-3.3-70b': { prompt: 2.65, completion: 3.5 },
   'mistral-7b': { prompt: 0.15, completion: 0.2 },
   'mistral-small': { prompt: 0.15, completion: 0.2 },
@@ -61,7 +76,10 @@ const bedrockValues = {
   'amazon.nova-micro-v1:0': { prompt: 0.035, completion: 0.14 },
   'amazon.nova-lite-v1:0': { prompt: 0.06, completion: 0.24 },
   'amazon.nova-pro-v1:0': { prompt: 0.8, completion: 3.2 },
+  'amazon.nova-premier-v1:0': { prompt: 0.8, completion: 3.2 }, // Default to nova-pro pricing
   'deepseek.r1': { prompt: 1.35, completion: 5.4 },
+  qwen: { prompt: 0, completion: 0 }, // Qwen base pattern
+  'qwen2.5': { prompt: 0, completion: 0 }, // Qwen 2.5 base pattern
 };
 
 /**
@@ -135,6 +153,7 @@ const tokenValues = Object.assign(
     'gemini-2.5-flash-lite': { prompt: 0.1, completion: 0.4 },
     'gemini-2.5-pro': { prompt: 1.25, completion: 10 },
     'gemini-pro-vision': { prompt: 0.5, completion: 1.5 },
+    grok: { prompt: 2.0, completion: 10.0 }, // Base pattern defaults to grok-2
     'grok-beta': { prompt: 5.0, completion: 15.0 },
     'grok-vision-beta': { prompt: 5.0, completion: 15.0 },
     'grok-2': { prompt: 2.0, completion: 10.0 },
@@ -148,6 +167,7 @@ const tokenValues = Object.assign(
     'grok-3-mini': { prompt: 0.3, completion: 0.5 },
     'grok-3-mini-fast': { prompt: 0.6, completion: 4 },
     'grok-4': { prompt: 3.0, completion: 15.0 },
+    kimi: { prompt: 0, completion: 0 }, // Kimi base pattern - free/unknown pricing
     codestral: { prompt: 0.3, completion: 0.9 },
     'ministral-3b': { prompt: 0.04, completion: 0.04 },
     'ministral-8b': { prompt: 0.1, completion: 0.1 },
