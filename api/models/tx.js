@@ -233,14 +233,6 @@ const getValueKey = (model, endpoint) => {
     return 'gpt-4.1';
   } else if (modelName.includes('gpt-4o-2024-05-13')) {
     return 'gpt-4o-2024-05-13';
-  } else if (modelName.includes('gpt-5-nano')) {
-    return 'gpt-5-nano';
-  } else if (modelName.includes('gpt-5-mini')) {
-    return 'gpt-5-mini';
-  } else if (modelName.includes('gpt-5')) {
-    return 'gpt-5';
-  } else if (modelName.includes('gpt-5-pro')) {
-    return 'gpt-5-pro';
   } else if (modelName.includes('gpt-4o-mini')) {
     return 'gpt-4o-mini';
   } else if (modelName.includes('gpt-4o')) {

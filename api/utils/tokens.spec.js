@@ -186,6 +186,19 @@ describe('getModelMaxTokens', () => {
     );
   });
 
+  test('should return correct tokens for gpt-5-pro matches', () => {
+    expect(getModelMaxTokens('gpt-5-pro')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-5-pro']);
+    expect(getModelMaxTokens('gpt-5-pro-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5-pro'],
+    );
+    expect(getModelMaxTokens('openai/gpt-5-pro')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5-pro'],
+    );
+    expect(getModelMaxTokens('gpt-5-pro-2025-01-30')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5-pro'],
+    );
+  });
+
   test('should return correct tokens for Anthropic models', () => {
     const models = [
       'claude-2.1',
@@ -469,7 +482,7 @@ describe('getModelMaxTokens', () => {
 
   test('should return correct max output tokens for GPT-5 models', () => {
     const { getModelMaxOutputTokens } = require('@librechat/api');
-    ['gpt-5', 'gpt-5-mini', 'gpt-5-nano'].forEach((model) => {
+    ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5-pro'].forEach((model) => {
       expect(getModelMaxOutputTokens(model)).toBe(maxOutputTokensMap[EModelEndpoint.openAI][model]);
       expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(
         maxOutputTokensMap[EModelEndpoint.openAI][model],
@@ -580,6 +593,13 @@ describe('matchModelName', () => {
     expect(matchModelName('openai/gpt-5-nano')).toBe('gpt-5-nano');
     expect(matchModelName('gpt-5-nano-preview')).toBe('gpt-5-nano');
     expect(matchModelName('gpt-5-nano-2025-01-30')).toBe('gpt-5-nano');
+  });
+
+  it('should return the closest matching key for gpt-5-pro matches', () => {
+    expect(matchModelName('openai/gpt-5-pro')).toBe('gpt-5-pro');
+    expect(matchModelName('gpt-5-pro-preview')).toBe('gpt-5-pro');
+    expect(matchModelName('gpt-5-pro-2025-01-30')).toBe('gpt-5-pro');
+    expect(matchModelName('gpt-5-pro-2025-01-30-0130')).toBe('gpt-5-pro');
   });
 
   // Tests for Google models
