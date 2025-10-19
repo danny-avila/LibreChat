@@ -1180,6 +1180,37 @@ describe('Claude Model Tests', () => {
     );
   });
 
+  it('should return correct prompt and completion rates for Claude Haiku 4.5', () => {
+    expect(getMultiplier({ model: 'claude-haiku-4-5', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-haiku-4-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-haiku-4-5', tokenType: 'completion' })).toBe(
+      tokenValues['claude-haiku-4-5'].completion,
+    );
+  });
+
+  it('should handle Claude Haiku 4.5 model name variations', () => {
+    const modelVariations = [
+      'claude-haiku-4-5',
+      'claude-haiku-4-5-20250420',
+      'claude-haiku-4-5-latest',
+      'anthropic/claude-haiku-4-5',
+      'claude-haiku-4-5/anthropic',
+      'claude-haiku-4-5-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-haiku-4-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-haiku-4-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-haiku-4-5'].completion,
+      );
+    });
+  });
+
   it('should handle Claude 4 model name variations with different prefixes and suffixes', () => {
     const modelVariations = [
       'claude-sonnet-4',

@@ -852,6 +852,49 @@ describe('Claude Model Tests', () => {
     );
   });
 
+  it('should return correct context length for Claude Haiku 4.5', () => {
+    expect(getModelMaxTokens('claude-haiku-4-5', EModelEndpoint.anthropic)).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-haiku-4-5'],
+    );
+    expect(getModelMaxTokens('claude-haiku-4-5')).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-haiku-4-5'],
+    );
+  });
+
+  it('should handle Claude Haiku 4.5 model name variations', () => {
+    const modelVariations = [
+      'claude-haiku-4-5',
+      'claude-haiku-4-5-20250420',
+      'claude-haiku-4-5-latest',
+      'anthropic/claude-haiku-4-5',
+      'claude-haiku-4-5/anthropic',
+      'claude-haiku-4-5-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const modelKey = findMatchingPattern(model, maxTokensMap[EModelEndpoint.anthropic]);
+      expect(modelKey).toBe('claude-haiku-4-5');
+      expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toBe(
+        maxTokensMap[EModelEndpoint.anthropic]['claude-haiku-4-5'],
+      );
+    });
+  });
+
+  it('should match model names correctly for Claude Haiku 4.5', () => {
+    const modelVariations = [
+      'claude-haiku-4-5',
+      'claude-haiku-4-5-20250420',
+      'claude-haiku-4-5-latest',
+      'anthropic/claude-haiku-4-5',
+      'claude-haiku-4-5/anthropic',
+      'claude-haiku-4-5-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      expect(matchModelName(model, EModelEndpoint.anthropic)).toBe('claude-haiku-4-5');
+    });
+  });
+
   it('should handle Claude 4 model name variations with different prefixes and suffixes', () => {
     const modelVariations = [
       'claude-sonnet-4',
