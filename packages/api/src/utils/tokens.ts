@@ -206,7 +206,7 @@ const metaModels = {
   'llama2:70b': 4000,
 };
 
-const ollamaModels = {
+const qwenModels = {
   qwen: 32000,
   'qwen2.5': 32000,
   'qwen-turbo': 1000000,
@@ -257,7 +257,6 @@ const bedrockModels = {
   ...anthropicModels,
   ...mistralModels,
   ...cohereModels,
-  ...ollamaModels,
   ...deepseekModels,
   ...metaModels,
   ...ai21Models,
@@ -286,6 +285,7 @@ const aggregateModels = {
   ...googleModels,
   ...bedrockModels,
   ...xAIModels,
+  ...qwenModels,
   // misc.
   kimi: 131000,
   // GPT-OSS

@@ -80,31 +80,6 @@ const bedrockValues = {
   'nova-pro': { prompt: 0.8, completion: 3.2 },
   'nova-premier': { prompt: 2.5, completion: 12.5 },
   'deepseek.r1': { prompt: 1.35, completion: 5.4 },
-  qwen: { prompt: 0.08, completion: 0.33 }, // Qwen base pattern (using qwen2.5-72b pricing)
-  'qwen2.5': { prompt: 0.08, completion: 0.33 }, // Qwen 2.5 base pattern
-  'qwen-turbo': { prompt: 0.05, completion: 0.2 },
-  'qwen-plus': { prompt: 0.4, completion: 1.2 },
-  'qwen-max': { prompt: 1.6, completion: 6.4 },
-  'qwq-32b': { prompt: 0.15, completion: 0.4 },
-  // Qwen3 models
-  qwen3: { prompt: 0.035, completion: 0.138 }, // Qwen3 base pattern (using qwen3-4b pricing)
-  'qwen3-8b': { prompt: 0.035, completion: 0.138 },
-  'qwen3-14b': { prompt: 0.05, completion: 0.22 },
-  'qwen3-30b-a3b': { prompt: 0.06, completion: 0.22 },
-  'qwen3-32b': { prompt: 0.05, completion: 0.2 },
-  'qwen3-235b-a22b': { prompt: 0.08, completion: 0.55 },
-  // Qwen3 VL (Vision-Language) models
-  'qwen3-vl-8b-thinking': { prompt: 0.18, completion: 2.1 },
-  'qwen3-vl-8b-instruct': { prompt: 0.18, completion: 0.69 },
-  'qwen3-vl-30b-a3b': { prompt: 0.29, completion: 1.0 },
-  'qwen3-vl-235b-a22b': { prompt: 0.3, completion: 1.2 },
-  // Qwen3 specialized models
-  'qwen3-max': { prompt: 1.2, completion: 6 },
-  'qwen3-coder': { prompt: 0.22, completion: 0.95 },
-  'qwen3-coder-30b-a3b': { prompt: 0.06, completion: 0.25 },
-  'qwen3-coder-plus': { prompt: 1, completion: 5 },
-  'qwen3-coder-flash': { prompt: 0.3, completion: 1.5 },
-  'qwen3-next-80b-a3b': { prompt: 0.1, completion: 0.8 },
 };
 
 /**
@@ -218,6 +193,32 @@ const tokenValues = Object.assign(
     'glm-4.5-air': { prompt: 0.14, completion: 0.86 },
     'glm-4.5v': { prompt: 0.6, completion: 1.8 },
     'glm-4.6': { prompt: 0.5, completion: 1.75 },
+    // Qwen models
+    qwen: { prompt: 0.08, completion: 0.33 }, // Qwen base pattern (using qwen2.5-72b pricing)
+    'qwen2.5': { prompt: 0.08, completion: 0.33 }, // Qwen 2.5 base pattern
+    'qwen-turbo': { prompt: 0.05, completion: 0.2 },
+    'qwen-plus': { prompt: 0.4, completion: 1.2 },
+    'qwen-max': { prompt: 1.6, completion: 6.4 },
+    'qwq-32b': { prompt: 0.15, completion: 0.4 },
+    // Qwen3 models
+    qwen3: { prompt: 0.035, completion: 0.138 }, // Qwen3 base pattern (using qwen3-4b pricing)
+    'qwen3-8b': { prompt: 0.035, completion: 0.138 },
+    'qwen3-14b': { prompt: 0.05, completion: 0.22 },
+    'qwen3-30b-a3b': { prompt: 0.06, completion: 0.22 },
+    'qwen3-32b': { prompt: 0.05, completion: 0.2 },
+    'qwen3-235b-a22b': { prompt: 0.08, completion: 0.55 },
+    // Qwen3 VL (Vision-Language) models
+    'qwen3-vl-8b-thinking': { prompt: 0.18, completion: 2.1 },
+    'qwen3-vl-8b-instruct': { prompt: 0.18, completion: 0.69 },
+    'qwen3-vl-30b-a3b': { prompt: 0.29, completion: 1.0 },
+    'qwen3-vl-235b-a22b': { prompt: 0.3, completion: 1.2 },
+    // Qwen3 specialized models
+    'qwen3-max': { prompt: 1.2, completion: 6 },
+    'qwen3-coder': { prompt: 0.22, completion: 0.95 },
+    'qwen3-coder-30b-a3b': { prompt: 0.06, completion: 0.25 },
+    'qwen3-coder-plus': { prompt: 1, completion: 5 },
+    'qwen3-coder-flash': { prompt: 0.3, completion: 1.5 },
+    'qwen3-next-80b-a3b': { prompt: 0.1, completion: 0.8 },
   },
   bedrockValues,
 );
