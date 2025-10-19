@@ -987,6 +987,121 @@ describe('Kimi Model Tests', () => {
   });
 });
 
+describe('Qwen3 Model Tests', () => {
+  describe('getModelMaxTokens', () => {
+    test('should return correct tokens for Qwen3 base pattern', () => {
+      expect(getModelMaxTokens('qwen3')).toBe(maxTokensMap[EModelEndpoint.openAI]['qwen3']);
+    });
+
+    test('should return correct tokens for qwen3-4b (falls back to qwen3)', () => {
+      expect(getModelMaxTokens('qwen3-4b')).toBe(maxTokensMap[EModelEndpoint.openAI]['qwen3']);
+    });
+
+    test('should return correct tokens for Qwen3 base models', () => {
+      expect(getModelMaxTokens('qwen3-8b')).toBe(maxTokensMap[EModelEndpoint.openAI]['qwen3-8b']);
+      expect(getModelMaxTokens('qwen3-14b')).toBe(maxTokensMap[EModelEndpoint.openAI]['qwen3-14b']);
+      expect(getModelMaxTokens('qwen3-32b')).toBe(maxTokensMap[EModelEndpoint.openAI]['qwen3-32b']);
+      expect(getModelMaxTokens('qwen3-235b-a22b')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-235b-a22b'],
+      );
+    });
+
+    test('should return correct tokens for Qwen3 VL (Vision-Language) models', () => {
+      expect(getModelMaxTokens('qwen3-vl-8b-thinking')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-vl-8b-thinking'],
+      );
+      expect(getModelMaxTokens('qwen3-vl-8b-instruct')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-vl-8b-instruct'],
+      );
+      expect(getModelMaxTokens('qwen3-vl-30b-a3b')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-vl-30b-a3b'],
+      );
+      expect(getModelMaxTokens('qwen3-vl-235b-a22b')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-vl-235b-a22b'],
+      );
+    });
+
+    test('should return correct tokens for Qwen3 specialized models', () => {
+      expect(getModelMaxTokens('qwen3-max')).toBe(maxTokensMap[EModelEndpoint.openAI]['qwen3-max']);
+      expect(getModelMaxTokens('qwen3-coder')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-coder'],
+      );
+      expect(getModelMaxTokens('qwen3-coder-30b-a3b')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-coder-30b-a3b'],
+      );
+      expect(getModelMaxTokens('qwen3-coder-plus')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-coder-plus'],
+      );
+      expect(getModelMaxTokens('qwen3-coder-flash')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-coder-flash'],
+      );
+      expect(getModelMaxTokens('qwen3-next-80b-a3b')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-next-80b-a3b'],
+      );
+    });
+
+    test('should handle Qwen3 models with provider prefixes', () => {
+      expect(getModelMaxTokens('alibaba/qwen3')).toBe(maxTokensMap[EModelEndpoint.openAI]['qwen3']);
+      expect(getModelMaxTokens('alibaba/qwen3-4b')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3'],
+      );
+      expect(getModelMaxTokens('qwen/qwen3-8b')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-8b'],
+      );
+      expect(getModelMaxTokens('openrouter/qwen3-max')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-max'],
+      );
+      expect(getModelMaxTokens('alibaba/qwen3-vl-8b-instruct')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-vl-8b-instruct'],
+      );
+      expect(getModelMaxTokens('qwen/qwen3-coder')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-coder'],
+      );
+    });
+
+    test('should handle Qwen3 models with suffixes', () => {
+      expect(getModelMaxTokens('qwen3-preview')).toBe(maxTokensMap[EModelEndpoint.openAI]['qwen3']);
+      expect(getModelMaxTokens('qwen3-4b-preview')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3'],
+      );
+      expect(getModelMaxTokens('qwen3-8b-latest')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-8b'],
+      );
+      expect(getModelMaxTokens('qwen3-max-2024')).toBe(
+        maxTokensMap[EModelEndpoint.openAI]['qwen3-max'],
+      );
+    });
+  });
+
+  describe('matchModelName', () => {
+    test('should match exact Qwen3 model names', () => {
+      expect(matchModelName('qwen3')).toBe('qwen3');
+      expect(matchModelName('qwen3-4b')).toBe('qwen3');
+      expect(matchModelName('qwen3-8b')).toBe('qwen3-8b');
+      expect(matchModelName('qwen3-vl-8b-thinking')).toBe('qwen3-vl-8b-thinking');
+      expect(matchModelName('qwen3-max')).toBe('qwen3-max');
+      expect(matchModelName('qwen3-coder')).toBe('qwen3-coder');
+    });
+
+    test('should match Qwen3 model variations with provider prefixes', () => {
+      expect(matchModelName('alibaba/qwen3')).toBe('qwen3');
+      expect(matchModelName('alibaba/qwen3-4b')).toBe('qwen3');
+      expect(matchModelName('qwen/qwen3-8b')).toBe('qwen3-8b');
+      expect(matchModelName('openrouter/qwen3-max')).toBe('qwen3-max');
+      expect(matchModelName('alibaba/qwen3-vl-8b-instruct')).toBe('qwen3-vl-8b-instruct');
+      expect(matchModelName('qwen/qwen3-coder')).toBe('qwen3-coder');
+    });
+
+    test('should match Qwen3 model variations with suffixes', () => {
+      expect(matchModelName('qwen3-preview')).toBe('qwen3');
+      expect(matchModelName('qwen3-4b-preview')).toBe('qwen3');
+      expect(matchModelName('qwen3-8b-latest')).toBe('qwen3-8b');
+      expect(matchModelName('qwen3-max-2024')).toBe('qwen3-max');
+      expect(matchModelName('qwen3-coder-v1')).toBe('qwen3-coder');
+    });
+  });
+});
+
 describe('GLM Model Tests (Zhipu AI)', () => {
   describe('getModelMaxTokens', () => {
     test('should return correct tokens for GLM models', () => {

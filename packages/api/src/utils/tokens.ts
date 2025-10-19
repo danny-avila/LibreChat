@@ -213,6 +213,25 @@ const ollamaModels = {
   'qwen-plus': 131000,
   'qwen-max': 32000,
   'qwq-32b': 32000,
+  // Qwen3 models
+  qwen3: 40960, // Qwen3 base pattern (using qwen3-4b context)
+  'qwen3-8b': 128000,
+  'qwen3-14b': 40960,
+  'qwen3-30b-a3b': 40960,
+  'qwen3-32b': 40960,
+  'qwen3-235b-a22b': 40960,
+  // Qwen3 VL (Vision-Language) models
+  'qwen3-vl-8b-thinking': 256000,
+  'qwen3-vl-8b-instruct': 262144,
+  'qwen3-vl-30b-a3b': 262144,
+  'qwen3-vl-235b-a22b': 131072,
+  // Qwen3 specialized models
+  'qwen3-max': 256000,
+  'qwen3-coder': 262144,
+  'qwen3-coder-30b-a3b': 262144,
+  'qwen3-coder-plus': 128000,
+  'qwen3-coder-flash': 128000,
+  'qwen3-next-80b-a3b': 262144,
 };
 
 const ai21Models = {

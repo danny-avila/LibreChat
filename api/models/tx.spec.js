@@ -768,6 +768,187 @@ describe('Deepseek Model Tests', () => {
   });
 });
 
+describe('Qwen3 Model Tests', () => {
+  describe('Qwen3 Base Models', () => {
+    it('should return correct pricing for qwen3 base pattern', () => {
+      expect(getMultiplier({ model: 'qwen3', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-4b (falls back to qwen3)', () => {
+      expect(getMultiplier({ model: 'qwen3-4b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-4b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-8b', () => {
+      expect(getMultiplier({ model: 'qwen3-8b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-8b'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-8b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-8b'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-14b', () => {
+      expect(getMultiplier({ model: 'qwen3-14b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-14b'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-14b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-14b'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-235b-a22b', () => {
+      expect(getMultiplier({ model: 'qwen3-235b-a22b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-235b-a22b'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-235b-a22b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-235b-a22b'].completion,
+      );
+    });
+
+    it('should handle model name variations with provider prefixes', () => {
+      const models = [
+        { input: 'qwen3', expected: 'qwen3' },
+        { input: 'qwen3-4b', expected: 'qwen3' },
+        { input: 'qwen3-8b', expected: 'qwen3-8b' },
+        { input: 'qwen3-32b', expected: 'qwen3-32b' },
+      ];
+      models.forEach(({ input, expected }) => {
+        const withPrefix = `alibaba/${input}`;
+        expect(getMultiplier({ model: withPrefix, tokenType: 'prompt' })).toBe(
+          tokenValues[expected].prompt,
+        );
+        expect(getMultiplier({ model: withPrefix, tokenType: 'completion' })).toBe(
+          tokenValues[expected].completion,
+        );
+      });
+    });
+  });
+
+  describe('Qwen3 VL (Vision-Language) Models', () => {
+    it('should return correct pricing for qwen3-vl-8b-thinking', () => {
+      expect(getMultiplier({ model: 'qwen3-vl-8b-thinking', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-vl-8b-thinking'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-vl-8b-thinking', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-vl-8b-thinking'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-vl-8b-instruct', () => {
+      expect(getMultiplier({ model: 'qwen3-vl-8b-instruct', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-vl-8b-instruct'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-vl-8b-instruct', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-vl-8b-instruct'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-vl-30b-a3b', () => {
+      expect(getMultiplier({ model: 'qwen3-vl-30b-a3b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-vl-30b-a3b'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-vl-30b-a3b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-vl-30b-a3b'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-vl-235b-a22b', () => {
+      expect(getMultiplier({ model: 'qwen3-vl-235b-a22b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-vl-235b-a22b'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-vl-235b-a22b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-vl-235b-a22b'].completion,
+      );
+    });
+  });
+
+  describe('Qwen3 Specialized Models', () => {
+    it('should return correct pricing for qwen3-max', () => {
+      expect(getMultiplier({ model: 'qwen3-max', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-max'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-max', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-max'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-coder', () => {
+      expect(getMultiplier({ model: 'qwen3-coder', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-coder'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-coder', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-coder'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-coder-plus', () => {
+      expect(getMultiplier({ model: 'qwen3-coder-plus', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-coder-plus'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-coder-plus', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-coder-plus'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-coder-flash', () => {
+      expect(getMultiplier({ model: 'qwen3-coder-flash', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-coder-flash'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-coder-flash', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-coder-flash'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-next-80b-a3b', () => {
+      expect(getMultiplier({ model: 'qwen3-next-80b-a3b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-next-80b-a3b'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-next-80b-a3b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-next-80b-a3b'].completion,
+      );
+    });
+  });
+
+  describe('Qwen3 Model Variations', () => {
+    it('should handle all qwen3 models with provider prefixes', () => {
+      const models = ['qwen3', 'qwen3-8b', 'qwen3-max', 'qwen3-coder', 'qwen3-vl-8b-instruct'];
+      const prefixes = ['alibaba', 'qwen', 'openrouter'];
+
+      models.forEach((model) => {
+        prefixes.forEach((prefix) => {
+          const fullModel = `${prefix}/${model}`;
+          expect(getMultiplier({ model: fullModel, tokenType: 'prompt' })).toBe(
+            tokenValues[model].prompt,
+          );
+          expect(getMultiplier({ model: fullModel, tokenType: 'completion' })).toBe(
+            tokenValues[model].completion,
+          );
+        });
+      });
+    });
+
+    it('should handle qwen3-4b falling back to qwen3 base pattern', () => {
+      const testCases = ['qwen3-4b', 'alibaba/qwen3-4b', 'qwen/qwen3-4b-preview'];
+      testCases.forEach((model) => {
+        expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(tokenValues['qwen3'].prompt);
+        expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+          tokenValues['qwen3'].completion,
+        );
+      });
+    });
+  });
+});
+
 describe('getCacheMultiplier', () => {
   it('should return the correct cache multiplier for a given valueKey and cacheType', () => {
     expect(getCacheMultiplier({ valueKey: 'claude-3-5-sonnet', cacheType: 'write' })).toBe(
