@@ -1,64 +1,71 @@
-import { z } from 'zod';
-import type { ZodError } from 'zod';
-import type { TModelsConfig } from './types';
-import { EModelEndpoint, eModelEndpointSchema } from './schemas';
-import { specsConfigSchema, TSpecsConfig } from './models';
-import { fileConfigSchema } from './file-config';
-import { FileSources } from './types/files';
-import { MCPServersSchema } from './mcp';
-import { apiBaseUrl } from './api-endpoints';
+import { z } from "zod";
+import type { ZodError } from "zod";
+import type { TModelsConfig } from "./types";
+import { EModelEndpoint, eModelEndpointSchema } from "./schemas";
+import { specsConfigSchema, TSpecsConfig } from "./models";
+import { fileConfigSchema } from "./file-config";
+import { FileSources } from "./types/files";
+import { MCPServersSchema } from "./mcp";
+import { apiBaseUrl } from "./api-endpoints";
 
-export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
+export const defaultSocialLogins = [
+  "google",
+  "facebook",
+  "openid",
+  "github",
+  "discord",
+  "saml",
+];
 
 export const defaultRetrievalModels = [
-  'gpt-4o',
-  'o1-preview-2024-09-12',
-  'o1-preview',
-  'o1-mini-2024-09-12',
-  'o1-mini',
-  'o3-mini',
-  'chatgpt-4o-latest',
-  'gpt-4o-2024-05-13',
-  'gpt-4o-2024-08-06',
-  'gpt-4o-mini',
-  'gpt-4o-mini-2024-07-18',
-  'gpt-4-turbo-preview',
-  'gpt-3.5-turbo-0125',
-  'gpt-4-0125-preview',
-  'gpt-4-1106-preview',
-  'gpt-3.5-turbo-1106',
-  'gpt-3.5-turbo-0125',
-  'gpt-4-turbo',
-  'gpt-4-0125',
-  'gpt-4-1106',
+  "gpt-4o",
+  "o1-preview-2024-09-12",
+  "o1-preview",
+  "o1-mini-2024-09-12",
+  "o1-mini",
+  "o3-mini",
+  "chatgpt-4o-latest",
+  "gpt-4o-2024-05-13",
+  "gpt-4o-2024-08-06",
+  "gpt-4o-mini",
+  "gpt-4o-mini-2024-07-18",
+  "gpt-4-turbo-preview",
+  "gpt-3.5-turbo-0125",
+  "gpt-4-0125-preview",
+  "gpt-4-1106-preview",
+  "gpt-3.5-turbo-1106",
+  "gpt-3.5-turbo-0125",
+  "gpt-4-turbo",
+  "gpt-4-0125",
+  "gpt-4-1106",
 ];
 
 export const excludedKeys = new Set([
-  'conversationId',
-  'title',
-  'iconURL',
-  'greeting',
-  'endpoint',
-  'endpointType',
-  'createdAt',
-  'updatedAt',
-  'expiredAt',
-  'messages',
-  'isArchived',
-  'tags',
-  'user',
-  '__v',
-  '_id',
-  'tools',
-  'model',
-  'files',
-  'spec',
-  'disableParams',
+  "conversationId",
+  "title",
+  "iconURL",
+  "greeting",
+  "endpoint",
+  "endpointType",
+  "createdAt",
+  "updatedAt",
+  "expiredAt",
+  "messages",
+  "isArchived",
+  "tags",
+  "user",
+  "__v",
+  "_id",
+  "tools",
+  "model",
+  "files",
+  "spec",
+  "disableParams",
 ]);
 
 export enum SettingsViews {
-  default = 'default',
-  advanced = 'advanced',
+  default = "default",
+  advanced = "advanced",
 }
 
 export const fileSourceSchema = z.nativeEnum(FileSources);
@@ -77,7 +84,9 @@ type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
 
 // Helper type to determine the default value or undefined based on whether the field has a default
 type DefaultValue<T> =
-  T extends z.ZodDefault<z.ZodTypeAny> ? ReturnType<T['_def']['defaultValue']> : undefined;
+  T extends z.ZodDefault<z.ZodTypeAny>
+    ? ReturnType<T["_def"]["defaultValue"]>
+    : undefined;
 
 // Extract default values or undefined from the schema shape
 type ExtractDefaults<T> = {
@@ -147,10 +156,16 @@ export type TAzureModelMapSchema = {
   group: string;
 };
 
-export type TAzureModelGroupMap = Record<string, TAzureModelMapSchema | undefined>;
+export type TAzureModelGroupMap = Record<
+  string,
+  TAzureModelMapSchema | undefined
+>;
 export type TAzureGroupMap = Record<
   string,
-  (TAzureBaseSchema & { models: Record<string, TAzureModelConfig | undefined> }) | undefined
+  | (TAzureBaseSchema & {
+      models: Record<string, TAzureModelConfig | undefined>;
+    })
+  | undefined
 >;
 
 export type TValidatedAzureConfig = {
@@ -167,25 +182,26 @@ export type TAzureConfigValidationResult = TValidatedAzureConfig & {
 };
 
 export enum Capabilities {
-  code_interpreter = 'code_interpreter',
-  image_vision = 'image_vision',
-  retrieval = 'retrieval',
-  actions = 'actions',
-  tools = 'tools',
+  code_interpreter = "code_interpreter",
+  image_vision = "image_vision",
+  retrieval = "retrieval",
+  actions = "actions",
+  tools = "tools",
 }
 
 export enum AgentCapabilities {
-  hide_sequential_outputs = 'hide_sequential_outputs',
-  end_after_tools = 'end_after_tools',
-  execute_code = 'execute_code',
-  file_search = 'file_search',
-  web_search = 'web_search',
-  artifacts = 'artifacts',
-  actions = 'actions',
-  context = 'context',
-  tools = 'tools',
-  chain = 'chain',
-  ocr = 'ocr',
+  hide_sequential_outputs = "hide_sequential_outputs",
+  end_after_tools = "end_after_tools",
+  execute_code = "execute_code",
+  file_search = "file_search",
+  web_search = "web_search",
+  artifacts = "artifacts",
+  canvas = "canvas",
+  actions = "actions",
+  context = "context",
+  tools = "tools",
+  chain = "chain",
+  ocr = "ocr",
 }
 
 export const defaultAssistantsVersion = {
@@ -200,7 +216,11 @@ export const baseEndpointSchema = z.object({
   titleModel: z.string().optional(),
   titleConvo: z.boolean().optional(),
   titleMethod: z
-    .union([z.literal('completion'), z.literal('functions'), z.literal('structured')])
+    .union([
+      z.literal("completion"),
+      z.literal("functions"),
+      z.literal("structured"),
+    ])
     .optional(),
   titleEndpoint: z.string().optional(),
   titlePromptTemplate: z.string().optional(),
@@ -232,7 +252,11 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
     supportedIds: z.array(z.string()).min(1).optional(),
     excludedIds: z.array(z.string()).min(1).optional(),
     privateAssistants: z.boolean().optional(),
-    retrievalModels: z.array(z.string()).min(1).optional().default(defaultRetrievalModels),
+    retrievalModels: z
+      .array(z.string())
+      .min(1)
+      .optional()
+      .default(defaultRetrievalModels),
     capabilities: z
       .array(z.nativeEnum(Capabilities))
       .optional()
@@ -263,6 +287,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.file_search,
   AgentCapabilities.web_search,
   AgentCapabilities.artifacts,
+  AgentCapabilities.canvas,
   AgentCapabilities.actions,
   AgentCapabilities.context,
   AgentCapabilities.tools,
@@ -280,7 +305,9 @@ export const agentsEndpointSchema = baseEndpointSchema
       maxCitations: z.number().min(1).max(50).optional().default(30),
       maxCitationsPerFile: z.number().min(1).max(10).optional().default(7),
       minRelevanceScore: z.number().min(0.0).max(1.0).optional().default(0.45),
-      allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
+      allowedProviders: z
+        .array(z.union([z.string(), eModelEndpointSchema]))
+        .optional(),
       capabilities: z
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
@@ -299,11 +326,13 @@ export type TAgentsEndpoint = z.infer<typeof agentsEndpointSchema>;
 
 export const endpointSchema = baseEndpointSchema.merge(
   z.object({
-    name: z.string().refine((value) => !eModelEndpointSchema.safeParse(value).success, {
-      message: `Value cannot be one of the default endpoint (EModelEndpoint) values: ${Object.values(
-        EModelEndpoint,
-      ).join(', ')}`,
-    }),
+    name: z
+      .string()
+      .refine((value) => !eModelEndpointSchema.safeParse(value).success, {
+        message: `Value cannot be one of the default endpoint (EModelEndpoint) values: ${Object.values(
+          EModelEndpoint,
+        ).join(", ")}`,
+      }),
     apiKey: z.string(),
     baseURL: z.string(),
     models: z.object({
@@ -321,7 +350,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     dropParams: z.array(z.string()).optional(),
     customParams: z
       .object({
-        defaultParamsEndpoint: z.string().default('custom'),
+        defaultParamsEndpoint: z.string().default("custom"),
         paramDefinitions: z.array(z.record(z.any())).optional(),
       })
       .strict(),
@@ -355,7 +384,7 @@ export const azureEndpointSchema = z
       .partial(),
   );
 
-export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, 'groups'> &
+export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, "groups"> &
   TAzureConfigValidationResult;
 
 const ttsOpenaiSchema = z.object({
@@ -458,10 +487,10 @@ const speechTab = z
   .optional();
 
 export enum RateLimitPrefix {
-  FILE_UPLOAD = 'FILE_UPLOAD',
-  IMPORT = 'IMPORT',
-  TTS = 'TTS',
-  STT = 'STT',
+  FILE_UPLOAD = "FILE_UPLOAD",
+  IMPORT = "IMPORT",
+  TTS = "TTS",
+  STT = "STT",
 }
 
 export const rateLimitSchema = z.object({
@@ -500,9 +529,9 @@ export const rateLimitSchema = z.object({
 });
 
 export enum EImageOutputType {
-  PNG = 'png',
-  WEBP = 'webp',
-  JPEG = 'jpeg',
+  PNG = "png",
+  WEBP = "webp",
+  JPEG = "jpeg",
 }
 
 const termsOfServiceSchema = z.object({
@@ -593,12 +622,14 @@ export type TTransactionsConfig = z.infer<typeof transactionsSchema>;
 
 export const turnstileOptionsSchema = z
   .object({
-    language: z.string().default('auto'),
-    size: z.enum(['normal', 'compact', 'flexible', 'invisible']).default('normal'),
+    language: z.string().default("auto"),
+    size: z
+      .enum(["normal", "compact", "flexible", "invisible"])
+      .default("normal"),
   })
   .default({
-    language: 'auto',
-    size: 'normal',
+    language: "auto",
+    size: "normal",
   });
 
 export const turnstileSchema = z.object({
@@ -682,21 +713,21 @@ export type TStartupConfig = {
 };
 
 export enum OCRStrategy {
-  MISTRAL_OCR = 'mistral_ocr',
-  CUSTOM_OCR = 'custom_ocr',
-  AZURE_MISTRAL_OCR = 'azure_mistral_ocr',
-  VERTEXAI_MISTRAL_OCR = 'vertexai_mistral_ocr',
+  MISTRAL_OCR = "mistral_ocr",
+  CUSTOM_OCR = "custom_ocr",
+  AZURE_MISTRAL_OCR = "azure_mistral_ocr",
+  VERTEXAI_MISTRAL_OCR = "vertexai_mistral_ocr",
 }
 
 export enum SearchCategories {
-  PROVIDERS = 'providers',
-  SCRAPERS = 'scrapers',
-  RERANKERS = 'rerankers',
+  PROVIDERS = "providers",
+  SCRAPERS = "scrapers",
+  RERANKERS = "rerankers",
 }
 
 export enum SearchProviders {
-  SERPER = 'serper',
-  SEARXNG = 'searxng',
+  SERPER = "serper",
+  SEARXNG = "searxng",
 }
 
 export enum ScraperProviders {
@@ -705,8 +736,8 @@ export enum ScraperProviders {
 }
 
 export enum RerankerTypes {
-  JINA = 'jina',
-  COHERE = 'cohere',
+  JINA = "jina",
+  COHERE = "cohere",
 }
 
 export enum SafeSearchTypes {
@@ -769,8 +800,8 @@ export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
 
 export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
-  apiKey: z.string().optional().default('${OCR_API_KEY}'),
-  baseURL: z.string().optional().default('${OCR_BASEURL}'),
+  apiKey: z.string().optional().default("${OCR_API_KEY}"),
+  baseURL: z.string().optional().default("${OCR_BASEURL}"),
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
 
@@ -780,9 +811,9 @@ export const balanceSchema = z.object({
   autoRefillEnabled: z.boolean().optional().default(false),
   refillIntervalValue: z.number().optional().default(30),
   refillIntervalUnit: z
-    .enum(['seconds', 'minutes', 'hours', 'days', 'weeks', 'months'])
+    .enum(["seconds", "minutes", "hours", "days", "weeks", "months"])
     .optional()
-    .default('days'),
+    .default("days"),
   refillAmount: z.number().optional().default(10000),
 });
 
@@ -870,7 +901,7 @@ export const configSchema = z.object({
     })
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
-      message: 'At least one `endpoints` field must be provided.',
+      message: "At least one `endpoints` field must be provided.",
     })
     .optional(),
 });
@@ -905,23 +936,23 @@ export type TProviderSchema =
   | undefined;
 
 export enum KnownEndpoints {
-  anyscale = 'anyscale',
-  apipie = 'apipie',
-  cohere = 'cohere',
-  fireworks = 'fireworks',
-  deepseek = 'deepseek',
-  groq = 'groq',
-  huggingface = 'huggingface',
-  mistral = 'mistral',
-  mlx = 'mlx',
-  ollama = 'ollama',
-  openrouter = 'openrouter',
-  perplexity = 'perplexity',
-  shuttleai = 'shuttleai',
-  'together.ai' = 'together.ai',
-  unify = 'unify',
-  vercel = 'vercel',
-  xai = 'xai',
+  anyscale = "anyscale",
+  apipie = "apipie",
+  cohere = "cohere",
+  fireworks = "fireworks",
+  deepseek = "deepseek",
+  groq = "groq",
+  huggingface = "huggingface",
+  mistral = "mistral",
+  mlx = "mlx",
+  ollama = "ollama",
+  openrouter = "openrouter",
+  perplexity = "perplexity",
+  shuttleai = "shuttleai",
+  "together.ai" = "together.ai",
+  unify = "unify",
+  xai = "xai",
+
 }
 
 export enum FetchTokenConfig {
@@ -943,21 +974,20 @@ export const defaultEndpoints: EModelEndpoint[] = [
 ];
 
 export const alternateName = {
-  [EModelEndpoint.openAI]: 'OpenAI',
-  [EModelEndpoint.assistants]: 'Assistants',
-  [EModelEndpoint.agents]: 'My Agents',
-  [EModelEndpoint.azureAssistants]: 'Azure Assistants',
-  [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
-  [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
-  [EModelEndpoint.gptPlugins]: 'Plugins',
-  [EModelEndpoint.google]: 'Google',
-  [EModelEndpoint.anthropic]: 'Anthropic',
-  [EModelEndpoint.custom]: 'Custom',
-  [EModelEndpoint.bedrock]: 'AWS Bedrock',
-  [KnownEndpoints.ollama]: 'Ollama',
-  [KnownEndpoints.deepseek]: 'DeepSeek',
-  [KnownEndpoints.xai]: 'xAI',
-  [KnownEndpoints.vercel]: 'Vercel',
+  [EModelEndpoint.openAI]: "OpenAI",
+  [EModelEndpoint.assistants]: "Assistants",
+  [EModelEndpoint.agents]: "My Agents",
+  [EModelEndpoint.azureAssistants]: "Azure Assistants",
+  [EModelEndpoint.azureOpenAI]: "Azure OpenAI",
+  [EModelEndpoint.chatGPTBrowser]: "ChatGPT",
+  [EModelEndpoint.gptPlugins]: "Plugins",
+  [EModelEndpoint.google]: "Google",
+  [EModelEndpoint.anthropic]: "Anthropic",
+  [EModelEndpoint.custom]: "Custom",
+  [EModelEndpoint.bedrock]: "AWS Bedrock",
+  [KnownEndpoints.ollama]: "Ollama",
+  [KnownEndpoints.deepseek]: "DeepSeek",
+  [KnownEndpoints.xai]: "xAI",
 };
 
 const sharedOpenAIModels = [
@@ -1017,42 +1047,42 @@ const sharedAnthropicModels = [
 ];
 
 export const bedrockModels = [
-  'anthropic.claude-3-5-sonnet-20241022-v2:0',
-  'anthropic.claude-3-5-sonnet-20240620-v1:0',
-  'anthropic.claude-3-5-haiku-20241022-v1:0',
-  'anthropic.claude-3-haiku-20240307-v1:0',
-  'anthropic.claude-3-opus-20240229-v1:0',
-  'anthropic.claude-3-sonnet-20240229-v1:0',
-  'anthropic.claude-v2',
-  'anthropic.claude-v2:1',
-  'anthropic.claude-instant-v1',
+  "anthropic.claude-3-5-sonnet-20241022-v2:0",
+  "anthropic.claude-3-5-sonnet-20240620-v1:0",
+  "anthropic.claude-3-5-haiku-20241022-v1:0",
+  "anthropic.claude-3-haiku-20240307-v1:0",
+  "anthropic.claude-3-opus-20240229-v1:0",
+  "anthropic.claude-3-sonnet-20240229-v1:0",
+  "anthropic.claude-v2",
+  "anthropic.claude-v2:1",
+  "anthropic.claude-instant-v1",
   // 'cohere.command-text-v14', // no conversation history
   // 'cohere.command-light-text-v14', // no conversation history
-  'cohere.command-r-v1:0',
-  'cohere.command-r-plus-v1:0',
-  'meta.llama2-13b-chat-v1',
-  'meta.llama2-70b-chat-v1',
-  'meta.llama3-8b-instruct-v1:0',
-  'meta.llama3-70b-instruct-v1:0',
-  'meta.llama3-1-8b-instruct-v1:0',
-  'meta.llama3-1-70b-instruct-v1:0',
-  'meta.llama3-1-405b-instruct-v1:0',
-  'mistral.mistral-7b-instruct-v0:2',
-  'mistral.mixtral-8x7b-instruct-v0:1',
-  'mistral.mistral-large-2402-v1:0',
-  'mistral.mistral-large-2407-v1:0',
-  'mistral.mistral-small-2402-v1:0',
-  'ai21.jamba-instruct-v1:0',
+  "cohere.command-r-v1:0",
+  "cohere.command-r-plus-v1:0",
+  "meta.llama2-13b-chat-v1",
+  "meta.llama2-70b-chat-v1",
+  "meta.llama3-8b-instruct-v1:0",
+  "meta.llama3-70b-instruct-v1:0",
+  "meta.llama3-1-8b-instruct-v1:0",
+  "meta.llama3-1-70b-instruct-v1:0",
+  "meta.llama3-1-405b-instruct-v1:0",
+  "mistral.mistral-7b-instruct-v0:2",
+  "mistral.mixtral-8x7b-instruct-v0:1",
+  "mistral.mistral-large-2402-v1:0",
+  "mistral.mistral-large-2407-v1:0",
+  "mistral.mistral-small-2402-v1:0",
+  "ai21.jamba-instruct-v1:0",
   // 'ai21.j2-mid-v1', // no streaming
   // 'ai21.j2-ultra-v1', no conversation history
-  'amazon.titan-text-lite-v1',
-  'amazon.titan-text-express-v1',
-  'amazon.titan-text-premier-v1:0',
+  "amazon.titan-text-lite-v1",
+  "amazon.titan-text-express-v1",
+  "amazon.titan-text-premier-v1:0",
 ];
 
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
-  [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
+  [EModelEndpoint.assistants]: [...sharedOpenAIModels, "chatgpt-4o-latest"],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
     // Gemini 2.5 Models
@@ -1066,10 +1096,10 @@ export const defaultModels = {
   [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
     ...sharedOpenAIModels,
-    'chatgpt-4o-latest',
-    'gpt-4-vision-preview',
-    'gpt-3.5-turbo-instruct-0914',
-    'gpt-3.5-turbo-instruct',
+    "chatgpt-4o-latest",
+    "gpt-4-vision-preview",
+    "gpt-3.5-turbo-instruct-0914",
+    "gpt-3.5-turbo-instruct",
   ],
   [EModelEndpoint.bedrock]: bedrockModels,
 };
@@ -1087,7 +1117,7 @@ export const initialModelsConfig: TModelsConfig = {
   [EModelEndpoint.agents]: openAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.gptPlugins]: openAIModels,
   [EModelEndpoint.azureOpenAI]: openAIModels,
-  [EModelEndpoint.chatGPTBrowser]: ['text-davinci-002-render-sha'],
+  [EModelEndpoint.chatGPTBrowser]: ["text-davinci-002-render-sha"],
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
   [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
   [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
@@ -1158,8 +1188,8 @@ export const visionModels = [
   'claude-haiku-4',
 ];
 export enum VisionModes {
-  generative = 'generative',
-  agents = 'agents',
+  generative = "generative",
+  agents = "agents",
 }
 
 export function validateVisionModel({
@@ -1175,7 +1205,7 @@ export function validateVisionModel({
     return false;
   }
 
-  if (model.includes('gpt-4-turbo-preview') || model.includes('o1-mini')) {
+  if (model.includes("gpt-4-turbo-preview") || model.includes("o1-mini")) {
     return false;
   }
 
@@ -1183,10 +1213,17 @@ export function validateVisionModel({
     return false;
   }
 
-  return visionModels.concat(additionalModels).some((visionModel) => model.includes(visionModel));
+  return visionModels
+    .concat(additionalModels)
+    .some((visionModel) => model.includes(visionModel));
 }
 
-export const imageGenTools = new Set(['dalle', 'dall-e', 'stable-diffusion', 'flux']);
+export const imageGenTools = new Set([
+  "dalle",
+  "dall-e",
+  "stable-diffusion",
+  "flux",
+]);
 
 /**
  * Enum for collections using infinite queries
@@ -1195,11 +1232,11 @@ export enum InfiniteCollections {
   /**
    * Collection for Prompt Groups
    */
-  PROMPT_GROUPS = 'promptGroups',
+  PROMPT_GROUPS = "promptGroups",
   /**
    * Collection for Shared Links
    */
-  SHARED_LINKS = 'sharedLinks',
+  SHARED_LINKS = "sharedLinks",
 }
 
 /**
@@ -1224,92 +1261,92 @@ export enum CacheKeys {
   /**
    * Key for the config store namespace.
    */
-  CONFIG_STORE = 'CONFIG_STORE',
+  CONFIG_STORE = "CONFIG_STORE",
   /**
    * Key for the roles cache.
    */
-  ROLES = 'ROLES',
+  ROLES = "ROLES",
   /**
    * Key for the plugins cache.
    */
-  PLUGINS = 'PLUGINS',
+  PLUGINS = "PLUGINS",
   /**
    * Key for the title generation cache.
    */
-  GEN_TITLE = 'GEN_TITLE',
+  GEN_TITLE = "GEN_TITLE",
   /**
    * Key for the tools cache.
    */
-  TOOLS = 'TOOLS',
+  TOOLS = "TOOLS",
   /**
    * Key for the model config cache.
    */
-  MODELS_CONFIG = 'MODELS_CONFIG',
+  MODELS_CONFIG = "MODELS_CONFIG",
   /**
    * Key for the model queries cache.
    */
-  MODEL_QUERIES = 'MODEL_QUERIES',
+  MODEL_QUERIES = "MODEL_QUERIES",
   /**
    * Key for the default startup config cache.
    */
-  STARTUP_CONFIG = 'STARTUP_CONFIG',
+  STARTUP_CONFIG = "STARTUP_CONFIG",
   /**
    * Key for the default endpoint config cache.
    */
-  ENDPOINT_CONFIG = 'ENDPOINT_CONFIG',
+  ENDPOINT_CONFIG = "ENDPOINT_CONFIG",
   /**
    * Key for accessing the model token config cache.
    */
-  TOKEN_CONFIG = 'TOKEN_CONFIG',
+  TOKEN_CONFIG = "TOKEN_CONFIG",
   /**
    * Key for the app config namespace.
    */
-  APP_CONFIG = 'APP_CONFIG',
+  APP_CONFIG = "APP_CONFIG",
   /**
    * Key for accessing Abort Keys
    */
-  ABORT_KEYS = 'ABORT_KEYS',
+  ABORT_KEYS = "ABORT_KEYS",
   /**
    * Key for the bans cache.
    */
-  BANS = 'BANS',
+  BANS = "BANS",
   /**
    * Key for the encoded domains cache.
    * Used by Azure OpenAI Assistants.
    */
-  ENCODED_DOMAINS = 'ENCODED_DOMAINS',
+  ENCODED_DOMAINS = "ENCODED_DOMAINS",
   /**
    * Key for the cached audio run Ids.
    */
-  AUDIO_RUNS = 'AUDIO_RUNS',
+  AUDIO_RUNS = "AUDIO_RUNS",
   /**
    * Key for in-progress messages.
    */
-  MESSAGES = 'MESSAGES',
+  MESSAGES = "MESSAGES",
   /**
    * Key for in-progress flow states.
    */
-  FLOWS = 'FLOWS',
+  FLOWS = "FLOWS",
   /**
    * Key for pending chat requests (concurrency check)
    */
-  PENDING_REQ = 'PENDING_REQ',
+  PENDING_REQ = "PENDING_REQ",
   /**
    * Key for s3 check intervals per user
    */
-  S3_EXPIRY_INTERVAL = 'S3_EXPIRY_INTERVAL',
+  S3_EXPIRY_INTERVAL = "S3_EXPIRY_INTERVAL",
   /**
    * key for open id exchanged tokens
    */
-  OPENID_EXCHANGED_TOKENS = 'OPENID_EXCHANGED_TOKENS',
+  OPENID_EXCHANGED_TOKENS = "OPENID_EXCHANGED_TOKENS",
   /**
    * Key for OpenID session.
    */
-  OPENID_SESSION = 'OPENID_SESSION',
+  OPENID_SESSION = "OPENID_SESSION",
   /**
    * Key for SAML session.
    */
-  SAML_SESSION = 'SAML_SESSION',
+  SAML_SESSION = "SAML_SESSION",
 }
 
 /**
@@ -1319,67 +1356,67 @@ export enum ViolationTypes {
   /**
    * File Upload Violations (exceeding limit).
    */
-  FILE_UPLOAD_LIMIT = 'file_upload_limit',
+  FILE_UPLOAD_LIMIT = "file_upload_limit",
   /**
    * Illegal Model Request (not available).
    */
-  ILLEGAL_MODEL_REQUEST = 'illegal_model_request',
+  ILLEGAL_MODEL_REQUEST = "illegal_model_request",
   /**
    * Token Limit Violation.
    */
-  TOKEN_BALANCE = 'token_balance',
+  TOKEN_BALANCE = "token_balance",
   /**
    * An issued ban.
    */
-  BAN = 'ban',
+  BAN = "ban",
   /**
    * TTS Request Limit Violation.
    */
-  TTS_LIMIT = 'tts_limit',
+  TTS_LIMIT = "tts_limit",
   /**
    * STT Request Limit Violation.
    */
-  STT_LIMIT = 'stt_limit',
+  STT_LIMIT = "stt_limit",
   /**
    * Reset Password Limit Violation.
    */
-  RESET_PASSWORD_LIMIT = 'reset_password_limit',
+  RESET_PASSWORD_LIMIT = "reset_password_limit",
   /**
    * Verify Email Limit Violation.
    */
-  VERIFY_EMAIL_LIMIT = 'verify_email_limit',
+  VERIFY_EMAIL_LIMIT = "verify_email_limit",
   /**
    * Verify Conversation Access violation.
    */
-  CONVO_ACCESS = 'convo_access',
+  CONVO_ACCESS = "convo_access",
   /**
    * Tool Call Limit Violation.
    */
-  TOOL_CALL_LIMIT = 'tool_call_limit',
+  TOOL_CALL_LIMIT = "tool_call_limit",
   /**
    * General violation (catch-all).
    */
-  GENERAL = 'general',
+  GENERAL = "general",
   /**
    * Login attempt violations.
    */
-  LOGINS = 'logins',
+  LOGINS = "logins",
   /**
    * Concurrent request violations.
    */
-  CONCURRENT = 'concurrent',
+  CONCURRENT = "concurrent",
   /**
    * Non-browser access violations.
    */
-  NON_BROWSER = 'non_browser',
+  NON_BROWSER = "non_browser",
   /**
    * Message limit violations.
    */
-  MESSAGE_LIMIT = 'message_limit',
+  MESSAGE_LIMIT = "message_limit",
   /**
    * Registration violations.
    */
-  REGISTRATIONS = 'registrations',
+  REGISTRATIONS = "registrations",
 }
 
 /**
@@ -1389,67 +1426,67 @@ export enum ErrorTypes {
   /**
    * No User-provided Key.
    */
-  NO_USER_KEY = 'no_user_key',
+  NO_USER_KEY = "no_user_key",
   /**
    * Expired User-provided Key.
    */
-  EXPIRED_USER_KEY = 'expired_user_key',
+  EXPIRED_USER_KEY = "expired_user_key",
   /**
    * Invalid User-provided Key.
    */
-  INVALID_USER_KEY = 'invalid_user_key',
+  INVALID_USER_KEY = "invalid_user_key",
   /**
    * No Base URL Provided.
    */
-  NO_BASE_URL = 'no_base_url',
+  NO_BASE_URL = "no_base_url",
   /**
    * Moderation error
    */
-  MODERATION = 'moderation',
+  MODERATION = "moderation",
   /**
    * Prompt exceeds max length
    */
-  INPUT_LENGTH = 'INPUT_LENGTH',
+  INPUT_LENGTH = "INPUT_LENGTH",
   /**
    * Invalid request error, API rejected request
    */
-  INVALID_REQUEST = 'invalid_request_error',
+  INVALID_REQUEST = "invalid_request_error",
   /**
    * Invalid action request error, likely not on list of allowed domains
    */
-  INVALID_ACTION = 'invalid_action_error',
+  INVALID_ACTION = "invalid_action_error",
   /**
    * Invalid request error, API rejected request
    */
-  NO_SYSTEM_MESSAGES = 'no_system_messages',
+  NO_SYSTEM_MESSAGES = "no_system_messages",
   /**
    * Google provider returned an error
    */
-  GOOGLE_ERROR = 'google_error',
+  GOOGLE_ERROR = "google_error",
   /**
    * Google provider does not allow custom tools with built-in tools
    */
-  GOOGLE_TOOL_CONFLICT = 'google_tool_conflict',
+  GOOGLE_TOOL_CONFLICT = "google_tool_conflict",
   /**
    * Invalid Agent Provider (excluded by Admin)
    */
-  INVALID_AGENT_PROVIDER = 'invalid_agent_provider',
+  INVALID_AGENT_PROVIDER = "invalid_agent_provider",
   /**
    * Missing model selection
    */
-  MISSING_MODEL = 'missing_model',
+  MISSING_MODEL = "missing_model",
   /**
    * Models configuration not loaded
    */
-  MODELS_NOT_LOADED = 'models_not_loaded',
+  MODELS_NOT_LOADED = "models_not_loaded",
   /**
    * Endpoint models not loaded
    */
-  ENDPOINT_MODELS_NOT_LOADED = 'endpoint_models_not_loaded',
+  ENDPOINT_MODELS_NOT_LOADED = "endpoint_models_not_loaded",
   /**
    * Generic Authentication failure
    */
-  AUTH_FAILED = 'auth_failed',
+  AUTH_FAILED = "auth_failed",
 }
 
 /**
@@ -1459,13 +1496,13 @@ export enum AuthKeys {
   /**
    * Key for the Service Account to use Vertex AI.
    */
-  GOOGLE_SERVICE_KEY = 'GOOGLE_SERVICE_KEY',
+  GOOGLE_SERVICE_KEY = "GOOGLE_SERVICE_KEY",
   /**
    * API key to use Google Generative AI.
    *
    * Note: this is not for Environment Variables, but to access encrypted object values.
    */
-  GOOGLE_API_KEY = 'GOOGLE_API_KEY',
+  GOOGLE_API_KEY = "GOOGLE_API_KEY",
 }
 
 /**
@@ -1500,69 +1537,69 @@ export enum SettingsTabValues {
   /**
    * Tab for General Settings
    */
-  GENERAL = 'general',
+  GENERAL = "general",
   /**
    * Tab for Chat Settings
    */
-  CHAT = 'chat',
+  CHAT = "chat",
   /**
    * Tab for Speech Settings
    */
-  SPEECH = 'speech',
+  SPEECH = "speech",
   /**
    * Tab for Beta Features
    */
-  BETA = 'beta',
+  BETA = "beta",
   /**
    * Tab for Data Controls
    */
-  DATA = 'data',
+  DATA = "data",
   /**
    * Tab for Balance Settings
    */
-  BALANCE = 'balance',
+  BALANCE = "balance",
   /**
    * Tab for Account Settings
    */
-  ACCOUNT = 'account',
+  ACCOUNT = "account",
   /**
    * Chat input commands
    */
-  COMMANDS = 'commands',
+  COMMANDS = "commands",
   /**
    * Tab for Personalization Settings
    */
-  PERSONALIZATION = 'personalization',
+  PERSONALIZATION = "personalization",
 }
 
 export enum STTProviders {
   /**
    * Provider for OpenAI STT
    */
-  OPENAI = 'openai',
+  OPENAI = "openai",
   /**
    * Provider for Microsoft Azure STT
    */
-  AZURE_OPENAI = 'azureOpenAI',
+  AZURE_OPENAI = "azureOpenAI",
 }
 
 export enum TTSProviders {
   /**
    * Provider for OpenAI TTS
    */
-  OPENAI = 'openai',
+  OPENAI = "openai",
   /**
    * Provider for Microsoft Azure OpenAI TTS
    */
-  AZURE_OPENAI = 'azureOpenAI',
+  AZURE_OPENAI = "azureOpenAI",
   /**
    * Provider for ElevenLabs TTS
    */
-  ELEVENLABS = 'elevenlabs',
+  ELEVENLABS = "elevenlabs",
   /**
    * Provider for LocalAI TTS
    */
-  LOCALAI = 'localai',
+  LOCALAI = "localai",
 }
 
 /** Enum for app-wide constants */
@@ -1572,110 +1609,112 @@ export enum Constants {
   /** Key for the Custom Config's version (librechat.yaml). */
   CONFIG_VERSION = '1.3.0',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
-  NO_PARENT = '00000000-0000-0000-0000-000000000000',
+  NO_PARENT = "00000000-0000-0000-0000-000000000000",
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
-  USE_PRELIM_RESPONSE_MESSAGE_ID = 'USE_PRELIM_RESPONSE_MESSAGE_ID',
+  USE_PRELIM_RESPONSE_MESSAGE_ID = "USE_PRELIM_RESPONSE_MESSAGE_ID",
   /** Standard value for the initial conversationId before a request is sent */
-  NEW_CONVO = 'new',
+  NEW_CONVO = "new",
   /** Standard value for the temporary conversationId after a request is sent and before the server responds */
-  PENDING_CONVO = 'PENDING',
+  PENDING_CONVO = "PENDING",
   /** Standard value for the conversationId used for search queries */
-  SEARCH = 'search',
+  SEARCH = "search",
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
   ENCODED_DOMAIN_LENGTH = 10,
   /** Identifier for using current_model in multi-model requests. */
-  CURRENT_MODEL = 'current_model',
+  CURRENT_MODEL = "current_model",
   /** Common divider for text values */
-  COMMON_DIVIDER = '__',
+  COMMON_DIVIDER = "__",
   /** Max length for commands */
   COMMANDS_MAX_LENGTH = 56,
   /** Default Stream Rate (ms) */
   DEFAULT_STREAM_RATE = 1,
   /** Saved Tag */
-  SAVED_TAG = 'Saved',
+  SAVED_TAG = "Saved",
   /** Max number of Conversation starters for Agents/Assistants */
   MAX_CONVO_STARTERS = 4,
   /** Global/instance Project Name */
-  GLOBAL_PROJECT_NAME = 'instance',
+  GLOBAL_PROJECT_NAME = "instance",
   /** Delimiter for MCP tools */
-  mcp_delimiter = '_mcp_',
+  mcp_delimiter = "_mcp_",
   /** Prefix for MCP plugins */
-  mcp_prefix = 'mcp_',
+  mcp_prefix = "mcp_",
   /** Unique value to indicate all MCP servers. For backend use only. */
-  mcp_all = 'sys__all__sys',
+  mcp_all = "sys__all__sys",
   /**
    * Unique value to indicate the MCP tool was added to an agent.
    * This helps inform the UI if the mcp server was previously added.
    * */
-  mcp_server = 'sys__server__sys',
+  mcp_server = "sys__server__sys",
   /** Placeholder Agent ID for Ephemeral Agents */
-  EPHEMERAL_AGENT_ID = 'ephemeral',
+  EPHEMERAL_AGENT_ID = "ephemeral",
 }
 
 export enum LocalStorageKeys {
   /** Key for the admin defined App Title */
-  APP_TITLE = 'appTitle',
+  APP_TITLE = "appTitle",
   /** Key for the last conversation setup. */
-  LAST_CONVO_SETUP = 'lastConversationSetup',
+  LAST_CONVO_SETUP = "lastConversationSetup",
   /** Key for the last selected model. */
-  LAST_MODEL = 'lastSelectedModel',
+  LAST_MODEL = "lastSelectedModel",
   /** Key for the last selected tools. */
-  LAST_TOOLS = 'lastSelectedTools',
+  LAST_TOOLS = "lastSelectedTools",
   /** Key for the last selected spec by name*/
-  LAST_SPEC = 'lastSelectedSpec',
+  LAST_SPEC = "lastSelectedSpec",
   /** Key for temporary files to delete */
-  FILES_TO_DELETE = 'filesToDelete',
+  FILES_TO_DELETE = "filesToDelete",
   /** Prefix key for the last selected assistant ID by index */
-  ASST_ID_PREFIX = 'assistant_id__',
+  ASST_ID_PREFIX = "assistant_id__",
   /** Prefix key for the last selected agent ID by index */
-  AGENT_ID_PREFIX = 'agent_id__',
+  AGENT_ID_PREFIX = "agent_id__",
   /** Key for the last selected fork setting */
-  FORK_SETTING = 'forkSetting',
+  FORK_SETTING = "forkSetting",
   /** Key for remembering the last selected option, instead of manually selecting */
-  REMEMBER_FORK_OPTION = 'rememberDefaultFork',
+  REMEMBER_FORK_OPTION = "rememberDefaultFork",
   /** Key for remembering the split at target fork option modifier */
-  FORK_SPLIT_AT_TARGET = 'splitAtTarget',
+  FORK_SPLIT_AT_TARGET = "splitAtTarget",
   /** Key for saving text drafts */
-  TEXT_DRAFT = 'textDraft_',
+  TEXT_DRAFT = "textDraft_",
   /** Key for saving file drafts */
-  FILES_DRAFT = 'filesDraft_',
+  FILES_DRAFT = "filesDraft_",
   /** Key for last Selected Prompt Category */
-  LAST_PROMPT_CATEGORY = 'lastPromptCategory',
+  LAST_PROMPT_CATEGORY = "lastPromptCategory",
   /** Key for rendering User Messages as Markdown */
-  ENABLE_USER_MSG_MARKDOWN = 'enableUserMsgMarkdown',
+  ENABLE_USER_MSG_MARKDOWN = "enableUserMsgMarkdown",
   /** Key for displaying analysis tool code input */
-  SHOW_ANALYSIS_CODE = 'showAnalysisCode',
+  SHOW_ANALYSIS_CODE = "showAnalysisCode",
   /** Last selected MCP values per conversation ID */
-  LAST_MCP_ = 'LAST_MCP_',
+  LAST_MCP_ = "LAST_MCP_",
   /** Last checked toggle for Code Interpreter API per conversation ID */
-  LAST_CODE_TOGGLE_ = 'LAST_CODE_TOGGLE_',
+  LAST_CODE_TOGGLE_ = "LAST_CODE_TOGGLE_",
   /** Last checked toggle for Web Search per conversation ID */
-  LAST_WEB_SEARCH_TOGGLE_ = 'LAST_WEB_SEARCH_TOGGLE_',
+  LAST_WEB_SEARCH_TOGGLE_ = "LAST_WEB_SEARCH_TOGGLE_",
   /** Last checked toggle for File Search per conversation ID */
-  LAST_FILE_SEARCH_TOGGLE_ = 'LAST_FILE_SEARCH_TOGGLE_',
+  LAST_FILE_SEARCH_TOGGLE_ = "LAST_FILE_SEARCH_TOGGLE_",
   /** Last checked toggle for Artifacts per conversation ID */
-  LAST_ARTIFACTS_TOGGLE_ = 'LAST_ARTIFACTS_TOGGLE_',
+  LAST_ARTIFACTS_TOGGLE_ = "LAST_ARTIFACTS_TOGGLE_",
+  /** Last checked toggle for Canvas per conversation ID */
+  LAST_CANVAS_TOGGLE_ = "LAST_CANVAS_TOGGLE_",
   /** Key for the last selected agent provider */
-  LAST_AGENT_PROVIDER = 'lastAgentProvider',
+  LAST_AGENT_PROVIDER = "lastAgentProvider",
   /** Key for the last selected agent model */
-  LAST_AGENT_MODEL = 'lastAgentModel',
+  LAST_AGENT_MODEL = "lastAgentModel",
   /** Pin state for MCP tools per conversation ID */
-  PIN_MCP_ = 'PIN_MCP_',
+  PIN_MCP_ = "PIN_MCP_",
   /** Pin state for Web Search per conversation ID */
-  PIN_WEB_SEARCH_ = 'PIN_WEB_SEARCH_',
+  PIN_WEB_SEARCH_ = "PIN_WEB_SEARCH_",
   /** Pin state for Code Interpreter per conversation ID */
-  PIN_CODE_INTERPRETER_ = 'PIN_CODE_INTERPRETER_',
+  PIN_CODE_INTERPRETER_ = "PIN_CODE_INTERPRETER_",
 }
 
 export enum ForkOptions {
   /** Key for direct path option */
-  DIRECT_PATH = 'directPath',
+  DIRECT_PATH = "directPath",
   /** Key for including branches */
-  INCLUDE_BRANCHES = 'includeBranches',
+  INCLUDE_BRANCHES = "includeBranches",
   /** Key for target level fork (default) */
-  TARGET_LEVEL = 'targetLevel',
+  TARGET_LEVEL = "targetLevel",
   /** Default option */
-  DEFAULT = 'default',
+  DEFAULT = "default",
 }
 
 /**
@@ -1685,30 +1724,30 @@ export enum CohereConstants {
   /**
    * Cohere API Endpoint, for special handling
    */
-  API_URL = 'https://api.cohere.ai/v1',
+  API_URL = "https://api.cohere.ai/v1",
   /**
    * Role for "USER" messages
    */
-  ROLE_USER = 'USER',
+  ROLE_USER = "USER",
   /**
    * Role for "SYSTEM" messages
    */
-  ROLE_SYSTEM = 'SYSTEM',
+  ROLE_SYSTEM = "SYSTEM",
   /**
    * Role for "CHATBOT" messages
    */
-  ROLE_CHATBOT = 'CHATBOT',
+  ROLE_CHATBOT = "CHATBOT",
   /**
    * Title message as required by Cohere
    */
-  TITLE_MESSAGE = 'TITLE:',
+  TITLE_MESSAGE = "TITLE:",
 }
 
 export enum SystemCategories {
-  ALL = 'sys__all__sys',
-  MY_PROMPTS = 'sys__my__prompts__sys',
-  NO_CATEGORY = 'sys__no__category__sys',
-  SHARED_PROMPTS = 'sys__shared__prompts__sys',
+  ALL = "sys__all__sys",
+  MY_PROMPTS = "sys__my__prompts__sys",
+  NO_CATEGORY = "sys__no__category__sys",
+  SHARED_PROMPTS = "sys__shared__prompts__sys",
 }
 
 export const providerEndpointMap = {
@@ -1725,4 +1764,5 @@ export const specialVariables = {
   current_datetime: true,
 };
 
-export type TSpecialVarLabel = `com_ui_special_var_${keyof typeof specialVariables}`;
+export type TSpecialVarLabel =
+  `com_ui_special_var_${keyof typeof specialVariables}`;

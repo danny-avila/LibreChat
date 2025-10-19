@@ -56,7 +56,7 @@ const initializeAgent = async ({
     !allowedProviders.has(agent.provider)
   ) {
     throw new Error(
-      `{ "type": "${ErrorTypes.INVALID_AGENT_PROVIDER}", "info": "${agent.provider}" }`,
+      `{ 'type': '${ErrorTypes.INVALID_AGENT_PROVIDER}', 'info': '${agent.provider}' }`,
     );
   }
   let currentFiles;
@@ -114,7 +114,10 @@ const initializeAgent = async ({
   })) ?? {};
 
   agent.endpoint = provider;
-  const { getOptions, overrideProvider } = getProviderConfig({ provider, appConfig });
+  const { getOptions, overrideProvider } = getProviderConfig({
+    provider,
+    appConfig,
+  });
   if (overrideProvider !== agent.provider) {
     agent.provider = overrideProvider;
   }
@@ -164,7 +167,7 @@ const initializeAgent = async ({
     options.tools?.length &&
     structuredTools?.length
   ) {
-    throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+    throw new Error(`{ 'type': '${ErrorTypes.GOOGLE_TOOL_CONFLICT}'}`);
   } else if (
     (agent.provider === Providers.OPENAI ||
       agent.provider === Providers.AZURE ||
@@ -193,6 +196,21 @@ const initializeAgent = async ({
       endpoint: agent.provider,
       artifacts: agent.artifacts,
     });
+  }
+
+  if (typeof agent.canvas === 'string' && agent.canvas !== '') {
+    const generateCanvasPrompt = require('~/app/clients/prompts/canvas');
+    const canvasPrompt = generateCanvasPrompt({
+      endpoint: agent.provider,
+      canvas: agent.canvas,
+      model: agent.model,
+    });
+    // Append canvas prompt to existing instructions
+    if (agent.additional_instructions) {
+      agent.additional_instructions += `\n${canvasPrompt}`;
+    } else {
+      agent.additional_instructions = canvasPrompt;
+    }
   }
 
   return {

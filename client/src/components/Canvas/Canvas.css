@@ -1,0 +1,58 @@
+/* Canvas ProseMirror Container Styles */
+
+/* Main container for Canvas ProseMirror component */
+.canvas-prosemirror-container {
+    position: relative;
+    height: 100%;
+    width: 100%;
+  }
+  
+  /* Remove all default padding and margins first */
+  .canvas-prosemirror-container .prose,
+  .canvas-prosemirror-container .prose *,
+  .canvas-prosemirror-container .ProseMirror {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  /* Add balanced padding for proper content spacing */
+  .canvas-prosemirror-container .prosemirror-editor {
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+  }
+  
+  /* List styling to restore bullet points and numbering */
+  .canvas-prosemirror-container ul {
+    list-style-type: disc !important;
+    padding-left: 1.5rem !important;
+    margin: 1rem 0 !important;
+  }
+  
+  .canvas-prosemirror-container ol {
+    list-style-type: decimal !important;
+    padding-left: 1.5rem !important;
+    margin: 1rem 0 !important;
+  }
+  
+  .canvas-prosemirror-container li {
+    margin: 0.5rem 0 !important;
+  }
+  
+  /* Dark mode styles for headings and body text */
+  @media (prefers-color-scheme: dark) {
+    .heading-1,
+    .heading-2,
+    .heading-3,
+    .body-text {
+      color: #ffffff !important;
+    }
+  }
+  
+  /* Also support class-based dark mode */
+  .dark .heading-1,
+  .dark .heading-2,
+  .dark .heading-3,
+  .dark .body-text {
+    color: #ffffff !important;
+  }
+  

@@ -1,4 +1,5 @@
 import * as artifacts from './artifacts';
+import * as canvas from './canvas';
 import families from './families';
 import endpoints from './endpoints';
 import user from './user';
@@ -17,6 +18,7 @@ export * from './mcp';
 
 export default {
   ...artifacts,
+  ...canvas,
   ...families,
   ...endpoints,
   ...user,

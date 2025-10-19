@@ -232,6 +232,7 @@ export const defaultAgentFormValues = {
   provider: {},
   projectIds: [],
   artifacts: '',
+  canvas: '',
   /** @deprecated Use ACL permissions instead */
   isCollaborative: false,
   recursion_limit: undefined,

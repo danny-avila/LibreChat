@@ -1,8 +1,8 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { useToastContext } from '@librechat/client';
-import { EModelEndpoint } from 'librechat-data-provider';
-import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
+import React, { useState, useMemo, useCallback } from "react";
+import { useToastContext } from "@librechat/client";
+import { EModelEndpoint } from "librechat-data-provider";
+import { Controller, useWatch, useFormContext } from "react-hook-form";
+import type { AgentForm, AgentPanelProps, IconComponentTypes } from "~/common";
 import {
   removeFocusOutlines,
   processAgentOption,
@@ -11,34 +11,39 @@ import {
   validateEmail,
   getIconKey,
   cn,
-} from '~/utils';
-import { ToolSelectDialog, MCPToolSelectDialog } from '~/components/Tools';
-import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
-import { useFileMapContext, useAgentPanelContext } from '~/Providers';
-import AgentCategorySelector from './AgentCategorySelector';
-import Action from '~/components/SidePanel/Builder/Action';
-import { useLocalize, useVisibleTools } from '~/hooks';
-import { Panel, isEphemeralAgent } from '~/common';
-import { useGetAgentFiles } from '~/data-provider';
-import { icons } from '~/hooks/Endpoint/Icons';
-import Instructions from './Instructions';
-import AgentAvatar from './AgentAvatar';
-import FileContext from './FileContext';
-import SearchForm from './Search/Form';
-import FileSearch from './FileSearch';
-import Artifacts from './Artifacts';
-import AgentTool from './AgentTool';
-import CodeForm from './Code/Form';
-import MCPTools from './MCPTools';
 
-const labelClass = 'mb-2 text-token-text-primary block font-medium';
+} from "~/utils";
+import { ToolSelectDialog, MCPToolSelectDialog } from "~/components/Tools";
+import useAgentCapabilities from "~/hooks/Agents/useAgentCapabilities";
+import { isEphemeralAgent } from "~/common";
+import { useFileMapContext, useAgentPanelContext } from "~/Providers";
+import AgentCategorySelector from "./AgentCategorySelector";
+import Action from "~/components/SidePanel/Builder/Action";
+import { useLocalize, useVisibleTools } from "~/hooks";
+import { useGetAgentFiles } from "~/data-provider";
+import { icons } from "~/hooks/Endpoint/Icons";
+import Instructions from "./Instructions";
+import AgentAvatar from "./AgentAvatar";
+import FileContext from "./FileContext";
+import SearchForm from "./Search/Form";
+import FileSearch from "./FileSearch";
+import Artifacts from "./Artifacts";
+import Canvas from "./Canvas";
+import AgentTool from "./AgentTool";
+import CodeForm from "./Code/Form";
+import MCPTools from "./MCPTools";
+import { Panel } from "~/common";
+
+const labelClass = "mb-2 text-token-text-primary block font-medium";
 const inputClass = cn(
   defaultTextProps,
-  'flex w-full px-3 py-2 border-border-light bg-surface-secondary focus-visible:ring-2 focus-visible:ring-ring-primary',
+  "flex w-full px-3 py-2 border-border-light bg-surface-secondary focus-visible:ring-2 focus-visible:ring-ring-primary",
   removeFocusOutlines,
 );
 
-export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'createMutation'>) {
+export default function AgentConfig({
+  createMutation,
+}: Pick<AgentPanelProps, "createMutation">) {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
@@ -60,11 +65,11 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
     control,
     formState: { errors },
   } = methods;
-  const provider = useWatch({ control, name: 'provider' });
-  const model = useWatch({ control, name: 'model' });
-  const agent = useWatch({ control, name: 'agent' });
-  const tools = useWatch({ control, name: 'tools' });
-  const agent_id = useWatch({ control, name: 'id' });
+  const provider = useWatch({ control, name: "provider" });
+  const model = useWatch({ control, name: "model" });
+  const agent = useWatch({ control, name: "agent" });
+  const tools = useWatch({ control, name: "tools" });
+  const agent_id = useWatch({ control, name: "id" });
 
   const { data: agentFiles = [] } = useGetAgentFiles(agent_id);
 
@@ -84,12 +89,13 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
     contextEnabled,
     actionsEnabled,
     artifactsEnabled,
+    canvasEnabled,
     webSearchEnabled,
     fileSearchEnabled,
   } = useAgentCapabilities(agentsConfig?.capabilities);
 
   const context_files = useMemo(() => {
-    if (typeof agent === 'string') {
+    if (typeof agent === "string") {
       return [];
     }
 
@@ -109,7 +115,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   }, [agent, agent_id, mergedFileMap]);
 
   const knowledge_files = useMemo(() => {
-    if (typeof agent === 'string') {
+    if (typeof agent === "string") {
       return [];
     }
 
@@ -129,7 +135,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   }, [agent, agent_id, mergedFileMap]);
 
   const code_files = useMemo(() => {
-    if (typeof agent === 'string') {
+    if (typeof agent === "string") {
       return [];
     }
 
@@ -151,23 +157,32 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   const handleAddActions = useCallback(() => {
     if (isEphemeralAgent(agent_id)) {
       showToast({
-        message: localize('com_assistants_actions_disabled'),
-        status: 'warning',
+        message: localize("com_assistants_actions_disabled"),
+        status: "warning",
       });
       return;
     }
     setActivePanel(Panel.actions);
   }, [agent_id, setActivePanel, showToast, localize]);
 
-  const providerValue = typeof provider === 'string' ? provider : provider?.value;
+  const providerValue =
+    typeof provider === "string" ? provider : provider?.value;
   let Icon: IconComponentTypes | null | undefined;
   let endpointType: EModelEndpoint | undefined;
   let endpointIconURL: string | undefined;
   let iconKey: string | undefined;
 
   if (providerValue !== undefined) {
-    endpointType = getEndpointField(endpointsConfig, providerValue as string, 'type');
-    endpointIconURL = getEndpointField(endpointsConfig, providerValue as string, 'iconURL');
+    endpointType = getEndpointField(
+      endpointsConfig,
+      providerValue as string,
+      "type",
+    );
+    endpointIconURL = getEndpointField(
+      endpointsConfig,
+      providerValue as string,
+      "iconURL",
+    );
     iconKey = getIconKey({
       endpoint: providerValue as string,
       endpointsConfig,
@@ -177,7 +192,12 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
     Icon = icons[iconKey];
   }
 
-  const { toolIds, mcpServerNames } = useVisibleTools(tools, regularTools, mcpServersMap);
+
+  const { toolIds, mcpServerNames } = useVisibleTools(
+    tools,
+    regularTools,
+    mcpServersMap,
+  );
 
   return (
     <>
@@ -187,35 +207,35 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           <AgentAvatar
             agent_id={agent_id}
             createMutation={createMutation}
-            avatar={agent?.['avatar'] ?? null}
+            avatar={agent?.["avatar"] ?? null}
           />
           <label className={labelClass} htmlFor="name">
-            {localize('com_ui_name')}
+            {localize("com_ui_name")}
             <span className="text-red-500">*</span>
           </label>
           <Controller
             name="name"
-            rules={{ required: localize('com_ui_agent_name_is_required') }}
+            rules={{ required: localize("com_ui_agent_name_is_required") }}
             control={control}
             render={({ field }) => (
               <>
                 <input
                   {...field}
-                  value={field.value ?? ''}
+                  value={field.value ?? ""}
                   maxLength={256}
                   className={inputClass}
                   id="name"
                   type="text"
-                  placeholder={localize('com_agents_name_placeholder')}
+                  placeholder={localize("com_agents_name_placeholder")}
                   aria-label="Agent name"
                 />
                 <div
                   className={cn(
-                    'mt-1 w-56 text-sm text-red-500',
-                    errors.name ? 'visible h-auto' : 'invisible h-0',
+                    "mt-1 w-56 text-sm text-red-500",
+                    errors.name ? "visible h-auto" : "invisible h-0",
                   )}
                 >
-                  {errors.name ? errors.name.message : ' '}
+                  {errors.name ? errors.name.message : " "}
                 </div>
               </>
             )}
@@ -224,7 +244,10 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             name="id"
             control={control}
             render={({ field }) => (
-              <p className="h-3 text-xs italic text-text-secondary" aria-live="polite">
+              <p
+                className="h-3 text-xs italic text-text-secondary"
+                aria-live="polite"
+              >
                 {field.value}
               </p>
             )}
@@ -233,7 +256,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         {/* Description */}
         <div className="mb-4">
           <label className={labelClass} htmlFor="description">
-            {localize('com_ui_description')}
+            {localize("com_ui_description")}
           </label>
           <Controller
             name="description"
@@ -241,12 +264,12 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             render={({ field }) => (
               <input
                 {...field}
-                value={field.value ?? ''}
+                value={field.value ?? ""}
                 maxLength={512}
                 className={inputClass}
                 id="description"
                 type="text"
-                placeholder={localize('com_agents_description_placeholder')}
+                placeholder={localize("com_agents_description_placeholder")}
                 aria-label="Agent description"
               />
             )}
@@ -255,7 +278,8 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         {/* Category */}
         <div className="mb-4">
           <label className={labelClass} htmlFor="category-selector">
-            {localize('com_ui_category')} <span className="text-red-500">*</span>
+            {localize("com_ui_category")}{" "}
+            <span className="text-red-500">*</span>
           </label>
           <AgentCategorySelector className="w-full" />
         </div>
@@ -264,7 +288,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         {/* Model and Provider */}
         <div className="mb-4">
           <label className={labelClass} htmlFor="provider">
-            {localize('com_ui_model')} <span className="text-red-500">*</span>
+            {localize("com_ui_model")} <span className="text-red-500">*</span>
           </label>
           <button
             type="button"
@@ -284,29 +308,40 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                   />
                 </div>
               )}
-              <span>{model != null && model ? model : localize('com_ui_select_model')}</span>
+              <span>
+                {model != null && model
+                  ? model
+                  : localize("com_ui_select_model")}
+              </span>
             </div>
           </button>
         </div>
         {(codeEnabled ||
           fileSearchEnabled ||
           artifactsEnabled ||
+          canvasEnabled ||
           contextEnabled ||
           webSearchEnabled) && (
           <div className="mb-4 flex w-full flex-col items-start gap-3">
             <label className="text-token-text-primary block font-medium">
-              {localize('com_assistants_capabilities')}
+              {localize("com_assistants_capabilities")}
             </label>
             {/* Code Execution */}
             {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
             {/* Web Search */}
             {webSearchEnabled && <SearchForm />}
             {/* File Context */}
-            {contextEnabled && <FileContext agent_id={agent_id} files={context_files} />}
+            {contextEnabled && (
+              <FileContext agent_id={agent_id} files={context_files} />
+            )}
             {/* Artifacts */}
             {artifactsEnabled && <Artifacts />}
+            {/* Canvas */}
+            {canvasEnabled && <Canvas />}
             {/* File Search */}
-            {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+            {fileSearchEnabled && (
+              <FileSearch agent_id={agent_id} files={knowledge_files} />
+            )}
           </div>
         )}
         {/* MCP Section */}
@@ -320,9 +355,9 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         {/* Agent Tools & Actions */}
         <div className="mb-4">
           <label className={labelClass}>
-            {`${toolsEnabled === true ? localize('com_ui_tools') : ''}
-              ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
-              ${actionsEnabled === true ? localize('com_assistants_actions') : ''}`}
+            {`${toolsEnabled === true ? localize("com_ui_tools") : ""}
+              ${toolsEnabled === true && actionsEnabled === true ? " + " : ""}
+              ${actionsEnabled === true ? localize("com_assistants_actions") : ""}`}
           </label>
           <div>
             <div className="mb-1">
@@ -363,7 +398,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                   aria-haspopup="dialog"
                 >
                   <div className="flex w-full items-center justify-center gap-2">
-                    {localize('com_assistants_add_tools')}
+                    {localize("com_assistants_add_tools")}
                   </div>
                 </button>
               )}
@@ -376,7 +411,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                   aria-haspopup="dialog"
                 >
                   <div className="flex w-full items-center justify-center gap-2">
-                    {localize('com_assistants_add_actions')}
+                    {localize("com_assistants_add_actions")}
                   </div>
                 </button>
               )}
@@ -388,7 +423,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           <div className="mb-1.5 flex items-center gap-2">
             <span>
               <label className="text-token-text-primary block font-medium">
-                {localize('com_ui_support_contact')}
+                {localize("com_ui_support_contact")}
               </label>
             </span>
           </div>
@@ -399,7 +434,9 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                 className="mb-1 flex items-center justify-between"
                 htmlFor="support-contact-name"
               >
-                <span className="text-sm">{localize('com_ui_support_contact_name')}</span>
+                <span className="text-sm">
+                  {localize("com_ui_support_contact_name")}
+                </span>
               </label>
               <Controller
                 name="support_contact.name"
@@ -407,18 +444,26 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                 rules={{
                   minLength: {
                     value: 3,
-                    message: localize('com_ui_support_contact_name_min_length', { minLength: 3 }),
+                    message: localize(
+                      "com_ui_support_contact_name_min_length",
+                      { minLength: 3 },
+                    ),
                   },
                 }}
                 render={({ field, fieldState: { error } }) => (
                   <>
                     <input
                       {...field}
-                      value={field.value ?? ''}
-                      className={cn(inputClass, error ? 'border-2 border-red-500' : '')}
+                      value={field.value ?? ""}
+                      className={cn(
+                        inputClass,
+                        error ? "border-2 border-red-500" : "",
+                      )}
                       id="support-contact-name"
                       type="text"
-                      placeholder={localize('com_ui_support_contact_name_placeholder')}
+                      placeholder={localize(
+                        "com_ui_support_contact_name_placeholder",
+                      )}
                       aria-label="Support contact name"
                     />
                     {error && (
@@ -436,24 +481,34 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                 className="mb-1 flex items-center justify-between"
                 htmlFor="support-contact-email"
               >
-                <span className="text-sm">{localize('com_ui_support_contact_email')}</span>
+                <span className="text-sm">
+                  {localize("com_ui_support_contact_email")}
+                </span>
               </label>
               <Controller
                 name="support_contact.email"
                 control={control}
                 rules={{
                   validate: (value) =>
-                    validateEmail(value ?? '', localize('com_ui_support_contact_email_invalid')),
+                    validateEmail(
+                      value ?? "",
+                      localize("com_ui_support_contact_email_invalid"),
+                    ),
                 }}
                 render={({ field, fieldState: { error } }) => (
                   <>
                     <input
                       {...field}
-                      value={field.value ?? ''}
-                      className={cn(inputClass, error ? 'border-2 border-red-500' : '')}
+                      value={field.value ?? ""}
+                      className={cn(
+                        inputClass,
+                        error ? "border-2 border-red-500" : "",
+                      )}
                       id="support-contact-email"
                       type="email"
-                      placeholder={localize('com_ui_support_contact_email_placeholder')}
+                      placeholder={localize(
+                        "com_ui_support_contact_email_placeholder",
+                      )}
                       aria-label="Support contact email"
                     />
                     {error && (
