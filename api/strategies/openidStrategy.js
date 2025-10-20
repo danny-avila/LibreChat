@@ -356,6 +356,11 @@ async function setupOpenId() {
             ...(await getUserInfo(openidConfig, tokenset.access_token, claims.sub)),
           };
 
+          // some openid providers don't return email by default, so use the preferred_username claim as fallback
+          if (isEnabled(process.env.OPENID_OPTIONAL_EMAIL)) {
+            userinfo.email = userinfo.email || userinfo.preferred_username;
+          }
+
           const appConfig = await getAppConfig();
           if (!isEmailDomainAllowed(userinfo.email, appConfig?.registration?.allowedDomains)) {
             logger.error(
