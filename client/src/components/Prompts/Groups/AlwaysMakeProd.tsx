@@ -28,6 +28,7 @@ export default function AlwaysMakeProd({
         checked={alwaysMakeProd}
         onCheckedChange={handleCheckedChange}
         data-testid="alwaysMakeProd"
+        // TODO: i18n - needs to be localized
         aria-label="Always make prompt production"
       />
       <div>{localize('com_nav_always_make_prod')} </div>
