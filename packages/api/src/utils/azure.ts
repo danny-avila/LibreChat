@@ -1,5 +1,7 @@
 import { isEnabled } from './common';
 import type { AzureOptions, GenericClient } from '~/types';
+import { DefaultAzureCredential } from '@azure/identity';
+import { logger } from '@librechat/data-schemas';
 
 /**
  * Sanitizes the model name to be used in the URL by removing or replacing disallowed characters.
@@ -118,3 +120,43 @@ export function constructAzureURL({
 
   return finalURL;
 }
+
+/**
+ * Checks if Entra ID authentication should be used based on environment variables.
+ * @returns {boolean} True if Entra ID authentication should be used
+ */
+export const shouldUseEntraId = (): boolean => {
+  return process.env.AZURE_OPENAI_USE_ENTRA_ID === 'true';
+};
+
+/**
+ * Creates an Azure credential for Entra ID authentication.
+ * Uses DefaultAzureCredential which supports multiple authentication methods:
+ * - Managed Identity (when running in Azure)
+ * - Service Principal (when environment variables are set)
+ * - Azure CLI (for local development)
+ * - Visual Studio Code (for local development)
+ *
+ * @returns DefaultAzureCredential instance
+ */
+
+export const createEntraIdCredential = (): DefaultAzureCredential => {
+  return new DefaultAzureCredential();
+};
+
+/**
+ * Gets the access token for Entra ID authentication from azure/identity.
+ * @returns {Promise<AccessToken>} The access token
+ */
+export const getEntraIdAccessToken = async (): Promise<string> => {
+  try {
+    const credential = createEntraIdCredential();
+
+    const tokenResponse = await credential.getToken('https://cognitiveservices.azure.com/.default');
+
+    return tokenResponse.token;
+  } catch (error) {
+    logger.error('[ENTRA_ID_DEBUG] Failed to get Entra ID access token:', error);
+    throw error;
+  }
+};
