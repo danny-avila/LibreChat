@@ -116,11 +116,15 @@ const refreshController = async (req, res) => {
       const token = await setAuthTokens(userId, res, session);
 
       // trigger OAuth MCP server reconnection asynchronously (best effort)
-      void getOAuthReconnectionManager()
-        .reconnectServers(userId)
-        .catch((err) => {
-          logger.error('Error reconnecting OAuth MCP servers:', err);
-        });
+      try {
+        void getOAuthReconnectionManager()
+          .reconnectServers(userId)
+          .catch((err) => {
+            logger.error('[refreshController] Error reconnecting OAuth MCP servers:', err);
+          });
+      } catch (err) {
+        logger.warn(`[refreshController] Cannot attempt OAuth MCP servers reconnection:`, err);
+      }
 
       res.status(200).send({ token, user });
     } else if (req?.query?.retry) {
