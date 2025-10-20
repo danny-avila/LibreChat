@@ -53,6 +53,7 @@ const LabelController: React.FC<LabelControllerProps> = ({
             }
           }}
           value={field.value.toString()}
+          aria-label={label}
         />
       )}
     />

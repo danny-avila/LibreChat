@@ -53,7 +53,9 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <div className="flex justify-between">
               <Label htmlFor="temp-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_temperature')}{' '}
-                <small className="opacity-40">({localize('com_endpoint_default')}: 0)</small>
+                <small className="opacity-40">
+                  ({localize('com_endpoint_default_with_num', { 0: '0' })})
+                </small>
               </Label>
               <InputNumber
                 id="temp-int"
@@ -101,6 +103,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 onCheckedChange={onCheckedChangeAgent}
                 disabled={readonly}
                 className="ml-4 mt-2"
+                aria-label={localize('com_endpoint_plug_use_functions')}
               />
             </HoverCardTrigger>
             <OptionHover endpoint={conversation.endpoint ?? ''} type="func" side={ESide.Bottom} />
@@ -119,6 +122,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 onCheckedChange={onCheckedChangeSkip}
                 disabled={readonly}
                 className="ml-4 mt-2"
+                aria-label={localize('com_endpoint_plug_skip_completion')}
               />
             </HoverCardTrigger>
             <OptionHover endpoint={conversation.endpoint ?? ''} type="skip" side={ESide.Bottom} />
