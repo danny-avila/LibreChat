@@ -256,7 +256,7 @@ const openAIParams: Record<string, SettingDefinition> = {
     description: 'com_endpoint_openai_use_responses_api',
     descriptionCode: true,
     type: 'boolean',
-    default: true, // stripe
+    default: false,
     component: 'switch',
     optionType: 'model',
     showDefault: false,
@@ -275,7 +275,7 @@ const openAIParams: Record<string, SettingDefinition> = {
     showDefault: false,
     columnSpan: 2,
   },
-  reasoning_summary: {
+    reasoning_summary: {
     key: 'reasoning_summary',
     label: 'com_endpoint_reasoning_summary',
     labelCode: true,

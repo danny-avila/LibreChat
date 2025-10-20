@@ -114,9 +114,6 @@ export function getOpenAILLMConfig({
     modelOptions,
   ) as Partial<t.OAIClientOptions> & Partial<t.OpenAIParameters> & Partial<AzureOpenAIInput>;
 
-  // <stripe>
-  llmConfig.useResponsesApi = true;
-  // </stripe>
 
   if (frequency_penalty != null) {
     llmConfig.frequencyPenalty = frequency_penalty;
