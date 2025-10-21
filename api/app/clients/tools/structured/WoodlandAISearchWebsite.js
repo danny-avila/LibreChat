@@ -119,11 +119,18 @@ class WoodlandAISearchWebsite extends Tool {
       return ['title', 'content', 'tags', 'headings', 'images_alt', 'breadcrumb', 'site', 'page_type'];
     })();
 
-    this.semanticConfiguration = this._env(
+    const rawSemanticConfiguration = this._env(
       fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
-      process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION || 'sem1',
+      process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
     );
-    this.semanticEnabled = !!(this.semanticConfiguration && String(this.semanticConfiguration).toLowerCase() !== 'none');
+    const normalizedSemanticConfiguration = (() => {
+      if (rawSemanticConfiguration == null) return undefined;
+      const str = String(rawSemanticConfiguration).trim();
+      if (!str || str.toLowerCase() === 'none') return undefined;
+      return str;
+    })();
+    this.semanticConfiguration = normalizedSemanticConfiguration;
+    this.semanticEnabled = !!this.semanticConfiguration;
     this.queryLanguage = this._env(
       fields.AZURE_AI_SEARCH_QUERY_LANGUAGE,
       process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE || 'en-us',
@@ -188,7 +195,7 @@ class WoodlandAISearchWebsite extends Tool {
       index: this.indexName,
       select: this.select,
       searchFields: this.searchFields,
-      semanticConfiguration: this.semanticConfiguration,
+      semanticConfiguration: this.semanticConfiguration || null,
       semanticEnabled: this.semanticEnabled,
       queryLanguage: this.queryLanguage,
       scoringProfile: this.scoringProfile,
@@ -250,7 +257,7 @@ class WoodlandAISearchWebsite extends Tool {
         logger.warn('[woodland-ai-search-website] Search failed', { attempt, msg });
 
         // If the service complains about semantic configuration, fall back to simple search without semantic options
-        if (/semantic configurations? defined|parameter name:\s*semanticconfiguration|must have valid semantic configurations/i.test(msg)) {
+        if (/semantic configurations? defined|parameter name:\s*semanticconfiguration|must have valid semantic configurations|semanticConfiguration(?:'|\\\")? must not be empty/i.test(msg)) {
           const fallback = { ...opts };
           fallback.queryType = 'simple';
           delete fallback.semanticSearchOptions;
@@ -382,10 +389,16 @@ class WoodlandAISearchWebsite extends Tool {
         filter
       };
 
-      if (this.semanticEnabled) {
+      const semanticConfigName =
+        typeof this.semanticConfiguration === 'string'
+          ? this.semanticConfiguration.trim()
+          : '';
+      const allowSemantic = !!semanticConfigName;
+
+      if (allowSemantic) {
         options.queryType = 'semantic';
         options.semanticSearchOptions = {
-          configurationName: this.semanticConfiguration,
+          configurationName: semanticConfigName,
           queryLanguage: perCallQueryLanguage || this.queryLanguage,
         };
         if (answersMode === 'extractive') {
@@ -397,7 +410,7 @@ class WoodlandAISearchWebsite extends Tool {
         options.speller = perCallSpeller || 'lexicon';
       } else {
         options.queryType = 'simple';
-        // Do NOT attach semantic properties when semantic is disabled
+        options.speller = perCallSpeller || 'lexicon';
       }
 
       if (!this.returnAllFields) {
@@ -407,14 +420,6 @@ class WoodlandAISearchWebsite extends Tool {
       }
       if (this.scoringProfile) options.scoringProfile = this.scoringProfile;
       if (perCallSearchFields) options.searchFields = perCallSearchFields;
-
-      if (!this.semanticEnabled) {
-        delete options.semanticSearchOptions;
-        delete options.answers;
-        delete options.captions;
-        delete options.speller;
-        options.queryType = 'simple';
-      }
 
       // Vector / hybrid search
       if (this.vectorFields.length > 0) {

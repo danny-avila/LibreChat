@@ -220,10 +220,18 @@ class WoodlandAISearchTractor extends Tool {
       // Keep to known searchable fields in the Tractors index
       return ['title', 'content', 'mda_instructions', 'hitch_instructions'];
     })();
-    this.semanticConfiguration = this._env(
+    const rawSemanticConfiguration = this._env(
       fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
-      process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION || 'sem1',
+      process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
     );
+    const normalizedSemanticConfiguration = (() => {
+      if (rawSemanticConfiguration == null) return undefined;
+      const str = String(rawSemanticConfiguration).trim();
+      if (!str || str.toLowerCase() === 'none') return undefined;
+      return str;
+    })();
+    this.semanticConfiguration = normalizedSemanticConfiguration;
+    this.enableSemantic = !!this.semanticConfiguration;
     this.queryLanguage = this._env(
       fields.AZURE_AI_SEARCH_QUERY_LANGUAGE,
       process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE || 'en-us',
@@ -269,7 +277,8 @@ class WoodlandAISearchTractor extends Tool {
       index: this.indexName,
       select: this.select,
       searchFields: this.searchFields,
-      semanticConfiguration: this.semanticConfiguration,
+      semanticConfiguration: this.semanticConfiguration || null,
+      enableSemantic: this.enableSemantic,
       queryLanguage: this.queryLanguage,
       scoringProfile: this.scoringProfile,
       defaultAnswerMode: this.defaultAnswerMode,
@@ -510,6 +519,17 @@ class WoodlandAISearchTractor extends Tool {
         const sanitized = { ...opts };
         let changed = false;
 
+        if (/semantic configuration/i.test(msg) || /semanticConfiguration(?:'|\\\")? must not be empty/i.test(msg)) {
+          if (sanitized.semanticSearchOptions) delete sanitized.semanticSearchOptions;
+          sanitized.queryType = 'simple';
+          delete sanitized.answers;
+          delete sanitized.captions;
+          changed = true;
+          logger.info(
+            '[woodland-ai-search-tractor] Semantic config missing or empty on index — falling back to simple query',
+          );
+        }
+
         // Remove orderBy for semantic queries (Azure restriction)
         if (/orderby/i.test(msg) && String(sanitized.queryType).toLowerCase() === 'semantic') {
           if (sanitized.orderBy) {
@@ -718,20 +738,30 @@ class WoodlandAISearchTractor extends Tool {
       })();
 
       const baseOptions = {
-        queryType: 'semantic',
         searchMode: inferredMode,
         top: finalTop,
-        semanticSearchOptions: {
-          configurationName: this.semanticConfiguration,
-          queryLanguage: this.queryLanguage,
-        },
         speller: 'lexicon',
         select: this.returnAllFields ? undefined : this.select,
       };
-      if (this.defaultAnswerMode === 'extractive') {
+      const semanticConfigName =
+        typeof this.semanticConfiguration === 'string'
+          ? this.semanticConfiguration.trim()
+          : '';
+      const allowSemantic = !!semanticConfigName;
+
+      if (allowSemantic) {
+        baseOptions.queryType = 'semantic';
+        baseOptions.semanticSearchOptions = {
+          configurationName: semanticConfigName,
+          queryLanguage: this.queryLanguage,
+        };
+      } else {
+        baseOptions.queryType = 'simple';
+      }
+      if (allowSemantic && this.defaultAnswerMode === 'extractive') {
         baseOptions.answers = 'extractive';
       }
-      if (this.defaultCaptionMode === 'extractive') {
+      if (allowSemantic && this.defaultCaptionMode === 'extractive') {
         baseOptions.captions = 'extractive';
       }
       if (this.scoringProfile) baseOptions.scoringProfile = this.scoringProfile;

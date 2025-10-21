@@ -184,10 +184,18 @@ class WoodlandAISearchCatalog extends Tool {
       ];
     })();
     this.searchFields = this._sanitizeFieldList(this.searchFields, 'searchFields-default');
-    this.semanticConfiguration = this._env(
+    const rawSemanticConfiguration = this._env(
       fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
-      process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION || 'sem1',
+      process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
     );
+    const normalizedSemanticConfiguration = (() => {
+      if (rawSemanticConfiguration == null) return undefined;
+      const str = String(rawSemanticConfiguration).trim();
+      if (!str || str.toLowerCase() === 'none') return undefined;
+      return str;
+    })();
+    this.semanticConfiguration = normalizedSemanticConfiguration;
+    this.enableSemantic = !!this.semanticConfiguration;
     this.queryLanguage = this._env(
       fields.AZURE_AI_SEARCH_QUERY_LANGUAGE,
       process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE || 'en-us',
@@ -259,7 +267,8 @@ class WoodlandAISearchCatalog extends Tool {
       index: this.indexName,
       select: this.select,
       searchFields: this.searchFields,
-      semanticConfiguration: this.semanticConfiguration,
+      semanticConfiguration: this.semanticConfiguration || null,
+      enableSemantic: this.enableSemantic,
       queryLanguage: this.queryLanguage,
       scoringProfile: this.scoringProfile,
       vectorFields: this.vectorFields,
@@ -358,6 +367,17 @@ class WoodlandAISearchCatalog extends Tool {
         const sanitized = { ...opts };
         let changed = false;
 
+        if (/semantic configuration/i.test(msg) || /semanticConfiguration(?:'|\\\")? must not be empty/i.test(msg)) {
+          if (sanitized.semanticSearchOptions) delete sanitized.semanticSearchOptions;
+          sanitized.queryType = 'simple';
+          delete sanitized.answers;
+          delete sanitized.captions;
+          changed = true;
+          logger.info(
+            '[woodland-ai-search-catalog] Semantic config missing or empty on index — falling back to simple query',
+          );
+        }
+
         if (/orderby/i.test(msg) && String(sanitized.queryType).toLowerCase() === 'semantic') {
           if (sanitized.orderBy) {
             delete sanitized.orderBy;
@@ -448,16 +468,28 @@ class WoodlandAISearchCatalog extends Tool {
       })();
 
       const options = {
-        queryType: 'semantic',
         searchMode: inferredMode,
         top: finalTop,
         filter,
-        semanticSearchOptions: {
-          configurationName: this.semanticConfiguration,
-          queryLanguage: perCallQueryLanguage || this.queryLanguage,
-        },
-        speller: perCallSpeller || 'lexicon',
       };
+
+      const semanticConfigName =
+        typeof this.semanticConfiguration === 'string'
+          ? this.semanticConfiguration.trim()
+          : '';
+      const allowSemantic = !!semanticConfigName;
+
+      if (allowSemantic) {
+        options.queryType = 'semantic';
+        options.semanticSearchOptions = {
+          configurationName: semanticConfigName,
+          queryLanguage: perCallQueryLanguage || this.queryLanguage,
+        };
+        options.speller = perCallSpeller || 'lexicon';
+      } else {
+        options.queryType = 'simple';
+        options.speller = perCallSpeller || 'lexicon';
+      }
 
       const answersMode =
         perCallAnswers === 'extractive' || perCallAnswers === 'none'
@@ -468,11 +500,11 @@ class WoodlandAISearchCatalog extends Tool {
           ? perCallCaptions
           : this.defaultCaptionMode;
 
-      if (answersMode === 'extractive') {
+      if (allowSemantic && answersMode === 'extractive') {
         options.answers = 'extractive';
       }
 
-      if (captionsMode === 'extractive') {
+      if (allowSemantic && captionsMode === 'extractive') {
         options.captions = 'extractive';
       }
 

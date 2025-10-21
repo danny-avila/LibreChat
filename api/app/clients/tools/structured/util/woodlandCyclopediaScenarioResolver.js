@@ -19,6 +19,22 @@ const STEP_PATTERNS = [
 const cache = new Map();
 let client;
 
+const sanitizeSemanticConfig = (value) => {
+  if (value == null) return undefined;
+  const str = String(value).trim();
+  if (!str || str.toLowerCase() === 'none') return undefined;
+  return str;
+};
+
+const semanticConfiguration = sanitizeSemanticConfig(process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION);
+const queryLanguage = (() => {
+  const raw = process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE;
+  if (typeof raw === 'string' && raw.trim()) {
+    return raw.trim();
+  }
+  return 'en-us';
+})();
+
 const toScenarioKey = (scenario) => String(scenario || '').trim().toLowerCase();
 
 const resetRegex = (regex) => {
@@ -113,12 +129,24 @@ const searchScenario = async (scenario) => {
 
   for (const query of queries) {
     try {
-      const iterator = searchClient.search(query, {
+      const options = {
         top: 3,
-        queryType: 'semantic',
         searchMode: 'any',
         searchFields: ['title', 'content', 'tags', 'headings'],
-      });
+      };
+
+      if (semanticConfiguration) {
+        options.queryType = 'semantic';
+        options.semanticSearchOptions = {
+          configurationName: semanticConfiguration,
+          queryLanguage,
+        };
+        options.speller = 'lexicon';
+      } else {
+        options.queryType = 'simple';
+      }
+
+      const iterator = searchClient.search(query, options);
 
       for await (const result of iterator.results) {
         const doc = result?.document;

@@ -150,11 +150,18 @@ class WoodlandAISearchCyclopedia extends Tool {
       if (v) return String(v).split(',').map((s) => s.trim()).filter(Boolean);
       return ['title', 'content', 'tags', 'breadcrumb', 'headings', 'images_alt', 'site', 'page_type'];
     })();
-    // If no semantic config is provided, leave it undefined to allow simple query fallback
-    this.semanticConfiguration = this._env(
+    // If no semantic config is provided, skip semantic search to avoid Azure errors
+    const rawSemanticConfiguration = this._env(
       fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
-      process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION
+      process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
     );
+    const normalizedSemanticConfiguration = (() => {
+      if (rawSemanticConfiguration == null) return undefined;
+      const str = String(rawSemanticConfiguration).trim();
+      if (!str || str.toLowerCase() === 'none') return undefined;
+      return str;
+    })();
+    this.semanticConfiguration = normalizedSemanticConfiguration;
     this.enableSemantic = !!this.semanticConfiguration;
     this.queryLanguage = this._env(
       fields.AZURE_AI_SEARCH_QUERY_LANGUAGE,
@@ -375,10 +382,16 @@ class WoodlandAISearchCyclopedia extends Tool {
         filter
       };
 
-      if (this.enableSemantic) {
+      const semanticConfigName =
+        typeof this.semanticConfiguration === 'string'
+          ? this.semanticConfiguration.trim()
+          : '';
+      const allowSemantic = !!semanticConfigName;
+
+      if (allowSemantic) {
         options.queryType = 'semantic';
         options.semanticSearchOptions = {
-          configurationName: this.semanticConfiguration,
+          configurationName: semanticConfigName,
           queryLanguage: perCallQueryLanguage || this.queryLanguage,
         };
         if (answersMode === 'extractive') {

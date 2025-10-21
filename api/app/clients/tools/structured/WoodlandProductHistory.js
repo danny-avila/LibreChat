@@ -39,10 +39,18 @@ class WoodlandProductHistory extends Tool {
 
     this.apiVersion = fields.AZURE_AI_SEARCH_API_VERSION || process.env.AZURE_AI_SEARCH_API_VERSION || WoodlandProductHistory.DEFAULT_API_VERSION;
 
-    const semanticConfiguration = fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION || process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION;
-    const queryLanguage = fields.AZURE_AI_SEARCH_QUERY_LANGUAGE || process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE;
-    this.semanticConfiguration = typeof semanticConfiguration === 'string' ? semanticConfiguration.trim() : semanticConfiguration;
-    this.queryLanguage = typeof queryLanguage === 'string' ? queryLanguage.trim() : queryLanguage;
+    const rawSemanticConfiguration =
+      fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION || process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION;
+    const semanticConfiguration = (() => {
+      if (rawSemanticConfiguration == null) return undefined;
+      const str = String(rawSemanticConfiguration).trim();
+      if (!str || str.toLowerCase() === 'none') return undefined;
+      return str;
+    })();
+    this.semanticConfiguration = semanticConfiguration;
+    const rawQueryLanguage =
+      fields.AZURE_AI_SEARCH_QUERY_LANGUAGE || process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE;
+    this.queryLanguage = typeof rawQueryLanguage === 'string' ? rawQueryLanguage.trim() : rawQueryLanguage;
 
     this.queryType = this._resolveQueryType(fields);
 
@@ -82,7 +90,7 @@ class WoodlandProductHistory extends Tool {
       searchFields: this.searchFields,
       vectorFields: this.vectorFields,
       vectorK: this.vectorK,
-      semanticConfiguration: this.semanticConfiguration,
+      semanticConfiguration: this.semanticConfiguration || null,
       queryLanguage: this.queryLanguage,
     });
   }
@@ -245,7 +253,7 @@ class WoodlandProductHistory extends Tool {
   async _performSearch(queryString, options) {
     const opts = { ...options };
 
-    if (this.queryType === 'semantic') {
+    if (this.queryType === 'semantic' && this._hasSemanticConfig()) {
       opts.semanticSearchOptions = {
         configurationName: this.semanticConfiguration,
         queryLanguage: this.queryLanguage,
