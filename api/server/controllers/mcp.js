@@ -32,7 +32,7 @@ const getMCPTools = async (req, res) => {
     const mcpServers = {};
 
     const cachePromises = configuredServers.map((serverName) =>
-      getMCPServerTools(serverName).then((tools) => ({ serverName, tools })),
+      getMCPServerTools(userId, serverName).then((tools) => ({ serverName, tools })),
     );
     const cacheResults = await Promise.all(cachePromises);
 
@@ -52,7 +52,7 @@ const getMCPTools = async (req, res) => {
 
       if (Object.keys(serverTools).length > 0) {
         // Cache asynchronously without blocking
-        cacheMCPServerTools({ serverName, serverTools }).catch((err) =>
+        cacheMCPServerTools({ userId, serverName, serverTools }).catch((err) =>
           logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
         );
       }
