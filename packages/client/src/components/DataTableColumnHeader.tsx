@@ -7,6 +7,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './DropdownMenu';
+import { useLocalize } from '~/hooks';
 import { Button } from './Button';
 import { cn } from '~/utils';
 
@@ -20,6 +21,8 @@ export function DataTableColumnHeader<TData, TValue>({
   title,
   className = '',
 }: DataTableColumnHeaderProps<TData, TValue>) {
+  const localize = useLocalize();
+
   if (!column.getCanSort()) {
     return <div className={cn(className)}>{title}</div>;
   }
@@ -28,7 +31,12 @@ export function DataTableColumnHeader<TData, TValue>({
     <div className={cn('flex items-center space-x-2', className)}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" className="-ml-3 h-8 data-[state=open]:bg-accent">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3 h-8 data-[state=open]:bg-accent"
+            aria-label={localize('com_ui_filter_by', { title })}
+          >
             <span>{title}</span>
             {column.getIsSorted() === 'desc' ? (
               <ArrowDownIcon className="ml-2 h-4 w-4" />
