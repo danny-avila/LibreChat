@@ -415,6 +415,37 @@ export function findLastSeparatorIndex(text: string, separators = SEPARATORS): n
   return lastIndex;
 }
 
+/**
+ * Replaces special variables in text with their corresponding values.
+ * 
+ * Available special variables:
+ * - {{current_date}}: Current date in UTC (YYYY-MM-DD with day of week)
+ * - {{current_datetime}}: Current datetime in UTC (YYYY-MM-DD HH:mm:ss with day of week)
+ * - {{iso_datetime}}: Current datetime in ISO 8601 format (UTC)
+ * - {{local_date}}: Current date in user's local timezone (YYYY-MM-DD with day of week)
+ * - {{local_datetime}}: Current datetime in user's local timezone (YYYY-MM-DD HH:mm:ss with day of week)
+ * - {{current_user}}: Name of the current user (if available)
+ * 
+ * Day of week values: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
+ * 
+ * Note: {{local_date}} and {{local_datetime}} require the timezone parameter.
+ * If timezone is not provided, they will fall back to UTC values.
+ * 
+ * @example
+ * ```typescript
+ * replaceSpecialVars({ 
+ *   text: 'Today is {{local_date}} and it\'s {{current_user}}\'s session',
+ *   user: { name: 'John' },
+ *   timezone: 'America/New_York'
+ * });
+ * // Result: "Today is 2024-04-29 (1) and it's John's session"
+ * ```
+ * 
+ * @param text - The text containing special variables to replace
+ * @param user - Optional user object containing user information
+ * @param timezone - Optional IANA timezone string (e.g., 'America/New_York', 'Europe/London', 'Asia/Tokyo')
+ * @returns The text with all special variables replaced with their values
+ */
 export function replaceSpecialVars({
   text,
   user,
