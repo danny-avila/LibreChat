@@ -98,6 +98,7 @@ async function reinitMCPServer({
     if (connection && !oauthRequired) {
       tools = await connection.fetchTools();
       availableTools = await updateMCPServerTools({
+        userId: user.id,
         serverName,
         tools,
       });

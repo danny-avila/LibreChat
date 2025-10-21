@@ -72,6 +72,7 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;
   const mcpServers = new Set(ephemeralAgent?.mcp);
+  const userId = req.user?.id; // note: userId cannot be undefined at runtime
   /** @type {string[]} */
   const tools = [];
   if (ephemeralAgent?.execute_code === true) {
@@ -90,7 +91,7 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
       if (addedServers.has(mcpServer)) {
         continue;
       }
-      const serverTools = await getMCPServerTools(mcpServer);
+      const serverTools = await getMCPServerTools(userId, mcpServer);
       if (!serverTools) {
         tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
         addedServers.add(mcpServer);
