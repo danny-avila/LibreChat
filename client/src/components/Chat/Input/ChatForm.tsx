@@ -121,6 +121,41 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     }
   }, [isCollapsed]);
 
+  /**
+   * HOTFIX: Android Edge Browser Keyboard Overlay Fix
+   *
+   * Problem: On Android Edge browser, the virtual keyboard covers the input field
+   * when it appears, making it impossible to see what the user is typing.
+   *
+   * Solution: When the textarea gains focus, push the form up by adding
+   * margin-bottom to make the input field visible above the keyboard.
+   */
+  const handleAndroidEdgeKeyboardFocusFix = useCallback(() => {
+    if (isAndroidEdgeBrowser()) {
+      const formElement = document.querySelector('form');
+      if (formElement) {
+        // Add margin-bottom to push the form up by the keyboard height
+        formElement.style.marginBottom = `240px`;
+      }
+    }
+  }, []);
+
+  /**
+   * HOTFIX: Android Edge Browser Keyboard Overlay Fix - Restore Position
+   *
+   * When the textarea loses focus (keyboard hides), restore the original
+   * form position by removing the margin-bottom.
+   */
+  const handleAndroidEdgeKeyboardBlurFix = useCallback(() => {
+    if (isAndroidEdgeBrowser()) {
+      const formElement = document.querySelector('form');
+      if (formElement) {
+        // Remove margin-bottom to restore original form position
+        formElement.style.marginBottom = `0px`;
+      }
+    }
+  }, []);
+
   useAutoSave({
     files,
     setFiles,
@@ -274,9 +309,13 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                   rows={1}
                   onFocus={() => {
                     handleFocusOrClick();
+                    handleAndroidEdgeKeyboardFocusFix();
                     setIsTextAreaFocused(true);
                   }}
-                  onBlur={setIsTextAreaFocused.bind(null, false)}
+                  onBlur={() => {
+                    handleAndroidEdgeKeyboardBlurFix();
+                    setIsTextAreaFocused(false);
+                  }}
                   onClick={handleFocusOrClick}
                   style={{ height: 44, overflowY: 'auto' }}
                   className={cn(
@@ -343,5 +382,15 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     </form>
   );
 });
+
+/**
+ * Needed for HOTFIX: Android Edge Browser Keyboard Overlay Fix (can be removed when Edge Android is fixed)
+ * @returns true if the browser is Android Edge, false otherwise
+ */
+function isAndroidEdgeBrowser(): boolean {
+  // https://learn.microsoft.com/de-de/microsoft-edge/web-platform/user-agent-guidance#identifiers-for-microsoft-edge-on-various-platforms
+  // EdgA -> Edge Android
+  return navigator.userAgent.includes('EdgA');
+}
 
 export default ChatForm;
