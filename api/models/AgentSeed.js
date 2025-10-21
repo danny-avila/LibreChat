@@ -3,7 +3,7 @@ const { Agent, User } = require('~/db/models');
 const promptTemplates = require('~/app/clients/agents/Woodland/promptTemplates');
 const { AgentCapabilities, EModelEndpoint, SystemRoles } = require('librechat-data-provider');
 
-const WOODLAND_PROMPT_VERSION = 'v2025.03.15';
+const WOODLAND_PROMPT_VERSION = 'v2025.03.26';
 
 const DEFAULT_PROVIDER =
   process.env.WOODLAND_AGENT_PROVIDER || EModelEndpoint.azureOpenAI;

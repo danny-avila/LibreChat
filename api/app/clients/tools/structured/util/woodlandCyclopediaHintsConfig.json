@@ -1,0 +1,63 @@
+{
+  "stepMatchers": [
+    { "pattern": "^step\\s*\\d{1,2}[:.)-]\\s*", "flags": "i" },
+    { "pattern": "^\\d{1,2}\\s*[:.)-]\\s+", "flags": "" },
+    { "pattern": "^[a-z]\\s*[:.)-]\\s+", "flags": "i" },
+    { "pattern": "^[•\\-–]\\s+", "flags": "" }
+  ],
+  "scenarioRules": [
+    {
+      "key": "engine_runs_only_on_choke",
+      "matchType": "all",
+      "patterns": [
+        { "pattern": "\\bengine\\b", "flags": "i" },
+        { "pattern": "\\bonly\\b", "flags": "i" },
+        { "pattern": "\\bchoke\\b", "flags": "i" }
+      ]
+    },
+    {
+      "key": "carb_cleaning",
+      "matchType": "all",
+      "patterns": [
+        { "pattern": "\\bcarb", "flags": "i" },
+        { "pattern": "clean", "flags": "i" }
+      ]
+    },
+    {
+      "key": "bag_wont_fold",
+      "matchType": "all",
+      "patterns": [
+        { "pattern": "\\bbag\\b", "flags": "i" },
+        { "pattern": "\\bfold\\b", "flags": "i" }
+      ]
+    },
+    {
+      "key": "wheel_shake",
+      "matchType": "all",
+      "patterns": [
+        { "pattern": "\\bwheel", "flags": "i" },
+        { "pattern": "\\bshake", "flags": "i" }
+      ]
+    },
+    {
+      "key": "grease_dual_pin_warning",
+      "matchType": "all",
+      "patterns": [
+        { "pattern": "\\bdual\\b", "flags": "i" },
+        { "pattern": "\\bpin\\b", "flags": "i" },
+        { "pattern": "\\bgrease\\b", "flags": "i" }
+      ]
+    },
+    {
+      "key": "service_locator",
+      "matchType": "any",
+      "patterns": [
+        { "pattern": "service center", "flags": "i" },
+        { "pattern": "near me", "flags": "i" },
+        { "pattern": "nearest dealer", "flags": "i" },
+        { "pattern": "zip", "flags": "i" },
+        { "pattern": "postal code", "flags": "i" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "modelAliases": {
+    "classic": ["classic", "cr classic"],
+    "commander": ["commander", "cr commander"],
+    "commercial pro": ["commercial pro", "commercial-pro", "commercial pro", "commercialpro", "commercial pro®"],
+    "xl": ["xl", "xl model", "commercial xl", "cyclone rake xl", "xl collector", "xl bag"],
+    "z-10": ["z-10", "z10", "zr-10", "zr10", "z‑10"],
+    "zr10": ["zr-10", "zr10", "z-10", "z10"]
+  },
+  "genericModelKeywords": ["all models", "all cyclone rake models", "all-product", "fits all"],
+  "rules": [
+    {
+      "code": "model-mismatch",
+      "severity": "block",
+      "handler": "modelMismatch",
+      "messageTemplate": "Catalog entry only references {{matches}}; does not match {{contextModel}}."
+    },
+    {
+      "code": "xl-impeller-mismatch",
+      "severity": "block",
+      "handler": "xlImpellerMismatch",
+      "message": "XL requires the 20-inch impeller. This record calls out other models and must be escalated.",
+      "config": {
+        "model": "xl",
+        "keyword": "\\bimpeller\\b"
+      }
+    },
+    {
+      "code": "liner-not-sold-separately",
+      "severity": "block",
+      "handler": "keyword",
+      "message": "Blower housing liners are not sold separately. Replace the full housing assembly or escalate.",
+      "config": {
+        "all": ["\\bblower\\b", "\\bhousing\\b", "\\bliner\\b"],
+        "any": ["not sold separately", "liner only"]
+      }
+    },
+    {
+      "code": "dual-pin-sealed-hub",
+      "severity": "warn",
+      "handler": "keyword",
+      "message": "Dual-pin wheel hubs ship sealed; do not advise greasing. Provide maintenance instructions instead.",
+      "config": {
+        "all": ["\\bdual\\b", "\\bwheel\\b", "\\bgrease\\b"]
+      }
+    }
+  ]
+}

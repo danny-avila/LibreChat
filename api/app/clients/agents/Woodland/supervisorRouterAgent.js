@@ -40,6 +40,8 @@ const DOMAIN_AGENT_CONFIGS = [
 
 const DEFAULT_MAX_DOMAIN_TOOLS = 4;
 const DEFAULT_LOW_CONFIDENCE_THRESHOLD = 0.55;
+const HIGH_CONFIDENCE_THRESHOLD = 0.8;
+const HIGH_CONFIDENCE_TOOL_CAP = 2;
 
 const DEFAULT_INTENT_TOOL_PRIORITIES = {
   sales: ['CatalogPartsAgent', 'WebsiteProductAgent'],
@@ -47,6 +49,7 @@ const DEFAULT_INTENT_TOOL_PRIORITIES = {
   support: ['CyclopediaSupportAgent', 'CatalogPartsAgent'],
   tractor_fitment: ['TractorFitmentAgent', 'CatalogPartsAgent'],
   cases: ['CasesReferenceAgent', 'CyclopediaSupportAgent'],
+  service: ['CyclopediaSupportAgent'],
   unknown: ['CatalogPartsAgent', 'CyclopediaSupportAgent', 'WebsiteProductAgent'],
 };
 
@@ -72,11 +75,17 @@ const KEYWORD_TOOL_RULES = [
     regex: /(case\s?#?\d+|support case|ticket|internal case|knowledge base)/i,
     tools: ['CasesReferenceAgent'],
   },
+  {
+    label: 'service_locator',
+    regex: /(service\s+center|nearest\s+dealer|repair\s+shop|zip\s+code|postal\s+code|technician\s+near)/i,
+    tools: ['CyclopediaSupportAgent'],
+  },
 ];
 
 const EARLY_EXIT_KEYWORDS = new Map(
   KEYWORD_TOOL_RULES.filter((rule) => rule.tools?.length === 1).map((rule) => [rule.label, rule.tools[0]]),
 );
+const PART_NUMBER_REGEX = /\b(part\s*number|sku|replacement\s*part|part\s*#)\b/i;
 
 const resolveDomainTools = ({ primaryIntent, secondaryIntents = [], confidence }, rawText, availableToolNames) => {
   const availableSet = new Set(availableToolNames);
@@ -108,6 +117,10 @@ const resolveDomainTools = ({ primaryIntent, secondaryIntents = [], confidence }
 
   const text = typeof rawText === 'string' ? rawText : JSON.stringify(rawText ?? '');
   if (text) {
+    if (PART_NUMBER_REGEX.test(text)) {
+      addTool('CatalogPartsAgent', { front: true });
+      addTool('CasesReferenceAgent');
+    }
     for (const rule of KEYWORD_TOOL_RULES) {
       if (!rule.regex.test(text)) {
         continue;
@@ -142,7 +155,21 @@ const resolveDomainTools = ({ primaryIntent, secondaryIntents = [], confidence }
     appendIntentTools('unknown');
   }
 
-  const recommended = selections.slice(0, DEFAULT_MAX_DOMAIN_TOOLS);
+  addTool('CasesReferenceAgent');
+
+  const maxTools =
+    confidence != null && confidence >= HIGH_CONFIDENCE_THRESHOLD
+      ? Math.max(1, Math.min(HIGH_CONFIDENCE_TOOL_CAP, DEFAULT_MAX_DOMAIN_TOOLS))
+      : DEFAULT_MAX_DOMAIN_TOOLS;
+
+  let recommended = selections.slice(0, maxTools);
+  if (!recommended.includes('CasesReferenceAgent') && availableSet.has('CasesReferenceAgent')) {
+    if (recommended.length >= maxTools) {
+      recommended[recommended.length - 1] = 'CasesReferenceAgent';
+    } else {
+      recommended.push('CasesReferenceAgent');
+    }
+  }
 
   logger?.debug?.('[SupervisorRouter] Tool selection heuristics', {
     primaryIntent,
@@ -158,6 +185,7 @@ const INSTRUCTIONS = promptTemplates.supervisorRouter;
 
 module.exports = async function initializeSupervisorRouterAgent(params) {
   const classifier = await createIntentClassifier(params);
+  const cachedIntent = { text: null, metadata: null };
   const baseTools = Array.isArray(params?.tools) ? params.tools : [];
   const baseToolNames = baseTools
     .map((tool) => tool?.name)
@@ -259,7 +287,17 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
 
     const original = input.input ?? '';
     const text = typeof original === 'string' ? original : JSON.stringify(original ?? '');
-    const metadata = await classifier.classify(text);
+
+    let metadata;
+    if (cachedIntent.text === text && cachedIntent.metadata) {
+      metadata = cachedIntent.metadata;
+    } else {
+      metadata = await classifier.classify(text);
+      if (metadata) {
+        cachedIntent.text = text;
+        cachedIntent.metadata = metadata;
+      }
+    }
     if (!metadata) {
       return input;
     }

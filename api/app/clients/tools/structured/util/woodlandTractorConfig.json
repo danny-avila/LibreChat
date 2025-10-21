@@ -1,0 +1,48 @@
+{
+  "familyAliases": {
+    "commander": "Commander",
+    "commander pro": "Commander",
+    "xl": "XL",
+    "z-10": "Z_10",
+    "z10": "Z_10",
+    "z 10": "Z_10",
+    "commercial pro": "Commercial_Pro",
+    "commercial_pro": "Commercial_Pro"
+  },
+  "familySignals": [
+    {
+      "match": ["commercial pro"],
+      "family": "Commercial PRO"
+    },
+    {
+      "match": ["commander pro", "commander"],
+      "family": "Commander Pro"
+    },
+    {
+      "match": ["standard complete platinum", "platinum"],
+      "family": "Standard Complete Platinum"
+    },
+    {
+      "match": ["classic"],
+      "family": "Classic"
+    }
+  ],
+  "partTypes": {
+    "collector bag": "collector bag",
+    "impeller": "impeller",
+    "hose": "hose",
+    "recoil starter": "recoil starter",
+    "starter": "recoil starter",
+    "boot plate": "boot plate",
+    "side tube": "side tube"
+  },
+  "intentKeywords": {
+    "parts": ["part", "replacement", "buy", "order", "sku", "view/buy", "add to cart", "price", "bag", "hose", "clamp"],
+    "compatibility": ["engine", "fit", "fits", "fitment", "compatible", "compatibility", "which engine", "used in"],
+    "sop": ["how to", "install", "installation", "guide", "manual", "troubleshoot", "troubleshooting", "winterization", "sop"],
+    "marketing": ["compare", "benefits", "why choose", "financing", "promotion", "warranty"],
+    "promo": ["promotion", "sale", "discount", "coupon", "financing"]
+  },
+  "partNumberRegex": "\\\\b\\d{2}-[a-z0-9]{2}-[a-z0-9]{3,}\\\\b",
+  "yearRegex": "\\\\b(19|20)\\d{2}\\\\b"
+}

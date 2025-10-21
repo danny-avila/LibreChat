@@ -6,10 +6,11 @@ const CLASSIFIER_INSTRUCTIONS = `You are the Woodland Intent Classifier. Examine
 - support (policies, warranty, shipping, procedures, returns)
 - tractor_fitment (compatibility questions requiring tractor make/model/engine/year)
 - cases (explicit request to review or reference a support case/ticket)
+- service (requests to locate service centers, technicians, or in-person assistance)
 
 Return strict JSON only with this shape:
 {
-  "primary_intent": "sales | parts | support | tractor_fitment | cases",
+  "primary_intent": "sales | parts | support | tractor_fitment | cases | service",
   "secondary_intents": ["parts", "support"],
   "confidence": 0.87,
   "missing_anchors": ["tractor make", "engine size"],

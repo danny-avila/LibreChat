@@ -1,0 +1,42 @@
+
+# LiteLLM proxy configuration for Azure OpenAI
+# Ensure these env vars are set in the process running the LiteLLM proxy:
+#   AZURE_OPENAI_API_KEY
+#   AZURE_OPENAI_ENDPOINT (e.g. https://my-aoai-resource.openai.azure.com)
+#   AZURE_OPENAI_API_VERSION (e.g. 2024-08-01-preview)
+#   AZURE_OPENAI_GPT4O_MINI_DEPLOYMENT (your deployed Azure OpenAI deployment name)
+#   LITELLM_MASTER_KEY (the proxy auth key)
+
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      # Explicitly set Azure provider and deployment
+      custom_llm_provider: azure
+      model: azure/gpt-4o-mini
+      api_key: 8mugTjYozcXx4xf4GWE5KN1jJOG7ptwJvDCJxcO1OLnojZ2vI2NlJQQJ99BHACYeBjFXJ3w3AAAAACOGfPtz
+      # api_base must be just the Azure endpoint root, no trailing slash
+      api_base: https://ai-hubwppai326115464401.openai.azure.com
+      api_version: 2025-01-01-preview
+      # Reasonable network timeouts to avoid premature connection errors
+      timeout: 60
+
+litellm_settings:
+  drop_params: true
+  # Increase retries for transient network hiccups
+  callbacks: ["langfuse"]
+  num_retries: 4
+  callbacks_config:
+    langfuse:
+      host:  https://cloud.langfuse.com          # e.g. https://cloud.langfuse.com
+      public_key: pk-lf-a5c094e3-bcc3-49f1-a77c-3f2708f55469
+      secret_key: sk-lf-af467a18-58ef-408c-ac91-67616b33b709
+  # Optional: turn off message logging in server logs
+  # turn_off_message_logging: true
+
+router_settings:
+  # Requests must include Authorization: Bearer <key> matching this value.
+  master_key: wppguide123
+  # Simple single-model routing; keep defaults
+  # You can add fallbacks later like:
+  #   allowed_fallbacks:
+  #     - ["gpt-4o-mini", "gpt-4o"]

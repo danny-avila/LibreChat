@@ -5,6 +5,7 @@ const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 const { logger } = require('~/config');
 const TTLCache = require('../util/ttlCache');
+const { applyCatalogPolicy } = require('./util/woodlandCatalogPolicy');
 
 const DEFAULT_CACHE_TTL_MS = Number(process.env.WOODLAND_SEARCH_CACHE_TTL_MS ?? 10_000);
 const DEFAULT_CACHE_MAX = Number(process.env.WOODLAND_SEARCH_CACHE_MAX_ENTRIES ?? 200);
@@ -18,6 +19,7 @@ class WoodlandAISearchCatalog extends Tool {
   static DEFAULT_SELECT ="*";
   static DEFAULT_VECTOR_K = 15;
   static DEFAULT_VECTOR_FIELDS = ''; // e.g., "contentVector,titleVector"
+  static VALID_FIELD_REGEX = /^[a-zA-Z_][\w.]*$/;
 
   _env(v, fallback) {
     return v ?? fallback;
@@ -108,6 +110,14 @@ class WoodlandAISearchCatalog extends Tool {
       queryLanguage: z.string().optional(),
       searchFields: z.string().optional().describe('Comma-separated search fields override'),
       disableCache: z.boolean().optional().describe('Skips shared result caching when true'),
+      model: z
+        .string()
+        .optional()
+        .describe('Cyclone Rake model focus (Classic, Commander, Commercial Pro, XL, Z-10)'),
+      hitch: z
+        .string()
+        .optional()
+        .describe('Hitch type (dual-pin or CRS) when enforcing catalog fitment rules'),
     });
 
     // Shared endpoint + key
@@ -173,6 +183,7 @@ class WoodlandAISearchCatalog extends Tool {
         'images_alt',
       ];
     })();
+    this.searchFields = this._sanitizeFieldList(this.searchFields, 'searchFields-default');
     this.semanticConfiguration = this._env(
       fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
       process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION || 'sem1',
@@ -260,6 +271,41 @@ class WoodlandAISearchCatalog extends Tool {
       defaultAnswerMode: this.defaultAnswerMode,
       defaultCaptionMode: this.defaultCaptionMode,
     });
+  }
+
+  _sanitizeFieldList(fields, context = 'select') {
+    if (!Array.isArray(fields)) {
+      return undefined;
+    }
+    const cleaned = [];
+    fields.forEach((field) => {
+      if (WoodlandAISearchCatalog.VALID_FIELD_REGEX.test(field)) {
+        cleaned.push(field);
+      } else {
+        logger.info('[woodland-ai-search-catalog] Dropping invalid field token', {
+          context,
+          field,
+        });
+      }
+    });
+    return cleaned.length > 0 ? cleaned : undefined;
+  }
+
+  _sanitizeFilterExpression(filter) {
+    if (!filter || typeof filter !== 'string') {
+      return undefined;
+    }
+    const trimmed = filter.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    if (/\bhitch\b/i.test(trimmed)) {
+      logger.info('[woodland-ai-search-catalog] Dropping hitch filter (not indexed field)', {
+        filter: trimmed,
+      });
+      return undefined;
+    }
+    return trimmed;
   }
 
   _sanitizeSearchOptions(opts) {
@@ -373,22 +419,26 @@ class WoodlandAISearchCatalog extends Tool {
       typeof topIn === 'number' && Number.isFinite(topIn) ? Math.max(1, Math.floor(topIn)) : this.top;
 
     // Per-call overrides
-    const perCallSelect =
+    const perCallSelectRaw =
       typeof data?.select === 'string'
         ? data.select.split(',').map((s) => s.trim()).filter(Boolean)
         : undefined;
-    const perCallSearchFields =
+    const perCallSelect = this._sanitizeFieldList(perCallSelectRaw, 'select');
+    const perCallSearchFieldsRaw =
       typeof data?.searchFields === 'string'
         ? data.searchFields.split(',').map((s) => s.trim()).filter(Boolean)
         : undefined;
+    const perCallSearchFields = this._sanitizeFieldList(perCallSearchFieldsRaw, 'searchFields');
     const perCallAnswers = data?.answers;
     const perCallCaptions = data?.captions;
     const perCallSpeller = data?.speller;
     const perCallQueryLanguage = data?.queryLanguage;
-    const filter = typeof data?.filter === 'string' && data.filter.trim() ? data.filter.trim() : undefined;
+    const filter = this._sanitizeFilterExpression(data?.filter);
     const embedding = Array.isArray(data?.embedding) ? data.embedding : undefined;
     const vectorK = Number.isFinite(data?.vectorK) ? Number(data.vectorK) : this.vectorK;
     const disableCache = data?.disableCache === true;
+    const modelContext = typeof data?.model === 'string' ? data.model : undefined;
+    const hitchContext = typeof data?.hitch === 'string' ? data.hitch : undefined;
 
     try {
       const inferredMode = (() => {
@@ -475,6 +525,21 @@ class WoodlandAISearchCatalog extends Tool {
       let payload = docs.docs || [];
       if (Array.isArray(payload)) {
         payload = payload.map((d) => (d ? this._normalizeDoc(d) : d));
+        const { docs: guarded, dropped } = await applyCatalogPolicy(payload, {
+          model: modelContext,
+          hitch: hitchContext,
+          query,
+        });
+        if (Array.isArray(dropped) && dropped.length > 0) {
+          logger.info('[woodland-ai-search-catalog] Policy guards dropped catalog rows', {
+            query,
+            dropped: dropped
+              .map((item) => item?.normalized_catalog?.sku || item?.sku)
+              .filter(Boolean),
+            modelContext,
+          });
+        }
+        payload = guarded;
       }
       logger.info('[woodland-ai-search-catalog] Query done', {
         count: Array.isArray(payload) ? payload.length : 0,

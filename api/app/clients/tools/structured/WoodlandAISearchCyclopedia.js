@@ -3,6 +3,8 @@ const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 const { logger } = require('~/config');
+const { resolveScenarioChecklist } = require('./util/woodlandCyclopediaScenarioResolver');
+const { deriveCyclopediaHints } = require('./util/woodlandCyclopediaHints');
 
 const DEFAULT_EXTRACTIVE = String(process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE ?? 'false')
   .toLowerCase()
@@ -48,6 +50,7 @@ class WoodlandAISearchCyclopedia extends Tool {
     const provenance = this._provenance(d);
     const citationLabel = title || 'Cyclopedia';
     const citationUrl = provenance?.url;
+    const troubleshooting = deriveCyclopediaHints(d);
 
     return {
       ...d,
@@ -65,6 +68,7 @@ class WoodlandAISearchCyclopedia extends Tool {
         reviewed: d?.reviewed,
         allowlist_match: d?.allowlist_match,
         provenance,
+        troubleshooting,
         citation: {
           label: citationLabel,
           url: citationUrl,
@@ -420,6 +424,43 @@ class WoodlandAISearchCyclopedia extends Tool {
       let payload = res.docs || [];
       if (Array.isArray(payload)) {
         payload = payload.map((d) => (d ? this._normalizeDoc(d) : d));
+        for (const doc of payload) {
+          try {
+            const hints = doc?.normalized_cyclopedia?.troubleshooting;
+            if (!hints) {
+              continue;
+            }
+            const hasSteps = Array.isArray(hints.steps) && hints.steps.length > 0;
+            const hasChecklist = Array.isArray(hints.checklists) && hints.checklists.length > 0;
+            const scenarios = Array.isArray(hints.scenarios) ? hints.scenarios : [];
+
+            const scenarioDefaults = [];
+            if (scenarios.length > 0 && !hasSteps) {
+              for (const scenario of scenarios) {
+                const defaults = await resolveScenarioChecklist(scenario);
+                if (Array.isArray(defaults) && defaults.length > 0) {
+                  scenarioDefaults.push({
+                    scenario,
+                    steps: defaults,
+                  });
+                }
+              }
+            }
+
+            if (scenarioDefaults.length > 0) {
+              hints.scenario_defaults = scenarioDefaults;
+            }
+
+            hints.hasTroubleshooting =
+              hasSteps ||
+              hasChecklist ||
+              (Array.isArray(hints.scenario_defaults) && hints.scenario_defaults.length > 0);
+          } catch (err) {
+            logger?.warn?.('[woodland-ai-search-cyclopedia] Failed to resolve scenario defaults', {
+              error: err?.message || String(err),
+            });
+          }
+        }
       }
       logger.info('[woodland-ai-search-cyclopedia] Query done', {
         count: Array.isArray(payload) ? payload.length : 0,

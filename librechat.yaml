@@ -123,21 +123,23 @@ actions:
 # Definition of custom endpoints
 
 endpoints:
-  azureOpenAI:
-    groups:
-    - group: "rg-woodland-ai-gpt"
-      apiKey: "8mugTjYozcXx4xf4GWE5KN1jJOG7ptwJvDCJxcO1OLnojZ2vI2NlJQQJ99BHACYeBjFXJ3w3AAAAACOGfPtz"  # arbitrary env var name
-      baseURL: "https://ai-hubwppai326115464401.services.ai.azure.com/models/"
-      version: "2024-05-01-preview" # Optional: specify API version
-      serverless: true # Optional: set to true if using serverless deployment
-      dropParams: ["user"]
-      forcePrompt: false
+  custom:
+    - name: "LiteLLM"
+      # A place holder - otherwise it becomes the default (OpenAI) key
+      # Provide the key instead in each "model" block within "litellm/litellm-config.yaml"
+      apiKey: wppguide123
+      # See the required changes above in "Start LiteLLM Proxy Server" step.
+      baseURL: "http://localhost:8000"
+      # A "default" model to start new users with. The "fetch" will pull the rest of the available models from LiteLLM
+      # More or less this is "irrelevant", you can pick any model. Just pick one you have defined in LiteLLM.
       models:
-        # Must match the deployment name of the model
-         gpt-4o-mini: true
-         mistral-small-2503 : true
-         Ministral-3B : true
-
+        default: ["gpt-4o-mini"]
+        fetch: true
+      titleConvo: true
+      titleModel: "gpt-4o-mini"
+      summarize: false
+      summaryModel: "gpt-4o-mini"
+      forcePrompt: false
   assistants:
     disableBuilder: false  # enable Assistants Builder UI
     pollIntervalMs: 3000   # polling for assistant updates
@@ -197,7 +199,7 @@ memory:
   tokenLimit: 10000
   personalize: true
   agent:
-    provider: "azureOpenAI"
+    provider: "LiteLLM"
     model: "gpt-4o-mini"
     instructions: "You are a memory management assistant. Store and manage user information accurately."
     model_parameters:

@@ -3,10 +3,144 @@ const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 const { logger } = require('~/config');
+const tractorConfig = require('./util/woodlandTractorConfig.json');
 
 const DEFAULT_EXTRACTIVE = String(process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE ?? 'false')
   .toLowerCase()
   .trim() === 'true';
+
+const DEFAULT_FAMILY_ALIASES = {
+  commander: 'Commander',
+  'commander pro': 'Commander',
+  xl: 'XL',
+  'z-10': 'Z_10',
+  z10: 'Z_10',
+  'z 10': 'Z_10',
+  'commercial pro': 'Commercial_Pro',
+  commercial_pro: 'Commercial_Pro',
+};
+
+const DEFAULT_FAMILY_SIGNALS = [
+  { family: 'Commercial PRO', match: ['commercial pro'] },
+  { family: 'Commander Pro', match: ['commander pro', 'commander'] },
+  { family: 'Standard Complete Platinum', match: ['standard complete platinum', 'platinum'] },
+  { family: 'Classic', match: ['classic'] },
+];
+
+const DEFAULT_PART_TYPES = {
+  'collector bag': 'collector bag',
+  impeller: 'impeller',
+  hose: 'hose',
+  'recoil starter': 'recoil starter',
+  starter: 'recoil starter',
+  'boot plate': 'boot plate',
+  'side tube': 'side tube',
+};
+
+const DEFAULT_INTENT_KEYWORDS = {
+  parts: ['part', 'replacement', 'buy', 'order', 'sku', 'view/buy', 'add to cart', 'price', 'bag', 'hose', 'clamp'],
+  compatibility: ['engine', 'fit', 'fits', 'fitment', 'compatible', 'compatibility', 'which engine', 'used in'],
+  sop: ['how to', 'install', 'installation', 'guide', 'manual', 'troubleshoot', 'troubleshooting', 'winterization', 'sop'],
+  marketing: ['compare', 'benefits', 'why choose', 'financing', 'promotion', 'warranty'],
+  promo: ['promotion', 'sale', 'discount', 'coupon', 'financing'],
+};
+
+const tractorConfigSchema = z
+  .object({
+    familyAliases: z.record(z.string(), z.string()).optional(),
+    familySignals: z
+      .array(
+        z.object({
+          family: z.string(),
+          match: z.array(z.string()).nonempty(),
+        }),
+      )
+      .optional(),
+    partTypes: z.record(z.string(), z.string()).optional(),
+    intentKeywords: z.record(z.string(), z.array(z.string()).nonempty()).optional(),
+    partNumberRegex: z.string().optional(),
+    yearRegex: z.string().optional(),
+  })
+  .optional();
+
+const parsedTractorConfig = (() => {
+  try {
+    const parsed = tractorConfigSchema.parse(tractorConfig) || {};
+    return parsed;
+  } catch (error) {
+    logger?.warn?.('[woodland-ai-search-tractor] Invalid tractor config, using defaults', {
+      error: error?.message || String(error),
+    });
+    return {};
+  }
+})();
+
+const toLowerList = (arr) =>
+  Array.isArray(arr)
+    ? arr
+        .map((s) => (typeof s === 'string' ? s.toLowerCase().trim() : ''))
+        .filter(Boolean)
+    : [];
+
+const mergeObjects = (defaults, overrides) => ({ ...defaults, ...(overrides || {}) });
+
+const FAMILY_ALIAS_ENTRIES = Object.entries(
+  mergeObjects(DEFAULT_FAMILY_ALIASES, parsedTractorConfig.familyAliases),
+)
+  .map(([key, value]) => [String(key).toLowerCase().trim(), value])
+  .filter(([key]) => key);
+
+const FAMILY_SIGNALS = [
+  ...DEFAULT_FAMILY_SIGNALS,
+  ...(Array.isArray(parsedTractorConfig.familySignals) ? parsedTractorConfig.familySignals : []),
+]
+  .map((signal) => ({
+    family: signal?.family,
+    keywords: toLowerList(signal?.match),
+  }))
+  .filter((signal) => signal.family && signal.keywords.length);
+
+const PART_TYPE_ENTRIES = Object.entries(
+  mergeObjects(DEFAULT_PART_TYPES, parsedTractorConfig.partTypes),
+)
+  .map(([needle, canonical]) => [String(needle).toLowerCase().trim(), canonical || needle])
+  .filter(([needle]) => needle);
+
+const rawIntentKeywords = { ...DEFAULT_INTENT_KEYWORDS };
+if (parsedTractorConfig.intentKeywords) {
+  for (const [key, list] of Object.entries(parsedTractorConfig.intentKeywords)) {
+    if (!Array.isArray(list)) {
+      continue;
+    }
+    rawIntentKeywords[key] = [...(rawIntentKeywords[key] || []), ...list];
+  }
+}
+
+const INTENT_KEYWORDS = Object.fromEntries(
+  Object.entries(rawIntentKeywords).map(([key, list]) => {
+    const combined = toLowerList(list);
+    const unique = Array.from(new Set(combined));
+    return [key, unique];
+  }),
+);
+
+const safeRegex = (pattern, fallback, flags = 'i') => {
+  if (typeof pattern === 'string' && pattern.trim()) {
+    try {
+      return new RegExp(pattern, flags);
+    } catch (_) {
+      // fall through to fallback
+    }
+  }
+  return fallback;
+};
+
+const PART_NUMBER_REGEX = safeRegex(
+  parsedTractorConfig.partNumberRegex,
+  /\b\d{2}-[a-z0-9]{2}-[a-z0-9]{3,}\b/i,
+);
+
+const YEAR_REGEX = safeRegex(parsedTractorConfig.yearRegex, /\b(19|20)\d{2}\b/, 'i');
 
 class WoodlandAISearchTractor extends Tool {
   static DEFAULT_API_VERSION = '2024-07-01';
@@ -37,6 +171,13 @@ class WoodlandAISearchTractor extends Tool {
       // Optional dense embedding (vector) for hybrid search
       embedding: z.array(z.number()).min(3).optional(),
     });
+
+    this.familyAliasMap = new Map(FAMILY_ALIAS_ENTRIES);
+    this.familySignals = FAMILY_SIGNALS;
+    this.partTypeEntries = PART_TYPE_ENTRIES;
+    this.intentKeywords = INTENT_KEYWORDS;
+    this.partNumberRegex = PART_NUMBER_REGEX;
+    this.yearRegex = YEAR_REGEX;
 
     // Shared endpoint + key
     this.serviceEndpoint = this._env(
@@ -159,18 +300,11 @@ class WoodlandAISearchTractor extends Tool {
   }
 
   _familyAliases(f) {
-    const map = new Map([
-      ['commander', 'Commander'],
-      ['commander pro', 'Commander'],
-      ['xl', 'XL'],
-      ['z-10', 'Z_10'],
-      ['z10', 'Z_10'],
-      ['z 10', 'Z_10'],
-      ['commercial pro', 'Commercial_Pro'],
-      ['commercial_pro', 'Commercial_Pro'],
-    ]);
     const key = String(f || '').trim().toLowerCase();
-    return map.get(key) || f;
+    if (!key) {
+      return f;
+    }
+    return this.familyAliasMap.get(key) || f;
   }
 
   _provenance(d) {
@@ -441,41 +575,40 @@ class WoodlandAISearchTractor extends Tool {
   // Intent and entity detection (lightweight heuristics)
   _detectIntent(query) {
     const q = (query || '').toString().toLowerCase();
-    const containsAny = (arr) => arr.some((w) => q.includes(w));
-    const yearRegex = /\b(19|20)\d{2}\b/;
-    const partRegex = /\b\d{2}-[a-z0-9]{2}-[a-z0-9]{3,}\b/i;
-    const partMatch = q.match(partRegex);
+    const containsAny = (arr = []) => arr.some((w) => w && q.includes(w));
+    const partMatch = this.partNumberRegex ? q.match(this.partNumberRegex) : null;
     const extracted = {};
     if (partMatch) extracted.partNumber = partMatch[0];
 
-    const partTypes = ['collector bag', 'impeller', 'hose', 'recoil starter', 'starter', 'boot plate', 'side tube'];
-    for (const t of partTypes) {
-      if (q.includes(t)) {
-        extracted.partType = t === 'starter' ? 'recoil starter' : t;
+    for (const [needle, canonical] of this.partTypeEntries) {
+      if (needle && q.includes(needle)) {
+        extracted.partType = canonical;
         break;
       }
     }
 
-    if (q.includes('commercial pro')) extracted.family = 'Commercial PRO';
-    else if (q.includes('commander pro') || q.includes('commander')) extracted.family = 'Commander Pro';
-    else if (q.includes('standard complete platinum') || q.includes('platinum')) extracted.family = 'Standard Complete Platinum';
-    else if (q.includes('classic')) extracted.family = 'Classic';
+    for (const signal of this.familySignals) {
+      if (signal.keywords.some((kw) => q.includes(kw))) {
+        extracted.family = signal.family;
+        break;
+      }
+    }
 
-    if (containsAny(['promotion', 'sale', 'discount', 'coupon', 'financing'])) extracted.wantsPromo = true;
+    if (containsAny(this.intentKeywords.promo)) extracted.wantsPromo = true;
 
     if (
       partMatch ||
-      containsAny(['part', 'replacement', 'buy', 'order', 'sku', 'view/buy', 'add to cart', 'price', 'bag', 'hose', 'clamp'])
+      containsAny(this.intentKeywords.parts)
     ) {
       return { intent: 'parts', extracted };
     }
-    if (containsAny(['engine', 'fit', 'fits', 'fitment', 'compatible', 'compatibility', 'which engine', 'used in']) || yearRegex.test(q)) {
+    if (containsAny(this.intentKeywords.compatibility) || (this.yearRegex && this.yearRegex.test(q))) {
       return { intent: 'compatibility', extracted };
     }
-    if (containsAny(['how to', 'install', 'installation', 'guide', 'manual', 'troubleshoot', 'troubleshooting', 'winterization', 'sop'])) {
+    if (containsAny(this.intentKeywords.sop)) {
       return { intent: 'sop', extracted };
     }
-    if (containsAny(['compare', 'benefits', 'why choose', 'financing', 'promotion', 'warranty'])) {
+    if (containsAny(this.intentKeywords.marketing)) {
       return { intent: 'marketing', extracted };
     }
     return { intent: 'general', extracted };
