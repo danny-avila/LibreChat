@@ -81,7 +81,8 @@ export default function useSubmitMessage() {
 
   const submitPrompt = useCallback(
     (text: string) => {
-      const parsedText = replaceSpecialVars({ text, user });
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const parsedText = replaceSpecialVars({ text, user, timezone });
       if (autoSendPrompts) {
         submitMessage({ text: parsedText });
         return;

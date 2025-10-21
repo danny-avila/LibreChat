@@ -1,9 +1,14 @@
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
 import type { ZodIssue } from 'zod';
 import type * as a from './types/assistants';
 import type * as s from './schemas';
 import type * as t from './types';
 import { ContentTypes } from './types/runs';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 import {
   openAISchema,
   googleSchema,
@@ -410,7 +415,15 @@ export function findLastSeparatorIndex(text: string, separators = SEPARATORS): n
   return lastIndex;
 }
 
-export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUser | null }) {
+export function replaceSpecialVars({
+  text,
+  user,
+  timezone,
+}: {
+  text: string;
+  user?: t.TUser | null;
+  timezone?: string;
+}) {
   let result = text;
   if (!result) {
     return result;
@@ -427,6 +440,27 @@ export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUse
 
   const isoDatetime = dayjs().toISOString();
   result = result.replace(/{{iso_datetime}}/gi, isoDatetime);
+
+  // Local timezone support
+  if (timezone) {
+    try {
+      const localDate = dayjs().tz(timezone).format('YYYY-MM-DD');
+      const localDayNumber = dayjs().tz(timezone).day();
+      const localCombinedDate = `${localDate} (${localDayNumber})`;
+      result = result.replace(/{{local_date}}/gi, localCombinedDate);
+
+      const localDatetime = dayjs().tz(timezone).format('YYYY-MM-DD HH:mm:ss');
+      result = result.replace(/{{local_datetime}}/gi, `${localDatetime} (${localDayNumber})`);
+    } catch (error) {
+      // If timezone is invalid, fall back to UTC values for local_* variables
+      result = result.replace(/{{local_date}}/gi, combinedDate);
+      result = result.replace(/{{local_datetime}}/gi, `${currentDatetime} (${dayNumber})`);
+    }
+  } else {
+    // If no timezone is provided, replace local_* variables with UTC values
+    result = result.replace(/{{local_date}}/gi, combinedDate);
+    result = result.replace(/{{local_datetime}}/gi, `${currentDatetime} (${dayNumber})`);
+  }
 
   if (user && user.name) {
     result = result.replace(/{{current_user}}/gi, user.name);

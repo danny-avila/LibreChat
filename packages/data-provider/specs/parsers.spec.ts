@@ -5,7 +5,7 @@ import type { TUser } from '../src/types';
 // Mock dayjs module with consistent date/time values regardless of environment
 jest.mock('dayjs', () => {
   // Create a mock implementation that returns fixed values
-  const mockDayjs = () => ({
+  const mockDayjs = (input?: any) => ({
     format: (format: string) => {
       if (format === 'YYYY-MM-DD') {
         return '2024-04-29';
@@ -17,6 +17,33 @@ jest.mock('dayjs', () => {
     },
     day: () => 1, // 1 = Monday
     toISOString: () => '2024-04-29T16:34:56.000Z',
+    tz: (timezone: string) => ({
+      format: (format: string) => {
+        // Mock timezone-specific formatting for America/New_York (UTC-4 during DST)
+        if (timezone === 'America/New_York') {
+          if (format === 'YYYY-MM-DD') {
+            return '2024-04-29';
+          }
+          if (format === 'YYYY-MM-DD HH:mm:ss') {
+            return '2024-04-29 08:34:56'; // 4 hours behind UTC 12:34:56
+          }
+        }
+        // Mock timezone-specific formatting for Asia/Tokyo (UTC+9)
+        if (timezone === 'Asia/Tokyo') {
+          if (format === 'YYYY-MM-DD') {
+            return '2024-04-29';
+          }
+          if (format === 'YYYY-MM-DD HH:mm:ss') {
+            return '2024-04-29 21:34:56'; // 9 hours ahead of UTC 12:34:56
+          }
+        }
+        return format;
+      },
+      day: () => {
+        // Return same day number for simplicity in tests
+        return 1;
+      },
+    }),
   });
 
   // Add any static methods needed
@@ -121,5 +148,55 @@ describe('replaceSpecialVars', () => {
     expect(result).toContain('2024-04-29 12:34:56 (1)'); // current_datetime
     expect(result).toContain('2024-04-29T16:34:56.000Z'); // iso_datetime
     expect(result).toContain('Test User'); // current_user
+    // local_date and local_datetime should fall back to UTC when no timezone provided
+    expect(result).toContain('2024-04-29 (1)'); // local_date (fallback to UTC)
+    expect(result).toContain('2024-04-29 12:34:56 (1)'); // local_datetime (fallback to UTC)
+  });
+
+  test('should replace {{local_date}} with the timezone-aware date when timezone is provided', () => {
+    const result = replaceSpecialVars({
+      text: 'Today in NY is {{local_date}}',
+      timezone: 'America/New_York',
+    });
+    expect(result).toBe('Today in NY is 2024-04-29 (1)');
+  });
+
+  test('should replace {{local_datetime}} with the timezone-aware datetime when timezone is provided', () => {
+    const result = replaceSpecialVars({
+      text: 'Now in NY is {{local_datetime}}',
+      timezone: 'America/New_York',
+    });
+    expect(result).toBe('Now in NY is 2024-04-29 08:34:56 (1)');
+  });
+
+  test('should replace {{local_datetime}} with Tokyo timezone', () => {
+    const result = replaceSpecialVars({
+      text: 'Now in Tokyo is {{local_datetime}}',
+      timezone: 'Asia/Tokyo',
+    });
+    expect(result).toBe('Now in Tokyo is 2024-04-29 21:34:56 (1)');
+  });
+
+  test('should fall back to UTC for local variables when no timezone is provided', () => {
+    const result = replaceSpecialVars({
+      text: 'Date: {{local_date}}, Time: {{local_datetime}}',
+    });
+    expect(result).toBe('Date: 2024-04-29 (1), Time: 2024-04-29 12:34:56 (1)');
+  });
+
+  test('should handle both UTC and local timezone variables in the same text', () => {
+    const result = replaceSpecialVars({
+      text: 'UTC: {{current_datetime}}, Local: {{local_datetime}}',
+      timezone: 'America/New_York',
+    });
+    expect(result).toBe('UTC: 2024-04-29 12:34:56 (1), Local: 2024-04-29 08:34:56 (1)');
+  });
+
+  test('should be case-insensitive for local timezone variables', () => {
+    const result = replaceSpecialVars({
+      text: 'Date: {{LOCAL_DATE}}, Time: {{Local_DateTime}}',
+      timezone: 'America/New_York',
+    });
+    expect(result).toBe('Date: 2024-04-29 (1), Time: 2024-04-29 08:34:56 (1)');
   });
 });

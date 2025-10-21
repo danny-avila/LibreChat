@@ -327,7 +327,7 @@ const loadTools = async ({
       const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
       requestedTools[tool] = async () => {
         toolContextMap[tool] = `# \`${tool}\`:
-Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
+Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}${options.req?.body?.timezone ? `\nLocal Date & Time: ${replaceSpecialVars({ text: '{{local_datetime}}', timezone: options.req.body.timezone })}` : ''}
 1. **Execute immediately without preface** when using \`${tool}\`.
 2. **After the search, begin with a brief summary** that directly addresses the query without headers or explaining your process.
 3. **Structure your response clearly** using Markdown formatting (Level 2 headers for sections, lists for multiple points, tables for comparisons).

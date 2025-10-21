@@ -121,9 +121,11 @@ export default function useChatFunctions({
     let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];
 
     if (conversation?.promptPrefix) {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       conversation.promptPrefix = replaceSpecialVars({
         text: conversation.promptPrefix,
         user,
+        timezone,
       });
     }
 

@@ -185,6 +185,7 @@ const initializeAgent = async ({
     agent.instructions = replaceSpecialVars({
       text: agent.instructions,
       user: req.user,
+      timezone: req.body?.timezone,
     });
   }
 
