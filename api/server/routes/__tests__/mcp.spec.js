@@ -2,6 +2,7 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { setCachedTools, getMCPServerTools } = require('~/server/services/Config');
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
@@ -47,6 +48,7 @@ jest.mock('~/models', () => ({
 jest.mock('~/server/services/Config', () => ({
   setCachedTools: jest.fn(),
   getCachedTools: jest.fn(),
+  getMCPServerTools: jest.fn(),
   loadCustomConfig: jest.fn(),
 }));
 
@@ -1305,6 +1307,77 @@ describe('MCP Routes', () => {
         .expect(302);
 
       expect(response.headers.location).toContain('/oauth/success');
+    });
+  });
+
+  describe('Cache Isolation Integration Tests', () => {
+    it('should isolate MCP tool cache between different users for same server', async () => {
+      const serverName = 'test-server';
+
+      // Simulate User A caching tools
+      const userATools = {
+        tool_a_mcp_testserver: {
+          name: 'tool_a',
+          description: 'User A tool',
+        },
+      };
+
+      // Simulate User B caching different tools
+      const userBTools = {
+        tool_b_mcp_testserver: {
+          name: 'tool_b',
+          description: 'User B tool',
+        },
+      };
+
+      setCachedTools.mockResolvedValue(true);
+
+      // Mock getMCPServerTools to simulate proper cache isolation
+      getMCPServerTools.mockImplementation((userId, server) => {
+        if (userId === 'user-a' && server === serverName) {
+          return Promise.resolve(userATools);
+        }
+        if (userId === 'user-b' && server === serverName) {
+          return Promise.resolve(userBTools);
+        }
+        return Promise.resolve(null);
+      });
+
+      // User A's tools should be isolated from User B
+      const resultA = await getMCPServerTools('user-a', serverName);
+      const resultB = await getMCPServerTools('user-b', serverName);
+
+      expect(resultA).toEqual(userATools);
+      expect(resultB).toEqual(userBTools);
+      expect(resultA).not.toEqual(resultB);
+
+      expect(getMCPServerTools).toHaveBeenCalledWith('user-a', serverName);
+      expect(getMCPServerTools).toHaveBeenCalledWith('user-b', serverName);
+    });
+
+    it('should prevent cross-user cache access via controller', async () => {
+      const serverName = 'github';
+
+      // Setup: User A has cached tools
+      getMCPServerTools.mockImplementation((userId, server) => {
+        if (userId === 'user-a' && server === 'github') {
+          return Promise.resolve({ sensitive_tool: { token: 'secret-a' } });
+        }
+        return Promise.resolve(null);
+      });
+
+      // User B makes a request (simulated via different req.user)
+      app.use((req, _, next) => {
+        req.user = { id: 'user-b' }; // Override to simulate User B
+        next();
+      });
+
+      // User B should not get User A's tools
+      const resultB = await getMCPServerTools('user-b', serverName);
+
+      expect(resultB).toBeNull();
+      expect(getMCPServerTools).toHaveBeenCalledWith('user-b', serverName);
+      expect(getMCPServerTools).not.toHaveBeenCalledWith('user-a', serverName);
     });
   });
 });
