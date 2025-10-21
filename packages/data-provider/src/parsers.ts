@@ -451,7 +451,7 @@ export function replaceSpecialVars({
 
       const localDatetime = dayjs().tz(timezone).format('YYYY-MM-DD HH:mm:ss');
       result = result.replace(/{{local_datetime}}/gi, `${localDatetime} (${localDayNumber})`);
-    } catch (error) {
+    } catch {
       // If timezone is invalid, fall back to UTC values for local_* variables
       result = result.replace(/{{local_date}}/gi, combinedDate);
       result = result.replace(/{{local_datetime}}/gi, `${currentDatetime} (${dayNumber})`);
