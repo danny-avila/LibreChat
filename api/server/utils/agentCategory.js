@@ -1,5 +1,4 @@
 const { logger } = require('@librechat/data-schemas');
-const { getAllCategories, createCategory, updateCategory, deleteCategory } = require('~/models');
 
 /**
  * Synchronizes custom agent categories with the database.
@@ -7,6 +6,7 @@ const { getAllCategories, createCategory, updateCategory, deleteCategory } = req
  * @param {boolean} enableDefaultCategories - Flag indicating whether to enable default categories.
  */
 async function syncCategories(customCategoriesList, enableDefaultCategories) {
+  const { getAllCategories, createCategory, updateCategory, deleteCategory } = require('~/models');
   logger.info('Syncing custom agent categories...');
 
   // Get all categories from DB

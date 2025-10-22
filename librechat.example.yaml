@@ -96,7 +96,7 @@ interface:
   marketplace:
     use: false 
     categories:
-      enableDefaultCategories: false
+      enableDefaultCategories: true 
         # list:
         #     - value: "Education"
         #       description: "Educational agents."
