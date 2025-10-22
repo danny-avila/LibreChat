@@ -9,11 +9,11 @@ import {
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
-import type { UseMutationResult } from '@tanstack/react-query';
+import type { UseMutationResult, UseMutationOptions } from '@tanstack/react-query';
 import { useLocalize } from '~/hooks';
 
 export const useUploadFileMutation = (
-  _options?: t.UploadMutationOptions,
+  _options?: UseMutationOptions<t.TFileUpload, unknown, FormData, unknown>,
   signal?: AbortSignal | null,
 ): UseMutationResult<
   t.TFileUpload, // response data
@@ -41,7 +41,7 @@ export const useUploadFileMutation = (
       return dataService.uploadFile(body, signal);
     },
     ...options,
-    onSuccess: (data, formData, context) => {
+    onSuccess: (data, formData, onMutateResult, context) => {
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (_files) => [
         data,
         ...(_files ?? []),
@@ -54,7 +54,7 @@ export const useUploadFileMutation = (
       const tool_resource = (formData.get('tool_resource') as string | undefined) ?? '';
 
       if (message_file === 'true') {
-        onSuccess?.(data, formData, context);
+        onSuccess?.(data, formData, onMutateResult, context);
         return;
       }
 
@@ -90,7 +90,7 @@ export const useUploadFileMutation = (
       }
 
       if (!assistant_id) {
-        onSuccess?.(data, formData, context);
+        onSuccess?.(data, formData, onMutateResult, context);
         return;
       }
 
@@ -134,13 +134,13 @@ export const useUploadFileMutation = (
           };
         },
       );
-      onSuccess?.(data, formData, context);
+      onSuccess?.(data, formData, onMutateResult, context);
     },
   });
 };
 
 export const useDeleteFilesMutation = (
-  _options?: t.DeleteMutationOptions,
+  _options?: UseMutationOptions<t.DeleteFilesResponse, unknown, t.DeleteFilesBody, unknown>,
 ): UseMutationResult<
   t.DeleteFilesResponse, // response data
   unknown, // error
@@ -155,7 +155,7 @@ export const useDeleteFilesMutation = (
     mutationKey: [MutationKeys.fileDelete],
     mutationFn: (body: t.DeleteFilesBody) => dataService.deleteFiles(body),
     ...options,
-    onError: (error, vars, context) => {
+    onError: (error, vars, onMutateResult, context) => {
       if (error && typeof error === 'object' && 'response' in error) {
         const errorWithResponse = error as { response?: { status?: number } };
         if (errorWithResponse.response?.status === 403) {
@@ -165,9 +165,9 @@ export const useDeleteFilesMutation = (
           });
         }
       }
-      onError?.(error, vars, context);
+      onError?.(error, vars, onMutateResult, context);
     },
-    onSuccess: (data, vars, context) => {
+    onSuccess: (data, vars, onMutateResult, context) => {
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (cachefiles) => {
         const { files: filesDeleted } = vars;
 
@@ -184,7 +184,7 @@ export const useDeleteFilesMutation = (
         status: 'success',
       });
 
-      onSuccess?.(data, vars, context);
+      onSuccess?.(data, vars, onMutateResult, context);
       if (vars.agent_id != null && vars.agent_id) {
         queryClient.refetchQueries({
           queryKey: [QueryKeys.agent, vars.agent_id]
