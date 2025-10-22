@@ -120,7 +120,7 @@ Please specify a correct \`imageOutputType\` value (case-sensitive).
       - ${EImageOutputType.JPEG}
       - ${EImageOutputType.PNG}
       - ${EImageOutputType.WEBP}
-
+      
       Refer to the latest config file guide for more information:
       https://www.librechat.ai/docs/configuration/librechat_yaml`,
     );
