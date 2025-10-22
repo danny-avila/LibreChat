@@ -68,8 +68,13 @@ const agentSchema = new Schema<IAgent>(
     end_after_tools: {
       type: Boolean,
     },
+    /** @deprecated Use edges instead */
     agent_ids: {
       type: [String],
+    },
+    edges: {
+      type: [{ type: Schema.Types.Mixed }],
+      default: [],
     },
     isCollaborative: {
       type: Boolean,

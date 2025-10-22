@@ -10,7 +10,7 @@ const {
   getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
-const { sleep, SplitStreamHandler: _Handler } = require('@librechat/agents');
+const { sleep, SplitStreamHandler: _Handler, addCacheControl } = require('@librechat/agents');
 const {
   Tokenizer,
   createFetch,
@@ -25,7 +25,6 @@ const {
 const {
   truncateText,
   formatMessage,
-  addCacheControl,
   titleFunctionPrompt,
   parseParamFromPrompt,
   createContextHandlers,

@@ -1,4 +1,5 @@
 import { Document, Types } from 'mongoose';
+import type { GraphEdge } from 'librechat-data-provider';
 
 export interface ISupportContact {
   name?: string;
@@ -27,7 +28,9 @@ export interface IAgent extends Omit<Document, 'model'> {
   authorName?: string;
   hide_sequential_outputs?: boolean;
   end_after_tools?: boolean;
+  /** @deprecated Use edges instead */
   agent_ids?: string[];
+  edges?: GraphEdge[];
   /** @deprecated Use ACL permissions instead */
   isCollaborative?: boolean;
   conversation_starters?: string[];

@@ -1,3 +1,4 @@
+export * from './chain';
 export * from './memory';
 export * from './migration';
 export * from './legacy';
