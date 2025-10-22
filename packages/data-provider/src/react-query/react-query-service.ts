@@ -3,6 +3,8 @@ import type {
   UseQueryOptions,
   UseMutationResult,
   QueryObserverResult,
+  UseMutationOptions,
+  UseQueryResult,
 } from '@tanstack/react-query';
 import { Constants, initialModelsConfig } from '../config';
 import { defaultOrderQuery } from '../types/assistants';
@@ -36,7 +38,6 @@ export const useGetSharedLinkQuery = (
   conversationId: string,
   config?: UseQueryOptions<t.TSharedLinkGetResponse>,
 ): QueryObserverResult<t.TSharedLinkGetResponse> => {
-  const queryClient = useQueryClient();
   return useQuery({
     queryKey: [QueryKeys.sharedLinks, conversationId],
     queryFn: () => dataService.getSharedLink(conversationId),
@@ -47,12 +48,6 @@ export const useGetSharedLinkQuery = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    onSuccess: (data) => {
-      queryClient.setQueryData([QueryKeys.sharedLinks, conversationId], {
-        conversationId: data.conversationId,
-        shareId: data.shareId,
-      });
-    },
     ...config,
   });
 };
@@ -80,7 +75,7 @@ export const useGetConversationByIdMutation = (id: string): UseMutationResult<s.
     // onSuccess: (res: s.TConversation) => {
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.conversation, id]
+        queryKey: [QueryKeys.conversation, id],
       });
     },
   });
@@ -94,7 +89,7 @@ export const useUpdateMessageMutation = (
     mutationFn: (payload: t.TUpdateMessageRequest) => dataService.updateMessage(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.messages, id]
+        queryKey: [QueryKeys.messages, id],
       });
     },
   });
@@ -108,7 +103,7 @@ export const useUpdateMessageContentMutation = (
     mutationFn: (payload: t.TUpdateMessageContent) => dataService.updateMessageContent(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.messages, conversationId]
+        queryKey: [QueryKeys.messages, conversationId],
       });
     },
   });
@@ -125,7 +120,7 @@ export const useUpdateUserKeysMutation = (): UseMutationResult<
     mutationFn: (payload: t.TUpdateUserKeyRequest) => dataService.updateUserKey(payload),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.name, variables.name]
+        queryKey: [QueryKeys.name, variables.name],
       });
     },
   });
@@ -137,7 +132,7 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
     mutationFn: () => dataService.clearAllConversations(),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.allConversations]
+        queryKey: [QueryKeys.allConversations],
       });
     },
   });
@@ -149,29 +144,29 @@ export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknow
     mutationFn: () => dataService.revokeUserKey(name),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.name, name]
+        queryKey: [QueryKeys.name, name],
       });
       if (s.isAssistantsEndpoint(name)) {
         queryClient.invalidateQueries({
-          queryKey: [QueryKeys.assistants, name, defaultOrderQuery]
+          queryKey: [QueryKeys.assistants, name, defaultOrderQuery],
         });
         queryClient.invalidateQueries({
-          queryKey: [QueryKeys.assistantDocs]
+          queryKey: [QueryKeys.assistantDocs],
         });
         queryClient.invalidateQueries({
-          queryKey: [QueryKeys.assistants]
+          queryKey: [QueryKeys.assistants],
         });
         queryClient.invalidateQueries({
-          queryKey: [QueryKeys.assistant]
+          queryKey: [QueryKeys.assistant],
         });
         queryClient.invalidateQueries({
-          queryKey: [QueryKeys.mcpTools]
+          queryKey: [QueryKeys.mcpTools],
         });
         queryClient.invalidateQueries({
-          queryKey: [QueryKeys.actions]
+          queryKey: [QueryKeys.actions],
         });
         queryClient.invalidateQueries({
-          queryKey: [QueryKeys.tools]
+          queryKey: [QueryKeys.tools],
         });
       }
     },
@@ -184,39 +179,31 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
     mutationFn: () => dataService.revokeAllUserKeys(),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.name]
+        queryKey: [QueryKeys.name],
       });
       queryClient.invalidateQueries({
-        queryKey: [
-          QueryKeys.assistants,
-          s.EModelEndpoint.assistants,
-          defaultOrderQuery,
-        ]
+        queryKey: [QueryKeys.assistants, s.EModelEndpoint.assistants, defaultOrderQuery],
       });
       queryClient.invalidateQueries({
-        queryKey: [
-          QueryKeys.assistants,
-          s.EModelEndpoint.azureAssistants,
-          defaultOrderQuery,
-        ]
+        queryKey: [QueryKeys.assistants, s.EModelEndpoint.azureAssistants, defaultOrderQuery],
       });
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.assistantDocs]
+        queryKey: [QueryKeys.assistantDocs],
       });
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.assistants]
+        queryKey: [QueryKeys.assistants],
       });
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.assistant]
+        queryKey: [QueryKeys.assistant],
       });
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.mcpTools]
+        queryKey: [QueryKeys.mcpTools],
       });
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.actions]
+        queryKey: [QueryKeys.actions],
       });
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.tools]
+        queryKey: [QueryKeys.tools],
       });
     },
   });
@@ -248,7 +235,7 @@ export const useCreatePresetMutation = (): UseMutationResult<
     mutationFn: (payload: s.TPreset) => dataService.createPreset(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.presets]
+        queryKey: [QueryKeys.presets],
       });
     },
   });
@@ -265,7 +252,7 @@ export const useDeletePresetMutation = (): UseMutationResult<
     mutationFn: (payload: s.TPreset | undefined) => dataService.deletePreset(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.presets]
+        queryKey: [QueryKeys.presets],
       });
     },
   });
@@ -282,26 +269,24 @@ export const useUpdateTokenCountMutation = (): UseMutationResult<
     mutationFn: ({ text }: { text: string }) => dataService.updateTokenCount(text),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.tokenCount]
+        queryKey: [QueryKeys.tokenCount],
       });
     },
   });
 };
 
 export const useRegisterUserMutation = (
-  options?: m.RegistrationOptions,
-): UseMutationResult<t.TError, unknown, t.TRegisterUser, unknown> => {
+  options?: UseMutationOptions<t.TRegisterUserResponse, t.TError, t.TRegisterUser, unknown>,
+): UseMutationResult<t.TRegisterUserResponse, t.TError, t.TRegisterUser, unknown> => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: t.TRegisterUser) => dataService.register(payload),
     ...options,
-    onSuccess: (...args) => {
+    onSuccess: (data, variables, onMutateResult, context) => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.user]
+        queryKey: [QueryKeys.user],
       });
-      if (options?.onSuccess) {
-        options.onSuccess(...args);
-      }
+      options?.onSuccess?.(data, variables, onMutateResult, context);
     },
   });
 };
@@ -333,8 +318,7 @@ export const useRequestPasswordResetMutation = (): UseMutationResult<
   unknown
 > => {
   return useMutation({
-    mutationFn: (payload: t.TRequestPasswordReset) =>
-      dataService.requestPasswordReset(payload)
+    mutationFn: (payload: t.TRequestPasswordReset) => dataService.requestPasswordReset(payload),
   });
 };
 
@@ -345,13 +329,13 @@ export const useResetPasswordMutation = (): UseMutationResult<
   unknown
 > => {
   return useMutation({
-    mutationFn: (payload: t.TResetPassword) => dataService.resetPassword(payload)
+    mutationFn: (payload: t.TResetPassword) => dataService.resetPassword(payload),
   });
 };
 
 export const useAvailablePluginsQuery = <TData = s.TPlugin[]>(
   config?: UseQueryOptions<s.TPlugin[], unknown, TData>,
-): QueryObserverResult<TData> => {
+): UseQueryResult<TData, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.availablePlugins],
     queryFn: () => dataService.getAvailablePlugins(),
@@ -363,22 +347,22 @@ export const useAvailablePluginsQuery = <TData = s.TPlugin[]>(
 };
 
 export const useUpdateUserPluginsMutation = (
-  _options?: m.UpdatePluginAuthOptions,
+  _options?: UseMutationOptions<t.TUser, unknown, t.TUpdateUserPlugins, unknown>,
 ): UseMutationResult<t.TUser, unknown, t.TUpdateUserPlugins, unknown> => {
   const queryClient = useQueryClient();
   const { onSuccess, ...options } = _options ?? {};
   return useMutation({
     mutationFn: (payload: t.TUpdateUserPlugins) => dataService.updateUserPlugins(payload),
     ...options,
-    onSuccess: (...args) => {
+    onSuccess: (data, variables, onMutateResult, context) => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.user]
+        queryKey: [QueryKeys.user],
       });
-      onSuccess?.(...args);
-      if (args[1]?.action === 'uninstall' && args[1]?.pluginKey?.startsWith(Constants.mcp_prefix)) {
-        const serverName = args[1]?.pluginKey?.substring(Constants.mcp_prefix.length);
+      onSuccess?.(data, variables, onMutateResult, context);
+      if (variables?.action === 'uninstall' && variables?.pluginKey?.startsWith(Constants.mcp_prefix)) {
+        const serverName = variables?.pluginKey?.substring(Constants.mcp_prefix.length);
         queryClient.invalidateQueries({
-          queryKey: [QueryKeys.mcpAuthValues, serverName]
+          queryKey: [QueryKeys.mcpAuthValues, serverName],
         });
       }
     },
@@ -402,7 +386,7 @@ export const useReinitializeMCPServerMutation = (): UseMutationResult<
     mutationFn: (serverName: string) => dataService.reinitializeMCPServer(serverName),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.mcpTools]
+        queryKey: [QueryKeys.mcpTools],
       });
     },
   });
@@ -419,7 +403,7 @@ export const useCancelMCPOAuthMutation = (): UseMutationResult<
     mutationFn: (serverName: string) => dataService.cancelMCPOAuth(serverName),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.mcpConnectionStatus]
+        queryKey: [QueryKeys.mcpConnectionStatus],
       });
     },
   });
@@ -448,7 +432,7 @@ export const useUpdateFeedbackMutation = (
       dataService.updateFeedback(conversationId, messageId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.messages, messageId]
+        queryKey: [QueryKeys.messages, messageId],
       });
     },
   });

@@ -5,7 +5,7 @@ import {
 } from 'librechat-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
-import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
+import type { InfiniteData, UseMutationResult, UseMutationOptions } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
   logger,
@@ -72,10 +72,10 @@ export const useTagConversationMutation = (
   return useMutation({
     mutationFn: (payload: t.TTagConversationRequest) =>
       dataService.addTagToConversation(conversationId, payload),
-    onSuccess: (updatedTags, ...rest) => {
+    onSuccess: (updatedTags, variables, onMutateResult, context) => {
       query.refetch();
       updateTagsInConversation(conversationId, updatedTags);
-      options?.onSuccess?.(updatedTags, ...rest);
+      options?.onSuccess?.(updatedTags, variables, onMutateResult, context);
     },
     onError: options?.onError,
     onMutate: options?.onMutate,
@@ -96,17 +96,18 @@ export const useArchiveConvoMutation = (
   const { onMutate, onError, onSuccess, ..._options } = options || {};
 
   return useMutation({
-    mutationFn: (payload: t.TArchiveConversationRequest) => dataService.archiveConversation(payload),
+    mutationFn: (payload: t.TArchiveConversationRequest) =>
+      dataService.archiveConversation(payload),
     onMutate,
 
-    onSuccess: (_data, vars, context) => {
+    onSuccess: (_data, vars, onMutateResult, context) => {
       const isArchived = vars.isArchived === true;
 
       removeConvoFromAllQueries(queryClient, vars.conversationId);
 
       const archivedQueries = queryClient.getQueryCache().findAll({
         queryKey: [QueryKeys.archivedConversations],
-        exact: false
+        exact: false,
       });
 
       for (const query of archivedQueries) {
@@ -147,17 +148,15 @@ export const useArchiveConvoMutation = (
         isArchived ? null : _data,
       );
 
-      onSuccess?.(_data, vars, context);
+      onSuccess?.(_data, vars, onMutateResult, context);
     },
     onError,
     onSettled: () => {
       queryClient.invalidateQueries({
         queryKey: convoQueryKey,
-        refetchPage: (_, index) => index === 0,
       });
       queryClient.invalidateQueries({
         queryKey: archivedConvoQueryKey,
-        refetchPage: (_, index) => index === 0,
       });
     },
     ..._options,
@@ -165,8 +164,9 @@ export const useArchiveConvoMutation = (
 };
 
 export const useCreateSharedLinkMutation = (
-  options?: t.MutationOptions<
-    t.TCreateShareLinkRequest,
+  options?: UseMutationOptions<
+    t.TSharedLinkResponse,
+    unknown,
     { conversationId: string; targetMessageId?: string }
   >,
 ): UseMutationResult<
@@ -179,24 +179,30 @@ export const useCreateSharedLinkMutation = (
 
   const { onSuccess, ..._options } = options || {};
   return useMutation({
-    mutationFn: ({ conversationId, targetMessageId }: { conversationId: string; targetMessageId?: string }) => {
+    mutationFn: ({
+      conversationId,
+      targetMessageId,
+    }: {
+      conversationId: string;
+      targetMessageId?: string;
+    }) => {
       if (!conversationId) {
         throw new Error('Conversation ID is required');
       }
 
       return dataService.createSharedLink(conversationId, targetMessageId);
     },
-    onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
+    onSuccess: (_data: t.TSharedLinkResponse, vars, onMutateResult, context) => {
       queryClient.setQueryData([QueryKeys.sharedLinks, _data.conversationId], _data);
 
-      onSuccess?.(_data, vars, context);
+      onSuccess?.(_data, vars, onMutateResult, context);
     },
     ..._options,
   });
 };
 
 export const useUpdateSharedLinkMutation = (
-  options?: t.MutationOptions<t.TUpdateShareLinkRequest, { shareId: string }>,
+  options?: UseMutationOptions<t.TSharedLinkResponse, unknown, { shareId: string }>,
 ): UseMutationResult<t.TSharedLinkResponse, unknown, { shareId: string }, unknown> => {
   const queryClient = useQueryClient();
 
@@ -209,13 +215,13 @@ export const useUpdateSharedLinkMutation = (
       return dataService.updateSharedLink(shareId);
     },
 
-    onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
+    onSuccess: (_data: t.TSharedLinkResponse, vars, onMutateResult, context) => {
       queryClient.setQueryData([QueryKeys.sharedLinks, _data.conversationId], _data);
 
-      onSuccess?.(_data, vars, context);
+      onSuccess?.(_data, vars, onMutateResult, context);
     },
 
-    ..._options
+    ..._options,
   });
 };
 
@@ -232,7 +238,7 @@ export const useDeleteSharedLinkMutation = (
 
   return useMutation({
     mutationFn: (vars) => dataService.deleteSharedLink(vars.shareId),
-    onMutate: async (vars) => {
+    onMutate: async (vars, context) => {
       await queryClient.cancelQueries({
         queryKey: [QueryKeys.sharedLinks],
         exact: false,
@@ -240,7 +246,7 @@ export const useDeleteSharedLinkMutation = (
 
       const previousQueries = new Map();
       const queryKeys = queryClient.getQueryCache().findAll({
-        queryKey: [QueryKeys.sharedLinks]
+        queryKey: [QueryKeys.sharedLinks],
       });
 
       queryKeys.forEach((query) => {
@@ -266,13 +272,13 @@ export const useDeleteSharedLinkMutation = (
         });
       });
 
-      return { previousQueries };
+      return { previousQueries, ...context };
     },
 
-    onError: (_err, _vars, context) => {
-      if (context?.previousQueries) {
-        context.previousQueries.forEach((prevData: unknown, prevQueryKey: unknown) => {
-          queryClient.setQueryData(prevQueryKey as string[], prevData);
+    onError: (_err, _vars, onMutateResult, _context) => {
+      if (onMutateResult?.previousQueries) {
+        onMutateResult.previousQueries.forEach((prevData, prevQueryKey) => {
+          queryClient.setQueryData(prevQueryKey, prevData);
         });
       }
     },
@@ -284,9 +290,9 @@ export const useDeleteSharedLinkMutation = (
       });
     },
 
-    onSuccess: (data, variables) => {
+    onSuccess: (data, variables, onMutateResult, context) => {
       if (onSuccess) {
-        onSuccess(data, variables);
+        onSuccess(data, variables, onMutateResult, context);
       }
 
       queryClient.refetchQueries({
@@ -305,11 +311,11 @@ export const useConversationTagMutation = ({
 }: {
   context: string;
   tag?: string;
-  options?: t.UpdateConversationTagOptions;
+  options?: UseMutationOptions<t.TConversationTag, unknown, t.TConversationTagRequest>;
 }): UseMutationResult<t.TConversationTagResponse, unknown, t.TConversationTagRequest, unknown> => {
   const queryClient = useQueryClient();
   const { onSuccess, ..._options } = options || {};
-  const onMutationSuccess: typeof onSuccess = (_data, vars) => {
+  const onMutationSuccess = (_data: t.TConversationTag, vars: t.TConversationTagRequest) => {
     queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (queryData) => {
       if (!queryData) {
         return [
@@ -377,9 +383,9 @@ export const useConversationTagMutation = ({
         ? dataService.updateConversationTag(tag, payload)
         : dataService.createConversationTag(payload),
 
-    onSuccess: (...args) => {
-      onMutationSuccess(...args);
-      onSuccess?.(...args);
+    onSuccess: (data, variables, onMutateResult, context) => {
+      onMutationSuccess(data, variables);
+      onSuccess?.(data, variables, onMutateResult, context);
     },
     ..._options,
   });
@@ -451,7 +457,7 @@ export const useDeleteTagInConversations = () => {
 };
 
 export const useDeleteConversationTagMutation = (
-  options?: t.DeleteConversationTagOptions,
+  options?: UseMutationOptions<t.TConversationTag, unknown, string, void>,
 ): UseMutationResult<t.TConversationTagResponse, unknown, string, void> => {
   const queryClient = useQueryClient();
   const deleteTagInAllConversations = useDeleteTagInConversations();
@@ -461,7 +467,7 @@ export const useDeleteConversationTagMutation = (
   return useMutation({
     mutationFn: (tag: string) => dataService.deleteConversationTag(tag),
 
-    onSuccess: (_data, tagToDelete, context) => {
+    onSuccess: (_data, tagToDelete, onMutateResult, context) => {
       queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (data) => {
         if (!data) {
           return data;
@@ -470,14 +476,19 @@ export const useDeleteConversationTagMutation = (
       });
 
       deleteTagInAllConversations(tagToDelete);
-      onSuccess?.(_data, tagToDelete, context);
+      onSuccess?.(_data, tagToDelete, onMutateResult, context);
     },
     ..._options,
   });
 };
 
 export const useDeleteConversationMutation = (
-  options?: t.DeleteConversationOptions,
+  options?: UseMutationOptions<
+    t.TDeleteConversationResponse,
+    unknown,
+    t.TDeleteConversationRequest,
+    unknown
+  >,
 ): UseMutationResult<
   t.TDeleteConversationResponse,
   unknown,
@@ -492,10 +503,10 @@ export const useDeleteConversationMutation = (
 
     onMutate: async () => {
       await queryClient.cancelQueries({
-        queryKey: [QueryKeys.allConversations]
+        queryKey: [QueryKeys.allConversations],
       });
       await queryClient.cancelQueries({
-        queryKey: [QueryKeys.archivedConversations]
+        queryKey: [QueryKeys.archivedConversations],
       });
       // could store old state if needed for rollback
     },
@@ -504,7 +515,7 @@ export const useDeleteConversationMutation = (
       // TODO: CHECK THIS, no-op; restore if needed
     },
 
-    onSuccess: (data, vars, context) => {
+    onSuccess: (data, vars, onMutateResult, context) => {
       if (vars.conversationId) {
         removeConvoFromAllQueries(queryClient, vars.conversationId);
       }
@@ -512,7 +523,7 @@ export const useDeleteConversationMutation = (
       // Also remove from all archivedConversations caches
       const archivedQueries = queryClient.getQueryCache().findAll({
         queryKey: [QueryKeys.archivedConversations],
-        exact: false
+        exact: false,
       });
 
       for (const query of archivedQueries) {
@@ -544,26 +555,29 @@ export const useDeleteConversationMutation = (
 
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.allConversations],
-        refetchPage: (_, index) => index === 0,
       });
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.archivedConversations],
-        refetchPage: (_, index) => index === 0,
       });
 
-      options?.onSuccess?.(data, vars, context);
-    }
+      options?.onSuccess?.(data, vars, onMutateResult, context);
+    },
   });
 };
 
 export const useDuplicateConversationMutation = (
-  options?: t.DuplicateConvoOptions,
+  options?: UseMutationOptions<
+    t.TDuplicateConvoResponse,
+    unknown,
+    t.TDuplicateConvoRequest,
+    unknown
+  >,
 ): UseMutationResult<t.TDuplicateConvoResponse, unknown, t.TDuplicateConvoRequest, unknown> => {
   const queryClient = useQueryClient();
   const { onSuccess, ..._options } = options ?? {};
   return useMutation({
     mutationFn: (payload) => dataService.duplicateConversation(payload),
-    onSuccess: (data, vars, context) => {
+    onSuccess: (data, vars, onMutateResult, context) => {
       const duplicatedConversation = data.conversation;
       if (!duplicatedConversation?.conversationId) {
         return;
@@ -579,7 +593,6 @@ export const useDuplicateConversationMutation = (
       );
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.allConversations],
-        refetchPage: (_, index) => index === 0,
       });
 
       if (duplicatedConversation.tags && duplicatedConversation.tags.length > 0) {
@@ -594,21 +607,23 @@ export const useDuplicateConversationMutation = (
         });
       }
 
-      onSuccess?.(data, vars, context);
+      onSuccess?.(data, vars, onMutateResult, context);
+      onSuccess?.(data, vars, onMutateResult, context);
     },
     ..._options,
   });
 };
 
 export const useForkConvoMutation = (
-  options?: t.ForkConvoOptions,
+  options?: UseMutationOptions<t.TForkConvoResponse, unknown, t.TForkConvoRequest, unknown>,
 ): UseMutationResult<t.TForkConvoResponse, unknown, t.TForkConvoRequest, unknown> => {
   const queryClient = useQueryClient();
   const { onSuccess, ..._options } = options || {};
 
   return useMutation({
     mutationFn: (payload: t.TForkConvoRequest) => dataService.forkConversation(payload),
-    onSuccess: (data, vars, context) => {
+    ..._options,
+    onSuccess: (data, vars, onMutateResult, context) => {
       if (!vars.conversationId) {
         return;
       }
@@ -623,7 +638,6 @@ export const useForkConvoMutation = (
       queryClient.setQueryData([QueryKeys.messages, forkedConversationId], data.messages);
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.allConversations],
-        refetchPage: (_, index) => index === 0,
       });
 
       if (forkedConversation.tags && forkedConversation.tags.length > 0) {
@@ -638,40 +652,32 @@ export const useForkConvoMutation = (
         });
       }
 
-      onSuccess?.(data, vars, context);
+      onSuccess?.(data, vars, onMutateResult, context);
     },
-    ..._options,
   });
 };
 
 export const useUploadConversationsMutation = (
-  _options?: t.MutationOptions<t.TImportResponse, FormData>,
+  _options?: UseMutationOptions<t.TImportResponse, unknown, FormData, unknown>,
 ) => {
   const queryClient = useQueryClient();
-  const { onSuccess, onError, onMutate } = _options || {};
+  const { onSuccess } = _options || {};
 
   return useMutation<t.TImportResponse, unknown, FormData>({
     mutationFn: (formData: FormData) => dataService.importConversationsFile(formData),
-    onSuccess: (data, variables, context) => {
+    ..._options,
+    onSuccess: (data, variables, onMutateResult, context) => {
       /* TODO: optimize to return imported conversations and add manually */
       queryClient.invalidateQueries({
-        queryKey: [QueryKeys.allConversations]
+        queryKey: [QueryKeys.allConversations],
       });
-      if (onSuccess) {
-        onSuccess(data, variables, context);
-      }
+      onSuccess?.(data, variables, onMutateResult, context);
     },
-    onError: (err, variables, context) => {
-      if (onError) {
-        onError(err, variables, context);
-      }
-    },
-    onMutate,
   });
 };
 
 export const useUpdatePresetMutation = (
-  options?: t.UpdatePresetOptions,
+  options?: UseMutationOptions<t.TPreset, unknown, t.TPreset, unknown>,
 ): UseMutationResult<
   t.TPreset, // response data
   unknown,
@@ -686,7 +692,7 @@ export const useUpdatePresetMutation = (
 };
 
 export const useDeletePresetMutation = (
-  options?: t.DeletePresetOptions,
+  options?: UseMutationOptions<t.PresetDeleteResponse, unknown, t.TPreset | undefined, unknown>,
 ): UseMutationResult<
   t.PresetDeleteResponse, // response data
   unknown,
@@ -702,7 +708,7 @@ export const useDeletePresetMutation = (
 
 /* Avatar upload */
 export const useUploadAvatarMutation = (
-  options?: t.UploadAvatarOptions,
+  options?: UseMutationOptions<t.AvatarUploadResponse, unknown, FormData, unknown>,
 ): UseMutationResult<
   t.AvatarUploadResponse, // response data
   unknown, // error
@@ -718,7 +724,7 @@ export const useUploadAvatarMutation = (
 
 /* Speech to text */
 export const useSpeechToTextMutation = (
-  options?: t.SpeechToTextOptions,
+  options?: UseMutationOptions<t.SpeechToTextResponse, unknown, FormData, unknown>,
 ): UseMutationResult<
   t.SpeechToTextResponse, // response data
   unknown, // error
@@ -734,7 +740,7 @@ export const useSpeechToTextMutation = (
 
 /* Text to speech */
 export const useTextToSpeechMutation = (
-  options?: t.TextToSpeechOptions,
+  options?: UseMutationOptions<ArrayBuffer, unknown, FormData, unknown>,
 ): UseMutationResult<
   ArrayBuffer, // response data
   unknown, // error
@@ -756,14 +762,14 @@ export const useTextToSpeechMutation = (
  * Create a new assistant
  */
 export const useCreateAssistantMutation = (
-  options?: t.CreateAssistantMutationOptions,
+  options?: UseMutationOptions<t.Assistant, Error, t.AssistantCreateParams, unknown>,
 ): UseMutationResult<t.Assistant, Error, t.AssistantCreateParams> => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (newAssistantData: t.AssistantCreateParams) => dataService.createAssistant(newAssistantData),
-    onMutate: (variables) => options?.onMutate?.(variables),
-    onError: (error, variables, context) => options?.onError?.(error, variables, context),
-    onSuccess: (newAssistant, variables, context) => {
+    mutationFn: (newAssistantData: t.AssistantCreateParams) =>
+      dataService.createAssistant(newAssistantData),
+    ...options,
+    onSuccess: (newAssistant, variables, onMutateResult, context) => {
       const listRes = queryClient.getQueryData<t.AssistantListResponse>([
         QueryKeys.assistants,
         variables.endpoint,
@@ -771,7 +777,7 @@ export const useCreateAssistantMutation = (
       ]);
 
       if (!listRes) {
-        return options?.onSuccess?.(newAssistant, variables, context);
+        return options?.onSuccess?.(newAssistant, variables, onMutateResult, context);
       }
 
       const currentAssistants = [newAssistant, ...JSON.parse(JSON.stringify(listRes.data))];
@@ -783,8 +789,8 @@ export const useCreateAssistantMutation = (
           data: currentAssistants,
         },
       );
-      return options?.onSuccess?.(newAssistant, variables, context);
-    }
+      return options?.onSuccess?.(newAssistant, variables, onMutateResult, context);
+    },
   });
 };
 
@@ -792,7 +798,12 @@ export const useCreateAssistantMutation = (
  * Hook for updating an assistant
  */
 export const useUpdateAssistantMutation = (
-  options?: t.UpdateAssistantMutationOptions,
+  options?: UseMutationOptions<
+    t.Assistant,
+    Error,
+    { assistant_id: string; data: t.AssistantUpdateParams },
+    unknown
+  >,
 ): UseMutationResult<
   t.Assistant,
   Error,
@@ -800,7 +811,13 @@ export const useUpdateAssistantMutation = (
 > => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ assistant_id, data }: { assistant_id: string; data: t.AssistantUpdateParams }) => {
+    mutationFn: ({
+      assistant_id,
+      data,
+    }: {
+      assistant_id: string;
+      data: t.AssistantUpdateParams;
+    }) => {
       const { endpoint } = data;
       const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
       const endpointConfig = endpointsConfig?.[endpoint];
@@ -811,9 +828,10 @@ export const useUpdateAssistantMutation = (
         assistant_id,
       });
     },
-    onMutate: (variables) => options?.onMutate?.(variables),
-    onError: (error, variables, context) => options?.onError?.(error, variables, context),
-    onSuccess: (updatedAssistant, variables, context) => {
+    onMutate: options?.onMutate,
+    onError: (error, variables, onMutateResult, context) =>
+      options?.onError?.(error, variables, onMutateResult, context),
+    onSuccess: (updatedAssistant, variables, onMutateResult, context) => {
       const listRes = queryClient.getQueryData<t.AssistantListResponse>([
         QueryKeys.assistants,
         variables.data.endpoint,
@@ -821,7 +839,7 @@ export const useUpdateAssistantMutation = (
       ]);
 
       if (!listRes) {
-        return options?.onSuccess?.(updatedAssistant, variables, context);
+        return options?.onSuccess?.(updatedAssistant, variables, onMutateResult, context);
       }
 
       queryClient.setQueryData<t.AssistantDocument[]>(
@@ -855,7 +873,7 @@ export const useUpdateAssistantMutation = (
           }),
         },
       );
-      return options?.onSuccess?.(updatedAssistant, variables, context);
+      return options?.onSuccess?.(updatedAssistant, variables, onMutateResult, context);
     },
   });
 };
@@ -864,7 +882,7 @@ export const useUpdateAssistantMutation = (
  * Hook for deleting an assistant
  */
 export const useDeleteAssistantMutation = (
-  options?: t.DeleteAssistantMutationOptions,
+  options?: UseMutationOptions<void, Error, t.DeleteAssistantBody, unknown>,
 ): UseMutationResult<void, Error, t.DeleteAssistantBody> => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -873,9 +891,8 @@ export const useDeleteAssistantMutation = (
       const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
       return dataService.deleteAssistant({ assistant_id, model, version, endpoint });
     },
-    onMutate: (variables) => options?.onMutate?.(variables),
-    onError: (error, variables, context) => options?.onError?.(error, variables, context),
-    onSuccess: (_data, variables, context) => {
+    ...options,
+    onSuccess: (_data, variables, onMutateResult, context) => {
       const listRes = queryClient.getQueryData<t.AssistantListResponse>([
         QueryKeys.assistants,
         variables.endpoint,
@@ -883,7 +900,7 @@ export const useDeleteAssistantMutation = (
       ]);
 
       if (!listRes) {
-        return options?.onSuccess?.(_data, variables, context);
+        return options?.onSuccess?.(_data, variables, onMutateResult, context);
       }
 
       const data = listRes.data.filter((assistant) => assistant.id !== variables.assistant_id);
@@ -896,7 +913,7 @@ export const useDeleteAssistantMutation = (
         },
       );
 
-      return options?.onSuccess?.(_data, variables, data);
+      return options?.onSuccess?.(_data, variables, onMutateResult, context);
     },
   });
 };
@@ -905,7 +922,7 @@ export const useDeleteAssistantMutation = (
  * Hook for uploading an assistant avatar
  */
 export const useUploadAssistantAvatarMutation = (
-  options?: t.UploadAssistantAvatarOptions,
+  options?: UseMutationOptions<t.Assistant, unknown, t.AssistantAvatarVariables, unknown>,
 ): UseMutationResult<
   t.Assistant, // response data
   unknown, // error
@@ -925,7 +942,7 @@ export const useUploadAssistantAvatarMutation = (
  * Hook for updating Assistant Actions
  */
 export const useUpdateAction = (
-  options?: t.UpdateActionOptions,
+  options?: UseMutationOptions<t.UpdateActionResponse, unknown, t.UpdateActionVariables, unknown>,
 ): UseMutationResult<
   t.UpdateActionResponse, // response data
   unknown, // error
@@ -936,10 +953,8 @@ export const useUpdateAction = (
   return useMutation({
     mutationKey: [MutationKeys.updateAction],
     mutationFn: (variables: t.UpdateActionVariables) => dataService.updateAction(variables),
-    onMutate: (variables) => options?.onMutate?.(variables),
-    onError: (error, variables, context) => options?.onError?.(error, variables, context),
-
-    onSuccess: (updateActionResponse, variables, context) => {
+    ...options,
+    onSuccess: (updateActionResponse, variables, onMutateResult, context) => {
       const listRes = queryClient.getQueryData<t.AssistantListResponse>([
         QueryKeys.assistants,
         variables.endpoint,
@@ -947,7 +962,7 @@ export const useUpdateAction = (
       ]);
 
       if (!listRes) {
-        return options?.onSuccess?.(updateActionResponse, variables, context);
+        return options?.onSuccess?.(updateActionResponse, variables, onMutateResult, context);
       }
 
       const updatedAssistant = updateActionResponse[1];
@@ -978,7 +993,7 @@ export const useUpdateAction = (
           );
       });
 
-      return options?.onSuccess?.(updateActionResponse, variables, context);
+      return options?.onSuccess?.(updateActionResponse, variables, onMutateResult, context);
     },
   });
 };
@@ -987,7 +1002,7 @@ export const useUpdateAction = (
  * Hook for deleting an Assistant Action
  */
 export const useDeleteAction = (
-  options?: t.DeleteActionOptions,
+  options?: UseMutationOptions<void, Error, t.DeleteActionVariables, unknown>,
 ): UseMutationResult<
   void, // response data for a delete operation is typically void
   Error, // error type
@@ -1006,9 +1021,8 @@ export const useDeleteAction = (
         version,
       });
     },
-    onMutate: (variables) => options?.onMutate?.(variables),
-    onError: (error, variables, context) => options?.onError?.(error, variables, context),
-    onSuccess: (_data, variables, context) => {
+    ...options,
+    onSuccess: (_data, variables, onMutateResult, context) => {
       let domain: string | undefined = '';
       queryClient.setQueryData<t.Action[]>([QueryKeys.actions], (prev) => {
         return prev?.filter((action) => {
@@ -1041,7 +1055,7 @@ export const useDeleteAction = (
         },
       );
 
-      return options?.onSuccess?.(_data, variables, context);
+      return options?.onSuccess?.(_data, variables, onMutateResult, context);
     },
   });
 };
@@ -1050,7 +1064,7 @@ export const useDeleteAction = (
  * Hook for verifying email address
  */
 export const useVerifyEmailMutation = (
-  options?: t.VerifyEmailOptions,
+  options?: UseMutationOptions<t.VerifyEmailResponse, unknown, t.TVerifyEmail, unknown>,
 ): UseMutationResult<t.VerifyEmailResponse, unknown, t.TVerifyEmail, unknown> => {
   return useMutation({
     mutationFn: (variables: t.TVerifyEmail) => dataService.verifyEmail(variables),
@@ -1062,7 +1076,7 @@ export const useVerifyEmailMutation = (
  * Hook for resending verficiation email
  */
 export const useResendVerificationEmail = (
-  options?: t.ResendVerifcationOptions,
+  options?: UseMutationOptions<t.VerifyEmailResponse, unknown, t.TResendVerificationEmail, unknown>,
 ): UseMutationResult<t.VerifyEmailResponse, unknown, t.TResendVerificationEmail, unknown> => {
   return useMutation({
     mutationFn: (variables: t.TResendVerificationEmail) =>
@@ -1072,17 +1086,17 @@ export const useResendVerificationEmail = (
 };
 
 export const useAcceptTermsMutation = (
-  options?: t.AcceptTermsMutationOptions,
+  options?: UseMutationOptions<t.TAcceptTermsResponse, unknown, void, unknown>,
 ): UseMutationResult<t.TAcceptTermsResponse, unknown, void, unknown> => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => dataService.acceptTerms(),
 
-    onSuccess: (data, variables, context) => {
+    onSuccess: (data, variables, onMutateResult, context) => {
       queryClient.setQueryData<t.TUserTermsResponse>([QueryKeys.userTerms], {
         termsAccepted: true,
       });
-      options?.onSuccess?.(data, variables, context);
+      options?.onSuccess?.(data, variables, onMutateResult, context);
     },
 
     onError: options?.onError,

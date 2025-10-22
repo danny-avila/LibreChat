@@ -1,7 +1,7 @@
 import { useResetRecoilState, useSetRecoilState } from 'recoil';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MutationKeys, QueryKeys, dataService, request } from 'librechat-data-provider';
-import type { UseMutationResult } from '@tanstack/react-query';
+import type { UseMutationResult, UseMutationOptions } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import useClearStates from '~/hooks/Config/useClearStates';
 import { clearAllConversationStorage } from '~/utils';
@@ -9,7 +9,7 @@ import store from '~/store';
 
 /* login/logout */
 export const useLogoutUserMutation = (
-  options?: t.LogoutOptions,
+  options?: UseMutationOptions<t.TLogoutResponse, unknown, undefined, unknown>,
 ): UseMutationResult<t.TLogoutResponse, unknown, undefined, unknown> => {
   const queryClient = useQueryClient();
   const clearStates = useClearStates();
@@ -31,7 +31,7 @@ export const useLogoutUserMutation = (
 };
 
 export const useLoginUserMutation = (
-  options?: t.MutationOptions<t.TLoginResponse, t.TLoginUser, unknown, unknown>,
+  options?: UseMutationOptions<t.TLoginResponse, unknown, t.TLoginUser, unknown>,
 ): UseMutationResult<t.TLoginResponse, unknown, t.TLoginUser, unknown> => {
   const queryClient = useQueryClient();
   const clearStates = useClearStates();
@@ -41,11 +41,11 @@ export const useLoginUserMutation = (
     mutationKey: [MutationKeys.loginUser],
     mutationFn: (payload: t.TLoginUser) => dataService.login(payload),
     ...(options || {}),
-    onMutate: (vars) => {
+    onMutate: (vars, context) => {
       resetDefaultPreset();
       clearStates();
       queryClient.removeQueries();
-      options?.onMutate?.(vars);
+      options?.onMutate?.(vars, context);
     },
     onSuccess: (...args) => {
       setQueriesEnabled(true);
@@ -55,23 +55,34 @@ export const useLoginUserMutation = (
 };
 
 export const useRefreshTokenMutation = (
-  options?: t.MutationOptions<t.TRefreshTokenResponse | undefined, undefined, unknown, unknown>,
-): UseMutationResult<t.TRefreshTokenResponse | undefined, unknown, undefined, unknown> => {
+  options?: UseMutationOptions<t.TRefreshTokenResponse, unknown, undefined, unknown>,
+): UseMutationResult<t.TRefreshTokenResponse, unknown, undefined, unknown> => {
   const queryClient = useQueryClient();
+  const setQueriesEnabled = useSetRecoilState<boolean>(store.queriesEnabled);
   return useMutation({
     mutationKey: [MutationKeys.refreshToken],
-    mutationFn: () => request.refreshToken(),
+    mutationFn: async () => {
+      const res = await request.refreshToken();
+      if (!res || !res.token) {
+        throw new Error('Refresh token not provided');
+      }
+      return res;
+    },
     ...(options || {}),
-    onMutate: (vars) => {
+    onMutate: (vars, context) => {
       queryClient.removeQueries();
-      options?.onMutate?.(vars);
+      options?.onMutate?.(vars, context);
+    },
+    onSuccess: (data, variables, onMutateResult, context) => {
+      setQueriesEnabled(true);
+      options?.onSuccess?.(data, variables, onMutateResult, context);
     },
   });
 };
 
 /* User */
 export const useDeleteUserMutation = (
-  options?: t.MutationOptions<unknown, undefined>,
+  options?: UseMutationOptions<unknown, unknown, undefined, unknown>,
 ): UseMutationResult<unknown, unknown, undefined, unknown> => {
   const queryClient = useQueryClient();
   const clearStates = useClearStates();
@@ -167,7 +178,7 @@ export const useRegenerateBackupCodesMutation = (): UseMutationResult<
 };
 
 export const useVerifyTwoFactorTempMutation = (
-  options?: t.MutationOptions<t.TVerify2FATempResponse, t.TVerify2FATempRequest, unknown, unknown>,
+  options?: UseMutationOptions<t.TVerify2FATempResponse, unknown, t.TVerify2FATempRequest, unknown>,
 ): UseMutationResult<t.TVerify2FATempResponse, unknown, t.TVerify2FATempRequest, unknown> => {
   const queryClient = useQueryClient();
   return useMutation({
