@@ -14,6 +14,7 @@ import Sources from '~/components/Web/Sources';
 import { mapAttachments } from '~/utils/map';
 import { EditTextPart } from './Parts';
 import { useLocalize } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 import store from '~/store';
 import Part from './Part';
 
@@ -53,6 +54,7 @@ const ContentParts = memo(
     setSiblingIdx,
   }: ContentPartsProps) => {
     const localize = useLocalize();
+    const { data: startupConfig } = useGetStartupConfig();
     const [showThinking, setShowThinking] = useRecoilState<boolean>(store.showThinking);
     const [isExpanded, setIsExpanded] = useState(showThinking);
     const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
@@ -139,7 +141,7 @@ const ContentParts = memo(
                 }
                 label={
                   effectiveIsSubmitting && isLast
-                    ? localize('com_ui_thinking')
+                    ? startupConfig?.interface?.thinkingIndicatorText || localize('com_ui_thinking')
                     : localize('com_ui_thoughts')
                 }
               />
