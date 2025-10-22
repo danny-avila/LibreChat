@@ -131,11 +131,14 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
    * margin-bottom to make the input field visible above the keyboard.
    */
   const handleAndroidEdgeKeyboardFocusFix = useCallback(() => {
-    if (isAndroidEdgeBrowser()) {
+    const ANDROID_EDGE_HOTFIX_KEYBOARD_OVERLAY_HEIGHT = '240px';
+
+    // Only apply fix for Android Edge version 141 or greater
+    if (isAndroidEdgeWithVersion141OrGreater()) {
       const formElement = document.querySelector('form');
       if (formElement) {
         // Add margin-bottom to push the form up by the keyboard height
-        formElement.style.marginBottom = `240px`;
+        formElement.style.marginBottom = ANDROID_EDGE_HOTFIX_KEYBOARD_OVERLAY_HEIGHT;
       }
     }
   }, []);
@@ -147,7 +150,8 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
    * form position by removing the margin-bottom.
    */
   const handleAndroidEdgeKeyboardBlurFix = useCallback(() => {
-    if (isAndroidEdgeBrowser()) {
+    // Only apply fix for Android Edge version 141 or greater
+    if (isAndroidEdgeWithVersion141OrGreater()) {
       const formElement = document.querySelector('form');
       if (formElement) {
         // Remove margin-bottom to restore original form position
@@ -384,13 +388,42 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
 });
 
 /**
- * Needed for HOTFIX: Android Edge Browser Keyboard Overlay Fix (can be removed when Edge Android is fixed)
- * @returns true if the browser is Android Edge, false otherwise
+ * Get the Edge browser version from user agent string
+ * @returns the version number (e.g., 141) or null if not Edge
  */
-function isAndroidEdgeBrowser(): boolean {
+function getEdgeVersion(): number | null {
+  const userAgent = navigator.userAgent;
+
+  // Edge on Android pattern: "EdgA/141.0.0.0"
+  const edgeAndroidMatch = userAgent.match(/EdgA\/(\d+)/);
+  if (edgeAndroidMatch) {
+    return parseInt(edgeAndroidMatch[1], 10);
+  }
+
+  return null;
+}
+
+/**
+ * HOTFIX: Android Edge Browser Keyboard Overlay Fix
+ *
+ * Problem: On Android Edge browser, the virtual keyboard covers the input field
+ * when it appears, making it impossible to see what the user is typing.
+ *
+ * Solution: When the textarea gains focus, push the form up by adding
+ * margin-bottom to make the input field visible above the keyboard.
+ *
+ * This can be reproduced on  Edge Version 141 or greater
+ *
+ * Check if browser is Android Edge with version 141 or greater
+ * @returns true if Android Edge version >= 141, false otherwise
+ */
+function isAndroidEdgeWithVersion141OrGreater(): boolean {
   // https://learn.microsoft.com/de-de/microsoft-edge/web-platform/user-agent-guidance#identifiers-for-microsoft-edge-on-various-platforms
   // EdgA -> Edge Android
-  return navigator.userAgent.includes('EdgA');
+  const isAndroidEdge = navigator.userAgent.includes('EdgA');
+  const version = getEdgeVersion();
+
+  return isAndroidEdge && version !== null && version >= 141;
 }
 
 export default ChatForm;
