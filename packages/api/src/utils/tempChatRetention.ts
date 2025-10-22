@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import type { AppConfig } from '~/types';
+import type { AppConfig } from '@librechat/data-schemas';
 
 /**
  * Default retention period for temporary chats in hours
@@ -73,7 +73,5 @@ export function getTempChatRetentionHours(
  */
 export function createTempChatExpirationDate(interfaceConfig?: AppConfig['interfaceConfig']): Date {
   const retentionHours = getTempChatRetentionHours(interfaceConfig);
-  const expiredAt = new Date();
-  expiredAt.setHours(expiredAt.getHours() + retentionHours);
-  return expiredAt;
+  return new Date(Date.now() + retentionHours * 60 * 60 * 1000);
 }

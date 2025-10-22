@@ -5,14 +5,12 @@ const keyBy = require('lodash/keyBy');
 const { loadYaml } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
-  CacheKeys,
   configSchema,
   paramSettings,
   EImageOutputType,
   agentParamSettings,
   validateSettingDefinitions,
 } = require('librechat-data-provider');
-const getLogStores = require('~/cache/getLogStores');
 const { syncCategories } = require('~/server/utils/agentCategory');
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
@@ -137,7 +135,6 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
   (customConfig.endpoints?.custom ?? [])
     .filter((endpoint) => endpoint.customParams)
     .forEach((endpoint) => parseCustomParams(endpoint.name, endpoint.customParams));
-
 
   if (result.data.modelSpecs) {
     customConfig.modelSpecs = result.data.modelSpecs;

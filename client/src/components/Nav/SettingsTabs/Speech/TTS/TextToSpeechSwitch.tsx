@@ -1,6 +1,4 @@
-import { useRecoilState } from 'recoil';
-import { Switch } from '@librechat/client';
-import { useLocalize } from '~/hooks';
+import ToggleSwitch from '../../ToggleSwitch';
 import store from '~/store';
 
 export default function TextToSpeechSwitch({
@@ -8,28 +6,13 @@ export default function TextToSpeechSwitch({
 }: {
   onCheckedChange?: (value: boolean) => void;
 }) {
-  const localize = useLocalize();
-  const [TextToSpeech, setTextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
-
-  const handleCheckedChange = (value: boolean) => {
-    setTextToSpeech(value);
-    if (onCheckedChange) {
-      onCheckedChange(value);
-    }
-  };
-
   return (
-    <div className="flex items-center justify-between">
-      <div>
-        <strong>{localize('com_nav_text_to_speech')}</strong>
-      </div>
-      <Switch
-        id="TextToSpeech"
-        checked={TextToSpeech}
-        onCheckedChange={handleCheckedChange}
-        className="ml-4"
-        data-testid="TextToSpeech"
-      />
-    </div>
+    <ToggleSwitch
+      stateAtom={store.textToSpeech}
+      localizationKey={'com_nav_text_to_speech' as const}
+      switchId="TextToSpeech"
+      onCheckedChange={onCheckedChange}
+      strongLabel={true}
+    />
   );
 }

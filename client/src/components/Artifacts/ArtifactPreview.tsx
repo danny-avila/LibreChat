@@ -13,7 +13,6 @@ export const ArtifactPreview = memo(function ({
   files,
   fileKey,
   template,
-  isMermaid,
   sharedProps,
   previewRef,
   currentCode,
@@ -21,7 +20,6 @@ export const ArtifactPreview = memo(function ({
 }: {
   files: ArtifactFiles;
   fileKey: string;
-  isMermaid: boolean;
   template: SandpackProviderProps['template'];
   sharedProps: Partial<SandpackProviderProps>;
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
@@ -56,15 +54,6 @@ export const ArtifactPreview = memo(function ({
     return _options;
   }, [startupConfig, template]);
 
-  const style: PreviewProps['style'] | undefined = useMemo(() => {
-    if (isMermaid) {
-      return {
-        backgroundColor: '#282C34',
-      };
-    }
-    return;
-  }, [isMermaid]);
-
   if (Object.keys(artifactFiles).length === 0) {
     return null;
   }
@@ -84,7 +73,6 @@ export const ArtifactPreview = memo(function ({
         showRefreshButton={false}
         tabIndex={0}
         ref={previewRef}
-        style={style}
       />
     </SandpackProvider>
   );
