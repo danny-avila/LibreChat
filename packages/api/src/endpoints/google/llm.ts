@@ -235,6 +235,10 @@ export function getGoogleConfig(
     };
   }
 
+  if (options.proxy) {
+    (llmConfig as GoogleClientOptions).proxyUrl = options.proxy;
+  }
+
   /** Handle defaultParams first - only process Google-native params if undefined */
   if (options.defaultParams && typeof options.defaultParams === 'object') {
     for (const [key, value] of Object.entries(options.defaultParams)) {
@@ -286,7 +290,6 @@ export function getGoogleConfig(
       }
     });
   }
-
   const tools: GoogleAIToolType[] = [];
 
   if (enableWebSearch) {

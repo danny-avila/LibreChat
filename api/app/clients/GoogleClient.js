@@ -7,7 +7,7 @@ const { ChatVertexAI } = require('@langchain/google-vertexai');
 const { Tokenizer, getSafetySettings } = require('@librechat/api');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
-const { HumanMessage, SystemMessage } = require('@langchain/core/messages');
+const { HumanMessage, SystemMessage, AIMessageChunk } = require('@langchain/core/messages');
 const {
   googleGenConfigSchema,
   validateVisionModel,
@@ -725,7 +725,7 @@ class GoogleClient extends BaseClient {
         messages.unshift(new SystemMessage(context));
       }
 
-      /** @type {import('@langchain/core/messages').AIMessageChunk['usage_metadata']} */
+      /** @type {AIMessageChunk['usage_metadata']} */
       let usageMetadata;
       /** @type {ChatVertexAI} */
       const client = this.client;
