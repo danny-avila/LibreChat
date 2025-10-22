@@ -73,7 +73,8 @@ export default function VariableForm({
 
   const mainText = useMemo(() => {
     const initialText = group.productionPrompt?.prompt ?? '';
-    return replaceSpecialVars({ text: initialText, user });
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return replaceSpecialVars({ text: initialText, user, timezone });
   }, [group.productionPrompt?.prompt, user]);
 
   const { allVariables, uniqueVariables, variableIndexMap } = useMemo(

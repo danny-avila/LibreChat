@@ -110,6 +110,7 @@ export type TPayload = Partial<TMessage> &
     isTemporary: boolean;
     ephemeralAgent?: TEphemeralAgent | null;
     editedContent?: TEditedContent | null;
+    timezone?: string;
   };
 
 export type TEditedContent =
