@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useState, useMemo } from 'react';
 import { UserIcon, useAvatar } from '@librechat/client';
 import type { TUser } from 'librechat-data-provider';
 import type { IconProps } from '~/common';
@@ -17,9 +17,15 @@ type UserAvatarProps = {
 
 const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAvatarProps) => {
   const [imageError, setImageError] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   const handleImageError = () => {
     setImageError(true);
+    setImageLoaded(false);
+  };
+
+  const handleImageLoad = () => {
+    setImageLoaded(true);
   };
 
   const renderDefaultAvatar = () => (
@@ -36,6 +42,10 @@ const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAva
     </div>
   );
 
+  const hasAvatar = useMemo(() => (user?.avatar ?? '') || avatarSrc, [user?.avatar, avatarSrc]);
+  const showImage = useMemo(() => hasAvatar && !imageError, [hasAvatar, imageError]);
+  const imageSrc = useMemo(() => (user?.avatar ?? '') || avatarSrc, [user?.avatar, avatarSrc]);
+
   return (
     <div
       title={username}
@@ -45,14 +55,16 @@ const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAva
       }}
       className={cn('relative flex items-center justify-center', className ?? '')}
     >
-      {(!(user?.avatar ?? '') && (!(user?.username ?? '') || user?.username.trim() === '')) ||
-      imageError ? (
-        renderDefaultAvatar()
-      ) : (
+      {!showImage || !imageLoaded ? renderDefaultAvatar() : null}
+      {showImage && (
         <img
+          style={{
+            display: imageLoaded ? 'block' : 'none',
+          }}
           className="rounded-full"
-          src={(user?.avatar ?? '') || avatarSrc}
+          src={imageSrc}
           alt="avatar"
+          onLoad={handleImageLoad}
           onError={handleImageError}
         />
       )}
@@ -69,8 +81,12 @@ const Icon: React.FC<IconProps> = memo((props) => {
   const avatarSrc = useAvatar(user);
   const localize = useLocalize();
 
+  const username = useMemo(
+    () => user?.name ?? user?.username ?? localize('com_nav_user'),
+    [user?.name, user?.username, localize],
+  );
+
   if (isCreatedByUser) {
-    const username = user?.name ?? user?.username ?? localize('com_nav_user');
     return (
       <UserAvatar
         size={size}
