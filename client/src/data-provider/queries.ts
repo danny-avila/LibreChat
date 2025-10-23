@@ -396,9 +396,9 @@ export const usePromptGroupsInfiniteQuery = (
   config?: UseInfiniteQueryOptions<t.PromptGroupListResponse, unknown>,
 ) => {
   const { name, pageSize, category } = params || {};
-  return useInfiniteQuery<t.PromptGroupListResponse, unknown>(
-    [QueryKeys.promptGroups, name, category, pageSize],
-    ({ pageParam }) => {
+  return useInfiniteQuery<t.PromptGroupListResponse, unknown>({
+    queryKey: [QueryKeys.promptGroups, name, category, pageSize],
+    queryFn: ({ pageParam }) => {
       const queryParams: t.TPromptGroupsWithFilterRequest = {
         name,
         category: category || '',
@@ -412,17 +412,15 @@ export const usePromptGroupsInfiniteQuery = (
 
       return dataService.getPromptGroups(queryParams);
     },
-    {
-      getNextPageParam: (lastPage) => {
-        // Use cursor-based pagination - ensure we return a valid cursor or undefined
-        return lastPage.has_more && lastPage.after ? lastPage.after : undefined;
-      },
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
+    getNextPageParam: (lastPage) => {
+      // Use cursor-based pagination - ensure we return a valid cursor or undefined
+      return lastPage.has_more && lastPage.after ? lastPage.after : undefined;
     },
-  );
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
 };
 
 export const useGetPromptGroup = (
