@@ -33,6 +33,7 @@ export * from './accessPermissions';
 export * from './keys';
 /* api call helpers */
 export * from './headers-helpers';
+export { loginPage, registerPage, apiBaseUrl } from './api-endpoints';
 export { default as request } from './request';
 export { dataService };
 import * as dataService from './data-service';
