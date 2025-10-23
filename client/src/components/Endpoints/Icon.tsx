@@ -46,6 +46,14 @@ const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAva
   const showImage = useMemo(() => hasAvatar && !imageError, [hasAvatar, imageError]);
   const imageSrc = useMemo(() => (user?.avatar ?? '') || avatarSrc, [user?.avatar, avatarSrc]);
 
+  /** Check if we're using a custom avatar (not initials) */
+  const isCustomAvatar = useMemo(() => !!(user?.avatar && user.avatar !== ''), [user?.avatar]);
+  /** Only show default while loading for custom avatars, not for initials */
+  const showDefaultWhileLoading = useMemo(
+    () => isCustomAvatar && !imageLoaded && showImage,
+    [isCustomAvatar, imageLoaded, showImage],
+  );
+
   return (
     <div
       title={username}
@@ -55,11 +63,11 @@ const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAva
       }}
       className={cn('relative flex items-center justify-center', className ?? '')}
     >
-      {!showImage || !imageLoaded ? renderDefaultAvatar() : null}
+      {!showImage || showDefaultWhileLoading ? renderDefaultAvatar() : null}
       {showImage && (
         <img
           style={{
-            display: imageLoaded ? 'block' : 'none',
+            display: imageLoaded || !isCustomAvatar ? 'block' : 'none',
           }}
           className="rounded-full"
           src={imageSrc}
