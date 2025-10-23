@@ -1081,6 +1081,7 @@
   "com_ui_prompt_name_required": "Prompt Name is required",
   "com_ui_prompt_preview_not_shared": "The author has not allowed collaboration for this prompt.",
   "com_ui_prompt_text": "Text",
+  "com_ui_prompt_input_field": "Prompt text input field",
   "com_ui_prompt_text_required": "Text is required",
   "com_ui_prompt_update_error": "There was an error updating the prompt",
   "com_ui_prompts": "Prompts",
