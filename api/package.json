@@ -48,7 +48,7 @@
     "@langchain/google-genai": "^0.2.13",
     "@langchain/google-vertexai": "^0.2.13",
     "@langchain/textsplitters": "^0.1.0",
-    "@librechat/agents": "^2.4.85",
+    "@librechat/agents": "^2.4.86",
     "@librechat/api": "*",
     "@librechat/data-schemas": "*",
     "@microsoft/microsoft-graph-client": "^3.0.7",

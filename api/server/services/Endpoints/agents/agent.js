@@ -143,7 +143,7 @@ const initializeAgent = async ({
   const agentMaxContextTokens = optionalChainWithEmptyCheck(
     maxContextTokens,
     getModelMaxTokens(tokensModel, providerEndpointMap[provider], options.endpointTokenConfig),
-    4096,
+    18000,
   );
 
   if (

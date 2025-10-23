@@ -5,6 +5,7 @@ import { QueryKeys, Constants } from 'librechat-data-provider';
 import { TooltipAnchor, NewChatIcon, MobileSidebar, Sidebar, Button } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import { useLocalize, useNewConvo } from '~/hooks';
+import { clearMessagesCache } from '~/utils';
 import store from '~/store';
 
 export default function NewChat({
@@ -33,13 +34,8 @@ export default function NewChat({
         window.open('/c/new', '_blank');
         return;
       }
-      queryClient.setQueryData<TMessage[]>(
-        [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
-        [],
-      );
-      queryClient.invalidateQueries({
-        queryKey: [QueryKeys.messages]
-      });
+      clearMessagesCache(queryClient, conversation?.conversationId);
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.messages] });
       newConvo();
       navigate('/c/new', { state: { focusChat: true } });
       if (isSmallScreen) {

@@ -1,4 +1,4 @@
-const { matchModelName } = require('@librechat/api');
+const { matchModelName, findMatchingPattern } = require('@librechat/api');
 const defaultRate = 6;
 
 /**
@@ -6,44 +6,58 @@ const defaultRate = 6;
  * source: https://aws.amazon.com/bedrock/pricing/
  * */
 const bedrockValues = {
-  // Basic llama2 patterns
+  // Basic llama2 patterns (base defaults to smallest variant)
+  llama2: { prompt: 0.75, completion: 1.0 },
+  'llama-2': { prompt: 0.75, completion: 1.0 },
   'llama2-13b': { prompt: 0.75, completion: 1.0 },
-  'llama2:13b': { prompt: 0.75, completion: 1.0 },
   'llama2:70b': { prompt: 1.95, completion: 2.56 },
   'llama2-70b': { prompt: 1.95, completion: 2.56 },
 
-  // Basic llama3 patterns
+  // Basic llama3 patterns (base defaults to smallest variant)
+  llama3: { prompt: 0.3, completion: 0.6 },
+  'llama-3': { prompt: 0.3, completion: 0.6 },
   'llama3-8b': { prompt: 0.3, completion: 0.6 },
   'llama3:8b': { prompt: 0.3, completion: 0.6 },
   'llama3-70b': { prompt: 2.65, completion: 3.5 },
   'llama3:70b': { prompt: 2.65, completion: 3.5 },
 
-  // llama3-x-Nb pattern
+  // llama3-x-Nb pattern (base defaults to smallest variant)
+  'llama3-1': { prompt: 0.22, completion: 0.22 },
   'llama3-1-8b': { prompt: 0.22, completion: 0.22 },
   'llama3-1-70b': { prompt: 0.72, completion: 0.72 },
   'llama3-1-405b': { prompt: 2.4, completion: 2.4 },
+  'llama3-2': { prompt: 0.1, completion: 0.1 },
   'llama3-2-1b': { prompt: 0.1, completion: 0.1 },
   'llama3-2-3b': { prompt: 0.15, completion: 0.15 },
   'llama3-2-11b': { prompt: 0.16, completion: 0.16 },
   'llama3-2-90b': { prompt: 0.72, completion: 0.72 },
+  'llama3-3': { prompt: 2.65, completion: 3.5 },
+  'llama3-3-70b': { prompt: 2.65, completion: 3.5 },
 
-  // llama3.x:Nb pattern
+  // llama3.x:Nb pattern (base defaults to smallest variant)
+  'llama3.1': { prompt: 0.22, completion: 0.22 },
   'llama3.1:8b': { prompt: 0.22, completion: 0.22 },
   'llama3.1:70b': { prompt: 0.72, completion: 0.72 },
   'llama3.1:405b': { prompt: 2.4, completion: 2.4 },
+  'llama3.2': { prompt: 0.1, completion: 0.1 },
   'llama3.2:1b': { prompt: 0.1, completion: 0.1 },
   'llama3.2:3b': { prompt: 0.15, completion: 0.15 },
   'llama3.2:11b': { prompt: 0.16, completion: 0.16 },
   'llama3.2:90b': { prompt: 0.72, completion: 0.72 },
+  'llama3.3': { prompt: 2.65, completion: 3.5 },
+  'llama3.3:70b': { prompt: 2.65, completion: 3.5 },
 
-  // llama-3.x-Nb pattern
+  // llama-3.x-Nb pattern (base defaults to smallest variant)
+  'llama-3.1': { prompt: 0.22, completion: 0.22 },
   'llama-3.1-8b': { prompt: 0.22, completion: 0.22 },
   'llama-3.1-70b': { prompt: 0.72, completion: 0.72 },
   'llama-3.1-405b': { prompt: 2.4, completion: 2.4 },
+  'llama-3.2': { prompt: 0.1, completion: 0.1 },
   'llama-3.2-1b': { prompt: 0.1, completion: 0.1 },
   'llama-3.2-3b': { prompt: 0.15, completion: 0.15 },
   'llama-3.2-11b': { prompt: 0.16, completion: 0.16 },
   'llama-3.2-90b': { prompt: 0.72, completion: 0.72 },
+  'llama-3.3': { prompt: 2.65, completion: 3.5 },
   'llama-3.3-70b': { prompt: 2.65, completion: 3.5 },
   'mistral-7b': { prompt: 0.15, completion: 0.2 },
   'mistral-small': { prompt: 0.15, completion: 0.2 },
@@ -52,15 +66,19 @@ const bedrockValues = {
   'mistral-large-2407': { prompt: 3.0, completion: 9.0 },
   'command-text': { prompt: 1.5, completion: 2.0 },
   'command-light': { prompt: 0.3, completion: 0.6 },
-  'ai21.j2-mid-v1': { prompt: 12.5, completion: 12.5 },
-  'ai21.j2-ultra-v1': { prompt: 18.8, completion: 18.8 },
-  'ai21.jamba-instruct-v1:0': { prompt: 0.5, completion: 0.7 },
-  'amazon.titan-text-lite-v1': { prompt: 0.15, completion: 0.2 },
-  'amazon.titan-text-express-v1': { prompt: 0.2, completion: 0.6 },
-  'amazon.titan-text-premier-v1:0': { prompt: 0.5, completion: 1.5 },
-  'amazon.nova-micro-v1:0': { prompt: 0.035, completion: 0.14 },
-  'amazon.nova-lite-v1:0': { prompt: 0.06, completion: 0.24 },
-  'amazon.nova-pro-v1:0': { prompt: 0.8, completion: 3.2 },
+  // AI21 models
+  'j2-mid': { prompt: 12.5, completion: 12.5 },
+  'j2-ultra': { prompt: 18.8, completion: 18.8 },
+  'jamba-instruct': { prompt: 0.5, completion: 0.7 },
+  // Amazon Titan models
+  'titan-text-lite': { prompt: 0.15, completion: 0.2 },
+  'titan-text-express': { prompt: 0.2, completion: 0.6 },
+  'titan-text-premier': { prompt: 0.5, completion: 1.5 },
+  // Amazon Nova models
+  'nova-micro': { prompt: 0.035, completion: 0.14 },
+  'nova-lite': { prompt: 0.06, completion: 0.24 },
+  'nova-pro': { prompt: 0.8, completion: 3.2 },
+  'nova-premier': { prompt: 2.5, completion: 12.5 },
   'deepseek.r1': { prompt: 1.35, completion: 5.4 },
 };
 
@@ -71,100 +89,136 @@ const bedrockValues = {
  */
 const tokenValues = Object.assign(
   {
+    // Legacy token size mappings (generic patterns - check LAST)
     '8k': { prompt: 30, completion: 60 },
     '32k': { prompt: 60, completion: 120 },
     '4k': { prompt: 1.5, completion: 2 },
     '16k': { prompt: 3, completion: 4 },
+    // Generic fallback patterns (check LAST)
+    'claude-': { prompt: 0.8, completion: 2.4 },
+    deepseek: { prompt: 0.28, completion: 0.42 },
+    command: { prompt: 0.38, completion: 0.38 },
+    gemma: { prompt: 0.02, completion: 0.04 }, // Base pattern (using gemma-3n-e4b pricing)
+    gemini: { prompt: 0.5, completion: 1.5 },
+    'gpt-oss': { prompt: 0.05, completion: 0.2 },
+    // Specific model variants (check FIRST - more specific patterns at end)
     'gpt-3.5-turbo-1106': { prompt: 1, completion: 2 },
-    'o4-mini': { prompt: 1.1, completion: 4.4 },
-    'o3-mini': { prompt: 1.1, completion: 4.4 },
-    o3: { prompt: 2, completion: 8 },
-    'o1-mini': { prompt: 1.1, completion: 4.4 },
-    'o1-preview': { prompt: 15, completion: 60 },
-    o1: { prompt: 15, completion: 60 },
+    'gpt-3.5-turbo-0125': { prompt: 0.5, completion: 1.5 },
+    'gpt-4-1106': { prompt: 10, completion: 30 },
+    'gpt-4.1': { prompt: 2, completion: 8 },
     'gpt-4.1-nano': { prompt: 0.1, completion: 0.4 },
     'gpt-4.1-mini': { prompt: 0.4, completion: 1.6 },
-    'gpt-4.1': { prompt: 2, completion: 8 },
     'gpt-4.5': { prompt: 75, completion: 150 },
-    'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
-    'gpt-5': { prompt: 1.25, completion: 10 },
-    'gpt-5-mini': { prompt: 0.25, completion: 2 },
-    'gpt-5-nano': { prompt: 0.05, completion: 0.4 },
     'gpt-4o': { prompt: 2.5, completion: 10 },
     'gpt-4o-2024-05-13': { prompt: 5, completion: 15 },
-    'gpt-4-1106': { prompt: 10, completion: 30 },
-    'gpt-3.5-turbo-0125': { prompt: 0.5, completion: 1.5 },
-    'claude-3-opus': { prompt: 15, completion: 75 },
+    'gpt-4o-mini': { prompt: 0.15, completion: 0.6 },
+    'gpt-5': { prompt: 1.25, completion: 10 },
+    'gpt-5-nano': { prompt: 0.05, completion: 0.4 },
+    'gpt-5-mini': { prompt: 0.25, completion: 2 },
+    'gpt-5-pro': { prompt: 15, completion: 120 },
+    o1: { prompt: 15, completion: 60 },
+    'o1-mini': { prompt: 1.1, completion: 4.4 },
+    'o1-preview': { prompt: 15, completion: 60 },
+    o3: { prompt: 2, completion: 8 },
+    'o3-mini': { prompt: 1.1, completion: 4.4 },
+    'o4-mini': { prompt: 1.1, completion: 4.4 },
+    'claude-instant': { prompt: 0.8, completion: 2.4 },
+    'claude-2': { prompt: 8, completion: 24 },
+    'claude-2.1': { prompt: 8, completion: 24 },
+    'claude-3-haiku': { prompt: 0.25, completion: 1.25 },
     'claude-3-sonnet': { prompt: 3, completion: 15 },
+    'claude-3-opus': { prompt: 15, completion: 75 },
+    'claude-3-5-haiku': { prompt: 0.8, completion: 4 },
+    'claude-3.5-haiku': { prompt: 0.8, completion: 4 },
     'claude-3-5-sonnet': { prompt: 3, completion: 15 },
     'claude-3.5-sonnet': { prompt: 3, completion: 15 },
     'claude-3-7-sonnet': { prompt: 3, completion: 15 },
     'claude-3.7-sonnet': { prompt: 3, completion: 15 },
-    'claude-3-5-haiku': { prompt: 0.8, completion: 4 },
-    'claude-3.5-haiku': { prompt: 0.8, completion: 4 },
-    'claude-3-haiku': { prompt: 0.25, completion: 1.25 },
-    'claude-sonnet-4': { prompt: 3, completion: 15 },
+    'claude-haiku-4-5': { prompt: 1, completion: 5 },
     'claude-opus-4': { prompt: 15, completion: 75 },
-    'claude-2.1': { prompt: 8, completion: 24 },
-    'claude-2': { prompt: 8, completion: 24 },
-    'claude-instant': { prompt: 0.8, completion: 2.4 },
-    'claude-': { prompt: 0.8, completion: 2.4 },
-    'command-r-plus': { prompt: 3, completion: 15 },
+    'claude-sonnet-4': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
+    'command-r-plus': { prompt: 3, completion: 15 },
+    'command-text': { prompt: 1.5, completion: 2.0 },
     'deepseek-reasoner': { prompt: 0.28, completion: 0.42 },
-    deepseek: { prompt: 0.28, completion: 0.42 },
-    /* cohere doesn't have rates for the older command models,
-  so this was from https://artificialanalysis.ai/models/command-light/providers */
-    command: { prompt: 0.38, completion: 0.38 },
-    gemma: { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
-    'gemma-2': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
-    'gemma-3': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
-    'gemma-3-27b': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
-    'gemini-2.0-flash-lite': { prompt: 0.075, completion: 0.3 },
+    'deepseek-r1': { prompt: 0.4, completion: 2.0 },
+    'deepseek-v3': { prompt: 0.2, completion: 0.8 },
+    'gemma-2': { prompt: 0.01, completion: 0.03 }, // Base pattern (using gemma-2-9b pricing)
+    'gemma-3': { prompt: 0.02, completion: 0.04 }, // Base pattern (using gemma-3n-e4b pricing)
+    'gemma-3-27b': { prompt: 0.09, completion: 0.16 },
+    'gemini-1.5': { prompt: 2.5, completion: 10 },
+    'gemini-1.5-flash': { prompt: 0.15, completion: 0.6 },
+    'gemini-1.5-flash-8b': { prompt: 0.075, completion: 0.3 },
+    'gemini-2.0': { prompt: 0.1, completion: 0.4 }, // Base pattern (using 2.0-flash pricing)
     'gemini-2.0-flash': { prompt: 0.1, completion: 0.4 },
-    'gemini-2.0': { prompt: 0, completion: 0 }, // https://ai.google.dev/pricing
-    'gemini-2.5-pro': { prompt: 1.25, completion: 10 },
+    'gemini-2.0-flash-lite': { prompt: 0.075, completion: 0.3 },
+    'gemini-2.5': { prompt: 0.3, completion: 2.5 }, // Base pattern (using 2.5-flash pricing)
     'gemini-2.5-flash': { prompt: 0.3, completion: 2.5 },
     'gemini-2.5-flash-lite': { prompt: 0.1, completion: 0.4 },
-    'gemini-2.5': { prompt: 0, completion: 0 }, // Free for a period of time
-    'gemini-1.5-flash-8b': { prompt: 0.075, completion: 0.3 },
-    'gemini-1.5-flash': { prompt: 0.15, completion: 0.6 },
-    'gemini-1.5': { prompt: 2.5, completion: 10 },
+    'gemini-2.5-pro': { prompt: 1.25, completion: 10 },
     'gemini-pro-vision': { prompt: 0.5, completion: 1.5 },
-    gemini: { prompt: 0.5, completion: 1.5 },
-    'grok-2-vision-1212': { prompt: 2.0, completion: 10.0 },
-    'grok-2-vision-latest': { prompt: 2.0, completion: 10.0 },
-    'grok-2-vision': { prompt: 2.0, completion: 10.0 },
+    grok: { prompt: 2.0, completion: 10.0 }, // Base pattern defaults to grok-2
+    'grok-beta': { prompt: 5.0, completion: 15.0 },
     'grok-vision-beta': { prompt: 5.0, completion: 15.0 },
+    'grok-2': { prompt: 2.0, completion: 10.0 },
     'grok-2-1212': { prompt: 2.0, completion: 10.0 },
     'grok-2-latest': { prompt: 2.0, completion: 10.0 },
-    'grok-2': { prompt: 2.0, completion: 10.0 },
-    'grok-3-mini-fast': { prompt: 0.6, completion: 4 },
-    'grok-3-mini': { prompt: 0.3, completion: 0.5 },
-    'grok-3-fast': { prompt: 5.0, completion: 25.0 },
+    'grok-2-vision': { prompt: 2.0, completion: 10.0 },
+    'grok-2-vision-1212': { prompt: 2.0, completion: 10.0 },
+    'grok-2-vision-latest': { prompt: 2.0, completion: 10.0 },
     'grok-3': { prompt: 3.0, completion: 15.0 },
+    'grok-3-fast': { prompt: 5.0, completion: 25.0 },
+    'grok-3-mini': { prompt: 0.3, completion: 0.5 },
+    'grok-3-mini-fast': { prompt: 0.6, completion: 4 },
     'grok-4': { prompt: 3.0, completion: 15.0 },
-    'grok-beta': { prompt: 5.0, completion: 15.0 },
-    'mistral-large': { prompt: 2.0, completion: 6.0 },
-    'pixtral-large': { prompt: 2.0, completion: 6.0 },
-    'mistral-saba': { prompt: 0.2, completion: 0.6 },
     codestral: { prompt: 0.3, completion: 0.9 },
-    'ministral-8b': { prompt: 0.1, completion: 0.1 },
     'ministral-3b': { prompt: 0.04, completion: 0.04 },
-    // GPT-OSS models
-    'gpt-oss': { prompt: 0.05, completion: 0.2 },
+    'ministral-8b': { prompt: 0.1, completion: 0.1 },
+    'mistral-nemo': { prompt: 0.15, completion: 0.15 },
+    'mistral-saba': { prompt: 0.2, completion: 0.6 },
+    'pixtral-large': { prompt: 2.0, completion: 6.0 },
+    'mistral-large': { prompt: 2.0, completion: 6.0 },
+    'mixtral-8x22b': { prompt: 0.65, completion: 0.65 },
+    kimi: { prompt: 0.14, completion: 2.49 }, // Base pattern (using kimi-k2 pricing)
+    // GPT-OSS models (specific sizes)
     'gpt-oss:20b': { prompt: 0.05, completion: 0.2 },
     'gpt-oss-20b': { prompt: 0.05, completion: 0.2 },
     'gpt-oss:120b': { prompt: 0.15, completion: 0.6 },
     'gpt-oss-120b': { prompt: 0.15, completion: 0.6 },
-    // GLM models (Zhipu AI)
+    // GLM models (Zhipu AI) - general to specific
     glm4: { prompt: 0.1, completion: 0.1 },
     'glm-4': { prompt: 0.1, completion: 0.1 },
     'glm-4-32b': { prompt: 0.1, completion: 0.1 },
     'glm-4.5': { prompt: 0.35, completion: 1.55 },
-    'glm-4.5v': { prompt: 0.6, completion: 1.8 },
     'glm-4.5-air': { prompt: 0.14, completion: 0.86 },
+    'glm-4.5v': { prompt: 0.6, completion: 1.8 },
     'glm-4.6': { prompt: 0.5, completion: 1.75 },
+    // Qwen models
+    qwen: { prompt: 0.08, completion: 0.33 }, // Qwen base pattern (using qwen2.5-72b pricing)
+    'qwen2.5': { prompt: 0.08, completion: 0.33 }, // Qwen 2.5 base pattern
+    'qwen-turbo': { prompt: 0.05, completion: 0.2 },
+    'qwen-plus': { prompt: 0.4, completion: 1.2 },
+    'qwen-max': { prompt: 1.6, completion: 6.4 },
+    'qwq-32b': { prompt: 0.15, completion: 0.4 },
+    // Qwen3 models
+    qwen3: { prompt: 0.035, completion: 0.138 }, // Qwen3 base pattern (using qwen3-4b pricing)
+    'qwen3-8b': { prompt: 0.035, completion: 0.138 },
+    'qwen3-14b': { prompt: 0.05, completion: 0.22 },
+    'qwen3-30b-a3b': { prompt: 0.06, completion: 0.22 },
+    'qwen3-32b': { prompt: 0.05, completion: 0.2 },
+    'qwen3-235b-a22b': { prompt: 0.08, completion: 0.55 },
+    // Qwen3 VL (Vision-Language) models
+    'qwen3-vl-8b-thinking': { prompt: 0.18, completion: 2.1 },
+    'qwen3-vl-8b-instruct': { prompt: 0.18, completion: 0.69 },
+    'qwen3-vl-30b-a3b': { prompt: 0.29, completion: 1.0 },
+    'qwen3-vl-235b-a22b': { prompt: 0.3, completion: 1.2 },
+    // Qwen3 specialized models
+    'qwen3-max': { prompt: 1.2, completion: 6 },
+    'qwen3-coder': { prompt: 0.22, completion: 0.95 },
+    'qwen3-coder-30b-a3b': { prompt: 0.06, completion: 0.25 },
+    'qwen3-coder-plus': { prompt: 1, completion: 5 },
+    'qwen3-coder-flash': { prompt: 0.3, completion: 1.5 },
+    'qwen3-next-80b-a3b': { prompt: 0.1, completion: 0.8 },
   },
   bedrockValues,
 );
@@ -195,67 +249,39 @@ const cacheTokenValues = {
  * @returns {string|undefined} The key corresponding to the model name, or undefined if no match is found.
  */
 const getValueKey = (model, endpoint) => {
+  if (!model || typeof model !== 'string') {
+    return undefined;
+  }
+
+  // Use findMatchingPattern directly against tokenValues for efficient lookup
+  if (!endpoint || (typeof endpoint === 'string' && !tokenValues[endpoint])) {
+    const matchedKey = findMatchingPattern(model, tokenValues);
+    if (matchedKey) {
+      return matchedKey;
+    }
+  }
+
+  // Fallback: use matchModelName for edge cases and legacy handling
   const modelName = matchModelName(model, endpoint);
   if (!modelName) {
     return undefined;
   }
 
+  // Legacy token size mappings and aliases for older models
   if (modelName.includes('gpt-3.5-turbo-16k')) {
     return '16k';
-  } else if (modelName.includes('gpt-3.5-turbo-0125')) {
-    return 'gpt-3.5-turbo-0125';
-  } else if (modelName.includes('gpt-3.5-turbo-1106')) {
-    return 'gpt-3.5-turbo-1106';
   } else if (modelName.includes('gpt-3.5')) {
     return '4k';
-  } else if (modelName.includes('o4-mini')) {
-    return 'o4-mini';
-  } else if (modelName.includes('o4')) {
-    return 'o4';
-  } else if (modelName.includes('o3-mini')) {
-    return 'o3-mini';
-  } else if (modelName.includes('o3')) {
-    return 'o3';
-  } else if (modelName.includes('o1-preview')) {
-    return 'o1-preview';
-  } else if (modelName.includes('o1-mini')) {
-    return 'o1-mini';
-  } else if (modelName.includes('o1')) {
-    return 'o1';
-  } else if (modelName.includes('gpt-4.5')) {
-    return 'gpt-4.5';
-  } else if (modelName.includes('gpt-4.1-nano')) {
-    return 'gpt-4.1-nano';
-  } else if (modelName.includes('gpt-4.1-mini')) {
-    return 'gpt-4.1-mini';
-  } else if (modelName.includes('gpt-4.1')) {
-    return 'gpt-4.1';
-  } else if (modelName.includes('gpt-4o-2024-05-13')) {
-    return 'gpt-4o-2024-05-13';
-  } else if (modelName.includes('gpt-5-nano')) {
-    return 'gpt-5-nano';
-  } else if (modelName.includes('gpt-5-mini')) {
-    return 'gpt-5-mini';
-  } else if (modelName.includes('gpt-5')) {
-    return 'gpt-5';
-  } else if (modelName.includes('gpt-4o-mini')) {
-    return 'gpt-4o-mini';
-  } else if (modelName.includes('gpt-4o')) {
-    return 'gpt-4o';
   } else if (modelName.includes('gpt-4-vision')) {
-    return 'gpt-4-1106';
-  } else if (modelName.includes('gpt-4-1106')) {
-    return 'gpt-4-1106';
+    return 'gpt-4-1106'; // Alias for gpt-4-vision
   } else if (modelName.includes('gpt-4-0125')) {
-    return 'gpt-4-1106';
+    return 'gpt-4-1106'; // Alias for gpt-4-0125
   } else if (modelName.includes('gpt-4-turbo')) {
-    return 'gpt-4-1106';
+    return 'gpt-4-1106'; // Alias for gpt-4-turbo
   } else if (modelName.includes('gpt-4-32k')) {
     return '32k';
   } else if (modelName.includes('gpt-4')) {
     return '8k';
-  } else if (tokenValues[modelName]) {
-    return modelName;
   }
 
   return undefined;
