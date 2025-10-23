@@ -101,6 +101,19 @@ librechat:
   #         summaryModel: "gpt-3.5-turbo"
   #         forcePrompt: false
   #         modelDisplayLabel: "OpenRouter"
+  #       # AI/ML API
+  #    - name: "AI/ML API"
+  #      apiKey: "${AI_ML_API_KEY}"
+  #      modelDisplayLabel: "AI/ML API"
+  #      baseURL: "https://api.aimlapi.com/v1"
+  #      iconURL: "https://raw.githubusercontent.com/OctavianTheI/aimlapi-assets-devrel/main/aimlapi%20square%20Logo%20Icon.svg"
+  #      headers:
+  #        X-Title: "LibreChat"
+  #      models:
+  #        default: ["gpt-4o"]
+  #        fetch: true
+  #      titleConvo: true
+  #      titleModel: "gpt-4o"
 
   # name of existing Yaml configmap, key must be librechat.yaml
   existingConfigYaml: ""
