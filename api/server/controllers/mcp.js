@@ -10,6 +10,25 @@ const {
   getAppConfig,
 } = require('~/server/services/Config');
 const { getMCPManager } = require('~/config');
+const {
+  createMCPServer,
+  findMCPServerById,
+  getListMCPServersByIds,
+  updateMCPServer,
+  deleteMCPServer,
+} = require('~/models');
+const {
+  findAccessibleResources,
+  findPubliclyAccessibleResources,
+  grantPermission,
+  removeAllPermissions,
+} = require('~/server/services/PermissionService');
+const {
+  ResourceType,
+  PermissionBits,
+  AccessRoleIds,
+  PrincipalType,
+} = require('librechat-data-provider');
 
 /**
  * Get all MCP tools available to the user
@@ -121,6 +140,229 @@ const getMCPTools = async (req, res) => {
   }
 };
 
+/**
+ * Create a new MCP server
+ */
+const createMCPServerController = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { title, description, options } = req.body;
+    ///TODO better options validation
+    if (!title || !options) {
+      return res.status(400).json({ message: 'Title and options are required' });
+    }
+
+    const mcpServer = await createMCPServer({
+      title,
+      description,
+      options,
+      author: userId,
+    });
+
+    // Auto-grant owner permission to creator
+    await grantPermission({
+      principalType: PrincipalType.USER,
+      principalId: userId,
+      resourceType: ResourceType.MCPSERVER,
+      resourceId: mcpServer._id,
+      accessRoleId: AccessRoleIds.MCPSERVER_OWNER,
+      grantedBy: userId,
+    });
+
+    logger.info(`[MCP Server] Created: ${mcpServer.id} by ${userId}`);
+
+    res.status(201).json(mcpServer);
+  } catch (error) {
+    logger.error('[createMCPServer]', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * Get MCP server by ID
+ */
+const getMCPServerById = async (req, res) => {
+  try {
+    const { mcp_id } = req.params;
+    if (!mcp_id) {
+      return res.status(400).json({ message: 'MCP ID is required' });
+    }
+    const mcpServer = await findMCPServerById(mcp_id);
+
+    if (!mcpServer) {
+      return res.status(404).json({ message: 'MCP server not found' });
+    }
+
+    res.status(200).json(mcpServer);
+  } catch (error) {
+    logger.error('[getMCPServerById]', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * Get a paginated list of MCP servers with ACL permissions (ownership + explicit shares)
+ * Supports search and filtering on title and description
+ * @route GET /api/mcp/servers
+ */
+const getMCPServersList = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      logger.warn('[getMCPServersList] User ID not found in request');
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { search, limit, cursor } = req.query;
+    let requiredPermission = req.query.requiredPermission;
+
+    if (typeof requiredPermission === 'string') {
+      requiredPermission = parseInt(requiredPermission, 10);
+      if (isNaN(requiredPermission)) {
+        requiredPermission = PermissionBits.VIEW;
+      }
+    } else if (typeof requiredPermission !== 'number') {
+      requiredPermission = PermissionBits.VIEW;
+    }
+
+    // Base filter
+    const filter = {};
+
+    // Handle search filter - search in title and description fields
+    if (search && search.trim() !== '') {
+      filter.$or = [
+        { title: { $regex: search.trim(), $options: 'i' } },
+        { description: { $regex: search.trim(), $options: 'i' } },
+      ];
+    }
+
+    // Get MCP server IDs the user has access to via ACL
+    const accessibleIds = await findAccessibleResources({
+      userId,
+      role: req.user.role,
+      resourceType: ResourceType.MCPSERVER,
+      requiredPermissions: requiredPermission,
+    });
+
+    const publiclyAccessibleIds = await findPubliclyAccessibleResources({
+      resourceType: ResourceType.MCPSERVER,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+
+    // Use the ACL-aware function to get paginated list
+    const data = await getListMCPServersByIds({
+      ids: accessibleIds,
+      otherParams: filter,
+      limit,
+      after: cursor,
+    });
+
+    // Mark public servers
+    if (data?.data?.length) {
+      data.data = data.data.map((server) => {
+        if (publiclyAccessibleIds.some((id) => id.equals(server._id))) {
+          server.isPublic = true;
+        }
+        return server;
+      });
+    }
+
+    return res.json(data);
+  } catch (error) {
+    logger.error('[getMCPServersList] Error listing MCP servers', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Update an MCP server
+ */
+const updateMCPServerController = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      logger.warn('[updateMCPServer] User ID not found in request');
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { mcp_id } = req.params;
+    const { title, description, options } = req.body;
+
+    // Check if server exists and user owns it
+    const existingServer = await findMCPServerById(mcp_id);
+    if (!existingServer) {
+      return res.status(404).json({ message: 'MCP server not found' });
+    }
+
+    if (existingServer.author.toString() !== userId) {
+      return res.status(403).json({ message: 'Forbidden: You do not own this MCP server' });
+    }
+
+    const updateData = {};
+    if (title !== undefined) {
+      updateData.title = title;
+    }
+    if (description !== undefined) {
+      updateData.description = description;
+    }
+    if (options !== undefined) {
+      updateData.options = options;
+    }
+
+    const updatedServer = await updateMCPServer(mcp_id, updateData);
+    res.status(200).json(updatedServer);
+  } catch (error) {
+    logger.error('[updateMCPServer]', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * Delete an MCP server
+ */
+const deleteMCPServerController = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      logger.warn('[deleteMCPServer] User ID not found in request');
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { mcp_id } = req.params;
+
+    // Check if server exists and user owns it
+    const existingServer = await findMCPServerById(mcp_id);
+    if (!existingServer) {
+      return res.status(404).json({ message: 'MCP server not found' });
+    }
+
+    if (existingServer.author.toString() !== userId) {
+      return res.status(403).json({ message: 'Forbidden: You do not own this MCP server' });
+    }
+
+    const deletedServer = await deleteMCPServer(mcp_id);
+
+    // Clean up ACL permissions
+    if (deletedServer) {
+      await removeAllPermissions({
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: deletedServer._id,
+      });
+      logger.info(`[MCP Server] Deleted: ${mcp_id} by ${userId}`);
+    }
+
+    res.status(200).json({ message: 'MCP server deleted successfully' });
+  } catch (error) {
+    logger.error('[deleteMCPServer]', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getMCPTools,
+  createMCPServerController,
+  getMCPServerById,
+  getMCPServersList,
+  updateMCPServerController,
+  deleteMCPServerController,
 };
