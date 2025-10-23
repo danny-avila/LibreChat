@@ -9,7 +9,9 @@ export const useGetBannerQuery = (
   config?: UseQueryOptions<t.TBannerResponse>,
 ): QueryObserverResult<t.TBannerResponse> => {
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
-  return useQuery<t.TBannerResponse>([QueryKeys.banner], () => dataService.getBanner(), {
+  return useQuery({
+    queryKey: [QueryKeys.banner],
+    queryFn: () => dataService.getBanner(),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -22,7 +24,9 @@ export const useGetUserBalance = (
   config?: UseQueryOptions<t.TBalanceResponse>,
 ): QueryObserverResult<t.TBalanceResponse> => {
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
-  return useQuery<t.TBalanceResponse>([QueryKeys.balance], () => dataService.getUserBalance(), {
+  return useQuery({
+    queryKey: [QueryKeys.balance],
+    queryFn: () => dataService.getUserBalance(),
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     refetchOnMount: true,
@@ -35,7 +39,9 @@ export const useGetSearchEnabledQuery = (
   config?: UseQueryOptions<boolean>,
 ): QueryObserverResult<boolean> => {
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
-  return useQuery<boolean>([QueryKeys.searchEnabled], () => dataService.getSearchEnabled(), {
+  return useQuery({
+    queryKey: [QueryKeys.searchEnabled],
+    queryFn: () => dataService.getSearchEnabled(),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,

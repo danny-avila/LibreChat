@@ -39,10 +39,14 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.toolAuth, Tools.web_search]);
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.toolAuth, Tools.web_search]
+      });
     },
     onError: () => {
-      queryClient.invalidateQueries([QueryKeys.toolAuth, Tools.web_search]);
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.toolAuth, Tools.web_search]
+      });
     },
   });
 

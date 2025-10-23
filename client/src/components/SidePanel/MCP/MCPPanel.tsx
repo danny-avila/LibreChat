@@ -31,9 +31,15 @@ function MCPPanelContent() {
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
 
       await Promise.all([
-        queryClient.invalidateQueries([QueryKeys.mcpTools]),
-        queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
-        queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.mcpTools]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.mcpAuthValues]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.mcpConnectionStatus]
+        }),
       ]);
     },
     onError: (error: unknown) => {

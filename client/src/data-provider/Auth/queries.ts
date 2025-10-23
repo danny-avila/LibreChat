@@ -9,7 +9,9 @@ export const useGetUserQuery = (
   config?: UseQueryOptions<t.TUser>,
 ): QueryObserverResult<t.TUser> => {
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
-  return useQuery<t.TUser>([QueryKeys.user], () => dataService.getUser(), {
+  return useQuery({
+    queryKey: [QueryKeys.user],
+    queryFn: () => dataService.getUser(),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,

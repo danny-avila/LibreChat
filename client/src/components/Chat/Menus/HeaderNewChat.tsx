@@ -16,7 +16,7 @@ export default function HeaderNewChat() {
       return;
     }
     clearMessagesCache(queryClient, conversation?.conversationId);
-    queryClient.invalidateQueries([QueryKeys.messages]);
+    queryClient.invalidateQueries({ queryKey: [QueryKeys.messages] });
     newConversation();
   };
 
