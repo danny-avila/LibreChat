@@ -155,14 +155,6 @@ export const useDeleteFilesMutation = (
     mutationKey: [MutationKeys.fileDelete],
     mutationFn: (body: t.DeleteFilesBody) => dataService.deleteFiles(body),
     ...options,
-    onMutate: async (vars) => {
-      await queryClient.cancelQueries({ queryKey: [QueryKeys.files] });
-      const previous = queryClient.getQueryData<t.TFile[] | undefined>([QueryKeys.files]) ?? [];
-      const toDelete = new Set(vars.files.map((f) => f.file_id));
-      const optimistic = previous.filter((f) => !toDelete.has(f.file_id));
-      queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], optimistic);
-      return { previous } as { previous: t.TFile[] };
-    },
     onError: (error, vars, context) => {
       if (error && typeof error === 'object' && 'response' in error) {
         const errorWithResponse = error as { response?: { status?: number } };
@@ -172,10 +164,6 @@ export const useDeleteFilesMutation = (
             status: 'error',
           });
         }
-      }
-      const ctx = context as { previous?: t.TFile[] } | undefined;
-      if (ctx?.previous) {
-        queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], ctx.previous);
       }
       onError?.(error, vars, context);
     },
