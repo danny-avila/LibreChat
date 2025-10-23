@@ -217,7 +217,12 @@ const AdminSettings = () => {
                 ))}
               </div>
               <div className="flex justify-end">
-                <Button type="submit" disabled={isSubmitting || isLoading} variant="submit">
+                <Button
+                  type="submit"
+                  disabled={isSubmitting || isLoading}
+                  variant="submit"
+                  aria-label={localize('com_ui_save')}
+                >
                   {localize('com_ui_save')}
                 </Button>
               </div>
