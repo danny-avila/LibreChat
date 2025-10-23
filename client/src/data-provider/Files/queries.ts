@@ -29,8 +29,7 @@ export const useGetAgentFiles = <TData = t.TFile[]>(
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery({
     queryKey: DynamicQueryKeys.agentFiles(agentId ?? ''),
-    queryFn: () => (agentId ? dataService.getAgentFiles(agentId) : Promise.resolve([]))
-  }, {
+    queryFn: () => (agentId ? dataService.getAgentFiles(agentId) : Promise.resolve([])),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
