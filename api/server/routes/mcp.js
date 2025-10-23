@@ -11,7 +11,8 @@ const {
 } = require('@librechat/api');
 const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
-const { findToken, updateToken, createToken, deleteTokens, getRoleByName } = require('~/models');
+const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
+const { getRoleByName } = require('~/models/Role');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');

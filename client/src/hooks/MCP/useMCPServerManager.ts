@@ -1,7 +1,7 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { Constants, QueryKeys } from 'librechat-data-provider';
+import { Constants, QueryKeys, MCPOptions } from 'librechat-data-provider';
 import {
   useCancelMCPOAuthMutation,
   useUpdateUserPluginsMutation,
@@ -11,6 +11,15 @@ import type { TUpdateUserPlugins, TPlugin, MCPServersResponse } from 'librechat-
 import type { ConfigFieldDetail } from '~/common';
 import { useLocalize, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
+import { useMcpServersQuery } from '~/data-provider/McpServers/queries';
+
+export interface MCPServerDefinition {
+  serverName: string;
+  iconPath: string | null;
+  config: MCPOptions;
+  _source: 'yaml' | 'database';
+  mcp_id?: string;
+}
 
 interface ServerState {
   isInitializing: boolean;
@@ -24,8 +33,13 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
-  const { data: startupConfig } = useGetStartupConfig();
+  const { data: startupConfig, isLoading: startupConfigLoading } = useGetStartupConfig();
   const { mcpValues, setMCPValues, isPinned, setIsPinned } = useMCPSelect({ conversationId });
+
+  const { data: dbServersData, isLoading: dbServersLoading } = useMcpServersQuery();
+
+  // Combine loading states - loading if either YAML config or DB servers are loading
+  const isLoading = startupConfigLoading || dbServersLoading;
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
@@ -38,11 +52,57 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   }, [mcpValues]);
 
   const configuredServers = useMemo(() => {
-    if (!startupConfig?.mcpServers) return [];
-    return Object.entries(startupConfig.mcpServers)
-      .filter(([, config]) => config.chatMenu !== false)
-      .map(([serverName]) => serverName);
-  }, [startupConfig?.mcpServers]);
+    const servers: string[] = [];
+
+    // 1. Add YAML servers from config (admin-configured)
+    if (startupConfig?.mcpServers) {
+      const yamlServers = Object.entries(startupConfig.mcpServers)
+        .filter(([, config]) => config.chatMenu !== false)
+        .map(([serverName]) => serverName);
+      servers.push(...yamlServers);
+    }
+
+    // 2. Add DB servers from CRUD API (user-configured)
+    if (dbServersData?.data) {
+      const dbServerNames = dbServersData.data.map((server) => server.title);
+      servers.push(...dbServerNames);
+    }
+
+    return servers;
+  }, [startupConfig?.mcpServers, dbServersData]);
+
+  const mcpServerDefinitions = useMemo<MCPServerDefinition[]>(() => {
+    const definitions: MCPServerDefinition[] = [];
+
+    // 1. YAML servers from config (admin-configured)
+    if (startupConfig?.mcpServers) {
+      const yamlDefs = Object.entries(startupConfig.mcpServers).map(
+        ([serverName, config]): MCPServerDefinition => ({
+          serverName,
+          iconPath: null,
+          config: config as MCPOptions,
+          _source: 'yaml',
+        }),
+      );
+      definitions.push(...yamlDefs);
+    }
+
+    // 2. DB servers from CRUD API (user-configured)
+    if (dbServersData?.data) {
+      const dbDefs = dbServersData.data.map(
+        (server): MCPServerDefinition => ({
+          serverName: server.title,
+          iconPath: null,
+          config: server.options,
+          _source: 'database',
+          mcp_id: server.mcp_id,
+        }),
+      );
+      definitions.push(...dbDefs);
+    }
+
+    return definitions;
+  }, [startupConfig?.mcpServers, dbServersData]);
 
   const reinitializeMutation = useReinitializeMCPServerMutation();
   const cancelOAuthMutation = useCancelMCPOAuthMutation();
@@ -81,7 +141,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   });
 
   const { connectionStatus } = useMCPConnectionStatus({
-    enabled: !!startupConfig?.mcpServers && Object.keys(startupConfig.mcpServers).length > 0,
+    enabled: !dbServersLoading && configuredServers.length > 0,
   });
 
   /** Filter disconnected servers when values change, but only after initial load
@@ -627,6 +687,9 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
   return {
     configuredServers,
+    mcpServerDefinitions,
+    isLoading,
+    connectionStatus,
     initializeServer,
     cancelOAuthFlow,
     isInitializing,
