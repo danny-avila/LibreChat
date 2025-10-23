@@ -23,7 +23,8 @@ export const useUploadFileMutation = (
 > => {
   const queryClient = useQueryClient();
   const { onSuccess, ...options } = _options || {};
-  return useMutation([MutationKeys.fileUpload], {
+  return useMutation({
+    mutationKey: [MutationKeys.fileUpload],
     mutationFn: (body: FormData) => {
       const width = body.get('width') ?? '';
       const height = body.get('height') ?? '';
@@ -150,9 +151,18 @@ export const useDeleteFilesMutation = (
   const { showToast } = useToastContext();
   const localize = useLocalize();
   const { onSuccess, onError, ...options } = _options || {};
-  return useMutation([MutationKeys.fileDelete], {
+  return useMutation({
+    mutationKey: [MutationKeys.fileDelete],
     mutationFn: (body: t.DeleteFilesBody) => dataService.deleteFiles(body),
     ...options,
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: [QueryKeys.files] });
+      const previous = queryClient.getQueryData<t.TFile[] | undefined>([QueryKeys.files]) ?? [];
+      const toDelete = new Set(vars.files.map((f) => f.file_id));
+      const optimistic = previous.filter((f) => !toDelete.has(f.file_id));
+      queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], optimistic);
+      return { previous } as { previous: t.TFile[] };
+    },
     onError: (error, vars, context) => {
       if (error && typeof error === 'object' && 'response' in error) {
         const errorWithResponse = error as { response?: { status?: number } };
@@ -162,6 +172,10 @@ export const useDeleteFilesMutation = (
             status: 'error',
           });
         }
+      }
+      const ctx = context as { previous?: t.TFile[] } | undefined;
+      if (ctx?.previous) {
+        queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], ctx.previous);
       }
       onError?.(error, vars, context);
     },
@@ -184,8 +198,11 @@ export const useDeleteFilesMutation = (
 
       onSuccess?.(data, vars, context);
       if (vars.agent_id != null && vars.agent_id) {
-        queryClient.refetchQueries([QueryKeys.agent, vars.agent_id]);
+        queryClient.refetchQueries({ queryKey: [QueryKeys.agent, vars.agent_id] });
       }
+    },
+    onSettled: () => {
+      queryClient.refetchQueries({ queryKey: [QueryKeys.files] });
     },
   });
 };
