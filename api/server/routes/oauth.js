@@ -6,7 +6,10 @@ const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
 const { isEnabled, createSetBalanceConfig } = require('@librechat/api');
 const { checkDomainAllowed, loginLimiter, logHeaders, checkBan } = require('~/server/middleware');
-const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
+const {
+  syncUserEntraGroupMemberships,
+  syncUserOidcGroupsFromToken,
+} = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
 const { getAppConfig } = require('~/server/services/Config');
 const { Balance } = require('~/db/models');
@@ -41,7 +44,12 @@ const oauthHandler = async (req, res, next) => {
       req.user.provider == 'openid' &&
       isEnabled(process.env.OPENID_REUSE_TOKENS) === true
     ) {
+      // Sync Entra ID groups from Microsoft Graph API (if enabled)
       await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);
+      
+      // Sync OIDC groups from JWT token claims (if enabled)
+      await syncUserOidcGroupsFromToken(req.user, req.user.tokenset);
+      
       setOpenIDAuthTokens(req.user.tokenset, res, req.user._id.toString());
     } else {
       await setAuthTokens(req.user._id, res);
