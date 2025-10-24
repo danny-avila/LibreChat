@@ -1,0 +1,32 @@
+{{- /*
+Copyright Broadcom, Inc. All Rights Reserved.
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+
+{{- if (include "mongodb.hidden.enabled" .) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mongodb.hidden.service.nameOverride" . }}
+  namespace: {{ include "mongodb.namespace" . | quote }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .Values.commonLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/component: hidden
+  {{- if or .Values.hidden.service.headless.annotations .Values.commonAnnotations }}
+  {{- $annotations := include "common.tplvalues.merge" ( dict "values" ( list .Values.hidden.service.headless.annotations .Values.commonAnnotations ) "context" . ) }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" $annotations "context" $) | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: {{ .Values.hidden.service.portName | quote }}
+      port: {{ .Values.hidden.service.ports.mongodb }}
+      targetPort: mongodb
+    {{- if .Values.hidden.service.extraPorts }}
+    {{- include "common.tplvalues.render" (dict "value" .Values.hidden.service.extraPorts "context" $) | nindent 4 }}
+    {{- end }}
+  {{- $podLabels := include "common.tplvalues.merge" ( dict "values" ( list .Values.hidden.podLabels .Values.commonLabels ) "context" . ) }}
+  selector: {{- include "common.labels.matchLabels" ( dict "customLabels" $podLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/component: hidden
+{{- end }}

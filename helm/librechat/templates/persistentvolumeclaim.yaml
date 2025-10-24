@@ -3,6 +3,8 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: {{ include "librechat.fullname" $ }}-images
+  annotations:
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
 spec:
   accessModes:
     - {{ .Values.librechat.imageVolume.accessModes }}

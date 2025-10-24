@@ -1,0 +1,42 @@
+{{- /*
+Copyright Broadcom, Inc. All Rights Reserved.
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+
+{{- if and (eq .Values.architecture "replicaset") .Values.externalAccess.enabled (eq .Values.externalAccess.service.type "ClusterIP") }}
+
+{{- $fullName := include "mongodb.fullname" . }}
+{{- $replicaCount := .Values.replicaCount | int }}
+{{- $root := . }}
+
+{{- range $i, $e := until $replicaCount }}
+{{- $targetPod := printf "%s-%d" (printf "%s" $fullName) $i }}
+{{- $_ := set $ "targetPod" $targetPod }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-%d" $fullName $i }}
+  namespace: {{ include "mongodb.namespace" $ }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" $root.Values.commonLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/component: mongodb
+  {{- if or $root.Values.service.annotations $root.Values.commonAnnotations }}
+  {{- $annotations := include "common.tplvalues.merge" ( dict "values" ( list $root.Values.service.annotations $root.Values.commonAnnotations ) "context" $ ) }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" $annotations "context" $) | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  publishNotReadyAddresses: {{ $root.Values.service.publishNotReadyAddresses }}
+  ports:
+    - name: {{ $root.Values.service.portName | quote }}
+      port: {{ $root.Values.service.ports.mongodb }}
+      targetPort: mongodb
+    {{- if $root.Values.service.extraPorts }}
+    {{- include "common.tplvalues.render" (dict "value" $root.Values.service.extraPorts "context" $) | nindent 4 }}
+    {{- end }}
+  {{- $podLabels := include "common.tplvalues.merge" ( dict "values" ( list $root.Values.podLabels $root.Values.commonLabels ) "context" $ ) }}
+  selector: {{- include "common.labels.matchLabels" ( dict "customLabels" $podLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/component: mongodb
+    statefulset.kubernetes.io/pod-name: {{ $targetPod }}
+---
+{{- end }}
+{{- end }}
