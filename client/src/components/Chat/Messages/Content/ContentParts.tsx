@@ -150,7 +150,7 @@ const ContentParts = memo(
           <Sources messageId={messageId} conversationId={conversationId || undefined} />
           {hasReasoningParts && (
             <div onMouseEnter={handleContentEnter} onMouseLeave={handleContentLeave}>
-              <div className="sticky top-0 z-10 my-2 bg-surface-secondary pb-2">
+              <div className="sticky top-0 z-10 mb-2 bg-surface-secondary pb-2 pt-2">
                 <ThinkingButton
                   isExpanded={isExpanded}
                   onClick={() =>
