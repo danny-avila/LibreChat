@@ -188,7 +188,7 @@ function Avatar({
         <Popover.Trigger asChild>
           <button
             type="button"
-            className="h-20 w-20"
+            className="f h-20 w-20 focus:rounded-full focus:ring-2 focus:ring-ring"
             aria-label={localize('com_ui_upload_agent_avatar_label')}
           >
             {previewUrl ? <AgentAvatarRender url={previewUrl} progress={progress} /> : <NoImage />}
