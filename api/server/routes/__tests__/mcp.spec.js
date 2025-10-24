@@ -2,7 +2,6 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { setCachedTools, getMCPServerTools } = require('~/server/services/Config');
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
