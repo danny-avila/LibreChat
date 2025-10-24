@@ -3,7 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, Constants, dataService } from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
-import { buildDefaultConvo, getDefaultEndpoint, getEndpointField, logger } from '~/utils';
+import {
+  getDefaultEndpoint,
+  clearMessagesCache,
+  buildDefaultConvo,
+  getEndpointField,
+  logger,
+} from '~/utils';
 import store from '~/store';
 
 const useNavigateToConvo = (index = 0) => {
@@ -80,7 +86,7 @@ const useNavigateToConvo = (index = 0) => {
       });
     }
     clearAllConversations(true);
-    queryClient.setQueryData([QueryKeys.messages, currentConvoId], []);
+    clearMessagesCache(queryClient, currentConvoId);
     if (convo.conversationId !== Constants.NEW_CONVO && convo.conversationId) {
       queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
       fetchFreshData(convo);
