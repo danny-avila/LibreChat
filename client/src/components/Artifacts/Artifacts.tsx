@@ -143,7 +143,7 @@ export default function Artifacts() {
       setTimeout(() => {
         setArtifactsVisible(false);
         setIsClosing(false);
-        setHeight(90); // Reset height
+        setHeight(90);
       }, 250);
     } else {
       resetCurrentArtifactId();
