@@ -126,6 +126,7 @@ const TableRowComponent = <TData, TValue>({
               cell.column.columnDef as TableColumn<TData, TValue>,
               isSmallScreen,
             )}
+            scope={cell.column.id === 'title' ? 'row' : undefined}
           >
             <div className="overflow-hidden text-ellipsis">
               {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -405,6 +406,7 @@ export default function DataTable<TData, TValue>({
                         ? header.column.getToggleSortingHandler()
                         : undefined
                     }
+                    scope="col"
                   >
                     {header.isPlaceholder
                       ? null
