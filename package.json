@@ -100,7 +100,7 @@
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.20.0",
     "@microsoft/eslint-formatter-sarif": "^3.1.0",
-    "@playwright/test": "^1.50.1",
+    "@playwright/test": "^1.56.1",
     "@types/react-virtualized": "^9.22.0",
     "caniuse-lite": "^1.0.30001741",
     "cross-env": "^7.0.3",
