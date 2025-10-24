@@ -118,7 +118,12 @@ const AttachFileMenu = ({
 
       const currentProvider = provider || endpoint;
 
-      if (isDocumentSupportedProvider(currentProvider || endpointType)) {
+      if (
+        isDocumentSupportedProvider(
+          currentProvider || endpointType,
+          startupConfig?.allowProviderUpload, //stripe
+        )
+      ) {
         items.push({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
@@ -213,6 +218,7 @@ const AttachFileMenu = ({
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
+    startupConfig?.allowProviderUpload, //stripe
   ]);
 
   const menuTrigger = (

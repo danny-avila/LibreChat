@@ -82,9 +82,21 @@ export const isOpenAILikeProvider = (provider?: string | null): boolean => {
   return openAILikeProviders.has(provider ?? '');
 };
 
-export const isDocumentSupportedProvider = (provider?: string | null): boolean => {
-  return false;
-  // stripe return documentSupportedProviders.has(provider ?? '');
+export const isDocumentSupportedProvider = (
+  provider?: string | null,
+  allowProviderUpload?: boolean, //stripe
+): boolean => {
+  // <stripe>
+  // frontend check for ALLOW_PROVIDER_UPLOAD
+  if (allowProviderUpload !== undefined) {
+    return allowProviderUpload;
+  }
+  // backend check for ALLOW_PROVIDER_UPLOAD
+  if (typeof process !== 'undefined' && process.env?.ALLOW_PROVIDER_UPLOAD !== undefined) {
+    return process.env.ALLOW_PROVIDER_UPLOAD.toLowerCase().trim() === 'true';
+  }
+  // </stripe>
+  return documentSupportedProviders.has(provider ?? '');
 };
 
 export const paramEndpoints = new Set<EModelEndpoint | string>([

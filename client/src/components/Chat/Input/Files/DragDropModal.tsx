@@ -20,6 +20,7 @@ import {
   useGetAgentsConfig,
   useLocalize,
 } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider'; //stripe
 import { ephemeralAgentByConvoId } from '~/store';
 import { useDragDropContext } from '~/Providers';
 
@@ -40,6 +41,7 @@ interface FileOption {
 const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragDropModalProps) => {
   const localize = useLocalize();
   const { agentsConfig } = useGetAgentsConfig();
+  const { data: startupConfig } = useGetStartupConfig();
   /** TODO: Ephemeral Agent Capabilities
    * Allow defining agent capabilities on a per-endpoint basis
    * Use definition for agents endpoint for ephemeral agents
@@ -57,7 +59,12 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     const currentProvider = provider || endpoint;
 
     // Check if provider supports document upload
-    if (isDocumentSupportedProvider(currentProvider || endpointType)) {
+    if (
+      isDocumentSupportedProvider(
+        currentProvider || endpointType,
+        startupConfig?.allowProviderUpload, //stripe
+      )
+    ) {
       const isGoogleProvider = currentProvider === EModelEndpoint.google;
       const validFileTypes = isGoogleProvider
         ? files.every(
@@ -116,6 +123,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     capabilities,
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
+    startupConfig?.allowProviderUpload,
   ]);
 
   if (!isVisible) {

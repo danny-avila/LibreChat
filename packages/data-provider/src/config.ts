@@ -681,6 +681,7 @@ export type TStartupConfig = {
   >;
   mcpPlaceholder?: string;
   conversationImportMaxFileSize?: number;
+  allowProviderUpload?: boolean; //stripe
 };
 
 export enum OCRStrategy {
