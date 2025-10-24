@@ -28,6 +28,7 @@ const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getAppConfig } = require('~/server/services/Config');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const { getLogStores } = require('~/cache');
+const { mcpServersRegistry } = require('@librechat/api');
 
 const getUserController = async (req, res) => {
   const appConfig = await getAppConfig({ role: req.user?.role });
@@ -198,7 +199,7 @@ const updateUserPluginsController = async (req, res) => {
       // If auth was updated successfully, disconnect MCP sessions as they might use these credentials
       if (pluginKey.startsWith(Constants.mcp_prefix)) {
         try {
-          const mcpManager = getMCPManager(user.id);
+          const mcpManager = getMCPManager();
           if (mcpManager) {
             // Extract server name from pluginKey (format: "mcp_<serverName>")
             const serverName = pluginKey.replace(Constants.mcp_prefix, '');
@@ -295,10 +296,11 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   }
 
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
-  const mcpManager = getMCPManager(userId);
-  const serverConfig = mcpManager.getRawConfig(serverName) ?? appConfig?.mcpServers?.[serverName];
-
-  if (!mcpManager.getOAuthServers().has(serverName)) {
+  const serverConfig =
+    (await mcpServersRegistry.getServerConfig(serverName, userId)) ??
+    appConfig?.mcpServers?.[serverName];
+  const oauthServers = await mcpServersRegistry.getOAuthServers();
+  if (!oauthServers.has(serverName)) {
     // this server does not use OAuth, so nothing to do here as well
     return;
   }

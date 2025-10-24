@@ -5,8 +5,6 @@ import { createClient, createCluster } from '@keyv/redis';
 import type { RedisClientType, RedisClusterType } from '@redis/client';
 import { cacheConfig } from './cacheConfig';
 
-const GLOBAL_PREFIX_SEPARATOR = '::';
-
 const urls = cacheConfig.REDIS_URI?.split(',').map((uri) => new URL(uri)) || [];
 const username = urls?.[0]?.username || cacheConfig.REDIS_USERNAME;
 const password = urls?.[0]?.password || cacheConfig.REDIS_PASSWORD;
@@ -18,7 +16,7 @@ if (cacheConfig.USE_REDIS) {
     username: username,
     password: password,
     tls: ca ? { ca } : undefined,
-    keyPrefix: `${cacheConfig.REDIS_KEY_PREFIX}${GLOBAL_PREFIX_SEPARATOR}`,
+    keyPrefix: `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}`,
     maxListeners: cacheConfig.REDIS_MAX_LISTENERS,
     retryStrategy: (times: number) => {
       if (
@@ -192,4 +190,4 @@ if (cacheConfig.USE_REDIS) {
   });
 }
 
-export { ioredisClient, keyvRedisClient, GLOBAL_PREFIX_SEPARATOR };
+export { ioredisClient, keyvRedisClient };
