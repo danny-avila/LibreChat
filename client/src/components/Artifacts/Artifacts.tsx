@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Code, Play, RefreshCw, X } from 'lucide-react';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
-import { Button, Spinner, useMediaQuery } from '@librechat/client';
+import { Button, Spinner, useMediaQuery, Radio } from '@librechat/client';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
@@ -24,13 +24,26 @@ export default function Artifacts() {
   const [isClosing, setIsClosing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
-  const [height, setHeight] = useState(90); // Height as percentage of viewport
+  const [height, setHeight] = useState(90);
   const [isDragging, setIsDragging] = useState(false);
-  const [blurAmount, setBlurAmount] = useState(0); // Dynamic blur amount
+  const [blurAmount, setBlurAmount] = useState(0);
   const dragStartY = useRef(0);
   const dragStartHeight = useRef(90);
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
+
+  const tabOptions = [
+    {
+      value: 'code',
+      label: localize('com_ui_code'),
+      icon: <Code className="size-4" />,
+    },
+    {
+      value: 'preview',
+      label: localize('com_ui_preview'),
+      icon: <Play className="size-4" />,
+    },
+  ];
 
   useEffect(() => {
     setIsMounted(true);
@@ -42,26 +55,22 @@ export default function Artifacts() {
     };
   }, [isMobile]);
 
-  // Dynamic blur based on height - more blur when taking up more screen
   useEffect(() => {
     if (!isMobile) {
       setBlurAmount(0);
       return;
     }
 
-    // Calculate blur amount based on how much screen is covered
-    // 50% height = no blur, 100% height = full blur
     const minHeightForBlur = 50;
     const maxHeightForBlur = 100;
 
     if (height <= minHeightForBlur) {
       setBlurAmount(0);
     } else if (height >= maxHeightForBlur) {
-      setBlurAmount(32); // Increased from 16 to 32 for stronger blur
+      setBlurAmount(32);
     } else {
-      // Linear interpolation between 0 and 32px blur
       const progress = (height - minHeightForBlur) / (maxHeightForBlur - minHeightForBlur);
-      setBlurAmount(Math.round(progress * 32)); // Changed from 16 to 32
+      setBlurAmount(Math.round(progress * 32));
     }
   }, [height, isMobile]);
 
@@ -142,7 +151,6 @@ export default function Artifacts() {
     }
   };
 
-  // Calculate backdrop opacity based on blur amount
   const backdropOpacity = blurAmount > 0 ? Math.min(0.3, blurAmount / 53.33) : 0;
 
   return (
@@ -156,7 +164,6 @@ export default function Artifacts() {
               isVisible && !isClosing
                 ? 'transition-all duration-300'
                 : 'pointer-events-none opacity-0 backdrop-blur-none transition-opacity duration-150',
-              // Allow pointer events when not fully blurred so chat is scrollable
               blurAmount < 8 && isVisible && !isClosing ? 'pointer-events-none' : '',
             )}
             style={{
@@ -199,6 +206,7 @@ export default function Artifacts() {
               <div className="h-1 w-12 rounded-full bg-border-xheavy opacity-40 transition-all duration-200 active:opacity-60" />
             </div>
           )}
+
           {/* Header */}
           <div
             className={cn(
@@ -215,31 +223,12 @@ export default function Artifacts() {
                     : '-translate-x-2 opacity-0',
                 )}
               >
-                <Tabs.List className="relative inline-flex h-9 gap-2 rounded-xl bg-surface-tertiary p-0.5">
-                  <div
-                    className={cn(
-                      'duration-[350ms] absolute top-0.5 h-8 rounded-[10px] bg-surface-primary-alt shadow-sm transition-all will-change-transform',
-                      activeTab === 'code'
-                        ? 'w-[42%] translate-x-0'
-                        : 'w-[50%] translate-x-[calc(100%-0.250rem)]',
-                    )}
-                  />
-                  <Tabs.Trigger
-                    value="code"
-                    className="relative z-10 flex items-center gap-1.5 rounded-[10px] border-transparent px-3 py-1 text-xs font-medium transition-all duration-200 hover:text-text-primary active:scale-95 data-[state=active]:text-text-primary data-[state=inactive]:text-text-secondary"
-                  >
-                    <Code className="size-3 transition-transform duration-200 group-active:scale-90" />
-                    <span className="whitespace-nowrap">{localize('com_ui_code')}</span>
-                  </Tabs.Trigger>
-                  <Tabs.Trigger
-                    value="preview"
-                    disabled={isMutating}
-                    className="relative z-10 flex items-center gap-1.5 rounded-[10px] border-transparent px-3 py-1 text-xs font-medium transition-all duration-200 hover:text-text-primary active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 data-[state=active]:text-text-primary data-[state=inactive]:text-text-secondary"
-                  >
-                    <Play className="size-3 transition-transform duration-200 group-active:scale-90" />
-                    <span className="whitespace-nowrap">{localize('com_ui_preview')}</span>
-                  </Tabs.Trigger>
-                </Tabs.List>
+                <Radio
+                  options={tabOptions}
+                  value={activeTab}
+                  onChange={setActiveTab}
+                  disabled={isMutating && activeTab !== 'code'}
+                />
               </div>
             )}
 
@@ -257,7 +246,6 @@ export default function Artifacts() {
                   onClick={handleRefresh}
                   disabled={isRefreshing}
                   aria-label={localize('com_ui_refresh')}
-                  className="transition-all duration-150 active:scale-90"
                 >
                   {isRefreshing ? (
                     <Spinner size={16} />
@@ -288,14 +276,12 @@ export default function Artifacts() {
                 variant="ghost"
                 onClick={closeArtifacts}
                 aria-label={localize('com_ui_close')}
-                className="h-8 w-8 transition-all duration-150 hover:scale-105 active:scale-90"
               >
                 <X size={16} />
               </Button>
             </div>
           </div>
 
-          {/* Content Area - Fixed positioning to prevent layout shifts */}
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-primary">
             <div className="absolute inset-0 flex flex-col">
               <ArtifactTabs
@@ -304,34 +290,35 @@ export default function Artifacts() {
                 previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
               />
             </div>
+
+            <div
+              className={cn(
+                'absolute inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm transition-opacity duration-300 ease-in-out',
+                isRefreshing ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
+              )}
+              aria-hidden={!isRefreshing}
+              role="status"
+            >
+              <div
+                className={cn(
+                  'transition-transform duration-300 ease-in-out',
+                  isRefreshing ? 'scale-100' : 'scale-95',
+                )}
+              >
+                <Spinner size={24} />
+              </div>
+            </div>
           </div>
 
-          {/* Mobile Tab Switcher with iOS-style animation */}
           {isMobile && (
-            <div className="pb-safe-offset-3 flex-shrink-0 border-t border-border-light bg-surface-primary-alt px-3 pt-2">
-              <Tabs.List className="relative flex h-10 w-full rounded-xl bg-surface-tertiary p-1">
-                <div
-                  className={cn(
-                    'duration-[350ms] absolute left-1 top-1 h-8 w-[calc(50%-0.25rem)] rounded-[10px] bg-surface-primary-alt shadow-sm transition-transform will-change-transform',
-                    activeTab === 'code' ? 'translate-x-0' : 'translate-x-[calc(100%+0.5rem)]',
-                  )}
-                />
-                <Tabs.Trigger
-                  value="code"
-                  className="relative z-10 flex w-1/2 items-center justify-center gap-1.5 rounded-[10px] border-transparent py-1.5 text-xs font-medium transition-all duration-150 active:scale-95 data-[state=active]:text-text-primary data-[state=inactive]:text-text-secondary"
-                >
-                  <Code className="size-3.5" />
-                  <span>{localize('com_ui_code')}</span>
-                </Tabs.Trigger>
-                <Tabs.Trigger
-                  value="preview"
-                  disabled={isMutating}
-                  className="relative z-10 flex w-1/2 items-center justify-center gap-1.5 rounded-[10px] border-transparent py-1.5 text-xs font-medium transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 data-[state=active]:text-text-primary data-[state=inactive]:text-text-secondary"
-                >
-                  <Play className="size-3.5" />
-                  <span>{localize('com_ui_preview')}</span>
-                </Tabs.Trigger>
-              </Tabs.List>
+            <div className="flex-shrink-0 border-t border-border-light bg-surface-primary-alt p-2">
+              <Radio
+                fullWidth
+                options={tabOptions}
+                value={activeTab}
+                onChange={setActiveTab}
+                disabled={isMutating && activeTab !== 'code'}
+              />
             </div>
           )}
         </div>
