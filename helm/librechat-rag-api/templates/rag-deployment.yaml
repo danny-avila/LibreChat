@@ -52,9 +52,6 @@ spec:
               name: {{ .Values.rag.existingSecret }}
           {{- end }}
           env:
-          {{- with .Values.env }}
-          {{- toYaml . | nindent 10 }}
-          {{- end }}
           {{- if .Values.postgresql.auth.existingSecret }}
           - name: POSTGRES_PASSWORD
             valueFrom:
@@ -69,6 +66,9 @@ spec:
                 name: {{ .Values.global.librechat.existingSecretName }}
                 key: {{ .Values.global.librechat.existingSecretApiKey }}
                 optional: true
+          {{- end }}
+          {{- with .Values.env }}
+          {{- toYaml . | nindent 10 }}
           {{- end }}
           {{- with .Values.volumeMounts }}
           volumeMounts:
