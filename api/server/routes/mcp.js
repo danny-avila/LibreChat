@@ -205,6 +205,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
         const tools = await userConnection.fetchTools();
         await updateMCPServerTools({
+          userId: flowState.userId,
           serverName,
           tools,
         });

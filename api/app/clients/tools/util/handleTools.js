@@ -448,7 +448,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         }
         if (!availableTools) {
           try {
-            availableTools = await getMCPServerTools(serverName);
+            availableTools = await getMCPServerTools(safeUser.id, serverName);
           } catch (error) {
             logger.error(`Error fetching available tools for MCP server ${serverName}:`, error);
           }
