@@ -1305,5 +1305,7 @@
   "com_ui_zoom_level": "Zoom level",
   "com_ui_zoom_out": "Zoom out",
   "com_ui_share_qr_code_description": "QR code for sharing this conversation link",
+  "com_ui_back_to_builder": "Back to builder",
+  "com_ui_remove_agent_from_chain": "Remove {{0}} from chain",
   "com_user_message": "You"
 }
