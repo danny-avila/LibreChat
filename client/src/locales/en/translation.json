@@ -788,6 +788,7 @@
   "com_ui_copy_to_clipboard": "Copy to clipboard",
   "com_ui_copy_url_to_clipboard": "Copy URL to clipboard",
   "com_ui_copy_stack_trace": "Copy stack trace",
+  "com_ui_copy_thoughts_to_clipboard": "Copy thoughts to clipboard",
   "com_ui_create": "Create",
   "com_ui_create_link": "Create link",
   "com_ui_create_memory": "Create Memory",
