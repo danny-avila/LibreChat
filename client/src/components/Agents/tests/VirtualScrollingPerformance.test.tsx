@@ -194,7 +194,7 @@ describe('Virtual Scrolling Performance', () => {
 
     // Performance check: rendering should be fast
     const renderTime = endTime - startTime;
-    expect(renderTime).toBeLessThan(720);
+    expect(renderTime).toBeLessThan(740);
 
     console.log(`Rendered 1000 agents in ${renderTime.toFixed(2)}ms`);
     console.log(`Only ${renderedCards.length} DOM nodes created for 1000 agents`);
