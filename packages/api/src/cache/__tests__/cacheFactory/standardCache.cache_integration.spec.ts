@@ -1,11 +1,14 @@
 import type { Keyv } from 'keyv';
 
-// Mock GLOBAL_PREFIX_SEPARATOR
-jest.mock('../../redisClients', () => {
-  const originalModule = jest.requireActual('../../redisClients');
+// Mock GLOBAL_PREFIX_SEPARATOR from cacheConfig
+jest.mock('../../cacheConfig', () => {
+  const originalModule = jest.requireActual('../../cacheConfig');
   return {
     ...originalModule,
-    GLOBAL_PREFIX_SEPARATOR: '>>',
+    cacheConfig: {
+      ...originalModule.cacheConfig,
+      GLOBAL_PREFIX_SEPARATOR: '>>',
+    },
   };
 });
 
