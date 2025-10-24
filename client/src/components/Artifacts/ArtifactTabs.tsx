@@ -39,12 +39,16 @@ export default function ArtifactTabs({
   const { files, fileKey, template, sharedProps } = useArtifactProps({ artifact });
 
   return (
-    <>
+    <div className="flex h-full w-full flex-col">
       <Tabs.Content
         ref={contentRef}
         value="code"
         id="artifacts-code"
-        className={cn('flex-grow overflow-auto')}
+        className={cn(
+          'h-full w-full flex-grow overflow-auto',
+          'data-[state=active]:duration-200 data-[state=active]:animate-in data-[state=active]:fade-in-0',
+          'data-[state=inactive]:duration-150 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0',
+        )}
         tabIndex={-1}
       >
         <ArtifactCodeEditor
@@ -56,7 +60,16 @@ export default function ArtifactTabs({
           sharedProps={sharedProps}
         />
       </Tabs.Content>
-      <Tabs.Content value="preview" className="flex-grow overflow-auto" tabIndex={-1}>
+
+      <Tabs.Content
+        value="preview"
+        className={cn(
+          'h-full w-full flex-grow overflow-auto',
+          'data-[state=active]:duration-200 data-[state=active]:animate-in data-[state=active]:fade-in-0',
+          'data-[state=inactive]:duration-150 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0',
+        )}
+        tabIndex={-1}
+      >
         <ArtifactPreview
           files={files}
           fileKey={fileKey}
@@ -67,6 +80,6 @@ export default function ArtifactTabs({
           startupConfig={startupConfig}
         />
       </Tabs.Content>
-    </>
+    </div>
   );
 }

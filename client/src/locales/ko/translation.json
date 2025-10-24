@@ -567,7 +567,7 @@
   "com_ui_archive": "아카이브",
   "com_ui_archive_delete_error": "저장된 대화 삭제 실패",
   "com_ui_archive_error": "대화 아카이브 실패",
-  "com_ui_artifact_click": "클릭하여 열기",
+  "com_ui_click_to_open": "클릭하여 열기",
   "com_ui_artifacts": "아티팩트",
   "com_ui_artifacts_options": "아티팩트 옵션",
   "com_ui_artifacts_toggle": "아티팩트 UI 표시/숨기기",

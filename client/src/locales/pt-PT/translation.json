@@ -656,7 +656,7 @@
   "com_ui_archive": "Arquivar",
   "com_ui_archive_delete_error": "Falha ao eliminar conversa arquivada",
   "com_ui_archive_error": "Falha ao arquivar conversa",
-  "com_ui_artifact_click": "Clique para abrir",
+  "com_ui_click_to_open": "Clique para abrir",
   "com_ui_artifacts": "Artefatos",
   "com_ui_artifacts_options": "Opções de Artefactos",
   "com_ui_artifacts_toggle": "Alternar UI de Artefatos",

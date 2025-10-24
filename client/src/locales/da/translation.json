@@ -531,7 +531,7 @@
   "com_ui_archive": "Arkiv",
   "com_ui_archive_delete_error": "Kunne ikke slette arkiveret samtale",
   "com_ui_archive_error": "Kunne ikke arkivere samtale",
-  "com_ui_artifact_click": "Klik for at åbne",
+  "com_ui_click_to_open": "Klik for at åbne",
   "com_ui_artifacts": "Artefakter",
   "com_ui_artifacts_toggle": "Skift artefakter UI",
   "com_ui_artifacts_toggle_agent": "Aktiver artefakter",

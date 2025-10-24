@@ -510,7 +510,7 @@
   "com_ui_archive": "Archivar",
   "com_ui_archive_delete_error": "Error al borrar conversación archivada",
   "com_ui_archive_error": "Error al archivar la conversación",
-  "com_ui_artifact_click": "Haga clic para abrir",
+  "com_ui_click_to_open": "Haga clic para abrir",
   "com_ui_artifacts": "Artefactos",
   "com_ui_artifacts_options": "Opciones de artefactos",
   "com_ui_artifacts_toggle": "Alternar Interfaz de Artefactos",

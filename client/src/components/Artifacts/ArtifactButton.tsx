@@ -55,40 +55,52 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
 
   return (
     <div className="group relative my-4 rounded-xl text-sm text-text-primary">
-      <button
-        type="button"
-        onClick={() => {
-          if (!location.pathname.includes('/c/')) {
+      {(() => {
+        const handleClick = () => {
+          if (!location.pathname.includes('/c/')) return;
+
+          if (isSelected) {
+            resetCurrentArtifactId();
+            setVisible(false);
             return;
           }
+
           resetCurrentArtifactId();
           setVisible(true);
+
           if (artifacts?.[artifact.id] == null) {
             setArtifacts(visibleArtifacts);
           }
+
           setTimeout(() => {
             setCurrentArtifactId(artifact.id);
           }, 15);
-        }}
-        className={
-          `relative overflow-hidden rounded-xl transition-all duration-200 hover:border-border-medium hover:bg-surface-hover hover:shadow-lg ` +
+        };
+
+        const buttonClass =
+          `relative overflow-hidden rounded-xl transition-all duration-300 hover:border-border-medium hover:bg-surface-hover hover:shadow-lg active:scale-[0.98] ` +
           (isSelected
             ? 'border-border-medium bg-surface-hover shadow-lg'
-            : 'border-border-light bg-surface-tertiary shadow-sm')
-        }
-      >
-        <div className="w-fit p-2">
-          <div className="flex flex-row items-center gap-2">
-            <FilePreview fileType={fileType} className="relative" />
-            <div className="overflow-hidden text-left">
-              <div className="truncate font-medium">{artifact.title}</div>
-              <div className="truncate text-text-secondary">
-                {localize('com_ui_artifact_click')}
+            : 'border-border-light bg-surface-tertiary shadow-sm');
+
+        const actionLabel = isSelected
+          ? localize('com_ui_click_to_close')
+          : localize('com_ui_click_to_open');
+
+        return (
+          <button type="button" onClick={handleClick} className={buttonClass}>
+            <div className="w-fit p-2">
+              <div className="flex flex-row items-center gap-2">
+                <FilePreview fileType={fileType} className="relative" />
+                <div className="overflow-hidden text-left">
+                  <div className="truncate font-medium">{artifact.title}</div>
+                  <div className="truncate text-text-secondary">{actionLabel}</div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      </button>
+          </button>
+        );
+      })()}
       <br />
     </div>
   );

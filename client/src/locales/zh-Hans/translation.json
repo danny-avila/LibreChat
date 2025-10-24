@@ -686,7 +686,7 @@
   "com_ui_archive": "归档",
   "com_ui_archive_delete_error": "删除已归档对话失败",
   "com_ui_archive_error": "归档对话失败",
-  "com_ui_artifact_click": "点击以打开",
+  "com_ui_click_to_open": "点击以打开",
   "com_ui_artifacts": "Artifacts",
   "com_ui_artifacts_options": "Artifacts 选项",
   "com_ui_artifacts_toggle": "切换 Artifacts UI",

@@ -50,6 +50,7 @@ export default function ArtifactVersion({
   return (
     <DropdownPopup
       menuId={menuId}
+      portal
       focusLoop
       unmountOnHide
       isOpen={isPopoverActive}

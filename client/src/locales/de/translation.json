@@ -685,7 +685,7 @@
   "com_ui_archive": "Archivieren",
   "com_ui_archive_delete_error": "Archivierter Chat konnte nicht gelöscht werden.",
   "com_ui_archive_error": "Konversation konnte nicht archiviert werden",
-  "com_ui_artifact_click": "Zum Öffnen klicken",
+  "com_ui_click_to_open": "Zum Öffnen klicken",
   "com_ui_artifacts": "Artefakte",
   "com_ui_artifacts_options": "Artefakt Optionen",
   "com_ui_artifacts_toggle": "Artefakte-Funktion einschalten",

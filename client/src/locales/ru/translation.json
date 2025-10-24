@@ -682,7 +682,7 @@
   "com_ui_archive": "Архивировать",
   "com_ui_archive_delete_error": "Не удалось удалить архивированный чат",
   "com_ui_archive_error": "Не удалось заархивировать чат",
-  "com_ui_artifact_click": "Нажмите, чтобы открыть",
+  "com_ui_click_to_open": "Нажмите, чтобы открыть",
   "com_ui_artifacts": "Артефакты",
   "com_ui_artifacts_options": "Параметры артефактов",
   "com_ui_artifacts_toggle": "Показать/скрыть артефакты",

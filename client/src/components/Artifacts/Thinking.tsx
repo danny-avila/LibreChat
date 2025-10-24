@@ -7,8 +7,8 @@ import { cn } from '~/utils';
 import store from '~/store';
 
 const BUTTON_STYLES = {
-  base: 'group mt-3 flex w-fit items-center justify-center rounded-xl bg-surface-tertiary px-3 py-2 text-xs leading-[18px] animate-thinking-appear',
-  icon: 'icon-sm ml-1.5 transform-gpu text-text-primary transition-transform duration-200',
+  base: '-sring group mt-3 flex w-fit items-center justify-center rounded-xl bg-surface-tertiary px-3 py-2 text-xs leading-[18px] transition-all duration-300 hover:bg-surface-secondary active:scale-95 animate-thinking-appear',
+  icon: 'icon-sm ml-1.5 transform-gpu text-text-primary transition-transform duration-300',
 } as const;
 
 const CONTENT_STYLES = {
@@ -69,7 +69,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
         <ThinkingButton isExpanded={isExpanded} onClick={handleClick} label={label} />
       </div>
       <div
-        className={cn('grid transition-all duration-300 ease-out', isExpanded && 'mb-8')}
+        className={cn('duration-400 grid transition-all', isExpanded && 'mb-8')}
         style={{
           gridTemplateRows: isExpanded ? '1fr' : '0fr',
         }}
