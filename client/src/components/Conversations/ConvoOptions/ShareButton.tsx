@@ -87,6 +87,7 @@ export default function ShareButton({
                   <Button
                     size="sm"
                     variant="outline"
+                    aria-label={localize('com_ui_copy_link')}
                     onClick={() => {
                       if (isCopying) {
                         return;
