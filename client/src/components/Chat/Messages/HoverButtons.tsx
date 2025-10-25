@@ -77,8 +77,9 @@ const HoverButton = memo(
     isDisabled = false,
     isLast = false,
     className = '',
+    buttonStyle = '',
   }: HoverButtonProps) => {
-    const buttonStyle = cn(
+    const defaultStyle = cn(
       'hover-button rounded-lg p-1.5 text-text-secondary-alt transition-colors duration-200',
       'hover:text-text-primary hover:bg-surface-hover',
       'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
@@ -92,7 +93,7 @@ const HoverButton = memo(
     return (
       <button
         id={id}
-        className={buttonStyle}
+        className={buttonStyle || defaultStyle}
         onClick={onClick}
         type="button"
         title={title}
@@ -181,6 +182,20 @@ const HoverButtons = ({
 
   const handleCopy = () => copyToClipboard(setIsCopied);
 
+  // When editing, keep buttons visible instead of only showing on hover
+  const getButtonStyle = (additionalClasses = '') => {
+    return cn(
+      'hover-button rounded-lg p-1.5 text-text-secondary-alt transition-colors duration-200',
+      'hover:text-text-primary hover:bg-surface-hover',
+      'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
+      !isLast &&
+        !isEditing &&
+        'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
+      'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
+      additionalClasses,
+    );
+  };
+
   return (
     <div className="group visible flex justify-center gap-0.5 self-end focus-within:outline-none lg:justify-start">
       {/* Text to Speech */}
@@ -197,6 +212,7 @@ const HoverButtons = ({
               icon={props.icon}
               isActive={props.isActive}
               isLast={isLast}
+              buttonStyle={getButtonStyle()}
             />
           )}
         />
@@ -210,7 +226,9 @@ const HoverButtons = ({
         }
         icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
         isLast={isLast}
-        className={`ml-0 flex items-center gap-1.5 text-xs ${isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : ''}`}
+        buttonStyle={getButtonStyle(
+          `ml-0 flex items-center gap-1.5 text-xs ${isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : ''}`,
+        )}
       />
 
       {/* Edit Button */}
@@ -224,7 +242,12 @@ const HoverButtons = ({
           isVisible={!hideEditButton}
           isDisabled={hideEditButton}
           isLast={isLast}
-          className={isCreatedByUser ? '' : 'active'}
+          buttonStyle={getButtonStyle(
+            cn(
+              isCreatedByUser ? '' : 'active',
+              isEditing && 'active text-text-primary bg-surface-hover',
+            ),
+          )}
         />
       )}
 
@@ -235,11 +258,17 @@ const HoverButtons = ({
         forkingSupported={forkingSupported}
         latestMessageId={latestMessage?.messageId}
         isLast={isLast}
+        isEditing={isEditing}
       />
 
       {/* Feedback Buttons */}
       {!isCreatedByUser && handleFeedback != null && (
-        <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
+        <Feedback
+          handleFeedback={handleFeedback}
+          feedback={message.feedback}
+          isLast={isLast}
+          isEditing={isEditing}
+        />
       )}
 
       {/* Regenerate Button */}
@@ -249,7 +278,7 @@ const HoverButtons = ({
           title={localize('com_ui_regenerate')}
           icon={<RegenerateIcon size="19" />}
           isLast={isLast}
-          className="active"
+          buttonStyle={getButtonStyle('active')}
         />
       )}
 
@@ -260,7 +289,7 @@ const HoverButtons = ({
           title={localize('com_ui_continue')}
           icon={<ContinueIcon className="w-19 h-19 -rotate-180" />}
           isLast={isLast}
-          className="active"
+          buttonStyle={getButtonStyle('active')}
         />
       )}
     </div>

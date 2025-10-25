@@ -26,6 +26,7 @@ interface FeedbackProps {
   handleFeedback: ({ feedback }: { feedback: TFeedback | undefined }) => void;
   feedback?: TFeedback;
   isLast?: boolean;
+  isEditing?: boolean;
 }
 
 const ICONS = {
@@ -73,11 +74,13 @@ function FeedbackOptionButton({
 
 function FeedbackButtons({
   isLast,
+  isEditing = false,
   feedback,
   onFeedback,
   onOther,
 }: {
   isLast: boolean;
+  isEditing?: boolean;
   feedback?: TFeedback;
   onFeedback: (fb: TFeedback | undefined) => void;
   onOther?: () => void;
@@ -147,7 +150,7 @@ function FeedbackButtons({
         store={upStore}
         render={
           <button
-            className={buttonClasses(feedback?.rating === 'thumbsUp', isLast)}
+            className={buttonClasses(feedback?.rating === 'thumbsUp', isLast, isEditing)}
             onClick={handleThumbsUpClick}
             type="button"
             title={localize('com_ui_feedback_positive')}
@@ -181,7 +184,7 @@ function FeedbackButtons({
         store={downStore}
         render={
           <button
-            className={buttonClasses(feedback?.rating === 'thumbsDown', isLast)}
+            className={buttonClasses(feedback?.rating === 'thumbsDown', isLast, isEditing)}
             onClick={handleThumbsDownClick}
             type="button"
             title={localize('com_ui_feedback_negative')}
@@ -214,12 +217,14 @@ function FeedbackButtons({
   );
 }
 
-function buttonClasses(isActive: boolean, isLast: boolean) {
+function buttonClasses(isActive: boolean, isLast: boolean, isEditing = false) {
   return cn(
     'hover-button rounded-lg p-1.5 text-text-secondary-alt transition-colors duration-200',
     'hover:text-text-primary hover:bg-surface-hover',
     'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
-    !isLast && 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
+    !isLast &&
+      !isEditing &&
+      'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
     'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
     isActive && 'active text-text-primary bg-surface-hover',
   );
@@ -227,6 +232,7 @@ function buttonClasses(isActive: boolean, isLast: boolean) {
 
 export default function Feedback({
   isLast = false,
+  isEditing = false,
   handleFeedback,
   feedback: initialFeedback,
 }: FeedbackProps) {
@@ -284,7 +290,7 @@ export default function Feedback({
       : localize('com_ui_feedback_negative');
     return (
       <button
-        className={buttonClasses(true, isLast)}
+        className={buttonClasses(true, isLast, isEditing)}
         onClick={() => {
           if (isThumbsUp) {
             handleButtonFeedback(undefined);
@@ -308,6 +314,7 @@ export default function Feedback({
       ) : (
         <FeedbackButtons
           isLast={isLast}
+          isEditing={isEditing}
           feedback={feedback}
           onFeedback={handleButtonFeedback}
           onOther={handleOtherOpen}
