@@ -688,7 +688,7 @@
   "com_ui_archive": "Arhīvs",
   "com_ui_archive_delete_error": "Neizdevās izdzēst arhivēto sarunu.",
   "com_ui_archive_error": "Neizdevās arhivēt sarunu.",
-  "com_ui_artifact_click": "Noklikšķiniet, lai atvērtu",
+  "com_ui_click_to_open": "Noklikšķiniet, lai atvērtu",
   "com_ui_artifacts": "Artefakti",
   "com_ui_artifacts_options": "Artefaktu opcijas",
   "com_ui_artifacts_toggle": "Pārslēgt artefaktu lietotāja saskarni",

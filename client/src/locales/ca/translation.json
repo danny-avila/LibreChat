@@ -508,7 +508,7 @@
   "com_ui_archive": "Arxiva",
   "com_ui_archive_delete_error": "No s'ha pogut eliminar la conversa arxivada",
   "com_ui_archive_error": "No s'ha pogut arxivar la conversa",
-  "com_ui_artifact_click": "Fes clic per obrir",
+  "com_ui_click_to_open": "Fes clic per obrir",
   "com_ui_artifacts": "Artifacts",
   "com_ui_artifacts_toggle": "Activa/desactiva la UI d'artifacts",
   "com_ui_artifacts_toggle_agent": "Habilita artifacts",

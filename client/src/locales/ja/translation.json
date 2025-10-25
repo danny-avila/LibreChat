@@ -576,7 +576,7 @@
   "com_ui_archive": "アーカイブ",
   "com_ui_archive_delete_error": "アーカイブされた会話の削除に失敗しました",
   "com_ui_archive_error": "アーカイブに失敗しました。",
-  "com_ui_artifact_click": "クリックして開く",
+  "com_ui_click_to_open": "クリックして開く",
   "com_ui_artifacts": "アーティファクト",
   "com_ui_artifacts_options": "アーティファクト・オプション",
   "com_ui_artifacts_toggle": "アーティファクト UI の切替",

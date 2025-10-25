@@ -479,7 +479,7 @@
   "com_ui_api_key": "کلید API",
   "com_ui_archive": "آرشیو",
   "com_ui_archive_error": "مکالمه بایگانی نشد",
-  "com_ui_artifact_click": "برای باز کردن کلیک کنید",
+  "com_ui_click_to_open": "برای باز کردن کلیک کنید",
   "com_ui_artifacts": "مصنوعات",
   "com_ui_artifacts_toggle": "تغییر رابط کاربری Artifacts",
   "com_ui_artifacts_toggle_agent": "Artifacts را فعال کنید",

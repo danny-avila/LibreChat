@@ -430,7 +430,7 @@
   "com_ui_all_proper": "Tümü",
   "com_ui_archive": "Arşivle",
   "com_ui_archive_error": "Konuşmayı arşivleyemedi",
-  "com_ui_artifact_click": "Açmak için tıklayın",
+  "com_ui_click_to_open": "Açmak için tıklayın",
   "com_ui_artifacts": "Yapıtlar",
   "com_ui_artifacts_toggle": "Yapıtlar Arayüzünü Aç/Kapat",
   "com_ui_ascending": "Artan",

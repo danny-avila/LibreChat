@@ -683,7 +683,7 @@
   "com_ui_archive": "Arkiver",
   "com_ui_archive_delete_error": "Sletting av arkivert samtale mislyktes.",
   "com_ui_archive_error": "Arkivering av samtale mislyktes.",
-  "com_ui_artifact_click": "Klikk for å åpne",
+  "com_ui_click_to_open": "Klikk for å åpne",
   "com_ui_artifacts": "Artefakter",
   "com_ui_artifacts_options": "Alternativer for artefakter",
   "com_ui_artifacts_toggle": "Veksle artefakt-UI",
