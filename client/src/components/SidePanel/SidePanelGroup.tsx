@@ -140,14 +140,14 @@ const SidePanelGroup = memo(
         <ResizablePanelGroup
           direction="horizontal"
           onLayout={(sizes) => throttledSaveLayout(sizes)}
-          className="ease-[cubic-bezier(0.25,0.46,0.45,0.94)] relative h-full w-full flex-1 overflow-auto bg-presentation transition-all duration-500"
+          className="relative h-full w-full flex-1 overflow-auto bg-presentation"
         >
           <ResizablePanel
             defaultSize={currentLayout[0]}
             minSize={minSizeMain}
             order={1}
             id="messages-view"
-            className="ease-[cubic-bezier(0.25,0.46,0.45,0.94)] transition-all duration-500"
+            className="transition-width relative h-full w-full flex-1 overflow-auto bg-presentation"
           >
             {children}
           </ResizablePanel>
@@ -167,7 +167,6 @@ const SidePanelGroup = memo(
                 collapsedSize={0}
                 order={2}
                 id="artifacts-panel"
-                className="ease-[cubic-bezier(0.25,0.46,0.45,0.94)] transition-all duration-500"
               >
                 <div className="h-full min-w-[400px] overflow-hidden">{artifacts}</div>
               </ResizablePanel>
