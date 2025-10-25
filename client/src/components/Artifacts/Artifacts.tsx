@@ -67,10 +67,10 @@ export default function Artifacts() {
     if (height <= minHeightForBlur) {
       setBlurAmount(0);
     } else if (height >= maxHeightForBlur) {
-      setBlurAmount(32);
+      setBlurAmount(MAX_BLUR_AMOUNT);
     } else {
       const progress = (height - minHeightForBlur) / (maxHeightForBlur - minHeightForBlur);
-      setBlurAmount(Math.round(progress * 32));
+      setBlurAmount(Math.round(progress * MAX_BLUR_AMOUNT));
     }
   }, [height, isMobile]);
 
@@ -151,7 +151,15 @@ export default function Artifacts() {
     }
   };
 
-  const backdropOpacity = blurAmount > 0 ? Math.min(0.3, blurAmount / 53.33) : 0;
+  // Matches the maximum blur applied when the sheet is fully expanded
+  const MAX_BLUR_AMOUNT = 32;
+  // Ensures the backdrop caps at 30% opacity when blur reaches its maximum
+  const MAX_BACKDROP_OPACITY = 0.3;
+
+  const backdropOpacity =
+    blurAmount > 0
+      ? (Math.min(blurAmount, MAX_BLUR_AMOUNT) / MAX_BLUR_AMOUNT) * MAX_BACKDROP_OPACITY
+      : 0;
 
   return (
     <Tabs.Root value={activeTab} onValueChange={setActiveTab} asChild>

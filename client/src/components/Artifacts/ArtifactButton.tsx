@@ -4,7 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { useRecoilState, useSetRecoilState, useResetRecoilState } from 'recoil';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
-import { getFileType, logger } from '~/utils';
+import { cn, getFileType, logger } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -77,11 +77,13 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
           }, 15);
         };
 
-        const buttonClass =
-          `relative overflow-hidden rounded-xl transition-all duration-300 hover:border-border-medium hover:bg-surface-hover hover:shadow-lg active:scale-[0.98] ` +
-          (isSelected
-            ? 'border-border-medium bg-surface-hover shadow-lg'
-            : 'border-border-light bg-surface-tertiary shadow-sm');
+        const buttonClass = cn(
+          'relative overflow-hidden rounded-xl transition-all duration-300 hover:border-border-medium hover:bg-surface-hover hover:shadow-lg active:scale-[0.98]',
+          {
+            'border-border-medium bg-surface-hover shadow-lg': isSelected,
+            'border-border-light bg-surface-tertiary shadow-sm': !isSelected,
+          },
+        );
 
         const actionLabel = isSelected
           ? localize('com_ui_click_to_close')
