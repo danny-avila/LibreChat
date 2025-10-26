@@ -1,4 +1,4 @@
-import React, { memo, useState, useMemo } from 'react';
+import React, { memo, useState, useMemo, useRef, useCallback } from 'react';
 import { UserIcon, useAvatar } from '@librechat/client';
 import type { TUser } from 'librechat-data-provider';
 import type { IconProps } from '~/common';
@@ -15,44 +15,49 @@ type UserAvatarProps = {
   className?: string;
 };
 
+/**
+ * Default avatar component - memoized outside to prevent recreation on every render
+ */
+const DefaultAvatar = memo(() => (
+  <div
+    style={{
+      backgroundColor: 'rgb(121, 137, 255)',
+      width: '20px',
+      height: '20px',
+      boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px',
+    }}
+    className="relative flex h-9 w-9 items-center justify-center rounded-sm p-1 text-white"
+  >
+    <UserIcon />
+  </div>
+));
+
+DefaultAvatar.displayName = 'DefaultAvatar';
+
 const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAvatarProps) => {
   const [imageError, setImageError] = useState(false);
-  const [imageLoaded, setImageLoaded] = useState(false);
+  const imageLoadedRef = useRef(false);
+  const currentSrcRef = useRef('');
 
-  const handleImageError = () => {
-    setImageError(true);
-    setImageLoaded(false);
-  };
-
-  const handleImageLoad = () => {
-    setImageLoaded(true);
-  };
-
-  const renderDefaultAvatar = () => (
-    <div
-      style={{
-        backgroundColor: 'rgb(121, 137, 255)',
-        width: '20px',
-        height: '20px',
-        boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px',
-      }}
-      className="relative flex h-9 w-9 items-center justify-center rounded-sm p-1 text-white"
-    >
-      <UserIcon />
-    </div>
-  );
-
-  const hasAvatar = useMemo(() => (user?.avatar ?? '') || avatarSrc, [user?.avatar, avatarSrc]);
-  const showImage = useMemo(() => hasAvatar && !imageError, [hasAvatar, imageError]);
   const imageSrc = useMemo(() => (user?.avatar ?? '') || avatarSrc, [user?.avatar, avatarSrc]);
 
-  /** Check if we're using a custom avatar (not initials) */
-  const isCustomAvatar = useMemo(() => !!(user?.avatar && user.avatar !== ''), [user?.avatar]);
-  // /** Only show default while loading for custom avatars, not for initials */
-  // const showDefaultWhileLoading = useMemo(
-  //   () => isCustomAvatar && !imageLoaded && showImage,
-  //   [isCustomAvatar, imageLoaded, showImage],
-  // );
+  /** Reset loaded state if image source changes */
+  if (currentSrcRef.current !== imageSrc) {
+    imageLoadedRef.current = false;
+    currentSrcRef.current = imageSrc;
+  }
+
+  const handleImageError = useCallback(() => {
+    setImageError(true);
+    imageLoadedRef.current = false;
+  }, []);
+
+  const handleImageLoad = useCallback(() => {
+    imageLoadedRef.current = true;
+  }, []);
+
+  const hasAvatar = useMemo(() => imageSrc !== '', [imageSrc]);
+  const showImage = useMemo(() => hasAvatar && !imageError, [hasAvatar, imageError]);
 
   return (
     <div
@@ -63,27 +68,16 @@ const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAva
       }}
       className={cn('relative flex items-center justify-center', className ?? '')}
     >
-      {/* Always render default avatar as background */}
-      {!showImage && renderDefaultAvatar()}
-      {showImage && (
-        <>
-          {/* Show default avatar behind the image while loading custom avatars */}
-          {isCustomAvatar && !imageLoaded && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              {renderDefaultAvatar()}
-            </div>
-          )}
-          <img
-            className={cn(
-              'relative z-10 rounded-full',
-              isCustomAvatar && !imageLoaded ? 'opacity-0' : 'opacity-100',
-            )}
-            src={imageSrc}
-            alt="avatar"
-            onLoad={handleImageLoad}
-            onError={handleImageError}
-          />
-        </>
+      {!showImage ? (
+        <DefaultAvatar />
+      ) : (
+        <img
+          className="rounded-full"
+          src={imageSrc}
+          alt="avatar"
+          onLoad={handleImageLoad}
+          onError={handleImageError}
+        />
       )}
     </div>
   );
