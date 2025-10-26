@@ -1,0 +1,111 @@
+# Update Documentation Submodule Workflow
+#
+# Purpose:
+#   Automatically keeps the documentation submodule in sync with the latest
+#   changes from the LibreChat-AI/librechat.ai repository.
+#
+# When it runs:
+#   1. Automatically every Monday at 9:00 AM UTC (weekly schedule)
+#   2. Manually via GitHub Actions UI (workflow_dispatch)
+#   3. When triggered by the docs repository (repository_dispatch: docs-updated)
+#
+# What it does:
+#   1. Checks out the main repository with submodules
+#   2. Updates the docs-site submodule to the latest remote commit
+#   3. Counts how many commits the submodule is behind
+#   4. Automatically creates a PR if updates are available
+#   5. Includes recent commit messages in the PR description
+#
+# PR Details:
+#   - Branch: automated/update-docs-submodule
+#   - Labels: documentation, automated
+#   - Auto-deletes branch after merge
+#
+# Manual Trigger:
+#   Go to Actions → Update Documentation Submodule → Run workflow
+#
+name: Update Documentation Submodule
+
+on:
+  schedule:
+    # Run weekly on Monday at 9:00 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch: # Allow manual triggering
+  repository_dispatch:
+    types: [docs-updated] # Trigger when docs repo is updated
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-submodule:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Update submodule to latest
+        id: update
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
+          # Update submodule to latest commit from remote
+          git submodule update --remote docs-site
+          
+          # Check if there are changes
+          if git diff --quiet docs-site; then
+            echo "No updates available"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "Changes detected in docs-site submodule"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            
+            # Get the number of commits behind
+            cd docs-site
+            COMMITS_BEHIND=$(git rev-list --count HEAD..@{u} 2>/dev/null || echo "0")
+            echo "commits_behind=$COMMITS_BEHIND" >> $GITHUB_OUTPUT
+            
+            # Get recent commit messages
+            RECENT_COMMITS=$(git log --oneline HEAD..@{u} -5 | sed 's/^/- /' || echo "")
+            echo "recent_commits<<EOF" >> $GITHUB_OUTPUT
+            echo "$RECENT_COMMITS" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            cd ..
+          fi
+      
+      - name: Create Pull Request
+        if: steps.update.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'docs: Update documentation submodule'
+          title: '📚 Update Documentation Submodule'
+          body: |
+            ## 📚 Documentation Update
+            
+            This PR updates the `docs-site` submodule to the latest version.
+            
+            **Changes:** ${{ steps.update.outputs.commits_behind }} commit(s) behind
+            
+            ### Recent documentation updates:
+            ${{ steps.update.outputs.recent_commits }}
+            
+            ---
+            
+            **Review checklist:**
+            - [ ] Documentation changes are relevant and compatible with current codebase
+            - [ ] No breaking changes in documentation structure
+            - [ ] Links and references are still valid
+            
+            *This PR was automatically created by the Update Documentation Submodule workflow.*
+          branch: automated/update-docs-submodule
+          delete-branch: true
+          labels: |
+            documentation
+            automated

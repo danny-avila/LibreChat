@@ -1,0 +1,138 @@
+# Documentation Check Workflow
+#
+# Purpose:
+#   Reminds contributors to update documentation when making code changes
+#   that typically require documentation updates (features, APIs, configs).
+#
+# When it runs:
+#   - Automatically on PRs that modify:
+#     * API code (api/**)
+#     * Frontend code (client/src/**)
+#     * Packages (packages/**)
+#     * Configuration files (librechat.example.yaml, .env.example)
+#
+# What it does:
+#   1. Checks if the docs-site submodule was updated in the PR
+#   2. Checks how long since documentation was last updated
+#   3. Posts a helpful comment on PRs reminding about documentation
+#   4. Provides instructions on how to update docs
+#
+# When it comments:
+#   - PR modifies feature/config files AND docs weren't updated
+#   - OR documentation hasn't been updated in 30+ days
+#
+# Note: This is a reminder only - it does NOT block PR merging
+#
+name: Documentation Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'api/**'
+      - 'client/src/**'
+      - 'packages/**'
+      - 'librechat.example.yaml'
+      - '.env.example'
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  check-docs:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+      
+      - name: Check if docs were updated
+        id: check
+        run: |
+          # Check if docs-site submodule was modified in this PR
+          DOCS_MODIFIED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -c '^docs-site' || echo "0")
+          echo "docs_modified=$DOCS_MODIFIED" >> $GITHUB_OUTPUT
+          
+          # Check how long since docs were last updated
+          cd docs-site
+          DAYS_SINCE_UPDATE=$(( ($(date +%s) - $(git log -1 --format=%ct)) / 86400 ))
+          echo "days_since_update=$DAYS_SINCE_UPDATE" >> $GITHUB_OUTPUT
+          cd ..
+          
+          # Check for specific file types that typically need docs
+          FEATURE_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '(routes|endpoints|config|yaml|\.env)' | wc -l)
+          echo "feature_files=$FEATURE_FILES" >> $GITHUB_OUTPUT
+      
+      - name: Comment on PR if docs might need updating
+        if: |
+          steps.check.outputs.docs_modified == '0' && 
+          (steps.check.outputs.feature_files > '0' || steps.check.outputs.days_since_update > '30')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const daysOld = ${{ steps.check.outputs.days_since_update }};
+            const hasFeatureFiles = ${{ steps.check.outputs.feature_files }} > 0;
+            
+            let message = '## 📚 Documentation Check\n\n';
+            
+            if (hasFeatureFiles) {
+              message += '⚠️ This PR modifies files that typically require documentation updates:\n';
+              message += '- Configuration files\n';
+              message += '- API routes/endpoints\n';
+              message += '- Environment variables\n\n';
+            }
+            
+            if (daysOld > 30) {
+              message += `ℹ️ The documentation submodule hasn't been updated in ${daysOld} days.\n\n`;
+            }
+            
+            message += '**Please consider:**\n';
+            message += '- Does this change require documentation updates?\n';
+            message += '- Should the `docs-site` submodule be updated?\n';
+            message += '- Are there new features, config options, or API changes?\n\n';
+            message += '**To update documentation:**\n';
+            message += '```bash\n';
+            message += 'cd docs-site\n';
+            message += 'git checkout -b docs/your-feature\n';
+            message += '# Make your changes\n';
+            message += 'git commit -m "docs: Document feature X"\n';
+            message += 'git push origin docs/your-feature\n';
+            message += 'cd ..\n';
+            message += 'git add docs-site\n';
+            message += '```\n\n';
+            message += 'See [Documentation Guidelines](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md#9-documentation-guidelines) for more details.\n\n';
+            message += '*This is an automated reminder. If documentation is not needed, you can safely ignore this message.*';
+            
+            // Check if we already commented
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('📚 Documentation Check')
+            );
+            
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: message
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: message
+              });
+            }
