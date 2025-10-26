@@ -464,7 +464,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
           role="table"
           aria-label={localize('com_ui_data_table')}
           aria-rowcount={data.length}
-          className="table-fixed"
+          className="table-auto"
           unwrapped={true}
         >
           <TableHeader className="sticky top-0 z-10 bg-surface-secondary">
@@ -516,9 +516,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                       ? {
                           width: `${metaWidth}%`,
                           maxWidth: `${metaWidth}%`,
-                          minWidth: isSmallScreen
-                            ? `${Math.max(metaWidth * 0.7, 10)}%`
-                            : `${metaWidth}%`,
+                          minWidth: `${metaWidth}%`,
                         }
                       : {};
                   return (

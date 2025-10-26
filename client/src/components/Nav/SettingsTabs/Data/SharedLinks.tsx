@@ -72,12 +72,11 @@ export default function SharedLinks() {
   const [allKnownLinks, setAllKnownLinks] = useState<SharedLinkItem[]>([]);
 
   const handleSearchChange = useCallback((value: string) => {
-    const trimmedValue = value.trim();
-    setSearchValue(trimmedValue);
+    setSearchValue(value);
     setAllKnownLinks([]);
     setQueryParams((prev) => ({
       ...prev,
-      search: trimmedValue,
+      search: value,
     }));
   }, []);
 

@@ -97,11 +97,10 @@ export default function ArchivedChatsTable() {
     });
 
   const handleSearchChange = useCallback((value: string) => {
-    const trimmedValue = value.trim();
-    setSearchValue(trimmedValue);
+    setSearchValue(value);
     setQueryParams((prev) => ({
       ...prev,
-      search: trimmedValue,
+      search: value,
     }));
   }, []);
 

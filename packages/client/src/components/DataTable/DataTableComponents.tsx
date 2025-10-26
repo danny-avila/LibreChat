@@ -47,6 +47,7 @@ interface TableRowComponentProps<TData extends Record<string, unknown>> {
   selected: boolean;
 }
 
+// ...existing code...
 const TableRowComponent = <TData extends Record<string, unknown>>(
   { row, virtualIndex, style, selected }: TableRowComponentProps<TData>,
   ref: React.Ref<HTMLTableRowElement>,
@@ -72,11 +73,11 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
         const widthStyle =
           cell.column.id === 'select'
             ? { width: '32px', maxWidth: '32px', minWidth: '32px' }
-            : percent && percent >= 1 && percent <= 100
+            : percent
               ? {
                   width: `${percent}%`,
                   maxWidth: `${percent}%`,
-                  minWidth: isSmallScreen ? `${Math.max(percent * 0.7, 10)}%` : `${percent}%`,
+                  minWidth: `${percent}%`, // Don't shrink on mobile
                 }
               : undefined;
 
@@ -93,7 +94,7 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
           <CellComponent
             key={cell.id}
             className={cn(
-              'truncate px-2 py-2 md:px-3 md:py-3',
+              'max-w-0 truncate px-2 py-2 md:px-3 md:py-3',
               cell.column.id === 'select' && 'w-8 p-1',
               meta?.className,
               isDesktopOnly && 'hidden md:table-cell',
@@ -108,6 +109,7 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
     </TableRow>
   );
 };
+// ...existing code...
 
 type ForwardTableRowComponentType = <TData extends Record<string, unknown>>(
   props: TableRowComponentProps<TData> & React.RefAttributes<HTMLTableRowElement>,
