@@ -48,11 +48,11 @@ const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAva
 
   /** Check if we're using a custom avatar (not initials) */
   const isCustomAvatar = useMemo(() => !!(user?.avatar && user.avatar !== ''), [user?.avatar]);
-  /** Only show default while loading for custom avatars, not for initials */
-  const showDefaultWhileLoading = useMemo(
-    () => isCustomAvatar && !imageLoaded && showImage,
-    [isCustomAvatar, imageLoaded, showImage],
-  );
+  // /** Only show default while loading for custom avatars, not for initials */
+  // const showDefaultWhileLoading = useMemo(
+  //   () => isCustomAvatar && !imageLoaded && showImage,
+  //   [isCustomAvatar, imageLoaded, showImage],
+  // );
 
   return (
     <div
@@ -63,18 +63,27 @@ const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAva
       }}
       className={cn('relative flex items-center justify-center', className ?? '')}
     >
-      {!showImage || showDefaultWhileLoading ? renderDefaultAvatar() : null}
+      {/* Always render default avatar as background */}
+      {!showImage && renderDefaultAvatar()}
       {showImage && (
-        <img
-          style={{
-            display: imageLoaded || !isCustomAvatar ? 'block' : 'none',
-          }}
-          className="rounded-full"
-          src={imageSrc}
-          alt="avatar"
-          onLoad={handleImageLoad}
-          onError={handleImageError}
-        />
+        <>
+          {/* Show default avatar behind the image while loading custom avatars */}
+          {isCustomAvatar && !imageLoaded && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              {renderDefaultAvatar()}
+            </div>
+          )}
+          <img
+            className={cn(
+              'relative z-10 rounded-full',
+              isCustomAvatar && !imageLoaded ? 'opacity-0' : 'opacity-100',
+            )}
+            src={imageSrc}
+            alt="avatar"
+            onLoad={handleImageLoad}
+            onError={handleImageError}
+          />
+        </>
       )}
     </div>
   );
