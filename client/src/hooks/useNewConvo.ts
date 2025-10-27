@@ -179,6 +179,7 @@ const useNewConvo = (index = 0) => {
         }
         setSubmission({} as TSubmission);
         if (!(keepLatestMessage ?? false)) {
+          logger.log('latest_message', 'Clearing all latest messages');
           clearAllLatestMessages();
         }
         if (isCancelled) {
@@ -251,18 +252,20 @@ const useNewConvo = (index = 0) => {
       };
 
       let preset = _preset;
-      const defaultModelSpec = getDefaultModelSpec(startupConfig);
+      const result = getDefaultModelSpec(startupConfig);
+      const defaultModelSpec = result?.default ?? result?.last;
       if (
         !preset &&
         startupConfig &&
         (startupConfig.modelSpecs?.prioritize === true ||
-          (startupConfig.interface?.modelSelect ?? true) !== true) &&
+          (startupConfig.interface?.modelSelect ?? true) !== true ||
+          (result?.last != null && Object.keys(_template).length === 0)) &&
         defaultModelSpec
       ) {
         preset = getModelSpecPreset(defaultModelSpec);
       }
 
-      if (conversation.conversationId === 'new' && !modelsData) {
+      if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
         const filesToDelete = Array.from(files.values())
           .filter(
             (file) =>
