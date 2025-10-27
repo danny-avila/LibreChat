@@ -151,11 +151,6 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
     }
   };
 
-  const toolName = tool
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-
   return (
     <div className="flex flex-col gap-4">
       {/* Icon Picker */}
@@ -279,9 +274,17 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
                   checked={selectedTools.includes(tool)}
                   onCheckedChange={() => handleToolToggle(tool)}
                   className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
-                  aria-label={toolName}
+                  aria-label={tool
+                    .split('_')
+                    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                    .join(' ')}
                 />
-                <span className="text-token-text-primary">{toolName}</span>
+                <span className="text-token-text-primary">
+                  {tool
+                    .split('_')
+                    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                    .join(' ')}
+                </span>
               </label>
             ))}
           </div>
