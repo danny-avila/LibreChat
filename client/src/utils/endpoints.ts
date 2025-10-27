@@ -176,11 +176,17 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
   };
 }
 
-/** Gets the default spec by order.
- *
- * First, the admin defined default, then last selected spec, followed by first spec
+/**
+ * Gets default model spec from config and user preferences.
+ * Priority: admin default → last selected → first spec (when prioritize=true or modelSelect disabled).
+ * Otherwise: admin default or last conversation spec.
  */
-export function getDefaultModelSpec(startupConfig?: t.TStartupConfig) {
+export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
+  | {
+      default?: t.TModelSpec;
+      last?: t.TModelSpec;
+    }
+  | undefined {
   const { modelSpecs, interface: interfaceConfig } = startupConfig ?? {};
   const { list, prioritize } = modelSpecs ?? {};
   if (!list) {
@@ -190,9 +196,9 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig) {
   if (prioritize === true || !interfaceConfig?.modelSelect) {
     const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
     const lastSelectedSpec = list?.find((spec) => spec.name === lastSelectedSpecName);
-    return defaultSpec || lastSelectedSpec || list?.[0];
+    return { default: defaultSpec || lastSelectedSpec || list?.[0] };
   } else if (defaultSpec) {
-    return defaultSpec;
+    return { default: defaultSpec };
   }
   const lastConversationSetup = JSON.parse(
     localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0') ?? '{}',
@@ -200,7 +206,7 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig) {
   if (!lastConversationSetup.spec) {
     return;
   }
-  return list?.find((spec) => spec.name === lastConversationSetup.spec);
+  return { last: list?.find((spec) => spec.name === lastConversationSetup.spec) };
 }
 
 export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
