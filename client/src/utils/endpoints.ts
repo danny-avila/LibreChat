@@ -1,4 +1,5 @@
 import {
+  Constants,
   EModelEndpoint,
   defaultEndpoints,
   modularEndpoints,
@@ -174,6 +175,39 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
     newEndpointType,
     isNewModular,
   };
+}
+
+export function getModelSpec({
+  specName,
+  startupConfig,
+}: {
+  specName?: string | null;
+  startupConfig?: t.TStartupConfig;
+}): t.TModelSpec | undefined {
+  if (!startupConfig || !specName) {
+    return;
+  }
+  return startupConfig.modelSpecs?.list?.find((spec) => spec.name === specName);
+}
+
+export function applyModelSpecEphemeralAgent({
+  convoId,
+  modelSpec,
+  updateEphemeralAgent,
+}: {
+  convoId?: string | null;
+  modelSpec?: t.TModelSpec;
+  updateEphemeralAgent: ((convoId: string, agent: t.TEphemeralAgent | null) => void) | undefined;
+}) {
+  if (!modelSpec || !updateEphemeralAgent) {
+    return;
+  }
+  updateEphemeralAgent((convoId ?? Constants.NEW_CONVO) || Constants.NEW_CONVO, {
+    mcp: modelSpec.mcpServers ?? [],
+    web_search: modelSpec.webSearch ?? false,
+    file_search: modelSpec.fileSearch ?? false,
+    execute_code: modelSpec.executeCode ?? false,
+  });
 }
 
 /**

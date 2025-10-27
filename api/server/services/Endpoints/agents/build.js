@@ -3,9 +3,10 @@ const { isAgentsEndpoint, removeNullishValues, Constants } = require('librechat-
 const { loadAgent } = require('~/models/Agent');
 
 const buildOptions = (req, endpoint, parsedBody, endpointType) => {
-  const { spec, iconURL, agent_id, instructions, ...model_parameters } = parsedBody;
+  const { spec, iconURL, agent_id, ...model_parameters } = parsedBody;
   const agentPromise = loadAgent({
     req,
+    spec,
     agent_id: isAgentsEndpoint(endpoint) ? agent_id : Constants.EPHEMERAL_AGENT_ID,
     endpoint,
     model_parameters,
@@ -20,7 +21,6 @@ const buildOptions = (req, endpoint, parsedBody, endpointType) => {
     endpoint,
     agent_id,
     endpointType,
-    instructions,
     model_parameters,
     agent: agentPromise,
   });

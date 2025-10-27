@@ -29,6 +29,7 @@ import {
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useResetChatBadges } from './useChatBadges';
+import { useApplyModelSpecEffects } from './Agents';
 import { usePauseGlobalAudio } from './Audio';
 import { logger } from '~/utils';
 import store from '~/store';
@@ -37,6 +38,7 @@ const useNewConvo = (index = 0) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { data: startupConfig } = useGetStartupConfig();
+  const applyModelSpecEffects = useApplyModelSpecEffects();
   const clearAllConversations = store.useClearConvoState();
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const { setConversation } = store.useCreateConversationAtom(index);
@@ -265,6 +267,12 @@ const useNewConvo = (index = 0) => {
         preset = getModelSpecPreset(defaultModelSpec);
       }
 
+      applyModelSpecEffects({
+        startupConfig,
+        specName: preset?.spec,
+        convoId: conversation.conversationId,
+      });
+
       if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
         const filesToDelete = Array.from(files.values())
           .filter(
@@ -311,6 +319,7 @@ const useNewConvo = (index = 0) => {
       saveBadgesState,
       pauseGlobalAudio,
       switchToConversation,
+      applyModelSpecEffects,
     ],
   );
 
