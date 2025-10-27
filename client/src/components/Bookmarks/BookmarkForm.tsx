@@ -129,7 +129,11 @@ const BookmarkForm = ({
         </div>
 
         <div className="mt-4 grid w-full items-center gap-2">
-          <Label htmlFor="bookmark-description" className="text-left text-sm font-medium">
+          <Label
+            id="bookmark-description-label"
+            htmlFor="bookmark-description"
+            className="text-left text-sm font-medium"
+          >
             {localize('com_ui_bookmarks_description')}
           </Label>
           <TextareaAutosize
@@ -147,6 +151,7 @@ const BookmarkForm = ({
             className={cn(
               'flex h-10 max-h-[250px] min-h-[100px] w-full resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm ring-offset-background focus-visible:outline-none',
             )}
+            aria-labelledby="bookmark-description-label"
           />
         </div>
         {conversationId != null && conversationId && (

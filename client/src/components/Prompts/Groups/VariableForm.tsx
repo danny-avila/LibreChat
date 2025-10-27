@@ -193,6 +193,7 @@ export default function VariableForm({
                       )}
                       placeholder={field.config.variable}
                       maxRows={8}
+                      aria-label={field.config.variable}
                     />
                   );
                 }}
