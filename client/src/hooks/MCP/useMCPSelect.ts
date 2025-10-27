@@ -25,6 +25,8 @@ export function useMCPSelect({ conversationId }: { conversationId?: string | nul
       // Strip out servers that are not available in the startup config
       const activeMcps = mcps.filter((mcp) => configuredServers.has(mcp));
       setMCPValuesRaw(activeMcps);
+    } else {
+      setMCPValuesRaw([]);
     }
   }, [ephemeralAgent?.mcp, setMCPValuesRaw, configuredServers]);
 
