@@ -82,7 +82,11 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
           </button>
           <div className="ml-2 flex gap-2">
             {isUserProvided && (isToolAuthenticated || runCodeIsEnabled) && (
-              <button type="button" onClick={() => setIsDialogOpen(true)}>
+              <button
+                type="button"
+                onClick={() => setIsDialogOpen(true)}
+                aria-label={localize('com_ui_add_api_key')}
+              >
                 <KeyRoundIcon className="h-5 w-5 text-text-primary" />
               </button>
             )}
