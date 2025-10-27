@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import type { TStartupConfig } from 'librechat-data-provider';
 import { getModelSpec, applyModelSpecEphemeralAgent } from '~/utils';
-import { useUpdateEphemeralAgent } from './useUpdateEphemeralAgent';
+import { useUpdateEphemeralAgent } from '~/store/agents';
 
 /**
  * Hook that applies a model spec from a preset to an ephemeral agent.
@@ -9,7 +9,6 @@ import { useUpdateEphemeralAgent } from './useUpdateEphemeralAgent';
  */
 export function useApplyModelSpecEffects() {
   const updateEphemeralAgent = useUpdateEphemeralAgent();
-
   const applyPresetModelSpec = useCallback(
     ({
       convoId,
