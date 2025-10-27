@@ -1,8 +1,8 @@
-import { v4 } from 'uuid';
 import { useCallback, useRef } from 'react';
+import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   QueryKeys,
   Constants,
@@ -356,6 +356,7 @@ export default function useEventHandlers({
 
   const createdHandler = useCallback(
     (data: TResData, submission: EventSubmission) => {
+      queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
       const { messages, userMessage, isRegenerate = false, isTemporary = false } = submission;
       const initialResponse = {
         ...submission.initialResponse,
