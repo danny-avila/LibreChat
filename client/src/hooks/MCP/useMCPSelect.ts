@@ -10,8 +10,8 @@ import { setTimestamp } from '~/utils/timestamps';
 export function useMCPSelect({ conversationId }: { conversationId?: string | null }) {
   const key = conversationId ?? Constants.NEW_CONVO;
   const { data: startupConfig } = useGetStartupConfig();
-  const configuredServers: string[] = useMemo(() => {
-    return Object.keys(startupConfig?.mcpServers ?? {});
+  const configuredServers = useMemo(() => {
+    return new Set(Object.keys(startupConfig?.mcpServers ?? {}));
   }, [startupConfig?.mcpServers]);
 
   const [isPinned, setIsPinned] = useAtom(mcpPinnedAtom);
@@ -23,7 +23,7 @@ export function useMCPSelect({ conversationId }: { conversationId?: string | nul
     const mcps = ephemeralAgent?.mcp ?? [];
     if (mcps.length > 0) {
       // Strip out servers that are not available in the startup config
-      const activeMcps = mcps.filter((mcp) => configuredServers.includes(mcp));
+      const activeMcps = mcps.filter((mcp) => configuredServers.has(mcp));
       setMCPValuesRaw(activeMcps);
     }
   }, [ephemeralAgent?.mcp, setMCPValuesRaw, configuredServers]);
