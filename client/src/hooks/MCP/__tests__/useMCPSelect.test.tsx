@@ -431,9 +431,10 @@ describe('useMCPSelect', () => {
         });
       });
 
-      // Values should remain unchanged since empty mcp array doesn't trigger update
-      // (due to the condition: ephemeralAgent?.mcp && ephemeralAgent.mcp.length > 0)
-      expect(result.current.mcpHook.mcpValues).toEqual(['initial-value']);
+      // Values should sync to empty array when ephemeralAgent.mcp is set to []
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual([]);
+      });
     });
 
     it('should properly sync non-empty arrays from ephemeralAgent', async () => {
