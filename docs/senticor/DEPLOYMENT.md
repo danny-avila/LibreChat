@@ -2,11 +2,15 @@
 
 **Multi-Repository Deployment for Neues Rechtsinformationssystem (NEURIS)**
 
-This deployment consists of three repositories working together:
+This deployment consists of five repositories working together:
 
 1. **LibreChat** (this repo) - Main chat interface
-2. **rechtsinformationen-bund-de-mcp** - MCP server for legal information
-3. **aixplain-proxy** - OpenAI-compatible proxy for aiXplain models
+2. **rechtsinformationen-bund-de-mcp** - MCP server for German legal information (8 tools)
+3. **hive-mcp** - MCP server for Honeycomb knowledge graph (11 tools)
+4. **mcp-server-fetch** - MCP server for web page fetching (1 tool) - installed via uvx
+5. **aixplain-proxy** - OpenAI-compatible proxy for aiXplain models
+
+**Total: 20 MCP tools available**
 
 ---
 
@@ -14,21 +18,28 @@ This deployment consists of three repositories working together:
 
 ```
 deployment/
-├── LibreChat/                    # This repository
-│   ├── .env                      # Environment configuration
-│   ├── librechat.yaml           # LibreChat configuration
-│   ├── docker-compose.yml       # Base docker compose
-│   └── docker-compose.override.yml  # Local overrides
+├── LibreChat/                          # This repository
+│   ├── .env                            # Environment configuration
+│   ├── librechat.yaml                  # LibreChat configuration
+│   ├── docker-compose.yml              # Base docker compose
+│   └── docker-compose.override.yml     # Local overrides
 │
-├── rechtsinformationen-bund-de-mcp/  # MCP Server
-│   ├── src/                     # TypeScript source
-│   ├── dist/                    # Built JavaScript (after npm run build)
+├── rechtsinformationen-bund-de-mcp/    # MCP Server - Legal Info
+│   ├── src/                            # TypeScript source
+│   ├── dist/                           # Built JavaScript (npm run build)
 │   └── package.json
 │
-└── aixplain-proxy/              # aiXplain Proxy
-    ├── server.js                # Proxy server
+├── hive-mcp/                           # MCP Server - Honeycomb
+│   ├── src/                            # TypeScript source
+│   ├── dist/                           # Built JavaScript (npm run build)
+│   └── package.json
+│
+└── aixplain-proxy/                     # aiXplain Proxy
+    ├── server.js                       # Proxy server
     ├── package.json
     └── Dockerfile
+
+Note: mcp-server-fetch is installed automatically via uvx (no separate repo needed)
 ```
 
 ---
@@ -36,7 +47,9 @@ deployment/
 ## Prerequisites
 
 - **Node.js** v18+ or v20+
-- **Docker** & Docker Compose
+- **Podman** (rootless container runtime - preferred over Docker)
+  - macOS: `brew install podman` + `podman machine init && podman machine start`
+  - Linux: Install via package manager
 - **Git**
 
 ---
@@ -52,25 +65,31 @@ cd neuris-deployment
 
 # Clone LibreChat
 git clone <librechat-repo-url> LibreChat
-cd LibreChat
 
-# Clone MCP Server (sibling directory)
-cd ..
+# Clone MCP Servers (sibling directories)
 git clone https://github.com/wolfgangihloff/rechtsinformationen-bund-de-mcp.git
+git clone <hive-mcp-repo-url> hive-mcp
 
 # Clone aiXplain Proxy (sibling directory)
-cd ..
 git clone <aixplain-proxy-repo-url> aixplain-proxy
+
+# Note: mcp-server-fetch will be installed automatically via uvx
 ```
 
-### 2. Build MCP Server
+### 2. Build MCP Servers
 
 ```bash
+# Build Rechtsinformationen MCP Server
 cd rechtsinformationen-bund-de-mcp
 npm install
 npm run build
-# Verify build
-ls -la dist/index.js
+ls -la dist/index.js  # Verify build
+
+# Build Honeycomb MCP Server
+cd ../hive-mcp
+npm install
+npm run build
+ls -la dist/index.js  # Verify build
 ```
 
 ### 3. Setup aiXplain Proxy
@@ -108,14 +127,23 @@ Create `docker-compose.override.yml`:
 ```yaml
 services:
   api:
+    # Use development mode for better debugging
+    command: npm run backend:dev
+
     volumes:
       # Mount librechat.yaml
       - ./librechat.yaml:/app/librechat.yaml:ro
 
-      # Mount MCP server
+      # Mount MCP servers
       - ../rechtsinformationen-bund-de-mcp:/app/mcp-servers/rechtsinformationen-bund-de:ro
+      - ../hive-mcp:/app/mcp-servers/honeycomb:ro
 
-  # Add aiXplain proxy service
+      # Optional: Mount modified files for STT MP4 support
+      - ./api/server/routes/files/multer.js:/app/api/server/routes/files/multer.js:ro
+      - ./api/server/services/Files/Audio/STTService.js:/app/api/server/services/Files/Audio/STTService.js:ro
+      - ./packages/data-provider/dist:/app/packages/data-provider/dist:ro
+
+  # Add aiXplain proxy service (optional)
   aixplain-proxy:
     image: aixplain-proxy
     container_name: aixplain-proxy
@@ -128,18 +156,33 @@ services:
 
 ### 6. Start Services
 
+**Important: Use `podman compose` (without hyphen) for best reliability**
+
 ```bash
-docker compose up -d
+# Start all services
+podman compose up -d
 
 # Check logs
-docker compose logs -f
+podman logs -f LibreChat
 
-# Verify MCP server loaded
-docker compose logs api | grep "MCP servers initialized"
-# Should show: "Added 6 MCP tools"
+# Verify MCP servers loaded
+podman logs LibreChat 2>&1 | grep "MCP servers initialized"
+# Should show: "MCP servers initialized successfully. Added 20 MCP tools"
 
-# Verify proxy is running
+# View individual MCP server details
+podman logs LibreChat 2>&1 | grep "\[MCP\]" | grep "Initialized"
+
+# Verify proxy is running (if using aiXplain)
 curl http://localhost:3001/health
+```
+
+**Troubleshooting: Connection Refused Errors**
+
+If you get "unable to connect to Podman socket" errors:
+```bash
+pkill -9 gvproxy
+podman machine start
+podman compose up -d
 ```
 
 ### 7. Access LibreChat
@@ -152,14 +195,35 @@ Open http://localhost:3080
 
 ### LibreChat (`librechat.yaml`)
 
-**MCP Server Configuration:**
+**MCP Server Configuration (all 3 servers):**
 ```yaml
 mcpServers:
-  rechtsinformationen-bund-de:
+  # German Legal Information (8 tools)
+  rechtsinformationen:
     type: stdio
     command: node
     args:
       - /app/mcp-servers/rechtsinformationen-bund-de/dist/index.js
+    timeout: 60000
+    chatMenu: true
+
+  # Honeycomb Knowledge Graph (11 tools)
+  honeycomb:
+    type: stdio
+    command: node
+    args:
+      - /app/mcp-servers/honeycomb/dist/index.js
+    timeout: 60000
+    chatMenu: true
+    env:
+      HONEYCOMB_API_URL: "http://host.containers.internal:8000"
+
+  # Web Page Fetching (1 tool)
+  fetch:
+    type: stdio
+    command: uvx
+    args:
+      - mcp-server-fetch
     timeout: 60000
     chatMenu: true
 ```
@@ -192,14 +256,33 @@ endpoints:
 4. Enable **rechtsinformationen-bund-de**
 5. Ask: `"Suche nach BGB § 433 und zeige Details"`
 
-### Available Tools
+### Available Tools (20 total)
 
-1. `deutsche_gesetze_suchen` - Search German laws
+**Rechtsinformationen (8 tools):**
+1. `deutsche_gesetze_suchen` - Search German federal laws
 2. `rechtsprechung_suchen` - Search case law
 3. `dokument_details_abrufen` - Get document details
-4. `alle_rechtsdokumente_suchen` - Search all documents
-5. `semantische_rechtssuche` - Semantic search
+4. `alle_rechtsdokumente_suchen` - Search all legal documents
+5. `semantische_rechtssuche` - Semantic search across legal texts
 6. `gesetz_per_eli_abrufen` - Get law by ELI
+7. `gesetz_per_abkuerzung_abrufen` - Get law by abbreviation
+8. `gesetz_inhaltsverzeichnis_abrufen` - Get law table of contents
+
+**Honeycomb (11 tools):**
+1. `create_honeycomb` - Create new knowledge graph
+2. `add_entity_to_honeycomb` - Add single entity
+3. `batch_add_entities` - Add multiple entities (recommended)
+4. `get_honeycomb` - Get honeycomb details
+5. `list_honeycombs` - List all honeycombs
+6. `delete_entity` - Remove entity
+7. `update_entity` - Update entity
+8. `search_entities` - Search within honeycomb
+9. `get_honeycomb_stats` - Get statistics
+10. `prepare_entity_extraction` - Prepare data extraction
+11. `get_entity_relationships` - Get entity connections
+
+**Fetch (1 tool):**
+1. `fetch` - Fetch and read web page content
 
 ### Recommended Models for MCP Tools
 
@@ -212,45 +295,53 @@ endpoints:
 
 ## Troubleshooting
 
-### MCP Server Not Loading
+### MCP Servers Not Loading
 
 ```bash
-# Check if MCP server is mounted
-docker compose exec api ls -la /app/mcp-servers/rechtsinformationen-bund-de/
+# Check if MCP servers are mounted
+podman exec LibreChat ls -la /app/mcp-servers/rechtsinformationen-bund-de/
+podman exec LibreChat ls -la /app/mcp-servers/honeycomb/
 
 # Check if built files exist
-docker compose exec api ls -la /app/mcp-servers/rechtsinformationen-bund-de/dist/
+podman exec LibreChat ls -la /app/mcp-servers/rechtsinformationen-bund-de/dist/
+podman exec LibreChat ls -la /app/mcp-servers/honeycomb/dist/
 
-# Test MCP server directly
+# Test MCP server directly (on host machine)
 cd rechtsinformationen-bund-de-mcp
 node dist/index.js
+
+# Check MCP initialization in logs
+podman logs LibreChat 2>&1 | grep "\[MCP\]"
 ```
 
 ### aiXplain Proxy Issues
 
 ```bash
 # Check proxy logs
-docker compose logs aixplain-proxy
+podman logs aixplain-proxy
 
 # Test proxy directly
 curl http://localhost:3001/v1/models
 
 # Verify model mapping
-docker compose exec aixplain-proxy cat /path/to/model-mapping.json
+podman exec aixplain-proxy cat /path/to/model-mapping.json
 ```
 
 ### LibreChat Not Starting
 
 ```bash
 # Check all logs
-docker compose logs
+podman logs LibreChat
 
 # Restart everything
-docker compose down
-docker compose up -d
+podman compose down
+podman compose up -d
 
 # Check individual services
-docker compose ps
+podman ps
+
+# Common fix for connection issues
+pkill -9 gvproxy && podman machine start
 ```
 
 ---
@@ -283,7 +374,7 @@ docker compose ps
 - Built files in `dist/index.js`
 - Node.js v18+ or v20+ compatible
 - Runs as stdio MCP server
-- Provides 6 tools for legal research
+- Provides 8 tools for legal research
 
 **Build command:**
 ```bash
@@ -291,9 +382,29 @@ npm run build
 ```
 
 **How it's used:**
-- Mounted read-only into LibreChat container
+- Mounted read-only into LibreChat container at `/app/mcp-servers/rechtsinformationen-bund-de`
 - Executed via `node dist/index.js`
 - Communicates via stdio protocol
+
+### For `hive-mcp` Repository (Honeycomb)
+
+**What LibreChat expects:**
+- Built files in `dist/index.js`
+- Node.js v18+ or v20+ compatible
+- Runs as stdio MCP server
+- Provides 11 tools for knowledge graph management
+- Requires HONEYCOMB_API_URL environment variable
+
+**Build command:**
+```bash
+npm run build
+```
+
+**How it's used:**
+- Mounted read-only into LibreChat container at `/app/mcp-servers/honeycomb`
+- Executed via `node dist/index.js`
+- Communicates via stdio protocol
+- Connects to Hive API at http://host.containers.internal:8000
 
 ### For `aixplain-proxy` Repository
 
@@ -319,15 +430,24 @@ npm run build
 
 ## Maintenance
 
-### Updating MCP Server
+### Updating MCP Servers
 
 ```bash
+# Update Rechtsinformationen MCP
 cd rechtsinformationen-bund-de-mcp
 git pull
 npm install
 npm run build
+
+# Update Honeycomb MCP
+cd ../hive-mcp
+git pull
+npm install
+npm run build
+
+# Restart LibreChat
 cd ../LibreChat
-docker compose restart api
+podman compose restart LibreChat
 ```
 
 ### Updating aiXplain Proxy
@@ -336,9 +456,9 @@ docker compose restart api
 cd aixplain-proxy
 git pull
 npm install
-docker build -t aixplain-proxy .
+podman build -t aixplain-proxy .
 cd ../LibreChat
-docker compose restart aixplain-proxy
+podman compose restart aixplain-proxy
 ```
 
 ### Updating LibreChat
@@ -346,8 +466,8 @@ docker compose restart aixplain-proxy
 ```bash
 cd LibreChat
 git pull
-docker compose down
-docker compose up -d
+podman compose down
+podman compose up -d
 ```
 
 ---
@@ -377,6 +497,21 @@ See `.env` file for full configuration. Key variables:
 
 ---
 
-**Last Updated**: 2025-10-06
-**Version**: 1.0
-**Status**: ✅ Production Ready
+## Recent Changes
+
+**2025-10-27:**
+- ✅ Removed osint-agent-teams MCP (Python-based, causing conflicts)
+- ✅ Updated to 3 MCP servers: rechtsinformationen (8), honeycomb (11), fetch (1)
+- ✅ Changed all Docker commands to Podman for better compatibility
+- ✅ Added Podman troubleshooting guide
+- ✅ Updated tool count from 6 to 20 total tools
+- ✅ Added docker-compose.override.yml example with all MCP servers
+
+**2025-10-06:**
+- Initial deployment documentation
+
+---
+
+**Last Updated**: 2025-10-27
+**Version**: 2.0
+**Status**: ✅ Production Ready (Podman-based)

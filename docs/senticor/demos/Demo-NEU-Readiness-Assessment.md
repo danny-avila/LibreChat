@@ -12,9 +12,10 @@
 **Steps**: 10 total
 **Current Readiness**: Steps 1-8 ready, Steps 9-10 need development
 
-✅ **HIVE API Status**: Running at localhost:8000 (703 triples)
-✅ **MCP Servers**: 3 configured (honeycomb, rechtsinformationen, fetch)
+✅ **HIVE API Status**: Running at localhost:8000
+✅ **MCP Servers**: 3 configured (honeycomb, rechtsinformationen, fetch) - 20 tools total
 ✅ **LibreChat**: Agents endpoint with proactive instructions
+✅ **KI-Referent Agent**: agent_xVyPosZZqSRr-PfI2KOQ- (shared with everyone)
 
 ---
 
@@ -321,9 +322,11 @@ The demo references these files that **don't exist**:
 ### MCP Servers:
 | Server | Status | Location | Tools |
 |--------|--------|----------|-------|
-| honeycomb | ✅ Configured | /app/mcp-servers/honeycomb | 9 tools |
-| rechtsinformationen | ✅ Configured | /app/mcp-servers/rechtsinformationen | 6 tools |
+| honeycomb | ✅ Configured | /app/mcp-servers/honeycomb | 11 tools |
+| rechtsinformationen | ✅ Configured | /app/mcp-servers/rechtsinformationen | 8 tools |
 | fetch | ✅ Configured | uvx mcp-server-fetch | 1 tool |
+
+**Total: 20 MCP tools available**
 
 ### Agent Configuration:
 - ✅ Proactive instructions in [librechat.yaml](../../librechat.yaml)

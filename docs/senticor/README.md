@@ -618,15 +618,21 @@ The deployment includes:
 
 ### Quick Start Commands
 
+**⚠️ IMPORTANT: This deployment uses Podman, not Docker**
+
 ```bash
-# Start all services
-docker compose up -d
+# Start all services (use "podman compose" without hyphen)
+podman compose up -d
 
 # View logs
-docker compose logs -f
+podman logs LibreChat --tail 100
+podman logs -f LibreChat  # Follow logs in real-time
 
 # Stop all services
-docker compose down
+podman compose down
+
+# Check container status
+podman ps
 
 # Create first admin user
 npm run create-user
@@ -636,6 +642,49 @@ npm run add-balance
 
 # Check user statistics
 npm run user-stats
+```
+
+### Podman Troubleshooting
+
+**Connection Refused Errors:**
+
+If you get "unable to connect to Podman socket" errors:
+
+```bash
+# Fix stale gvproxy process and restart
+pkill -9 gvproxy
+podman machine start
+
+# Then start your containers
+podman compose up -d
+```
+
+**Checking MCP Servers:**
+
+After starting LibreChat, verify MCP servers are loaded:
+
+```bash
+# Check MCP initialization
+podman logs LibreChat 2>&1 | grep "MCP servers initialized"
+
+# Should show: "MCP servers initialized successfully. Added 20 MCP tools"
+
+# View individual MCP server details
+podman logs LibreChat 2>&1 | grep "\[MCP\]" | grep "Initialized"
+```
+
+**Podman vs podman-compose:**
+
+- ✅ **Use**: `podman compose` (native command, more reliable)
+- ❌ **Avoid**: `podman-compose` (Python wrapper, can have connection issues)
+
+**Verify Podman Machine:**
+
+```bash
+# Check machine status
+podman machine list
+
+# Should show "Currently running"
 ```
 
 ### Troubleshooting
@@ -703,9 +752,7 @@ Comprehensive end-to-end tests are available to validate the complete Integratio
 
 1. LibreChat container must be running:
    ```bash
-   podman-compose up -d
-   # or
-   docker compose up -d
+   podman compose up -d
    ```
 
 2. Google Gemini API key must be configured in `.env`:
@@ -717,8 +764,6 @@ Comprehensive end-to-end tests are available to validate the complete Integratio
 3. KI-Referent system agent must be created:
    ```bash
    podman exec LibreChat npm run create-ki-referent:force
-   # or
-   docker exec LibreChat npm run create-ki-referent:force
    ```
 
 #### Test Commands

@@ -48,14 +48,6 @@ Finde alle Projekte, die sich mit Ehrenamt beschäftigen.
 Zeige mir die vollständige Struktur des Wissensgraphen.
 ```
 
-**6a. OSINT Agent Team 🤖**
-```
-Ich benötige tiefgehende Hintergrundinformationen zu den Trägerorganisationen. Bitte recherchiere detaillierte Informationen über den Internationalen Bund e.V.
-```
-```
-Ja, bitte ergänze die Informationen im Honeycomb.
-```
-
 **7. Vorschriften**
 ```
 Ich möchte im Bericht erwähnen, welche gesetzlichen Grundlagen es für Integrationskurse gibt. Was sind dazu die wichtigsten Regelungen?
@@ -94,14 +86,13 @@ Die Lösung: LibreChat mit Senticor
 	•	📊 HIVE Honeycomb – Wissensgraph für strukturierte Datenhaltung
 	•	⚖️ Rechtsinformationen – Direkter Zugriff auf deutsche Bundes- und Landesgesetze
 	•	🌐 Fetch – Webseiten und Pressemitteilungen einlesen
-	•	🤖 OSINT Agent Team – Kollaborative KI-Agenten für tiefgehende Web-Recherche 🆕
 
 (Diese Kombination ermöglicht einen faktenbasierten KI‑Assistenten statt einer reinen Black‑Box‑KI.)
 
 ⸻
 
 🚀 Demo-Ablauf (Übersicht)
-	1.	Projekt starten • 2) Pressemitteilung einlesen • 3) Rechtsgrundlagen • 4) Projekt‑Tracking • 5) Berichtsgliederung • 6) Suche & Analyse • 6a) Deep Research mit OSINT Agent Team 🤖🆕 • 7) Vorschriften‑Q&A 🆕 • 8) Textgenerierung 🆕 • 9) Graph‑Visualisierung & Datenpflege 🆕 • 10) Nutzer‑Feedback & lernende KI 🆕
+	1.	Projekt starten • 2) Pressemitteilung einlesen • 3) Rechtsgrundlagen • 4) Projekt‑Tracking • 5) Berichtsgliederung • 6) Suche & Analyse • 7) Vorschriften‑Q&A 🆕 • 8) Textgenerierung 🆕 • 9) Graph‑Visualisierung & Datenpflege 🆕 • 10) Nutzer‑Feedback & lernende KI 🆕
 
 ⸻
 
@@ -360,96 +351,6 @@ Workflow bis Q1 2026:
 
 ⸻
 
-Schritt 6a: Deep Research mit OSINT Agent Team (3–5 Min) 🆕🤖
-
-Sie:
-Ich benötige tiefgehende Hintergrundinformationen zu den Trägerorganisationen. Bitte recherchiere detaillierte Informationen über den Internationalen Bund e.V.
-
-LibreChat (proaktiv):
-💡 Das ist eine komplexe Recherche! Ich kann ein OSINT Agent Team für dich spawnen, das im Web nach detaillierten Informationen sucht.
-
-Das Agent Team wird:
-- Das Web nach Informationen über den Internationalen Bund e.V. durchsuchen
-- Schlüsselentitäten identifizieren (Standorte, Programme, Zahlen)
-- Glaubwürdige Quellen sammeln
-- Einen strukturierten Bericht mit Zitaten erstellen
-
-Das dauert typischerweise 1-3 Minuten. Soll ich starten?
-
-Sie:
-Ja, bitte starte die Recherche.
-
-LibreChat:
-[spawn_agent_team wird aufgerufen mit topic="Internationaler Bund e.V. Deutschland"]
-
-✅ Agent Team gestartet! Execution ID: exec_ib_001
-Ich überwache den Fortschritt...
-
-[Nach 30 Sekunden - get_execution_status]
-⏳ Das Team arbeitet noch... Status: running
-
-[Nach 2 Minuten - get_execution_status]
-✅ Recherche abgeschlossen! Ich hole die Ergebnisse...
-
-[get_execution_results wird aufgerufen]
-
-📊 OSINT Agent Team Bericht: Internationaler Bund e.V.
-
-Gefundene Entitäten (15 gesamt):
-
-**Organisation:**
-- Name: Internationaler Bund (IB) e.V.
-- Typ: Freier Träger der Jugend-, Sozial- und Bildungsarbeit
-- Gründung: 1949
-- Hauptsitz: Frankfurt am Main
-- Mitarbeiter: ca. 14.000
-- Wikidata ID: Q1665700
-
-**Programme & Schwerpunkte:**
-- Jugendberufshilfe
-- Integration und Migration
-- Soziale Arbeit
-- Medizinische Rehabilitation
-- Bildung und Ausbildung
-
-**Standorte in Baden-Württemberg:**
-- Stuttgart
-- Karlsruhe (unser Projekt!)
-- Mannheim
-- Freiburg
-- Heidelberg
-
-**Kennzahlen:**
-- Jahresumsatz: ca. 1 Milliarde Euro
-- Betreute Personen: über 350.000 jährlich
-- Projekte: über 700 bundesweit
-
-**Quellen:**
-- offizielle Website: https://www.ib.de
-- Wikipedia: https://de.wikipedia.org/wiki/Internationaler_Bund
-- Wikidata: https://www.wikidata.org/wiki/Q1665700
-- Bundesanzeiger (Jahresberichte)
-
-Soll ich diese detaillierten Informationen in deinen Honeycomb "Integrationsbericht Baden-Württemberg 2025" aufnehmen?
-
-Sie:
-Ja, bitte ergänze die Informationen im Honeycomb.
-
-LibreChat:
-[batch_add_entities wird für 15 Entitäten aufgerufen]
-
-✅ Hinzugefügt:
-- 1 aktualisierte Organisation (IB e.V. mit Details)
-- 5 Programme
-- 5 Standorte in BW
-- 4 Kennzahlen-Entitäten
-
-Alle mit Quellen und Wikidata-IDs versehen!
-
-💡 Tipp: Ich kann das auch für die anderen 4 Trägerorganisationen machen. Soll ich die Recherche für alle parallel starten?
-
-⸻
-
 Schritt 7: Auskunft zu Vorschriften (2–3 Min) 🆕
 
 Sie:
@@ -544,13 +445,12 @@ Praktischer Nutzen – Alle Daten mit Quellen; durchsuchbar; erweiterbar; export
 🆕 Rollenbasierte Visualisierung – Kontextspezifische Sichten, Status‑Badges, KPI‑Hinweise.
 🆕 Datenlebenszyklus – Valid‑From/To, Review‑Fristen, Archiv‑Layer, Audit‑Trail.
 🆕 Lernende KI – Halbautomatische Vorschläge, Reviewer‑Flows, personalisierte Defaults.
-🤖🆕 Kollaborative Multi-Agent Recherche – OSINT Agent Teams für tiefgehende Web-Recherche mit strukturierten JSON-LD Berichten.
 
 ⸻
 
-🎬 Timing (18–30 Minuten)
+🎬 Timing (15–25 Minuten)
 
-[0:00–0:02] Einleitung • [0:02–0:05] Wissensgraph erstellen • [0:05–0:09] PM einlesen • [0:09–0:13] Rechtsgrundlagen • [0:13–0:16] Tracking • [0:16–0:19] Gliederung • [0:19–0:22] Suche & Analyse • [0:22–0:27] 🆕🤖 Deep Research mit OSINT Agent Team • [0:27–0:30] Q&A Vorschriften • [0:30–0:33] Textgenerierung • [0:33–0:35] 🆕 Graph‑Visualisierung • [0:35–0:37] 🆕 Nutzer‑Feedback
+[0:00–0:02] Einleitung • [0:02–0:05] Wissensgraph erstellen • [0:05–0:09] PM einlesen • [0:09–0:13] Rechtsgrundlagen • [0:13–0:16] Tracking • [0:16–0:19] Gliederung • [0:19–0:22] Suche & Analyse • [0:22–0:25] Q&A Vorschriften 🆕 • [0:25–0:28] Textgenerierung 🆕 • [0:28–0:30] 🆕 Graph‑Visualisierung • [0:30–0:32] 🆕 Nutzer‑Feedback
 
 ⸻
 
@@ -559,10 +459,11 @@ Praktischer Nutzen – Alle Daten mit Quellen; durchsuchbar; erweiterbar; export
 System: LibreChat v0.8.0 (Agents‑Endpoint) • HIVE Honeycomb API • Podman (lokales MCP‑Netz)
 
 MCP‑Server:
-	1.	honeycomb – Wissensgraph (CRUD)
-	2.	rechtsinformationen-bund-de – Gesetze (ELI)
-	3.	fetch – Web‑Fetch (UVX)
-	4.	osint-agent-teams – Kollaborative Multi-Agent Recherche (aiXplain) 🤖🆕
+	1.	honeycomb – Wissensgraph (CRUD) - 11 tools
+	2.	rechtsinformationen-bund-de – Gesetze (ELI) - 8 tools
+	3.	fetch – Web‑Fetch (UVX) - 1 tool
+
+**Total: 20 MCP tools**
 
 Konfiguration:
 	•	Proaktive Agenten‑Instruktionen in librechat.yaml (deutsch, rollenbasiert)

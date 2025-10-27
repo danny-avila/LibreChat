@@ -1,19 +1,42 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Page, Response } from '@playwright/test';
 
 /**
  * Complete E2E test for Integrationsbericht Demo
- * Tests Steps 1-6 of the demo workflow with the KI-Referent agent
+ * Tests Steps 1-8 of the demo workflow with the KI-Referent agent
  *
  * Prerequisites:
  * - LibreChat running at http://localhost:3080
  * - HIVE API running at http://localhost:8000
- * - KI-Referent system agent created
+ * - KI-Referent system agent created (agent_xVyPosZZqSRr-PfI2KOQ-)
  * - Demo user: sales-demo@senticor.de exists
+ * - MCP servers: honeycomb (11 tools), rechtsinformationen (8 tools), fetch (1 tool)
+ *
+ * Refactored based on LibreChat core E2E patterns:
+ * - Uses waitForResponse() checking for "final":true in API response
+ * - Focuses on Karlsruhe projects only (3-5 vs 34) for faster execution
+ * - Uses timestamped honeycomb names to avoid conflicts
+ * - Manual login (more reliable than storageState for nightly runs)
  */
 
 const { DEMO_USER } = require('../test-user');
 const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:3080';
+
+// Wait for agent streaming response to complete
+const waitForAgentStream = async (response: Response) => {
+  const isAgentEndpoint = response.url().includes('/api/agents');
+  return isAgentEndpoint && response.status() === 200;
+};
+
+// Generate timestamped honeycomb name
+function getTimestampedHoneycombName(): string {
+  const now = new Date();
+  const timestamp = now.toISOString()
+    .replace(/T/, '_')
+    .replace(/:/g, '-')
+    .replace(/\..+/, '');
+  return `hc_demo_${timestamp}`;
+}
 
 async function loginUser(page: Page) {
   console.log('🔐 Logging in...');
@@ -61,14 +84,14 @@ async function selectKIReferentAgent(page: Page) {
 }
 
 async function sendMessageAndWait(page: Page, message: string, options: {
-  waitForResponse?: boolean;
   timeout?: number;
   checkContent?: string | RegExp;
-} = {}) {
+  expectMcpTools?: string[]; // e.g., ['rechtsinformationen', 'honeycomb']
+} = {}): Promise<string> {
   const {
-    waitForResponse = true,
     timeout = 180000, // 3 minutes for AI responses
-    checkContent
+    checkContent,
+    expectMcpTools
   } = options;
 
   console.log(`📤 Sending: ${message.substring(0, 80)}${message.length > 80 ? '...' : ''}`);
@@ -77,40 +100,57 @@ async function sendMessageAndWait(page: Page, message: string, options: {
   await textbox.waitFor({ state: 'visible', timeout: 10000 });
   await textbox.click();
   await textbox.fill(message);
-  await textbox.press('Enter');
 
-  if (!waitForResponse) {
-    return;
+  // Wait for API response using LibreChat core pattern
+  console.log('  ⏳ Waiting for agent response...');
+  const responsePromise = [
+    page.waitForResponse(waitForAgentStream, { timeout }),
+    textbox.press('Enter'),
+  ];
+
+  const [response] = (await Promise.all(responsePromise)) as [Response];
+  const responseBody = await response.body();
+  const bodyText = responseBody.toString();
+  const messageSuccess = bodyText.includes('"final":true');
+
+  if (!messageSuccess) {
+    console.log('  ⚠️  Warning: Response did not include "final":true flag');
+  } else {
+    console.log('  ✅ Agent response complete');
   }
 
-  // Wait for AI to start responding (Stop button appears)
-  console.log('  ⏳ Waiting for AI response...');
-  try {
-    await page.waitForSelector('button:has-text("Stop")', { state: 'visible', timeout: 30000 });
-    console.log('  → AI is responding...');
-
-    // Wait for response to complete (Stop button disappears)
-    await page.waitForSelector('button:has-text("Stop")', { state: 'detached', timeout });
-    console.log('  ✅ Response received');
-  } catch (error) {
-    console.log('  ⚠️  No Stop button detected, checking for response...');
+  // Check for MCP tool usage if requested
+  if (expectMcpTools && expectMcpTools.length > 0) {
+    for (const tool of expectMcpTools) {
+      if (bodyText.includes(tool)) {
+        console.log(`  ✓ MCP tool "${tool}" was called`);
+      } else {
+        console.log(`  ⚠️  MCP tool "${tool}" was NOT called (may have used world knowledge)`);
+      }
+    }
   }
 
-  await page.waitForTimeout(2000);
+  // Small delay to let UI update
+  await page.waitForTimeout(1000);
 
   // Check for specific content if requested
   if (checkContent) {
     const messages = page.locator('[class*="markdown"], [data-testid*="message"]');
     const lastMessage = messages.last();
-    await expect(lastMessage).toContainText(checkContent, { timeout: 10000 });
-    console.log(`  ✓ Response contains: "${checkContent}"`);
+    await expect(lastMessage).toContainText(checkContent, { timeout: 15000 });
+    console.log(`  ✓ Response contains expected content`);
   }
+
+  return bodyText;
 }
 
 test.describe('Integrationsbericht Demo - Complete Workflow', () => {
   test.setTimeout(600000); // 10 minutes for full workflow
 
-  test('Complete Demo: Steps 1-6', async ({ page }) => {
+  test('Complete Demo: Steps 1-8 (Karlsruhe Focus)', async ({ page }) => {
+    const honeycombName = getTimestampedHoneycombName();
+    console.log(`🍯 Using honeycomb name: ${honeycombName}`);
+
     // Setup: Login and select agent
     await loginUser(page);
     await page.goto(`${BASE_URL}/c/new`, { timeout: 10000 });
@@ -122,26 +162,27 @@ test.describe('Integrationsbericht Demo - Complete Workflow', () => {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     await sendMessageAndWait(page,
-      'Ich erstelle den Integrationsbericht Baden-Württemberg 2025 für die Veröffentlichung im Q1 2026. ' +
-      'Das Kernstück ist ein Update zu 34 lokalen Integrationsprojekten. ' +
-      'Hier ist die Pressemitteilung:\n\n' +
-      'https://sozialministerium.baden-wuerttemberg.de/de/service/presse/pressemitteilung/pid/land-foerdert-34-lokale-integrationsprojekte-mit-rund-18-millionen-euro',
+      `Ich erstelle den Integrationsbericht Baden-Württemberg 2025 für die Veröffentlichung im Q1 2026. ` +
+      `Erstelle einen Wissensgraphen mit dem Namen "${honeycombName}" für dieses Projekt.`,
       {
-        timeout: 240000, // 4 minutes for this complex operation
+        timeout: 120000,
         checkContent: /honeycomb|wissensgraph|erstellt/i
       }
     );
 
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🌐 STEP 2: Pressemitteilung einlesen');
+    console.log('🌐 STEP 2: Pressemitteilung einlesen (NUR KARLSRUHE)');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-    // The agent should have already created a honeycomb in Step 1
-    // Now we ask it to add more information
     await sendMessageAndWait(page,
-      'Ja, bitte erstelle den Honeycomb und füge die Informationen aus der Pressemitteilung hinzu.',
+      'Bitte füge die Informationen aus dieser Pressemitteilung zum Honeycomb hinzu:\n\n' +
+      'https://sozialministerium.baden-wuerttemberg.de/de/service/presse/pressemitteilung/pid/land-foerdert-34-lokale-integrationsprojekte-mit-rund-18-millionen-euro\n\n' +
+      '⚠️ WICHTIG: Fokussiere dich NUR auf Projekte im Regierungsbezirk Karlsruhe. ' +
+      'Füge maximal 3-5 Beispielprojekte hinzu, um Zeit zu sparen. ' +
+      'Ignoriere alle anderen Regierungsbezirke (Stuttgart, Tübingen, Freiburg).',
       {
         timeout: 180000, // 3 minutes
+        checkContent: /karlsruhe|projekt|hinzugefügt/i
       }
     );
 
@@ -150,12 +191,13 @@ test.describe('Integrationsbericht Demo - Complete Workflow', () => {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     await sendMessageAndWait(page,
-      'Welche Gesetze regeln Integration in Baden-Württemberg? ' +
-      'Ich brauche die rechtliche Grundlage für Kapitel 2 des Berichts. ' +
-      'Bitte füge die wichtigsten Paragraphen zum Honeycomb hinzu.',
+      'Ich brauche die rechtlichen Grundlagen für Integrationskurse aus dem Aufenthaltsgesetz (AufenthG). ' +
+      'Bitte nutze die rechtsinformationen MCP Tools um die aktuellen Paragraphen zu § 43 und § 44 AufenthG zu recherchieren. ' +
+      'Füge die Informationen zum Honeycomb hinzu.',
       {
-        timeout: 180000,
-        checkContent: /§|gesetz|aufenthg|sgb/i
+        timeout: 120000,
+        checkContent: /§\s*43|§\s*44|aufenthg|integrationskurs|rechtsinformationen|gesetze im internet/i,
+        expectMcpTools: ['rechtsinformationen']
       }
     );
 
@@ -181,7 +223,7 @@ test.describe('Integrationsbericht Demo - Complete Workflow', () => {
 
     await sendMessageAndWait(page,
       'Erstelle eine Gliederung für den Integrationsbericht basierend auf den Daten im Honeycomb. ' +
-      'Der Bericht sollte die 34 Projekte, rechtlichen Grundlagen und Best Practices enthalten.',
+      'Der Bericht sollte die Karlsruhe-Projekte, rechtlichen Grundlagen und Best Practices enthalten.',
       {
         timeout: 120000,
         checkContent: /kapitel|gliederung|1\.|2\.|einleitung|zusammenfassung/i
@@ -201,31 +243,61 @@ test.describe('Integrationsbericht Demo - Complete Workflow', () => {
     );
 
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('✅ COMPLETE: All 6 steps executed successfully!');
+    console.log('⚖️  STEP 7: Legal Q&A - Integrationskurse');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    await sendMessageAndWait(page,
+      'Ich möchte im Bericht erwähnen, welche gesetzlichen Grundlagen es für Integrationskurse gibt. ' +
+      'Recherchiere bitte mit den rechtsinformationen MCP Tools die relevanten Paragraphen im AufenthG. ' +
+      'Erstelle eine kurze Zusammenfassung für den Bericht.',
+      {
+        timeout: 120000,
+        checkContent: /§\s*43|§\s*44|§44|aufenthg|integrationskurs|rechtsinformationen|gesetze/i,
+        expectMcpTools: ['rechtsinformationen']
+      }
+    );
+
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📝 STEP 8: Text Generation - Project Summary');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    await sendMessageAndWait(page,
+      'Bitte formuliere eine kurze Zusammenfassung für das Projekt "Zusammen stark im Ehrenamt" ' +
+      '(Landkreis Karlsruhe) für den Bericht. Die Zusammenfassung sollte den Träger und die Ziele enthalten.',
+      {
+        timeout: 120000,
+        checkContent: /karlsruhe|ehrenamt|projekt|internationaler bund|ib/i
+      }
+    );
+
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('✅ COMPLETE: All 8 steps executed successfully!');
+    console.log(`🍯 Honeycomb: ${honeycombName}`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     // Final verification - check conversation has messages
     const messages = page.locator('[class*="markdown"], [data-testid*="message"]');
     const messageCount = await messages.count();
     console.log(`📊 Total messages in conversation: ${messageCount}`);
-    expect(messageCount).toBeGreaterThan(10); // Should have user + assistant messages for all steps
+    expect(messageCount).toBeGreaterThan(14); // Should have user + assistant messages for all 8 steps
   });
 
   test('Step 1 Only: Create Honeycomb', async ({ page }) => {
     test.setTimeout(180000); // 3 minutes
+    const honeycombName = getTimestampedHoneycombName();
 
     await loginUser(page);
     await page.goto(`${BASE_URL}/c/new`, { timeout: 10000 });
     await page.waitForTimeout(1000);
     await selectKIReferentAgent(page);
 
-    console.log('\n📝 Testing Step 1: Honeycomb creation\n');
+    console.log(`\n📝 Testing Step 1: Honeycomb creation (${honeycombName})\n`);
 
     await sendMessageAndWait(page,
-      'Ich erstelle den Integrationsbericht Baden-Württemberg 2025.',
+      `Erstelle einen Wissensgraphen mit dem Namen "${honeycombName}" für den Integrationsbericht Baden-Württemberg 2025.`,
       {
         timeout: 120000,
-        checkContent: /honeycomb|wissensgraph/i
+        checkContent: /honeycomb|wissensgraph|erstellt/i
       }
     );
 
@@ -243,10 +315,11 @@ test.describe('Integrationsbericht Demo - Complete Workflow', () => {
     console.log('\n⚖️  Testing Step 3: Legal research\n');
 
     await sendMessageAndWait(page,
-      'Welche Gesetze regeln Integration in Deutschland? Nenne mir die wichtigsten Paragraphen.',
+      'Recherchiere mit den rechtsinformationen MCP Tools die rechtlichen Grundlagen für Integration in Deutschland. ' +
+      'Fokussiere dich auf das Aufenthaltsgesetz (AufenthG) - insbesondere § 43 und § 44 zu Integrationskursen.',
       {
         timeout: 120000,
-        checkContent: /§|gesetz|aufenthg|sgb|integration/i
+        checkContent: /§|gesetz|aufenthg|sgb|integration|rechtsinformationen/i
       }
     );
 

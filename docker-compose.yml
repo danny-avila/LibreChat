@@ -54,6 +54,8 @@ services:
       POSTGRES_USER: myuser
       POSTGRES_PASSWORD: mypassword
     restart: always
+    ports:
+      - "5433:5432"  # Expose PostgreSQL on localhost:5433
     volumes:
       - pgdata2:/var/lib/postgresql/data
   rag_api:
