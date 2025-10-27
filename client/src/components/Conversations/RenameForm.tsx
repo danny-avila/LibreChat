@@ -35,7 +35,6 @@ const RenameForm: React.FC<RenameFormProps> = ({
         onSubmit(titleInput);
         break;
       case 'Tab':
-        // Allow normal tab behavior to move to buttons
         break;
     }
   };
