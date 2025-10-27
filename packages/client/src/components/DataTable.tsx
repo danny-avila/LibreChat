@@ -118,6 +118,24 @@ const TableRowComponent = <TData, TValue>({
           );
         }
 
+        if (cell.column.id === 'title') {
+          return (
+            <TableHead
+              key={cell.id}
+              className="w-0 max-w-0 px-2 py-1 align-middle text-xs transition-all duration-300 sm:px-4 sm:py-2 sm:text-sm"
+              style={getColumnStyle(
+                cell.column.columnDef as TableColumn<TData, TValue>,
+                isSmallScreen,
+              )}
+              scope="row"
+            >
+              <div className="overflow-hidden text-ellipsis">
+                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              </div>
+            </TableHead>
+          );
+        }
+
         return (
           <TableCell
             key={cell.id}
@@ -126,7 +144,6 @@ const TableRowComponent = <TData, TValue>({
               cell.column.columnDef as TableColumn<TData, TValue>,
               isSmallScreen,
             )}
-            scope={cell.column.id === 'title' ? 'row' : undefined}
           >
             <div className="overflow-hidden text-ellipsis">
               {flexRender(cell.column.columnDef.cell, cell.getContext())}
