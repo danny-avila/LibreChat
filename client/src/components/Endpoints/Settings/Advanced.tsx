@@ -150,7 +150,7 @@ export default function Settings({
               max={2}
               min={0}
               step={0.01}
-              className="flex h-4 w-full bg-yellow-400"
+              className="flex h-4 w-full"
               aria-labelledby="temp-int"
             />
           </HoverCardTrigger>
