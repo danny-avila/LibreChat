@@ -84,6 +84,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               min={0}
               step={0.01}
               className="flex h-4 w-full"
+              aria-labelledby="temp-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={conversation.endpoint ?? ''} type="temp" side={ESide.Left} />
