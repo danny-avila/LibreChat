@@ -31,6 +31,7 @@ export default function AdvancedPanel() {
             onClick={() => {
               setActivePanel(Panel.builder);
             }}
+            aria-label={localize('com_ui_back_to_builder')}
           >
             <div className="advanced-panel-content flex w-full items-center justify-center gap-2">
               <ChevronLeft />

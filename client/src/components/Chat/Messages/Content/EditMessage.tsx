@@ -168,6 +168,7 @@ const EditMessage = ({
             'max-h-[65vh] pr-3 md:max-h-[75vh] md:pr-4',
             removeFocusRings,
           )}
+          aria-label={localize('com_ui_message_input')}
           dir={isRTL ? 'rtl' : 'ltr'}
         />
       </div>

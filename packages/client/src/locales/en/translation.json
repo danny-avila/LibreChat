@@ -1,4 +1,7 @@
 {
   "com_ui_cancel": "Cancel",
-  "com_ui_no_options": "No options available"
+  "com_ui_no_options": "No options available",
+  "com_ui_delete_selected_items": "Delete selected items",
+  "com_ui_filter_by": "Filter by {{title}}",
+  "com_ui_cancel_dialog": "Cancel dialog"
 }

@@ -283,6 +283,13 @@ export default function AgentPanel() {
                   setCurrentAgentId(undefined);
                 }}
                 disabled={agentQuery.isInitialLoading}
+                aria-label={
+                  localize('com_ui_create') +
+                  ' ' +
+                  localize('com_ui_new') +
+                  ' ' +
+                  localize('com_ui_agent')
+                }
               >
                 <Plus className="mr-1 h-4 w-4" />
                 {localize('com_ui_create') +
