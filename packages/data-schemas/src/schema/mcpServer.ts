@@ -9,18 +9,10 @@ const mcpServerSchema = new Schema<MCPServerDocument>(
       unique: true,
       required: true,
     },
-    title: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    description: {
-      type: String,
-      trim: true,
-    },
-    options: {
+    config: {
       type: Schema.Types.Mixed,
       required: true,
+      // Config contains: title, description, url, oauth, etc.
     },
     author: {
       type: Schema.Types.ObjectId,

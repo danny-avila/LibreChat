@@ -19,6 +19,7 @@ import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import MCPPanel from '~/components/SidePanel/MCP/MCPPanel';
+import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
 import { useGetStartupConfig } from '~/data-provider';
 import { useHasAccess } from '~/hooks';
 
@@ -60,6 +61,10 @@ export default function useSideNavLinks({
   const hasAccessToCreateAgents = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.CREATE,
+  });
+  const hasAccessToUseMCPSettings = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
   });
   const { data: startupConfig } = useGetStartupConfig();
 
@@ -169,6 +174,16 @@ export default function useSideNavLinks({
         Component: MCPPanel,
       });
     }
+    //Todo we should hide if user has no create access and number of mcp servers is 0?
+    if (hasAccessToUseMCPSettings) {
+      links.push({
+        title: 'com_nav_setting_mcp',
+        label: '',
+        icon: MCPIcon,
+        id: 'mcp-builder',
+        Component: MCPBuilderPanel,
+      });
+    }
 
     links.push({
       title: 'com_sidepanel_hide_panel',
@@ -191,6 +206,7 @@ export default function useSideNavLinks({
     hasAccessToReadMemories,
     hasAccessToBookmarks,
     hasAccessToCreateAgents,
+    hasAccessToUseMCPSettings,
     hidePanel,
     startupConfig,
   ]);

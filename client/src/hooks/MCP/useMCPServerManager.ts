@@ -15,10 +15,10 @@ import { useMcpServersQuery } from '~/data-provider/McpServers/queries';
 
 export interface MCPServerDefinition {
   serverName: string;
-  iconPath: string | null;
   config: MCPOptions;
   _source: 'yaml' | 'database';
   mcp_id?: string;
+  _id?: string; // MongoDB ObjectId for database servers (used for permissions)
 }
 
 interface ServerState {
@@ -64,7 +64,9 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
     // 2. Add DB servers from CRUD API (user-configured)
     if (dbServersData?.data) {
-      const dbServerNames = dbServersData.data.map((server) => server.title);
+      const dbServerNames = dbServersData.data.map(
+        (server) => server.config.title || server.mcp_id,
+      );
       servers.push(...dbServerNames);
     }
 
@@ -79,7 +81,6 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       const yamlDefs = Object.entries(startupConfig.mcpServers).map(
         ([serverName, config]): MCPServerDefinition => ({
           serverName,
-          iconPath: null,
           config: config as MCPOptions,
           _source: 'yaml',
         }),
@@ -91,11 +92,11 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     if (dbServersData?.data) {
       const dbDefs = dbServersData.data.map(
         (server): MCPServerDefinition => ({
-          serverName: server.title,
-          iconPath: null,
-          config: server.options,
+          serverName: server.config.title || 'Unnamed Server',
+          config: server.config,
           _source: 'database',
           mcp_id: server.mcp_id,
+          _id: server._id, // MongoDB ObjectId for permissions
         }),
       );
       definitions.push(...dbDefs);

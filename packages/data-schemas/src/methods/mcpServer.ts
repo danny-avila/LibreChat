@@ -9,13 +9,11 @@ const NORMALIZED_LIMIT_DEFAULT = 20;
 export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
   /**
    * Create a new MCP server
-   * @param data - Object containing title, description, options, and author
+   * @param data - Object containing config (with title, description, url, etc.) and author
    * @returns The created MCP server document
    */
   async function createMCPServer(data: {
-    title: string;
-    description?: string;
-    options: MCPOptions;
+    config: MCPOptions;
     author: string | Types.ObjectId;
   }): Promise<MCPServerDocument> {
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
@@ -24,9 +22,7 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
 
     const newServer = await MCPServer.create({
       mcp_id,
-      title: data.title,
-      description: data.description,
-      options: data.options,
+      config: data.config,
       author: data.author,
     });
 
@@ -169,12 +165,12 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
   /**
    * Update an MCP server
    * @param mcp_id - The MCP server ID
-   * @param updateData - Object containing fields to update
+   * @param updateData - Object containing config to update
    * @returns The updated MCP server document or null
    */
   async function updateMCPServer(
     mcp_id: string,
-    updateData: { title?: string; description?: string; options?: MCPOptions },
+    updateData: { config?: MCPOptions },
   ): Promise<MCPServerDocument | null> {
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
     return await MCPServer.findOneAndUpdate(

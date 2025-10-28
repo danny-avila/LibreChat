@@ -852,6 +852,12 @@ export function updatePeoplePickerPermissions(
   );
 }
 
+export function updateMcpServersPermissions(
+  variables: m.UpdateMcpServersPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateMcpServersPermissions(variables.roleName), variables.updates);
+}
+
 export function updateMarketplacePermissions(
   variables: m.UpdateMarketplacePermVars,
 ): Promise<m.UpdatePermResponse> {

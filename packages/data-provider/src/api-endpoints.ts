@@ -325,6 +325,8 @@ export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
 export const updatePeoplePickerPermissions = (roleName: string) =>
   `${getRole(roleName)}/people-picker`;
+export const updateMcpServersPermissions = (roleName: string) =>
+  `${getRole(roleName)}/mcp-servers`;
 
 export const updateMarketplacePermissions = (roleName: string) =>
   `${getRole(roleName)}/marketplace`;

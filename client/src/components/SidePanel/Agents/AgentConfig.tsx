@@ -317,6 +317,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             setShowMCPToolDialog={setShowMCPToolDialog}
           />
         )}
+
         {/* Agent Tools & Actions */}
         <div className="mb-4">
           <label className={labelClass}>

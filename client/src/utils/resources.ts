@@ -36,6 +36,17 @@ export const RESOURCE_CONFIGS: Record<ResourceType, ResourceConfig> = {
       `Manage permissions for ${name && name !== '' ? `"${name}"` : 'prompt'}`,
     getCopyUrlMessage: () => 'Prompt URL copied',
   },
+  [ResourceType.MCPSERVER]: {
+    resourceType: ResourceType.MCPSERVER,
+    defaultViewerRoleId: AccessRoleIds.MCPSERVER_VIEWER,
+    defaultEditorRoleId: AccessRoleIds.MCPSERVER_EDITOR,
+    defaultOwnerRoleId: AccessRoleIds.MCPSERVER_OWNER,
+    getResourceName: (name?: string) => (name && name !== '' ? `"${name}"` : 'MCP server'),
+    getShareMessage: (name?: string) => (name && name !== '' ? `"${name}"` : 'MCP server'),
+    getManageMessage: (name?: string) =>
+      `Manage permissions for ${name && name !== '' ? `"${name}"` : 'MCP server'}`,
+    getCopyUrlMessage: () => 'MCP Server URL copied',
+  },
 };
 
 export const getResourceConfig = (resourceType: ResourceType): ResourceConfig | undefined => {

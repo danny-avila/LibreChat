@@ -1,14 +1,13 @@
-import type { MCPOptions } from '../mcp';
+import type { MCPOptions, MCPServerUserInput } from '../mcp';
 
 /**
  * Base MCP Server interface
  * Core structure shared between API and database layers
  */
 export interface IMcpServer {
+  _id?: string; // MongoDB ObjectId (used for ACL/permissions)
   mcp_id: string;
-  title: string;
-  description?: string;
-  options: MCPOptions;
+  config: MCPOptions;
   author?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
@@ -23,20 +22,18 @@ export type McpServer = IMcpServer;
 
 /**
  * Parameters for creating a new user-managed MCP server
+ * Note: Only UI-editable fields are allowed (excludes server-managed fields)
  */
 export type McpServerCreateParams = {
-  title: string;
-  description?: string;
-  options: MCPOptions;
+  config: MCPServerUserInput; // UI fields only (title, description, url, oauth, iconPath)
 };
 
 /**
  * Parameters for updating an existing user-managed MCP server
+ * Note: Only UI-editable fields are allowed (excludes server-managed fields)
  */
 export type McpServerUpdateParams = {
-  title?: string;
-  description?: string;
-  options?: MCPOptions;
+  config?: MCPServerUserInput; // UI fields only (title, description, url, oauth, iconPath)
 };
 
 /**

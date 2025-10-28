@@ -3,7 +3,7 @@
  * Handles MCP-specific tool endpoints, decoupled from regular LibreChat tools
  */
 const { logger } = require('@librechat/data-schemas');
-const { Constants } = require('librechat-data-provider');
+const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
 const {
   cacheMCPServerTools,
   getMCPServerTools,
@@ -146,16 +146,24 @@ const getMCPTools = async (req, res) => {
 const createMCPServerController = async (req, res) => {
   try {
     const userId = req.user?.id;
-    const { title, description, options } = req.body;
-    ///TODO better options validation
-    if (!title || !options) {
-      return res.status(400).json({ message: 'Title and options are required' });
+    const { config } = req.body;
+
+    // Validate config using Zod schema
+    const validation = MCPServerUserInputSchema.safeParse(config);
+    if (!validation.success) {
+      return res.status(400).json({
+        message: 'Invalid MCP server configuration',
+        errors: validation.error.errors,
+      });
+    }
+
+    // Additional business rule: title is required
+    if (!validation.data.title) {
+      return res.status(400).json({ message: 'Server title is required' });
     }
 
     const mcpServer = await createMCPServer({
-      title,
-      description,
-      options,
+      config: validation.data, // Use validated data
       author: userId,
     });
 
@@ -169,7 +177,7 @@ const createMCPServerController = async (req, res) => {
       grantedBy: userId,
     });
 
-    logger.info(`[MCP Server] Created: ${mcpServer.id} by ${userId}`);
+    logger.info(`[MCP Server] Created: ${mcpServer.mcp_id} by ${userId}`);
 
     res.status(201).json(mcpServer);
   } catch (error) {
@@ -228,11 +236,11 @@ const getMCPServersList = async (req, res) => {
     // Base filter
     const filter = {};
 
-    // Handle search filter - search in title and description fields
+    // Handle search filter - search in config.title and config.description fields
     if (search && search.trim() !== '') {
       filter.$or = [
-        { title: { $regex: search.trim(), $options: 'i' } },
-        { description: { $regex: search.trim(), $options: 'i' } },
+        { 'config.title': { $regex: search.trim(), $options: 'i' } },
+        { 'config.description': { $regex: search.trim(), $options: 'i' } },
       ];
     }
 
@@ -286,7 +294,7 @@ const updateMCPServerController = async (req, res) => {
     }
 
     const { mcp_id } = req.params;
-    const { title, description, options } = req.body;
+    const { config } = req.body;
 
     // Check if server exists and user owns it
     const existingServer = await findMCPServerById(mcp_id);
@@ -294,22 +302,23 @@ const updateMCPServerController = async (req, res) => {
       return res.status(404).json({ message: 'MCP server not found' });
     }
 
-    if (existingServer.author.toString() !== userId) {
-      return res.status(403).json({ message: 'Forbidden: You do not own this MCP server' });
+    // Validate config if provided
+    if (config !== undefined) {
+      const validation = MCPServerUserInputSchema.safeParse(config);
+      if (!validation.success) {
+        return res.status(400).json({
+          message: 'Invalid MCP server configuration',
+          errors: validation.error.errors,
+        });
+      }
+
+      // Use validated data
+      const updatedServer = await updateMCPServer(mcp_id, { config: validation.data });
+      return res.status(200).json(updatedServer);
     }
 
-    const updateData = {};
-    if (title !== undefined) {
-      updateData.title = title;
-    }
-    if (description !== undefined) {
-      updateData.description = description;
-    }
-    if (options !== undefined) {
-      updateData.options = options;
-    }
-
-    const updatedServer = await updateMCPServer(mcp_id, updateData);
+    // If no config provided, return existing server
+    const updatedServer = await updateMCPServer(mcp_id, {});
     res.status(200).json(updatedServer);
   } catch (error) {
     logger.error('[updateMCPServer]', error);
@@ -334,10 +343,6 @@ const deleteMCPServerController = async (req, res) => {
     const existingServer = await findMCPServerById(mcp_id);
     if (!existingServer) {
       return res.status(404).json({ message: 'MCP server not found' });
-    }
-
-    if (existingServer.author.toString() !== userId) {
-      return res.status(403).json({ message: 'Forbidden: You do not own this MCP server' });
     }
 
     const deletedServer = await deleteMCPServer(mcp_id);
