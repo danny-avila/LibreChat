@@ -58,10 +58,24 @@ const AuthContextProvider = ({
         setTokenHeader(token);
         setIsAuthenticated(isAuthenticated);
 
-        // Use a custom redirect if set
-        const finalRedirect = logoutRedirectRef.current || redirect;
+        // Determine final redirect: explicit > logoutOverride > URL param > sessionStorage
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlRedirectEncoded = urlParams.get('redirect_to') || undefined;
+        const urlRedirect = urlRedirectEncoded ? decodeURIComponent(urlRedirectEncoded) : undefined;
+        const storedRedirect = sessionStorage.getItem('post_login_redirect_to') || undefined;
+
+        const finalRedirect =
+          logoutRedirectRef.current || urlRedirect || storedRedirect || redirect || undefined;
         // Clear the stored redirect
         logoutRedirectRef.current = undefined;
+        if (storedRedirect) {
+          sessionStorage.removeItem('post_login_redirect_to');
+        }
+        if (urlRedirectEncoded) {
+          urlParams.delete('redirect_to');
+          const newUrl = `${window.location.pathname}${urlParams.toString() ? `?${urlParams.toString()}` : ''}${window.location.hash}`;
+          window.history.replaceState({}, '', newUrl);
+        }
 
         if (finalRedirect == null) {
           return;
@@ -91,6 +105,7 @@ const AuthContextProvider = ({
     onError: (error: TResError | unknown) => {
       const resError = error as TResError;
       doSetError(resError.message);
+      // Stay on login page; no redirect_to here because user actively failed login
       navigate('/login', { replace: true });
     },
   });
@@ -146,7 +161,9 @@ const AuthContextProvider = ({
           if (authConfig?.test === true) {
             return;
           }
-          navigate('/login');
+          const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+          const redirectTo = encodeURIComponent(currentPath || '/');
+          navigate(`/login?redirect_to=${redirectTo}`);
         }
       },
       onError: (error) => {
@@ -154,7 +171,9 @@ const AuthContextProvider = ({
         if (authConfig?.test === true) {
           return;
         }
-        navigate('/login');
+        const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        const redirectTo = encodeURIComponent(currentPath || '/');
+        navigate(`/login?redirect_to=${redirectTo}`);
       },
     });
   }, []);
@@ -164,7 +183,9 @@ const AuthContextProvider = ({
       setUser(userQuery.data);
     } else if (userQuery.isError) {
       doSetError((userQuery.error as Error).message);
-      navigate('/login', { replace: true });
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      const redirectTo = encodeURIComponent(currentPath || '/');
+      navigate(`/login?redirect_to=${redirectTo}`, { replace: true });
     }
     if (error != null && error && isAuthenticated) {
       doSetError(undefined);
@@ -193,6 +214,7 @@ const AuthContextProvider = ({
         token: newToken,
         isAuthenticated: true,
         user: user,
+        // allow setUserContext to pick up any redirect_to or stored redirect
       });
     };
 
