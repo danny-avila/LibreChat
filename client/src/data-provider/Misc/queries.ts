@@ -1,13 +1,13 @@
 import { useRecoilValue } from 'recoil';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import { useQuery } from '@tanstack/react-query';
-import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
+import type { UseQueryResult, UseQueryOptions } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import store from '~/store';
 
 export const useGetBannerQuery = (
-  config?: UseQueryOptions<t.TBannerResponse>,
-): QueryObserverResult<t.TBannerResponse> => {
+  config?: Omit<UseQueryOptions<t.TBannerResponse, unknown, t.TBannerResponse>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TBannerResponse, unknown> => {
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery({
     queryKey: [QueryKeys.banner],
@@ -21,8 +21,8 @@ export const useGetBannerQuery = (
 };
 
 export const useGetUserBalance = (
-  config?: UseQueryOptions<t.TBalanceResponse>,
-): QueryObserverResult<t.TBalanceResponse> => {
+  config?: Omit<UseQueryOptions<t.TBalanceResponse, unknown, t.TBalanceResponse>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TBalanceResponse, unknown> => {
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery({
     queryKey: [QueryKeys.balance],
@@ -36,8 +36,8 @@ export const useGetUserBalance = (
 };
 
 export const useGetSearchEnabledQuery = (
-  config?: UseQueryOptions<boolean>,
-): QueryObserverResult<boolean> => {
+  config?: Omit<UseQueryOptions<boolean, unknown, boolean>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<boolean, unknown> => {
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery({
     queryKey: [QueryKeys.searchEnabled],

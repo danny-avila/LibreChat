@@ -157,7 +157,7 @@ function MCPPanelContent() {
                 handleConfigRevoke(selectedServerNameForEditing);
               }
             }}
-            isSubmitting={updateUserPluginsMutation.isLoading}
+            isSubmitting={updateUserPluginsMutation.isPending}
           />
         </div>
 

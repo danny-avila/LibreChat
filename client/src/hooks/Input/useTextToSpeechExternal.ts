@@ -90,7 +90,7 @@ function useTextToSpeechExternal({
     setDownloadFile(false);
   };
 
-  const { mutate: processAudio, isLoading } = useTextToSpeechMutation({
+  const { mutate: processAudio, isPending } = useTextToSpeechMutation({
     onMutate: (variables) => {
       const inputText = (variables.get('input') ?? '') as string;
       if (inputText.length >= 4096) {
@@ -195,7 +195,7 @@ function useTextToSpeechExternal({
   return {
     generateSpeechExternal,
     cancelSpeech,
-    isLoading: isFetching || isLoading,
+    isLoading: isFetching || isPending,
     audioRef,
     voices: voicesData,
   };

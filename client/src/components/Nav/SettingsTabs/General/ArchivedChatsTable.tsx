@@ -50,7 +50,7 @@ export default function ArchivedChatsTable({
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
     useConversationsInfiniteQuery(queryParams, {
       staleTime: 0,
-      cacheTime: 5 * 60 * 1000,
+      gcTime: 5 * 60 * 1000,
       refetchOnWindowFocus: false,
       refetchOnMount: false,
     });

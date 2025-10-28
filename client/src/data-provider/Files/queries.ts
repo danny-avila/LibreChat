@@ -1,15 +1,15 @@
 import { useRecoilValue } from 'recoil';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, DynamicQueryKeys, dataService } from 'librechat-data-provider';
-import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
+import type { UseQueryResult, UseQueryOptions } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import { isEphemeralAgent } from '~/common';
 import { addFileToCache } from '~/utils';
 import store from '~/store';
 
 export const useGetFiles = <TData = t.TFile[] | boolean>(
-  config?: UseQueryOptions<t.TFile[], unknown, TData>,
-): QueryObserverResult<TData, unknown> => {
+  config?: Omit<UseQueryOptions<t.TFile[], unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery({
     queryKey: [QueryKeys.files],
@@ -24,8 +24,8 @@ export const useGetFiles = <TData = t.TFile[] | boolean>(
 
 export const useGetAgentFiles = <TData = t.TFile[]>(
   agentId: string | undefined,
-  config?: UseQueryOptions<t.TFile[], unknown, TData>,
-): QueryObserverResult<TData, unknown> => {
+  config?: Omit<UseQueryOptions<t.TFile[], unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery({
     queryKey: DynamicQueryKeys.agentFiles(agentId ?? ''),
@@ -39,8 +39,8 @@ export const useGetAgentFiles = <TData = t.TFile[]>(
 };
 
 export const useGetFileConfig = <TData = t.FileConfig>(
-  config?: UseQueryOptions<t.FileConfig, unknown, TData>,
-): QueryObserverResult<TData, unknown> => {
+  config?: Omit<UseQueryOptions<t.FileConfig, unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.fileConfig],
     queryFn: () => dataService.getFileConfig(),
@@ -51,7 +51,7 @@ export const useGetFileConfig = <TData = t.FileConfig>(
   });
 };
 
-export const useFileDownload = (userId?: string, file_id?: string): QueryObserverResult<string> => {
+export const useFileDownload = (userId?: string, file_id?: string): UseQueryResult<string, unknown> => {
   const queryClient = useQueryClient();
   return useQuery({
     queryKey: [QueryKeys.fileDownload, file_id],
@@ -83,7 +83,7 @@ export const useFileDownload = (userId?: string, file_id?: string): QueryObserve
   });
 };
 
-export const useCodeOutputDownload = (url = ''): QueryObserverResult<string> => {
+export const useCodeOutputDownload = (url = ''): UseQueryResult<string, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.fileDownload, url],
     queryFn: async () => {

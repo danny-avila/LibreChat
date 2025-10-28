@@ -79,7 +79,7 @@ describe('useHealthCheck', () => {
           queryKey: [QueryKeys.health],
           queryFn: expect.any(Function),
           retry: false,
-          cacheTime: 0,
+          gcTime: 0,
           staleTime: 0,
         }),
       );

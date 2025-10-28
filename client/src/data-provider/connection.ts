@@ -29,7 +29,7 @@ export const useHealthCheck = (isAuthenticated = false) => {
             queryKey: [QueryKeys.health],
             queryFn: () => dataService.healthCheck(),
             retry: false,
-            cacheTime: 0,
+            gcTime: 0,
             staleTime: 0,
           });
         } catch (error) {

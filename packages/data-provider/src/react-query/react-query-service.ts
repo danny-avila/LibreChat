@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
   UseQueryOptions,
   UseMutationResult,
-  QueryObserverResult,
   UseMutationOptions,
   UseQueryResult,
 } from '@tanstack/react-query';
@@ -22,8 +21,8 @@ export { hasPermissions } from '../accessPermissions';
 
 export const useGetSharedMessages = (
   shareId: string,
-  config?: UseQueryOptions<t.TSharedMessagesResponse>,
-): QueryObserverResult<t.TSharedMessagesResponse> => {
+  config?: Omit<UseQueryOptions<t.TSharedMessagesResponse, unknown, t.TSharedMessagesResponse>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TSharedMessagesResponse, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.sharedMessages, shareId],
     queryFn: () => dataService.getSharedMessages(shareId),
@@ -36,8 +35,11 @@ export const useGetSharedMessages = (
 
 export const useGetSharedLinkQuery = (
   conversationId: string,
-  config?: UseQueryOptions<t.TSharedLinkGetResponse>,
-): QueryObserverResult<t.TSharedLinkGetResponse> => {
+  config?: Omit<
+    UseQueryOptions<t.TSharedLinkGetResponse, unknown, t.TSharedLinkGetResponse>,
+    'queryKey' | 'queryFn'
+  >,
+): UseQueryResult<t.TSharedLinkGetResponse, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.sharedLinks, conversationId],
     queryFn: () => dataService.getSharedLink(conversationId),
@@ -54,8 +56,8 @@ export const useGetSharedLinkQuery = (
 
 export const useGetConversationByIdQuery = (
   id: string,
-  config?: UseQueryOptions<s.TConversation>,
-): QueryObserverResult<s.TConversation> => {
+  config?: Omit<UseQueryOptions<s.TConversation, unknown, s.TConversation>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<s.TConversation, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.conversation, id],
     queryFn: () => dataService.getConversationById(id),
@@ -210,8 +212,8 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
 };
 
 export const useGetModelsQuery = (
-  config?: UseQueryOptions<t.TModelsConfig>,
-): QueryObserverResult<t.TModelsConfig> => {
+  config?: Omit<UseQueryOptions<t.TModelsConfig, unknown, t.TModelsConfig>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TModelsConfig, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.models],
     queryFn: () => dataService.getModels(),
@@ -293,8 +295,8 @@ export const useRegisterUserMutation = (
 
 export const useUserKeyQuery = (
   name: string,
-  config?: UseQueryOptions<t.TCheckUserKeyResponse>,
-): QueryObserverResult<t.TCheckUserKeyResponse> => {
+  config?: Omit<UseQueryOptions<t.TCheckUserKeyResponse, unknown, t.TCheckUserKeyResponse>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TCheckUserKeyResponse, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.name, name],
     queryFn: () => {
@@ -334,7 +336,7 @@ export const useResetPasswordMutation = (): UseMutationResult<
 };
 
 export const useAvailablePluginsQuery = <TData = s.TPlugin[]>(
-  config?: UseQueryOptions<s.TPlugin[], unknown, TData>,
+  config?: Omit<UseQueryOptions<s.TPlugin[], unknown, TData>, 'queryKey' | 'queryFn'>,
 ): UseQueryResult<TData, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.availablePlugins],
@@ -410,8 +412,11 @@ export const useCancelMCPOAuthMutation = (): UseMutationResult<
 };
 
 export const useGetCustomConfigSpeechQuery = (
-  config?: UseQueryOptions<t.TCustomConfigSpeechResponse>,
-): QueryObserverResult<t.TCustomConfigSpeechResponse> => {
+  config?: Omit<
+    UseQueryOptions<t.TCustomConfigSpeechResponse, unknown, t.TCustomConfigSpeechResponse>,
+    'queryKey' | 'queryFn'
+  >,
+): UseQueryResult<t.TCustomConfigSpeechResponse, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.customConfigSpeech],
     queryFn: () => dataService.getCustomConfigSpeech(),
@@ -440,8 +445,11 @@ export const useUpdateFeedbackMutation = (
 
 export const useSearchPrincipalsQuery = (
   params: q.PrincipalSearchParams,
-  config?: UseQueryOptions<q.PrincipalSearchResponse>,
-): QueryObserverResult<q.PrincipalSearchResponse> => {
+  config?: Omit<
+    UseQueryOptions<q.PrincipalSearchResponse, unknown, q.PrincipalSearchResponse>,
+    'queryKey' | 'queryFn'
+  >,
+): UseQueryResult<q.PrincipalSearchResponse, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.principalSearch, params],
     queryFn: () => dataService.searchPrincipals(params),
@@ -456,8 +464,8 @@ export const useSearchPrincipalsQuery = (
 
 export const useGetAccessRolesQuery = (
   resourceType: ResourceType,
-  config?: UseQueryOptions<q.AccessRolesResponse>,
-): QueryObserverResult<q.AccessRolesResponse> => {
+  config?: Omit<UseQueryOptions<q.AccessRolesResponse, unknown, q.AccessRolesResponse>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<q.AccessRolesResponse, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.accessRoles, resourceType],
     queryFn: () => dataService.getAccessRoles(resourceType),
@@ -473,8 +481,11 @@ export const useGetAccessRolesQuery = (
 export const useGetResourcePermissionsQuery = (
   resourceType: ResourceType,
   resourceId: string,
-  config?: UseQueryOptions<permissions.TGetResourcePermissionsResponse>,
-): QueryObserverResult<permissions.TGetResourcePermissionsResponse> => {
+  config?: Omit<
+    UseQueryOptions<permissions.TGetResourcePermissionsResponse, unknown, permissions.TGetResourcePermissionsResponse>,
+    'queryKey' | 'queryFn'
+  >,
+): UseQueryResult<permissions.TGetResourcePermissionsResponse, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.resourcePermissions, resourceType, resourceId],
     queryFn: () => dataService.getResourcePermissions(resourceType, resourceId),
@@ -520,8 +531,11 @@ export const useUpdateResourcePermissionsMutation = (): UseMutationResult<
 export const useGetEffectivePermissionsQuery = (
   resourceType: ResourceType,
   resourceId: string,
-  config?: UseQueryOptions<permissions.TEffectivePermissionsResponse>,
-): QueryObserverResult<permissions.TEffectivePermissionsResponse> => {
+  config?: Omit<
+    UseQueryOptions<permissions.TEffectivePermissionsResponse, unknown, permissions.TEffectivePermissionsResponse>,
+    'queryKey' | 'queryFn'
+  >,
+): UseQueryResult<permissions.TEffectivePermissionsResponse, unknown> => {
   return useQuery<permissions.TEffectivePermissionsResponse>({
     queryKey: [QueryKeys.effectivePermissions, resourceType, resourceId],
     queryFn: () => dataService.getEffectivePermissions(resourceType, resourceId),
@@ -534,8 +548,11 @@ export const useGetEffectivePermissionsQuery = (
 
 export const useMCPServerConnectionStatusQuery = (
   serverName: string,
-  config?: UseQueryOptions<MCPServerConnectionStatusResponse>,
-): QueryObserverResult<MCPServerConnectionStatusResponse> => {
+  config?: Omit<
+    UseQueryOptions<MCPServerConnectionStatusResponse, unknown, MCPServerConnectionStatusResponse>,
+    'queryKey' | 'queryFn'
+  >,
+): UseQueryResult<MCPServerConnectionStatusResponse, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.mcpConnectionStatus, serverName],
     queryFn: () => dataService.getMCPServerConnectionStatus(serverName),

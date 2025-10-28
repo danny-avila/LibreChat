@@ -1,14 +1,14 @@
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
+import type { UseQueryOptions, UseQueryResult } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import { logger } from '~/utils';
 
 export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
   id: string,
-  config?: UseQueryOptions<t.TMessage[], unknown, TData>,
-): QueryObserverResult<TData> => {
+  config?: Omit<UseQueryOptions<t.TMessage[], unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
   const location = useLocation();
   const queryClient = useQueryClient();
   return useQuery({
