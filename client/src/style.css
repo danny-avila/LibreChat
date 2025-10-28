@@ -2732,19 +2732,6 @@ html {
   animation: fadeIn 0.5s ease-out forwards;
 }
 
-/* Enhanced smooth scaling for interactions */
-.scale-98 {
-  transform: scale(0.98);
-}
-
-/* Add hardware acceleration for smoother animations */
-.will-change-transform {
-  will-change: transform;
-}
-
-.will-change-opacity {
-  will-change: opacity;
-}
 
 /* Prevent content flash and layout shifts in artifacts */
 [data-radix-scroll-area-viewport] {
@@ -2754,7 +2741,6 @@ html {
 
 /* Ensure smooth tab content transitions */
 [role="tabpanel"] {
-  /* Use GPU acceleration for tab content */
   transform: translateZ(0);
   backface-visibility: hidden;
   -webkit-font-smoothing: subpixel-antialiased;
