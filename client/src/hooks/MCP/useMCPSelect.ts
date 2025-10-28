@@ -21,12 +21,12 @@ export function useMCPSelect({ conversationId }: { conversationId?: string | nul
   // Sync Jotai state with ephemeral agent state
   useEffect(() => {
     const mcps = ephemeralAgent?.mcp ?? [];
-    if (mcps.length > 0) {
+    if (mcps.length === 1 && mcps[0] === Constants.mcp_clear) {
+      setMCPValuesRaw([]);
+    } else if (mcps.length > 0) {
       // Strip out servers that are not available in the startup config
       const activeMcps = mcps.filter((mcp) => configuredServers.has(mcp));
       setMCPValuesRaw(activeMcps);
-    } else {
-      setMCPValuesRaw([]);
     }
   }, [ephemeralAgent?.mcp, setMCPValuesRaw, configuredServers]);
 
