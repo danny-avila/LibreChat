@@ -368,7 +368,7 @@ async function setupOpenId() {
             findUser,
             email: claims.email,
             openidId: claims.sub,
-            idOnTheSource: claims.oid,
+            idOnTheSource: claims.oid || claims.sub, // Use sub as fallback for non-Microsoft OIDC providers
             strategyName: 'openidStrategy',
           });
           let user = result.user;
@@ -436,7 +436,7 @@ async function setupOpenId() {
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
-              idOnTheSource: userinfo.oid,
+              idOnTheSource: userinfo.oid || userinfo.sub, // Use sub as fallback for non-Microsoft OIDC providers
             };
 
             const balanceConfig = getBalanceConfig(appConfig);
@@ -446,7 +446,7 @@ async function setupOpenId() {
             user.openidId = userinfo.sub;
             user.username = username;
             user.name = fullName;
-            user.idOnTheSource = userinfo.oid;
+            user.idOnTheSource = userinfo.oid || userinfo.sub; // Use sub as fallback for non-Microsoft OIDC providers
             if (userinfo.email && userinfo.email !== user.email) {
               user.email = userinfo.email;
               user.emailVerified = userinfo.email_verified || false;
