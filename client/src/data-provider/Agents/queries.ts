@@ -143,9 +143,9 @@ export const useMarketplaceAgentsInfiniteQuery = (
     promoted?: 0 | 1;
     cursor?: string; // For pagination
   },
-  config?: UseInfiniteQueryOptions<t.AgentListResponse, unknown>,
+  config?: UseInfiniteQueryOptions<t.AgentListResponse, Error>,
 ) => {
-  return useInfiniteQuery<t.AgentListResponse>({
+  return useInfiniteQuery<t.AgentListResponse, Error>({
     queryKey: [QueryKeys.marketplaceAgents, params],
     queryFn: ({ pageParam }) => {
       const queryParams = { ...params };

@@ -201,9 +201,9 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
             queryKey: [QueryKeys.mcpConnectionStatus]
           });
 
-          const freshConnectionData = queryClient.getQueryData([
+          const freshConnectionData = queryClient.getQueryData<{ connectionStatus?: Record<string, { connectionState?: string }> }>([
             QueryKeys.mcpConnectionStatus,
-          ]) as any;
+          ]);
           const freshConnectionStatus = freshConnectionData?.connectionStatus || {};
 
           const serverStatus = freshConnectionStatus[serverName];
@@ -570,7 +570,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       const hasCustomUserVars =
         serverConfig?.customUserVars && Object.keys(serverConfig.customUserVars).length > 0;
 
-      return {
+    return {
         serverName,
         serverStatus,
         tool: serverData
@@ -636,7 +636,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     handleDialogOpenChange,
     handleSave,
     handleRevoke,
-    updateUserPluginsMutation.isLoading,
+    updateUserPluginsMutation.isPending,
   ]);
 
   return {

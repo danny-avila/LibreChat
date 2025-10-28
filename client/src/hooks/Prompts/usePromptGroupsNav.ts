@@ -69,9 +69,9 @@ export default function usePromptGroupsNav(hasAccess = true) {
       const result = await groupsQuery.fetchNextPage();
       if (result.isSuccess && result.data?.pages) {
         // Update cursor history with the cursor for the next page
-        const lastPage = result.data.pages[result.data.pages.length - 2]; // Get the page before the newly fetched one
-        if (lastPage?.after && !cursorHistoryRef.current.includes(lastPage.after)) {
-          cursorHistoryRef.current.push(lastPage.after);
+        const lastPage = (result.data.pages as any)[result.data.pages.length - 2]; // Get the page before the newly fetched one
+        if (lastPage?.after && !cursorHistoryRef.current.includes((lastPage as any).after)) {
+          cursorHistoryRef.current.push((lastPage as any).after);
         }
       }
     }

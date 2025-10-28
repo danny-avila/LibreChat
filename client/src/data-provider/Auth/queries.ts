@@ -34,7 +34,7 @@ export const useGraphTokenQuery = (
 
   return useQuery({
     queryKey: [QueryKeys.graphToken, scopes],
-    queryFn: () => dataService.getGraphApiToken({ scopes }),
+    queryFn: () => dataService.getGraphApiToken({ scopes: scopes ?? '' }),
     enabled,
     staleTime: 50 * 60 * 1000, // 50 minutes (tokens expire in 60 minutes)
     retry: 1,

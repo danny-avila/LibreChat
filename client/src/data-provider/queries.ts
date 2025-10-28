@@ -7,12 +7,7 @@ import {
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  UseInfiniteQueryOptions,
-  UseQueryResult,
-  UseQueryOptions,
-  InfiniteData,
-} from '@tanstack/react-query';
+import type { UseInfiniteQueryOptions, UseQueryResult, UseQueryOptions, InfiniteData } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import type {
   Action,
@@ -77,11 +72,11 @@ export const useGetConvoIdQuery = (
 
 export const useConversationsInfiniteQuery = (
   params: ConversationListParams,
-  config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
+  config?: UseInfiniteQueryOptions<ConversationListResponse, Error>,
 ) => {
   const { isArchived, sortBy, sortDirection, tags, search } = params;
 
-  return useInfiniteQuery<ConversationListResponse>({
+  return useInfiniteQuery<ConversationListResponse, Error>({
     queryKey: [
       isArchived ? QueryKeys.archivedConversations : QueryKeys.allConversations,
       { isArchived, sortBy, sortDirection, tags, search },
@@ -105,11 +100,11 @@ export const useConversationsInfiniteQuery = (
 
 export const useMessagesInfiniteQuery = (
   params: MessagesListParams,
-  config?: UseInfiniteQueryOptions<MessagesListResponse, unknown>,
+  config?: UseInfiniteQueryOptions<MessagesListResponse, Error>,
 ) => {
   const { sortBy, sortDirection, pageSize, conversationId, messageId, search } = params;
 
-  return useInfiniteQuery<MessagesListResponse>({
+  return useInfiniteQuery<MessagesListResponse, Error>({
     queryKey: [
       QueryKeys.messages,
       { sortBy, sortDirection, pageSize, conversationId, messageId, search },
@@ -134,11 +129,11 @@ export const useMessagesInfiniteQuery = (
 
 export const useSharedLinksQuery = (
   params: SharedLinksListParams,
-  config?: UseInfiniteQueryOptions<SharedLinksResponse, unknown>,
+  config?: UseInfiniteQueryOptions<SharedLinksResponse, Error>,
 ) => {
   const { pageSize, isPublic, search, sortBy, sortDirection } = params;
 
-  return useInfiniteQuery<SharedLinksResponse>({
+  return useInfiniteQuery<SharedLinksResponse, Error>({
     queryKey: [QueryKeys.sharedLinks, { pageSize, isPublic, search, sortBy, sortDirection }],
     queryFn: ({ pageParam }) =>
       dataService.listSharedLinks({
@@ -398,10 +393,10 @@ export const useCustomConfigSpeechQuery = (
 
 export const usePromptGroupsInfiniteQuery = (
   params?: t.TPromptGroupsWithFilterRequest,
-  config?: UseInfiniteQueryOptions<t.PromptGroupListResponse, unknown>,
+  config?: UseInfiniteQueryOptions<t.PromptGroupListResponse, Error, t.PromptGroupListResponse>,
 ) => {
   const { name, pageSize, category } = params || {};
-  return useInfiniteQuery<t.PromptGroupListResponse, unknown>({
+  return useInfiniteQuery<t.PromptGroupListResponse, Error>({
     queryKey: [QueryKeys.promptGroups, name, category, pageSize],
     queryFn: ({ pageParam }) => {
       const queryParams: t.TPromptGroupsWithFilterRequest = {
