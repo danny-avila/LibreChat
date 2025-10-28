@@ -117,6 +117,7 @@ function SwitchItem({
           className="ml-4"
           data-testid={id}
           disabled={disabled}
+          aria-label={label}
         />
       </div>
     </HoverCard>
