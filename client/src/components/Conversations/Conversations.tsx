@@ -199,6 +199,7 @@ const Conversations: FC<ConversationsProps> = ({
                 rowHeight={getRowHeight}
                 rowRenderer={rowRenderer}
                 overscanRowCount={10}
+                aria-readonly={false}
                 className="outline-none"
                 style={{ outline: 'none' }}
                 aria-label="Conversations"
