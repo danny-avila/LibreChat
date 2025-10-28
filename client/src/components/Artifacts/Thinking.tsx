@@ -74,7 +74,7 @@ export const ThinkingButton = memo(
           onMouseEnter={() => setIsButtonHovered(true)}
           onMouseLeave={() => setIsButtonHovered(false)}
           className={cn(
-            'group flex flex-1 items-center justify-start rounded-xl leading-[18px]',
+            'group flex flex-1 items-center justify-start rounded-lg leading-[18px]',
             fontSize,
           )}
         >
