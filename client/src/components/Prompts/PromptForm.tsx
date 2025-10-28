@@ -126,7 +126,7 @@ const RightPanel = React.memo(
                   isLoadingGroup ||
                   !selectedPrompt ||
                   selectedPrompt._id === group?.productionId ||
-                  makeProductionMutation.isLoading ||
+                  makeProductionMutation.isPending ||
                   !canEdit
                 }
               >
