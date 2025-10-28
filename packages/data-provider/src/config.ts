@@ -214,6 +214,14 @@ export const bedrockEndpointSchema = baseEndpointSchema.merge(
   }),
 );
 
+const modelItemSchema = z.union([
+  z.string(),
+  z.object({
+    name: z.string(),
+    description: z.string().optional(),
+  }),
+]);
+
 export const assistantEndpointSchema = baseEndpointSchema.merge(
   z.object({
     /* assistants specific */
@@ -239,7 +247,7 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
     apiKey: z.string().optional(),
     models: z
       .object({
-        default: z.array(z.string()).min(1),
+        default: z.array(modelItemSchema).min(1),
         fetch: z.boolean().optional(),
         userIdQuery: z.boolean().optional(),
       })
@@ -299,7 +307,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     apiKey: z.string(),
     baseURL: z.string(),
     models: z.object({
-      default: z.array(z.string()).min(1),
+      default: z.array(modelItemSchema).min(1),
       fetch: z.boolean().optional(),
       userIdQuery: z.boolean().optional(),
     }),
@@ -636,6 +644,7 @@ export type TStartupConfig = {
   helpAndFaqURL: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
+  modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
@@ -1597,6 +1606,8 @@ export enum Constants {
   mcp_prefix = 'mcp_',
   /** Unique value to indicate all MCP servers. For backend use only. */
   mcp_all = 'sys__all__sys',
+  /** Unique value to indicate clearing MCP servers from UI state. For frontend use only. */
+  mcp_clear = 'sys__clear__sys',
   /**
    * Unique value to indicate the MCP tool was added to an agent.
    * This helps inform the UI if the mcp server was previously added.

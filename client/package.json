@@ -149,7 +149,7 @@
     "tailwindcss": "^3.4.1",
     "ts-jest": "^29.2.5",
     "typescript": "^5.3.3",
-    "vite": "^6.3.6",
+    "vite": "^6.4.1",
     "vite-plugin-compression2": "^2.2.1",
     "vite-plugin-node-polyfills": "^0.23.0",
     "vite-plugin-pwa": "^0.21.2"
