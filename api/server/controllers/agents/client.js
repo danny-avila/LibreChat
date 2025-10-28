@@ -14,6 +14,7 @@ const {
   formatContentStrings,
   getTransactionsConfig,
   createMemoryProcessor,
+  sanitizeTitle,
 } = require('@librechat/api');
 const {
   Callback,
@@ -1270,7 +1271,8 @@ class AgentClient extends BaseClient {
         );
       });
 
-      return titleResult.title;
+      const sanitizedTitle = sanitizeTitle(titleResult.title);
+      return sanitizedTitle;
     } catch (err) {
       logger.error('[api/server/controllers/agents/client.js #titleConvo] Error', err);
       return;
