@@ -88,6 +88,10 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     throw new Error(`${endpoint} Base URL not provided.`);
   }
 
+  if (endpoint.toLowerCase() === 'helicone') {
+    resolvedHeaders['Helicone-Auth'] = `Bearer ${apiKey}`;
+  }
+
   const cache = getLogStores(CacheKeys.TOKEN_CONFIG);
   const tokenKey =
     !endpointConfig.tokenConfig && (userProvidesKey || userProvidesURL)

@@ -68,6 +68,32 @@ const fetchModels = async ({
     return await OllamaClient.fetchModels(baseURL);
   }
 
+  if (name && name.toLowerCase() === 'helicone') {
+    try {
+      const options = {
+        headers: {},
+        timeout: 5000
+      };
+
+      if (process.env.PROXY) {
+        options.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+      }
+
+      const heliconeModelRegistryUrl = 'https://api.helicone.ai/v1/public/model-registry/models';
+      const res = await axios.get(heliconeModelRegistryUrl, options);
+
+      if (res.data && res.data.data && res.data.data.models && Array.isArray(res.data.data.models)) {
+        models = res.data.data.models.map((model) => model.id);
+        logger.info(`[Helicone] Fetched ${models.length} models from model registry`);
+      }
+
+      return models;
+    } catch (error) {
+      logger.error('[Helicone] Failed to fetch models from model registry:', error.message);
+      return models;
+    }
+  }
+
   try {
     const options = {
       headers: {},
