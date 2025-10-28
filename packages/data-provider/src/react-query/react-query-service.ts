@@ -21,8 +21,8 @@ export { hasPermissions } from '../accessPermissions';
 
 export const useGetSharedMessages = (
   shareId: string,
-  config?: Omit<UseQueryOptions<t.TSharedMessagesResponse, unknown, t.TSharedMessagesResponse>, 'queryKey' | 'queryFn'>,
-): UseQueryResult<t.TSharedMessagesResponse, unknown> => {
+  config?: Omit<UseQueryOptions<t.TSharedMessagesResponse, Error, t.TSharedMessagesResponse>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TSharedMessagesResponse, Error> => {
   return useQuery({
     queryKey: [QueryKeys.sharedMessages, shareId],
     queryFn: () => dataService.getSharedMessages(shareId),
@@ -36,10 +36,10 @@ export const useGetSharedMessages = (
 export const useGetSharedLinkQuery = (
   conversationId: string,
   config?: Omit<
-    UseQueryOptions<t.TSharedLinkGetResponse, unknown, t.TSharedLinkGetResponse>,
+    UseQueryOptions<t.TSharedLinkGetResponse, Error, t.TSharedLinkGetResponse>,
     'queryKey' | 'queryFn'
   >,
-): UseQueryResult<t.TSharedLinkGetResponse, unknown> => {
+): UseQueryResult<t.TSharedLinkGetResponse, Error> => {
   return useQuery({
     queryKey: [QueryKeys.sharedLinks, conversationId],
     queryFn: () => dataService.getSharedLink(conversationId),
@@ -56,8 +56,8 @@ export const useGetSharedLinkQuery = (
 
 export const useGetConversationByIdQuery = (
   id: string,
-  config?: Omit<UseQueryOptions<s.TConversation, unknown, s.TConversation>, 'queryKey' | 'queryFn'>,
-): UseQueryResult<s.TConversation, unknown> => {
+  config?: Omit<UseQueryOptions<s.TConversation, Error, s.TConversation>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<s.TConversation, Error> => {
   return useQuery({
     queryKey: [QueryKeys.conversation, id],
     queryFn: () => dataService.getConversationById(id),
@@ -212,8 +212,8 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
 };
 
 export const useGetModelsQuery = (
-  config?: Omit<UseQueryOptions<t.TModelsConfig, unknown, t.TModelsConfig>, 'queryKey' | 'queryFn'>,
-): UseQueryResult<t.TModelsConfig, unknown> => {
+  config?: Omit<UseQueryOptions<t.TModelsConfig, Error, t.TModelsConfig>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TModelsConfig, Error> => {
   return useQuery({
     queryKey: [QueryKeys.models],
     queryFn: () => dataService.getModels(),
@@ -295,8 +295,8 @@ export const useRegisterUserMutation = (
 
 export const useUserKeyQuery = (
   name: string,
-  config?: Omit<UseQueryOptions<t.TCheckUserKeyResponse, unknown, t.TCheckUserKeyResponse>, 'queryKey' | 'queryFn'>,
-): UseQueryResult<t.TCheckUserKeyResponse, unknown> => {
+  config?: Omit<UseQueryOptions<t.TCheckUserKeyResponse, Error, t.TCheckUserKeyResponse>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TCheckUserKeyResponse, Error> => {
   return useQuery({
     queryKey: [QueryKeys.name, name],
     queryFn: () => {
@@ -336,8 +336,8 @@ export const useResetPasswordMutation = (): UseMutationResult<
 };
 
 export const useAvailablePluginsQuery = <TData = s.TPlugin[]>(
-  config?: Omit<UseQueryOptions<s.TPlugin[], unknown, TData>, 'queryKey' | 'queryFn'>,
-): UseQueryResult<TData, unknown> => {
+  config?: Omit<UseQueryOptions<s.TPlugin[], Error, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, Error> => {
   return useQuery({
     queryKey: [QueryKeys.availablePlugins],
     queryFn: () => dataService.getAvailablePlugins(),
@@ -413,10 +413,10 @@ export const useCancelMCPOAuthMutation = (): UseMutationResult<
 
 export const useGetCustomConfigSpeechQuery = (
   config?: Omit<
-    UseQueryOptions<t.TCustomConfigSpeechResponse, unknown, t.TCustomConfigSpeechResponse>,
+    UseQueryOptions<t.TCustomConfigSpeechResponse, Error, t.TCustomConfigSpeechResponse>,
     'queryKey' | 'queryFn'
   >,
-): UseQueryResult<t.TCustomConfigSpeechResponse, unknown> => {
+): UseQueryResult<t.TCustomConfigSpeechResponse, Error> => {
   return useQuery({
     queryKey: [QueryKeys.customConfigSpeech],
     queryFn: () => dataService.getCustomConfigSpeech(),
@@ -446,10 +446,10 @@ export const useUpdateFeedbackMutation = (
 export const useSearchPrincipalsQuery = (
   params: q.PrincipalSearchParams,
   config?: Omit<
-    UseQueryOptions<q.PrincipalSearchResponse, unknown, q.PrincipalSearchResponse>,
+    UseQueryOptions<q.PrincipalSearchResponse, Error, q.PrincipalSearchResponse>,
     'queryKey' | 'queryFn'
   >,
-): UseQueryResult<q.PrincipalSearchResponse, unknown> => {
+): UseQueryResult<q.PrincipalSearchResponse, Error> => {
   return useQuery({
     queryKey: [QueryKeys.principalSearch, params],
     queryFn: () => dataService.searchPrincipals(params),
@@ -464,8 +464,8 @@ export const useSearchPrincipalsQuery = (
 
 export const useGetAccessRolesQuery = (
   resourceType: ResourceType,
-  config?: Omit<UseQueryOptions<q.AccessRolesResponse, unknown, q.AccessRolesResponse>, 'queryKey' | 'queryFn'>,
-): UseQueryResult<q.AccessRolesResponse, unknown> => {
+  config?: Omit<UseQueryOptions<q.AccessRolesResponse, Error, q.AccessRolesResponse>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<q.AccessRolesResponse, Error> => {
   return useQuery({
     queryKey: [QueryKeys.accessRoles, resourceType],
     queryFn: () => dataService.getAccessRoles(resourceType),
@@ -482,10 +482,10 @@ export const useGetResourcePermissionsQuery = (
   resourceType: ResourceType,
   resourceId: string,
   config?: Omit<
-    UseQueryOptions<permissions.TGetResourcePermissionsResponse, unknown, permissions.TGetResourcePermissionsResponse>,
+    UseQueryOptions<permissions.TGetResourcePermissionsResponse, Error, permissions.TGetResourcePermissionsResponse>,
     'queryKey' | 'queryFn'
   >,
-): UseQueryResult<permissions.TGetResourcePermissionsResponse, unknown> => {
+): UseQueryResult<permissions.TGetResourcePermissionsResponse, Error> => {
   return useQuery({
     queryKey: [QueryKeys.resourcePermissions, resourceType, resourceId],
     queryFn: () => dataService.getResourcePermissions(resourceType, resourceId),
@@ -532,10 +532,10 @@ export const useGetEffectivePermissionsQuery = (
   resourceType: ResourceType,
   resourceId: string,
   config?: Omit<
-    UseQueryOptions<permissions.TEffectivePermissionsResponse, unknown, permissions.TEffectivePermissionsResponse>,
+    UseQueryOptions<permissions.TEffectivePermissionsResponse, Error, permissions.TEffectivePermissionsResponse>,
     'queryKey' | 'queryFn'
   >,
-): UseQueryResult<permissions.TEffectivePermissionsResponse, unknown> => {
+): UseQueryResult<permissions.TEffectivePermissionsResponse, Error> => {
   return useQuery<permissions.TEffectivePermissionsResponse>({
     queryKey: [QueryKeys.effectivePermissions, resourceType, resourceId],
     queryFn: () => dataService.getEffectivePermissions(resourceType, resourceId),
@@ -549,10 +549,10 @@ export const useGetEffectivePermissionsQuery = (
 export const useMCPServerConnectionStatusQuery = (
   serverName: string,
   config?: Omit<
-    UseQueryOptions<MCPServerConnectionStatusResponse, unknown, MCPServerConnectionStatusResponse>,
+    UseQueryOptions<MCPServerConnectionStatusResponse, Error, MCPServerConnectionStatusResponse>,
     'queryKey' | 'queryFn'
   >,
-): UseQueryResult<MCPServerConnectionStatusResponse, unknown> => {
+): UseQueryResult<MCPServerConnectionStatusResponse, Error> => {
   return useQuery({
     queryKey: [QueryKeys.mcpConnectionStatus, serverName],
     queryFn: () => dataService.getMCPServerConnectionStatus(serverName),
