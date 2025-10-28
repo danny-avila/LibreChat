@@ -268,7 +268,7 @@ export default function AgentPanel() {
               setCurrentAgentId={setCurrentAgentId}
               // The following is required to force re-render the component when the form's agent ID changes
               // Also maintains ComboBox Focus for Accessibility
-              selectedAgentId={agentQuery.isPending ? null : (current_agent_id ?? null)}
+              selectedAgentId={agentQuery.isLoading ? null : (current_agent_id ?? null)}
             />
           </div>
           {/* Create + Select Button */}
@@ -300,7 +300,7 @@ export default function AgentPanel() {
               </Button>
               <Button
                 variant="submit"
-                disabled={isEphemeralAgent(agent_id) || agentQuery.isPending}
+                disabled={isEphemeralAgent(agent_id) || agentQuery.isLoading}
                 onClick={(e) => {
                   e.preventDefault();
                   handleSelectAgent();
@@ -312,8 +312,8 @@ export default function AgentPanel() {
             </div>
           )}
         </div>
-        {agentQuery.isPending && <AgentPanelSkeleton />}
-        {!canEditAgent && !agentQuery.isPending && (
+        {agentQuery.isLoading && <AgentPanelSkeleton />}
+        {!canEditAgent && !agentQuery.isLoading && (
           <div className="flex h-[30vh] w-full items-center justify-center">
             <div className="text-center">
               <h2 className="text-token-text-primary m-2 text-xl font-semibold">
@@ -323,16 +323,16 @@ export default function AgentPanel() {
             </div>
           </div>
         )}
-        {canEditAgent && !agentQuery.isPending && activePanel === Panel.model && (
+        {canEditAgent && !agentQuery.isLoading && activePanel === Panel.model && (
           <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
         )}
-        {canEditAgent && !agentQuery.isPending && activePanel === Panel.builder && (
+        {canEditAgent && !agentQuery.isLoading && activePanel === Panel.builder && (
           <AgentConfig createMutation={create} />
         )}
-        {canEditAgent && !agentQuery.isPending && activePanel === Panel.advanced && (
+        {canEditAgent && !agentQuery.isLoading && activePanel === Panel.advanced && (
           <AdvancedPanel />
         )}
-        {canEditAgent && !agentQuery.isPending && (
+        {canEditAgent && !agentQuery.isLoading && (
           <AgentFooter
             createMutation={create}
             updateMutation={update}
