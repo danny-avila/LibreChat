@@ -676,7 +676,7 @@
   "com_ui_archive": "לארכיון",
   "com_ui_archive_delete_error": "מחיקת השיחה מהארכיון נכשלה",
   "com_ui_archive_error": "אירעה שגיאה באירכוב השיחה",
-  "com_ui_click_to_open": "לחץ לפתיחה",
+  "com_ui_artifact_click": "לחץ לפתיחה",
   "com_ui_artifacts": "רכיבי תצוגה",
   "com_ui_artifacts_options": "אפשרויות ארטיפקטים",
   "com_ui_artifacts_toggle": "הפעל/כבה רכיבי תצוגה",

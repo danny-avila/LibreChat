@@ -477,7 +477,7 @@
   "com_ui_api_key": "คีย์ API",
   "com_ui_archive": "เก็บถาวร",
   "com_ui_archive_error": "ไม่สามารถเก็บถาวรการสนทนา",
-  "com_ui_click_to_open": "คลิกเพื่อเปิด",
+  "com_ui_artifact_click": "คลิกเพื่อเปิด",
   "com_ui_artifacts": "สิ่งประดิษฐ์",
   "com_ui_artifacts_toggle": "สลับ UI สิ่งประดิษฐ์",
   "com_ui_artifacts_toggle_agent": "เปิดใช้งานสิ่งประดิษฐ์",

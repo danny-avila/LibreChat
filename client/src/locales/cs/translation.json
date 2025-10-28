@@ -385,7 +385,7 @@
   "com_ui_api_key": "API klíč",
   "com_ui_archive": "Archivovat",
   "com_ui_archive_error": "Nepodařilo se archivovat konverzaci",
-  "com_ui_click_to_open": "Klikněte pro otevření",
+  "com_ui_artifact_click": "Klikněte pro otevření",
   "com_ui_artifacts": "Artefakty",
   "com_ui_artifacts_toggle": "Přepnout uživatelské rozhraní artefaktů",
   "com_ui_artifacts_toggle_agent": "Povolit artefakty",

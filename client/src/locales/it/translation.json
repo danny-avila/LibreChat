@@ -541,7 +541,7 @@
   "com_ui_api_key": "Chiave API",
   "com_ui_archive": "Archivia",
   "com_ui_archive_error": "Errore durante l'archiviazione della conversazione",
-  "com_ui_click_to_open": "Clicca per aprire",
+  "com_ui_artifact_click": "Clicca per aprire",
   "com_ui_artifacts": "Artefatti",
   "com_ui_artifacts_toggle": "Mostra/Nascondi Interfaccia Artefatti",
   "com_ui_artifacts_toggle_agent": "Abilita artefatti",

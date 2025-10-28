@@ -429,7 +429,7 @@
   "com_ui_all_proper": "Wszystkie",
   "com_ui_archive": "Archiwum",
   "com_ui_archive_error": "Nie udało się archiwizować rozmowy",
-  "com_ui_click_to_open": "Kliknij, aby otworzyć",
+  "com_ui_artifact_click": "Kliknij, aby otworzyć",
   "com_ui_artifacts": "Artefakty",
   "com_ui_artifacts_toggle": "Przełącz interfejs artefaktów",
   "com_ui_ascending": "Rosnąco",

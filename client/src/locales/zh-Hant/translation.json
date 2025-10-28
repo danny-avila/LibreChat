@@ -548,7 +548,7 @@
   "com_ui_api_key": "API 金鑰",
   "com_ui_archive": "封存",
   "com_ui_archive_error": "封存對話時發生錯誤",
-  "com_ui_click_to_open": "點擊開啟",
+  "com_ui_artifact_click": "點擊開啟",
   "com_ui_artifacts": "成品",
   "com_ui_artifacts_toggle": "切換成品介面",
   "com_ui_ascending": "遞增",

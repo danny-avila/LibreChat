@@ -479,7 +479,7 @@
   "com_ui_api_key": "API kulcs",
   "com_ui_archive": "Archiválás",
   "com_ui_archive_error": "Nem sikerült archiválni a beszélgetést",
-  "com_ui_click_to_open": "Kattintson a megnyitáshoz",
+  "com_ui_artifact_click": "Kattintson a megnyitáshoz",
   "com_ui_artifacts": "Műtermékek",
   "com_ui_artifacts_toggle": "Műtermék kezelőfelület váltása",
   "com_ui_artifacts_toggle_agent": "Műtermékek engedélyezése",

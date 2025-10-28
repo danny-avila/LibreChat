@@ -87,7 +87,7 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
 
         const actionLabel = isSelected
           ? localize('com_ui_click_to_close')
-          : localize('com_ui_click_to_open');
+          : localize('com_ui_artifact_click');
 
         return (
           <button type="button" onClick={handleClick} className={buttonClass}>

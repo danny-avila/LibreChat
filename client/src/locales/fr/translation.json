@@ -635,7 +635,7 @@
   "com_ui_archive": "Archiver",
   "com_ui_archive_delete_error": "Suppression de la conversation archivée échouée",
   "com_ui_archive_error": "échec de l'archivage de la conversation",
-  "com_ui_click_to_open": "Cliquer pour ouvrir",
+  "com_ui_artifact_click": "Cliquer pour ouvrir",
   "com_ui_artifacts": "Artefacts",
   "com_ui_artifacts_options": "Options des Artefacts",
   "com_ui_artifacts_toggle": "Afficher/Masquer l'interface des artefacts",
