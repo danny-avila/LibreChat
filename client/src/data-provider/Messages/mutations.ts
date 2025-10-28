@@ -10,7 +10,7 @@ export const useEditArtifact = (
   const { onSuccess, ...options } = _options ?? {};
   return useMutation({
     mutationFn: (variables: t.TEditArtifactRequest) => dataService.editArtifact(variables),
-    onSuccess: (data, vars, context) => {
+    onSuccess: (data, vars, onMutateResult, context) => {
       let targetNotFound = true;
       const setMessageData = (conversationId?: string | null) => {
         if (!conversationId) {
@@ -53,7 +53,7 @@ export const useEditArtifact = (
         setMessageData(Constants.NEW_CONVO);
       }
 
-      onSuccess?.(data, vars, context);
+      onSuccess?.(data, vars, onMutateResult, context);
     },
     ...options,
   });

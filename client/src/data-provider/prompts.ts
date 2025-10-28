@@ -31,7 +31,7 @@ export const useUpdatePromptGroup = (
   return useMutation({
     mutationFn: (variables: t.TUpdatePromptGroupVariables) =>
       dataService.updatePromptGroup(variables),
-    onMutate: (variables: t.TUpdatePromptGroupVariables) => {
+    onMutate: (variables: t.TUpdatePromptGroupVariables, context) => {
       const groupData = queryClient.getQueryData<t.TPromptGroup>([
         QueryKeys.promptGroup,
         variables.id,
@@ -69,12 +69,12 @@ export const useUpdatePromptGroup = (
       }
 
       if (onMutate) {
-        onMutate(variables);
+        onMutate(variables, context);
       }
 
       return { group, previousListData };
     },
-    onError: (err, variables, context) => {
+    onError: (err, variables, onMutateResult, context) => {
       if (context?.group) {
         queryClient.setQueryData([QueryKeys.promptGroups, variables.id], context.group);
       }
@@ -85,13 +85,13 @@ export const useUpdatePromptGroup = (
         );
       }
       if (onError) {
-        onError(err, variables, context);
+        onError(err, variables, onMutateResult, context);
       }
     },
-    onSuccess: (response, variables, context) => {
+    onSuccess: (response, variables, onMutateResult, context) => {
       updateGroupInAll(queryClient, { _id: variables.id, ...response });
       if (onSuccess) {
-        onSuccess(response, variables, context);
+        onSuccess(response, variables, onMutateResult, context);
       }
     },
   });
@@ -109,7 +109,7 @@ export const useCreatePrompt = (
   return useMutation({
     mutationFn: (payload: t.TCreatePrompt) => dataService.createPrompt(payload),
     ...rest,
-    onSuccess: (response, variables, context) => {
+    onSuccess: (response, variables, onMutateResult, context) => {
       const { prompt, group } = response;
       queryClient.setQueryData(
         [QueryKeys.prompts, variables.prompt.groupId],
@@ -133,7 +133,7 @@ export const useCreatePrompt = (
       }
 
       if (onSuccess) {
-        onSuccess(response, variables, context);
+        onSuccess(response, variables, onMutateResult, context);
       }
     },
   });
@@ -154,7 +154,7 @@ export const useAddPromptToGroup = (
     mutationFn: ({ groupId, ...payload }: t.TCreatePrompt & { groupId: string }) =>
       dataService.addPromptToGroup(groupId, payload),
     ...rest,
-    onSuccess: (response, variables, context) => {
+    onSuccess: (response, variables, onMutateResult, context) => {
       const { prompt } = response;
       queryClient.setQueryData(
         [QueryKeys.prompts, variables.prompt.groupId],
@@ -164,7 +164,7 @@ export const useAddPromptToGroup = (
       );
 
       if (onSuccess) {
-        onSuccess(response, variables, context);
+        onSuccess(response, variables, onMutateResult, context);
       }
     },
   });

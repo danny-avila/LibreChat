@@ -374,9 +374,7 @@ export function updateConvoInAllQueries(
 
 // Remove
 export function removeConvoFromAllQueries(queryClient: QueryClient, conversationId: string) {
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
+  const queries = queryClient.getQueryCache().findAll({ queryKey: [QueryKeys.allConversations] });
 
   for (const query of queries) {
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {

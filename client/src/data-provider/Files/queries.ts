@@ -51,7 +51,10 @@ export const useGetFileConfig = <TData = t.FileConfig>(
   });
 };
 
-export const useFileDownload = (userId?: string, file_id?: string): UseQueryResult<string, unknown> => {
+export const useFileDownload = (
+  userId?: string,
+  file_id?: string,
+): UseQueryResult<string | undefined, unknown> => {
   const queryClient = useQueryClient();
   return useQuery({
     queryKey: [QueryKeys.fileDownload, file_id],
@@ -83,7 +86,7 @@ export const useFileDownload = (userId?: string, file_id?: string): UseQueryResu
   });
 };
 
-export const useCodeOutputDownload = (url = ''): UseQueryResult<string, unknown> => {
+export const useCodeOutputDownload = (url = ''): UseQueryResult<string | undefined, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.fileDownload, url],
     queryFn: async () => {
