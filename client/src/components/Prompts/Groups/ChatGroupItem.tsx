@@ -53,20 +53,24 @@ function ChatGroupItem({
 
   return (
     <>
-      <ListCard
-        name={group.name}
-        category={group.category ?? ''}
-        onClick={onCardClick}
-        snippet={
-          typeof group.oneliner === 'string' && group.oneliner.length > 0
-            ? group.oneliner
-            : (group.productionPrompt?.prompt ?? '')
-        }
-      >
-        <div className="flex flex-row items-center gap-2">
-          {groupIsGlobal === true && (
-            <EarthIcon className="icon-md text-green-400" aria-label="Global prompt group" />
-          )}
+      <div className="my-2 flex items-stretch justify-between rounded-xl border border-border-light shadow-sm transition-all duration-300 ease-in-out hover:bg-surface-tertiary hover:shadow-lg">
+        <ListCard
+          name={group.name}
+          category={group.category ?? ''}
+          onClick={onCardClick}
+          snippet={
+            typeof group.oneliner === 'string' && group.oneliner.length > 0
+              ? group.oneliner
+              : (group.productionPrompt?.prompt ?? '')
+          }
+        >
+          <div className="flex flex-row items-center gap-2">
+            {groupIsGlobal === true && (
+              <EarthIcon className="icon-md text-green-400" aria-label="Global prompt group" />
+            )}
+          </div>
+        </ListCard>
+        <div className="mr-1 mt-2.5 items-start pl-2">
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button
@@ -81,7 +85,7 @@ function ChatGroupItem({
                     e.stopPropagation();
                   }
                 }}
-                className="z-50 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-medium bg-transparent p-0 text-sm font-medium transition-all duration-300 ease-in-out hover:border-border-heavy hover:bg-surface-hover focus:border-border-heavy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+                className="z-50 mr-2 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-medium bg-transparent p-0 text-sm font-medium transition-all duration-300 ease-in-out hover:border-border-heavy hover:bg-surface-hover focus:border-border-heavy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
               >
                 <MenuIcon className="icon-md text-text-secondary" aria-hidden="true" />
               </button>
@@ -127,7 +131,7 @@ function ChatGroupItem({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </ListCard>
+      </div>
       <PreviewPrompt group={group} open={isPreviewDialogOpen} onOpenChange={setPreviewDialogOpen} />
       <VariableDialog
         open={isVariableDialogOpen}
