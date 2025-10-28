@@ -17,12 +17,10 @@ interface ToggleSwitchProps {
   strongLabel?: boolean;
 }
 
-// Type guard to check if it's a Recoil atom
 function isRecoilState<T>(atom: unknown): atom is RecoilState<T> {
   return atom != null && typeof atom === 'object' && 'key' in atom;
 }
 
-// Component for Recoil atoms
 const RecoilToggle: React.FC<
   Omit<ToggleSwitchProps, 'stateAtom'> & { stateAtom: RecoilState<boolean> }
 > = ({
@@ -65,7 +63,6 @@ const RecoilToggle: React.FC<
   );
 };
 
-// Component for Jotai atoms
 const JotaiToggle: React.FC<
   Omit<ToggleSwitchProps, 'stateAtom'> & { stateAtom: WritableAtom<boolean, [boolean], void> }
 > = ({

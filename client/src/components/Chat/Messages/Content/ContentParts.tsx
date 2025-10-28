@@ -60,7 +60,6 @@ const ContentParts = memo(
 
     const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
-    // Memoize hover handlers to avoid recreating on every render
     const handleContentEnter = useCallback(() => setIsContentHovered(true), []);
     const handleContentLeave = useCallback(() => setIsContentHovered(false), []);
 

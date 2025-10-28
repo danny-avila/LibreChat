@@ -14,12 +14,10 @@ import Markdown from './Markdown';
 import { cn } from '~/utils';
 import store from '~/store';
 
-// Constants
 const ERROR_CONNECTION_TEXT = 'Error connecting to server, try refreshing the page.';
 const DELAYED_ERROR_TIMEOUT = 5500;
 const UNFINISHED_DELAY = 250;
 
-// Helper Functions
 const parseThinkingContent = (text: string) => {
   const thinkingMatch = text.match(/:::thinking([\s\S]*?):::/);
   return {
@@ -28,7 +26,6 @@ const parseThinkingContent = (text: string) => {
   };
 };
 
-// Sub-components
 const LoadingFallback = () => (
   <div className="text-message mb-[0.625rem] flex min-h-[20px] flex-col items-start gap-3 overflow-visible">
     <div className="markdown prose dark:prose-invert light w-full break-words dark:text-gray-100">
