@@ -1,10 +1,6 @@
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, dataService, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
-import type {
-  QueryObserverResult,
-  UseQueryOptions,
-  UseInfiniteQueryOptions,
-} from '@tanstack/react-query';
+import type { UseQueryResult, UseQueryOptions, UseInfiniteQueryOptions } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import { isEphemeralAgent } from '~/common';
 
@@ -18,7 +14,7 @@ export const defaultAgentParams: t.AgentListParams = {
 /**
  * Hook for getting all available tools for A
  */
-export const useAvailableAgentToolsQuery = (): QueryObserverResult<t.TPlugin[]> => {
+export const useAvailableAgentToolsQuery = (): UseQueryResult<t.TPlugin[], unknown> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
 
@@ -38,8 +34,8 @@ export const useAvailableAgentToolsQuery = (): QueryObserverResult<t.TPlugin[]> 
  */
 export const useListAgentsQuery = <TData = t.AgentListResponse>(
   params: t.AgentListParams = defaultAgentParams,
-  config?: UseQueryOptions<t.AgentListResponse, unknown, TData>,
-): QueryObserverResult<TData> => {
+  config?: Omit<UseQueryOptions<t.AgentListResponse, unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
 
@@ -68,8 +64,8 @@ export const useListAgentsQuery = <TData = t.AgentListResponse>(
  */
 export const useGetAgentByIdQuery = (
   agent_id: string | null | undefined,
-  config?: UseQueryOptions<t.Agent>,
-): QueryObserverResult<t.Agent> => {
+  config?: Omit<UseQueryOptions<t.Agent, unknown, t.Agent>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.Agent, unknown> => {
   const isValidAgentId = !!agent_id && !isEphemeralAgent(agent_id);
 
   return useQuery({
@@ -94,8 +90,8 @@ export const useGetAgentByIdQuery = (
  */
 export const useGetExpandedAgentByIdQuery = (
   agent_id: string,
-  config?: UseQueryOptions<t.Agent>,
-): QueryObserverResult<t.Agent> => {
+  config?: Omit<UseQueryOptions<t.Agent, unknown, t.Agent>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.Agent, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.agent, agent_id, 'expanded'],
 
@@ -119,8 +115,8 @@ export const useGetExpandedAgentByIdQuery = (
  * Hook for getting agent categories for marketplace tabs
  */
 export const useGetAgentCategoriesQuery = (
-  config?: UseQueryOptions<t.TMarketplaceCategory[]>,
-): QueryObserverResult<t.TMarketplaceCategory[]> => {
+  config?: Omit<UseQueryOptions<t.TMarketplaceCategory[], unknown, t.TMarketplaceCategory[]>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TMarketplaceCategory[], unknown> => {
   return useQuery({
     queryKey: [QueryKeys.agentCategories],
     queryFn: () => dataService.getAgentCategories(),
@@ -162,7 +158,7 @@ export const useMarketplaceAgentsInfiniteQuery = (
     enabled: !!params.requiredPermission,
     keepPreviousData: true,
     staleTime: 2 * 60 * 1000, // 2 minutes
-    cacheTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,

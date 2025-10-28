@@ -29,7 +29,7 @@ const useSpeechToTextExternal = (
   const [speechToText] = useRecoilState<boolean>(store.speechToText);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
 
-  const { mutate: processAudio, isLoading: isProcessing } = useSpeechToTextMutation({
+  const { mutate: processAudio, isPending: isProcessing } = useSpeechToTextMutation({
     onSuccess: (data) => {
       const extractedText = data.text;
       setText(extractedText);

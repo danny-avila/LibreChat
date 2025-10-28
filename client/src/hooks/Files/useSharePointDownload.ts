@@ -122,7 +122,7 @@ export default function useSharePointDownload({
 
   return {
     downloadSharePointFiles,
-    isDownloading: batchDownloadMutation.isLoading,
+    isDownloading: batchDownloadMutation.isPending,
     downloadProgress,
     error,
   };

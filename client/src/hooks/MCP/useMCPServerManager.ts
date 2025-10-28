@@ -618,7 +618,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       });
     }
 
-    return {
+      return {
       serverName: selectedToolForConfig.name,
       serverStatus: connectionStatus?.[selectedToolForConfig.name],
       isOpen: isConfigModalOpen,
@@ -627,7 +627,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       initialValues,
       onSave: handleSave,
       onRevoke: handleRevoke,
-      isSubmitting: updateUserPluginsMutation.isLoading,
+      isSubmitting: updateUserPluginsMutation.isPending,
     };
   }, [
     selectedToolForConfig,

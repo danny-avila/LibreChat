@@ -7,18 +7,13 @@ import {
   marketplacePermissionsSchema,
   peoplePickerPermissionsSchema,
 } from 'librechat-data-provider';
-import type {
-  UseQueryOptions,
-  UseMutationResult,
-  QueryObserverResult,
-  UseMutationOptions,
-} from '@tanstack/react-query';
+import type { UseQueryOptions, UseMutationResult, UseQueryResult, UseMutationOptions } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 
 export const useGetRole = (
   roleName: string,
-  config?: UseQueryOptions<t.TRole>,
-): QueryObserverResult<t.TRole> => {
+  config?: Omit<UseQueryOptions<t.TRole, unknown, t.TRole>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TRole, unknown> => {
   return useQuery({
     queryKey: [QueryKeys.roles, roleName],
     queryFn: () => dataService.getRole(roleName),

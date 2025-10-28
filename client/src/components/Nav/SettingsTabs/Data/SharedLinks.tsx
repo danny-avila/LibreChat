@@ -48,7 +48,7 @@ export default function SharedLinks() {
     useSharedLinksQuery(queryParams, {
       enabled: isOpen,
       staleTime: 0,
-      cacheTime: 5 * 60 * 1000,
+      gcTime: 5 * 60 * 1000,
       refetchOnWindowFocus: false,
       refetchOnMount: false,
     });

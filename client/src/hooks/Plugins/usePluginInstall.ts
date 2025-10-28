@@ -1,6 +1,7 @@
 // hooks/Plugins/usePluginInstall.ts
 import { useCallback } from 'react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import type { UseMutationOptions } from '@tanstack/react-query';
 import type {
   TError,
   TUser,
@@ -11,11 +12,15 @@ import type {
 import { useSetRecoilState } from 'recoil';
 import store from '~/store';
 
+type OnSuccessHandler = NonNullable<
+  UseMutationOptions<TUser, unknown, TUpdateUserPlugins, unknown>['onSuccess']
+>;
+
 interface PluginStoreHandlers {
   onInstallError?: (error: TError) => void;
   onUninstallError?: (error: TError) => void;
-  onInstallSuccess?: (data: TUser, variables: TUpdateUserPlugins, context: unknown) => void;
-  onUninstallSuccess?: (data: TUser, variables: TUpdateUserPlugins, context: unknown) => void;
+  onInstallSuccess?: OnSuccessHandler;
+  onUninstallSuccess?: OnSuccessHandler;
 }
 
 export default function usePluginInstall(handlers: PluginStoreHandlers = {}) {

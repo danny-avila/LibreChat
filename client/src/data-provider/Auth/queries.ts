@@ -1,13 +1,13 @@
 import { useRecoilValue } from 'recoil';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import { useQuery } from '@tanstack/react-query';
-import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
+import type { UseQueryResult, UseQueryOptions } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import store from '~/store';
 
 export const useGetUserQuery = (
-  config?: UseQueryOptions<t.TUser>,
-): QueryObserverResult<t.TUser> => {
+  config?: Omit<UseQueryOptions<t.TUser, unknown, t.TUser>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TUser, unknown> => {
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   return useQuery({
     queryKey: [QueryKeys.user],
@@ -28,8 +28,8 @@ export interface UseGraphTokenQueryOptions {
 
 export const useGraphTokenQuery = (
   options: UseGraphTokenQueryOptions = {},
-  config?: UseQueryOptions<any>,
-): QueryObserverResult<any> => {
+  config?: Omit<UseQueryOptions<any, unknown, any>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<any, unknown> => {
   const { scopes, enabled = false } = options;
 
   return useQuery({
