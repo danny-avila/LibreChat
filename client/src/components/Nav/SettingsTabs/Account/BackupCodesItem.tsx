@@ -25,7 +25,7 @@ const BackupCodesItem: React.FC = () => {
   const setUser = useSetRecoilState(store.user);
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
 
-  const { mutate: regenerateBackupCodes, isLoading } = useRegenerateBackupCodesMutation();
+  const { mutate: regenerateBackupCodes, isPending: isLoading } = useRegenerateBackupCodesMutation();
 
   const fetchBackupCodes = (auto: boolean = false) => {
     regenerateBackupCodes(undefined, {

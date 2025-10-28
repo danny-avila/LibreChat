@@ -37,7 +37,7 @@ export default function MemoryEditDialog({
     permission: Permissions.UPDATE,
   });
 
-  const { mutate: updateMemory, isLoading } = useUpdateMemoryMutation({
+  const { mutate: updateMemory, isPending: isLoading } = useUpdateMemoryMutation({
     onMutate: () => {
       onOpenChange(false);
       setTimeout(() => {

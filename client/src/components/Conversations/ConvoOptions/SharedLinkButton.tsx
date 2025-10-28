@@ -40,7 +40,7 @@ export default function SharedLinkButton({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const shareId = share?.shareId ?? '';
 
-  const { mutateAsync: mutate, isLoading: isCreateLoading } = useCreateSharedLinkMutation({
+  const { mutateAsync: mutate, isPending: isCreateLoading } = useCreateSharedLinkMutation({
     onError: () => {
       showToast({
         message: localize('com_ui_share_error'),
@@ -50,7 +50,7 @@ export default function SharedLinkButton({
     },
   });
 
-  const { mutateAsync, isLoading: isUpdateLoading } = useUpdateSharedLinkMutation({
+  const { mutateAsync, isPending: isUpdateLoading } = useUpdateSharedLinkMutation({
     onError: () => {
       showToast({
         message: localize('com_ui_share_error'),

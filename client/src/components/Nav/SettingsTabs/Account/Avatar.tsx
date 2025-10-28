@@ -52,7 +52,7 @@ function Avatar() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
 
-  const { mutate: uploadAvatar, isLoading: isUploading } = useUploadAvatarMutation({
+  const { mutate: uploadAvatar, isPending: isUploading } = useUploadAvatarMutation({
     onSuccess: (data) => {
       showToast({ message: localize('com_ui_upload_success') });
       setUser((prev) => ({ ...prev, avatar: data.url }) as TUser);

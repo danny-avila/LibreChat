@@ -71,7 +71,7 @@ const PeoplePickerAdminSettings = () => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { user, roles } = useAuthContext();
-  const { mutate, isLoading } = useUpdatePeoplePickerPermissionsMutation({
+  const { mutate, isPending } = useUpdatePeoplePickerPermissionsMutation({
     onSuccess: () => {
       showToast({ status: 'success', message: localize('com_ui_saved') });
     },
@@ -207,7 +207,7 @@ const PeoplePickerAdminSettings = () => {
               <button
                 type="button"
                 onClick={handleSubmit(onSubmit)}
-                disabled={isSubmitting || isLoading}
+                disabled={isSubmitting || isPending}
                 className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
               >
                 {localize('com_ui_save')}

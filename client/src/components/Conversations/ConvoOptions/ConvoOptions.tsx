@@ -73,8 +73,8 @@ function ConvoOptions({
     },
   });
 
-  const isDuplicateLoading = duplicateConversation.isLoading;
-  const isArchiveLoading = archiveConvoMutation.isLoading;
+  const isDuplicateLoading = duplicateConversation.isPending;
+  const isArchiveLoading = archiveConvoMutation.isPending;
 
   const handleShareClick = useCallback(() => {
     setShowShareDialog(true);

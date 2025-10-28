@@ -81,7 +81,7 @@ jest.mock('librechat-data-provider/react-query', () => ({
   useGetModelsQuery: () => ({ data: {} }),
   useGetEffectivePermissionsQuery: () => ({
     data: { permissionBits: 0xffffffff }, // All permissions
-    isLoading: false,
+    isPending: false,
   }),
   hasPermissions: (_bits: number, _required: number) => true, // Always return true for tests
 }));
@@ -106,7 +106,7 @@ jest.mock('~/hooks', () => ({
 jest.mock('~/hooks/useResourcePermissions', () => ({
   useResourcePermissions: () => ({
     hasPermission: jest.fn(() => true),
-    isLoading: false,
+    isPending: false,
   }),
 }));
 
@@ -217,7 +217,7 @@ jest.mock('~/data-provider', () => {
     useGetAgentByIdQuery: jest.fn(),
     useGetExpandedAgentByIdQuery: jest.fn(() => ({
       data: null,
-      isInitialLoading: false,
+      isPending: false,
     })),
     useUpdateAgentMutation: actual.useUpdateAgentMutation,
   };
@@ -260,7 +260,7 @@ const mockAgentQuery = (
       isCollaborative: false,
       ...agent,
     } as Agent,
-    isInitialLoading: false,
+    isPending: false,
   } as any);
 };
 

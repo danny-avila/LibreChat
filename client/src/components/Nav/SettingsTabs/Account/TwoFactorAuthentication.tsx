@@ -46,9 +46,9 @@ const TwoFactorAuthentication: React.FC = () => {
   const [phase, setPhase] = useState<Phase>(user?.twoFactorEnabled ? 'disable' : 'setup');
 
   const { mutate: confirm2FAMutate } = useConfirmTwoFactorMutation();
-  const { mutate: enable2FAMutate, isLoading: isGenerating } = useEnableTwoFactorMutation();
-  const { mutate: verify2FAMutate, isLoading: isVerifying } = useVerifyTwoFactorMutation();
-  const { mutate: disable2FAMutate, isLoading: isDisabling } = useDisableTwoFactorMutation();
+  const { mutate: enable2FAMutate, isPending: isGenerating } = useEnableTwoFactorMutation();
+  const { mutate: verify2FAMutate, isPending: isVerifying } = useVerifyTwoFactorMutation();
+  const { mutate: disable2FAMutate, isPending: isDisabling } = useDisableTwoFactorMutation();
 
   const steps = ['Setup', 'Scan QR', 'Verify', 'Backup'];
   const phasesLabel: Record<Phase, string> = {

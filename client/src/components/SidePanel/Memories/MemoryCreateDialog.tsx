@@ -33,7 +33,7 @@ export default function MemoryCreateDialog({
     permission: Permissions.CREATE,
   });
 
-  const { mutate: createMemory, isLoading } = useCreateMemoryMutation({
+  const { mutate: createMemory, isPending: isLoading } = useCreateMemoryMutation({
     onSuccess: () => {
       showToast({
         message: localize('com_ui_memory_created'),
