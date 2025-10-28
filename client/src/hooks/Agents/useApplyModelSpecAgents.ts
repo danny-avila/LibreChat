@@ -9,7 +9,7 @@ import { getModelSpec, applyModelSpecEphemeralAgent } from '~/utils';
  */
 export function useApplyModelSpecEffects() {
   const updateEphemeralAgent = useUpdateEphemeralAgent();
-  const applyPresetModelSpec = useCallback(
+  const applyModelSpecEffects = useCallback(
     ({
       convoId,
       specName,
@@ -37,7 +37,7 @@ export function useApplyModelSpecEffects() {
     [updateEphemeralAgent],
   );
 
-  return applyPresetModelSpec;
+  return applyModelSpecEffects;
 }
 
 export function useApplyAgentTemplate() {

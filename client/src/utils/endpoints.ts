@@ -203,7 +203,7 @@ export function applyModelSpecEphemeralAgent({
     return;
   }
   updateEphemeralAgent((convoId ?? Constants.NEW_CONVO) || Constants.NEW_CONVO, {
-    mcp: modelSpec.mcpServers ?? [],
+    mcp: modelSpec.mcpServers ?? [Constants.mcp_clear as string],
     web_search: modelSpec.webSearch ?? false,
     file_search: modelSpec.fileSearch ?? false,
     execute_code: modelSpec.executeCode ?? false,
