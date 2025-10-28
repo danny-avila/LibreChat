@@ -160,7 +160,7 @@ export const useDuplicateAgentMutation = (
     onMutate: options?.onMutate,
     onError: options?.onError,
 
-    onSuccess: ({ agent, actions }, variables, context) => {
+    onSuccess: ({ agent, actions }, variables, onMutateResult, context) => {
       ((keys: t.AgentListParams[]) => {
         keys.forEach((key) => {
           const listRes = queryClient.getQueryData<t.AgentListResponse>([QueryKeys.agents, key]);
@@ -179,7 +179,7 @@ export const useDuplicateAgentMutation = (
       queryClient.setQueryData<t.Action[]>([QueryKeys.actions], existingActions.concat(actions));
       invalidateAgentMarketplaceQueries(queryClient);
 
-      return options?.onSuccess?.({ agent, actions }, variables, context);
+      return options?.onSuccess?.({ agent, actions }, variables, onMutateResult, context);
     }
   });
 };

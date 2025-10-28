@@ -134,7 +134,7 @@ export const useGetAgentCategoriesQuery = (
 /**
  * Hook for infinite loading of marketplace agents with cursor-based pagination
  */
-export const useMarketplaceAgentsInfiniteQuery = (
+export const useMarketplaceAgentsInfiniteQuery = <TData = InfiniteData<t.AgentListResponse, unknown>>(
   params: {
     requiredPermission: number;
     category?: string;
@@ -143,9 +143,9 @@ export const useMarketplaceAgentsInfiniteQuery = (
     promoted?: 0 | 1;
     cursor?: string; // For pagination
   },
-  config?: UseInfiniteQueryOptions<t.AgentListResponse, Error>,
+  config?: Omit<UseInfiniteQueryOptions<t.AgentListResponse, Error, TData>, 'queryKey' | 'queryFn' | 'initialPageParam' | 'getNextPageParam'>,
 ) => {
-  return useInfiniteQuery<t.AgentListResponse, Error>({
+  return useInfiniteQuery<t.AgentListResponse, Error, TData>({
     queryKey: [QueryKeys.marketplaceAgents, params],
     queryFn: ({ pageParam }) => {
       const queryParams = { ...params };
@@ -156,7 +156,7 @@ export const useMarketplaceAgentsInfiniteQuery = (
     },
     getNextPageParam: (lastPage) => lastPage?.after ?? undefined,
     enabled: !!params.requiredPermission,
-    keepPreviousData: true,
+    initialPageParam: undefined,
     staleTime: 2 * 60 * 1000, // 2 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes
     refetchOnWindowFocus: false,
