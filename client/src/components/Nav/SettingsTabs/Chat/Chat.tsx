@@ -3,6 +3,7 @@ import FontSizeSelector from './FontSizeSelector';
 import { ForkSettings } from './ForkSettings';
 import ChatDirection from './ChatDirection';
 import ToggleSwitch from '../ToggleSwitch';
+import { showThinkingAtom } from '~/store/showThinking';
 import store from '~/store';
 
 const toggleSwitchConfigs = [
@@ -28,7 +29,7 @@ const toggleSwitchConfigs = [
     key: 'centerFormOnLanding',
   },
   {
-    stateAtom: store.showThinking,
+    stateAtom: showThinkingAtom,
     localizationKey: 'com_nav_show_thinking',
     switchId: 'showThinking',
     hoverCardText: undefined,

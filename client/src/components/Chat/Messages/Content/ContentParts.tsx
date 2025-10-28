@@ -1,5 +1,5 @@
 import { memo, useMemo, useState, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -9,12 +9,12 @@ import type {
 } from 'librechat-data-provider';
 import { ThinkingButton } from '~/components/Artifacts/Thinking';
 import { MessageContext, SearchContext } from '~/Providers';
+import { showThinkingAtom } from '~/store/showThinking';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import { mapAttachments } from '~/utils/map';
 import { EditTextPart } from './Parts';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 import Part from './Part';
 
 type ContentPartsProps = {
@@ -53,7 +53,7 @@ const ContentParts = memo(
     setSiblingIdx,
   }: ContentPartsProps) => {
     const localize = useLocalize();
-    const [showThinking, setShowThinking] = useRecoilState<boolean>(store.showThinking);
+    const [showThinking, setShowThinking] = useAtom(showThinkingAtom);
     const [isExpanded, setIsExpanded] = useState(showThinking);
     const [isContentHovered, setIsContentHovered] = useState(false);
     const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);

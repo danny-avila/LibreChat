@@ -1,11 +1,12 @@
 import { useState, useMemo, memo, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { Lightbulb, ChevronDown } from 'lucide-react';
 import { Clipboard, CheckMark } from '@librechat/client';
 import type { MouseEvent, FC } from 'react';
+import { fontSizeAtom } from '~/store/fontSize';
+import { showThinkingAtom } from '~/store/showThinking';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import store from '~/store';
 
 /**
  * ThinkingContent - Displays the actual thinking/reasoning content
@@ -14,7 +15,7 @@ import store from '~/store';
 export const ThinkingContent: FC<{
   children: React.ReactNode;
 }> = memo(({ children }) => {
-  const fontSize = useRecoilValue(store.fontSize);
+  const fontSize = useAtomValue(fontSizeAtom);
 
   return (
     <div className="relative rounded-3xl border border-border-medium bg-surface-tertiary p-4 text-text-secondary">
@@ -43,7 +44,7 @@ export const ThinkingButton = memo(
     isContentHovered?: boolean;
   }) => {
     const localize = useLocalize();
-    const fontSize = useRecoilValue(store.fontSize);
+    const fontSize = useAtomValue(fontSizeAtom);
 
     const [isButtonHovered, setIsButtonHovered] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
@@ -129,7 +130,7 @@ export const ThinkingButton = memo(
  */
 const Thinking: React.ElementType = memo(({ children }: { children: React.ReactNode }) => {
   const localize = useLocalize();
-  const showThinking = useRecoilValue<boolean>(store.showThinking);
+  const showThinking = useAtomValue(showThinkingAtom);
   const [isExpanded, setIsExpanded] = useState(showThinking);
   const [isContentHovered, setIsContentHovered] = useState(false);
 
