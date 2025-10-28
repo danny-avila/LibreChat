@@ -150,7 +150,7 @@ const Conversations: FC<ConversationsProps> = ({
       return (
         <CellMeasurer cache={cache} columnIndex={0} key={key} parent={parent} rowIndex={index}>
           {({ registerChild }) => (
-            <div ref={registerChild} style={style}>
+            <div ref={registerChild} style={style} className="px-2">
               {rendering}
             </div>
           )}
