@@ -47,59 +47,6 @@ module.exports = {
           '0%': { transform: 'translateX(0)' },
           '100%': { transform: 'translateX(100%)' },
         },
-        // iOS-inspired smooth animations
-        'artifact-slide-up': {
-          '0%': {
-            transform: 'translateY(100%) scale(0.95)',
-            opacity: '0',
-          },
-          '100%': {
-            transform: 'translateY(0) scale(1)',
-            opacity: '1',
-          },
-        },
-        'artifact-slide-down': {
-          '0%': {
-            transform: 'translateY(0) scale(1)',
-            opacity: '1',
-          },
-          '100%': {
-            transform: 'translateY(100%) scale(0.95)',
-            opacity: '0',
-          },
-        },
-        'artifact-slide-in-desktop': {
-          '0%': {
-            transform: 'translateX(20px)',
-            opacity: '0',
-          },
-          '100%': {
-            transform: 'translateX(0)',
-            opacity: '1',
-          },
-        },
-        'artifact-slide-out-desktop': {
-          '0%': {
-            transform: 'translateX(0)',
-            opacity: '1',
-          },
-          '100%': {
-            transform: 'translateX(20px)',
-            opacity: '0',
-          },
-        },
-        'backdrop-fade-in': {
-          '0%': { opacity: '0' },
-          '100%': { opacity: '1' },
-        },
-        'backdrop-fade-out': {
-          '0%': { opacity: '1' },
-          '100%': { opacity: '0' },
-        },
-        'tab-slide': {
-          '0%': { transform: 'translateX(var(--tab-slide-from))' },
-          '100%': { transform: 'translateX(var(--tab-slide-to))' },
-        },
         'thinking-appear': {
           '0%': {
             opacity: '0',
@@ -119,16 +66,6 @@ module.exports = {
         'slide-in-left': 'slide-in-left 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',
         'slide-out-left': 'slide-out-left 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',
         'slide-out-right': 'slide-out-right 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',
-        // iOS-inspired smooth animations
-        'artifact-slide-up': 'artifact-slide-up 0.45s cubic-bezier(0.32, 0.72, 0, 1)',
-        'artifact-slide-down': 'artifact-slide-down 0.35s cubic-bezier(0.32, 0.72, 0, 1)',
-        'artifact-slide-in-desktop':
-          'artifact-slide-in-desktop 0.5s cubic-bezier(0.32, 0.72, 0, 1)',
-        'artifact-slide-out-desktop':
-          'artifact-slide-out-desktop 0.35s cubic-bezier(0.32, 0.72, 0, 1)',
-        'backdrop-fade-in': 'backdrop-fade-in 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
-        'backdrop-fade-out': 'backdrop-fade-out 0.25s cubic-bezier(0.32, 0.72, 0, 1)',
-        'tab-slide': 'tab-slide 0.35s cubic-bezier(0.32, 0.72, 0, 1)',
         'thinking-appear': 'thinking-appear 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
       },
       transitionTimingFunction: {
