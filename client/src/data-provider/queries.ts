@@ -70,13 +70,13 @@ export const useGetConvoIdQuery = (
   });
 };
 
-export const useConversationsInfiniteQuery = (
+export const useConversationsInfiniteQuery = <TData = InfiniteData<ConversationListResponse, unknown>>(
   params: ConversationListParams,
-  config?: UseInfiniteQueryOptions<ConversationListResponse, Error>,
+  config?: Omit<UseInfiniteQueryOptions<ConversationListResponse, Error, TData>, 'queryKey' | 'queryFn' | 'initialPageParam' | 'getNextPageParam'>,
 ) => {
   const { isArchived, sortBy, sortDirection, tags, search } = params;
 
-  return useInfiniteQuery<ConversationListResponse, Error>({
+  return useInfiniteQuery<ConversationListResponse, Error, TData>({
     queryKey: [
       isArchived ? QueryKeys.archivedConversations : QueryKeys.allConversations,
       { isArchived, sortBy, sortDirection, tags, search },
@@ -91,20 +91,20 @@ export const useConversationsInfiniteQuery = (
         cursor: pageParam?.toString(),
       }),
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
-    keepPreviousData: true,
+    initialPageParam: undefined,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
     ...config,
   });
 };
 
-export const useMessagesInfiniteQuery = (
+export const useMessagesInfiniteQuery = <TData = InfiniteData<MessagesListResponse, unknown>>(
   params: MessagesListParams,
-  config?: UseInfiniteQueryOptions<MessagesListResponse, Error>,
+  config?: Omit<UseInfiniteQueryOptions<MessagesListResponse, Error, TData>, 'queryKey' | 'queryFn' | 'initialPageParam' | 'getNextPageParam'>,
 ) => {
   const { sortBy, sortDirection, pageSize, conversationId, messageId, search } = params;
 
-  return useInfiniteQuery<MessagesListResponse, Error>({
+  return useInfiniteQuery<MessagesListResponse, Error, TData>({
     queryKey: [
       QueryKeys.messages,
       { sortBy, sortDirection, pageSize, conversationId, messageId, search },
@@ -120,20 +120,20 @@ export const useMessagesInfiniteQuery = (
         cursor: pageParam?.toString(),
       }),
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
-    keepPreviousData: true,
+    initialPageParam: undefined,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
     ...config,
   });
 };
 
-export const useSharedLinksQuery = (
+export const useSharedLinksQuery = <TData = InfiniteData<SharedLinksResponse, unknown>>(
   params: SharedLinksListParams,
-  config?: UseInfiniteQueryOptions<SharedLinksResponse, Error>,
+  config?: Omit<UseInfiniteQueryOptions<SharedLinksResponse, Error, TData>, 'queryKey' | 'queryFn' | 'initialPageParam' | 'getNextPageParam'>,
 ) => {
   const { pageSize, isPublic, search, sortBy, sortDirection } = params;
 
-  return useInfiniteQuery<SharedLinksResponse, Error>({
+  return useInfiniteQuery<SharedLinksResponse, Error, TData>({
     queryKey: [QueryKeys.sharedLinks, { pageSize, isPublic, search, sortBy, sortDirection }],
     queryFn: ({ pageParam }) =>
       dataService.listSharedLinks({
@@ -145,7 +145,7 @@ export const useSharedLinksQuery = (
         sortDirection,
       }),
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
-    keepPreviousData: true,
+    initialPageParam: undefined,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
     ...config,
@@ -391,12 +391,12 @@ export const useCustomConfigSpeechQuery = (
 
 /** Prompt */
 
-export const usePromptGroupsInfiniteQuery = (
+export const usePromptGroupsInfiniteQuery = <TData = InfiniteData<t.PromptGroupListResponse, unknown>>(
   params?: t.TPromptGroupsWithFilterRequest,
-  config?: UseInfiniteQueryOptions<t.PromptGroupListResponse, Error, t.PromptGroupListResponse>,
+  config?: Omit<UseInfiniteQueryOptions<t.PromptGroupListResponse, Error, TData>, 'queryKey' | 'queryFn' | 'initialPageParam' | 'getNextPageParam'>,
 ) => {
   const { name, pageSize, category } = params || {};
-  return useInfiniteQuery<t.PromptGroupListResponse, Error>({
+  return useInfiniteQuery<t.PromptGroupListResponse, Error, TData>({
     queryKey: [QueryKeys.promptGroups, name, category, pageSize],
     queryFn: ({ pageParam }) => {
       const queryParams: t.TPromptGroupsWithFilterRequest = {
@@ -416,6 +416,7 @@ export const usePromptGroupsInfiniteQuery = (
       // Use cursor-based pagination - ensure we return a valid cursor or undefined
       return lastPage.has_more && lastPage.after ? lastPage.after : undefined;
     },
+    initialPageParam: undefined,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,

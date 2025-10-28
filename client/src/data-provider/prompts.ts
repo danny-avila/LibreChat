@@ -31,7 +31,7 @@ export const useUpdatePromptGroup = (
   return useMutation({
     mutationFn: (variables: t.TUpdatePromptGroupVariables) =>
       dataService.updatePromptGroup(variables),
-    onMutate: (variables: t.TUpdatePromptGroupVariables, context) => {
+    onMutate: (variables: t.TUpdatePromptGroupVariables) => {
       const groupData = queryClient.getQueryData<t.TPromptGroup>([
         QueryKeys.promptGroup,
         variables.id,
@@ -69,23 +69,23 @@ export const useUpdatePromptGroup = (
       }
 
       if (onMutate) {
-        onMutate(variables, context);
+        onMutate(variables, { group, previousListData } as any);
       }
 
       return { group, previousListData };
     },
-    onError: (err, variables, onMutateResult, context) => {
-      if (context?.group) {
-        queryClient.setQueryData([QueryKeys.promptGroups, variables.id], context.group);
+    onError: (err, variables, onMutateResult) => {
+      if (onMutateResult?.group) {
+        queryClient.setQueryData([QueryKeys.promptGroups, variables.id], onMutateResult.group);
       }
-      if (context?.previousListData) {
+      if (onMutateResult?.previousListData) {
         queryClient.setQueryData<t.PromptGroupListData>(
           [QueryKeys.promptGroups, name, category, pageSize],
-          context.previousListData,
+          onMutateResult.previousListData,
         );
       }
       if (onError) {
-        onError(err, variables, onMutateResult, context);
+        onError(err, variables, onMutateResult, undefined);
       }
     },
     onSuccess: (response, variables, onMutateResult, context) => {
