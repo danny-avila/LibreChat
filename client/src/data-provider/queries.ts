@@ -119,7 +119,7 @@ export const useMessagesInfiniteQuery = <TData = InfiniteData<MessagesListRespon
         search,
         cursor: pageParam?.toString(),
       }),
-    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
+    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? null,
     initialPageParam: undefined,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
@@ -414,7 +414,7 @@ export const usePromptGroupsInfiniteQuery = <TData = InfiniteData<t.PromptGroupL
     },
     getNextPageParam: (lastPage) => {
       // Use cursor-based pagination - ensure we return a valid cursor or undefined
-      return lastPage.has_more && lastPage.after ? lastPage.after : undefined;
+      return lastPage.has_more && lastPage.after ? lastPage.after : null;
     },
     initialPageParam: undefined,
     refetchOnWindowFocus: false,

@@ -154,7 +154,7 @@ export const useMarketplaceAgentsInfiniteQuery = <TData = InfiniteData<t.AgentLi
       }
       return dataService.getMarketplaceAgents(queryParams);
     },
-    getNextPageParam: (lastPage) => lastPage?.after ?? undefined,
+    getNextPageParam: (lastPage) => lastPage?.after ?? null,
     enabled: !!params.requiredPermission,
     initialPageParam: undefined,
     staleTime: 2 * 60 * 1000, // 2 minutes
