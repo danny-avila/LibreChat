@@ -1603,6 +1603,8 @@ export enum Constants {
   mcp_prefix = 'mcp_',
   /** Unique value to indicate all MCP servers. For backend use only. */
   mcp_all = 'sys__all__sys',
+  /** Unique value to indicate clearing MCP servers from UI state. For frontend use only. */
+  mcp_clear = 'sys__clear__sys',
   /**
    * Unique value to indicate the MCP tool was added to an agent.
    * This helps inform the UI if the mcp server was previously added.

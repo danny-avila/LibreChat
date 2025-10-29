@@ -250,7 +250,11 @@ export default function ApiKeyDialog({
         }}
         buttons={
           isToolAuthenticated && (
-            <Button onClick={onRevoke} className="bg-red-500 text-white hover:bg-red-600">
+            <Button
+              onClick={onRevoke}
+              className="bg-red-500 text-white hover:bg-red-600"
+              aria-label={localize('com_ui_revoke')}
+            >
               {localize('com_ui_revoke')}
             </Button>
           )
