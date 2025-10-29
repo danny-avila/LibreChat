@@ -5,6 +5,7 @@ import {
   isAgentsEndpoint,
   defaultOrderQuery,
   defaultAssistantsVersion,
+  Time,
 } from 'librechat-data-provider';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
@@ -199,6 +200,8 @@ export const useAvailableToolsQuery = <TData = t.TPlugin[]>(
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
+      refetchInterval: config?.refetchInterval ?? Time.ONE_MINUTE,
+      refetchIntervalInBackground: config?.refetchIntervalInBackground ?? true,
       enabled,
       ...config,
     },

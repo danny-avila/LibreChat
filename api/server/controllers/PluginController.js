@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { CacheKeys, Constants } = require('librechat-data-provider');
+const { CacheKeys, Constants, Time } = require('librechat-data-provider');
 const {
   getToolkitKey,
   checkPluginAuth,
@@ -44,7 +44,7 @@ const getAvailablePluginsController = async (req, res) => {
       plugins = plugins.filter((plugin) => !filteredTools.includes(plugin.pluginKey));
     }
 
-    await cache.set(CacheKeys.PLUGINS, plugins);
+    await cache.set(CacheKeys.PLUGINS, plugins, Time.ONE_MINUTE);
     res.status(200).json(plugins);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -182,7 +182,7 @@ const getAvailableTools = async (req, res) => {
     }
 
     const finalTools = filterUniquePlugins(toolsOutput);
-    await cache.set(CacheKeys.TOOLS, finalTools);
+    await cache.set(CacheKeys.TOOLS, finalTools, Time.ONE_MINUTE);
 
     const dedupedTools = filterUniquePlugins([...(mcpPlugins ?? []), ...finalTools]);
     res.status(200).json(dedupedTools);

@@ -1,5 +1,5 @@
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, dataService, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
+import { QueryKeys, dataService, EModelEndpoint, PermissionBits, Time } from 'librechat-data-provider';
 import type {
   QueryObserverResult,
   UseQueryOptions,
@@ -26,6 +26,8 @@ export const useAvailableAgentToolsQuery = (): QueryObserverResult<t.TPlugin[]> 
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
+    refetchInterval: Time.ONE_MINUTE,
+    refetchIntervalInBackground: true,
     enabled,
   });
 };
