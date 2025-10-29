@@ -1,3 +1,4 @@
+import type { QueryOptions } from 'mongoose';
 import { IToken, TokenCreateData, TokenQuery, TokenUpdateData, TokenDeleteResult } from '~/types';
 import logger from '~/config/winston';
 
@@ -47,13 +48,30 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
   async function deleteTokens(query: TokenQuery): Promise<TokenDeleteResult> {
     try {
       const Token = mongoose.models.Token;
+      const conditions = [];
+
+      if (query.userId !== undefined) {
+        conditions.push({ userId: query.userId });
+      }
+      if (query.token !== undefined) {
+        conditions.push({ token: query.token });
+      }
+      if (query.email !== undefined) {
+        conditions.push({ email: query.email });
+      }
+      if (query.identifier !== undefined) {
+        conditions.push({ identifier: query.identifier });
+      }
+
+      /**
+       * If no conditions are specified, throw an error to prevent accidental deletion of all tokens
+       */
+      if (conditions.length === 0) {
+        throw new Error('At least one query parameter must be provided');
+      }
+
       return await Token.deleteMany({
-        $or: [
-          { userId: query.userId },
-          { token: query.token },
-          { email: query.email },
-          { identifier: query.identifier },
-        ],
+        $or: conditions,
       });
     } catch (error) {
       logger.debug('An error occurred while deleting tokens:', error);
@@ -64,7 +82,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
   /**
    * Finds a Token document that matches the provided query.
    */
-  async function findToken(query: TokenQuery): Promise<IToken | null> {
+  async function findToken(query: TokenQuery, options?: QueryOptions): Promise<IToken | null> {
     try {
       const Token = mongoose.models.Token;
       const conditions = [];
@@ -82,9 +100,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
         conditions.push({ identifier: query.identifier });
       }
 
-      const token = await Token.findOne({
-        $and: conditions,
-      }).lean();
+      const token = await Token.findOne({ $and: conditions }, null, options).lean();
 
       return token as IToken | null;
     } catch (error) {

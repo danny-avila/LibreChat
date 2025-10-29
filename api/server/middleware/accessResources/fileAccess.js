@@ -1,7 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { PermissionBits, hasPermissions, ResourceType } = require('librechat-data-provider');
 const { getEffectivePermissions } = require('~/server/services/PermissionService');
-const { getAgent } = require('~/models/Agent');
+const { getAgents } = require('~/models/Agent');
 const { getFiles } = require('~/models/File');
 
 /**
@@ -10,11 +10,12 @@ const { getFiles } = require('~/models/File');
  */
 const checkAgentBasedFileAccess = async ({ userId, role, fileId }) => {
   try {
-    // Find agents that have this file in their tool_resources
-    const agentsWithFile = await getAgent({
+    /** Agents that have this file in their tool_resources */
+    const agentsWithFile = await getAgents({
       $or: [
-        { 'tool_resources.file_search.file_ids': fileId },
         { 'tool_resources.execute_code.file_ids': fileId },
+        { 'tool_resources.file_search.file_ids': fileId },
+        { 'tool_resources.context.file_ids': fileId },
         { 'tool_resources.ocr.file_ids': fileId },
       ],
     });
@@ -24,7 +25,7 @@ const checkAgentBasedFileAccess = async ({ userId, role, fileId }) => {
     }
 
     // Check if user has access to any of these agents
-    for (const agent of Array.isArray(agentsWithFile) ? agentsWithFile : [agentsWithFile]) {
+    for (const agent of agentsWithFile) {
       // Check if user is the agent author
       if (agent.author && agent.author.toString() === userId) {
         logger.debug(`[fileAccess] User is author of agent ${agent.id}`);
@@ -83,7 +84,6 @@ const fileAccess = async (req, res, next) => {
       });
     }
 
-    // Get the file
     const [file] = await getFiles({ file_id: fileId });
     if (!file) {
       return res.status(404).json({
@@ -92,20 +92,18 @@ const fileAccess = async (req, res, next) => {
       });
     }
 
-    // Check if user owns the file
     if (file.user && file.user.toString() === userId) {
       req.fileAccess = { file };
       return next();
     }
 
-    // Check agent-based access (file inherits agent permissions)
+    /** Agent-based access (file inherits agent permissions) */
     const hasAgentAccess = await checkAgentBasedFileAccess({ userId, role: userRole, fileId });
     if (hasAgentAccess) {
       req.fileAccess = { file };
       return next();
     }
 
-    // No access
     logger.warn(`[fileAccess] User ${userId} denied access to file ${fileId}`);
     return res.status(403).json({
       error: 'Forbidden',

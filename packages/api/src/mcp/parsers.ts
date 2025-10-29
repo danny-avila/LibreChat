@@ -1,4 +1,7 @@
+import { Tools } from 'librechat-data-provider';
+import type { UIResource } from 'librechat-data-provider';
 import type * as t from './types';
+
 const RECOGNIZED_PROVIDERS = new Set([
   'google',
   'anthropic',
@@ -80,20 +83,12 @@ function parseAsString(result: t.MCPToolCallResponse): string {
 
 /**
  * Converts MCPToolCallResponse content into recognized content block types
- * Recognized types: "image", "image_url", "text", "json"
- *
- * @param {t.MCPToolCallResponse} result - The MCPToolCallResponse object
- * @param {string} provider - The provider name (google, anthropic, openai)
- * @returns {Array<Object>} Formatted content blocks
- */
-/**
- * Converts MCPToolCallResponse content into recognized content block types
  * First element: string or formatted content (excluding image_url)
- * Second element: image_url content if any
+ * Second element: Recognized types - "image", "image_url", "text", "json"
  *
- * @param {t.MCPToolCallResponse} result - The MCPToolCallResponse object
- * @param {string} provider - The provider name (google, anthropic, openai)
- * @returns {t.FormattedContentResult} Tuple of content and image_urls
+ * @param  result - The MCPToolCallResponse object
+ * @param provider - The provider name (google, anthropic, openai)
+ * @returns Tuple of content and image_urls
  */
 export function formatToolContent(
   result: t.MCPToolCallResponse,
@@ -111,7 +106,7 @@ export function formatToolContent(
   const formattedContent: t.FormattedContent[] = [];
   const imageUrls: t.FormattedContent[] = [];
   let currentTextBlock = '';
-  const uiResources: t.UIResource[] = [];
+  const uiResources: UIResource[] = [];
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
 
@@ -144,8 +139,7 @@ export function formatToolContent(
 
     resource: (item) => {
       if (item.resource.uri.startsWith('ui://')) {
-        uiResources.push(item.resource as t.UIResource);
-        return;
+        uiResources.push(item.resource as UIResource);
       }
 
       const resourceText = [];
@@ -182,18 +176,14 @@ export function formatToolContent(
     formattedContent.push({ type: 'text', text: currentTextBlock });
   }
 
-  if (uiResources.length) {
-    formattedContent.push({
-      type: 'text',
-      metadata: {
-        type: 'ui_resources',
-        data: uiResources,
-      },
-      text: '',
-    });
+  let artifacts: t.Artifacts = undefined;
+  if (imageUrls.length || uiResources.length) {
+    artifacts = {
+      ...(imageUrls.length && { content: imageUrls }),
+      ...(uiResources.length && { [Tools.ui_resources]: { data: uiResources } }),
+    };
   }
 
-  const artifacts = imageUrls.length ? { content: imageUrls } : undefined;
   if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
     return [formattedContent, artifacts];
   }

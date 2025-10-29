@@ -1,4 +1,4 @@
-# v0.8.0-rc3
+# v0.8.0
 
 # Base node image (Debian-based for mongodb-memory-server compatibility)
 FROM node:20-bookworm-slim AS node
@@ -54,7 +54,7 @@ RUN \
     # Allow mounting of these files, which have no default
     touch .env ; \
     # Create directories for the volumes to inherit the correct permissions
-    mkdir -p /app/client/public/images /app/api/logs ; \
+    mkdir -p /app/client/public/images /app/api/logs /app/uploads ; \
     npm config set fetch-retry-maxtimeout 600000 ; \
     npm config set fetch-retries 5 ; \
     npm config set fetch-retry-mintimeout 15000 ; \
@@ -76,7 +76,6 @@ ENV JWT_SECRET=16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef 
     JWT_REFRESH_SECRET=eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418 \
     ALLOW_SOCIAL_LOGIN=false \
     ALLOW_PASSWORD_RESET=false
-
 # Node API setup
 EXPOSE 3080
 ENV HOST=0.0.0.0

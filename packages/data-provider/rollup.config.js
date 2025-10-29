@@ -5,7 +5,6 @@ import peerDepsExternal from 'rollup-plugin-peer-deps-external';
 import commonjs from '@rollup/plugin-commonjs';
 import replace from '@rollup/plugin-replace';
 import terser from '@rollup/plugin-terser';
-import generatePackageJson from 'rollup-plugin-generate-package-json';
 
 const plugins = [
   peerDepsExternal(),
@@ -19,19 +18,6 @@ const plugins = [
     useTsconfigDeclarationDir: true,
   }),
   terser(),
-];
-
-const subfolderPlugins = (folderName) => [
-  ...plugins,
-  generatePackageJson({
-    baseContents: {
-      name: `${pkg.name}/${folderName}`,
-      private: true,
-      main: '../index.js',
-      module: './index.es.js', // Adjust to match the output file
-      types: `../types/${folderName}/index.d.ts`, // Point to correct types file
-    },
-  }),
 ];
 
 export default [
@@ -83,6 +69,6 @@ export default [
       // 'librechat-data-provider', // Marking main part as external
     ],
     preserveSymlinks: true,
-    plugins: subfolderPlugins('react-query'),
+    plugins,
   },
 ];

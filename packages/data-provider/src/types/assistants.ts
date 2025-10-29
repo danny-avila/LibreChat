@@ -23,6 +23,7 @@ export enum Tools {
   retrieval = 'retrieval',
   function = 'function',
   memory = 'memory',
+  ui_resources = 'ui_resources',
 }
 
 export enum EToolResources {
@@ -30,6 +31,7 @@ export enum EToolResources {
   execute_code = 'execute_code',
   file_search = 'file_search',
   image_edit = 'image_edit',
+  context = 'context',
   ocr = 'ocr',
 }
 
@@ -181,6 +183,8 @@ export interface AgentToolResources {
   [EToolResources.image_edit]?: AgentBaseResource;
   [EToolResources.execute_code]?: ExecuteCodeResource;
   [EToolResources.file_search]?: AgentFileResource;
+  [EToolResources.context]?: AgentBaseResource;
+  /** @deprecated Use context instead */
   [EToolResources.ocr]?: AgentBaseResource;
 }
 /**
@@ -471,10 +475,20 @@ export type ContentPart = (
 ) &
   PartMetadata;
 
+export type TextData = (Text & PartMetadata) | undefined;
+
 export type TMessageContentParts =
-  | { type: ContentTypes.ERROR; text?: string | (Text & PartMetadata); error?: string }
-  | { type: ContentTypes.THINK; think: string | (Text & PartMetadata) }
-  | { type: ContentTypes.TEXT; text: string | (Text & PartMetadata); tool_call_ids?: string[] }
+  | {
+      type: ContentTypes.ERROR;
+      text?: string | TextData;
+      error?: string;
+    }
+  | { type: ContentTypes.THINK; think?: string | TextData }
+  | {
+      type: ContentTypes.TEXT;
+      text?: string | TextData;
+      tool_call_ids?: string[];
+    }
   | {
       type: ContentTypes.TOOL_CALL;
       tool_call: (

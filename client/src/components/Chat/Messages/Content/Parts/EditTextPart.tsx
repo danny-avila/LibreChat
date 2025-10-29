@@ -6,8 +6,8 @@ import { useRecoilState, useRecoilValue } from 'recoil';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
 import type { Agents } from 'librechat-data-provider';
 import type { TEditProps } from '~/common';
+import { useMessagesOperations, useMessagesConversation, useAddedChatContext } from '~/Providers';
 import Container from '~/components/Chat/Messages/Content/Container';
-import { useChatContext, useAddedChatContext } from '~/Providers';
 import { cn, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -25,7 +25,8 @@ const EditTextPart = ({
 }) => {
   const localize = useLocalize();
   const { addedIndex } = useAddedChatContext();
-  const { ask, getMessages, setMessages, conversation } = useChatContext();
+  const { conversation } = useMessagesConversation();
+  const { ask, getMessages, setMessages } = useMessagesOperations();
   const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
     store.latestMessageFamily(addedIndex),
   );
@@ -169,6 +170,7 @@ const EditTextPart = ({
             'max-h-[65vh] pr-3 md:max-h-[75vh] md:pr-4',
             removeFocusRings,
           )}
+          aria-label={localize('com_ui_editable_message')}
           dir={isRTL ? 'rtl' : 'ltr'}
         />
       </div>

@@ -66,7 +66,7 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
             placeholder={
               hasValue
                 ? localize('com_ui_mcp_update_var', { 0: config.title })
-                : localize('com_ui_mcp_enter_var', { 0: config.title })
+                : `${localize('com_ui_mcp_enter_var', { 0: config.title })} ${localize('com_ui_optional')}`
             }
             className="w-full rounded border border-border-medium bg-transparent px-2 py-1 text-text-primary placeholder:text-text-secondary focus:outline-none sm:text-sm"
           />

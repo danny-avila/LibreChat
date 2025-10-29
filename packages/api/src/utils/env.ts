@@ -1,5 +1,6 @@
 import { extractEnvVariable } from 'librechat-data-provider';
 import type { TUser, MCPOptions } from 'librechat-data-provider';
+import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody } from '~/types';
 
 /**
@@ -25,6 +26,31 @@ const ALLOWED_USER_FIELDS = [
   'twoFactorEnabled',
   'termsAccepted',
 ] as const;
+
+type AllowedUserField = (typeof ALLOWED_USER_FIELDS)[number];
+type SafeUser = Pick<IUser, AllowedUserField>;
+
+/**
+ * Creates a safe user object containing only allowed fields.
+ * Optimized for performance while maintaining type safety.
+ *
+ * @param user - The user object to extract safe fields from
+ * @returns A new object containing only allowed fields
+ */
+export function createSafeUser(user: IUser | null | undefined): Partial<SafeUser> {
+  if (!user) {
+    return {};
+  }
+
+  const safeUser: Partial<SafeUser> = {};
+  for (const field of ALLOWED_USER_FIELDS) {
+    if (field in user) {
+      safeUser[field] = user[field];
+    }
+  }
+
+  return safeUser;
+}
 
 /**
  * List of allowed request body fields that can be used in header placeholders.
@@ -189,6 +215,21 @@ export function processMCPEnv(params: {
   // Process URL if it exists (for WebSocket, SSE, StreamableHTTP types)
   if ('url' in newObj && newObj.url) {
     newObj.url = processSingleValue({ originalValue: newObj.url, customUserVars, user, body });
+  }
+
+  // Process OAuth configuration if it exists (for all transport types)
+  if ('oauth' in newObj && newObj.oauth) {
+    const processedOAuth: Record<string, string | string[] | undefined> = {};
+    for (const [key, originalValue] of Object.entries(newObj.oauth)) {
+      // Only process string values for environment variables
+      // token_exchange_method is an enum and shouldn't be processed
+      if (typeof originalValue === 'string') {
+        processedOAuth[key] = processSingleValue({ originalValue, customUserVars, user, body });
+      } else {
+        processedOAuth[key] = originalValue;
+      }
+    }
+    newObj.oauth = processedOAuth;
   }
 
   return newObj;

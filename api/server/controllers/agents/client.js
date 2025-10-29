@@ -7,10 +7,12 @@ const {
   createRun,
   Tokenizer,
   checkAccess,
+  logAxiosError,
   resolveHeaders,
   getBalanceConfig,
   memoryInstructions,
   formatContentStrings,
+  getTransactionsConfig,
   createMemoryProcessor,
 } = require('@librechat/api');
 const {
@@ -87,11 +89,10 @@ function createTokenCounter(encoding) {
 }
 
 function logToolError(graph, error, toolId) {
-  logger.error(
-    '[api/server/controllers/agents/client.js #chatCompletion] Tool Error',
+  logAxiosError({
     error,
-    toolId,
-  );
+    message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
+  });
 }
 
 class AgentClient extends BaseClient {
@@ -210,16 +211,13 @@ class AgentClient extends BaseClient {
    * @returns {Promise<Array<Partial<MongoFile>>>}
    */
   async addImageURLs(message, attachments) {
-    const { files, text, image_urls } = await encodeAndFormat(
+    const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
       this.options.agent.provider,
       VisionModes.agents,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;
-    if (text && text.length) {
-      message.ocr = text;
-    }
     return files;
   }
 
@@ -247,19 +245,18 @@ class AgentClient extends BaseClient {
 
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
+      const latestMessage = orderedMessages[orderedMessages.length - 1];
 
       if (this.message_file_map) {
-        this.message_file_map[orderedMessages[orderedMessages.length - 1].messageId] = attachments;
+        this.message_file_map[latestMessage.messageId] = attachments;
       } else {
         this.message_file_map = {
-          [orderedMessages[orderedMessages.length - 1].messageId]: attachments,
+          [latestMessage.messageId]: attachments,
         };
       }
 
-      const files = await this.addImageURLs(
-        orderedMessages[orderedMessages.length - 1],
-        attachments,
-      );
+      await this.addFileContextToMessage(latestMessage, attachments);
+      const files = await this.processAttachments(latestMessage, attachments);
 
       this.options.attachments = files;
     }
@@ -279,21 +276,21 @@ class AgentClient extends BaseClient {
         assistantName: this.options?.modelLabel,
       });
 
-      if (message.ocr && i !== orderedMessages.length - 1) {
+      if (message.fileContext && i !== orderedMessages.length - 1) {
         if (typeof formattedMessage.content === 'string') {
-          formattedMessage.content = message.ocr + '\n' + formattedMessage.content;
+          formattedMessage.content = message.fileContext + '\n' + formattedMessage.content;
         } else {
           const textPart = formattedMessage.content.find((part) => part.type === 'text');
           textPart
-            ? (textPart.text = message.ocr + '\n' + textPart.text)
-            : formattedMessage.content.unshift({ type: 'text', text: message.ocr });
+            ? (textPart.text = message.fileContext + '\n' + textPart.text)
+            : formattedMessage.content.unshift({ type: 'text', text: message.fileContext });
         }
-      } else if (message.ocr && i === orderedMessages.length - 1) {
-        systemContent = [systemContent, message.ocr].join('\n');
+      } else if (message.fileContext && i === orderedMessages.length - 1) {
+        systemContent = [systemContent, message.fileContext].join('\n');
       }
 
       const needsTokenCount =
-        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.ocr;
+        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.fileContext;
 
       /* If tokens were never counted, or, is a Vision request and the message has files, count again */
       if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
@@ -623,11 +620,13 @@ class AgentClient extends BaseClient {
    * @param {string} [params.model]
    * @param {string} [params.context='message']
    * @param {AppConfig['balance']} [params.balance]
+   * @param {AppConfig['transactions']} [params.transactions]
    * @param {UsageMetadata[]} [params.collectedUsage=this.collectedUsage]
    */
   async recordCollectedUsage({
     model,
     balance,
+    transactions,
     context = 'message',
     collectedUsage = this.collectedUsage,
   }) {
@@ -653,6 +652,7 @@ class AgentClient extends BaseClient {
       const txMetadata = {
         context,
         balance,
+        transactions,
         conversationId: this.conversationId,
         user: this.user ?? this.options.req.user?.id,
         endpointTokenConfig: this.options.endpointTokenConfig,
@@ -868,11 +868,10 @@ class AgentClient extends BaseClient {
         if (agent.useLegacyContent === true) {
           messages = formatContentStrings(messages);
         }
-        if (
-          agent.model_parameters?.clientOptions?.defaultHeaders?.['anthropic-beta']?.includes(
-            'prompt-caching',
-          )
-        ) {
+        const defaultHeaders =
+          agent.model_parameters?.clientOptions?.defaultHeaders ??
+          agent.model_parameters?.configuration?.defaultHeaders;
+        if (defaultHeaders?.['anthropic-beta']?.includes('prompt-caching')) {
           messages = addCacheControl(messages);
         }
 
@@ -1051,7 +1050,12 @@ class AgentClient extends BaseClient {
         }
 
         const balanceConfig = getBalanceConfig(appConfig);
-        await this.recordCollectedUsage({ context: 'message', balance: balanceConfig });
+        const transactionsConfig = getTransactionsConfig(appConfig);
+        await this.recordCollectedUsage({
+          context: 'message',
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
@@ -1108,9 +1112,16 @@ class AgentClient extends BaseClient {
       appConfig.endpoints?.[endpoint] ??
       titleProviderConfig.customEndpointConfig;
     if (!endpointConfig) {
-      logger.warn(
-        '[api/server/controllers/agents/client.js #titleConvo] Error getting endpoint config',
+      logger.debug(
+        `[api/server/controllers/agents/client.js #titleConvo] No endpoint config for "${endpoint}"`,
       );
+    }
+
+    if (endpointConfig?.titleConvo === false) {
+      logger.debug(
+        `[api/server/controllers/agents/client.js #titleConvo] Title generation disabled for endpoint "${endpoint}"`,
+      );
+      return;
     }
 
     if (endpointConfig?.titleEndpoint && endpointConfig.titleEndpoint !== endpoint) {
@@ -1122,7 +1133,7 @@ class AgentClient extends BaseClient {
         endpoint = endpointConfig.titleEndpoint;
       } catch (error) {
         logger.warn(
-          `[api/server/controllers/agents/client.js #titleConvo] Error getting title endpoint config for ${endpointConfig.titleEndpoint}, falling back to default`,
+          `[api/server/controllers/agents/client.js #titleConvo] Error getting title endpoint config for "${endpointConfig.titleEndpoint}", falling back to default`,
           error,
         );
         // Fall back to original provider config
@@ -1245,11 +1256,13 @@ class AgentClient extends BaseClient {
       });
 
       const balanceConfig = getBalanceConfig(appConfig);
+      const transactionsConfig = getTransactionsConfig(appConfig);
       await this.recordCollectedUsage({
         collectedUsage,
         context: 'title',
         model: clientOptions.model,
         balance: balanceConfig,
+        transactions: transactionsConfig,
       }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error recording collected usage',

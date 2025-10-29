@@ -1,5 +1,5 @@
 const OpenAI = require('openai');
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
 
 /**
  * Handles errors that may occur when making requests to OpenAI's API.

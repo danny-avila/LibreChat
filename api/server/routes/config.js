@@ -116,6 +116,9 @@ router.get('/', async function (req, res) {
       sharePointPickerGraphScope: process.env.SHAREPOINT_PICKER_GRAPH_SCOPE,
       sharePointPickerSharePointScope: process.env.SHAREPOINT_PICKER_SHAREPOINT_SCOPE,
       openidReuseTokens,
+      conversationImportMaxFileSize: process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES
+        ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
+        : 0,
     };
 
     const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);
@@ -123,7 +126,6 @@ router.get('/', async function (req, res) {
       payload.minPasswordLength = minPasswordLength;
     }
 
-    payload.mcpServers = {};
     const getMCPServers = () => {
       try {
         if (appConfig?.mcpConfig == null) {
@@ -137,6 +139,9 @@ router.get('/', async function (req, res) {
         if (!mcpServers) return;
         const oauthServers = mcpManager.getOAuthServers();
         for (const serverName in mcpServers) {
+          if (!payload.mcpServers) {
+            payload.mcpServers = {};
+          }
           const serverConfig = mcpServers[serverName];
           payload.mcpServers[serverName] = removeNullishValues({
             startup: serverConfig?.startup,
@@ -155,7 +160,7 @@ router.get('/', async function (req, res) {
     if (
       webSearchConfig != null &&
       (webSearchConfig.searchProvider ||
-        webSearchConfig.scraperType ||
+        webSearchConfig.scraperProvider ||
         webSearchConfig.rerankerType)
     ) {
       payload.webSearch = {};
@@ -164,8 +169,8 @@ router.get('/', async function (req, res) {
     if (webSearchConfig?.searchProvider) {
       payload.webSearch.searchProvider = webSearchConfig.searchProvider;
     }
-    if (webSearchConfig?.scraperType) {
-      payload.webSearch.scraperType = webSearchConfig.scraperType;
+    if (webSearchConfig?.scraperProvider) {
+      payload.webSearch.scraperProvider = webSearchConfig.scraperProvider;
     }
     if (webSearchConfig?.rerankerType) {
       payload.webSearch.rerankerType = webSearchConfig.rerankerType;
