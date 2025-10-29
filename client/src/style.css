@@ -12,13 +12,6 @@
   --gray-200: #e3e3e3;
   --gray-300: #cdcdcd;
   --gray-400: #999696;
-  /* These small increments (--gray-410) and (--gray-490) were added to reach a contrast ratio of 3:1 against the light theme background #FFFFFF 
-     and the dark theme background #0D0D0D, respectively, for the sake of accessibility. 
-     All ratios were checked using https://webaim.org/resources/contrastchecker
-  */
-  --gray-410: #959393;
-  --gray-450: #8D8B8B;
-  --gray-490: #616161;
   --gray-500: #595959;
   --gray-600: #424242;
   --gray-700: #2f2f2f;
@@ -83,8 +76,8 @@ html {
   --header-button-hover: var(--gray-50);
   --surface-active: var(--gray-100);
   --surface-active-alt: var(--gray-200);
-  --surface-hover: var(--gray-410);
-  --surface-hover-alt: var(--gray-450);
+  --surface-hover: var(--gray-200);
+  --surface-hover-alt: var(--gray-300);
   --surface-primary: var(--white);
   --surface-primary-alt: var(--gray-50);
   --surface-primary-contrast: var(--gray-100);
@@ -143,8 +136,8 @@ html {
   --header-button-hover: var(--gray-700);
   --surface-active: var(--gray-500);
   --surface-active-alt: var(--gray-700);
-  --surface-hover: var(--gray-490);
-  --surface-hover-alt: var(--gray-450);
+  --surface-hover: var(--gray-600);
+  --surface-hover-alt: var(--gray-600);
   --surface-primary: var(--gray-900);
   --surface-primary-alt: var(--gray-850);
   --surface-primary-contrast: var(--gray-850);
