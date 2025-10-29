@@ -383,9 +383,11 @@ ${memory ?? 'No existing memories'}`;
     });
 
     const config = {
+      runName: 'MemoryRun',
       configurable: {
+        user_id: userId,
+        thread_id: conversationId,
         provider: llmConfig?.provider,
-        thread_id: `memory-run-${conversationId}`,
       },
       streamMode: 'values',
       recursionLimit: 3,
