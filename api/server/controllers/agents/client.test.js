@@ -1,6 +1,5 @@
 const { Providers } = require('@librechat/agents');
 const { Constants, EModelEndpoint } = require('librechat-data-provider');
-const { sanitizeTitle } = require('@librechat/api');
 const AgentClient = require('./client');
 
 jest.mock('@librechat/agents', () => ({
