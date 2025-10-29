@@ -8,6 +8,7 @@ const {
   Tokenizer,
   checkAccess,
   logAxiosError,
+  sanitizeTitle,
   resolveHeaders,
   getBalanceConfig,
   memoryInstructions,
@@ -1275,7 +1276,7 @@ class AgentClient extends BaseClient {
         );
       });
 
-      return titleResult.title;
+      return sanitizeTitle(titleResult.title);
     } catch (err) {
       logger.error('[api/server/controllers/agents/client.js #titleConvo] Error', err);
       return;
