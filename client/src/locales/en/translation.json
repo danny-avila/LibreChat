@@ -666,8 +666,6 @@
   "com_ui_agent_handoff_prompt_placeholder": "Tell this agent what content to generate and pass to the handoff agent. You need to add something here to enable this feature",
   "com_ui_agent_handoff_prompt_key": "Content parameter name (default: 'instructions')",
   "com_ui_agent_handoff_prompt_key_placeholder": "Label the content passed (default: 'instructions')",
-  "com_ui_transferring_to_agent": "Transferring to {{0}}",
-  "com_ui_transferred_to_agent": "Transferred to {{0}}",
   "com_ui_transferred_to": "Transferred to",
   "com_ui_handoff_instructions": "Handoff instructions",
   "com_ui_beta": "Beta",
