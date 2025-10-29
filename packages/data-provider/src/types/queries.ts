@@ -106,6 +106,9 @@ export type MCPTool = {
   name: string;
   pluginKey: string;
   description: string;
+  source?: string;
+  version?: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type MCPServer = {
@@ -114,6 +117,7 @@ export type MCPServer = {
   authenticated: boolean;
   authConfig: s.TPluginAuthConfig[];
   tools: MCPTool[];
+  parentServer?: string;
 };
 
 export type MCPServersResponse = {

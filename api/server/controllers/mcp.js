@@ -8,8 +8,125 @@ const {
   cacheMCPServerTools,
   getMCPServerTools,
   getAppConfig,
+  invalidateCachedTools,
 } = require('~/server/services/Config');
 const { getMCPManager } = require('~/config');
+
+const SOURCE_KEYS = [
+  'sourceServer',
+  'serverName',
+  'server',
+  'originServer',
+  'provider',
+  'upstreamServer',
+  'gatewayServer',
+  'mcpServer',
+  'collection',
+  'namespace',
+];
+const VERSION_KEYS = ['version', 'toolVersion', 'build', 'release', 'appVersion'];
+const DISPLAY_SEPARATORS = ['|', ' via ', '@'];
+
+const normalizeString = (value) =>
+  typeof value === 'string' ? value.trim() : value ? String(value).trim() : null;
+
+const extractVersion = (metadata) => {
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+  for (const key of VERSION_KEYS) {
+    const value = metadata[key];
+    const normalized = normalizeString(
+      typeof value === 'object' && value != null ? value.name ?? value.id ?? value.value : value,
+    );
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return null;
+};
+
+const extractSourceFromTags = (tags) => {
+  if (!tags) {
+    return null;
+  }
+
+  if (Array.isArray(tags)) {
+    for (const tag of tags) {
+      if (typeof tag === 'string') {
+        const match = tag.match(/(server|source|provider)[=:]\s*(.+)$/i);
+        if (match?.[2]) {
+          return match[2].trim();
+        }
+      }
+    }
+  } else if (typeof tags === 'object') {
+    for (const value of Object.values(tags)) {
+      const normalized = normalizeString(value);
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+
+  return null;
+};
+
+const extractSourceFromMetadata = (metadata) => {
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+
+  for (const key of SOURCE_KEYS) {
+    if (!(key in metadata)) {
+      continue;
+    }
+    const value = metadata[key];
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      if (normalized) {
+        return normalized;
+      }
+    } else if (typeof value === 'object' && value !== null) {
+      const nested =
+        normalizeString(value.name ?? value.id ?? value.slug ?? value.key) ||
+        extractSourceFromMetadata(value);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  const taggedSource = extractSourceFromTags(metadata.tags);
+  if (taggedSource) {
+    return taggedSource;
+  }
+
+  return null;
+};
+
+const splitDisplayName = (displayName) => {
+  if (typeof displayName !== 'string') {
+    return { displayName: '', source: null };
+  }
+
+  const trimmed = displayName.trim();
+  for (const separator of DISPLAY_SEPARATORS) {
+    const index = trimmed.indexOf(separator);
+    if (index !== -1) {
+      const head = trimmed.slice(0, index).trim();
+      const tail = trimmed.slice(index + separator.length).trim();
+      if (head && tail) {
+        return {
+          displayName: head.replace(/^@/, '').trim(),
+          source: tail.replace(/^@/, '').trim(),
+        };
+      }
+    }
+  }
+
+  return { displayName: trimmed, source: null };
+};
 
 /**
  * Get all MCP tools available to the user
@@ -30,10 +147,18 @@ const getMCPTools = async (req, res) => {
     const mcpManager = getMCPManager();
     const configuredServers = Object.keys(appConfig.mcpConfig);
     const mcpServers = {};
+    const derivedServers = new Map();
+    const bypassCache =
+      req.query?.refresh === 'true' ||
+      req.query?.refresh === '1' ||
+      req.query?.refresh === 'yes';
 
-    const cachePromises = configuredServers.map((serverName) =>
-      getMCPServerTools(serverName).then((tools) => ({ serverName, tools })),
-    );
+    const cachePromises = configuredServers.map((serverName) => {
+      if (bypassCache) {
+        return Promise.resolve({ serverName, tools: null });
+      }
+      return getMCPServerTools(serverName).then((tools) => ({ serverName, tools }));
+    });
     const cacheResults = await Promise.all(cachePromises);
 
     const serverToolsMap = new Map();
@@ -41,6 +166,10 @@ const getMCPTools = async (req, res) => {
       if (tools) {
         serverToolsMap.set(serverName, tools);
         continue;
+      }
+
+      if (bypassCache) {
+        await invalidateCachedTools({ serverName });
       }
 
       const serverTools = await mcpManager.getServerToolFunctions(userId, serverName);
@@ -97,11 +226,52 @@ const getMCPTools = async (req, res) => {
             }
 
             const toolName = toolKey.split(Constants.mcp_delimiter)[0];
-            server.tools.push({
-              name: toolName,
+            const metadata = toolData.function.metadata ?? {};
+            let displayName =
+              metadata.displayName ||
+              metadata.title ||
+              metadata.name ||
+              toolData.function.name ||
+              toolName;
+            let source = extractSourceFromMetadata(metadata);
+            const version = extractVersion(metadata);
+
+            const splitResult = splitDisplayName(displayName);
+            if (splitResult.displayName) {
+              displayName = splitResult.displayName;
+            }
+            if (!source && splitResult.source) {
+              source = splitResult.source;
+            }
+
+            const toolEntry = {
+              name: displayName,
               pluginKey: toolKey,
               description: toolData.function.description || '',
-            });
+              source: source || undefined,
+              version: version || undefined,
+              metadata,
+            };
+
+            server.tools.push(toolEntry);
+
+            if (source && source !== serverName) {
+              if (!derivedServers.has(source)) {
+                derivedServers.set(source, {
+                  name: source,
+                  icon: server.icon,
+                  authenticated: server.authenticated,
+                  authConfig: server.authConfig,
+                  tools: [],
+                  parentServer: serverName,
+                });
+              }
+
+              derivedServers.get(source).tools.push({
+                ...toolEntry,
+                source,
+              });
+            }
           }
         }
 
@@ -111,6 +281,20 @@ const getMCPTools = async (req, res) => {
         }
       } catch (error) {
         logger.error(`[getMCPTools] Error loading tools for server ${serverName}:`, error);
+      }
+    }
+
+    for (const [derivedName, derivedServer] of derivedServers.entries()) {
+      if (!mcpServers[derivedName]) {
+        mcpServers[derivedName] = derivedServer;
+      } else if (Array.isArray(derivedServer.tools) && derivedServer.tools.length > 0) {
+        const existing = mcpServers[derivedName];
+        existing.tools = Array.isArray(existing.tools)
+          ? [...existing.tools, ...derivedServer.tools]
+          : [...derivedServer.tools];
+        if (!existing.parentServer && derivedServer.parentServer) {
+          existing.parentServer = derivedServer.parentServer;
+        }
       }
     }
 

@@ -226,6 +226,7 @@ export interface MCPServerInfo {
   isConfigured: boolean;
   isConnected: boolean;
   metadata: t.TPlugin;
+  parentServer?: string;
 }
 
 export type AgentPanelContextType = {
