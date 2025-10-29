@@ -1,0 +1,36 @@
+version: 1.2.8
+#cache: true
+
+interface:
+  modelSelect: false
+
+endpoints:
+  custom:
+    - name: "Vicktoria · Gemma-3"
+      type: openai
+      baseURL: "https://kz8cbdakx53fw8-8000.proxy.runpod.net/v1"
+      apiKey: "set-a-strong-secret"  # replace with ${RUNPOD_API_KEY} if you want to use env vars
+
+      # Make requests vLLM-compatible
+      dropParams:
+        - "user"
+        - "frequency_penalty"
+        - "presence_penalty"
+        - "top_logprobs"
+        - "logit_bias"
+        - "response_format"
+
+      addParams:
+        stream: false  # enable (true) later once debugged
+
+      models:
+        default: ["google/gemma-3-27b-it"]
+        fetch: true
+
+      titleConvo: true
+      titleModel: "current_model"
+      titleMessageRole: "user"
+      summarize: false
+      summaryModel: "current_model"
+      modelDisplayLabel: "Gemma-3 27B (RunPod)"
+

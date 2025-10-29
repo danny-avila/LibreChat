@@ -1,0 +1,21 @@
+services:
+  api:
+    volumes:
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
+    # (optional) also put the api on the NPM network if you want to proxy directly to it
+    networks:
+      - default
+      - npm-network
+
+  client:
+    # Remove 80/443 host bindings so we don't conflict with NPM
+    ports: []
+    networks:
+      - default
+      - npm-network
+
+networks:
+  npm-network:
+    external: true
