@@ -137,7 +137,6 @@ function ConvoOptions({
         show: startupConfig && startupConfig.sharedLinksEnabled,
         hideOnClick: false,
         ref: shareButtonRef,
-        render: (props) => <button {...props} />,
       },
       {
         label: localize('com_ui_rename'),
@@ -170,7 +169,6 @@ function ConvoOptions({
         icon: <Trash className="icon-sm mr-2 text-text-primary" />,
         hideOnClick: false,
         ref: deleteButtonRef,
-        render: (props) => <button {...props} />,
       },
     ],
     [
