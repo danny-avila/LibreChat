@@ -1,4 +1,4 @@
-import { useState, useMemo, memo } from 'react';
+import { useState, useMemo, memo, useRef } from 'react';
 import { Menu as MenuIcon, Edit as EditIcon, EarthIcon, TextSearch } from 'lucide-react';
 import {
   DropdownMenu,
@@ -37,6 +37,8 @@ function ChatGroupItem({
   const { hasPermission } = useResourcePermissions('promptGroup', group._id || '');
   const canEdit = hasPermission(PermissionBits.EDIT);
 
+  const triggerButtonRef = useRef<HTMLButtonElement | null>(null);
+
   const onCardClick: React.MouseEventHandler<HTMLButtonElement> = () => {
     const text = group.productionPrompt?.prompt;
     if (!text?.trim()) {
@@ -74,6 +76,7 @@ function ChatGroupItem({
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button
+                ref={triggerButtonRef}
                 id={`prompt-actions-${group._id}`}
                 type="button"
                 aria-label={localize('com_ui_sr_actions_menu', { name: group.name })}
@@ -132,7 +135,16 @@ function ChatGroupItem({
           </DropdownMenu>
         </div>
       </div>
-      <PreviewPrompt group={group} open={isPreviewDialogOpen} onOpenChange={setPreviewDialogOpen} />
+      <PreviewPrompt
+        group={group}
+        open={isPreviewDialogOpen}
+        onOpenChange={setPreviewDialogOpen}
+        onCloseAutoFocus={() => {
+          requestAnimationFrame(() => {
+            triggerButtonRef.current?.focus({ preventScroll: true });
+          });
+        }}
+      />
       <VariableDialog
         open={isVariableDialogOpen}
         onClose={() => setVariableDialogOpen(false)}
