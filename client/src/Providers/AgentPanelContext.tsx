@@ -38,7 +38,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   const { data: regularTools } = useAvailableToolsQuery(EModelEndpoint.agents);
 
   const { data: mcpData } = useMCPToolsQuery({
-    enabled: !isEphemeralAgent(agent_id) && startupConfig?.mcpServers != null,
+    enabled: !isEphemeralAgent(agent_id),
   });
 
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
@@ -66,6 +66,10 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
           authenticated: serverData.authenticated,
         } as TPlugin;
 
+        const connectionEntry =
+          connectionStatus?.[serverName] ??
+          (serverData.parentServer ? connectionStatus?.[serverData.parentServer] : undefined);
+
         const tools = serverData.tools.map((tool) => ({
           tool_id: tool.pluginKey,
           metadata: {
@@ -80,7 +84,8 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
           serverName,
           tools,
           isConfigured: configuredServers.has(serverName),
-          isConnected: connectionStatus?.[serverName]?.connectionState === 'connected',
+          isConnected: connectionEntry?.connectionState === 'connected',
+          parentServer: serverData.parentServer,
           metadata,
         });
       }

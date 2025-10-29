@@ -302,8 +302,26 @@ export const getAvailableTools = (
 
 /* MCP Tools - Decoupled from regular tools */
 
-export const getMCPTools = (): Promise<q.MCPServersResponse> => {
-  return request.get(endpoints.mcp.tools);
+type MCPToolsOptions = {
+  refresh?: boolean;
+  signal?: AbortSignal;
+};
+
+export const getMCPTools = (options?: MCPToolsOptions): Promise<q.MCPServersResponse> => {
+  const params: Record<string, string | number> = {};
+  if (options?.refresh) {
+    params.refresh = 'true';
+    params._ = Date.now();
+  }
+
+  return request.get(endpoints.mcp.tools, {
+    signal: options?.signal,
+    params: Object.keys(params).length ? params : undefined,
+    headers: {
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    },
+  });
 };
 
 export const getVerifyAgentToolAuth = (

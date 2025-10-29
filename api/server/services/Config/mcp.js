@@ -23,6 +23,7 @@ async function updateMCPServerTools({ serverName, tools }) {
           name,
           description: tool.description,
           parameters: tool.inputSchema,
+          metadata: tool.metadata ?? {},
         },
       };
     }

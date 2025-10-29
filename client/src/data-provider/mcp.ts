@@ -15,15 +15,13 @@ import type { MCPServersResponse } from 'librechat-data-provider';
 export const useMCPToolsQuery = <TData = MCPServersResponse>(
   config?: UseQueryOptions<MCPServersResponse, unknown, TData>,
 ): QueryObserverResult<TData> => {
-  return useQuery<MCPServersResponse, unknown, TData>(
-    [QueryKeys.mcpTools],
-    () => dataService.getMCPTools(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      ...config,
-    },
-  );
+  return useQuery<MCPServersResponse, unknown, TData>({
+    queryKey: [QueryKeys.mcpTools],
+    queryFn: ({ signal }) => dataService.getMCPTools({ signal }),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    ...config,
+  });
 };

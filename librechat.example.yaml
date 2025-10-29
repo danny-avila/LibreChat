@@ -441,3 +441,16 @@ endpoints:
 #     # instructions: "You are a memory management assistant. Store and manage user information accurately."
 #     # model_parameters:
 #     #   temperature: 0.1
+mcpServers:
+  mintapp-gateway:
+    command: npx
+    args:
+      - -y
+      - "@neomint-pst/mintapp-mcp-bridge"
+      - "--host"
+      - "host.docker.internal"
+      - "--port"
+      - "3001"
+    timeout: 30000
+    initTimeout: 10000
+    serverInstructions: true
