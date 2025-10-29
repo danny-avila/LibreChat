@@ -775,6 +775,7 @@ class AgentClient extends BaseClient {
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
       config = {
+        runName: 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
           last_agent_index: this.agentConfigs?.size ?? 0,
@@ -1233,6 +1234,10 @@ class AgentClient extends BaseClient {
               handleLLMEnd,
             },
           ],
+          configurable: {
+            thread_id: this.conversationId,
+            user_id: this.user ?? this.options.req.user?.id,
+          },
         },
       });
 
