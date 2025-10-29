@@ -1,6 +1,6 @@
-const { OllamaClient } = require('./OllamaClient');
+const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { SplitStreamHandler, CustomOpenAIClient: OpenAI } = require('@librechat/agents');
+const { sleep, SplitStreamHandler, CustomOpenAIClient: OpenAI } = require('@librechat/agents');
 const {
   isEnabled,
   Tokenizer,
@@ -34,16 +34,15 @@ const {
   createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { addSpaceIfNeeded, sleep } = require('~/server/utils');
 const { spendTokens } = require('~/models/spendTokens');
+const { addSpaceIfNeeded } = require('~/server/utils');
 const { handleOpenAIErrors } = require('./tools/util');
+const { OllamaClient } = require('./OllamaClient');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { extractBaseURL } = require('~/utils');
 const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
-const { createLLM } = require('./llm');
-const { logger } = require('~/config');
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -614,65 +613,8 @@ class OpenAIClient extends BaseClient {
     return (reply ?? '').trim();
   }
 
-  initializeLLM({
-    model = openAISettings.model.default,
-    modelName,
-    temperature = 0.2,
-    max_tokens,
-    streaming,
-  }) {
-    const modelOptions = {
-      modelName: modelName ?? model,
-      temperature,
-      user: this.user,
-    };
-
-    if (max_tokens) {
-      modelOptions.max_tokens = max_tokens;
-    }
-
-    const configOptions = {};
-
-    if (this.langchainProxy) {
-      configOptions.basePath = this.langchainProxy;
-    }
-
-    if (this.useOpenRouter) {
-      configOptions.basePath = 'https://openrouter.ai/api/v1';
-      configOptions.baseOptions = {
-        headers: {
-          'HTTP-Referer': 'https://librechat.ai',
-          'X-Title': 'LibreChat',
-        },
-      };
-    }
-
-    const { headers } = this.options;
-    if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
-      configOptions.baseOptions = {
-        headers: resolveHeaders({
-          headers: {
-            ...headers,
-            ...configOptions?.baseOptions?.headers,
-          },
-        }),
-      };
-    }
-
-    if (this.options.proxy) {
-      configOptions.httpAgent = new HttpsProxyAgent(this.options.proxy);
-      configOptions.httpsAgent = new HttpsProxyAgent(this.options.proxy);
-    }
-
-    const llm = createLLM({
-      modelOptions,
-      configOptions,
-      openAIApiKey: this.apiKey,
-      azure: this.azure,
-      streaming,
-    });
-
-    return llm;
+  initializeLLM() {
+    throw new Error('Deprecated');
   }
 
   /**

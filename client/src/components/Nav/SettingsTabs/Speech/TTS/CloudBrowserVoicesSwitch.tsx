@@ -1,6 +1,5 @@
-import { useRecoilState } from 'recoil';
-import { Switch } from '@librechat/client';
-import { useLocalize } from '~/hooks';
+import { useRecoilValue } from 'recoil';
+import ToggleSwitch from '../../ToggleSwitch';
 import store from '~/store';
 
 export default function CloudBrowserVoicesSwitch({
@@ -8,30 +7,15 @@ export default function CloudBrowserVoicesSwitch({
 }: {
   onCheckedChange?: (value: boolean) => void;
 }) {
-  const localize = useLocalize();
-  const [cloudBrowserVoices, setCloudBrowserVoices] = useRecoilState<boolean>(
-    store.cloudBrowserVoices,
-  );
-  const [textToSpeech] = useRecoilState<boolean>(store.textToSpeech);
-
-  const handleCheckedChange = (value: boolean) => {
-    setCloudBrowserVoices(value);
-    if (onCheckedChange) {
-      onCheckedChange(value);
-    }
-  };
+  const textToSpeech = useRecoilValue(store.textToSpeech);
 
   return (
-    <div className="flex items-center justify-between">
-      <div>{localize('com_nav_enable_cloud_browser_voice')}</div>
-      <Switch
-        id="CloudBrowserVoices"
-        checked={cloudBrowserVoices}
-        onCheckedChange={handleCheckedChange}
-        className="ml-4"
-        data-testid="CloudBrowserVoices"
-        disabled={!textToSpeech}
-      />
-    </div>
+    <ToggleSwitch
+      stateAtom={store.cloudBrowserVoices}
+      localizationKey={'com_nav_enable_cloud_browser_voice' as const}
+      switchId="CloudBrowserVoices"
+      onCheckedChange={onCheckedChange}
+      disabled={!textToSpeech}
+    />
   );
 }
