@@ -53,7 +53,7 @@ function ChatGroupItem({
 
   return (
     <>
-      <div className="my-2 flex items-stretch justify-between rounded-xl border border-border-light shadow-sm transition-all duration-300 ease-in-out hover:bg-surface-tertiary hover:shadow-lg">
+      <div className="relative my-2 items-stretch justify-between rounded-xl border border-border-light shadow-sm transition-all duration-300 ease-in-out hover:bg-surface-tertiary hover:shadow-lg">
         <ListCard
           name={group.name}
           category={group.category ?? ''}
@@ -70,7 +70,7 @@ function ChatGroupItem({
             )}
           </div>
         </ListCard>
-        <div className="mr-1 mt-2.5 items-start pl-2">
+        <div className="absolute right-0 top-0 mr-1 mt-2.5 items-start pl-2">
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button
