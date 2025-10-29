@@ -68,6 +68,7 @@ export function getOpenAIConfig(
       azure,
       apiKey,
       baseURL,
+      endpoint,
       streaming,
       addParams,
       dropParams,
