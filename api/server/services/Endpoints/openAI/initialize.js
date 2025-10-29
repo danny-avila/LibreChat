@@ -143,7 +143,7 @@ const initializeClient = async ({
     modelOptions.model = modelName;
     clientOptions = Object.assign({ modelOptions }, clientOptions);
     clientOptions.modelOptions.user = req.user.id;
-    const options = getOpenAIConfig(apiKey, clientOptions);
+    const options = getOpenAIConfig(apiKey, clientOptions, endpoint);
     if (options != null && serverless === true) {
       options.useLegacyContent = true;
     }
