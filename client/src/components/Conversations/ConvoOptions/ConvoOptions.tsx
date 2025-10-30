@@ -47,6 +47,7 @@ function ConvoOptions({
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
 
   const archiveConvoMutation = useArchiveConvoMutation();
 
@@ -94,6 +95,10 @@ function ConvoOptions({
       { conversationId: convoId, isArchived: true },
       {
         onSuccess: () => {
+          setAnnouncement(localize('com_ui_convo_archived'));
+          setTimeout(() => {
+            setAnnouncement('');
+          }, 10000);
           if (currentConvoId === convoId || currentConvoId === 'new') {
             newConversation();
             navigate('/c/new', { replace: true });
@@ -188,6 +193,9 @@ function ConvoOptions({
 
   return (
     <>
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </span>
       <DropdownPopup
         portal={true}
         mountByState={true}
