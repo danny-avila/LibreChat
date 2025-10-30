@@ -30,6 +30,7 @@ export default function SaveDraft({
         onCheckedChange={handleCheckedChange}
         className="ml-4"
         data-testid="showThinking"
+        aria-label={localize('com_nav_show_thinking')}
       />
     </div>
   );

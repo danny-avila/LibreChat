@@ -1,4 +1,9 @@
-import { Verbosity, ReasoningEffort, ReasoningSummary } from 'librechat-data-provider';
+import {
+  Verbosity,
+  EModelEndpoint,
+  ReasoningEffort,
+  ReasoningSummary,
+} from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { OpenAIParameters, AzureOptions } from '~/types';
 import { getOpenAIConfig } from './config';
@@ -103,10 +108,87 @@ describe('getOpenAIConfig', () => {
 
     const result = getOpenAIConfig(mockApiKey, { modelOptions });
 
+    /** When no endpoint is specified, it's treated as non-openAI/azureOpenAI, so uses reasoning object */
+    expect(result.llmConfig.reasoning).toEqual({
+      effort: ReasoningEffort.high,
+      summary: ReasoningSummary.detailed,
+    });
+    expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
+  });
+
+  it('should use reasoning_effort for openAI endpoint without useResponsesApi', () => {
+    const modelOptions = {
+      reasoning_effort: ReasoningEffort.high,
+      reasoning_summary: ReasoningSummary.detailed,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions }, EModelEndpoint.openAI);
+
     expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBe(
       ReasoningEffort.high,
     );
     expect(result.llmConfig.reasoning).toBeUndefined();
+  });
+
+  it('should use reasoning_effort for azureOpenAI endpoint without useResponsesApi', () => {
+    const modelOptions = {
+      reasoning_effort: ReasoningEffort.high,
+      reasoning_summary: ReasoningSummary.detailed,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions }, EModelEndpoint.azureOpenAI);
+
+    expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBe(
+      ReasoningEffort.high,
+    );
+    expect(result.llmConfig.reasoning).toBeUndefined();
+  });
+
+  it('should use reasoning object for openAI endpoint with useResponsesApi=true', () => {
+    const modelOptions = {
+      reasoning_effort: ReasoningEffort.high,
+      reasoning_summary: ReasoningSummary.detailed,
+      useResponsesApi: true,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions }, EModelEndpoint.openAI);
+
+    expect(result.llmConfig.reasoning).toEqual({
+      effort: ReasoningEffort.high,
+      summary: ReasoningSummary.detailed,
+    });
+    expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
+  });
+
+  it('should use reasoning object for azureOpenAI endpoint with useResponsesApi=true', () => {
+    const modelOptions = {
+      reasoning_effort: ReasoningEffort.high,
+      reasoning_summary: ReasoningSummary.detailed,
+      useResponsesApi: true,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions }, EModelEndpoint.azureOpenAI);
+
+    expect(result.llmConfig.reasoning).toEqual({
+      effort: ReasoningEffort.high,
+      summary: ReasoningSummary.detailed,
+    });
+    expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
+  });
+
+  it('should use reasoning object for non-openAI/azureOpenAI endpoints', () => {
+    const modelOptions = {
+      reasoning_effort: ReasoningEffort.high,
+      reasoning_summary: ReasoningSummary.detailed,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions }, 'custom-endpoint');
+
+    expect(result.llmConfig.reasoning).toEqual({
+      effort: ReasoningEffort.high,
+      summary: ReasoningSummary.detailed,
+    });
+    expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
   });
 
   it('should handle OpenRouter configuration', () => {

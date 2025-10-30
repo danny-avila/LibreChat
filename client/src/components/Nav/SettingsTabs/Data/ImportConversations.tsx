@@ -9,12 +9,10 @@ import { useLocalize } from '~/hooks';
 import { cn, logger } from '~/utils';
 
 function ImportConversations() {
-  const queryClient = useQueryClient();
-  const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
   const localize = useLocalize();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
   const { showToast } = useToastContext();
-
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
 
   const handleSuccess = useCallback(() => {
@@ -53,7 +51,8 @@ function ImportConversations() {
   const handleFileUpload = useCallback(
     async (file: File) => {
       try {
-        const maxFileSize = (startupConfig as any)?.conversationImportMaxFileSize;
+        const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+        const maxFileSize = startupConfig?.conversationImportMaxFileSize;
         if (maxFileSize && file.size > maxFileSize) {
           const size = (maxFileSize / (1024 * 1024)).toFixed(2);
           showToast({
@@ -76,7 +75,7 @@ function ImportConversations() {
         });
       }
     },
-    [uploadFile, showToast, localize, startupConfig],
+    [uploadFile, showToast, localize, queryClient],
   );
 
   const handleFileChange = useCallback(

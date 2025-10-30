@@ -1,15 +1,14 @@
-import { useRecoilState } from 'recoil';
-import { Dropdown, applyFontSize } from '@librechat/client';
+import { useAtom } from 'jotai';
+import { Dropdown } from '@librechat/client';
+import { fontSizeAtom } from '~/store/fontSize';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 
 export default function FontSizeSelector() {
-  const [fontSize, setFontSize] = useRecoilState(store.fontSize);
   const localize = useLocalize();
+  const [fontSize, setFontSize] = useAtom(fontSizeAtom);
 
   const handleChange = (val: string) => {
     setFontSize(val);
-    applyFontSize(val);
   };
 
   const options = [

@@ -40,10 +40,10 @@ const openAIModels = {
   'gpt-5': 400000,
   'gpt-5-mini': 400000,
   'gpt-5-nano': 400000,
+  'gpt-5-pro': 400000,
   'gpt-4o': 127500, // -500 from max
   'gpt-4o-mini': 127500, // -500 from max
   'gpt-4o-2024-05-13': 127500, // -500 from max
-  'gpt-4o-2024-08-06': 127500, // -500 from max
   'gpt-4-turbo': 127500, // -500 from max
   'gpt-4-vision': 127500, // -500 from max
   'gpt-3.5-turbo': 16375, // -10 from max
@@ -60,9 +60,11 @@ const mistralModels = {
   'mistral-7b': 31990, // -10 from max
   'mistral-small': 31990, // -10 from max
   'mixtral-8x7b': 31990, // -10 from max
+  'mixtral-8x22b': 65536,
   'mistral-large': 131000,
   'mistral-large-2402': 127500,
   'mistral-large-2407': 127500,
+  'mistral-nemo': 131000,
   'pixtral-large': 131000,
   'mistral-saba': 32000,
   codestral: 256000,
@@ -75,6 +77,7 @@ const cohereModels = {
   'command-light-nightly': 8182, // -10 from max
   command: 4086, // -10 from max
   'command-nightly': 8182, // -10 from max
+  'command-text': 4086, // -10 from max
   'command-r': 127500, // -500 from max
   'command-r-plus': 127500, // -500 from max
 };
@@ -127,14 +130,17 @@ const anthropicModels = {
   'claude-3.7-sonnet': 200000,
   'claude-3-5-sonnet-latest': 200000,
   'claude-3.5-sonnet-latest': 200000,
+  'claude-haiku-4-5': 200000,
   'claude-sonnet-4': 1000000,
   'claude-opus-4': 200000,
   'claude-4': 200000,
 };
 
 const deepseekModels = {
-  'deepseek-reasoner': 128000,
   deepseek: 128000,
+  'deepseek-reasoner': 128000,
+  'deepseek-r1': 128000,
+  'deepseek-v3': 128000,
   'deepseek.r1': 128000,
 };
 
@@ -200,32 +206,57 @@ const metaModels = {
   'llama2:70b': 4000,
 };
 
-const ollamaModels = {
+const qwenModels = {
+  qwen: 32000,
   'qwen2.5': 32000,
+  'qwen-turbo': 1000000,
+  'qwen-plus': 131000,
+  'qwen-max': 32000,
+  'qwq-32b': 32000,
+  // Qwen3 models
+  qwen3: 40960, // Qwen3 base pattern (using qwen3-4b context)
+  'qwen3-8b': 128000,
+  'qwen3-14b': 40960,
+  'qwen3-30b-a3b': 40960,
+  'qwen3-32b': 40960,
+  'qwen3-235b-a22b': 40960,
+  // Qwen3 VL (Vision-Language) models
+  'qwen3-vl-8b-thinking': 256000,
+  'qwen3-vl-8b-instruct': 262144,
+  'qwen3-vl-30b-a3b': 262144,
+  'qwen3-vl-235b-a22b': 131072,
+  // Qwen3 specialized models
+  'qwen3-max': 256000,
+  'qwen3-coder': 262144,
+  'qwen3-coder-30b-a3b': 262144,
+  'qwen3-coder-plus': 128000,
+  'qwen3-coder-flash': 128000,
+  'qwen3-next-80b-a3b': 262144,
 };
 
 const ai21Models = {
-  'ai21.j2-mid-v1': 8182, // -10 from max
-  'ai21.j2-ultra-v1': 8182, // -10 from max
-  'ai21.jamba-instruct-v1:0': 255500, // -500 from max
+  'j2-mid': 8182, // -10 from max
+  'j2-ultra': 8182, // -10 from max
+  'jamba-instruct': 255500, // -500 from max
 };
 
 const amazonModels = {
-  'amazon.titan-text-lite-v1': 4000,
-  'amazon.titan-text-express-v1': 8000,
-  'amazon.titan-text-premier-v1:0': 31500, // -500 from max
+  // Amazon Titan models
+  'titan-text-lite': 4000,
+  'titan-text-express': 8000,
+  'titan-text-premier': 31500, // -500 from max
+  // Amazon Nova models
   // https://aws.amazon.com/ai/generative-ai/nova/
-  'amazon.nova-micro-v1:0': 127000, // -1000 from max,
-  'amazon.nova-lite-v1:0': 295000, // -5000 from max,
-  'amazon.nova-pro-v1:0': 295000, // -5000 from max,
-  'amazon.nova-premier-v1:0': 995000, // -5000 from max,
+  'nova-micro': 127000, // -1000 from max
+  'nova-lite': 295000, // -5000 from max
+  'nova-pro': 295000, // -5000 from max
+  'nova-premier': 995000, // -5000 from max
 };
 
 const bedrockModels = {
   ...anthropicModels,
   ...mistralModels,
   ...cohereModels,
-  ...ollamaModels,
   ...deepseekModels,
   ...metaModels,
   ...ai21Models,
@@ -254,6 +285,7 @@ const aggregateModels = {
   ...googleModels,
   ...bedrockModels,
   ...xAIModels,
+  ...qwenModels,
   // misc.
   kimi: 131000,
   // GPT-OSS
@@ -289,6 +321,7 @@ export const modelMaxOutputs = {
   'gpt-5': 128000,
   'gpt-5-mini': 128000,
   'gpt-5-nano': 128000,
+  'gpt-5-pro': 128000,
   'gpt-oss-20b': 131000,
   'gpt-oss-120b': 131000,
   system_default: 32000,
@@ -299,6 +332,7 @@ const anthropicMaxOutputs = {
   'claude-3-haiku': 4096,
   'claude-3-sonnet': 4096,
   'claude-3-opus': 4096,
+  'claude-haiku-4-5': 64000,
   'claude-opus-4': 32000,
   'claude-sonnet-4': 64000,
   'claude-3.5-sonnet': 8192,

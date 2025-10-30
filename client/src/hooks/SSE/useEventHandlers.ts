@@ -1,8 +1,8 @@
-import { v4 } from 'uuid';
 import { useCallback, useRef } from 'react';
+import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   QueryKeys,
   Constants,
@@ -13,7 +13,12 @@ import {
   tConvoUpdateSchema,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { TMessage, TConversation, EventSubmission } from 'librechat-data-provider';
+import type {
+  TMessage,
+  TConversation,
+  EventSubmission,
+  TStartupConfig,
+} from 'librechat-data-provider';
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { TGenTitleMutation } from '~/data-provider';
@@ -31,11 +36,12 @@ import {
 } from '~/utils';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
-import store, { useApplyNewAgentTemplate } from '~/store';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
+import { useApplyAgentTemplate } from '~/hooks/Agents';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
+import store from '~/store';
 
 type TSyncData = {
   sync: boolean;
@@ -172,7 +178,7 @@ export default function useEventHandlers({
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
-  const applyAgentTemplate = useApplyNewAgentTemplate();
+  const applyAgentTemplate = useApplyAgentTemplate();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
   const navigate = useNavigate();
   const location = useLocation();
@@ -356,6 +362,7 @@ export default function useEventHandlers({
 
   const createdHandler = useCallback(
     (data: TResData, submission: EventSubmission) => {
+      queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
       const { messages, userMessage, isRegenerate = false, isTemporary = false } = submission;
       const initialResponse = {
         ...submission.initialResponse,
@@ -411,11 +418,13 @@ export default function useEventHandlers({
       }
 
       if (conversationId) {
-        applyAgentTemplate(
-          conversationId,
-          submission.conversation.conversationId,
-          submission.ephemeralAgent,
-        );
+        applyAgentTemplate({
+          targetId: conversationId,
+          sourceId: submission.conversation?.conversationId,
+          ephemeralAgent: submission.ephemeralAgent,
+          specName: submission.conversation?.spec,
+          startupConfig: queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]),
+        });
       }
 
       if (resetLatestMessage) {
@@ -566,11 +575,13 @@ export default function useEventHandlers({
         });
 
         if (conversation.conversationId && submission.ephemeralAgent) {
-          applyAgentTemplate(
-            conversation.conversationId,
-            submissionConvo.conversationId,
-            submission.ephemeralAgent,
-          );
+          applyAgentTemplate({
+            targetId: conversation.conversationId,
+            sourceId: submissionConvo.conversationId,
+            ephemeralAgent: submission.ephemeralAgent,
+            specName: submission.conversation?.spec,
+            startupConfig: queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]),
+          });
         }
 
         if (location.pathname === `/c/${Constants.NEW_CONVO}`) {
