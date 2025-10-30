@@ -1,5 +1,5 @@
-import { memo, useMemo, useState } from 'react';
-import { useRecoilState } from 'recoil';
+import { memo, useMemo, useState, useCallback } from 'react';
+import { useAtom } from 'jotai';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -9,12 +9,12 @@ import type {
 } from 'librechat-data-provider';
 import { ThinkingButton } from '~/components/Artifacts/Thinking';
 import { MessageContext, SearchContext } from '~/Providers';
+import { showThinkingAtom } from '~/store/showThinking';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import { mapAttachments } from '~/utils/map';
 import { EditTextPart } from './Parts';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 import Part from './Part';
 
 type ContentPartsProps = {
@@ -53,11 +53,15 @@ const ContentParts = memo(
     setSiblingIdx,
   }: ContentPartsProps) => {
     const localize = useLocalize();
-    const [showThinking, setShowThinking] = useRecoilState<boolean>(store.showThinking);
+    const [showThinking, setShowThinking] = useAtom(showThinkingAtom);
     const [isExpanded, setIsExpanded] = useState(showThinking);
+    const [isContentHovered, setIsContentHovered] = useState(false);
     const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
 
     const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
+
+    const handleContentEnter = useCallback(() => setIsContentHovered(true), []);
+    const handleContentLeave = useCallback(() => setIsContentHovered(false), []);
 
     const hasReasoningParts = useMemo(() => {
       const hasThinkPart = content?.some((part) => part?.type === ContentTypes.THINK) ?? false;
@@ -76,6 +80,23 @@ const ContentParts = memo(
         }) ?? false;
 
       return hasThinkPart && allThinkPartsHaveContent;
+    }, [content]);
+
+    // Extract all reasoning text for copy functionality
+    const reasoningContent = useMemo(() => {
+      if (!content) {
+        return '';
+      }
+      return content
+        .filter((part) => part?.type === ContentTypes.THINK)
+        .map((part) => {
+          if (typeof part?.think === 'string') {
+            return part.think.replace(/<\/?think>/g, '').trim();
+          }
+          return '';
+        })
+        .filter(Boolean)
+        .join('\n\n');
     }, [content]);
 
     if (!content) {
@@ -127,40 +148,74 @@ const ContentParts = memo(
           <MemoryArtifacts attachments={attachments} />
           <Sources messageId={messageId} conversationId={conversationId || undefined} />
           {hasReasoningParts && (
-            <div className="mb-5">
-              <ThinkingButton
-                isExpanded={isExpanded}
-                onClick={() =>
-                  setIsExpanded((prev) => {
-                    const val = !prev;
-                    setShowThinking(val);
-                    return val;
-                  })
-                }
-                label={
-                  effectiveIsSubmitting && isLast
-                    ? localize('com_ui_thinking')
-                    : localize('com_ui_thoughts')
-                }
-              />
+            <div onMouseEnter={handleContentEnter} onMouseLeave={handleContentLeave}>
+              <div className="sticky top-0 z-10 mb-2 bg-surface-secondary pb-2 pt-2">
+                <ThinkingButton
+                  isExpanded={isExpanded}
+                  onClick={() =>
+                    setIsExpanded((prev) => {
+                      const val = !prev;
+                      setShowThinking(val);
+                      return val;
+                    })
+                  }
+                  label={
+                    effectiveIsSubmitting && isLast
+                      ? localize('com_ui_thinking')
+                      : localize('com_ui_thoughts')
+                  }
+                  content={reasoningContent}
+                  isContentHovered={isContentHovered}
+                />
+              </div>
+              {content
+                .filter((part) => part?.type === ContentTypes.THINK)
+                .map((part) => {
+                  const originalIdx = content.indexOf(part);
+                  return (
+                    <MessageContext.Provider
+                      key={`provider-${messageId}-${originalIdx}`}
+                      value={{
+                        messageId,
+                        isExpanded,
+                        conversationId,
+                        partIndex: originalIdx,
+                        nextType: content[originalIdx + 1]?.type,
+                        isSubmitting: effectiveIsSubmitting,
+                        isLatestMessage,
+                      }}
+                    >
+                      <Part
+                        part={part}
+                        attachments={undefined}
+                        isSubmitting={effectiveIsSubmitting}
+                        key={`part-${messageId}-${originalIdx}`}
+                        isCreatedByUser={isCreatedByUser}
+                        isLast={originalIdx === content.length - 1}
+                        showCursor={false}
+                      />
+                    </MessageContext.Provider>
+                  );
+                })}
             </div>
           )}
           {content
-            .filter((part) => part)
-            .map((part, idx) => {
+            .filter((part) => part && part.type !== ContentTypes.THINK)
+            .map((part) => {
+              const originalIdx = content.indexOf(part);
               const toolCallId =
                 (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
               const attachments = attachmentMap[toolCallId];
 
               return (
                 <MessageContext.Provider
-                  key={`provider-${messageId}-${idx}`}
+                  key={`provider-${messageId}-${originalIdx}`}
                   value={{
                     messageId,
                     isExpanded,
                     conversationId,
-                    partIndex: idx,
-                    nextType: content[idx + 1]?.type,
+                    partIndex: originalIdx,
+                    nextType: content[originalIdx + 1]?.type,
                     isSubmitting: effectiveIsSubmitting,
                     isLatestMessage,
                   }}
@@ -169,10 +224,10 @@ const ContentParts = memo(
                     part={part}
                     attachments={attachments}
                     isSubmitting={effectiveIsSubmitting}
-                    key={`part-${messageId}-${idx}`}
+                    key={`part-${messageId}-${originalIdx}`}
                     isCreatedByUser={isCreatedByUser}
-                    isLast={idx === content.length - 1}
-                    showCursor={idx === content.length - 1 && isLast}
+                    isLast={originalIdx === content.length - 1}
+                    showCursor={originalIdx === content.length - 1 && isLast}
                   />
                 </MessageContext.Provider>
               );
