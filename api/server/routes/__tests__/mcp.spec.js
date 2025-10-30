@@ -47,6 +47,7 @@ jest.mock('~/models', () => ({
 jest.mock('~/server/services/Config', () => ({
   setCachedTools: jest.fn(),
   getCachedTools: jest.fn(),
+  getMCPServerTools: jest.fn(),
   loadCustomConfig: jest.fn(),
 }));
 
