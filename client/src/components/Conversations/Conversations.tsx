@@ -33,9 +33,9 @@ LoadingSpinner.displayName = 'LoadingSpinner';
 const DateLabel: FC<{ groupName: string }> = memo(({ groupName }) => {
   const localize = useLocalize();
   return (
-    <div className="mt-2 pl-2 pt-1 text-text-secondary" style={{ fontSize: '0.7rem' }}>
+    <h2 className="mt-2 pl-2 pt-1 text-text-secondary" style={{ fontSize: '0.7rem' }}>
       {localize(groupName as TranslationKeys) || groupName}
-    </div>
+    </h2>
   );
 });
 
