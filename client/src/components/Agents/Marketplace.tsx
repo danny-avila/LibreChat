@@ -224,10 +224,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
       window.open('/c/new', '_blank');
       return;
     }
-    queryClient.setQueryData<t.TMessage[]>(
-      [QueryKeys.messages, conversation?.conversationId],
-      [],
-    );
+    clearMessagesCache(queryClient, conversation?.conversationId);
     queryClient.invalidateQueries({
       queryKey: [QueryKeys.messages]
     });
