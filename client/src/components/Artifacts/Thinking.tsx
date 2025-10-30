@@ -3,8 +3,8 @@ import { useAtomValue } from 'jotai';
 import { Lightbulb, ChevronDown } from 'lucide-react';
 import { Clipboard, CheckMark } from '@librechat/client';
 import type { MouseEvent, FC } from 'react';
-import { fontSizeAtom } from '~/store/fontSize';
 import { showThinkingAtom } from '~/store/showThinking';
+import { fontSizeAtom } from '~/store/fontSize';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
