@@ -8,6 +8,7 @@ const {
   Tokenizer,
   checkAccess,
   logAxiosError,
+  sanitizeTitle,
   resolveHeaders,
   getBalanceConfig,
   memoryInstructions,
@@ -775,6 +776,7 @@ class AgentClient extends BaseClient {
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
       config = {
+        runName: 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
           last_agent_index: this.agentConfigs?.size ?? 0,
@@ -1233,6 +1235,10 @@ class AgentClient extends BaseClient {
               handleLLMEnd,
             },
           ],
+          configurable: {
+            thread_id: this.conversationId,
+            user_id: this.user ?? this.options.req.user?.id,
+          },
         },
       });
 
@@ -1270,7 +1276,7 @@ class AgentClient extends BaseClient {
         );
       });
 
-      return titleResult.title;
+      return sanitizeTitle(titleResult.title);
     } catch (err) {
       logger.error('[api/server/controllers/agents/client.js #titleConvo] Error', err);
       return;
