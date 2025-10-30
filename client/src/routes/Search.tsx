@@ -30,7 +30,7 @@ export default function Search() {
     {
       enabled: isAuthenticated && !!searchQuery,
       staleTime: 30000,
-      cacheTime: 300000,
+      gcTime: 300000,
     },
   );
 

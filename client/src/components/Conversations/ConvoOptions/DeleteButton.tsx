@@ -89,8 +89,8 @@ export function DeleteConversationDialog({
         <Button aria-label="cancel" variant="outline" onClick={() => setShowDeleteDialog(false)}>
           {localize('com_ui_cancel')}
         </Button>
-        <Button variant="destructive" onClick={confirmDelete} disabled={deleteMutation.isLoading}>
-          {deleteMutation.isLoading ? <Spinner /> : localize('com_ui_delete')}
+        <Button variant="destructive" onClick={confirmDelete} disabled={deleteMutation.isPending}>
+          {deleteMutation.isPending ? <Spinner /> : localize('com_ui_delete')}
         </Button>
       </div>
     </OGDialogContent>

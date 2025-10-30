@@ -50,7 +50,7 @@ export default function AgentFooter({
   const canShareThisAgent = hasPermission(PermissionBits.SHARE);
   const canDeleteThisAgent = hasPermission(PermissionBits.DELETE);
   const renderSaveButton = () => {
-    if (createMutation.isLoading || updateMutation.isLoading) {
+    if (createMutation.isPending || updateMutation.isPending) {
       return <Spinner className="icon-md" aria-hidden="true" />;
     }
 
@@ -93,8 +93,8 @@ export default function AgentFooter({
         <button
           className="btn btn-primary focus:shadow-outline flex h-9 w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
           type="submit"
-          disabled={createMutation.isLoading || updateMutation.isLoading}
-          aria-busy={createMutation.isLoading || updateMutation.isLoading}
+          disabled={createMutation.isPending || updateMutation.isPending}
+          aria-busy={createMutation.isPending || updateMutation.isPending}
         >
           {renderSaveButton()}
         </button>

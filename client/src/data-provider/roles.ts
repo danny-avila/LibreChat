@@ -7,18 +7,16 @@ import {
   marketplacePermissionsSchema,
   peoplePickerPermissionsSchema,
 } from 'librechat-data-provider';
-import type {
-  UseQueryOptions,
-  UseMutationResult,
-  QueryObserverResult,
-} from '@tanstack/react-query';
+import type { UseQueryOptions, UseMutationResult, UseQueryResult, UseMutationOptions } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 
 export const useGetRole = (
   roleName: string,
-  config?: UseQueryOptions<t.TRole>,
-): QueryObserverResult<t.TRole> => {
-  return useQuery<t.TRole>([QueryKeys.roles, roleName], () => dataService.getRole(roleName), {
+  config?: Omit<UseQueryOptions<t.TRole, unknown, t.TRole>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TRole, unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.roles, roleName],
+    queryFn: () => dataService.getRole(roleName),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -28,7 +26,7 @@ export const useGetRole = (
 };
 
 export const useUpdatePromptPermissionsMutation = (
-  options?: t.UpdatePromptPermOptions,
+  options?: UseMutationOptions<t.UpdatePermResponse, t.TError | undefined, t.UpdatePromptPermVars, unknown>,
 ): UseMutationResult<
   t.UpdatePermResponse,
   t.TError | undefined,
@@ -37,34 +35,29 @@ export const useUpdatePromptPermissionsMutation = (
 > => {
   const queryClient = useQueryClient();
   const { onMutate, onSuccess, onError } = options ?? {};
-  return useMutation(
-    (variables) => {
+  return useMutation({
+    mutationFn: (variables) => {
       promptPermissionsSchema.partial().parse(variables.updates);
       return dataService.updatePromptPermissions(variables);
     },
-    {
-      onSuccess: (data, variables, context) => {
-        queryClient.invalidateQueries([QueryKeys.roles, variables.roleName]);
-        if (onSuccess) {
-          onSuccess(data, variables, context);
-        }
-      },
-      onError: (...args) => {
-        const error = args[0];
-        if (error != null) {
-          console.error('Failed to update prompt permissions:', error);
-        }
-        if (onError) {
-          onError(...args);
-        }
-      },
-      onMutate,
+    onSuccess: (data, variables, onMutateResult, context) => {
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.roles, variables.roleName]
+      });
+      onSuccess?.(data, variables, onMutateResult, context);
     },
-  );
+    onError: (error, variables, onMutateResult, context) => {
+      if (error != null) {
+        console.error('Failed to update prompt permissions:', error);
+      }
+      onError?.(error, variables, onMutateResult, context);
+    },
+    onMutate,
+  });
 };
 
 export const useUpdateAgentPermissionsMutation = (
-  options?: t.UpdateAgentPermOptions,
+  options?: UseMutationOptions<t.UpdatePermResponse, t.TError | undefined, t.UpdateAgentPermVars, unknown>,
 ): UseMutationResult<
   t.UpdatePermResponse,
   t.TError | undefined,
@@ -73,34 +66,29 @@ export const useUpdateAgentPermissionsMutation = (
 > => {
   const queryClient = useQueryClient();
   const { onMutate, onSuccess, onError } = options ?? {};
-  return useMutation(
-    (variables) => {
+  return useMutation({
+    mutationFn: (variables) => {
       promptPermissionsSchema.partial().parse(variables.updates);
       return dataService.updateAgentPermissions(variables);
     },
-    {
-      onSuccess: (data, variables, context) => {
-        queryClient.invalidateQueries([QueryKeys.roles, variables.roleName]);
-        if (onSuccess != null) {
-          onSuccess(data, variables, context);
-        }
-      },
-      onError: (...args) => {
-        const error = args[0];
-        if (error != null) {
-          console.error('Failed to update prompt permissions:', error);
-        }
-        if (onError != null) {
-          onError(...args);
-        }
-      },
-      onMutate,
+    onSuccess: (data, variables, onMutateResult, context) => {
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.roles, variables.roleName]
+      });
+      onSuccess?.(data, variables, onMutateResult, context);
     },
-  );
+    onError: (error, variables, onMutateResult, context) => {
+      if (error != null) {
+        console.error('Failed to update prompt permissions:', error);
+      }
+      onError?.(error, variables, onMutateResult, context);
+    },
+    onMutate,
+  });
 };
 
 export const useUpdateMemoryPermissionsMutation = (
-  options?: t.UpdateMemoryPermOptions,
+  options?: UseMutationOptions<t.UpdatePermResponse, t.TError | undefined, t.UpdateMemoryPermVars, unknown>,
 ): UseMutationResult<
   t.UpdatePermResponse,
   t.TError | undefined,
@@ -109,34 +97,29 @@ export const useUpdateMemoryPermissionsMutation = (
 > => {
   const queryClient = useQueryClient();
   const { onMutate, onSuccess, onError } = options ?? {};
-  return useMutation(
-    (variables) => {
+  return useMutation({
+    mutationFn: (variables) => {
       memoryPermissionsSchema.partial().parse(variables.updates);
       return dataService.updateMemoryPermissions(variables);
     },
-    {
-      onSuccess: (data, variables, context) => {
-        queryClient.invalidateQueries([QueryKeys.roles, variables.roleName]);
-        if (onSuccess) {
-          onSuccess(data, variables, context);
-        }
-      },
-      onError: (...args) => {
-        const error = args[0];
-        if (error != null) {
-          console.error('Failed to update memory permissions:', error);
-        }
-        if (onError) {
-          onError(...args);
-        }
-      },
-      onMutate,
+    onSuccess: (data, variables, onMutateResult, context) => {
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.roles, variables.roleName]
+      });
+      onSuccess?.(data, variables, onMutateResult, context);
     },
-  );
+    onError: (error, variables, onMutateResult, context) => {
+      if (error != null) {
+        console.error('Failed to update memory permissions:', error);
+      }
+      onError?.(error, variables, onMutateResult, context);
+    },
+    onMutate,
+  });
 };
 
 export const useUpdatePeoplePickerPermissionsMutation = (
-  options?: t.UpdatePeoplePickerPermOptions,
+  options?: UseMutationOptions<t.UpdatePermResponse, t.TError | undefined, t.UpdatePeoplePickerPermVars, unknown>,
 ): UseMutationResult<
   t.UpdatePermResponse,
   t.TError | undefined,
@@ -145,34 +128,29 @@ export const useUpdatePeoplePickerPermissionsMutation = (
 > => {
   const queryClient = useQueryClient();
   const { onMutate, onSuccess, onError } = options ?? {};
-  return useMutation(
-    (variables) => {
+  return useMutation({
+    mutationFn: (variables) => {
       peoplePickerPermissionsSchema.partial().parse(variables.updates);
       return dataService.updatePeoplePickerPermissions(variables);
     },
-    {
-      onSuccess: (data, variables, context) => {
-        queryClient.invalidateQueries([QueryKeys.roles, variables.roleName]);
-        if (onSuccess) {
-          onSuccess(data, variables, context);
-        }
-      },
-      onError: (...args) => {
-        const error = args[0];
-        if (error != null) {
-          console.error('Failed to update people picker permissions:', error);
-        }
-        if (onError) {
-          onError(...args);
-        }
-      },
-      onMutate,
+    onSuccess: (data, variables, onMutateResult, context) => {
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.roles, variables.roleName]
+      });
+      onSuccess?.(data, variables, onMutateResult, context);
     },
-  );
+    onError: (error, variables, onMutateResult, context) => {
+      if (error != null) {
+        console.error('Failed to update people picker permissions:', error);
+      }
+      onError?.(error, variables, onMutateResult, context);
+    },
+    onMutate,
+  });
 };
 
 export const useUpdateMarketplacePermissionsMutation = (
-  options?: t.UpdateMarketplacePermOptions,
+  options?: UseMutationOptions<t.UpdatePermResponse, t.TError | undefined, t.UpdateMarketplacePermVars, unknown>,
 ): UseMutationResult<
   t.UpdatePermResponse,
   t.TError | undefined,
@@ -181,28 +159,23 @@ export const useUpdateMarketplacePermissionsMutation = (
 > => {
   const queryClient = useQueryClient();
   const { onMutate, onSuccess, onError } = options ?? {};
-  return useMutation(
-    (variables) => {
+  return useMutation({
+    mutationFn: (variables) => {
       marketplacePermissionsSchema.partial().parse(variables.updates);
       return dataService.updateMarketplacePermissions(variables);
     },
-    {
-      onSuccess: (data, variables, context) => {
-        queryClient.invalidateQueries([QueryKeys.roles, variables.roleName]);
-        if (onSuccess) {
-          onSuccess(data, variables, context);
-        }
-      },
-      onError: (...args) => {
-        const error = args[0];
-        if (error != null) {
-          console.error('Failed to update marketplace permissions:', error);
-        }
-        if (onError) {
-          onError(...args);
-        }
-      },
-      onMutate,
+    onSuccess: (data, variables, onMutateResult, context) => {
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.roles, variables.roleName]
+      });
+      onSuccess?.(data, variables, onMutateResult, context);
     },
-  );
+    onError: (error, variables, onMutateResult, context) => {
+      if (error != null) {
+        console.error('Failed to update marketplace permissions:', error);
+      }
+      onError?.(error, variables, onMutateResult, context);
+    },
+    onMutate,
+  });
 };

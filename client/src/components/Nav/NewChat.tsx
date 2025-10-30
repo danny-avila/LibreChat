@@ -35,7 +35,9 @@ export default function NewChat({
         return;
       }
       clearMessagesCache(queryClient, conversation?.conversationId);
-      queryClient.invalidateQueries([QueryKeys.messages]);
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.messages]
+      });
       newConvo();
       navigate('/c/new', { state: { focusChat: true } });
       if (isSmallScreen) {

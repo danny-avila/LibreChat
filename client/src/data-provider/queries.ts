@@ -7,12 +7,7 @@ import {
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  UseInfiniteQueryOptions,
-  QueryObserverResult,
-  UseQueryOptions,
-  InfiniteData,
-} from '@tanstack/react-query';
+import type { UseInfiniteQueryOptions, UseQueryResult, UseQueryOptions, InfiniteData } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import type {
   Action,
@@ -34,9 +29,11 @@ import type { ConversationCursorData } from '~/utils/convos';
 import { findConversationInInfinite } from '~/utils';
 
 export const useGetPresetsQuery = (
-  config?: UseQueryOptions<TPreset[]>,
-): QueryObserverResult<TPreset[], unknown> => {
-  return useQuery<TPreset[]>([QueryKeys.presets], () => dataService.getPresets(), {
+  config?: Omit<UseQueryOptions<TPreset[], unknown, TPreset[]>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TPreset[], unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.presets],
+    queryFn: () => dataService.getPresets(),
     staleTime: 1000 * 10,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -47,17 +44,16 @@ export const useGetPresetsQuery = (
 
 export const useGetConvoIdQuery = (
   id: string,
-  config?: UseQueryOptions<t.TConversation>,
-): QueryObserverResult<t.TConversation> => {
+  config?: Omit<UseQueryOptions<t.TConversation, unknown, t.TConversation>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TConversation, unknown> => {
   const queryClient = useQueryClient();
 
-  return useQuery<t.TConversation>(
-    [QueryKeys.conversation, id],
-    () => {
+  return useQuery({
+    queryKey: [QueryKeys.conversation, id],
+    queryFn: () => {
       // Try to find in all fetched infinite pages
       const convosQuery = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(
         [QueryKeys.allConversations],
-        { exact: false },
       );
       const found = findConversationInInfinite(convosQuery, id);
 
@@ -67,22 +63,20 @@ export const useGetConvoIdQuery = (
       // Otherwise, fetch from API
       return dataService.getConversationById(id);
     },
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
 };
 
-export const useConversationsInfiniteQuery = (
+export const useConversationsInfiniteQuery = <TData = InfiniteData<ConversationListResponse, unknown>>(
   params: ConversationListParams,
-  config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
+  config?: Omit<UseInfiniteQueryOptions<ConversationListResponse, Error, TData>, 'queryKey' | 'queryFn' | 'initialPageParam' | 'getNextPageParam'>,
 ) => {
   const { isArchived, sortBy, sortDirection, tags, search } = params;
 
-  return useInfiniteQuery<ConversationListResponse>({
+  return useInfiniteQuery<ConversationListResponse, Error, TData>({
     queryKey: [
       isArchived ? QueryKeys.archivedConversations : QueryKeys.allConversations,
       { isArchived, sortBy, sortDirection, tags, search },
@@ -97,20 +91,20 @@ export const useConversationsInfiniteQuery = (
         cursor: pageParam?.toString(),
       }),
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
-    keepPreviousData: true,
+    initialPageParam: undefined,
     staleTime: 5 * 60 * 1000, // 5 minutes
-    cacheTime: 30 * 60 * 1000, // 30 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
     ...config,
   });
 };
 
-export const useMessagesInfiniteQuery = (
+export const useMessagesInfiniteQuery = <TData = InfiniteData<MessagesListResponse, unknown>>(
   params: MessagesListParams,
-  config?: UseInfiniteQueryOptions<MessagesListResponse, unknown>,
+  config?: Omit<UseInfiniteQueryOptions<MessagesListResponse, Error, TData>, 'queryKey' | 'queryFn' | 'initialPageParam' | 'getNextPageParam'>,
 ) => {
   const { sortBy, sortDirection, pageSize, conversationId, messageId, search } = params;
 
-  return useInfiniteQuery<MessagesListResponse>({
+  return useInfiniteQuery<MessagesListResponse, Error, TData>({
     queryKey: [
       QueryKeys.messages,
       { sortBy, sortDirection, pageSize, conversationId, messageId, search },
@@ -125,21 +119,21 @@ export const useMessagesInfiniteQuery = (
         search,
         cursor: pageParam?.toString(),
       }),
-    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
-    keepPreviousData: true,
+    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? null,
+    initialPageParam: undefined,
     staleTime: 5 * 60 * 1000, // 5 minutes
-    cacheTime: 30 * 60 * 1000, // 30 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
     ...config,
   });
 };
 
-export const useSharedLinksQuery = (
+export const useSharedLinksQuery = <TData = InfiniteData<SharedLinksResponse, unknown>>(
   params: SharedLinksListParams,
-  config?: UseInfiniteQueryOptions<SharedLinksResponse, unknown>,
+  config?: Omit<UseInfiniteQueryOptions<SharedLinksResponse, Error, TData>, 'queryKey' | 'queryFn' | 'initialPageParam' | 'getNextPageParam'>,
 ) => {
   const { pageSize, isPublic, search, sortBy, sortDirection } = params;
 
-  return useInfiniteQuery<SharedLinksResponse>({
+  return useInfiniteQuery<SharedLinksResponse, Error, TData>({
     queryKey: [QueryKeys.sharedLinks, { pageSize, isPublic, search, sortBy, sortDirection }],
     queryFn: ({ pageParam }) =>
       dataService.listSharedLinks({
@@ -151,26 +145,27 @@ export const useSharedLinksQuery = (
         sortDirection,
       }),
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
-    keepPreviousData: true,
+    initialPageParam: undefined,
     staleTime: 5 * 60 * 1000, // 5 minutes
-    cacheTime: 30 * 60 * 1000, // 30 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
     ...config,
   });
 };
 
 export const useConversationTagsQuery = (
-  config?: UseQueryOptions<t.TConversationTagsResponse>,
-): QueryObserverResult<t.TConversationTagsResponse> => {
-  return useQuery<t.TConversationTag[]>(
-    [QueryKeys.conversationTags],
-    () => dataService.getConversationTags(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
+  config?: Omit<
+    UseQueryOptions<t.TConversationTagsResponse, unknown, t.TConversationTagsResponse>,
+    'queryKey' | 'queryFn'
+  >,
+): UseQueryResult<t.TConversationTagsResponse, unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.conversationTags],
+    queryFn: () => dataService.getConversationTags(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
 };
 
 /**
@@ -183,8 +178,8 @@ export const useConversationTagsQuery = (
  */
 export const useAvailableToolsQuery = <TData = t.TPlugin[]>(
   endpoint: t.AssistantsEndpoint | EModelEndpoint.agents,
-  config?: UseQueryOptions<t.TPlugin[], unknown, TData>,
-): QueryObserverResult<TData> => {
+  config?: Omit<UseQueryOptions<t.TPlugin[], unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
@@ -193,17 +188,15 @@ export const useAvailableToolsQuery = <TData = t.TPlugin[]>(
   const enabled = isAgentsEndpoint(endpoint) ? true : !!endpointsConfig?.[endpoint] && keyProvided;
   const version: string | number | undefined =
     endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-  return useQuery<t.TPlugin[], unknown, TData>(
-    [QueryKeys.tools],
-    () => dataService.getAvailableTools(endpoint, version),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      enabled,
-      ...config,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.tools],
+    queryFn: () => dataService.getAvailableTools(endpoint, version),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    enabled,
+    ...config,
+  });
 };
 
 /**
@@ -212,8 +205,8 @@ export const useAvailableToolsQuery = <TData = t.TPlugin[]>(
 export const useListAssistantsQuery = <TData = AssistantListResponse>(
   endpoint: t.AssistantsEndpoint,
   params: Omit<AssistantListParams, 'endpoint'> = defaultOrderQuery,
-  config?: UseQueryOptions<AssistantListResponse, unknown, TData>,
-): QueryObserverResult<TData> => {
+  config?: Omit<UseQueryOptions<AssistantListResponse, unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
@@ -221,23 +214,23 @@ export const useListAssistantsQuery = <TData = AssistantListResponse>(
   const keyProvided = userProvidesKey ? !!(keyExpiry?.expiresAt ?? '') : true;
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-  return useQuery<AssistantListResponse, unknown, TData>(
-    [QueryKeys.assistants, endpoint, params],
-    () => dataService.listAssistants({ ...params, endpoint }, version),
-    {
-      // Example selector to sort them by created_at
-      // select: (res) => {
-      //   return res.data.sort((a, b) => a.created_at - b.created_at);
-      // },
-      staleTime: 1000 * 5,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.assistants, endpoint, params],
+    queryFn: () => dataService.listAssistants({ ...params, endpoint }, version),
+
+    // Example selector to sort them by created_at
+    // select: (res) => {
+    //   return res.data.sort((a, b) => a.created_at - b.created_at);
+    // },
+    staleTime: 1000 * 5,
+
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled
+  });
 };
 
 /*
@@ -278,8 +271,8 @@ export const useListAssistantsInfiniteQuery = (
 export const useGetAssistantByIdQuery = (
   endpoint: t.AssistantsEndpoint,
   assistant_id: string,
-  config?: UseQueryOptions<Assistant>,
-): QueryObserverResult<Assistant> => {
+  config?: Omit<UseQueryOptions<Assistant, unknown, Assistant>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<Assistant, unknown> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
@@ -287,24 +280,22 @@ export const useGetAssistantByIdQuery = (
   const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
-  return useQuery<Assistant>(
-    [QueryKeys.assistant, assistant_id],
-    () =>
+  return useQuery({
+    queryKey: [QueryKeys.assistant, assistant_id],
+    queryFn: () =>
       dataService.getAssistantById({
         endpoint,
         assistant_id,
         version,
       }),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      // Query will not execute until the assistant_id exists
-      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
-    },
-  );
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+    // Query will not execute until the assistant_id exists
+    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
+  });
 };
 
 /**
@@ -312,8 +303,8 @@ export const useGetAssistantByIdQuery = (
  */
 export const useGetActionsQuery = <TData = Action[]>(
   endpoint: t.AssistantsEndpoint | EModelEndpoint.agents,
-  config?: UseQueryOptions<Action[], unknown, TData>,
-): QueryObserverResult<TData> => {
+  config?: Omit<UseQueryOptions<Action[], unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
@@ -322,12 +313,14 @@ export const useGetActionsQuery = <TData = Action[]>(
   const enabled =
     (!!endpointsConfig?.[endpoint] && keyProvided) || endpoint === EModelEndpoint.agents;
 
-  return useQuery<Action[], unknown, TData>([QueryKeys.actions], () => dataService.getActions(), {
+  return useQuery({
+    queryKey: [QueryKeys.actions],
+    queryFn: () => dataService.getActions(),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
     ...config,
-    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
+    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled
   });
 };
 
@@ -336,8 +329,8 @@ export const useGetActionsQuery = <TData = Action[]>(
  */
 export const useGetAssistantDocsQuery = <TData = AssistantDocument[]>(
   endpoint: t.AssistantsEndpoint | string,
-  config?: UseQueryOptions<AssistantDocument[], unknown, TData>,
-): QueryObserverResult<TData> => {
+  config?: Omit<UseQueryOptions<AssistantDocument[], unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
   const keyExpiry = queryClient.getQueryData<TCheckUserKeyResponse>([QueryKeys.name, endpoint]);
@@ -346,30 +339,30 @@ export const useGetAssistantDocsQuery = <TData = AssistantDocument[]>(
   const enabled = !!endpointsConfig?.[endpoint] && keyProvided;
   const version = endpointsConfig?.[endpoint]?.version ?? defaultAssistantsVersion[endpoint];
 
-  return useQuery<AssistantDocument[], unknown, TData>(
-    [QueryKeys.assistantDocs, endpoint],
-    () =>
+  return useQuery({
+    queryKey: [QueryKeys.assistantDocs, endpoint],
+    queryFn: () =>
       dataService.getAssistantDocs({
         endpoint,
         version,
       }),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
-    },
-  );
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled
+  });
 };
 
 /** STT/TTS */
 
 /* Text to speech voices */
 export const useVoicesQuery = (
-  config?: UseQueryOptions<t.VoiceResponse>,
-): QueryObserverResult<t.VoiceResponse> => {
-  return useQuery<t.VoiceResponse>([QueryKeys.voices], () => dataService.getVoices(), {
+  config?: Omit<UseQueryOptions<t.VoiceResponse, unknown, t.VoiceResponse>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.VoiceResponse, unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.voices],
+    queryFn: () => dataService.getVoices(),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -380,31 +373,32 @@ export const useVoicesQuery = (
 
 /* Custom config speech */
 export const useCustomConfigSpeechQuery = (
-  config?: UseQueryOptions<t.TCustomConfigSpeechResponse>,
-): QueryObserverResult<t.TCustomConfigSpeechResponse> => {
-  return useQuery<t.TCustomConfigSpeechResponse>(
-    [QueryKeys.customConfigSpeech],
-    () => dataService.getCustomConfigSpeech(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-    },
-  );
+  config?: Omit<
+    UseQueryOptions<t.TCustomConfigSpeechResponse, unknown, t.TCustomConfigSpeechResponse>,
+    'queryKey' | 'queryFn'
+  >,
+): UseQueryResult<t.TCustomConfigSpeechResponse, unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.customConfigSpeech],
+    queryFn: () => dataService.getCustomConfigSpeech(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+  });
 };
 
 /** Prompt */
 
-export const usePromptGroupsInfiniteQuery = (
+export const usePromptGroupsInfiniteQuery = <TData = InfiniteData<t.PromptGroupListResponse, unknown>>(
   params?: t.TPromptGroupsWithFilterRequest,
-  config?: UseInfiniteQueryOptions<t.PromptGroupListResponse, unknown>,
+  config?: Omit<UseInfiniteQueryOptions<t.PromptGroupListResponse, Error, TData>, 'queryKey' | 'queryFn' | 'initialPageParam' | 'getNextPageParam'>,
 ) => {
   const { name, pageSize, category } = params || {};
-  return useInfiniteQuery<t.PromptGroupListResponse, unknown>(
-    [QueryKeys.promptGroups, name, category, pageSize],
-    ({ pageParam }) => {
+  return useInfiniteQuery<t.PromptGroupListResponse, Error, TData>({
+    queryKey: [QueryKeys.promptGroups, name, category, pageSize],
+    queryFn: ({ pageParam }) => {
       const queryParams: t.TPromptGroupsWithFilterRequest = {
         name,
         category: category || '',
@@ -418,111 +412,105 @@ export const usePromptGroupsInfiniteQuery = (
 
       return dataService.getPromptGroups(queryParams);
     },
-    {
-      getNextPageParam: (lastPage) => {
-        // Use cursor-based pagination - ensure we return a valid cursor or undefined
-        return lastPage.has_more && lastPage.after ? lastPage.after : undefined;
-      },
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
+    getNextPageParam: (lastPage) => {
+      // Use cursor-based pagination - ensure we return a valid cursor or undefined
+      return lastPage.has_more && lastPage.after ? lastPage.after : null;
     },
-  );
+    initialPageParam: undefined,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
 };
 
 export const useGetPromptGroup = (
   id: string,
-  config?: UseQueryOptions<t.TPromptGroup>,
-): QueryObserverResult<t.TPromptGroup> => {
-  return useQuery<t.TPromptGroup>(
-    [QueryKeys.promptGroup, id],
-    () => dataService.getPromptGroup(id),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled : true,
-    },
-  );
+  config?: Omit<UseQueryOptions<t.TPromptGroup, unknown, t.TPromptGroup>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TPromptGroup, unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.promptGroup, id],
+    queryFn: () => dataService.getPromptGroup(id),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled : true,
+  });
 };
 
 export const useGetPrompts = (
   filter: t.TPromptsWithFilterRequest,
-  config?: UseQueryOptions<t.TPrompt[]>,
-): QueryObserverResult<t.TPrompt[]> => {
-  return useQuery<t.TPrompt[]>(
-    [QueryKeys.prompts, filter.groupId ?? ''],
-    () => dataService.getPrompts(filter),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled : true,
-    },
-  );
+  config?: Omit<UseQueryOptions<t.TPrompt[], unknown, t.TPrompt[]>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TPrompt[], unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.prompts, filter.groupId ?? ''],
+    queryFn: () => dataService.getPrompts(filter),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled : true,
+  });
 };
 
 export const useGetAllPromptGroups = <TData = t.AllPromptGroupsResponse>(
   filter?: t.AllPromptGroupsFilterRequest,
-  config?: UseQueryOptions<t.AllPromptGroupsResponse, unknown, TData>,
-): QueryObserverResult<TData> => {
-  return useQuery<t.AllPromptGroupsResponse, unknown, TData>(
-    [QueryKeys.allPromptGroups],
-    () => dataService.getAllPromptGroups(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-    },
-  );
+  config?: Omit<UseQueryOptions<t.AllPromptGroupsResponse, unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.allPromptGroups],
+    queryFn: () => dataService.getAllPromptGroups(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+  });
 };
 
 export const useGetCategories = <TData = t.TGetCategoriesResponse>(
-  config?: UseQueryOptions<t.TGetCategoriesResponse, unknown, TData>,
-): QueryObserverResult<TData> => {
-  return useQuery<t.TGetCategoriesResponse, unknown, TData>(
-    [QueryKeys.categories],
-    () => dataService.getCategories(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled : true,
-    },
-  );
+  config?: Omit<UseQueryOptions<t.TGetCategoriesResponse, unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.categories],
+    queryFn: () => dataService.getCategories(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled : true,
+  });
 };
 
 export const useGetRandomPrompts = (
   filter: t.TGetRandomPromptsRequest,
-  config?: UseQueryOptions<t.TGetRandomPromptsResponse>,
-): QueryObserverResult<t.TGetRandomPromptsResponse> => {
-  return useQuery<t.TGetRandomPromptsResponse>(
-    [QueryKeys.randomPrompts],
-    () => dataService.getRandomPrompts(filter),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled : true,
-    },
-  );
+  config?: Omit<
+    UseQueryOptions<t.TGetRandomPromptsResponse, unknown, t.TGetRandomPromptsResponse>,
+    'queryKey' | 'queryFn'
+  >,
+): UseQueryResult<t.TGetRandomPromptsResponse, unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.randomPrompts],
+    queryFn: () => dataService.getRandomPrompts(filter),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled : true,
+  });
 };
 
 export const useUserTermsQuery = (
-  config?: UseQueryOptions<t.TUserTermsResponse>,
-): QueryObserverResult<t.TUserTermsResponse> => {
-  return useQuery<t.TUserTermsResponse>([QueryKeys.userTerms], () => dataService.getUserTerms(), {
+  config?: Omit<UseQueryOptions<t.TUserTermsResponse, unknown, t.TUserTermsResponse>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TUserTermsResponse, unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.userTerms],
+    queryFn: () => dataService.getUserTerms(),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,

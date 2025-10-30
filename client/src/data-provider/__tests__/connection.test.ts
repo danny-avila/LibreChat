@@ -75,13 +75,13 @@ describe('useHealthCheck', () => {
       });
 
       expect(mockQueryClient.fetchQuery).toHaveBeenCalledWith(
-        [QueryKeys.health],
-        expect.any(Function),
-        {
+        expect.objectContaining({
+          queryKey: [QueryKeys.health],
+          queryFn: expect.any(Function),
           retry: false,
-          cacheTime: 0,
+          gcTime: 0,
           staleTime: 0,
-        },
+        }),
       );
     });
 

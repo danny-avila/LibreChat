@@ -12,7 +12,7 @@ import type { ResourceType } from 'librechat-data-provider';
  * @returns Object with hasPermission function and loading state
  */
 export const useResourcePermissions = (resourceType: ResourceType, resourceId: string) => {
-  const { data, isLoading } = useGetEffectivePermissionsQuery(resourceType, resourceId);
+  const { data, isPending } = useGetEffectivePermissionsQuery(resourceType, resourceId);
 
   const hasPermission = (requiredPermission: number): boolean => {
     return data ? hasPermissions(data.permissionBits, requiredPermission) : false;
@@ -20,7 +20,7 @@ export const useResourcePermissions = (resourceType: ResourceType, resourceId: s
 
   return {
     hasPermission,
-    isLoading,
+    isPending,
     permissionBits: data?.permissionBits || 0,
   };
 };

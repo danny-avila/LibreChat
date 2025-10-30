@@ -4,7 +4,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
-import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
+import type { UseQueryOptions, UseQueryResult } from '@tanstack/react-query';
 import type { MCPServersResponse } from 'librechat-data-provider';
 
 /**
@@ -13,17 +13,16 @@ import type { MCPServersResponse } from 'librechat-data-provider';
  * @returns MCP servers with their tools
  */
 export const useMCPToolsQuery = <TData = MCPServersResponse>(
-  config?: UseQueryOptions<MCPServersResponse, unknown, TData>,
-): QueryObserverResult<TData> => {
-  return useQuery<MCPServersResponse, unknown, TData>(
-    [QueryKeys.mcpTools],
-    () => dataService.getMCPTools(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      ...config,
-    },
-  );
+  config?: Omit<UseQueryOptions<MCPServersResponse, unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.mcpTools],
+    queryFn: () => dataService.getMCPTools(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    // 5 minutes
+    staleTime: 5 * 60 * 1000,
+    ...config,
+  });
 };

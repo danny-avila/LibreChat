@@ -55,7 +55,7 @@ export const ClearChats = () => {
             selectHandler: clearConvos,
             selectClasses:
               'bg-destructive text-white transition-all duration-200 hover:bg-destructive/80',
-            selectText: clearConvosMutation.isLoading ? <Spinner /> : localize('com_ui_delete'),
+            selectText: clearConvosMutation.isPending ? <Spinner /> : localize('com_ui_delete'),
           }}
         />
       </OGDialog>

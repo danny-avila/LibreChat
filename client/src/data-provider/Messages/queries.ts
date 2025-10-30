@@ -1,19 +1,19 @@
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
+import type { UseQueryOptions, UseQueryResult } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import { logger } from '~/utils';
 
 export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
   id: string,
-  config?: UseQueryOptions<t.TMessage[], unknown, TData>,
-): QueryObserverResult<TData> => {
+  config?: Omit<UseQueryOptions<t.TMessage[], unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
   const location = useLocation();
   const queryClient = useQueryClient();
-  return useQuery<t.TMessage[], unknown, TData>(
-    [QueryKeys.messages, id],
-    async () => {
+  return useQuery({
+    queryKey: [QueryKeys.messages, id],
+    queryFn: async () => {
       const result = await dataService.getMessagesByConvoId(id);
       if (!location.pathname.includes('/c/new') && result?.length === 1) {
         const currentMessages = queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]);
@@ -32,11 +32,10 @@ export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
       }
       return result;
     },
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
+
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
 };

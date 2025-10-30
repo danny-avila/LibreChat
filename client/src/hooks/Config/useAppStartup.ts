@@ -29,10 +29,8 @@ export default function useAppStartup({
 }) {
   const setAvailableTools = useSetRecoilState(store.availableTools);
   const [defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
-  const { data: allPlugins } = useAvailablePluginsQuery({
-    enabled: !!user?.plugins,
-    select: selectPlugins,
-  });
+  const pluginsQuery = useAvailablePluginsQuery();
+  const allPlugins = useMemo(() => (pluginsQuery.data ? selectPlugins(pluginsQuery.data) : undefined), [pluginsQuery.data]);
 
   useSpeechSettingsInit(!!user);
 

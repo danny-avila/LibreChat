@@ -52,9 +52,15 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
 
       await Promise.all([
-        queryClient.invalidateQueries([QueryKeys.mcpTools]),
-        queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
-        queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.mcpTools]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.mcpAuthValues]
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.mcpConnectionStatus]
+        }),
       ]);
     },
     onError: (error: unknown) => {
@@ -191,11 +197,13 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
             return;
           }
 
-          await queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
+          await queryClient.refetchQueries({
+            queryKey: [QueryKeys.mcpConnectionStatus]
+          });
 
-          const freshConnectionData = queryClient.getQueryData([
+          const freshConnectionData = queryClient.getQueryData<{ connectionStatus?: Record<string, { connectionState?: string }> }>([
             QueryKeys.mcpConnectionStatus,
-          ]) as any;
+          ]);
           const freshConnectionStatus = freshConnectionData?.connectionStatus || {};
 
           const serverStatus = freshConnectionStatus[serverName];
@@ -215,7 +223,9 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
               setMCPValues([...currentValues, serverName]);
             }
 
-            await queryClient.invalidateQueries([QueryKeys.mcpTools]);
+            await queryClient.invalidateQueries({
+              queryKey: [QueryKeys.mcpTools]
+            });
 
             // This delay is to ensure UI has updated with new connection status before cleanup
             // Otherwise servers will show as disconnected for a second after OAuth flow completes
@@ -315,7 +325,9 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
           startServerPolling(serverName);
         } else {
-          await queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
+          await queryClient.invalidateQueries({
+            queryKey: [QueryKeys.mcpConnectionStatus]
+          });
 
           showToast({
             message: localize('com_ui_mcp_initialized_success', { 0: serverName }),
@@ -357,7 +369,9 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       cancelOAuthMutation.mutate(serverName, {
         onSuccess: () => {
           cleanupServerState(serverName);
-          queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
+          queryClient.invalidateQueries({
+            queryKey: [QueryKeys.mcpConnectionStatus]
+          });
 
           showToast({
             message: localize('com_ui_mcp_oauth_cancelled', { 0: serverName }),
@@ -556,7 +570,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       const hasCustomUserVars =
         serverConfig?.customUserVars && Object.keys(serverConfig.customUserVars).length > 0;
 
-      return {
+    return {
         serverName,
         serverStatus,
         tool: serverData
@@ -604,7 +618,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       });
     }
 
-    return {
+      return {
       serverName: selectedToolForConfig.name,
       serverStatus: connectionStatus?.[selectedToolForConfig.name],
       isOpen: isConfigModalOpen,
@@ -613,7 +627,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       initialValues,
       onSave: handleSave,
       onRevoke: handleRevoke,
-      isSubmitting: updateUserPluginsMutation.isLoading,
+      isSubmitting: updateUserPluginsMutation.isPending,
     };
   }, [
     selectedToolForConfig,
@@ -622,7 +636,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     handleDialogOpenChange,
     handleSave,
     handleRevoke,
-    updateUserPluginsMutation.isLoading,
+    updateUserPluginsMutation.isPending,
   ]);
 
   return {
