@@ -1,4 +1,3 @@
-const { Providers } = require('@librechat/agents');
 const {
   resolveHeaders,
   isUserProvided,
@@ -143,39 +142,27 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
 
   if (optionsOnly) {
     const modelOptions = endpointOption?.model_parameters ?? {};
-    if (endpoint !== Providers.OLLAMA) {
-      clientOptions = Object.assign(
-        {
-          modelOptions,
-        },
-        clientOptions,
-      );
-      clientOptions.modelOptions.user = req.user.id;
-      const options = getOpenAIConfig(apiKey, clientOptions, endpoint);
-      if (options != null) {
-        options.useLegacyContent = true;
-        options.endpointTokenConfig = endpointTokenConfig;
-      }
-      if (!clientOptions.streamRate) {
-        return options;
-      }
-      options.llmConfig.callbacks = [
-        {
-          handleLLMNewToken: createHandleLLMNewToken(clientOptions.streamRate),
-        },
-      ];
+    clientOptions = Object.assign(
+      {
+        modelOptions,
+      },
+      clientOptions,
+    );
+    clientOptions.modelOptions.user = req.user.id;
+    const options = getOpenAIConfig(apiKey, clientOptions, endpoint);
+    if (options != null) {
+      options.useLegacyContent = true;
+      options.endpointTokenConfig = endpointTokenConfig;
+    }
+    if (!clientOptions.streamRate) {
       return options;
     }
-
-    if (clientOptions.reverseProxyUrl) {
-      modelOptions.baseUrl = clientOptions.reverseProxyUrl.split('/v1')[0];
-      delete clientOptions.reverseProxyUrl;
-    }
-
-    return {
-      useLegacyContent: true,
-      llmConfig: modelOptions,
-    };
+    options.llmConfig.callbacks = [
+      {
+        handleLLMNewToken: createHandleLLMNewToken(clientOptions.streamRate),
+      },
+    ];
+    return options;
   }
 
   const client = new OpenAIClient(apiKey, clientOptions);
