@@ -57,7 +57,7 @@ async function loadConfigModels(req) {
 
   for (let i = 0; i < customEndpoints.length; i++) {
     const endpoint = customEndpoints[i];
-    const { models, name: configName, baseURL, apiKey } = endpoint;
+    const { models, name: configName, baseURL, apiKey, headers: endpointHeaders } = endpoint;
     const name = normalizeEndpointName(configName);
     endpointsMap[name] = endpoint;
 
@@ -76,6 +76,8 @@ async function loadConfigModels(req) {
           apiKey: API_KEY,
           baseURL: BASE_URL,
           user: req.user.id,
+          userObject: req.user,
+          headers: endpointHeaders,
           direct: endpoint.directEndpoint,
           userIdQuery: models.userIdQuery,
         });
