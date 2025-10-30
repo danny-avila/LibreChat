@@ -1,9 +1,9 @@
 import { memo } from 'react';
+import { showThinkingAtom } from '~/store/showThinking';
 import FontSizeSelector from './FontSizeSelector';
 import { ForkSettings } from './ForkSettings';
 import ChatDirection from './ChatDirection';
 import ToggleSwitch from '../ToggleSwitch';
-import { showThinkingAtom } from '~/store/showThinking';
 import store from '~/store';
 
 const toggleSwitchConfigs = [
