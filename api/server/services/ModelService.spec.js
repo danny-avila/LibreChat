@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { logAxiosError } = require('@librechat/api');
+const { logAxiosError, resolveHeaders } = require('@librechat/api');
 const { EModelEndpoint, defaultModels } = require('librechat-data-provider');
 
 const {
@@ -280,6 +280,38 @@ describe('fetchModels with Ollama specific logic', () => {
     expect(models).toEqual(['Ollama-Base', 'Ollama-Advanced']);
     expect(axios.get).toHaveBeenCalledWith('https://api.ollama.test.com/api/tags', {
       headers: {},
+      timeout: 5000,
+    });
+  });
+
+  it('should pass headers and user object to Ollama fetchModels', async () => {
+    const customHeaders = {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer custom-token',
+    };
+    const userObject = {
+      id: 'user789',
+      email: 'test@example.com',
+    };
+
+    resolveHeaders.mockReturnValueOnce(customHeaders);
+
+    const models = await fetchModels({
+      user: 'user789',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.ollama.test.com',
+      name: 'ollama',
+      headers: customHeaders,
+      userObject,
+    });
+
+    expect(models).toEqual(['Ollama-Base', 'Ollama-Advanced']);
+    expect(resolveHeaders).toHaveBeenCalledWith({
+      headers: customHeaders,
+      user: userObject,
+    });
+    expect(axios.get).toHaveBeenCalledWith('https://api.ollama.test.com/api/tags', {
+      headers: customHeaders,
       timeout: 5000,
     });
   });
