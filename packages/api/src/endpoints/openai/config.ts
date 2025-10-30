@@ -113,8 +113,10 @@ export function getOpenAIConfig(
         return;
       }
 
+      const updatedUrl = configOptions.baseURL?.replace(/\/deployments(?:\/.*)?$/, '/v1');
+
       configOptions.baseURL = constructAzureURL({
-        baseURL: configOptions.baseURL || 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
+        baseURL: updatedUrl || 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
         azureOptions: azure,
       });
 
