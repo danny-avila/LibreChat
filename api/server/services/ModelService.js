@@ -72,10 +72,9 @@ const fetchModels = async ({
     try {
       return await OllamaClient.fetchModels(baseURL, { headers, user: userObject });
     } catch (ollamaError) {
-      logger.info(
-        `[ModelService] Failed to fetch models from Ollama API for ${name}. Attempting OpenAI-compatible fetch.`,
-        { error: ollamaError.message },
-      );
+      const logMessage =
+        'Failed to fetch models from Ollama API. Attempting to fetch via OpenAI-compatible endpoint.';
+      logAxiosError({ message: logMessage, error: ollamaError });
     }
   }
 
