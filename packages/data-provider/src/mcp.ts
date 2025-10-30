@@ -3,6 +3,10 @@ import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
 const BaseOptionsSchema = z.object({
+  /** Display name for the MCP server */
+  title: z.string().optional(),
+  /** Description of the MCP server */
+  description: z.string().optional(),
   /**
    * Controls whether the MCP server is initialized during application startup.
    * - true (default): Server is initialized during app startup and included in app-level connections
@@ -178,3 +182,32 @@ export const MCPOptionsSchema = z.union([
 export const MCPServersSchema = z.record(z.string(), MCPOptionsSchema);
 
 export type MCPOptions = z.infer<typeof MCPOptionsSchema>;
+
+/**
+ * Helper to omit server-managed fields that should not come from UI
+ */
+const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T) =>
+  schema.omit({
+    startup: true,
+    timeout: true,
+    initTimeout: true,
+    chatMenu: true,
+    serverInstructions: true,
+    requiresOAuth: true,
+    customUserVars: true,
+    oauth_headers: true,
+  });
+
+/**
+ * MCP Server configuration that comes from UI input only
+ * Omits server-managed fields like startup, timeout, customUserVars, etc.
+ * Allows: title, description, url, iconPath, oauth (user credentials)
+ */
+export const MCPServerUserInputSchema = z.union([
+  omitServerManagedFields(StdioOptionsSchema),
+  omitServerManagedFields(WebSocketOptionsSchema),
+  omitServerManagedFields(SSEOptionsSchema),
+  omitServerManagedFields(StreamableHTTPOptionsSchema),
+]);
+
+export type MCPServerUserInput = z.infer<typeof MCPServerUserInputSchema>;

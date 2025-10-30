@@ -15,6 +15,7 @@ jest.mock('@librechat/api', () => ({
     storeTokens: jest.fn(),
   },
   getUserMCPAuthMap: jest.fn(),
+  generateCheckAccess: jest.fn(() => (req, res, next) => next()),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -42,6 +43,7 @@ jest.mock('~/models', () => ({
   createToken: jest.fn(),
   deleteTokens: jest.fn(),
   findPluginAuthsByKeys: jest.fn(),
+  getRoleByName: jest.fn(),
 }));
 
 jest.mock('~/server/services/Config', () => ({
@@ -75,6 +77,7 @@ jest.mock('~/cache', () => ({
 
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, res, next) => next(),
+  canAccessMCPServerResource: () => (req, res, next) => next(),
 }));
 
 jest.mock('~/server/services/Tools/mcp', () => ({

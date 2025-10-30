@@ -1,8 +1,10 @@
 import React, { memo, useCallback } from 'react';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { MultiSelect, MCPIcon } from '@librechat/client';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { useBadgeRowContext } from '~/Providers';
+import { useHasAccess } from '~/hooks';
 
 function MCPSelectContent() {
   const { conversationId, mcpServerManager } = useBadgeRowContext();
@@ -101,7 +103,12 @@ function MCPSelect() {
   const { mcpServerManager } = useBadgeRowContext();
   const { configuredServers } = mcpServerManager;
 
-  if (!configuredServers || configuredServers.length === 0) {
+  const canUseMcp = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
+  });
+
+  if (!canUseMcp || !configuredServers || configuredServers.length === 0) {
     return null;
   }
 

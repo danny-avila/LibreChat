@@ -226,6 +226,17 @@ export const mcp = {
   tools: `${BASE_URL}/api/mcp/tools`,
 };
 
+/* MCP Servers */
+export const mcpServers = (params?: { limit?: number; after?: string; search?: string }) => {
+  const baseUrl = `${BASE_URL}/api/mcp/servers`;
+  if (!params || Object.keys(params).length === 0) {
+    return baseUrl;
+  }
+  return `${baseUrl}${buildQuery(params)}`;
+};
+
+export const mcpServer = (mcp_id: string) => `${BASE_URL}/api/mcp/servers/${mcp_id}`;
+
 export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;
 
 export const files = () => `${BASE_URL}/api/files`;
@@ -314,6 +325,8 @@ export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
 export const updatePeoplePickerPermissions = (roleName: string) =>
   `${getRole(roleName)}/people-picker`;
+export const updateMcpServersPermissions = (roleName: string) =>
+  `${getRole(roleName)}/mcp-servers`;
 
 export const updateMarketplacePermissions = (roleName: string) =>
   `${getRole(roleName)}/marketplace`;
