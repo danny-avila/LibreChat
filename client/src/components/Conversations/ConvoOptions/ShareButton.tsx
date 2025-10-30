@@ -26,7 +26,15 @@ export default function ShareButton({
   const [showQR, setShowQR] = useState(false);
   const [sharedLink, setSharedLink] = useState('');
   const [isCopying, setIsCopying] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
   const copyLink = useCopyToClipboard({ text: sharedLink });
+  const copyLinkAndAnnounce = (setIsCopying: React.Dispatch<React.SetStateAction<boolean>>) => {
+    setAnnouncement(localize('com_ui_link_copied'));
+    copyLink(setIsCopying);
+    setTimeout(() => {
+      setAnnouncement('');
+    }, 1000);
+  };
   const latestMessage = useRecoilValue(store.latestMessageFamily(0));
   const { data: share, isLoading } = useGetSharedLinkQuery(conversationId);
 
@@ -90,6 +98,9 @@ export default function ShareButton({
               {shareId && (
                 <div className="flex items-center gap-2 rounded-md bg-surface-secondary p-2">
                   <div className="flex-1 break-all text-sm text-text-secondary">{sharedLink}</div>
+                  <span className="sr-only" aria-live="polite" aria-atomic="true">
+                    {announcement}
+                  </span>
                   <Button
                     size="sm"
                     variant="outline"
@@ -98,7 +109,7 @@ export default function ShareButton({
                       if (isCopying) {
                         return;
                       }
-                      copyLink(setIsCopying);
+                      copyLinkAndAnnounce(setIsCopying);
                     }}
                     className={cn('shrink-0', isCopying ? 'cursor-default' : '')}
                   >
