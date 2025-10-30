@@ -57,7 +57,6 @@ function getLLMConfig(
 
   const defaultOptions = {
     model: anthropicSettings.model.default,
-    maxOutputTokens: anthropicSettings.maxOutputTokens.default,
     stream: true,
   };
 

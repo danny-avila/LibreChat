@@ -30,7 +30,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
           apiKey: 'sk-xxxx',
           model: 'claude-sonnet-4',
           stream: true,
-          maxTokens: 8192,
+          maxTokens: 64000,
           modelKwargs: {
             metadata: {
               user_id: 'some_user_id',
