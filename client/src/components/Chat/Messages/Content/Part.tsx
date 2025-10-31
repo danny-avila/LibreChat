@@ -75,7 +75,7 @@ const Part = memo(
       if (typeof reasoning !== 'string') {
         return null;
       }
-      return <Reasoning reasoning={reasoning} />;
+      return <Reasoning reasoning={reasoning} isLast={isLast ?? false} />;
     } else if (part.type === ContentTypes.TOOL_CALL) {
       const toolCall = part[ContentTypes.TOOL_CALL];
 

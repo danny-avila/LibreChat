@@ -35,24 +35,16 @@ export const ThinkingButton = memo(
     onClick,
     label,
     content,
-    isContentHovered = false,
   }: {
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
     label: string;
     content?: string;
-    isContentHovered?: boolean;
   }) => {
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
 
-    const [isButtonHovered, setIsButtonHovered] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
-
-    const isHovered = useMemo(
-      () => isButtonHovered || isContentHovered,
-      [isButtonHovered, isContentHovered],
-    );
 
     const handleCopy = useCallback(
       (e: MouseEvent<HTMLButtonElement>) => {
@@ -67,27 +59,22 @@ export const ThinkingButton = memo(
     );
 
     return (
-      <div className="flex w-full items-center justify-between gap-2">
+      <div className="group flex w-full items-center justify-between gap-2">
         <button
           type="button"
           onClick={onClick}
-          onMouseEnter={() => setIsButtonHovered(true)}
-          onMouseLeave={() => setIsButtonHovered(false)}
           className={cn(
-            'group flex flex-1 items-center justify-start rounded-lg leading-[18px]',
+            'flex flex-1 items-center justify-start rounded-lg leading-[18px]',
             fontSize,
           )}
         >
-          {isHovered ? (
-            <ChevronDown
-              className={cn(
-                'icon-sm mr-1.5 transform-gpu text-text-primary transition-transform duration-300',
-                isExpanded && 'rotate-180',
-              )}
-            />
-          ) : (
-            <Lightbulb className="icon-sm mr-1.5 text-text-secondary" />
-          )}
+          <Lightbulb className="icon-sm mr-1.5 text-text-secondary group-hover:hidden" />
+          <ChevronDown
+            className={cn(
+              'icon-sm mr-1.5 hidden transform-gpu text-text-primary transition-transform duration-300 group-hover:block',
+              isExpanded && 'rotate-180',
+            )}
+          />
           {label}
         </button>
         {content && (
@@ -132,15 +119,11 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
   const localize = useLocalize();
   const showThinking = useAtomValue(showThinkingAtom);
   const [isExpanded, setIsExpanded] = useState(showThinking);
-  const [isContentHovered, setIsContentHovered] = useState(false);
 
   const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     setIsExpanded((prev) => !prev);
   }, []);
-
-  const handleContentEnter = useCallback(() => setIsContentHovered(true), []);
-  const handleContentLeave = useCallback(() => setIsContentHovered(false), []);
 
   const label = useMemo(() => localize('com_ui_thoughts'), [localize]);
 
@@ -157,14 +140,13 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
   }
 
   return (
-    <div onMouseEnter={handleContentEnter} onMouseLeave={handleContentLeave}>
+    <div>
       <div className="sticky top-0 z-10 mb-4 bg-surface-primary pb-2 pt-2">
         <ThinkingButton
           isExpanded={isExpanded}
           onClick={handleClick}
           label={label}
           content={textContent}
-          isContentHovered={isContentHovered}
         />
       </div>
       <div
