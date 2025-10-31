@@ -2,7 +2,7 @@ import { memo, useMemo, useState, useCallback } from 'react';
 import { useAtom } from 'jotai';
 import type { MouseEvent } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
-import { ThinkingContent, ThinkingButton } from '~/components/Artifacts/Thinking';
+import { ThinkingContent, ThinkingButton } from './Thinking';
 import { showThinkingAtom } from '~/store/showThinking';
 import { useMessageContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
