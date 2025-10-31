@@ -3,6 +3,7 @@ const { EModelEndpoint, AuthKeys } = require('librechat-data-provider');
 const { getGoogleConfig, isEnabled, loadServiceKey } = require('@librechat/api');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { GoogleClient } = require('~/app');
+const { ProxyAgent, setGlobalDispatcher } = require('undici');
 
 const initializeClient = async ({ req, res, endpointOption, overrideModel, optionsOnly }) => {
   const { GOOGLE_KEY, GOOGLE_REVERSE_PROXY, GOOGLE_AUTH_HEADER, PROXY } = process.env;
@@ -81,7 +82,20 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
     if (overrideModel) {
       clientOptions.modelOptions.model = overrideModel;
     }
-    return getGoogleConfig(credentials, clientOptions);
+    const result = getGoogleConfig(credentials, clientOptions);
+    
+    if (clientOptions.proxy && result.llmConfig) {
+      result.llmConfig.proxyUrl = clientOptions.proxy;
+      // Set up undici global dispatcher to route all fetch requests through proxy
+      try {
+        const proxyAgent = new ProxyAgent(clientOptions.proxy);
+        setGlobalDispatcher(proxyAgent);
+      } catch (error) {
+        // Proxy configuration failed, but continue without it
+      }
+    }
+    
+    return result;
   }
 
   const client = new GoogleClient(credentials, clientOptions);
