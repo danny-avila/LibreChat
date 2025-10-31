@@ -65,6 +65,10 @@ const Part = memo(
       if (part.tool_call_ids != null && !text) {
         return null;
       }
+      /** Skip rendering if text is only whitespace to avoid empty Container */
+      if (/^\s*$/.test(text)) {
+        return null;
+      }
       return (
         <Container>
           <Text text={text} isCreatedByUser={isCreatedByUser} showCursor={showCursor} />
