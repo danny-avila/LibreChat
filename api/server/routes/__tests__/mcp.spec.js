@@ -119,7 +119,7 @@ describe('MCP Routes', () => {
   });
 
   describe('GET /:serverName/oauth/initiate', () => {
-    const { MCPOAuthHandler } = require('@librechat/api');
+    const { MCPOAuthHandler, mcpServersRegistry } = require('@librechat/api');
     const { getLogStores } = require('~/cache');
 
     it('should initiate OAuth flow successfully', async () => {
@@ -132,13 +132,9 @@ describe('MCP Routes', () => {
         }),
       };
 
-      const mockMcpManager = {
-        getRawConfig: jest.fn().mockReturnValue({}),
-      };
-
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
-      require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
+      mcpServersRegistry.getServerConfig.mockResolvedValue({});
 
       MCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
         authorizationUrl: 'https://oauth.example.com/auth',
@@ -292,6 +288,7 @@ describe('MCP Routes', () => {
     });
 
     it('should handle OAuth callback successfully', async () => {
+      const { mcpServersRegistry } = require('@librechat/api');
       const mockFlowManager = {
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
@@ -311,6 +308,7 @@ describe('MCP Routes', () => {
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
+      mcpServersRegistry.getServerConfig.mockResolvedValue({});
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
@@ -325,7 +323,6 @@ describe('MCP Routes', () => {
       };
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue(mockUserConnection),
-        getRawConfig: jest.fn().mockReturnValue({}),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
@@ -383,6 +380,7 @@ describe('MCP Routes', () => {
     });
 
     it('should handle system-level OAuth completion', async () => {
+      const { mcpServersRegistry } = require('@librechat/api');
       const mockFlowManager = {
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
@@ -402,13 +400,9 @@ describe('MCP Routes', () => {
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
+      mcpServersRegistry.getServerConfig.mockResolvedValue({});
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
-
-      const mockMcpManager = {
-        getRawConfig: jest.fn().mockReturnValue({}),
-      };
-      require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
       const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
         code: 'test-auth-code',
@@ -421,6 +415,7 @@ describe('MCP Routes', () => {
     });
 
     it('should handle reconnection failure after OAuth', async () => {
+      const { mcpServersRegistry } = require('@librechat/api');
       const mockFlowManager = {
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
@@ -440,12 +435,12 @@ describe('MCP Routes', () => {
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
+      mcpServersRegistry.getServerConfig.mockResolvedValue({});
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
       const mockMcpManager = {
         getUserConnection: jest.fn().mockRejectedValue(new Error('Reconnection failed')),
-        getRawConfig: jest.fn().mockReturnValue({}),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
@@ -465,6 +460,7 @@ describe('MCP Routes', () => {
     });
 
     it('should redirect to error page if token storage fails', async () => {
+      const { mcpServersRegistry } = require('@librechat/api');
       const mockFlowManager = {
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
@@ -484,6 +480,7 @@ describe('MCP Routes', () => {
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
       MCPTokenStorage.storeTokens.mockRejectedValue(new Error('store failed'));
+      mcpServersRegistry.getServerConfig.mockResolvedValue({});
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
@@ -1224,7 +1221,7 @@ describe('MCP Routes', () => {
 
   describe('GET /:serverName/oauth/callback - Edge Cases', () => {
     it('should handle OAuth callback without toolFlowId (falsy toolFlowId)', async () => {
-      const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+      const { MCPOAuthHandler, MCPTokenStorage, mcpServersRegistry } = require('@librechat/api');
       const mockTokens = {
         access_token: 'edge-access-token',
         refresh_token: 'edge-refresh-token',
@@ -1242,6 +1239,7 @@ describe('MCP Routes', () => {
       });
       MCPOAuthHandler.completeOAuthFlow = jest.fn().mockResolvedValue(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
+      mcpServersRegistry.getServerConfig.mockResolvedValue({});
 
       const mockFlowManager = {
         completeFlow: jest.fn(),
@@ -1252,7 +1250,6 @@ describe('MCP Routes', () => {
         getUserConnection: jest.fn().mockResolvedValue({
           fetchTools: jest.fn().mockResolvedValue([]),
         }),
-        getRawConfig: jest.fn().mockReturnValue({}),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
@@ -1267,7 +1264,7 @@ describe('MCP Routes', () => {
     it('should handle null cached tools in OAuth callback (triggers || {} fallback)', async () => {
       const { getCachedTools } = require('~/server/services/Config');
       getCachedTools.mockResolvedValue(null);
-      const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+      const { MCPOAuthHandler, MCPTokenStorage, mcpServersRegistry } = require('@librechat/api');
       const mockTokens = {
         access_token: 'edge-access-token',
         refresh_token: 'edge-refresh-token',
@@ -1293,6 +1290,7 @@ describe('MCP Routes', () => {
       });
       MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
+      mcpServersRegistry.getServerConfig.mockResolvedValue({});
 
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue({
@@ -1300,7 +1298,6 @@ describe('MCP Routes', () => {
             .fn()
             .mockResolvedValue([{ name: 'test-tool', description: 'Test tool' }]),
         }),
-        getRawConfig: jest.fn().mockReturnValue({}),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
