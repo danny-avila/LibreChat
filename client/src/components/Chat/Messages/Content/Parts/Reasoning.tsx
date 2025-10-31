@@ -67,7 +67,7 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
   }
 
   return (
-    <div>
+    <div className="group/reasoning">
       <div className="sticky top-0 z-10 mb-2 bg-surface-secondary pb-2 pt-2">
         <ThinkingButton
           isExpanded={isExpanded}

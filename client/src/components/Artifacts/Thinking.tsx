@@ -59,22 +59,24 @@ export const ThinkingButton = memo(
     );
 
     return (
-      <div className="group flex w-full items-center justify-between gap-2">
+      <div className="flex w-full items-center justify-between gap-2">
         <button
           type="button"
           onClick={onClick}
           className={cn(
-            'flex flex-1 items-center justify-start rounded-lg leading-[18px]',
+            'group/button flex flex-1 items-center justify-start rounded-lg leading-[18px]',
             fontSize,
           )}
         >
-          <Lightbulb className="icon-sm mr-1.5 text-text-secondary group-hover:hidden" />
-          <ChevronDown
-            className={cn(
-              'icon-sm mr-1.5 hidden transform-gpu text-text-primary transition-transform duration-300 group-hover:block',
-              isExpanded && 'rotate-180',
-            )}
-          />
+          <span className="relative mr-1.5 inline-flex h-[18px] w-[18px] items-center justify-center">
+            <Lightbulb className="icon-sm absolute text-text-secondary opacity-100 transition-opacity group-hover/button:opacity-0" />
+            <ChevronDown
+              className={cn(
+                'icon-sm absolute transform-gpu text-text-primary opacity-0 transition-all duration-300 group-hover/button:opacity-100',
+                isExpanded && 'rotate-180',
+              )}
+            />
+          </span>
           {label}
         </button>
         {content && (
