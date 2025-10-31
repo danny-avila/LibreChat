@@ -68,7 +68,7 @@ export default function ShareButton({
         showCloseButton={true}
         showCancelButton={false}
         title={localize('com_ui_share_link_to_chat')}
-        className="max-w-[550px]"
+        className="max-h-[90vh] max-w-[550px] overflow-y-auto"
         main={
           <div>
             <div className="h-full py-2 text-text-primary">
@@ -82,7 +82,7 @@ export default function ShareButton({
                   : localize('com_ui_share_create_message');
               })()}
             </div>
-            <div className="relative items-center rounded-lg p-2">
+            <div className="relative items-center overflow-auto rounded-lg p-2">
               {showQR && (
                 <div className="mb-4 flex flex-col items-center">
                   <QRCodeSVG
