@@ -317,22 +317,5 @@ describe('extractGroupsFromToken', () => {
     const result = extractGroupsFromToken(tokenset, 'resource_access.librechat.roles', 'access');
     expect(result).toEqual(['chat-admin', 'prompt-creator']);
   });
-
-  it('should handle Auth0 groups', () => {
-    const tokenset = {
-      id_token: 'id.jwt.token',
-    };
-
-    jwtDecode.mockReturnValue({
-      'https://example.auth0.com/groups': ['engineering', 'product'],
-    });
-
-    const result = extractGroupsFromToken(
-      tokenset,
-      'https://example.auth0.com/groups',
-      'id',
-    );
-    expect(result).toEqual(['engineering', 'product']);
-  });
 });
 

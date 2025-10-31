@@ -1,8 +1,4 @@
-const { syncUserOidcGroupsFromToken } = require('./PermissionService');
-const { extractGroupsFromToken } = require('~/utils/extractJwtClaims');
-const { Group } = require('~/db/models');
-
-// Mock dependencies
+// Mock dependencies BEFORE imports to prevent initialization errors
 jest.mock('~/utils/extractJwtClaims');
 jest.mock('~/db/models');
 jest.mock('@librechat/data-schemas', () => ({
@@ -12,7 +8,63 @@ jest.mock('@librechat/data-schemas', () => ({
     error: jest.fn(),
     debug: jest.fn(),
   },
+  getTransactionSupport: jest.fn(),
+  isEnabled: jest.fn((val) => val === 'true' || val === true),
+  createModels: jest.fn(() => ({
+    User: {},
+    Key: {},
+    Session: {},
+    Balance: {},
+    Transaction: {},
+    Group: {},
+    Conversation: {},
+    Message: {},
+    Assistant: {},
+    Agent: {},
+    ToolCall: {},
+    Action: {},
+    Prompt: {},
+    PromptGroup: {},
+    Preset: {},
+    File: {},
+    ConversationTag: {},
+    Categories: {},
+    Role: {},
+    AclEntry: {},
+    AccessRole: {},
+    Project: {},
+    Banner: {},
+  })),
 }));
+jest.mock('~/server/services/GraphApiService', () => ({
+  entraIdPrincipalFeatureEnabled: jest.fn(() => false),
+  getUserEntraGroups: jest.fn(),
+  getUserOwnedEntraGroups: jest.fn(),
+  getGroupMembers: jest.fn(),
+  getGroupOwners: jest.fn(),
+}));
+jest.mock('~/models', () => ({
+  findAccessibleResources: jest.fn(),
+  getEffectivePermissions: jest.fn(),
+  grantPermission: jest.fn(),
+  findEntriesByPrincipalsAndResource: jest.fn(),
+  findGroupByExternalId: jest.fn(),
+  findRoleByIdentifier: jest.fn(),
+  getUserPrincipals: jest.fn(),
+  hasPermission: jest.fn(),
+  createGroup: jest.fn(),
+  createUser: jest.fn(),
+  updateUser: jest.fn(),
+  findUser: jest.fn(),
+}));
+jest.mock('@librechat/api', () => ({
+  isEnabled: jest.fn((val) => val === 'true' || val === true),
+}));
+
+// Now import after mocks are set up
+const { syncUserOidcGroupsFromToken } = require('./PermissionService');
+const { extractGroupsFromToken } = require('~/utils/extractJwtClaims');
+const { Group } = require('~/db/models');
 
 describe('syncUserOidcGroupsFromToken', () => {
   let originalEnv;
@@ -115,6 +167,7 @@ describe('syncUserOidcGroupsFromToken', () => {
         tokenset,
         'realm_access.roles', // default claim path
         'access', // default token kind
+        null, // default exclusion pattern
       );
     });
 
@@ -141,6 +194,7 @@ describe('syncUserOidcGroupsFromToken', () => {
         tokenset,
         'custom.path.groups',
         'id',
+        null, // exclusion pattern not set in this test
       );
     });
 
