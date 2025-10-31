@@ -66,7 +66,7 @@ const Part = memo(
         return null;
       }
       /** Skip rendering if text is only whitespace to avoid empty Container */
-      if (/^\s*$/.test(text)) {
+      if (!isLast && text.length > 0 && /^\s*$/.test(text)) {
         return null;
       }
       return (
