@@ -558,9 +558,9 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
  * - Add transaction wrapping for full atomicity (currently relies on passed session)
  * - Implement bulk query optimization for large group counts (>20 groups)
  * - Add configurable group name transformation/mapping
- * - Add role filtering to exclude system/default roles
  * - Add orphaned group cleanup (groups with no members)
  * - Add manual sync trigger via admin API
+ * - Add support for URL-based claim paths (e.g., Auth0 custom namespaces)
  * 
  * @param {Object} user - User object from authentication
  * @param {string} user.idOnTheSource - User's external ID (oid or sub from token claims)
@@ -582,6 +582,12 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
       return;
     }
 
+    // Security: Validate idOnTheSource type to prevent MongoDB injection
+    if (typeof user.idOnTheSource !== 'string' || user.idOnTheSource.trim().length === 0) {
+      logger.warn('[PermissionService.syncUserOidcGroupsFromToken] Invalid idOnTheSource type or empty value');
+      return;
+    }
+
     // Validate tokenset
     if (!tokenset || typeof tokenset !== 'object') {
       logger.warn('[PermissionService.syncUserOidcGroupsFromToken] Invalid tokenset provided');
@@ -595,7 +601,21 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     const exclusionPattern = process.env.OPENID_GROUPS_EXCLUDE_PATTERN || null;
 
     // Extract groups from token
-    const groupNames = extractGroupsFromToken(tokenset, claimPath, tokenKind, exclusionPattern);
+    let groupNames = extractGroupsFromToken(tokenset, claimPath, tokenKind, exclusionPattern);
+
+    // Security: Limit maximum number of groups to prevent DoS attacks
+    const MAX_GROUPS_PER_USER = parseInt(process.env.OPENID_MAX_GROUPS_PER_USER) || 100;
+    if (groupNames.length > MAX_GROUPS_PER_USER) {
+      logger.warn(
+        `[PermissionService.syncUserOidcGroupsFromToken] User ${user.email} has ${groupNames.length} groups, limiting to ${MAX_GROUPS_PER_USER}`,
+        {
+          userId: user._id,
+          originalCount: groupNames.length,
+          limitedCount: MAX_GROUPS_PER_USER,
+        },
+      );
+      groupNames = groupNames.slice(0, MAX_GROUPS_PER_USER);
+    }
 
     if (!groupNames || groupNames.length === 0) {
       logger.info(

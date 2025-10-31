@@ -123,6 +123,20 @@ function shouldExcludeGroup(groupName, exclusionPattern) {
     if (pattern.startsWith('regex:')) {
       try {
         const regexStr = pattern.substring(6); // Remove 'regex:' prefix
+        
+        // Security: Prevent ReDoS attacks by limiting regex complexity
+        if (regexStr.length > 200) {
+          logger.warn(`[shouldExcludeGroup] Regex pattern too long (${regexStr.length} chars), skipping: ${pattern.substring(0, 50)}...`);
+          continue;
+        }
+        
+        // Security: Detect potentially dangerous regex patterns
+        const dangerousPatterns = /(\+\*|\*\+|\{\d+,\}|\(\?[^:)])/;
+        if (dangerousPatterns.test(regexStr)) {
+          logger.warn(`[shouldExcludeGroup] Potentially dangerous regex pattern detected, skipping: ${pattern}`);
+          continue;
+        }
+        
         const regex = new RegExp(regexStr, 'i'); // Case-insensitive
         if (regex.test(groupName)) {
           logger.debug(`[shouldExcludeGroup] Excluding '${groupName}' (matched regex: ${regexStr})`);
