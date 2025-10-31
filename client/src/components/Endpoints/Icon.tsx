@@ -1,4 +1,4 @@
-import React, { memo, useState, useMemo, useRef, useCallback } from 'react';
+import React, { memo, useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { UserIcon, useAvatar } from '@librechat/client';
 import type { TUser } from 'librechat-data-provider';
 import type { IconProps } from '~/common';
@@ -37,15 +37,14 @@ DefaultAvatar.displayName = 'DefaultAvatar';
 const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAvatarProps) => {
   const [imageError, setImageError] = useState(false);
   const imageLoadedRef = useRef(false);
-  const currentSrcRef = useRef('');
 
   const imageSrc = useMemo(() => (user?.avatar ?? '') || avatarSrc, [user?.avatar, avatarSrc]);
 
-  /** Reset loaded state if image source changes */
-  if (currentSrcRef.current !== imageSrc) {
+  /** Reset loaded state and error state if image source changes */
+  useEffect(() => {
     imageLoadedRef.current = false;
-    currentSrcRef.current = imageSrc;
-  }
+    setImageError(false);
+  }, [imageSrc]);
 
   const handleImageError = useCallback(() => {
     setImageError(true);
@@ -54,6 +53,7 @@ const UserAvatar = memo(({ size, user, avatarSrc, username, className }: UserAva
 
   const handleImageLoad = useCallback(() => {
     imageLoadedRef.current = true;
+    setImageError(false);
   }, []);
 
   const hasAvatar = useMemo(() => imageSrc !== '', [imageSrc]);
