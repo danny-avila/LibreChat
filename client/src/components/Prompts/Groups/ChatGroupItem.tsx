@@ -102,6 +102,9 @@ function ChatGroupItem({
                   e.stopPropagation();
                   setPreviewDialogOpen(true);
                 }}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                }}
                 className="w-full cursor-pointer rounded-lg text-text-primary hover:bg-surface-hover focus:bg-surface-hover disabled:cursor-not-allowed"
               >
                 <TextSearch className="mr-2 h-4 w-4 text-text-primary" aria-hidden="true" />
@@ -115,6 +118,9 @@ function ChatGroupItem({
                     onClick={(e) => {
                       e.stopPropagation();
                       onEditClick(e);
+                    }}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
                     }}
                   >
                     <EditIcon className="mr-2 h-4 w-4 text-text-primary" aria-hidden="true" />
