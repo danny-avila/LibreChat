@@ -62,11 +62,12 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid flow state' });
     }
 
+    const oauthHeaders = await getOAuthHeaders(serverName, userId);
     const { authorizationUrl, flowId: oauthFlowId } = await MCPOAuthHandler.initiateOAuthFlow(
       serverName,
       serverUrl,
       userId,
-      getOAuthHeaders(serverName),
+      oauthHeaders,
       oauthConfig,
     );
 
@@ -545,9 +546,8 @@ router.get('/:serverName/auth-values', requireJwtAuth, async (req, res) => {
   }
 });
 
-function getOAuthHeaders(serverName) {
-  const mcpManager = getMCPManager();
-  const serverConfig = mcpManager.getRawConfig(serverName);
+async function getOAuthHeaders(serverName, userId) {
+  const serverConfig = await mcpServersRegistry.getServerConfig(serverName, userId);
   return serverConfig?.oauth_headers ?? {};
 }
 
