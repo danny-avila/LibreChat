@@ -188,6 +188,46 @@ Keep up with the latest updates by visiting the releases page and notes:
 
 ---
 
+## 🚀 Getting Started
+
+### Quick Start
+
+For detailed installation and setup instructions, visit our [documentation](https://docs.librechat.ai).
+
+### For Contributors
+
+When contributing to LibreChat, you'll need to initialize the documentation submodule:
+
+```bash
+# Clone with submodules
+git clone --recurse-submodules https://github.com/danny-avila/LibreChat.git
+
+# Or if you've already cloned, initialize submodules
+git submodule update --init --recursive
+```
+
+The documentation is maintained in a separate repository and included as a git submodule in `docs-site/`. This allows:
+- **Code and docs stay in sync**: Documentation updates can be made alongside code changes
+- **Easy local preview**: Run the docs site locally while developing
+- **Flexible contribution**: Contribute to docs only, code only, or both together
+
+#### Working with Documentation:
+
+```bash
+# Check if docs are up-to-date
+npm run check:docs
+
+# Update documentation to latest version
+git submodule update --remote docs-site
+
+# Preview docs locally
+cd docs-site && npm install && npm run dev
+```
+
+For more details on contributing, see [CONTRIBUTING.md](.github/CONTRIBUTING.md#9-documentation-guidelines).
+
+---
+
 ## ✨ Contributions
 
 Contributions, suggestions, bug reports and fixes are welcome!
