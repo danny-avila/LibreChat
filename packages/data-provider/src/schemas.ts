@@ -619,9 +619,8 @@ export type MemoryArtifact = {
 };
 
 export type UIResource = {
-  type?: string;
-  data?: unknown;
-  uri?: string;
+  resourceId: string;
+  uri: string;
   mimeType?: string;
   text?: string;
   [key: string]: unknown;
