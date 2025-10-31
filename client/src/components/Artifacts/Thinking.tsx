@@ -142,7 +142,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
   }
 
   return (
-    <div>
+    <>
       <div className="sticky top-0 z-10 mb-4 bg-surface-primary pb-2 pt-2">
         <ThinkingButton
           isExpanded={isExpanded}
@@ -161,7 +161,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
           <ThinkingContent>{children}</ThinkingContent>
         </div>
       </div>
-    </div>
+    </>
   );
 });
 
