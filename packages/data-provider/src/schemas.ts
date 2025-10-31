@@ -339,7 +339,7 @@ export const googleSettings = {
   },
   thinkingBudget: {
     min: -1 as const,
-    max: 32768 as const,
+    max: 32000 as const,
     step: 1 as const,
     /** `-1` = Dynamic Thinking, meaning the model will adjust
      * the budget based on the complexity of the request.
@@ -349,6 +349,8 @@ export const googleSettings = {
 };
 
 const ANTHROPIC_MAX_OUTPUT = 128000 as const;
+const CLAUDE_4_64K_MAX_OUTPUT = 64000 as const;
+const CLAUDE_32K_MAX_OUTPUT = 32000 as const;
 const DEFAULT_MAX_OUTPUT = 8192 as const;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096 as const;
 export const anthropicSettings = {
@@ -379,18 +381,27 @@ export const anthropicSettings = {
     step: 1 as const,
     default: DEFAULT_MAX_OUTPUT,
     reset: (modelName: string) => {
-      if (/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) {
-        return DEFAULT_MAX_OUTPUT;
+      if (/claude-(?:sonnet|haiku)[-.]?[4-9]/.test(modelName)) {
+        return CLAUDE_4_64K_MAX_OUTPUT;
       }
 
-      return 4096;
+      if (/claude-opus[-.]?[4-9]/.test(modelName)) {
+        return CLAUDE_32K_MAX_OUTPUT;
+      }
+
+      return DEFAULT_MAX_OUTPUT;
     },
     set: (value: number, modelName: string) => {
-      if (
-        !(/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) &&
-        value > LEGACY_ANTHROPIC_MAX_OUTPUT
-      ) {
-        return LEGACY_ANTHROPIC_MAX_OUTPUT;
+      if (/claude-(?:sonnet|haiku)[-.]?[4-9]/.test(modelName) && value > CLAUDE_4_64K_MAX_OUTPUT) {
+        return CLAUDE_4_64K_MAX_OUTPUT;
+      }
+
+      if (/claude-(?:opus|haiku)[-.]?[4-9]/.test(modelName) && value > CLAUDE_32K_MAX_OUTPUT) {
+        return CLAUDE_32K_MAX_OUTPUT;
+      }
+
+      if (value > ANTHROPIC_MAX_OUTPUT) {
+        return ANTHROPIC_MAX_OUTPUT;
       }
 
       return value;

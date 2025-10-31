@@ -5,6 +5,7 @@ import { QueryKeys, Constants } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { Dispatch, SetStateAction } from 'react';
 import { useLocalize, useNewConvo } from '~/hooks';
+import { clearMessagesCache } from '~/utils';
 import store from '~/store';
 
 export default function MobileNav({
@@ -57,10 +58,7 @@ export default function MobileNav({
         aria-label={localize('com_ui_new_chat')}
         className="m-1 inline-flex size-10 items-center justify-center rounded-full hover:bg-surface-hover"
         onClick={() => {
-          queryClient.setQueryData<TMessage[]>(
-            [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
-            [],
-          );
+          clearMessagesCache(queryClient, conversation?.conversationId);
           queryClient.invalidateQueries([QueryKeys.messages]);
           newConversation();
         }}

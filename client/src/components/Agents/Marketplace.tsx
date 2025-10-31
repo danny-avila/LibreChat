@@ -4,7 +4,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
-import { PermissionTypes, Permissions, QueryKeys, Constants } from 'librechat-data-provider';
+import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/hooks';
@@ -13,11 +13,11 @@ import MarketplaceAdminSettings from './MarketplaceAdminSettings';
 import { SidePanelProvider, useChatContext } from '~/Providers';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { OpenSidebar } from '~/components/Chat/Menus';
+import { cn, clearMessagesCache } from '~/utils';
 import CategoryTabs from './CategoryTabs';
 import AgentDetail from './AgentDetail';
 import SearchBar from './SearchBar';
 import AgentGrid from './AgentGrid';
-import { cn } from '~/utils';
 import store from '~/store';
 
 interface AgentMarketplaceProps {
@@ -224,10 +224,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
       window.open('/c/new', '_blank');
       return;
     }
-    queryClient.setQueryData<t.TMessage[]>(
-      [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
-      [],
-    );
+    clearMessagesCache(queryClient, conversation?.conversationId);
     queryClient.invalidateQueries([QueryKeys.messages]);
     newConversation();
   };

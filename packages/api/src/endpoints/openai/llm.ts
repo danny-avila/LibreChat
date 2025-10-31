@@ -1,4 +1,4 @@
-import { removeNullishValues } from 'librechat-data-provider';
+import { EModelEndpoint, removeNullishValues } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
@@ -79,6 +79,7 @@ export function getOpenAILLMConfig({
   azure,
   apiKey,
   baseURL,
+  endpoint,
   streaming,
   addParams,
   dropParams,
@@ -88,6 +89,7 @@ export function getOpenAILLMConfig({
   apiKey: string;
   streaming: boolean;
   baseURL?: string | null;
+  endpoint?: EModelEndpoint | string | null;
   modelOptions: Partial<t.OpenAIParameters>;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
@@ -155,7 +157,8 @@ export function getOpenAILLMConfig({
 
   if (
     hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
-    (llmConfig.useResponsesApi === true || useOpenRouter)
+    (llmConfig.useResponsesApi === true ||
+      (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI))
   ) {
     llmConfig.reasoning = removeNullishValues(
       {

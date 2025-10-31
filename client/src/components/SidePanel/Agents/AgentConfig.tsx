@@ -420,9 +420,16 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                       type="text"
                       placeholder={localize('com_ui_support_contact_name_placeholder')}
                       aria-label="Support contact name"
+                      aria-invalid={error ? 'true' : 'false'}
+                      aria-describedby={error ? 'support-contact-name-error' : undefined}
                     />
                     {error && (
-                      <span className="text-sm text-red-500 transition duration-300 ease-in-out">
+                      <span
+                        id="support-contact-name-error"
+                        className="text-sm text-red-500 transition duration-300 ease-in-out"
+                        role="alert"
+                        aria-live="polite"
+                      >
                         {error.message}
                       </span>
                     )}
@@ -455,9 +462,16 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                       type="email"
                       placeholder={localize('com_ui_support_contact_email_placeholder')}
                       aria-label="Support contact email"
+                      aria-invalid={error ? 'true' : 'false'}
+                      aria-describedby={error ? 'support-contact-email-error' : undefined}
                     />
                     {error && (
-                      <span className="text-sm text-red-500 transition duration-300 ease-in-out">
+                      <span
+                        id="support-contact-email-error"
+                        className="text-sm text-red-500 transition duration-300 ease-in-out"
+                        role="alert"
+                        aria-live="polite"
+                      >
                         {error.message}
                       </span>
                     )}
