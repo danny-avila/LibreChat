@@ -47,6 +47,16 @@ module.exports = {
           '0%': { transform: 'translateX(0)' },
           '100%': { transform: 'translateX(100%)' },
         },
+        'thinking-appear': {
+          '0%': {
+            opacity: '0',
+            transform: 'scale(0.9) translateY(4px)',
+          },
+          '100%': {
+            opacity: '1',
+            transform: 'scale(1) translateY(0)',
+          },
+        },
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-out forwards',
@@ -56,6 +66,12 @@ module.exports = {
         'slide-in-left': 'slide-in-left 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',
         'slide-out-left': 'slide-out-left 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',
         'slide-out-right': 'slide-out-right 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',
+        'thinking-appear': 'thinking-appear 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+      },
+      transitionTimingFunction: {
+        ios: 'cubic-bezier(0.32, 0.72, 0, 1)',
+        'ios-spring': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'ios-decelerate': 'cubic-bezier(0, 0, 0.2, 1)',
       },
       colors: {
         gray: {
