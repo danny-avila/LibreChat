@@ -1,9 +1,14 @@
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
 import type { ZodIssue } from 'zod';
 import type * as a from './types/assistants';
 import type * as s from './schemas';
 import type * as t from './types';
 import { ContentTypes } from './types/runs';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 import {
   openAISchema,
   googleSchema,
@@ -410,7 +415,46 @@ export function findLastSeparatorIndex(text: string, separators = SEPARATORS): n
   return lastIndex;
 }
 
-export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUser | null }) {
+/**
+ * Replaces special variables in text with their corresponding values.
+ * 
+ * Available special variables:
+ * - {{current_date}}: Current date in UTC (YYYY-MM-DD with day of week)
+ * - {{current_datetime}}: Current datetime in UTC (YYYY-MM-DD HH:mm:ss with day of week)
+ * - {{iso_datetime}}: Current datetime in ISO 8601 format (UTC)
+ * - {{local_date}}: Current date in user's local timezone (YYYY-MM-DD with day of week)
+ * - {{local_datetime}}: Current datetime in user's local timezone (YYYY-MM-DD HH:mm:ss with day of week)
+ * - {{current_user}}: Name of the current user (if available)
+ * 
+ * Day of week values: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
+ * 
+ * Note: {{local_date}} and {{local_datetime}} require the timezone parameter.
+ * If timezone is not provided, they will fall back to UTC values.
+ * 
+ * @example
+ * ```typescript
+ * replaceSpecialVars({ 
+ *   text: 'Today is {{local_date}} and it\'s {{current_user}}\'s session',
+ *   user: { name: 'John' },
+ *   timezone: 'America/New_York'
+ * });
+ * // Result: "Today is 2024-04-29 (1) and it's John's session"
+ * ```
+ * 
+ * @param text - The text containing special variables to replace
+ * @param user - Optional user object containing user information
+ * @param timezone - Optional IANA timezone string (e.g., 'America/New_York', 'Europe/London', 'Asia/Tokyo')
+ * @returns The text with all special variables replaced with their values
+ */
+export function replaceSpecialVars({
+  text,
+  user,
+  timezone,
+}: {
+  text: string;
+  user?: t.TUser | null;
+  timezone?: string;
+}) {
   let result = text;
   if (!result) {
     return result;
@@ -427,6 +471,27 @@ export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUse
 
   const isoDatetime = dayjs().toISOString();
   result = result.replace(/{{iso_datetime}}/gi, isoDatetime);
+
+  // Local timezone support
+  if (timezone) {
+    try {
+      const localDate = dayjs().tz(timezone).format('YYYY-MM-DD');
+      const localDayNumber = dayjs().tz(timezone).day();
+      const localCombinedDate = `${localDate} (${localDayNumber})`;
+      result = result.replace(/{{local_date}}/gi, localCombinedDate);
+
+      const localDatetime = dayjs().tz(timezone).format('YYYY-MM-DD HH:mm:ss');
+      result = result.replace(/{{local_datetime}}/gi, `${localDatetime} (${localDayNumber})`);
+    } catch {
+      // If timezone is invalid, fall back to UTC values for local_* variables
+      result = result.replace(/{{local_date}}/gi, combinedDate);
+      result = result.replace(/{{local_datetime}}/gi, `${currentDatetime} (${dayNumber})`);
+    }
+  } else {
+    // If no timezone is provided, replace local_* variables with UTC values
+    result = result.replace(/{{local_date}}/gi, combinedDate);
+    result = result.replace(/{{local_datetime}}/gi, `${currentDatetime} (${dayNumber})`);
+  }
 
   if (user && user.name) {
     result = result.replace(/{{current_user}}/gi, user.name);
