@@ -22,6 +22,9 @@ class WoodlandProductHistory extends Tool {
       deckHose: z.string().optional(),
       collectorBag: z.string().optional(),
       blowerColor: z.string().optional(),
+      bagColor: z.string().optional(),
+      bagShape: z.string().optional(),
+      blowerOpening: z.string().optional(),
       top: z.number().int().positive().max(100).optional(),
       format: z.enum(['json']).default('json'),
     });
@@ -166,19 +169,199 @@ class WoodlandProductHistory extends Tool {
 
   _shapeDocument(doc) {
     const { primaryUrl, supplementalUrls } = this._collectUrls(doc);
-    const normalized = {
-      rake_model: doc.rake_model,
-      engine_model: doc.engine_model,
-      deck_hose: doc.deck_hose,
-      collector_bag: doc.collector_bag,
-      blower_color: doc.blower_color,
-    };
+    const bagDetails = this._deriveBagDetails(doc.collector_bag ?? doc.collectorBag);
+    const blowerOpening = this._deriveBlowerOpening(doc.deck_hose ?? doc.deckHose);
+    const normalized = this._normalizeAttributes(doc, {
+      bagDetails,
+      blowerOpening,
+    });
 
     return {
       ...doc,
       citations: [primaryUrl, ...supplementalUrls].filter(Boolean),
       normalized_product: normalized,
     };
+  }
+
+  _deriveBagDetails(rawValue) {
+    if (typeof rawValue !== 'string') {
+      return {};
+    }
+    const value = rawValue.trim();
+    if (!value) {
+      return {};
+    }
+    const firstSegment = value.split('-')[0]?.trim() || value;
+    const match = firstSegment.match(/^(Straight|Tapered|Square)\s+([A-Za-z]+)/i);
+    if (!match) {
+      return {};
+    }
+    const [, shape, color] = match;
+    return {
+      shape: shape ? shape.trim() : undefined,
+      color: color ? color.trim() : undefined,
+    };
+  }
+
+  _deriveBlowerOpening(rawValue) {
+    if (typeof rawValue !== 'string') {
+      return undefined;
+    }
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const match = trimmed.match(/(\d+(?:\.\d+)?)\s*(?:in|inch|inches)/i);
+    if (match) {
+      const [, size] = match;
+      return `${size}"`;
+    }
+    return trimmed;
+  }
+
+  _isMeaningfulValue(value) {
+    if (value == null) {
+      return false;
+    }
+    const str = String(value).trim();
+    if (!str) {
+      return false;
+    }
+    return str.toLowerCase() !== 'n/a';
+  }
+
+  _lookupUrl(doc, fieldName) {
+    if (!fieldName || typeof fieldName !== 'string') {
+      return '';
+    }
+    const candidates = new Set([
+      `${fieldName}_url`,
+      `${fieldName}_Url`,
+      `${fieldName}Url`,
+      `${fieldName}URL`,
+      `${fieldName.replace(/_/g, '-')}_url`,
+      `${fieldName.replace(/_/g, '-')}-url`,
+      `${fieldName.replace(/_/g, '')}Url`,
+      `${fieldName.replace(/[_-]/g, '')}Url`,
+    ]);
+
+    for (const candidate of candidates) {
+      if (candidate in doc && this._isMeaningfulValue(doc[candidate])) {
+        return String(doc[candidate]).trim();
+      }
+    }
+    return '';
+  }
+
+  _formatOptionLabel(fieldName, prefix) {
+    if (!fieldName || typeof fieldName !== 'string') {
+      return '';
+    }
+    const normalized = fieldName.toLowerCase();
+    const normalizedPrefix = typeof prefix === 'string' ? prefix.toLowerCase() : '';
+    let labelPart = normalizedPrefix && normalized.startsWith(normalizedPrefix)
+      ? fieldName.slice(prefix.length)
+      : fieldName;
+    labelPart = labelPart.replace(/^[_-]/, '');
+    if (!labelPart) {
+      return 'primary';
+    }
+    return labelPart
+      .replace(/[_-]/g, ' ')
+      .replace(/(\d+)/g, ' $1')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  _collectOptionGroup(doc, prefixes = []) {
+    const prefixList = Array.isArray(prefixes) ? prefixes.filter(Boolean) : [prefixes];
+    if (!prefixList.length) {
+      return [];
+    }
+    const seen = new Set();
+    const entries = [];
+    Object.entries(doc || {}).forEach(([rawKey, value]) => {
+      if (!this._isMeaningfulValue(value)) {
+        return;
+      }
+      const key = String(rawKey);
+      const lowerKey = key.toLowerCase();
+      if (lowerKey.endsWith('_url') || lowerKey.endsWith('url')) {
+        return;
+      }
+      const matchedPrefix = prefixList.find((prefix) => lowerKey.startsWith(String(prefix).toLowerCase()));
+      if (!matchedPrefix) {
+        return;
+      }
+      if (seen.has(lowerKey)) {
+        return;
+      }
+      seen.add(lowerKey);
+      entries.push({
+        field: key,
+        label: this._formatOptionLabel(key, matchedPrefix),
+        value: String(value).trim(),
+        url: this._lookupUrl(doc, key),
+      });
+    });
+
+    entries.sort((a, b) => a.label.localeCompare(b.label));
+    return entries;
+  }
+
+  _valueWithUrl(doc, fieldName) {
+    if (!this._isMeaningfulValue(doc?.[fieldName])) {
+      return undefined;
+    }
+    const value = String(doc[fieldName]).trim();
+    const url = this._lookupUrl(doc, fieldName);
+    return url ? { value, url } : { value };
+  }
+
+  _normalizeAttributes(doc, { bagDetails, blowerOpening }) {
+    const normalized = {
+      model: doc.rake_model || doc.model,
+      engine_model: doc.engine_model,
+      deck_hose: doc.deck_hose,
+      collector_bag: doc.collector_bag,
+      blower_color: doc.blower_color,
+      bag_color: bagDetails?.color || undefined,
+      bag_shape: bagDetails?.shape || undefined,
+      blower_opening: blowerOpening || undefined,
+      groups: {
+        replacement_side_tubes: this._collectOptionGroup(doc, ['replacement_side_tubes']),
+        collector_bag_options: this._collectOptionGroup(doc, ['replacement_bag_option']),
+        latch_upgrades: this._collectOptionGroup(doc, ['latch_upgrade_kit']),
+        collector_frames: this._collectOptionGroup(doc, ['collector_frame', 'collector_complete', 'replacement_collector_complete']),
+        chassis: this._collectOptionGroup(doc, ['chassis']),
+        impellers: this._collectOptionGroup(doc, ['replacement_impeller_option', 'impeller_hardware_kit']),
+        blower_housings: this._collectOptionGroup(doc, ['replacement_blower_housing_option', 'blower_housing', 'blower_rebuild']),
+        blower_with_impeller: this._collectOptionGroup(doc, ['replacement_blower_w_impeller_option']),
+        engines: this._collectOptionGroup(doc, ['engine_model', 'replacement_engine_option']),
+        engine_blowers: this._collectOptionGroup(doc, ['engine_blower_complete_option', 'engine_blower_complete']),
+        air_filters: this._collectOptionGroup(doc, ['replacement_air_filters']),
+        maintenance_kits: this._collectOptionGroup(doc, ['engine_maintenance_kit']),
+        couplings: this._collectOptionGroup(doc, ['mda_collar', 'pvp_coupling', 'estate_vac_coupling', 'power_unloader_chute']),
+        accessories: this._collectOptionGroup(doc, ['roof_rack_carrier', 'accessories']),
+        deck_hose: this._collectOptionGroup(doc, ['deck_hose']),
+      },
+      fields: {
+        roof_rack_carrier: this._valueWithUrl(doc, 'roof_rack_carrier'),
+        replacement_air_filters: this._valueWithUrl(doc, 'replacement_air_filters'),
+        engine_maintenance_kit: this._valueWithUrl(doc, 'engine_maintenance_kit'),
+        mda_collar: this._valueWithUrl(doc, 'mda_collar'),
+        blower_inlet: this._valueWithUrl(doc, 'blower_inlet'),
+        exit_chute: this._valueWithUrl(doc, 'exit_chute'),
+        band_clamp: this._valueWithUrl(doc, 'band_clamp'),
+        pvp_coupling: this._valueWithUrl(doc, 'pvp_coupling'),
+        estate_vac_coupling: this._valueWithUrl(doc, 'estate_vac_coupling'),
+        power_unloader_chute: this._valueWithUrl(doc, 'power_unloader_chute'),
+      },
+      tags: Array.isArray(doc.tags) ? doc.tags : this._stringArray(doc.tags),
+      content: typeof doc.content === 'string' ? doc.content : undefined,
+    };
+
+    return normalized;
   }
 
   _stringArray(value) {
@@ -312,13 +495,26 @@ class WoodlandProductHistory extends Tool {
 
     const input = parsed.data;
     const top = Number.isFinite(input.top) ? Math.floor(input.top) : this.topDefault;
-    const filter = this._buildFilter(input);
+    const enriched = { ...input };
+    if (!enriched.deckHose && input.blowerOpening) {
+      enriched.deckHose = input.blowerOpening;
+    }
+    if (!enriched.collectorBag && (input.bagShape || input.bagColor)) {
+      const bagParts = [input.bagShape, input.bagColor].filter(Boolean);
+      if (bagParts.length) {
+        enriched.collectorBag = bagParts.join(' ');
+      }
+    }
+    const filter = this._buildFilter(enriched);
     const fallbackTerms = this._collectTerms(
-      input.rakeModel,
-      input.engineModel,
-      input.deckHose,
-      input.collectorBag,
-      input.blowerColor,
+      enriched.rakeModel,
+      enriched.engineModel,
+      enriched.deckHose,
+      enriched.collectorBag,
+      enriched.blowerColor,
+      input.bagColor,
+      input.bagShape,
+      input.blowerOpening,
     );
     const filterTerms = this._extractFilterTerms(filter);
     const queryString =

@@ -27,6 +27,41 @@ const DEFAULT_FAMILY_SIGNALS = [
   { family: 'Classic', match: ['classic'] },
 ];
 
+const DEFAULT_RAKE_NAME_ALIASES = {
+  'classic': 'Classic',
+  'classic rake': 'Classic',
+  'cyclone rake classic': 'Classic',
+  'commander': 'Commander',
+  'commander rake': 'Commander',
+  'cyclone rake commander': 'Commander',
+  'commander_crs': 'Commander_CRS',
+  'commercial_pro_crs': 'Commercial_Pro_CRS',
+  'commercialpro_crs': 'Commercial_Pro_CRS',
+  'commercial pro crs': 'Commercial_Pro_CRS',
+  'commander pro': 'Commander Pro',
+  'crs commander': 'Commander_CRS',
+  'classic_crs': 'Classic_CRS',
+  'classic crs': 'Classic_CRS',
+  'xl': 'XL',
+  'xl rake': 'XL',
+  'cyclone rake xl': 'XL',
+  'xl_crs': 'XL_CRS',
+  'xl crs': 'XL_CRS',
+  'cyclone rake xl crs': 'XL_CRS',
+  'z10': 'Z_10',
+  'z-10': 'Z_10',
+  'z 10': 'Z_10',
+  'cyclone rake z-10': 'Z_10',
+  'cyclone rake z_10': 'Z_10',
+  'cyclone rake z 10': 'Z_10',
+  'z10_crs': 'Z_10_CRS',
+  'z-10_crs': 'Z_10_CRS',
+  'z 10 crs': 'Z_10_CRS',
+  'crs z_10': 'Z_10_CRS',
+  'crs z-10': 'Z_10_CRS',
+  'cyclone rake z-10 crs': 'Z_10_CRS',
+};
+
 const DEFAULT_PART_TYPES = {
   'collector bag': 'collector bag',
   impeller: 'impeller',
@@ -35,6 +70,23 @@ const DEFAULT_PART_TYPES = {
   starter: 'recoil starter',
   'boot plate': 'boot plate',
   'side tube': 'side tube',
+  'rubber collar': 'rubber collar',
+  'rubber collar kit': 'rubber collar',
+  mda: 'mda',
+  'mower deck adapter': 'mda',
+  hitch: 'hitch',
+  'hitch kit': 'hitch',
+};
+
+const PART_TYPE_FIELD_MAP = {
+  hose: ['hose_sku', 'amhose_sku', 'upgradehose_sku', 'amupgradehose_sku'],
+  impeller: ['impeller_sku', 'impeller_retrofit_sku'],
+  'rubber collar': ['rubbercollar_sku'],
+  'collector bag': ['collector_bag_sku'],
+  'boot plate': ['boot_plate_sku'],
+  'side tube': ['side_tube_sku'],
+  mda: ['mda_sku', 'ammda_sku'],
+  hitch: ['hitch_sku', 'amhitch_sku'],
 };
 
 const DEFAULT_INTENT_KEYWORDS = {
@@ -157,12 +209,14 @@ class WoodlandAISearchTractor extends Tool {
     this.description = "Use the 'woodland-ai-search-tractor' tool to retrieve search results from the Tractor Azure AI Search index";
 
     this.schema = z.object({
-      query: z.string().describe('Search word or phrase for Tractor Azure AI Search'),
+      query: z.string().optional().default('').describe('Search word or phrase for Tractor Azure AI Search'),
       top: z.number().int().positive().optional(),
       make: z.string().optional(),
       model: z.string().optional(),
       deck_size: z.union([z.string(), z.number()]).optional(),
       family: z.union([z.string(), z.array(z.string())]).optional(),
+      rake_name: z.union([z.string(), z.array(z.string())]).optional(),
+      rake_sku: z.union([z.string(), z.array(z.string())]).optional(),
       sku: z.string().optional(),
       part_type: z.string().optional(),
       require_active: z.boolean().optional(),
@@ -178,6 +232,7 @@ class WoodlandAISearchTractor extends Tool {
     this.intentKeywords = INTENT_KEYWORDS;
     this.partNumberRegex = PART_NUMBER_REGEX;
     this.yearRegex = YEAR_REGEX;
+    this.rakeNameAliases = { ...DEFAULT_RAKE_NAME_ALIASES };
 
     // Shared endpoint + key
     this.serviceEndpoint = this._env(
@@ -381,15 +436,65 @@ class WoodlandAISearchTractor extends Tool {
     }
   }
 
+  _parseTagValues(tags = []) {
+    const map = new Map();
+    if (!Array.isArray(tags)) {
+      return map;
+    }
+    tags.forEach((tag) => {
+      if (typeof tag !== 'string') {
+        return;
+      }
+      const idx = tag.indexOf(':');
+      if (idx <= 0 || idx === tag.length - 1) {
+        return;
+      }
+      const key = tag.slice(0, idx).trim().toLowerCase();
+      const value = tag.slice(idx + 1).trim();
+      if (!key || !value) {
+        return;
+      }
+      if (!map.has(key)) {
+        map.set(key, []);
+      }
+      map.get(key).push(value);
+    });
+    return map;
+  }
+
   _normalizeDoc(d) {
     const bool = (v) => (typeof v === 'boolean' ? v : undefined);
     const str = (v) => (v == null ? undefined : String(v));
     const list = (v) => (Array.isArray(v) ? v.filter(Boolean).map(String) : undefined);
+    const listFromAny = (value) => {
+      if (Array.isArray(value)) {
+        return value
+          .map((entry) => (entry == null ? '' : String(entry).trim()))
+          .map((entry) => (entry && entry.includes('|') ? entry.split('|') : entry))
+          .flat()
+          .map((entry) => (entry && entry.includes(';') ? entry.split(';') : entry))
+          .flat()
+          .map((entry) => (entry && entry.includes(',') ? entry.split(',') : entry))
+          .flat()
+          .map((entry) => String(entry).trim())
+          .filter(Boolean);
+      }
+      if (typeof value === 'string') {
+        return value
+          .split(/[,;|]/)
+          .map((segment) => segment.trim())
+          .filter(Boolean);
+      }
+      return undefined;
+    };
 
     const tractor = [d?.tractor_make, d?.tractor_model, d?.tractor_deck_size]
       .filter((x) => x != null && String(x).trim().length > 0)
       .join(' ')
       .trim() || undefined;
+
+    const tagsList = list(d?.tags) || [];
+    const tagValues = this._parseTagValues(tagsList);
 
     const normalized = {
       tractor, // e.g., "AMF 836 36"
@@ -428,11 +533,72 @@ class WoodlandAISearchTractor extends Tool {
         undefined,
       notes: str(d?.content),
       picture_thumbnail_url: str(d?.picture_thumbnail_url),
-      tags: list(d?.tags),
+      tags: tagsList,
       provenance: this._provenance(d),
     };
 
-    return { ...d, normalized_compat: normalized };
+    const toSkuEntry = (sku, url, label, source) => {
+      if (!sku) {
+        return undefined;
+      }
+      const entry = { sku, label: label || undefined, source: source || 'oem' };
+      if (url) {
+        entry.url = url;
+      }
+      return entry;
+    };
+
+    const flatten = (...entries) => entries.filter(Boolean);
+
+    const normalizedFitment = {
+      tractor,
+      make: str(d?.tractor_make),
+      model: str(d?.tractor_model),
+      deck_size: this._normalizeDeckSize(d?.tractor_deck_size),
+      deck_size_raw: str(d?.tractor_deck_size),
+      family: this._familyAliases(d?.family || d?.rake_family),
+      rake_model: str(d?.rake_model) || (tagValues.get('rake_model') || [])[0],
+      rake_names: [
+        ...(listFromAny(d?.rake_name) || []),
+        ...(listFromAny(d?.rake_names) || []),
+        ...(tagValues.get('rake_name') || []),
+      ].filter(Boolean),
+      rake_skus: [
+        ...(listFromAny(d?.rake_sku) || []),
+        ...(listFromAny(d?.rake_skus) || []),
+        ...(tagValues.get('rake_sku') || []),
+      ].filter(Boolean),
+      hose_options: flatten(
+        toSkuEntry(normalized.oem?.hose, normalized.oem?.hose_url, 'OEM hose', 'oem'),
+        toSkuEntry(normalized.oem?.upgrade_hose, normalized.oem?.upgrade_hose_url, 'OEM upgrade hose', 'oem'),
+        toSkuEntry(normalized.aftermarket?.hose, normalized.aftermarket?.hose_url, 'Aftermarket hose', 'aftermarket'),
+        toSkuEntry(normalized.aftermarket?.upgrade_hose, normalized.aftermarket?.upgrade_hose_url, 'Aftermarket upgrade hose', 'aftermarket'),
+      ),
+      hitch_options: flatten(
+        toSkuEntry(normalized.oem?.hitch, normalized.oem?.hitch_url, 'OEM hitch', 'oem'),
+        toSkuEntry(normalized.aftermarket?.hitch, normalized.aftermarket?.hitch_url, 'Aftermarket hitch', 'aftermarket'),
+      ),
+      mda_options: flatten(
+        toSkuEntry(normalized.oem?.mda, normalized.oem?.mda_url, 'OEM MDA', 'oem'),
+        toSkuEntry(normalized.aftermarket?.mda, normalized.aftermarket?.mda_url, 'Aftermarket MDA', 'aftermarket'),
+      ),
+      rubber_collar_options: flatten(
+        toSkuEntry(normalized.oem?.rubber_collar, normalized.oem?.rubber_collar_url, 'OEM rubber collar', 'oem'),
+      ),
+      flags: {
+        deck_opening_measurements_required: normalized.deck_opening_measurements_required,
+        mda_pre_cut: normalized.mda_pre_cut,
+        customer_drilling_required: normalized.customer_drilling_required,
+        exhaust_deflection_needed: normalized.exhaust_deflection_needed,
+        compatible_with_large_rakes: normalized.compatible_with_large_rakes,
+      },
+      compatible_with: normalized.compatible_with,
+      notes: normalized.notes,
+      tags: normalized.tags,
+      provenance: normalized.provenance,
+    };
+
+    return { ...d, normalized_compat: normalized, normalized_fitment: normalizedFitment };
   }
 
   _formatSupportAnswer(doc) {
@@ -488,16 +654,16 @@ class WoodlandAISearchTractor extends Tool {
   async _safeSearch(query, options) {
     const run = async (opts) => {
       const send = this._sanitizeSearchOptions(opts);
-      logger.debug('[woodland-ai-search-tractor] Sending request', {
+      logger.info('[woodland-ai-search-tractor] Search request (pre-transform)', {
         query,
-        options: JSON.stringify(send, null, 2),
+        options: send,
       });
       const rs = await this.client.search(query, send);
       const items = [];
       for await (const r of rs.results) items.push(r.document);
-      logger.debug('[woodland-ai-search-tractor] Received response', {
+      logger.info('[woodland-ai-search-tractor] Search response (pre-normalize)', {
         count: items.length,
-        sample: items.slice(0, 2),
+        docs: items,
       });
       return items;
     };
@@ -594,11 +760,24 @@ class WoodlandAISearchTractor extends Tool {
 
   // Intent and entity detection (lightweight heuristics)
   _detectIntent(query) {
-    const q = (query || '').toString().toLowerCase();
+    const raw = (query || '').toString();
+    const q = raw.toLowerCase();
     const containsAny = (arr = []) => arr.some((w) => w && q.includes(w));
     const partMatch = this.partNumberRegex ? q.match(this.partNumberRegex) : null;
     const extracted = {};
     if (partMatch) extracted.partNumber = partMatch[0];
+
+    const deckSignals = [
+      /\bdeck(?:\s+size)?\s*[:=]?\s*(\d{2,3})(?:\s*(?:in|inch|inches|["”]))?/i,
+      /(\d{2,3})(?:\s*(?:in|inch|inches|["”]))\s+deck\b/i,
+    ];
+    for (const re of deckSignals) {
+      const match = raw.match(re);
+      if (match && match[1]) {
+        extracted.deckSize = this._normalizeDeckSize(match[1]);
+        break;
+      }
+    }
 
     for (const [needle, canonical] of this.partTypeEntries) {
       if (needle && q.includes(needle)) {
@@ -614,6 +793,31 @@ class WoodlandAISearchTractor extends Tool {
       }
     }
 
+    // Rake name detection (Commander_CRS, Commercial_Pro_CRS, etc.)
+    for (const [alias, canonical] of Object.entries(this.rakeNameAliases || {})) {
+      if (alias && q.includes(alias)) {
+        extracted.rakeName = canonical;
+        extracted.rakeNameAlias = alias;
+        const aliasRegex = new RegExp(alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        const aliasMatch = raw.match(aliasRegex);
+        if (aliasMatch) {
+          extracted.rakeNameRaw = aliasMatch[0].trim();
+        }
+        break;
+      }
+    }
+
+    if (!extracted.rakeNameRaw) {
+      const rakePhrase = raw.match(/((?:[A-Za-z0-9_\-\/]+\s+)*[A-Za-z0-9_\-\/]+)\s*((?:rake)(?:\s+type)?)\b/i);
+      if (rakePhrase) {
+        extracted.rakeNameRaw = rakePhrase[1].trim();
+        extracted.rakeNameRawFull = `${rakePhrase[1]} ${rakePhrase[2] || ''}`.trim();
+        if (!extracted.rakeName) {
+          extracted.rakeName = extracted.rakeNameRaw;
+        }
+      }
+    }
+
     if (containsAny(this.intentKeywords.promo)) extracted.wantsPromo = true;
 
     if (
@@ -622,6 +826,20 @@ class WoodlandAISearchTractor extends Tool {
     ) {
       return { intent: 'parts', extracted };
     }
+    if (!extracted.make || !extracted.model) {
+      const makeModelMatch = raw.match(/\b([A-Za-z][A-Za-z&'\-\/ ]{1,40})\s+([A-Za-z0-9]{2,}[A-Za-z0-9\-]*)\b/);
+      if (makeModelMatch) {
+        const maybeMake = makeModelMatch[1]?.trim();
+        const maybeModel = makeModelMatch[2]?.trim();
+        if (maybeMake && !extracted.make) {
+          extracted.make = maybeMake;
+        }
+        if (maybeModel && !extracted.model) {
+          extracted.model = maybeModel;
+        }
+      }
+    }
+
     if (containsAny(this.intentKeywords.compatibility) || (this.yearRegex && this.yearRegex.test(q))) {
       return { intent: 'compatibility', extracted };
     }
@@ -634,8 +852,62 @@ class WoodlandAISearchTractor extends Tool {
     return { intent: 'general', extracted };
   }
 
+  _combineClauses(clauses) {
+    return Array.isArray(clauses) && clauses.length
+      ? clauses.map((c) => `(${c})`).join(' and ')
+      : undefined;
+  }
+
+  _fieldOrTag(field, tagKey, value) {
+    const escapedValue = this._escapeLiteral(value);
+    const tagLiteral = this._escapeLiteral(`${tagKey}:${value}`);
+    const tagClause = `tags/any(t: t eq '${tagLiteral}')`;
+    return `((${field} eq '${escapedValue}') or ${tagClause})`;
+  }
+
+  _buildMakeModelClauses(extracted = {}) {
+    const clauses = [];
+    if (extracted.make) {
+      clauses.push(this._fieldOrTag('tractor_make', 'make', extracted.make));
+    }
+    if (extracted.model) {
+      clauses.push(this._fieldOrTag('tractor_model', 'model', extracted.model));
+    }
+    return clauses;
+  }
+
   // Per-intent options for the single Tractor index.
-  _optionsForIntent(intent, extracted = {}) {
+  _buildCompatibilityClauses(extracted = {}) {
+    const clauses = [];
+    if (extracted.make) {
+      clauses.push(this._fieldOrTag('tractor_make', 'make', extracted.make));
+    }
+    if (extracted.model) {
+      clauses.push(this._fieldOrTag('tractor_model', 'model', extracted.model));
+    }
+    if (extracted.deckSize) {
+      clauses.push(this._fieldOrTag('tractor_deck_size', 'deck', extracted.deckSize));
+    }
+    if (extracted.family) {
+      const familyVal = this._familyAliases(extracted.family);
+      clauses.push(this._fieldOrTag('group_name', 'group', familyVal));
+    }
+    if (extracted.rakeName) {
+      clauses.push(this._fieldOrTag('rake_name', 'rake_name', extracted.rakeName));
+    }
+    if (extracted.rakeNameRaw && extracted.rakeNameRaw !== extracted.rakeName) {
+      clauses.push(this._fieldOrTag('rake_name', 'rake_name', extracted.rakeNameRaw));
+    }
+    if (extracted.rakeNameRawFull) {
+      clauses.push(this._fieldOrTag('rake_name', 'rake_name', extracted.rakeNameRawFull));
+    }
+    if (extracted.rakeSku) {
+      clauses.push(this._fieldOrTag('rake_sku', 'rake_sku', extracted.rakeSku));
+    }
+    return clauses;
+  }
+
+  _optionsForIntent(intent, extracted = {}, { compatibilityClauses } = {}) {
     const maybe = (o, sel) => (this.returnAllFields ? o : { ...o, select: sel });
     const pn = extracted.partNumber || '';
     const skuFields = [
@@ -694,22 +966,36 @@ class WoodlandAISearchTractor extends Tool {
     ];
 
     if (intent === 'parts') {
-      let filter;
+      const clauses = Array.isArray(compatibilityClauses)
+        ? [...compatibilityClauses]
+        : this._buildCompatibilityClauses(extracted);
+      if (extracted.partType) {
+        const typeKey = String(extracted.partType || '').toLowerCase();
+        const fields = PART_TYPE_FIELD_MAP[typeKey] || [];
+        if (fields.length) {
+          const skuClause = fields
+            .map((f) => `(${f} ne '' and ${f} ne null)`)
+            .join(' or ');
+          if (skuClause) {
+            clauses.push(`(${skuClause})`);
+          }
+        }
+      }
       if (pn) {
         const eqs = skuFields.map((f) => `${f} eq '${this._escapeLiteral(pn)}'`).join(' or ');
-        filter = eqs || undefined;
+        if (eqs) {
+          clauses.push(eqs);
+        }
       }
+      const filter = this._combineClauses(clauses);
       return maybe({ filter, searchFields: this.searchFields }, baseSelect);
     }
 
     if (intent === 'compatibility') {
-      // Build progressively strict filters
-      const filts = [];
-      if (extracted.make) filts.push(`tractor_make eq '${this._escapeLiteral(extracted.make)}'`);
-      if (extracted.model) filts.push(`tractor_model eq '${this._escapeLiteral(extracted.model)}'`);
-      if (extracted.deckSize) filts.push(`tractor_deck_size eq '${this._escapeLiteral(extracted.deckSize)}'`);
-      if (extracted.family) filts.push(`group_name eq '${this._escapeLiteral(this._familyAliases(extracted.family))}'`);
-      const filter = filts.length ? filts.map((f) => `(${f})`).join(' and ') : undefined;
+      const clauses = Array.isArray(compatibilityClauses)
+        ? compatibilityClauses
+        : this._buildCompatibilityClauses(extracted);
+      const filter = this._combineClauses(clauses);
       return maybe({ filter, searchFields: this.searchFields }, baseSelect);
     }
 
@@ -727,7 +1013,21 @@ class WoodlandAISearchTractor extends Tool {
   }
 
   async _call(data) {
-    const { query, top: topIn, make, model, deck_size, family, sku, part_type, require_active, relaxed, embedding } = data;
+    const {
+      query,
+      top: topIn,
+      make,
+      model,
+      deck_size,
+      family,
+      rake_name,
+      rake_sku,
+      sku,
+      part_type,
+      require_active,
+      relaxed,
+      embedding,
+    } = data;
     const finalTop = typeof topIn === 'number' && Number.isFinite(topIn) ? Math.max(1, Math.floor(topIn)) : this.top;
 
     try {
@@ -780,7 +1080,8 @@ class WoodlandAISearchTractor extends Tool {
         };
       }
 
-      const { intent, extracted } = this._detectIntent(query);
+      let { intent, extracted } = this._detectIntent(query);
+      const pickFirst = (value) => (Array.isArray(value) ? value.find(Boolean) : value);
       const merged = {
         ...extracted,
         make: make || extracted.make,
@@ -789,19 +1090,64 @@ class WoodlandAISearchTractor extends Tool {
         family: Array.isArray(family)
           ? (family.find(Boolean) ? this._familyAliases(family[0]) : undefined)
           : (family ? this._familyAliases(family) : extracted.family),
+        rakeName: pickFirst(rake_name) || extracted.rakeName,
+        rakeSku: pickFirst(rake_sku) || extracted.rakeSku,
         partType: part_type || extracted.partType,
         partNumber: sku || extracted.partNumber,
+        rakeNameAlias: extracted.rakeNameAlias,
+        rakeNameRaw: extracted.rakeNameRaw,
+        rakeNameRawFull: extracted.rakeNameRawFull,
       };
+      if (intent === 'general' && merged.make && merged.model) {
+        intent = 'compatibility';
+      }
+      const compatibilityClauses = this._buildCompatibilityClauses(merged);
+      const compatibilityFilter = this._combineClauses(compatibilityClauses);
+      const makeModelClauses = this._buildMakeModelClauses(merged);
+      const makeModelFilter = this._combineClauses(makeModelClauses);
+      const escapeRegex = (term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const sanitizedQuery = (() => {
+        if (!query) {
+          const seedTerms = [merged.make, merged.model, merged.deckSize]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+          return seedTerms.length ? seedTerms : '*';
+        }
+        let q = query.toString();
+        const removeTerm = (term) => {
+          if (!term) return;
+          const regex = new RegExp(escapeRegex(term), 'ig');
+          q = q.replace(regex, ' ');
+        };
+        removeTerm(merged.rakeNameAlias);
+        if (merged.rakeName && merged.rakeName !== merged.rakeNameAlias) {
+          removeTerm(merged.rakeName);
+        }
+        removeTerm(merged.rakeNameRaw);
+        removeTerm(merged.rakeNameRawFull);
+        removeTerm(merged.make);
+        removeTerm(merged.model);
+        q = q.replace(/\brake(?:\s+type)?\b/gi, ' ');
+        q = q.replace(/\s+/g, ' ').trim();
+        return q.length ? q : '*';
+      })();
 
-      const intentOptions = this._optionsForIntent(intent, merged);
+      const intentOptions = this._optionsForIntent(intent, merged, { compatibilityClauses });
       let options = { ...baseOptions, ...intentOptions };
+      const finalQueryString = sanitizedQuery;
 
       // Relaxed mode: remove strict filters and broaden recall
       if (relaxed === true) {
-        delete options.filter;
+        if (makeModelFilter) {
+          options.filter = makeModelFilter;
+        }
         options.top = Math.max(options.top || this.top, 18);
         // Prefer any-mode to catch more matches in broad searches
         options.searchMode = 'any';
+      }
+      if (!options.filter && compatibilityFilter) {
+        options.filter = compatibilityFilter;
       }
       // SKU prioritization
       if (merged.partNumber) {
@@ -818,26 +1164,32 @@ class WoodlandAISearchTractor extends Tool {
         delete options.orderBy;
       }
 
-      let docs = await this._tieredSearch(query, options);
-      // If no hits, relax filters: drop family -> deck -> model
-      if (Array.isArray(docs) && docs.length === 0 && options.filter && relaxed !== true) {
-        const dropOne = (flt, key) => {
-          // remove the first occurrence of a condition with the given key
-          const re = new RegExp(`\\(\n?\s*${key}[^)]*\)`, 'i');
-          return flt.replace(re, '').replace(/\)\s*and\s*\(/g, ') and (').replace(/\(\s*\)/g, '');
-        };
-        const keys = ['group_name', 'tractor_deck_size', 'tractor_model'];
-        for (const k of keys) {
-          if (!options.filter) break;
-          const nf = dropOne(options.filter, k + '\\s+eq');
-          const relaxed = { ...options, filter: nf };
-          const r = await this._tieredSearch(query, relaxed);
-          if (Array.isArray(r) && r.length > 0) {
-            docs = r;
-            break;
-          }
-        }
+      logger.info('[woodland-ai-search-tractor] Prepared search call', {
+        intent,
+        originalQuery: query,
+        sanitizedQuery: finalQueryString,
+        filterApplied: options.filter || null,
+        top: options.top,
+        searchMode: options.searchMode,
+      });
+
+      let docs = await this._tieredSearch(finalQueryString, options);
+      if (
+        (!Array.isArray(docs) || docs.length === 0) &&
+        compatibilityFilter &&
+        makeModelFilter &&
+        compatibilityFilter !== makeModelFilter &&
+        relaxed !== true
+      ) {
+        const fallbackOptions = { ...options, filter: makeModelFilter };
+        logger.info('[woodland-ai-search-tractor] Strict match empty, retrying with make/model filter', {
+          originalFilter: options.filter,
+          fallbackFilter: makeModelFilter,
+        });
+        docs = await this._tieredSearch(finalQueryString, fallbackOptions);
+        options = fallbackOptions;
       }
+      // No relaxed fallback: prefer signaling missing data rather than returning mismatched tractors.
       // Attach normalized compatibility projection and provenance to each doc
       if (Array.isArray(docs)) {
         docs = docs.map((d) => (d ? this._normalizeDoc(d) : d));

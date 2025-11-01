@@ -34,7 +34,29 @@ class WoodlandAISearchWebsite extends Tool {
 
   _normalizeDoc(d) {
     const str = (v) => (v == null ? undefined : String(v));
-    const list = (v) => (Array.isArray(v) ? v.filter(Boolean).map(String) : undefined);
+    const num = (v) => (v == null || v === '' ? undefined : Number(v));
+    const list = (v) => (Array.isArray(v) ? v.filter(Boolean).map((entry) => String(entry).trim()).filter(Boolean) : undefined);
+    const listFromAny = (value) => {
+      if (Array.isArray(value)) {
+        return value
+          .map((entry) => (entry == null ? '' : String(entry).trim()))
+          .map((entry) => (entry && entry.includes('|') ? entry.split('|') : entry))
+          .flat()
+          .map((entry) => (entry && entry.includes(';') ? entry.split(';') : entry))
+          .flat()
+          .map((entry) => (entry && entry.includes(',') ? entry.split(',') : entry))
+          .flat()
+          .map((entry) => String(entry).trim())
+          .filter(Boolean);
+      }
+      if (typeof value === 'string') {
+        return value
+          .split(/[,;|]/)
+          .map((segment) => segment.trim())
+          .filter(Boolean);
+      }
+      return undefined;
+    };
 
     const provenance = this._provenance(d);
     const title = str(d?.title) || str(d?.heading) || str(d?.breadcrumb?.split?.('\n')?.pop());
@@ -50,6 +72,31 @@ class WoodlandAISearchWebsite extends Tool {
       breadcrumb: str(d?.breadcrumb),
       last_updated: str(d?.last_updated),
       last_crawled: str(d?.last_crawled),
+      pricing: {
+        price: num(d?.price),
+        sale_price: num(d?.sale_price),
+        strike_price: num(d?.strike_price),
+        financing_copy: str(d?.financing_copy),
+        financing_url: str(d?.financing_url),
+      },
+      promotions: {
+        headline: str(d?.promo_headline),
+        subheadline: str(d?.promo_subheadline),
+        description: str(d?.promo_description),
+        disclaimer: str(d?.promo_disclaimer),
+        start_date: str(d?.promo_start),
+        end_date: str(d?.promo_end),
+        code: str(d?.promo_code),
+      },
+      cta: {
+        text: str(d?.cta_text),
+        url: str(d?.cta_url),
+        phone: str(d?.cta_phone),
+        button_text: str(d?.cta_button_text),
+      },
+      highlights: listFromAny(d?.highlights) || listFromAny(d?.key_points),
+      sections: listFromAny(d?.sections),
+      faqs: listFromAny(d?.faqs),
       provenance,
       citation: { label: citationLabel, url: provenance?.url, markdown: citationMarkdown },
     };

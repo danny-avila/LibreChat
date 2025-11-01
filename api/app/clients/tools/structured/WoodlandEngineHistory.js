@@ -170,23 +170,93 @@ class WoodlandEngineHistory extends Tool {
 
   _shapeDocument(doc) {
     const { primaryUrl, supplementalUrls } = this._collectUrls(doc);
-    const normalized = {
-      engine_model: doc.engine_model,
-      rake_model: doc.rake_model,
-      inuse_date: doc.inuse_date,
-      engine_horsepower: doc.engine_horsepower,
-      filter_shape: doc.filter_shape,
-      blower_color: doc.blower_color,
-      air_filter: doc.air_filter,
-      engine_maintenance_kit: doc.engine_maintenance_kit,
-      engine_maintenance_kit_url: doc.engine_maintenance_kit_url,
-    };
+    const normalized = this._normalizeAttributes(doc);
 
     return {
       ...doc,
       citations: [primaryUrl, ...supplementalUrls].filter(Boolean),
       normalized_engine: normalized,
     };
+  }
+
+  _isMeaningfulValue(value) {
+    if (value == null) {
+      return false;
+    }
+    const str = String(value).trim();
+    if (!str) {
+      return false;
+    }
+    return str.toLowerCase() !== 'n/a';
+  }
+
+  _lookupUrl(doc, fieldName) {
+    if (!fieldName || typeof fieldName !== 'string') {
+      return '';
+    }
+    const variants = new Set([
+      `${fieldName}_url`,
+      `${fieldName}Url`,
+      `${fieldName}URL`,
+      `${fieldName.replace(/_/g, '-')}_url`,
+      `${fieldName.replace(/[_-]/g, '')}Url`,
+    ]);
+    for (const key of variants) {
+      if (key in doc && this._isMeaningfulValue(doc[key])) {
+        return String(doc[key]).trim();
+      }
+    }
+    return '';
+  }
+
+  _valueWithUrl(doc, fieldName, label) {
+    if (!this._isMeaningfulValue(doc?.[fieldName])) {
+      return undefined;
+    }
+    const entry = { value: String(doc[fieldName]).trim() };
+    const url = this._lookupUrl(doc, fieldName);
+    if (url) {
+      entry.url = url;
+    }
+    if (label) {
+      entry.label = label;
+    }
+    return entry;
+  }
+
+  _collectSingleFieldGroup(doc, fieldName, label) {
+    const entry = this._valueWithUrl(doc, fieldName, label);
+    return entry ? [entry] : [];
+  }
+
+  _normalizeAttributes(doc) {
+    const normalized = {
+      engine_model: doc.engine_model,
+      rake_model: doc.rake_model,
+      in_use_date: doc.inuse_date || doc['in_use_date'],
+      horsepower: doc.engine_horsepower,
+      filter_shape: doc.filter_shape,
+      blower_color: doc.blower_color,
+      deck_hose: doc.deck_hose_diameter || doc.deck_hose,
+      fields: {
+        air_filter: this._valueWithUrl(doc, 'air_filter'),
+        engine_maintenance_kit: this._valueWithUrl(doc, 'engine_maintenance_kit'),
+        filters_and_emk: this._valueWithUrl(doc, 'filters_and_emk'),
+        blower_color: this._valueWithUrl(doc, 'blower_color'),
+        deck_hose: this._valueWithUrl(doc, 'deck_hose_diameter') || this._valueWithUrl(doc, 'deck_hose'),
+      },
+      groups: {
+        maintenance_kits: this._collectSingleFieldGroup(doc, 'engine_maintenance_kit', 'engine_maintenance_kit'),
+        air_filters: this._collectSingleFieldGroup(doc, 'air_filter', 'air_filter'),
+        filters_and_emk: this._collectSingleFieldGroup(doc, 'filters_and_emk', 'filters_and_emk'),
+        blower_color: this._collectSingleFieldGroup(doc, 'blower_color', 'blower_color'),
+        deck_hose: this._collectSingleFieldGroup(doc, 'deck_hose_diameter', 'deck_hose_diameter'),
+      },
+      tags: Array.isArray(doc.tags) ? doc.tags : this._stringArray(doc.tags),
+      content: typeof doc.content === 'string' ? doc.content : undefined,
+    };
+
+    return normalized;
   }
 
   _stringArray(value) {

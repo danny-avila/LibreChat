@@ -55,6 +55,12 @@ const DEFAULT_INTENT_TOOL_PRIORITIES = {
 
 const KEYWORD_TOOL_RULES = [
   {
+    label: 'catalog_sku_attribute',
+    regex: /\b(sku|blue\s+diamond|liner|part\s*number|replacement\s*liner)\b/i,
+    tools: ['CatalogPartsAgent'],
+    frontLoad: true,
+  },
+  {
     label: 'tractor_compatibility',
     regex: /(compatible|compatibility|fit|fits|deck|tractor|attachment|mount|hitch|clearance)/i,
     tools: ['TractorFitmentAgent', 'CatalogPartsAgent'],
