@@ -1,0 +1,23 @@
+{{- /*
+Copyright Broadcom, Inc. All Rights Reserved.
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+
+{{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "mongodb.fullname" . }}
+  namespace: {{ include "mongodb.prometheusRule.namespace" . }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .Values.commonLabels "context" $ ) | nindent 4 }}
+    {{- if .Values.metrics.prometheusRule.additionalLabels }}
+    {{- include "common.tplvalues.render" (dict "value" .Values.metrics.prometheusRule.additionalLabels "context" $) | nindent 4 }}
+    {{- end }}
+  {{- if .Values.commonAnnotations }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    - name: {{ include "mongodb.fullname" . }}
+      rules: {{- include "common.tplvalues.render" ( dict "value" .Values.metrics.prometheusRule.rules "context" $ ) | nindent 8 }}
+{{- end }}

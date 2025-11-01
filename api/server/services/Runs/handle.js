@@ -65,7 +65,7 @@ async function waitForRun({
   thread_id,
   runManager,
   pollIntervalMs = 2000,
-  timeout = 60000 * 3,
+  timeout = 60000 * 20,
 }) {
   let timeElapsed = 0;
   let run;
@@ -77,8 +77,8 @@ async function waitForRun({
   let lastSeenStatus = null;
   const runIdLog = `run_id: ${run_id}`;
   const runInfo = `user: ${openai.req.user.id} | thread_id: ${thread_id} | ${runIdLog}`;
-  const raceTimeoutMs = 3000;
-  let maxRetries = 5;
+  const raceTimeoutMs = 20000;
+  let maxRetries = 10;
   while (timeElapsed < timeout) {
     i++;
     logger.debug(`[heartbeat ${i}] ${runIdLog} | Retrieving run status...`);
@@ -234,7 +234,7 @@ async function _handleRun({ openai, run_id, thread_id }) {
     thread_id,
     runManager,
     pollIntervalMs: 2000,
-    timeout: 60000,
+    timeout: 60000 * 20,
   });
   const actions = [];
   if (run.required_action) {

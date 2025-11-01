@@ -31,7 +31,7 @@ dependencies:
   - name: mongodb
     version: "16.5.45"
     condition: mongodb.enabled
-    repository: "https://charts.bitnami.com/bitnami"
+    repository: file://charts/mongodb
   - name: meilisearch
     version: "0.11.0"
     condition: meilisearch.enabled

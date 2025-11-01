@@ -1,0 +1,21 @@
+{{- /*
+Copyright Broadcom, Inc. All Rights Reserved.
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+
+{{- if and .Values.serviceAccount.create .Values.rbac.create }}
+apiVersion: {{ include "common.capabilities.rbac.apiVersion" . }}
+kind: RoleBinding
+metadata:
+  name: {{ include "mongodb.fullname" . }}
+  namespace: {{ include "mongodb.namespace" . | quote }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .Values.commonLabels "context" $ ) | nindent 4 }}
+roleRef:
+  kind: Role
+  name: {{ include "mongodb.fullname" . }}
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "mongodb.serviceAccountName" . }}
+    namespace: {{ include "mongodb.namespace" . | quote }}
+{{- end }}

@@ -82,9 +82,9 @@ const redactFormat = winston.format((info: winston.Logform.TransformableInfo) =>
  * @returns The truncated or original value.
  */
 const truncateLongStrings = (value: unknown, length = 100): unknown => {
-  if (typeof value === 'string') {
-    return value.length > length ? value.substring(0, length) + '... [truncated]' : value;
-  }
+  // if (typeof value === 'string') {
+  //   return value.length > length ? value.substring(0, length) + '... [truncated]' : value;
+  // }
 
   return value;
 };

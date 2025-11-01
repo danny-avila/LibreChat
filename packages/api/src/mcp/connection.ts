@@ -82,7 +82,7 @@ export class MCPConnection extends EventEmitter {
   private transport: Transport | null = null; // Make this nullable
   private connectionState: t.ConnectionState = 'disconnected';
   private connectPromise: Promise<void> | null = null;
-  private readonly MAX_RECONNECT_ATTEMPTS = 3;
+  private readonly MAX_RECONNECT_ATTEMPTS = 6;
   public readonly serverName: string;
   private shouldStopReconnecting = false;
   private isReconnecting = false;

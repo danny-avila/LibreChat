@@ -1,0 +1,232 @@
+{
+  "$schema": "http://json-schema.org/schema#",
+  "type": "object",
+  "properties": {
+    "architecture": {
+      "type": "string",
+      "title": "MongoDB&reg; architecture",
+      "form": true,
+      "description": "Allowed values: `standalone` or `replicaset`"
+    },
+    "auth": {
+      "type": "object",
+      "title": "Authentication configuration",
+      "form": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Enable Authentication",
+          "form": true
+        },
+        "rootUser": {
+          "type": "string",
+          "title": "MongoDB&reg; admin user",
+          "form": true,
+          "description": "Name of the admin user. Default is root"
+        },
+        "rootPassword": {
+          "type": "string",
+          "title": "MongoDB&reg; admin password",
+          "form": true,
+          "description": "Defaults to a random 10-character alphanumeric string if not set",
+          "hidden": {
+            "value": false,
+            "path": "auth/enabled"
+          }
+        },
+        "database": {
+          "type": "string",
+          "title": "MongoDB&reg; custom database",
+          "description": "Name of the custom database to be created during the 1st initialization of MongoDB&reg;",
+          "form": true
+        },
+        "username": {
+          "type": "string",
+          "title": "MongoDB&reg; custom user",
+          "description": "Name of the custom user to be created during the 1st initialization of MongoDB&reg;. This user only has permissions on the MongoDB&reg; custom database",
+          "form": true
+        },
+        "password": {
+          "type": "string",
+          "title": "Password for MongoDB&reg; custom user",
+          "form": true,
+          "description": "Defaults to a random 10-character alphanumeric string if not set",
+          "hidden": {
+            "value": false,
+            "path": "auth/enabled"
+          }
+        },
+        "replicaSetKey": {
+          "type": "string",
+          "title": "Key used for replica set authentication",
+          "form": true,
+          "description": "Defaults to a random 10-character alphanumeric string if not set",
+          "hidden": {
+            "value": "standalone",
+            "path": "architecture"
+          }
+        }
+      }
+    },
+    "replicaCount": {
+      "type": "integer",
+      "form": true,
+      "title": "Number of MongoDB&reg; replicas",
+      "hidden": {
+        "value": "standalone",
+        "path": "architecture"
+      }
+    },
+    "configuration": {
+      "type": "string",
+      "title": "MongoDB&reg; Custom Configuration",
+      "form": true,
+      "render": "textArea"
+    },
+    "arbiter": {
+      "type": "object",
+      "title": "Arbiter configuration",
+      "form": true,
+      "properties": {
+        "configuration": {
+          "type": "string",
+          "title": "Arbiter Custom Configuration",
+          "form": true,
+          "render": "textArea",
+          "hidden": {
+            "value": "standalone",
+            "path": "architecture"
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "title": "Network policy configuration",
+      "form": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "form": true,
+          "title": "Enable network policy",
+          "description": "Enable network policy using Kubernetes native NP",
+          "hidden": {
+            "value": false,
+            "path": "networkPolicy/enabled"
+          }
+        },
+        "ingress": {
+          "type": "object",
+          "properties": {
+            "namespaceSelector": {
+              "type": "object",
+              "title": "Namespace selector label that is allowed to access this instance",
+              "hidden": {
+                "value": {},
+                "path": "networkPolicy/ingress/namespaceSelector"
+              }
+            },
+            "podSelector": {
+              "type": "object",
+              "title": "Pod selector label that is allowed to access this instance",
+              "hidden": {
+                "value": {},
+                "path": "networkPolicy/ingress/podSelector"
+              }
+            },
+            "customRules": {
+              "type": "array",
+              "title": "Custom rules for ingress network policy",
+              "hidden": {
+                "value": [],
+                "path": "networkPolicy/ingress/customRules"
+              }
+            }
+          }
+        },
+        "egress": {
+          "type": "object",
+          "properties": {
+            "customRules": {
+              "type": "array",
+              "title": "Custom rules for egress network policy",
+              "hidden": {
+                "value": [],
+                "path": "networkPolicy/egress/customRules"
+              }
+            }
+          }
+        }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "title": "Persistence configuration",
+      "form": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "form": true,
+          "title": "Enable persistence",
+          "description": "Enable persistence using Persistent Volume Claims"
+        },
+        "size": {
+          "type": "string",
+          "title": "Persistent Volume Size",
+          "form": true,
+          "render": "slider",
+          "sliderMin": 1,
+          "sliderMax": 100,
+          "sliderUnit": "Gi",
+          "hidden": {
+            "value": false,
+            "path": "persistence/enabled"
+          }
+        }
+      }
+    },
+    "volumePermissions": {
+      "type": "object",
+      "hidden": {
+        "value": false,
+        "path": "persistence/enabled"
+      },
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "form": true,
+          "title": "Enable Init Containers",
+          "description": "Use an init container to set required folder permissions on the data volume before mounting it in the final destination"
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "form": true,
+      "title": "Prometheus metrics details",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Create Prometheus metrics exporter",
+          "description": "Create a side-car container to expose Prometheus metrics",
+          "form": true
+        },
+        "serviceMonitor": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Create Prometheus Operator ServiceMonitor",
+              "description": "Create a ServiceMonitor to track metrics using Prometheus Operator",
+              "form": true,
+              "hidden": {
+                "value": false,
+                "path": "metrics/enabled"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

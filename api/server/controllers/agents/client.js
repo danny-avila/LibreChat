@@ -403,7 +403,7 @@ class AgentClient extends BaseClient {
    * @param {number} timeoutMs - Timeout in milliseconds (default: 3000)
    * @returns {Promise<(TAttachment | null)[] | undefined>}
    */
-  async awaitMemoryWithTimeout(memoryPromise, timeoutMs = 3000) {
+  async awaitMemoryWithTimeout(memoryPromise, timeoutMs = 20000) {
     if (!memoryPromise) {
       return;
     }

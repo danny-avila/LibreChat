@@ -1,0 +1,20 @@
+{{- /*
+Copyright Broadcom, Inc. All Rights Reserved.
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+
+{{- if (include "mongodb.createConfigmap" .) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mongodb.fullname" . }}
+  namespace: {{ include "mongodb.namespace" . | quote }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .Values.commonLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/component: mongodb
+  {{- if .Values.commonAnnotations }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
+  {{- end }}
+data:
+  mongodb.conf: |-
+    {{- include "common.tplvalues.render" (dict "value" .Values.configuration "context" $) | nindent 4 }}
+{{- end }}
