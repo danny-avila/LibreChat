@@ -1,3 +1,4 @@
+import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import type { AgentOutput, AgentSummary } from '~/data-provider/agent-insights';
 
 interface AgentCardProps {
@@ -51,7 +52,9 @@ export default function AgentCard({ output, summary, onClick }: AgentCardProps) 
 
       {/* Preview */}
       <div className="mb-4 rounded-md bg-gray-50 p-4 dark:bg-gray-900">
-        <p className="line-clamp-4 text-sm text-text-secondary">{preview}</p>
+        <div className="line-clamp-4 text-sm text-text-secondary prose prose-sm max-w-none dark:prose-invert">
+          <MarkdownLite content={preview} codeExecution={false} />
+        </div>
       </div>
 
       {/* Footer */}

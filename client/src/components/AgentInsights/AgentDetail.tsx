@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useGetAgentHistory } from '~/data-provider/agent-insights';
 import { Spinner } from '@librechat/client';
+import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import type { AgentOutput, AgentSummary } from '~/data-provider/agent-insights';
 
 interface AgentDetailProps {
@@ -34,7 +35,7 @@ export default function AgentDetail({ output, onBack, summaries }: AgentDetailPr
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
       <div className="border-b border-border-light bg-surface-primary p-6 dark:border-border-dark">
-        <div className="mx-auto max-w-4xl">
+        <div className="mx-auto max-w-6xl">
           <button
             onClick={onBack}
             className="mb-4 flex items-center text-sm text-text-secondary hover:text-text-primary"
@@ -70,12 +71,12 @@ export default function AgentDetail({ output, onBack, summaries }: AgentDetailPr
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl p-6">
+        <div className="mx-auto max-w-6xl p-6">
           {/* Main Response */}
           <div className="mb-6 rounded-lg border border-border-light bg-white p-6 dark:border-border-dark dark:bg-gray-800">
             <h2 className="mb-4 text-xl font-semibold text-text-primary">Agent Response</h2>
             <div className="prose prose-sm max-w-none dark:prose-invert">
-              <pre className="whitespace-pre-wrap text-text-secondary">{output.response}</pre>
+              <MarkdownLite content={output.response} codeExecution={false} />
             </div>
           </div>
 
@@ -145,6 +146,9 @@ export default function AgentDetail({ output, onBack, summaries }: AgentDetailPr
                   <div className="space-y-3">
                     {historyData?.outputs.map((historicalOutput, idx) => {
                       const histTime = new Date(historicalOutput.timestamp).toLocaleString();
+                      const preview =
+                        historicalOutput.response.substring(0, 500) +
+                        (historicalOutput.response.length > 500 ? '...' : '');
                       return (
                         <details
                           key={idx}
@@ -153,11 +157,8 @@ export default function AgentDetail({ output, onBack, summaries }: AgentDetailPr
                           <summary className="cursor-pointer font-medium text-text-primary">
                             {histTime}
                           </summary>
-                          <div className="mt-2 text-sm text-text-secondary">
-                            <pre className="whitespace-pre-wrap">
-                              {historicalOutput.response.substring(0, 500)}
-                              {historicalOutput.response.length > 500 ? '...' : ''}
-                            </pre>
+                          <div className="mt-2 text-sm text-text-secondary prose prose-sm max-w-none dark:prose-invert">
+                            <MarkdownLite content={preview} codeExecution={false} />
                           </div>
                         </details>
                       );
