@@ -52,7 +52,7 @@ export default function AgentCard({ output, summary, onClick }: AgentCardProps) 
 
       {/* Preview */}
       <div className="mb-4 rounded-md bg-gray-50 p-4 dark:bg-gray-900">
-        <div className="line-clamp-4 text-sm text-text-secondary prose prose-sm max-w-none dark:prose-invert">
+        <div className="line-clamp-4 prose max-w-none dark:prose-invert !max-w-full [&_*]:!max-w-full">
           <MarkdownLite content={preview} codeExecution={false} />
         </div>
       </div>

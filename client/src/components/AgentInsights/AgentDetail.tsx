@@ -75,7 +75,7 @@ export default function AgentDetail({ output, onBack, summaries }: AgentDetailPr
           {/* Main Response */}
           <div className="mb-6 rounded-lg border border-border-light bg-white p-6 dark:border-border-dark dark:bg-gray-800">
             <h2 className="mb-4 text-xl font-semibold text-text-primary">Agent Response</h2>
-            <div className="prose prose-sm max-w-none dark:prose-invert">
+            <div className="prose max-w-none dark:prose-invert !max-w-full [&_*]:!max-w-full prose-headings:!max-w-full prose-p:!max-w-full prose-li:!max-w-full">
               <MarkdownLite content={output.response} codeExecution={false} />
             </div>
           </div>
@@ -157,7 +157,7 @@ export default function AgentDetail({ output, onBack, summaries }: AgentDetailPr
                           <summary className="cursor-pointer font-medium text-text-primary">
                             {histTime}
                           </summary>
-                          <div className="mt-2 text-sm text-text-secondary prose prose-sm max-w-none dark:prose-invert">
+                          <div className="mt-2 prose max-w-none dark:prose-invert !max-w-full [&_*]:!max-w-full">
                             <MarkdownLite content={preview} codeExecution={false} />
                           </div>
                         </details>
