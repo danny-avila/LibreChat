@@ -75,6 +75,7 @@ function DynamicTextarea({
             disabled={readonly}
             value={inputValue ?? ''}
             onChange={setInputValue}
+            aria-label={localize(label as TranslationKeys)}
             placeholder={
               placeholderCode
                 ? (localize(placeholder as TranslationKeys) ?? placeholder)

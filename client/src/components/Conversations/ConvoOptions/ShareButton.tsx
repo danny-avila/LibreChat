@@ -77,7 +77,13 @@ export default function ShareButton({
             <div className="relative items-center rounded-lg p-2">
               {showQR && (
                 <div className="mb-4 flex flex-col items-center">
-                  <QRCodeSVG value={sharedLink} size={200} marginSize={2} className="rounded-2xl" />
+                  <QRCodeSVG
+                    value={sharedLink}
+                    size={200}
+                    marginSize={2}
+                    className="rounded-2xl"
+                    title={localize('com_ui_share_qr_code_description')}
+                  />
                 </div>
               )}
 
@@ -87,6 +93,7 @@ export default function ShareButton({
                   <Button
                     size="sm"
                     variant="outline"
+                    aria-label={localize('com_ui_copy_link')}
                     onClick={() => {
                       if (isCopying) {
                         return;

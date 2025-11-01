@@ -62,25 +62,38 @@ const getAgents = async (searchParameter) => await Agent.find(searchParameter).l
  *
  * @param {Object} params
  * @param {ServerRequest} params.req
+ * @param {string} params.spec
  * @param {string} params.agent_id
  * @param {string} params.endpoint
  * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _m }) => {
+const loadEphemeralAgent = async ({ req, spec, agent_id, endpoint, model_parameters: _m }) => {
   const { model, ...model_parameters } = _m;
+  const modelSpecs = req.config?.modelSpecs?.list;
+  /** @type {TModelSpec | null} */
+  let modelSpec = null;
+  if (spec != null && spec !== '') {
+    modelSpec = modelSpecs?.find((s) => s.name === spec) || null;
+  }
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;
   const mcpServers = new Set(ephemeralAgent?.mcp);
+  const userId = req.user?.id; // note: userId cannot be undefined at runtime
+  if (modelSpec?.mcpServers) {
+    for (const mcpServer of modelSpec.mcpServers) {
+      mcpServers.add(mcpServer);
+    }
+  }
   /** @type {string[]} */
   const tools = [];
-  if (ephemeralAgent?.execute_code === true) {
+  if (ephemeralAgent?.execute_code === true || modelSpec?.executeCode === true) {
     tools.push(Tools.execute_code);
   }
-  if (ephemeralAgent?.file_search === true) {
+  if (ephemeralAgent?.file_search === true || modelSpec?.fileSearch === true) {
     tools.push(Tools.file_search);
   }
-  if (ephemeralAgent?.web_search === true) {
+  if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
     tools.push(Tools.web_search);
   }
 
@@ -90,7 +103,7 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
       if (addedServers.has(mcpServer)) {
         continue;
       }
-      const serverTools = await getMCPServerTools(mcpServer);
+      const serverTools = await getMCPServerTools(userId, mcpServer);
       if (!serverTools) {
         tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
         addedServers.add(mcpServer);
@@ -122,17 +135,18 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
  *
  * @param {Object} params
  * @param {ServerRequest} params.req
+ * @param {string} params.spec
  * @param {string} params.agent_id
  * @param {string} params.endpoint
  * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
+const loadAgent = async ({ req, spec, agent_id, endpoint, model_parameters }) => {
   if (!agent_id) {
     return null;
   }
   if (agent_id === EPHEMERAL_AGENT_ID) {
-    return await loadEphemeralAgent({ req, agent_id, endpoint, model_parameters });
+    return await loadEphemeralAgent({ req, spec, agent_id, endpoint, model_parameters });
   }
   const agent = await getAgent({
     id: agent_id,
