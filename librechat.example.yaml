@@ -301,6 +301,46 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # AI/ML API Example
+    - name: "AI/ML API"                                  # Unique name for the endpoint
+      apiKey: "${AI_ML_API_KEY}"                         # Reference your environment variable for the API key
+      modelDisplayLabel: "AI/ML API"                     # Label shown next to the model icon
+      baseURL: "https://api.aimlapi.com/v1"
+      iconURL: "https://raw.githubusercontent.com/OctavianTheI/aimlapi-assets-devrel/main/aimlapi%20square%20Logo%20Icon.svg"
+
+      headers:
+        X-Title: "LibreChat"
+
+      models:
+        default: ["gpt-4o"]                              # Default models to use
+        fetch: true                                      # Fetch the model list from the API
+
+      titleConvo: true                                   # Enable automatic conversation titles
+      titleModel: "gpt-4o"                               # Model to use for title generation
+
+      # Additional optional parameters:
+
+      # titleMethod: "completion"                        # "completion" or "functions" (defaults to "completion")
+      # titleMessageRole: "system"                       # Role for title generation (defaults to "system")
+      # summarize: false                                 # Enable summarization before replying
+      # summaryModel: "gpt-3.5-turbo"                    # Model for summarization
+      # forcePrompt: false                               # Send a flat `prompt` instead of structured `messages`
+
+      # addParams:                                       # Additional parameters to add to the request
+      # max_tokens: 2048                                 # Maximum tokens for the response
+      # temperature: 0.7                                 # Temperature for response generation
+      # top_p: 0.9                                       # Top-p sampling for response generation
+
+      # dropParams:                                      # Parameters to drop from the request
+      #   - "stop"                   # Basic parameters (commonly removed across providers)
+      #   - "user"                   # User-specific parameters (not supported by some models)
+      #   - "frequency_penalty"      # Penalty parameters (not supported by some models)
+      #   - "presence_penalty"       # Penalty parameters (not supported by some models)
+      #   - "stream"                 # Streaming & logit parameters (for Groq, Cohere, etc.)
+      #   - "logit_bias"             # Logit bias parameters (not supported by some models)
+      #   - "logprobs"               # Log probabilities parameters (not supported by some models)
+      #   - "max_tokens"             # Token settings (Anthropic, Groq, etc.)
+
     # Portkey AI Example
     - name: 'Portkey'
       apiKey: 'dummy'
