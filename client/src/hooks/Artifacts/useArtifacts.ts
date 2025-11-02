@@ -112,21 +112,11 @@ export default function useArtifacts() {
   const currentArtifact = currentArtifactId != null ? artifacts?.[currentArtifactId] : null;
 
   const currentIndex = orderedArtifactIds.indexOf(currentArtifactId ?? '');
-  const cycleArtifact = (direction: 'next' | 'prev') => {
-    let newIndex: number;
-    if (direction === 'next') {
-      newIndex = (currentIndex + 1) % orderedArtifactIds.length;
-    } else {
-      newIndex = (currentIndex - 1 + orderedArtifactIds.length) % orderedArtifactIds.length;
-    }
-    setCurrentArtifactId(orderedArtifactIds[newIndex]);
-  };
 
   return {
     activeTab,
     setActiveTab,
     currentIndex,
-    cycleArtifact,
     currentArtifact,
     orderedArtifactIds,
     setCurrentArtifactId,
