@@ -147,7 +147,7 @@ const SidePanelGroup = memo(
             minSize={minSizeMain}
             order={1}
             id="messages-view"
-            className="transition-width relative h-full w-full flex-1 overflow-auto bg-presentation"
+            className="relative h-full w-full flex-1 overflow-auto bg-presentation"
           >
             {children}
           </ResizablePanel>

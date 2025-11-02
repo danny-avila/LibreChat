@@ -42,12 +42,12 @@ export default function ArtifactsHeader({
   return (
     <div
       className={cn(
-        'flex flex-shrink-0 items-center justify-between gap-2 border-b border-border-light bg-surface-primary-alt px-3 py-2 transition-all duration-300',
+        'flex flex-shrink-0 items-center justify-between gap-2 border-b border-border-light bg-surface-primary-alt px-3 py-2',
         isMobile ? 'justify-center' : 'w-full overflow-hidden',
       )}
     >
       {!isMobile && (
-        <div className="flex items-center transition-all duration-500">
+        <div className="flex items-center">
           <Radio
             options={tabOptions}
             value={activeTab}
@@ -57,12 +57,7 @@ export default function ArtifactsHeader({
         </div>
       )}
 
-      <div
-        className={cn(
-          'flex items-center gap-2 transition-all duration-500',
-          isMobile ? 'min-w-max' : '',
-        )}
-      >
+      <div className={cn('flex items-center gap-2', isMobile ? 'min-w-max' : '')}>
         {activeTab === 'preview' && (
           <Button
             size="icon"
