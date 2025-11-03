@@ -57,7 +57,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     const currentProvider = provider || endpoint;
 
     // Check if provider supports document upload
-    if (isDocumentSupportedProvider(endpointType || currentProvider)) {
+    if (isDocumentSupportedProvider(endpointType) || isDocumentSupportedProvider(currentProvider)) {
       const isGoogleProvider = currentProvider === EModelEndpoint.google;
       const validFileTypes = isGoogleProvider
         ? files.every(

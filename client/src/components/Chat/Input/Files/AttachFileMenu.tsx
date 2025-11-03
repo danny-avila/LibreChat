@@ -117,8 +117,8 @@ const AttachFileMenu = ({
       const items: MenuItemProps[] = [];
 
       const currentProvider = provider || endpoint;
-
-      if (isDocumentSupportedProvider(endpointType || currentProvider)) {
+      
+      if (isDocumentSupportedProvider(endpointType) || isDocumentSupportedProvider(currentProvider)) {
         items.push({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
