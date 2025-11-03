@@ -33,7 +33,8 @@ const DOMAIN_AGENT_CONFIGS = [
   },
   {
     name: 'TractorFitmentAgent',
-    description: 'Consult for tractor compatibility, installation requirements, and missing anchors.',
+    description:
+      'Consult for tractor compatibility, installation requirements, and missing anchors.',
     initializer: initializeTractorFitmentAgent,
   },
 ];
@@ -83,17 +84,25 @@ const KEYWORD_TOOL_RULES = [
   },
   {
     label: 'service_locator',
-    regex: /(service\s+center|nearest\s+dealer|repair\s+shop|zip\s+code|postal\s+code|technician\s+near)/i,
+    regex:
+      /(service\s+center|nearest\s+dealer|repair\s+shop|zip\s+code|postal\s+code|technician\s+near)/i,
     tools: ['CyclopediaSupportAgent'],
   },
 ];
 
 const EARLY_EXIT_KEYWORDS = new Map(
-  KEYWORD_TOOL_RULES.filter((rule) => rule.tools?.length === 1).map((rule) => [rule.label, rule.tools[0]]),
+  KEYWORD_TOOL_RULES.filter((rule) => rule.tools?.length === 1).map((rule) => [
+    rule.label,
+    rule.tools[0],
+  ]),
 );
 const PART_NUMBER_REGEX = /\b(part\s*number|sku|replacement\s*part|part\s*#)\b/i;
 
-const resolveDomainTools = ({ primaryIntent, secondaryIntents = [], confidence }, rawText, availableToolNames) => {
+const resolveDomainTools = (
+  { primaryIntent, secondaryIntents = [], confidence },
+  rawText,
+  availableToolNames,
+) => {
   const availableSet = new Set(availableToolNames);
   const selections = [];
 
@@ -137,7 +146,9 @@ const resolveDomainTools = ({ primaryIntent, secondaryIntents = [], confidence }
           return [toolName];
         }
       }
-      rule.tools.forEach((toolName, index) => addTool(toolName, { front: rule.frontLoad && index === 0 }));
+      rule.tools.forEach((toolName, index) =>
+        addTool(toolName, { front: rule.frontLoad && index === 0 }),
+      );
       if (rule.frontLoad && selections.length >= DEFAULT_MAX_DOMAIN_TOOLS) {
         return selections.slice(0, DEFAULT_MAX_DOMAIN_TOOLS);
       }
@@ -198,12 +209,25 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
     .filter((name) => typeof name === 'string' && name.length > 0);
 
   const domainAgentEntries = DOMAIN_AGENT_CONFIGS.map(({ name, description, initializer }) => {
-    let cachedAgent;
+    let cachedAgent = null;
+    let initializationPromise = null;
+
     const ensureAgent = async () => {
-      if (!cachedAgent) {
-        cachedAgent = await initializer(params);
+      if (cachedAgent) {
+        return cachedAgent;
       }
-      return cachedAgent;
+      if (!initializationPromise) {
+        initializationPromise = initializer(params)
+          .then((agentInstance) => {
+            cachedAgent = agentInstance;
+            return agentInstance;
+          })
+          .catch((error) => {
+            initializationPromise = null;
+            throw error;
+          });
+      }
+      return initializationPromise;
     };
 
     const wrappedTool = tool(
@@ -229,16 +253,32 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
           input: z
             .string()
             .min(1)
-            .describe('The fully-formed customer request (including any assumptions) to pass to the domain agent'),
+            .describe(
+              'The fully-formed customer request (including any assumptions) to pass to the domain agent',
+            ),
         }),
       },
     );
 
-    return { name, tool: wrappedTool };
+    return { name, tool: wrappedTool, ensureAgent };
   });
 
   const domainAgentTools = domainAgentEntries.map(({ tool: domainTool }) => domainTool);
-  const domainToolMap = new Map(domainAgentEntries.map(({ name, tool: domainTool }) => [name, domainTool]));
+  const domainToolMap = new Map(
+    domainAgentEntries.map(({ name, tool: domainTool }) => [name, domainTool]),
+  );
+
+  const shouldPrewarm =
+    String(process.env.WOODLAND_SUPERVISOR_PREWARM ?? 'true').toLowerCase() !== 'false';
+  if (shouldPrewarm) {
+    setTimeout(() => {
+      domainAgentEntries.forEach(({ ensureAgent }) => {
+        ensureAgent().catch((error) => {
+          logger?.warn?.('[SupervisorRouter] Prewarm failed', { error: error?.message });
+        });
+      });
+    }, 0);
+  }
 
   const supervisorParams = {
     ...params,
@@ -267,9 +307,16 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
     return baseTools.find((tool) => tool.name === name);
   };
 
+  let activeToolSignature = null;
   const setActiveTools = (toolNames) => {
-    const selectedNames = Array.isArray(toolNames) && toolNames.length > 0 ? toolNames : allDomainToolNames;
+    const selectedNames =
+      Array.isArray(toolNames) && toolNames.length > 0 ? toolNames : allDomainToolNames;
     const uniqueNames = Array.from(new Set([...baseToolNames, ...selectedNames]));
+    const signature = uniqueNames.join('|');
+    if (signature === activeToolSignature) {
+      return;
+    }
+    activeToolSignature = signature;
     const nextTools = uniqueNames.map(reconcileToolObject).filter(Boolean);
 
     executor.tools = nextTools;
@@ -313,9 +360,7 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
       ? metadata.secondary_intents
       : [];
     const confidence = typeof metadata.confidence === 'number' ? metadata.confidence : null;
-    const missingAnchors = Array.isArray(metadata.missing_anchors)
-      ? metadata.missing_anchors
-      : [];
+    const missingAnchors = Array.isArray(metadata.missing_anchors) ? metadata.missing_anchors : [];
     const clarifyingQuestion = metadata.clarifying_question || null;
     const recommendedTools = resolveDomainTools(
       { primaryIntent, secondaryIntents, confidence },

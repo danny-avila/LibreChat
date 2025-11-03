@@ -29,10 +29,12 @@ class WoodlandProductHistory extends Tool {
       format: z.enum(['json']).default('json'),
     });
 
-    this.serviceEndpoint = fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_AI_SEARCH_SERVICE_ENDPOINT;
+    this.serviceEndpoint =
+      fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_AI_SEARCH_SERVICE_ENDPOINT;
     this.apiKey = fields.AZURE_AI_SEARCH_API_KEY || process.env.AZURE_AI_SEARCH_API_KEY;
     this.indexName =
-      fields.AZURE_AI_SEARCH_PRODUCT_HISTORY_INDEX || process.env.AZURE_AI_SEARCH_PRODUCT_HISTORY_INDEX ||
+      fields.AZURE_AI_SEARCH_PRODUCT_HISTORY_INDEX ||
+      process.env.AZURE_AI_SEARCH_PRODUCT_HISTORY_INDEX ||
       fields.AZURE_AI_SEARCH_INDEX_NAME ||
       process.env.AZURE_AI_SEARCH_INDEX_NAME;
 
@@ -40,10 +42,14 @@ class WoodlandProductHistory extends Tool {
       throw new Error('Missing Azure Search configuration for product history.');
     }
 
-    this.apiVersion = fields.AZURE_AI_SEARCH_API_VERSION || process.env.AZURE_AI_SEARCH_API_VERSION || WoodlandProductHistory.DEFAULT_API_VERSION;
+    this.apiVersion =
+      fields.AZURE_AI_SEARCH_API_VERSION ||
+      process.env.AZURE_AI_SEARCH_API_VERSION ||
+      WoodlandProductHistory.DEFAULT_API_VERSION;
 
     const rawSemanticConfiguration =
-      fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION || process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION;
+      fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION ||
+      process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION;
     const semanticConfiguration = (() => {
       if (rawSemanticConfiguration == null) return undefined;
       const str = String(rawSemanticConfiguration).trim();
@@ -53,28 +59,41 @@ class WoodlandProductHistory extends Tool {
     this.semanticConfiguration = semanticConfiguration;
     const rawQueryLanguage =
       fields.AZURE_AI_SEARCH_QUERY_LANGUAGE || process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE;
-    this.queryLanguage = typeof rawQueryLanguage === 'string' ? rawQueryLanguage.trim() : rawQueryLanguage;
+    this.queryLanguage =
+      typeof rawQueryLanguage === 'string' ? rawQueryLanguage.trim() : rawQueryLanguage;
 
     this.queryType = this._resolveQueryType(fields);
 
-    this.topDefault = Number(fields.WOODLAND_HISTORY_DEFAULT_TOP || process.env.WOODLAND_HISTORY_DEFAULT_TOP || WoodlandProductHistory.DEFAULT_TOP);
+    this.topDefault = Number(
+      fields.WOODLAND_HISTORY_DEFAULT_TOP ||
+        process.env.WOODLAND_HISTORY_DEFAULT_TOP ||
+        WoodlandProductHistory.DEFAULT_TOP,
+    );
     const selectFields = this._stringArray(
-      fields.WOODLAND_HISTORY_SELECT || process.env.WOODLAND_HISTORY_SELECT || WoodlandProductHistory.DEFAULT_SELECT,
+      fields.WOODLAND_HISTORY_SELECT ||
+        process.env.WOODLAND_HISTORY_SELECT ||
+        WoodlandProductHistory.DEFAULT_SELECT,
     );
     this.select = selectFields.length ? selectFields : ['*'];
 
-    const configuredSearchFields = fields.WOODLAND_HISTORY_SEARCH_FIELDS || process.env.WOODLAND_HISTORY_SEARCH_FIELDS;
+    const configuredSearchFields =
+      fields.WOODLAND_HISTORY_SEARCH_FIELDS || process.env.WOODLAND_HISTORY_SEARCH_FIELDS;
     const searchFields = configuredSearchFields ? this._stringArray(configuredSearchFields) : [];
     this.searchFields = searchFields.length ? searchFields : undefined;
 
-    const vectorFields = fields.AZURE_AI_SEARCH_VECTOR_FIELDS || process.env.AZURE_AI_SEARCH_VECTOR_FIELDS;
+    const vectorFields =
+      fields.AZURE_AI_SEARCH_VECTOR_FIELDS || process.env.AZURE_AI_SEARCH_VECTOR_FIELDS;
     this.vectorFields = vectorFields
       ? String(vectorFields)
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean)
       : [];
-    this.vectorK = Number(fields.AZURE_AI_SEARCH_VECTOR_K || process.env.AZURE_AI_SEARCH_VECTOR_K || WoodlandProductHistory.DEFAULT_VECTOR_K);
+    this.vectorK = Number(
+      fields.AZURE_AI_SEARCH_VECTOR_K ||
+        process.env.AZURE_AI_SEARCH_VECTOR_K ||
+        WoodlandProductHistory.DEFAULT_VECTOR_K,
+    );
 
     this.client = new SearchClient(
       this.serviceEndpoint,
@@ -259,18 +278,15 @@ class WoodlandProductHistory extends Tool {
     }
     const normalized = fieldName.toLowerCase();
     const normalizedPrefix = typeof prefix === 'string' ? prefix.toLowerCase() : '';
-    let labelPart = normalizedPrefix && normalized.startsWith(normalizedPrefix)
-      ? fieldName.slice(prefix.length)
-      : fieldName;
+    let labelPart =
+      normalizedPrefix && normalized.startsWith(normalizedPrefix)
+        ? fieldName.slice(prefix.length)
+        : fieldName;
     labelPart = labelPart.replace(/^[_-]/, '');
     if (!labelPart) {
       return 'primary';
     }
-    return labelPart
-      .replace(/[_-]/g, ' ')
-      .replace(/(\d+)/g, ' $1')
-      .replace(/\s+/g, ' ')
-      .trim();
+    return labelPart.replace(/[_-]/g, ' ').replace(/(\d+)/g, ' $1').replace(/\s+/g, ' ').trim();
   }
 
   _collectOptionGroup(doc, prefixes = []) {
@@ -289,7 +305,9 @@ class WoodlandProductHistory extends Tool {
       if (lowerKey.endsWith('_url') || lowerKey.endsWith('url')) {
         return;
       }
-      const matchedPrefix = prefixList.find((prefix) => lowerKey.startsWith(String(prefix).toLowerCase()));
+      const matchedPrefix = prefixList.find((prefix) =>
+        lowerKey.startsWith(String(prefix).toLowerCase()),
+      );
       if (!matchedPrefix) {
         return;
       }
@@ -332,16 +350,37 @@ class WoodlandProductHistory extends Tool {
         replacement_side_tubes: this._collectOptionGroup(doc, ['replacement_side_tubes']),
         collector_bag_options: this._collectOptionGroup(doc, ['replacement_bag_option']),
         latch_upgrades: this._collectOptionGroup(doc, ['latch_upgrade_kit']),
-        collector_frames: this._collectOptionGroup(doc, ['collector_frame', 'collector_complete', 'replacement_collector_complete']),
+        collector_frames: this._collectOptionGroup(doc, [
+          'collector_frame',
+          'collector_complete',
+          'replacement_collector_complete',
+        ]),
         chassis: this._collectOptionGroup(doc, ['chassis']),
-        impellers: this._collectOptionGroup(doc, ['replacement_impeller_option', 'impeller_hardware_kit']),
-        blower_housings: this._collectOptionGroup(doc, ['replacement_blower_housing_option', 'blower_housing', 'blower_rebuild']),
-        blower_with_impeller: this._collectOptionGroup(doc, ['replacement_blower_w_impeller_option']),
+        impellers: this._collectOptionGroup(doc, [
+          'replacement_impeller_option',
+          'impeller_hardware_kit',
+        ]),
+        blower_housings: this._collectOptionGroup(doc, [
+          'replacement_blower_housing_option',
+          'blower_housing',
+          'blower_rebuild',
+        ]),
+        blower_with_impeller: this._collectOptionGroup(doc, [
+          'replacement_blower_w_impeller_option',
+        ]),
         engines: this._collectOptionGroup(doc, ['engine_model', 'replacement_engine_option']),
-        engine_blowers: this._collectOptionGroup(doc, ['engine_blower_complete_option', 'engine_blower_complete']),
+        engine_blowers: this._collectOptionGroup(doc, [
+          'engine_blower_complete_option',
+          'engine_blower_complete',
+        ]),
         air_filters: this._collectOptionGroup(doc, ['replacement_air_filters']),
         maintenance_kits: this._collectOptionGroup(doc, ['engine_maintenance_kit']),
-        couplings: this._collectOptionGroup(doc, ['mda_collar', 'pvp_coupling', 'estate_vac_coupling', 'power_unloader_chute']),
+        couplings: this._collectOptionGroup(doc, [
+          'mda_collar',
+          'pvp_coupling',
+          'estate_vac_coupling',
+          'power_unloader_chute',
+        ]),
         accessories: this._collectOptionGroup(doc, ['roof_rack_carrier', 'accessories']),
         deck_hose: this._collectOptionGroup(doc, ['deck_hose']),
       },
@@ -471,13 +510,21 @@ class WoodlandProductHistory extends Tool {
   }
 
   _resolveQueryType(fields = {}) {
-    const raw = (fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || WoodlandProductHistory.DEFAULT_QUERY_TYPE);
-    const normalized = String(raw || '').toLowerCase().trim();
+    const raw =
+      fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE ||
+      process.env.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE ||
+      WoodlandProductHistory.DEFAULT_QUERY_TYPE;
+    const normalized = String(raw || '')
+      .toLowerCase()
+      .trim();
     if (normalized === 'semantic' && !this._hasSemanticConfig()) {
-      logger.warn('[woodland-ai-product-history] Semantic queryType requested but semantic configuration is missing. Using simple.', {
-        semanticConfiguration: this.semanticConfiguration,
-        queryLanguage: this.queryLanguage,
-      });
+      logger.warn(
+        '[woodland-ai-product-history] Semantic queryType requested but semantic configuration is missing. Using simple.',
+        {
+          semanticConfiguration: this.semanticConfiguration,
+          queryLanguage: this.queryLanguage,
+        },
+      );
       return 'simple';
     }
     return normalized || 'simple';
@@ -563,12 +610,16 @@ class WoodlandProductHistory extends Tool {
       if (results.length === 0 && options.filter) {
         const retryOptions = { ...options };
         delete retryOptions.filter;
-        logger.info('[woodland-ai-product-history] No results with filter, retrying without filter');
+        logger.info(
+          '[woodland-ai-product-history] No results with filter, retrying without filter',
+        );
         results = await this._performSearch(queryString, retryOptions);
       }
 
       if (results.length === 0 && queryString !== '*' && !options.filter) {
-        logger.info('[woodland-ai-product-history] No results with query terms, retrying with wildcard');
+        logger.info(
+          '[woodland-ai-product-history] No results with query terms, retrying with wildcard',
+        );
         results = await this._performSearch('*', { ...options, filter: undefined });
       }
 
@@ -586,3 +637,4 @@ class WoodlandProductHistory extends Tool {
 }
 
 module.exports = WoodlandProductHistory;
+WoodlandProductHistory.enableReusableInstance = true;

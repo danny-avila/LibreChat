@@ -4,9 +4,10 @@ const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 const { logger } = require('~/config');
 
-const DEFAULT_EXTRACTIVE = String(process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE ?? 'false')
-  .toLowerCase()
-  .trim() === 'true';
+const DEFAULT_EXTRACTIVE =
+  String(process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE ?? 'false')
+    .toLowerCase()
+    .trim() === 'true';
 
 class WoodlandAISearchCases extends Tool {
   static DEFAULT_API_VERSION = '2024-07-01';
@@ -85,8 +86,10 @@ class WoodlandAISearchCases extends Tool {
     const title = str(d?.title);
     const content = str(d?.content) || str(d?.summary) || str(d?.answer);
     const requirements =
-      this._extractList(content, [/requirements?\s*[:\-]\s*([^\n]+)/i, /eligibility\s*[:\-]\s*([^\n]+)/i]) ||
-      list(d?.requirements);
+      this._extractList(content, [
+        /requirements?\s*[:\-]\s*([^\n]+)/i,
+        /eligibility\s*[:\-]\s*([^\n]+)/i,
+      ]) || list(d?.requirements);
     const exceptions =
       this._extractList(content, [/exceptions?\s*[:\-]\s*([^\n]+)/i]) || list(d?.exceptions);
     const scope = str(d?.category) || str(d?.scope) || undefined;
@@ -95,7 +98,7 @@ class WoodlandAISearchCases extends Tool {
     // Build provenance and a Markdown-ready citation
     const provenance = this._provenance(d);
     const caseNumber = d?.case_number ?? d?.caseNumber;
-    const citationLabel = caseNumber ? `Case #${caseNumber}` : (title || 'Case');
+    const citationLabel = caseNumber ? `Case #${caseNumber}` : title || 'Case';
     const citationUrl = provenance?.url;
     const citationMarkdown = citationUrl ? `[${citationLabel}](${citationUrl})` : citationLabel;
 
@@ -114,7 +117,7 @@ class WoodlandAISearchCases extends Tool {
       citation: {
         label: citationLabel,
         url: citationUrl,
-        markdown: citationMarkdown
+        markdown: citationMarkdown,
       },
     };
 
@@ -124,20 +127,30 @@ class WoodlandAISearchCases extends Tool {
   constructor(fields = {}) {
     super();
     this.name = 'woodland-ai-search-cases';
-    this.description = "Use the 'woodland-ai-search-cases' tool to answer questions from the Cases Azure AI Search index";
+    this.description =
+      "Use the 'woodland-ai-search-cases' tool to answer questions from the Cases Azure AI Search index";
 
     this.schema = z.object({
       query: z.string().describe('Question or search phrase for Cases index'),
       top: z.number().int().positive().optional(),
-      select: z.string().optional().describe('Comma-separated list of fields to return. Use "*" to select all fields (omit $select).'),
-      filter: z.string().optional().describe("OData filter"),
-      embedding: z.array(z.number()).min(8).optional().describe('Optional dense embedding for hybrid/vector search'),
+      select: z
+        .string()
+        .optional()
+        .describe(
+          'Comma-separated list of fields to return. Use "*" to select all fields (omit $select).',
+        ),
+      filter: z.string().optional().describe('OData filter'),
+      embedding: z
+        .array(z.number())
+        .min(8)
+        .optional()
+        .describe('Optional dense embedding for hybrid/vector search'),
       vectorK: z.number().int().positive().optional().describe('k for vector search'),
       answers: z.enum(['extractive', 'none']).optional(),
       captions: z.enum(['extractive', 'none']).optional(),
       speller: z.enum(['lexicon', 'simple', 'none']).optional(),
       queryLanguage: z.string().optional(),
-      searchFields: z.string().optional().describe('Comma-separated search fields override')
+      searchFields: z.string().optional().describe('Comma-separated search fields override'),
     });
 
     // Shared endpoint + key
@@ -151,13 +164,18 @@ class WoodlandAISearchCases extends Tool {
     this.indexName =
       this._env(fields.AZURE_AI_SEARCH_CASES_INDEX, process.env.AZURE_AI_SEARCH_CASES_INDEX) ||
       this._env(fields.AZURE_AI_SEARCH_CASE_INDEX, process.env.AZURE_AI_SEARCH_CASE_INDEX) ||
-      this._env(fields.AZURE_AI_SEARCH_CASES_INDEX_NAME, process.env.AZURE_AI_SEARCH_CASES_INDEX_NAME) ||
+      this._env(
+        fields.AZURE_AI_SEARCH_CASES_INDEX_NAME,
+        process.env.AZURE_AI_SEARCH_CASES_INDEX_NAME,
+      ) ||
       this._env(fields.AZURE_AI_SEARCH_INDEX_NAME, process.env.AZURE_AI_SEARCH_INDEX_NAME);
 
     // Base URL for resolving relative URLs
     this.baseUrl =
-      this._env(fields.AZURE_AI_SEARCH_CASES_BASE_URL, process.env.AZURE_AI_SEARCH_CASES_BASE_URL) ||
-      this._env(fields.AZURE_AI_SEARCH_BASE_URL, process.env.AZURE_AI_SEARCH_BASE_URL);
+      this._env(
+        fields.AZURE_AI_SEARCH_CASES_BASE_URL,
+        process.env.AZURE_AI_SEARCH_CASES_BASE_URL,
+      ) || this._env(fields.AZURE_AI_SEARCH_BASE_URL, process.env.AZURE_AI_SEARCH_BASE_URL);
 
     if (!this.serviceEndpoint || !this.apiKey || !this.indexName) {
       throw new Error(
@@ -182,8 +200,13 @@ class WoodlandAISearchCases extends Tool {
         this._env(
           fields.AZURE_AI_SEARCH_CASES_SEARCH_FIELDS,
           process.env.AZURE_AI_SEARCH_CASES_SEARCH_FIELDS,
-        ) || this._env(fields.AZURE_AI_SEARCH_SEARCH_FIELDS, process.env.AZURE_AI_SEARCH_SEARCH_FIELDS);
-      if (v) return String(v).split(',').map((s) => s.trim()).filter(Boolean);
+        ) ||
+        this._env(fields.AZURE_AI_SEARCH_SEARCH_FIELDS, process.env.AZURE_AI_SEARCH_SEARCH_FIELDS);
+      if (v)
+        return String(v)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
       // Generic defaults suitable for Q&A corpora; avoid page_type
       return ['title', 'content', 'summary', 'tags', 'keywords', 'category', 'question', 'answer'];
     })();
@@ -207,35 +230,51 @@ class WoodlandAISearchCases extends Tool {
       fields.AZURE_AI_SEARCH_SCORING_PROFILE,
       process.env.AZURE_AI_SEARCH_SCORING_PROFILE,
     );
-    this.returnAllFields = String(
-      this._env(
-        fields.AZURE_AI_SEARCH_RETURN_ALL_FIELDS,
-        process.env.AZURE_AI_SEARCH_RETURN_ALL_FIELDS || 'true',
-      ),
-    )
-      .toLowerCase()
-      .trim() === 'true';
+    this.returnAllFields =
+      String(
+        this._env(
+          fields.AZURE_AI_SEARCH_RETURN_ALL_FIELDS,
+          process.env.AZURE_AI_SEARCH_RETURN_ALL_FIELDS || 'true',
+        ),
+      )
+        .toLowerCase()
+        .trim() === 'true';
 
     // Vector options
     this.vectorFields = (() => {
       const v =
-        this._env(fields.AZURE_AI_SEARCH_CASES_VECTOR_FIELDS, process.env.AZURE_AI_SEARCH_CASES_VECTOR_FIELDS) ||
-        this._env(fields.AZURE_AI_SEARCH_VECTOR_FIELDS, process.env.AZURE_AI_SEARCH_VECTOR_FIELDS) ||
+        this._env(
+          fields.AZURE_AI_SEARCH_CASES_VECTOR_FIELDS,
+          process.env.AZURE_AI_SEARCH_CASES_VECTOR_FIELDS,
+        ) ||
+        this._env(
+          fields.AZURE_AI_SEARCH_VECTOR_FIELDS,
+          process.env.AZURE_AI_SEARCH_VECTOR_FIELDS,
+        ) ||
         WoodlandAISearchCases.DEFAULT_VECTOR_FIELDS;
-      return String(v || '').split(',').map(s => s.trim()).filter(Boolean);
+      return String(v || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     })();
     this.vectorK = Number(
-      this._env(fields.AZURE_AI_SEARCH_CASES_VECTOR_K, process.env.AZURE_AI_SEARCH_CASES_VECTOR_K) ||
-      this._env(fields.AZURE_AI_SEARCH_VECTOR_K, process.env.AZURE_AI_SEARCH_VECTOR_K) ||
-      WoodlandAISearchCases.DEFAULT_VECTOR_K
+      this._env(
+        fields.AZURE_AI_SEARCH_CASES_VECTOR_K,
+        process.env.AZURE_AI_SEARCH_CASES_VECTOR_K,
+      ) ||
+        this._env(fields.AZURE_AI_SEARCH_VECTOR_K, process.env.AZURE_AI_SEARCH_VECTOR_K) ||
+        WoodlandAISearchCases.DEFAULT_VECTOR_K,
     );
 
-    const extractiveEnabled = String(
-      this._env(fields.WOODLAND_SEARCH_ENABLE_EXTRACTIVE, process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE) ??
-        DEFAULT_EXTRACTIVE,
-    )
-      .toLowerCase()
-      .trim() === 'true';
+    const extractiveEnabled =
+      String(
+        this._env(
+          fields.WOODLAND_SEARCH_ENABLE_EXTRACTIVE,
+          process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE,
+        ) ?? DEFAULT_EXTRACTIVE,
+      )
+        .toLowerCase()
+        .trim() === 'true';
 
     this.defaultAnswerMode = extractiveEnabled ? 'extractive' : 'none';
     this.defaultCaptionMode = extractiveEnabled ? 'extractive' : 'none';
@@ -294,7 +333,7 @@ class WoodlandAISearchCases extends Tool {
       logger.debug('[woodland-ai-search-cases] Sending request', {
         query,
         hasVector: Array.isArray(send.vectorQueries) && send.vectorQueries.length > 0,
-        options: JSON.stringify({ ...send, vectorQueries: undefined }, null, 2)
+        options: JSON.stringify({ ...send, vectorQueries: undefined }, null, 2),
       });
       const rs = await this.client.search(query, send);
       const items = [];
@@ -323,7 +362,10 @@ class WoodlandAISearchCases extends Tool {
         const sanitized = { ...opts };
         let changed = false;
 
-        if (/semantic configuration/i.test(msg) || /semanticConfiguration(?:'|\\")? must not be empty/i.test(msg)) {
+        if (
+          /semantic configuration/i.test(msg) ||
+          /semanticConfiguration(?:'|\\")? must not be empty/i.test(msg)
+        ) {
           if (sanitized.semanticSearchOptions) delete sanitized.semanticSearchOptions;
           sanitized.queryType = 'simple';
           delete sanitized.answers;
@@ -338,7 +380,9 @@ class WoodlandAISearchCases extends Tool {
           if (sanitized.orderBy) {
             delete sanitized.orderBy;
             changed = true;
-            logger.info('[woodland-ai-search-cases] Removing orderBy for semantic query and retrying');
+            logger.info(
+              '[woodland-ai-search-cases] Removing orderBy for semantic query and retrying',
+            );
           }
         }
 
@@ -346,7 +390,7 @@ class WoodlandAISearchCases extends Tool {
         const toRemove = [];
         const regexes = [
           /Unknown field '([^']+)'/gi,
-          /Could not find a property named '([^']+)'/gi
+          /Could not find a property named '([^']+)'/gi,
         ];
         for (const rx of regexes) {
           let m;
@@ -373,7 +417,9 @@ class WoodlandAISearchCases extends Tool {
             if (sanitized.filter) {
               delete sanitized.filter;
               changed = true;
-              logger.info('[woodland-ai-search-cases] Dropping filter due to unknown fields and retrying');
+              logger.info(
+                '[woodland-ai-search-cases] Dropping filter due to unknown fields and retrying',
+              );
             }
             if (sanitized.orderBy) {
               delete sanitized.orderBy;
@@ -391,7 +437,9 @@ class WoodlandAISearchCases extends Tool {
         if (!changed && sanitized.select) {
           delete sanitized.select;
           changed = true;
-          logger.info('[woodland-ai-search-cases] Dropping select entirely as final fallback and retrying');
+          logger.info(
+            '[woodland-ai-search-cases] Dropping select entirely as final fallback and retrying',
+          );
         }
 
         if (!changed) break;
@@ -403,7 +451,10 @@ class WoodlandAISearchCases extends Tool {
 
   async _call(data) {
     const { query, top: topIn } = data;
-    const finalTop = typeof topIn === 'number' && Number.isFinite(topIn) ? Math.max(1, Math.floor(topIn)) : this.top;
+    const finalTop =
+      typeof topIn === 'number' && Number.isFinite(topIn)
+        ? Math.max(1, Math.floor(topIn))
+        : this.top;
 
     // Per-call overrides and normalization
     let perCallSelect;
@@ -412,15 +463,25 @@ class WoodlandAISearchCases extends Tool {
       if (raw === '' || raw === '*') {
         perCallSelect = [];
       } else {
-        perCallSelect = raw.split(',').map(s => s.trim()).filter(Boolean);
+        perCallSelect = raw
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
       }
     }
-    const perCallSearchFields = typeof data?.searchFields === 'string' ? data.searchFields.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+    const perCallSearchFields =
+      typeof data?.searchFields === 'string'
+        ? data.searchFields
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined;
     const perCallAnswers = data?.answers;
     const perCallCaptions = data?.captions;
     const perCallSpeller = data?.speller;
     const perCallQueryLanguage = data?.queryLanguage;
-    const filter = typeof data?.filter === 'string' && data.filter.trim() ? data.filter.trim() : undefined;
+    const filter =
+      typeof data?.filter === 'string' && data.filter.trim() ? data.filter.trim() : undefined;
     const embedding = Array.isArray(data?.embedding) ? data.embedding : undefined;
     const vectorK = Number.isFinite(data?.vectorK) ? Number(data.vectorK) : this.vectorK;
 
@@ -443,9 +504,7 @@ class WoodlandAISearchCases extends Tool {
       };
 
       const semanticConfigName =
-        typeof this.semanticConfiguration === 'string'
-          ? this.semanticConfiguration.trim()
-          : '';
+        typeof this.semanticConfiguration === 'string' ? this.semanticConfiguration.trim() : '';
       const allowSemantic = !!semanticConfigName;
 
       if (allowSemantic) {
@@ -473,7 +532,9 @@ class WoodlandAISearchCases extends Tool {
             options.select = perCallSelect;
           } else {
             // per-call "*" or blank: omit $select
-            logger.info('[woodland-ai-search-cases] Per-call select requested ALL fields; omitting $select');
+            logger.info(
+              '[woodland-ai-search-cases] Per-call select requested ALL fields; omitting $select',
+            );
           }
         } else if (this.select && this.select.length > 0) {
           options.select = this.select;
@@ -520,3 +581,4 @@ class WoodlandAISearchCases extends Tool {
 }
 
 module.exports = WoodlandAISearchCases;
+WoodlandAISearchCases.enableReusableInstance = true;

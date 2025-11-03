@@ -9,30 +9,72 @@ const { applyCatalogPolicy, canonicalizeModel } = require('./util/woodlandCatalo
 
 const DEFAULT_CACHE_TTL_MS = Number(process.env.WOODLAND_SEARCH_CACHE_TTL_MS ?? 10_000);
 const DEFAULT_CACHE_MAX = Number(process.env.WOODLAND_SEARCH_CACHE_MAX_ENTRIES ?? 200);
-const DEFAULT_EXTRACTIVE = String(process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE ?? 'false')
-  .toLowerCase()
-  .trim() === 'true';
+const DEFAULT_EXTRACTIVE =
+  String(process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE ?? 'false')
+    .toLowerCase()
+    .trim() === 'true';
 
 const DEFAULT_RAKE_NAME_ALIASES = {
-  classic: ['classic', 'classic cyclone rake', 'cyclone rake classic', 'classic rake'],
-  commander: ['commander', 'cyclone rake commander', 'commander rake'],
+  classic: [
+    'classic',
+    'classic cyclone rake',
+    'cyclone rake classic',
+    'classic rake',
+    '101',
+    '101 classic',
+    '101 standard',
+    '101 standard complete',
+    '101 standard complete platinum',
+    'standard complete',
+    'standard complete platinum',
+  ],
+  commander: [
+    'commander',
+    'cyclone rake commander',
+    'commander rake',
+    '103',
+    '103 commander',
+    'commander pro',
+  ],
   'commander crs': ['commander crs', 'commander_crs', 'crs commander'],
-  'commercial pro': ['commercial pro', 'cyclone rake commercial pro', 'commercial-pro'],
+  'commercial pro': [
+    'commercial pro',
+    'cyclone rake commercial pro',
+    'commercial-pro',
+    'commercial',
+    '102 commercial',
+    '104 commercial pro',
+    'commercial d',
+  ],
   'commercial pro crs': ['commercial pro crs', 'commercial_pro_crs'],
-  xl: ['xl', 'cyclone rake xl', 'xl rake'],
+  xl: ['xl', 'cyclone rake xl', 'xl rake', '106 xl'],
   'xl crs': ['xl crs', 'xl_crs'],
-  'z-10': ['z-10', 'z10', 'z 10', 'cyclone rake z-10', 'cyclone rake z 10', 'zr-10', 'zr10', 'zr 10'],
+  'z-10': [
+    'z-10',
+    'z10',
+    'z 10',
+    'cyclone rake z-10',
+    'cyclone rake z 10',
+    'zr-10',
+    'zr10',
+    'zr 10',
+    '112',
+  ],
   'z-10 crs': ['z-10 crs', 'z10 crs', 'z_10_crs'],
 };
 
 const normalizeAliasMap = (aliases = {}) => {
   const map = new Map();
   Object.entries(aliases).forEach(([canonical, list]) => {
-    const c = String(canonical || '').trim().toLowerCase();
+    const c = String(canonical || '')
+      .trim()
+      .toLowerCase();
     if (!c) return;
     map.set(c, c);
     (Array.isArray(list) ? list : []).forEach((alias) => {
-      const key = String(alias || '').trim().toLowerCase();
+      const key = String(alias || '')
+        .trim()
+        .toLowerCase();
       if (!key) return;
       map.set(key, c);
     });
@@ -43,7 +85,7 @@ const normalizeAliasMap = (aliases = {}) => {
 class WoodlandAISearchCatalog extends Tool {
   static DEFAULT_API_VERSION = '2024-07-01';
   static DEFAULT_TOP = 5;
-  static DEFAULT_SELECT ="*";
+  static DEFAULT_SELECT = '*';
   static DEFAULT_VECTOR_K = 15;
   static DEFAULT_VECTOR_FIELDS = ''; // e.g., "contentVector,titleVector"
   static VALID_FIELD_REGEX = /^[a-zA-Z_][\w.]*$/;
@@ -66,7 +108,9 @@ class WoodlandAISearchCatalog extends Tool {
   }
 
   _canonicalizeRakeName(value) {
-    const key = String(value || '').trim().toLowerCase();
+    const key = String(value || '')
+      .trim()
+      .toLowerCase();
     if (!key) {
       return undefined;
     }
@@ -87,13 +131,22 @@ class WoodlandAISearchCatalog extends Tool {
     const rakeNamesRaw = Array.isArray(fitment.rake_names) ? fitment.rake_names : [];
     const rakeModelsRaw = Array.isArray(fitment.rake_models) ? fitment.rake_models : [];
     const rakeSkus = Array.isArray(fitment.rake_skus) ? fitment.rake_skus : [];
+    const familyCanonical = fitment.family_canonical || this._canonicalizeRakeName(fitment.family);
+    const compatibleCanonical = Array.isArray(fitment.compatible_models_canonical)
+      ? fitment.compatible_models_canonical
+      : [];
+    const compatibleRaw = Array.isArray(fitment.compatible_models) ? fitment.compatible_models : [];
 
     if (canonicalRakeName) {
       const canonicalMatches =
-        namesCanonical.includes(canonicalRakeName) || modelsCanonical.includes(canonicalRakeName);
+        namesCanonical.includes(canonicalRakeName) ||
+        modelsCanonical.includes(canonicalRakeName) ||
+        (familyCanonical ? familyCanonical === canonicalRakeName : false) ||
+        compatibleCanonical.includes(canonicalRakeName);
       const rawMatches =
         rakeNamesRaw.some((name) => this._canonicalizeRakeName(name) === canonicalRakeName) ||
-        rakeModelsRaw.some((name) => this._canonicalizeRakeName(name) === canonicalRakeName);
+        rakeModelsRaw.some((name) => this._canonicalizeRakeName(name) === canonicalRakeName) ||
+        compatibleRaw.some((name) => this._canonicalizeRakeName(name) === canonicalRakeName);
       if (!canonicalMatches && !rawMatches) {
         return false;
       }
@@ -135,7 +188,13 @@ class WoodlandAISearchCatalog extends Tool {
       }
       return undefined;
     };
-    const list = (v) => (Array.isArray(v) ? v.filter((x) => x != null && x !== '').map((x) => String(x).trim()).filter(Boolean) : undefined);
+    const list = (v) =>
+      Array.isArray(v)
+        ? v
+            .filter((x) => x != null && x !== '')
+            .map((x) => String(x).trim())
+            .filter(Boolean)
+        : undefined;
     const listFromAny = (value) => {
       if (Array.isArray(value)) {
         return value
@@ -166,7 +225,7 @@ class WoodlandAISearchCatalog extends Tool {
     const thePrice = num(d?.price);
     const availability = str(d?.availability) || str(d?.status);
 
-    const citationLabel = sku ? `${title || 'Product'} — ${sku}` : (title || 'Product');
+    const citationLabel = sku ? `${title || 'Product'} — ${sku}` : title || 'Product';
     const citationUrl = provenance?.url;
     const citationMarkdown = citationUrl ? `[${citationLabel}](${citationUrl})` : citationLabel;
 
@@ -251,13 +310,23 @@ class WoodlandAISearchCatalog extends Tool {
         .map((name) => this._canonicalizeRakeName(name))
         .filter(Boolean),
     );
-    if (canonicalNames.length || canonicalModels.length) {
-      normalized.fitment = {
-        ...(normalized.fitment || {}),
-        rake_names_canonical: canonicalNames.length ? canonicalNames : undefined,
-        rake_models_canonical: canonicalModels.length ? canonicalModels : undefined,
-      };
+    const familyRaw = str(d?.family);
+    const familyCanonical = this._canonicalizeRakeName(familyRaw);
+    const compatibleModels = listFromAny(d?.compatible_models);
+    const compatibleModelsCanonical = compatibleModels
+      ? uniq(compatibleModels.map((name) => this._canonicalizeRakeName(name)).filter(Boolean))
+      : undefined;
+
+    const fitment = { ...(normalized.fitment || {}) };
+    if (canonicalNames.length) fitment.rake_names_canonical = canonicalNames;
+    if (canonicalModels.length) fitment.rake_models_canonical = canonicalModels;
+    if (familyRaw) fitment.family = familyRaw;
+    if (familyCanonical) fitment.family_canonical = familyCanonical;
+    if (compatibleModels) fitment.compatible_models = compatibleModels;
+    if (compatibleModelsCanonical && compatibleModelsCanonical.length) {
+      fitment.compatible_models_canonical = compatibleModelsCanonical;
     }
+    normalized.fitment = fitment;
 
     return { ...d, normalized_catalog: normalized };
   }
@@ -270,11 +339,15 @@ class WoodlandAISearchCatalog extends Tool {
       "Use the 'woodland-ai-search-catalog' tool to answer questions from the Catalog Azure AI Search index";
 
     this.schema = z.object({
-      query: z.string().describe('Question or search phrase for Catalog index'),
+      query: z.string().optional().describe('Question or search phrase for Catalog index'),
       top: z.number().int().positive().optional(),
       select: z.string().optional().describe('Comma-separated list of fields to return'),
       filter: z.string().optional().describe('OData filter'),
-      embedding: z.array(z.number()).min(8).optional().describe('Optional dense embedding for hybrid/vector search'),
+      embedding: z
+        .array(z.number())
+        .min(8)
+        .optional()
+        .describe('Optional dense embedding for hybrid/vector search'),
       vectorK: z.number().int().positive().optional().describe('k for vector search'),
       answers: z.enum(['extractive', 'none']).optional(),
       captions: z.enum(['extractive', 'none']).optional(),
@@ -294,10 +367,7 @@ class WoodlandAISearchCatalog extends Tool {
         .string()
         .optional()
         .describe('Explicit rake name to filter results (e.g., Classic Cyclone Rake)'),
-      rakeSku: z
-        .string()
-        .optional()
-        .describe('Explicit rake SKU to filter results (e.g., 105)'),
+      rakeSku: z.string().optional().describe('Explicit rake SKU to filter results (e.g., 105)'),
     });
 
     // Shared endpoint + key
@@ -350,8 +420,13 @@ class WoodlandAISearchCatalog extends Tool {
         this._env(
           fields.AZURE_AI_SEARCH_CATALOG_SEARCH_FIELDS,
           process.env.AZURE_AI_SEARCH_CATALOG_SEARCH_FIELDS,
-        ) || this._env(fields.AZURE_AI_SEARCH_SEARCH_FIELDS, process.env.AZURE_AI_SEARCH_SEARCH_FIELDS);
-      if (v) return String(v).split(',').map((s) => s.trim()).filter(Boolean);
+        ) ||
+        this._env(fields.AZURE_AI_SEARCH_SEARCH_FIELDS, process.env.AZURE_AI_SEARCH_SEARCH_FIELDS);
+      if (v)
+        return String(v)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
       return [
         'title',
         'content',
@@ -384,14 +459,15 @@ class WoodlandAISearchCatalog extends Tool {
       fields.AZURE_AI_SEARCH_SCORING_PROFILE,
       process.env.AZURE_AI_SEARCH_SCORING_PROFILE,
     );
-    this.returnAllFields = String(
-      this._env(
-        fields.AZURE_AI_SEARCH_RETURN_ALL_FIELDS,
-        process.env.AZURE_AI_SEARCH_RETURN_ALL_FIELDS || 'true',
-      ),
-    )
-      .toLowerCase()
-      .trim() === 'true';
+    this.returnAllFields =
+      String(
+        this._env(
+          fields.AZURE_AI_SEARCH_RETURN_ALL_FIELDS,
+          process.env.AZURE_AI_SEARCH_RETURN_ALL_FIELDS || 'true',
+        ),
+      )
+        .toLowerCase()
+        .trim() === 'true';
 
     // Vector options
     this.vectorFields = (() => {
@@ -400,12 +476,21 @@ class WoodlandAISearchCatalog extends Tool {
           fields.AZURE_AI_SEARCH_CATALOG_VECTOR_FIELDS,
           process.env.AZURE_AI_SEARCH_CATALOG_VECTOR_FIELDS,
         ) ||
-        this._env(fields.AZURE_AI_SEARCH_VECTOR_FIELDS, process.env.AZURE_AI_SEARCH_VECTOR_FIELDS) ||
+        this._env(
+          fields.AZURE_AI_SEARCH_VECTOR_FIELDS,
+          process.env.AZURE_AI_SEARCH_VECTOR_FIELDS,
+        ) ||
         WoodlandAISearchCatalog.DEFAULT_VECTOR_FIELDS;
-      return String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+      return String(v || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     })();
     this.vectorK = Number(
-      this._env(fields.AZURE_AI_SEARCH_CATALOG_VECTOR_K, process.env.AZURE_AI_SEARCH_CATALOG_VECTOR_K) ||
+      this._env(
+        fields.AZURE_AI_SEARCH_CATALOG_VECTOR_K,
+        process.env.AZURE_AI_SEARCH_CATALOG_VECTOR_K,
+      ) ||
         this._env(fields.AZURE_AI_SEARCH_VECTOR_K, process.env.AZURE_AI_SEARCH_VECTOR_K) ||
         WoodlandAISearchCatalog.DEFAULT_VECTOR_K,
     );
@@ -426,12 +511,15 @@ class WoodlandAISearchCatalog extends Tool {
     const maxEntries = Number.isFinite(maxSetting) && maxSetting > 0 ? maxSetting : 0;
     this.cache = ttlMs > 0 && maxEntries > 0 ? new TTLCache({ ttlMs, maxEntries }) : null;
 
-    const extractiveEnabled = String(
-      this._env(fields.WOODLAND_SEARCH_ENABLE_EXTRACTIVE, process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE) ??
-        DEFAULT_EXTRACTIVE,
-    )
-      .toLowerCase()
-      .trim() === 'true';
+    const extractiveEnabled =
+      String(
+        this._env(
+          fields.WOODLAND_SEARCH_ENABLE_EXTRACTIVE,
+          process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE,
+        ) ?? DEFAULT_EXTRACTIVE,
+      )
+        .toLowerCase()
+        .trim() === 'true';
 
     this.defaultAnswerMode = extractiveEnabled ? 'extractive' : 'none';
     this.defaultCaptionMode = extractiveEnabled ? 'extractive' : 'none';
@@ -548,7 +636,10 @@ class WoodlandAISearchCatalog extends Tool {
         const sanitized = { ...opts };
         let changed = false;
 
-        if (/semantic configuration/i.test(msg) || /semanticConfiguration(?:'|\\\")? must not be empty/i.test(msg)) {
+        if (
+          /semantic configuration/i.test(msg) ||
+          /semanticConfiguration(?:'|\\\")? must not be empty/i.test(msg)
+        ) {
           if (sanitized.semanticSearchOptions) delete sanitized.semanticSearchOptions;
           sanitized.queryType = 'simple';
           delete sanitized.answers;
@@ -563,7 +654,9 @@ class WoodlandAISearchCatalog extends Tool {
           if (sanitized.orderBy) {
             delete sanitized.orderBy;
             changed = true;
-            logger.info('[woodland-ai-search-catalog] Removing orderBy for semantic query and retrying');
+            logger.info(
+              '[woodland-ai-search-catalog] Removing orderBy for semantic query and retrying',
+            );
           }
         }
 
@@ -592,7 +685,9 @@ class WoodlandAISearchCatalog extends Tool {
             if (sanitized.filter) {
               delete sanitized.filter;
               changed = true;
-              logger.info('[woodland-ai-search-catalog] Dropping filter due to unknown fields and retrying');
+              logger.info(
+                '[woodland-ai-search-catalog] Dropping filter due to unknown fields and retrying',
+              );
             }
             if (sanitized.orderBy) {
               delete sanitized.orderBy;
@@ -617,17 +712,25 @@ class WoodlandAISearchCatalog extends Tool {
   async _call(data) {
     const { query, top: topIn } = data;
     const finalTop =
-      typeof topIn === 'number' && Number.isFinite(topIn) ? Math.max(1, Math.floor(topIn)) : this.top;
+      typeof topIn === 'number' && Number.isFinite(topIn)
+        ? Math.max(1, Math.floor(topIn))
+        : this.top;
 
     // Per-call overrides
     const perCallSelectRaw =
       typeof data?.select === 'string'
-        ? data.select.split(',').map((s) => s.trim()).filter(Boolean)
+        ? data.select
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
         : undefined;
     const perCallSelect = this._sanitizeFieldList(perCallSelectRaw, 'select');
     const perCallSearchFieldsRaw =
       typeof data?.searchFields === 'string'
-        ? data.searchFields.split(',').map((s) => s.trim()).filter(Boolean)
+        ? data.searchFields
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
         : undefined;
     const perCallSearchFields = this._sanitizeFieldList(perCallSearchFieldsRaw, 'searchFields');
     const perCallAnswers = data?.answers;
@@ -643,7 +746,8 @@ class WoodlandAISearchCatalog extends Tool {
     const rakeNameContext = typeof data?.rakeName === 'string' ? data.rakeName : undefined;
     const rakeSkuContext = typeof data?.rakeSku === 'string' ? data.rakeSku : undefined;
 
-    const canonicalModelContext = canonicalizeModel(modelContext);
+    const canonicalModelContext =
+      canonicalizeModel(modelContext) || this._canonicalizeRakeName(modelContext);
     const canonicalRakeNameTarget = (() => {
       const explicit = this._canonicalizeRakeName(rakeNameContext);
       if (explicit) {
@@ -672,9 +776,7 @@ class WoodlandAISearchCatalog extends Tool {
       };
 
       const semanticConfigName =
-        typeof this.semanticConfiguration === 'string'
-          ? this.semanticConfiguration.trim()
-          : '';
+        typeof this.semanticConfiguration === 'string' ? this.semanticConfiguration.trim() : '';
       const allowSemantic = !!semanticConfigName;
 
       if (allowSemantic) {
@@ -727,13 +829,30 @@ class WoodlandAISearchCatalog extends Tool {
 
       if (options.orderBy) delete options.orderBy;
 
+      const finalQueryString = (() => {
+        const raw = (query ?? '').toString().trim();
+        if (raw.length) return raw;
+        const seeds = [
+          rakeNameContext,
+          canonicalRakeNameTarget,
+          modelContext,
+          canonicalModelContext,
+          rakeSkuContext,
+        ]
+          .map((s) => (typeof s === 'string' ? s.trim() : ''))
+          .filter(Boolean);
+        return seeds.length ? seeds.join(' ') : '*';
+      })();
+
       let cacheKey;
       if (this.cache && !disableCache && !embedding) {
         const descriptor = {
-          query,
+          query: finalQueryString,
           top: finalTop,
           filter,
-          select: (perCallSelect || (!this.returnAllFields ? this.select : undefined))?.slice().sort(),
+          select: (perCallSelect || (!this.returnAllFields ? this.select : undefined))
+            ?.slice()
+            .sort(),
           searchFields: (perCallSearchFields || this.searchFields)?.slice().sort(),
           answers: answersMode,
           captions: captionsMode,
@@ -746,14 +865,14 @@ class WoodlandAISearchCatalog extends Tool {
         const cached = this.cache.get(cacheKey);
         if (cached) {
           logger.debug('[woodland-ai-search-catalog] Returning cached response', {
-            query,
+            query: finalQueryString,
             top: finalTop,
           });
           return cached;
         }
       }
 
-      const docs = await this._safeSearch(query, options);
+      const docs = await this._safeSearch(finalQueryString, options);
       let payload = docs.docs || [];
       if (Array.isArray(payload)) {
         payload = payload.map((d) => (d ? this._normalizeDoc(d) : d));
@@ -789,11 +908,14 @@ class WoodlandAISearchCatalog extends Tool {
             }
             payload = filteredByRake;
           } else {
-            logger.info('[woodland-ai-search-catalog] Rake context filter found no matches; returning unfiltered payload', {
-              query,
-              canonicalRakeNameTarget,
-              normalizedRakeSkuTarget,
-            });
+            logger.info(
+              '[woodland-ai-search-catalog] Rake context filter found no matches; returning unfiltered payload',
+              {
+                query,
+                canonicalRakeNameTarget,
+                normalizedRakeSkuTarget,
+              },
+            );
           }
         }
       }
@@ -820,3 +942,4 @@ class WoodlandAISearchCatalog extends Tool {
 }
 
 module.exports = WoodlandAISearchCatalog;
+WoodlandAISearchCatalog.enableReusableInstance = true;

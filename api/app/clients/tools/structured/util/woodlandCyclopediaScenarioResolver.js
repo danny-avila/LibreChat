@@ -26,7 +26,9 @@ const sanitizeSemanticConfig = (value) => {
   return str;
 };
 
-const semanticConfiguration = sanitizeSemanticConfig(process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION);
+const semanticConfiguration = sanitizeSemanticConfig(
+  process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION,
+);
 const queryLanguage = (() => {
   const raw = process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE;
   if (typeof raw === 'string' && raw.trim()) {
@@ -35,7 +37,10 @@ const queryLanguage = (() => {
   return 'en-us';
 })();
 
-const toScenarioKey = (scenario) => String(scenario || '').trim().toLowerCase();
+const toScenarioKey = (scenario) =>
+  String(scenario || '')
+    .trim()
+    .toLowerCase();
 
 const resetRegex = (regex) => {
   if (regex && regex.global) {
@@ -111,11 +116,7 @@ const initClient = () => {
 
 const buildQueries = (scenario) => {
   const label = scenario.replace(/_/g, ' ');
-  return [
-    `"${scenario}" checklist`,
-    `"${label}" checklist`,
-    `${label} troubleshooting steps`,
-  ];
+  return [`"${scenario}" checklist`, `"${label}" checklist`, `${label} troubleshooting steps`];
 };
 
 const searchScenario = async (scenario) => {

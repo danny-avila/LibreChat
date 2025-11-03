@@ -16,7 +16,9 @@ const compilePattern = (pattern) => {
 };
 
 const lowerCaseSet = (arr = []) =>
-  Array.isArray(arr) ? Array.from(new Set(arr.map((item) => String(item).toLowerCase().trim()).filter(Boolean))) : [];
+  Array.isArray(arr)
+    ? Array.from(new Set(arr.map((item) => String(item).toLowerCase().trim()).filter(Boolean)))
+    : [];
 
 const normalizeModelAliases = (aliases = {}) =>
   Object.fromEntries(
@@ -46,16 +48,16 @@ const compileRule = (rule = {}) => {
 
   if (compiled.handler === 'xlImpellerMismatch') {
     const cfg = compiled.config;
-    cfg.model = String(cfg.model || 'xl').toLowerCase().trim();
+    cfg.model = String(cfg.model || 'xl')
+      .toLowerCase()
+      .trim();
     cfg.keyword = compilePattern(cfg.keyword || '\\bimpeller\\b');
   }
 
   return compiled;
 };
 
-const POLICY_RULES = Array.isArray(rawConfig?.rules)
-  ? rawConfig.rules.map(compileRule)
-  : [];
+const POLICY_RULES = Array.isArray(rawConfig?.rules) ? rawConfig.rules.map(compileRule) : [];
 
 const collectStrings = (doc) => {
   const acc = [];
@@ -126,9 +128,7 @@ const canonicalizeModel = (input) => {
 };
 
 const extractModelMentions = (doc) => {
-  const text = collectStrings(doc)
-    .join(' | ')
-    .toLowerCase();
+  const text = collectStrings(doc).join(' | ').toLowerCase();
 
   const positives = new Set();
   const rawMatches = new Set();
@@ -212,15 +212,14 @@ const RULE_HANDLERS = {
   },
   keyword: (rule, { text }) => {
     const cfg = rule.config || {};
-    const allMatch = Array.isArray(cfg.all)
-      ? cfg.all.every((regex) => regex.test(text))
-      : true;
+    const allMatch = Array.isArray(cfg.all) ? cfg.all.every((regex) => regex.test(text)) : true;
     if (!allMatch) {
       return null;
     }
-    const anyMatch = Array.isArray(cfg.any) && cfg.any.length > 0
-      ? cfg.any.some((regex) => regex.test(text))
-      : true;
+    const anyMatch =
+      Array.isArray(cfg.any) && cfg.any.length > 0
+        ? cfg.any.some((regex) => regex.test(text))
+        : true;
     if (!anyMatch) {
       return null;
     }

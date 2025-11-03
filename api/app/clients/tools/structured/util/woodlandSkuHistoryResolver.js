@@ -26,18 +26,8 @@ const HISTORY_SOURCES = [
   },
   {
     role: 'engine',
-    envKeys: [
-      'AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX',
-      'AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX_NAME',
-    ],
-    interestingFields: [
-      'engine',
-      'hp',
-      'horsepower',
-      'notes',
-      'summary',
-      'changes',
-    ],
+    envKeys: ['AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX', 'AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX_NAME'],
+    interestingFields: ['engine', 'hp', 'horsepower', 'notes', 'summary', 'changes'],
   },
 ];
 
@@ -191,9 +181,7 @@ const searchHistory = async (source, sku) => {
   } catch (error) {
     const details = error?.message || String(error);
     const status = error?.statusCode ? ` (status ${error.statusCode})` : '';
-    logger?.warn?.(
-      `[woodland-sku-history] Search failed for ${source.role}${status}: ${details}`,
-    );
+    logger?.warn?.(`[woodland-sku-history] Search failed for ${source.role}${status}: ${details}`);
   }
 
   return undefined;
@@ -208,9 +196,7 @@ const resolveSkuHistory = async (sku) => {
   const start = Date.now();
   const cached = historyCache.get(key);
   if (cached !== undefined) {
-    logger?.debug?.(
-      `[woodland-sku-history] Cache hit for ${key} after ${Date.now() - start}ms`,
-    );
+    logger?.debug?.(`[woodland-sku-history] Cache hit for ${key} after ${Date.now() - start}ms`);
     return cached;
   }
 

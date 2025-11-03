@@ -28,10 +28,12 @@ class WoodlandEngineHistory extends Tool {
       format: z.enum(['json']).default('json'),
     });
 
-    this.serviceEndpoint = fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_AI_SEARCH_SERVICE_ENDPOINT;
+    this.serviceEndpoint =
+      fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_AI_SEARCH_SERVICE_ENDPOINT;
     this.apiKey = fields.AZURE_AI_SEARCH_API_KEY || process.env.AZURE_AI_SEARCH_API_KEY;
     this.indexName =
-      fields.AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX || process.env.AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX ||
+      fields.AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX ||
+      process.env.AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX ||
       fields.AZURE_AI_SEARCH_INDEX_NAME ||
       process.env.AZURE_AI_SEARCH_INDEX_NAME;
 
@@ -39,10 +41,14 @@ class WoodlandEngineHistory extends Tool {
       throw new Error('Missing Azure Search configuration for engine history.');
     }
 
-    this.apiVersion = fields.AZURE_AI_SEARCH_API_VERSION || process.env.AZURE_AI_SEARCH_API_VERSION || WoodlandEngineHistory.DEFAULT_API_VERSION;
+    this.apiVersion =
+      fields.AZURE_AI_SEARCH_API_VERSION ||
+      process.env.AZURE_AI_SEARCH_API_VERSION ||
+      WoodlandEngineHistory.DEFAULT_API_VERSION;
 
     const rawSemanticConfiguration =
-      fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION || process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION;
+      fields.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION ||
+      process.env.AZURE_AI_SEARCH_SEMANTIC_CONFIGURATION;
     const semanticConfiguration = (() => {
       if (rawSemanticConfiguration == null) return undefined;
       const str = String(rawSemanticConfiguration).trim();
@@ -52,34 +58,47 @@ class WoodlandEngineHistory extends Tool {
     this.semanticConfiguration = semanticConfiguration;
     const rawQueryLanguage =
       fields.AZURE_AI_SEARCH_QUERY_LANGUAGE || process.env.AZURE_AI_SEARCH_QUERY_LANGUAGE;
-    this.queryLanguage = typeof rawQueryLanguage === 'string' ? rawQueryLanguage.trim() : rawQueryLanguage;
+    this.queryLanguage =
+      typeof rawQueryLanguage === 'string' ? rawQueryLanguage.trim() : rawQueryLanguage;
 
     this.queryType = this._resolveQueryType(fields);
 
-    this.topDefault = Number(fields.WOODLAND_HISTORY_DEFAULT_TOP || process.env.WOODLAND_HISTORY_DEFAULT_TOP || WoodlandEngineHistory.DEFAULT_TOP);
+    this.topDefault = Number(
+      fields.WOODLAND_HISTORY_DEFAULT_TOP ||
+        process.env.WOODLAND_HISTORY_DEFAULT_TOP ||
+        WoodlandEngineHistory.DEFAULT_TOP,
+    );
     const selectFields = this._stringArray(
-      fields.WOODLAND_HISTORY_SELECT || process.env.WOODLAND_HISTORY_SELECT || WoodlandEngineHistory.DEFAULT_SELECT,
+      fields.WOODLAND_HISTORY_SELECT ||
+        process.env.WOODLAND_HISTORY_SELECT ||
+        WoodlandEngineHistory.DEFAULT_SELECT,
     );
     this.select = selectFields.length ? selectFields : ['*'];
 
-    const configuredSearchFields = fields.WOODLAND_HISTORY_SEARCH_FIELDS || process.env.WOODLAND_HISTORY_SEARCH_FIELDS;
+    const configuredSearchFields =
+      fields.WOODLAND_HISTORY_SEARCH_FIELDS || process.env.WOODLAND_HISTORY_SEARCH_FIELDS;
     const searchFields = configuredSearchFields ? this._stringArray(configuredSearchFields) : [];
     this.searchFields = searchFields.length ? searchFields : undefined;
 
-    const vectorFields = fields.AZURE_AI_SEARCH_VECTOR_FIELDS || process.env.AZURE_AI_SEARCH_VECTOR_FIELDS;
+    const vectorFields =
+      fields.AZURE_AI_SEARCH_VECTOR_FIELDS || process.env.AZURE_AI_SEARCH_VECTOR_FIELDS;
     this.vectorFields = vectorFields
       ? String(vectorFields)
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean)
       : [];
-    this.vectorK = Number(fields.AZURE_AI_SEARCH_VECTOR_K || process.env.AZURE_AI_SEARCH_VECTOR_K || WoodlandEngineHistory.DEFAULT_VECTOR_K);
+    this.vectorK = Number(
+      fields.AZURE_AI_SEARCH_VECTOR_K ||
+        process.env.AZURE_AI_SEARCH_VECTOR_K ||
+        WoodlandEngineHistory.DEFAULT_VECTOR_K,
+    );
 
     this.client = new SearchClient(
       this.serviceEndpoint,
       this.indexName,
       new AzureKeyCredential(this.apiKey),
-      { apiVersion: this.apiVersion }, 
+      { apiVersion: this.apiVersion },
     );
 
     logger.info('[woodland-ai-engine-history] Initialized', {
@@ -145,7 +164,9 @@ class WoodlandEngineHistory extends Tool {
     ];
     airtableCandidates.forEach((value) => push(value, true));
 
-    ['document_url', 'source_url', 'url', 'engine_maintenance_kit_url'].forEach((key) => push(doc[key]));
+    ['document_url', 'source_url', 'url', 'engine_maintenance_kit_url'].forEach((key) =>
+      push(doc[key]),
+    );
     Object.keys(doc).forEach((key) => {
       if (/airtable/i.test(key)) {
         push(doc[key], true);
@@ -243,10 +264,15 @@ class WoodlandEngineHistory extends Tool {
         engine_maintenance_kit: this._valueWithUrl(doc, 'engine_maintenance_kit'),
         filters_and_emk: this._valueWithUrl(doc, 'filters_and_emk'),
         blower_color: this._valueWithUrl(doc, 'blower_color'),
-        deck_hose: this._valueWithUrl(doc, 'deck_hose_diameter') || this._valueWithUrl(doc, 'deck_hose'),
+        deck_hose:
+          this._valueWithUrl(doc, 'deck_hose_diameter') || this._valueWithUrl(doc, 'deck_hose'),
       },
       groups: {
-        maintenance_kits: this._collectSingleFieldGroup(doc, 'engine_maintenance_kit', 'engine_maintenance_kit'),
+        maintenance_kits: this._collectSingleFieldGroup(
+          doc,
+          'engine_maintenance_kit',
+          'engine_maintenance_kit',
+        ),
         air_filters: this._collectSingleFieldGroup(doc, 'air_filter', 'air_filter'),
         filters_and_emk: this._collectSingleFieldGroup(doc, 'filters_and_emk', 'filters_and_emk'),
         blower_color: this._collectSingleFieldGroup(doc, 'blower_color', 'blower_color'),
@@ -285,13 +311,21 @@ class WoodlandEngineHistory extends Tool {
   }
 
   _resolveQueryType(fields = {}) {
-    const raw = (fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || WoodlandEngineHistory.DEFAULT_QUERY_TYPE);
-    const normalized = String(raw || '').toLowerCase().trim();
+    const raw =
+      fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE ||
+      process.env.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE ||
+      WoodlandEngineHistory.DEFAULT_QUERY_TYPE;
+    const normalized = String(raw || '')
+      .toLowerCase()
+      .trim();
     if (normalized === 'semantic' && !this._hasSemanticConfig()) {
-      logger.warn('[woodland-ai-engine-history] Semantic queryType requested but semantic configuration is missing. Using simple.', {
-        semanticConfiguration: this.semanticConfiguration,
-        queryLanguage: this.queryLanguage,
-      });
+      logger.warn(
+        '[woodland-ai-engine-history] Semantic queryType requested but semantic configuration is missing. Using simple.',
+        {
+          semanticConfiguration: this.semanticConfiguration,
+          queryLanguage: this.queryLanguage,
+        },
+      );
       return 'simple';
     }
     return normalized || 'simple';
@@ -449,7 +483,9 @@ class WoodlandEngineHistory extends Tool {
       }
 
       if (results.length === 0 && queryString !== '*' && !options.filter) {
-        logger.info('[woodland-ai-engine-history] No results with query terms, retrying with wildcard');
+        logger.info(
+          '[woodland-ai-engine-history] No results with query terms, retrying with wildcard',
+        );
         results = await this._performSearch('*', { ...options, filter: undefined });
       }
 
@@ -467,3 +503,4 @@ class WoodlandEngineHistory extends Tool {
 }
 
 module.exports = WoodlandEngineHistory;
+WoodlandEngineHistory.enableReusableInstance = true;

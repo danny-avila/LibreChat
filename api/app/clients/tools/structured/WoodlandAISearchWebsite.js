@@ -4,14 +4,16 @@ const { Tool } = require('@langchain/core/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 const { logger } = require('~/config');
 
-const DEFAULT_EXTRACTIVE = String(process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE ?? 'false')
-  .toLowerCase()
-  .trim() === 'true';
+const DEFAULT_EXTRACTIVE =
+  String(process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE ?? 'false')
+    .toLowerCase()
+    .trim() === 'true';
 
 class WoodlandAISearchWebsite extends Tool {
   static DEFAULT_API_VERSION = '2024-07-01';
   static DEFAULT_TOP = 5;
-  static DEFAULT_SELECT = 'id,title,content,url,parent_id,parent_url,site,page_type,breadcrumb,tags,headings,images_alt,content_length,author,last_published,last_updated,last_crawled,allowlist_match,reviewed';
+  static DEFAULT_SELECT =
+    'id,title,content,url,parent_id,parent_url,site,page_type,breadcrumb,tags,headings,images_alt,content_length,author,last_published,last_updated,last_crawled,allowlist_match,reviewed';
   static DEFAULT_VECTOR_K = 15;
   static DEFAULT_VECTOR_FIELDS = '';
 
@@ -35,7 +37,13 @@ class WoodlandAISearchWebsite extends Tool {
   _normalizeDoc(d) {
     const str = (v) => (v == null ? undefined : String(v));
     const num = (v) => (v == null || v === '' ? undefined : Number(v));
-    const list = (v) => (Array.isArray(v) ? v.filter(Boolean).map((entry) => String(entry).trim()).filter(Boolean) : undefined);
+    const list = (v) =>
+      Array.isArray(v)
+        ? v
+            .filter(Boolean)
+            .map((entry) => String(entry).trim())
+            .filter(Boolean)
+        : undefined;
     const listFromAny = (value) => {
       if (Array.isArray(value)) {
         return value
@@ -61,11 +69,13 @@ class WoodlandAISearchWebsite extends Tool {
     const provenance = this._provenance(d);
     const title = str(d?.title) || str(d?.heading) || str(d?.breadcrumb?.split?.('\n')?.pop());
     const citationLabel = title || (provenance?.host ? `${provenance.host} page` : 'Website doc');
-    const citationMarkdown = provenance?.url ? `[${citationLabel}](${provenance.url})` : citationLabel;
+    const citationMarkdown = provenance?.url
+      ? `[${citationLabel}](${provenance.url})`
+      : citationLabel;
 
     const normalized = {
       title,
-      summary: str(d?.summary) || (str(d?.content)?.slice(0, 500) || undefined),
+      summary: str(d?.summary) || str(d?.content)?.slice(0, 500) || undefined,
       tags: list(d?.tags),
       images_alt: list(d?.images_alt),
       headings: list(d?.headings),
@@ -107,20 +117,25 @@ class WoodlandAISearchWebsite extends Tool {
   constructor(fields = {}) {
     super();
     this.name = 'woodland-ai-search-website';
-    this.description = "Use the 'woodland-ai-search-website' tool to query the public Website index (semantic/vector).";
+    this.description =
+      "Use the 'woodland-ai-search-website' tool to query the public Website index (semantic/vector).";
 
     this.schema = z.object({
       query: z.string().describe('Question or search phrase for Website index'),
       top: z.number().int().positive().optional(),
       select: z.string().optional().describe('Comma-separated list of fields to return'),
       filter: z.string().optional().describe('OData filter'),
-      embedding: z.array(z.number()).min(8).optional().describe('Optional dense embedding for hybrid/vector search'),
+      embedding: z
+        .array(z.number())
+        .min(8)
+        .optional()
+        .describe('Optional dense embedding for hybrid/vector search'),
       vectorK: z.number().int().positive().optional().describe('k for vector search'),
       answers: z.enum(['extractive', 'none']).optional(),
       captions: z.enum(['extractive', 'none']).optional(),
       speller: z.enum(['lexicon', 'simple', 'none']).optional(),
       queryLanguage: z.string().optional(),
-      searchFields: z.string().optional().describe('Comma-separated search fields override')
+      searchFields: z.string().optional().describe('Comma-separated search fields override'),
     });
 
     // Endpoint/key
@@ -133,13 +148,18 @@ class WoodlandAISearchWebsite extends Tool {
     // Website index name
     this.indexName =
       this._env(fields.AZURE_AI_SEARCH_WEBSITE_INDEX, process.env.AZURE_AI_SEARCH_WEBSITE_INDEX) ||
-      this._env(fields.AZURE_AI_SEARCH_WEBSITE_INDEX_NAME, process.env.AZURE_AI_SEARCH_WEBSITE_INDEX_NAME) ||
+      this._env(
+        fields.AZURE_AI_SEARCH_WEBSITE_INDEX_NAME,
+        process.env.AZURE_AI_SEARCH_WEBSITE_INDEX_NAME,
+      ) ||
       this._env(fields.AZURE_AI_SEARCH_INDEX_NAME, process.env.AZURE_AI_SEARCH_INDEX_NAME);
 
     // Base URL for resolving relative links (optional)
     this.baseUrl =
-      this._env(fields.AZURE_AI_SEARCH_WEBSITE_BASE_URL, process.env.AZURE_AI_SEARCH_WEBSITE_BASE_URL) ||
-      this._env(fields.AZURE_AI_SEARCH_BASE_URL, process.env.AZURE_AI_SEARCH_BASE_URL);
+      this._env(
+        fields.AZURE_AI_SEARCH_WEBSITE_BASE_URL,
+        process.env.AZURE_AI_SEARCH_WEBSITE_BASE_URL,
+      ) || this._env(fields.AZURE_AI_SEARCH_BASE_URL, process.env.AZURE_AI_SEARCH_BASE_URL);
 
     if (!this.serviceEndpoint || !this.apiKey || !this.indexName) {
       throw new Error(
@@ -160,10 +180,26 @@ class WoodlandAISearchWebsite extends Tool {
     // Semantic/search options
     this.searchFields = (() => {
       const v =
-        this._env(fields.AZURE_AI_SEARCH_WEBSITE_SEARCH_FIELDS, process.env.AZURE_AI_SEARCH_WEBSITE_SEARCH_FIELDS) ||
+        this._env(
+          fields.AZURE_AI_SEARCH_WEBSITE_SEARCH_FIELDS,
+          process.env.AZURE_AI_SEARCH_WEBSITE_SEARCH_FIELDS,
+        ) ||
         this._env(fields.AZURE_AI_SEARCH_SEARCH_FIELDS, process.env.AZURE_AI_SEARCH_SEARCH_FIELDS);
-      if (v) return String(v).split(',').map((s) => s.trim()).filter(Boolean);
-      return ['title', 'content', 'tags', 'headings', 'images_alt', 'breadcrumb', 'site', 'page_type'];
+      if (v)
+        return String(v)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+      return [
+        'title',
+        'content',
+        'tags',
+        'headings',
+        'images_alt',
+        'breadcrumb',
+        'site',
+        'page_type',
+      ];
     })();
 
     const rawSemanticConfiguration = this._env(
@@ -186,46 +222,63 @@ class WoodlandAISearchWebsite extends Tool {
       fields.AZURE_AI_SEARCH_SCORING_PROFILE,
       process.env.AZURE_AI_SEARCH_SCORING_PROFILE,
     );
-    this.returnAllFields = String(
-      this._env(
-        fields.AZURE_AI_SEARCH_RETURN_ALL_FIELDS,
-        process.env.AZURE_AI_SEARCH_RETURN_ALL_FIELDS || 'true',
-      ),
-    )
-      .toLowerCase()
-      .trim() === 'true';
+    this.returnAllFields =
+      String(
+        this._env(
+          fields.AZURE_AI_SEARCH_RETURN_ALL_FIELDS,
+          process.env.AZURE_AI_SEARCH_RETURN_ALL_FIELDS || 'true',
+        ),
+      )
+        .toLowerCase()
+        .trim() === 'true';
 
     // Vector options
     this.vectorFields = (() => {
       const v =
-        this._env(fields.AZURE_AI_SEARCH_WEBSITE_VECTOR_FIELDS, process.env.AZURE_AI_SEARCH_WEBSITE_VECTOR_FIELDS) ||
-        this._env(fields.AZURE_AI_SEARCH_VECTOR_FIELDS, process.env.AZURE_AI_SEARCH_VECTOR_FIELDS) ||
+        this._env(
+          fields.AZURE_AI_SEARCH_WEBSITE_VECTOR_FIELDS,
+          process.env.AZURE_AI_SEARCH_WEBSITE_VECTOR_FIELDS,
+        ) ||
+        this._env(
+          fields.AZURE_AI_SEARCH_VECTOR_FIELDS,
+          process.env.AZURE_AI_SEARCH_VECTOR_FIELDS,
+        ) ||
         WoodlandAISearchWebsite.DEFAULT_VECTOR_FIELDS;
-      return String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+      return String(v || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     })();
 
     this.vectorK = Number(
-      this._env(fields.AZURE_AI_SEARCH_WEBSITE_VECTOR_K, process.env.AZURE_AI_SEARCH_WEBSITE_VECTOR_K) ||
+      this._env(
+        fields.AZURE_AI_SEARCH_WEBSITE_VECTOR_K,
+        process.env.AZURE_AI_SEARCH_WEBSITE_VECTOR_K,
+      ) ||
         this._env(fields.AZURE_AI_SEARCH_VECTOR_K, process.env.AZURE_AI_SEARCH_VECTOR_K) ||
         WoodlandAISearchWebsite.DEFAULT_VECTOR_K,
     );
 
     // Auto-vectorize (text -> vector) support, if the index has a built-in vectorizer configured
-    this.vectorizeQueryEnabled = String(
-      this._env(
-        fields.AZURE_AI_SEARCH_VECTORIZE_QUERY,
-        process.env.AZURE_AI_SEARCH_VECTORIZE_QUERY || 'false',
-      ),
-    )
-      .toLowerCase()
-      .trim() === 'true';
+    this.vectorizeQueryEnabled =
+      String(
+        this._env(
+          fields.AZURE_AI_SEARCH_VECTORIZE_QUERY,
+          process.env.AZURE_AI_SEARCH_VECTORIZE_QUERY || 'false',
+        ),
+      )
+        .toLowerCase()
+        .trim() === 'true';
 
-    const extractiveEnabled = String(
-      this._env(fields.WOODLAND_SEARCH_ENABLE_EXTRACTIVE, process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE) ??
-        DEFAULT_EXTRACTIVE,
-    )
-      .toLowerCase()
-      .trim() === 'true';
+    const extractiveEnabled =
+      String(
+        this._env(
+          fields.WOODLAND_SEARCH_ENABLE_EXTRACTIVE,
+          process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE,
+        ) ?? DEFAULT_EXTRACTIVE,
+      )
+        .toLowerCase()
+        .trim() === 'true';
 
     this.defaultAnswerMode = extractiveEnabled ? 'extractive' : 'none';
     this.defaultCaptionMode = extractiveEnabled ? 'extractive' : 'none';
@@ -304,7 +357,11 @@ class WoodlandAISearchWebsite extends Tool {
         logger.warn('[woodland-ai-search-website] Search failed', { attempt, msg });
 
         // If the service complains about semantic configuration, fall back to simple search without semantic options
-        if (/semantic configurations? defined|parameter name:\s*semanticconfiguration|must have valid semantic configurations|semanticConfiguration(?:'|\\\")? must not be empty/i.test(msg)) {
+        if (
+          /semantic configurations? defined|parameter name:\s*semanticconfiguration|must have valid semantic configurations|semanticConfiguration(?:'|\\\")? must not be empty/i.test(
+            msg,
+          )
+        ) {
           const fallback = { ...opts };
           fallback.queryType = 'simple';
           delete fallback.semanticSearchOptions;
@@ -313,7 +370,9 @@ class WoodlandAISearchWebsite extends Tool {
           delete fallback.speller;
           // keep other options (top, filter, select, searchFields, vectorQueries)
           try {
-            logger.info('[woodland-ai-search-website] Falling back to queryType=simple (no semantic options) due to missing semantic configuration');
+            logger.info(
+              '[woodland-ai-search-website] Falling back to queryType=simple (no semantic options) due to missing semantic configuration',
+            );
             const rs = await this.client.search(query, this._sanitizeSearchOptions(fallback));
             const items = [];
             for await (const r of rs.results) items.push(r.document);
@@ -324,15 +383,23 @@ class WoodlandAISearchWebsite extends Tool {
             return { docs: items, retried: true };
           } catch (e2) {
             // If fallback also fails, continue to normal sanitation logic below
-            logger.warn('[woodland-ai-search-website] Fallback simple search also failed', { msg: e2?.message || String(e2) });
+            logger.warn('[woodland-ai-search-website] Fallback simple search also failed', {
+              msg: e2?.message || String(e2),
+            });
           }
         }
         // If service rejects text-based vector queries, drop `text` and retry with no vector queries
-        if (/Unrecognized field\s+'text'|cannot deserialize.*vectorQueries|invalid property.*vectorQueries/i.test(msg)) {
+        if (
+          /Unrecognized field\s+'text'|cannot deserialize.*vectorQueries|invalid property.*vectorQueries/i.test(
+            msg,
+          )
+        ) {
           const fallback = { ...opts };
           if (Array.isArray(fallback.vectorQueries)) delete fallback.vectorQueries;
           try {
-            logger.info('[woodland-ai-search-website] Removing text-based vectorQueries and retrying');
+            logger.info(
+              '[woodland-ai-search-website] Removing text-based vectorQueries and retrying',
+            );
             const rs = await this.client.search(query, this._sanitizeSearchOptions(fallback));
             const items = [];
             for await (const r of rs.results) items.push(r.document);
@@ -342,7 +409,9 @@ class WoodlandAISearchWebsite extends Tool {
             });
             return { docs: items, retried: true };
           } catch (e3) {
-            logger.warn('[woodland-ai-search-website] Retry without vectorQueries also failed', { msg: e3?.message || String(e3) });
+            logger.warn('[woodland-ai-search-website] Retry without vectorQueries also failed', {
+              msg: e3?.message || String(e3),
+            });
           }
         }
 
@@ -353,7 +422,9 @@ class WoodlandAISearchWebsite extends Tool {
           if (sanitized.orderBy) {
             delete sanitized.orderBy;
             changed = true;
-            logger.info('[woodland-ai-search-website] Removing orderBy for semantic query and retrying');
+            logger.info(
+              '[woodland-ai-search-website] Removing orderBy for semantic query and retrying',
+            );
           }
         }
 
@@ -382,7 +453,9 @@ class WoodlandAISearchWebsite extends Tool {
             if (sanitized.filter) {
               delete sanitized.filter;
               changed = true;
-              logger.info('[woodland-ai-search-website] Dropping filter due to unknown fields and retrying');
+              logger.info(
+                '[woodland-ai-search-website] Dropping filter due to unknown fields and retrying',
+              );
             }
             if (sanitized.orderBy) {
               delete sanitized.orderBy;
@@ -406,15 +479,31 @@ class WoodlandAISearchWebsite extends Tool {
 
   async _call(data) {
     const { query, top: topIn } = data;
-    const finalTop = typeof topIn === 'number' && Number.isFinite(topIn) ? Math.max(1, Math.floor(topIn)) : this.top;
+    const finalTop =
+      typeof topIn === 'number' && Number.isFinite(topIn)
+        ? Math.max(1, Math.floor(topIn))
+        : this.top;
 
-    const perCallSelect = typeof data?.select === 'string' ? data.select.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
-    const perCallSearchFields = typeof data?.searchFields === 'string' ? data.searchFields.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+    const perCallSelect =
+      typeof data?.select === 'string'
+        ? data.select
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined;
+    const perCallSearchFields =
+      typeof data?.searchFields === 'string'
+        ? data.searchFields
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined;
     const perCallAnswers = data?.answers;
     const perCallCaptions = data?.captions;
     const perCallSpeller = data?.speller;
     const perCallQueryLanguage = data?.queryLanguage;
-    const filter = typeof data?.filter === 'string' && data.filter.trim() ? data.filter.trim() : undefined;
+    const filter =
+      typeof data?.filter === 'string' && data.filter.trim() ? data.filter.trim() : undefined;
     const embedding = Array.isArray(data?.embedding) ? data.embedding : undefined;
     const vectorK = Number.isFinite(data?.vectorK) ? Number(data.vectorK) : this.vectorK;
 
@@ -433,13 +522,11 @@ class WoodlandAISearchWebsite extends Tool {
       const options = {
         searchMode: inferredMode,
         top: finalTop,
-        filter
+        filter,
       };
 
       const semanticConfigName =
-        typeof this.semanticConfiguration === 'string'
-          ? this.semanticConfiguration.trim()
-          : '';
+        typeof this.semanticConfiguration === 'string' ? this.semanticConfiguration.trim() : '';
       const allowSemantic = !!semanticConfigName;
 
       if (allowSemantic) {
@@ -501,7 +588,13 @@ class WoodlandAISearchWebsite extends Tool {
         top: finalTop,
         queryType: options.queryType,
         semanticEnabled: this.semanticEnabled,
-        vectorQueryMode: Array.isArray(options.vectorQueries) ? (options.vectorQueries[0]?.vector ? 'embedding' : (options.vectorQueries[0]?.text ? 'text' : 'none')) : 'none',
+        vectorQueryMode: Array.isArray(options.vectorQueries)
+          ? options.vectorQueries[0]?.vector
+            ? 'embedding'
+            : options.vectorQueries[0]?.text
+              ? 'text'
+              : 'none'
+          : 'none',
       });
       return JSON.stringify(payload);
     } catch (error) {
@@ -515,3 +608,4 @@ class WoodlandAISearchWebsite extends Tool {
 }
 
 module.exports = WoodlandAISearchWebsite;
+WoodlandAISearchWebsite.enableReusableInstance = true;

@@ -90,24 +90,12 @@ const wrapExecutor = (executor, whitelist, agentName = 'WoodlandAgent') => {
   return executor;
 };
 
-module.exports = async function createWoodlandFunctionsAgent({
-  tools = [],
-  model,
-  pastMessages,
-  customName,
-  currentDateString,
-  customInstructions,
-  ...rest
-}, {
-  agentName,
-  instructions,
-  allowedTools,
-  citationWhitelist,
-}) {
+module.exports = async function createWoodlandFunctionsAgent(
+  { tools = [], model, pastMessages, customName, currentDateString, customInstructions, ...rest },
+  { agentName, instructions, allowedTools, citationWhitelist },
+) {
   const filteredTools = pickTools(tools, allowedTools);
-  const trimmedPastMessages = Array.isArray(pastMessages)
-    ? pastMessages.slice(-6)
-    : pastMessages;
+  const trimmedPastMessages = Array.isArray(pastMessages) ? pastMessages.slice(-6) : pastMessages;
   const executor = await initializeFunctionsAgent({
     tools: filteredTools,
     model,

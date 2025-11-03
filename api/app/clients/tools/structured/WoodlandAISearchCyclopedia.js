@@ -6,9 +6,10 @@ const { logger } = require('~/config');
 const { resolveScenarioChecklist } = require('./util/woodlandCyclopediaScenarioResolver');
 const { deriveCyclopediaHints } = require('./util/woodlandCyclopediaHints');
 
-const DEFAULT_EXTRACTIVE = String(process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE ?? 'false')
-  .toLowerCase()
-  .trim() === 'true';
+const DEFAULT_EXTRACTIVE =
+  String(process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE ?? 'false')
+    .toLowerCase()
+    .trim() === 'true';
 
 class WoodlandAISearchCyclopedia extends Tool {
   static DEFAULT_API_VERSION = '2024-07-01';
@@ -18,7 +19,9 @@ class WoodlandAISearchCyclopedia extends Tool {
   static DEFAULT_VECTOR_K = 15;
   static DEFAULT_VECTOR_FIELDS = ''; // e.g., "contentVector,titleVector"
 
-  _env(v, fb) { return v ?? fb; }
+  _env(v, fb) {
+    return v ?? fb;
+  }
 
   _provenance(d) {
     try {
@@ -89,7 +92,10 @@ class WoodlandAISearchCyclopedia extends Tool {
       top: z.number().int().positive().optional(),
       select: z.string().optional().describe('Comma-separated list of fields to return'),
       filter: z.string().optional().describe('OData filter'),
-      embedding: z.array(z.number()).min(8).optional()
+      embedding: z
+        .array(z.number())
+        .min(8)
+        .optional()
         .describe('Optional dense embedding for hybrid/vector search'),
       vectorK: z.number().int().positive().optional().describe('k for vector search'),
       answers: z.enum(['extractive', 'none']).optional(),
@@ -107,12 +113,16 @@ class WoodlandAISearchCyclopedia extends Tool {
     this.apiKey = this._env(fields.AZURE_AI_SEARCH_API_KEY, process.env.AZURE_AI_SEARCH_API_KEY);
 
     // Index (Cyclopedia-specific with fallbacks)
-    this.indexName =
-      this._env(fields.AZURE_AI_SEARCH_CYCLOPEDIA_INDEX, process.env.AZURE_AI_SEARCH_CYCLOPEDIA_INDEX);
+    this.indexName = this._env(
+      fields.AZURE_AI_SEARCH_CYCLOPEDIA_INDEX,
+      process.env.AZURE_AI_SEARCH_CYCLOPEDIA_INDEX,
+    );
     // Optional base for resolving relative URLs
     this.baseUrl =
-      this._env(fields.AZURE_AI_SEARCH_CYCLOPEDIA_BASE_URL, process.env.AZURE_AI_SEARCH_CYCLOPEDIA_BASE_URL) ||
-      this._env(fields.AZURE_AI_SEARCH_BASE_URL, process.env.AZURE_AI_SEARCH_BASE_URL);
+      this._env(
+        fields.AZURE_AI_SEARCH_CYCLOPEDIA_BASE_URL,
+        process.env.AZURE_AI_SEARCH_CYCLOPEDIA_BASE_URL,
+      ) || this._env(fields.AZURE_AI_SEARCH_BASE_URL, process.env.AZURE_AI_SEARCH_BASE_URL);
 
     if (!this.serviceEndpoint || !this.apiKey || !this.indexName) {
       const missing = {
@@ -144,11 +154,26 @@ class WoodlandAISearchCyclopedia extends Tool {
     // Semantic/search options
     this.searchFields = (() => {
       const v =
-        this._env(fields.AZURE_AI_SEARCH_CYCLOPEDIA_SEARCH_FIELDS,
-          process.env.AZURE_AI_SEARCH_CYCLOPEDIA_SEARCH_FIELDS) ||
+        this._env(
+          fields.AZURE_AI_SEARCH_CYCLOPEDIA_SEARCH_FIELDS,
+          process.env.AZURE_AI_SEARCH_CYCLOPEDIA_SEARCH_FIELDS,
+        ) ||
         this._env(fields.AZURE_AI_SEARCH_SEARCH_FIELDS, process.env.AZURE_AI_SEARCH_SEARCH_FIELDS);
-      if (v) return String(v).split(',').map((s) => s.trim()).filter(Boolean);
-      return ['title', 'content', 'tags', 'breadcrumb', 'headings', 'images_alt', 'site', 'page_type'];
+      if (v)
+        return String(v)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+      return [
+        'title',
+        'content',
+        'tags',
+        'breadcrumb',
+        'headings',
+        'images_alt',
+        'site',
+        'page_type',
+      ];
     })();
     // If no semantic config is provided, skip semantic search to avoid Azure errors
     const rawSemanticConfiguration = this._env(
@@ -171,35 +196,49 @@ class WoodlandAISearchCyclopedia extends Tool {
       fields.AZURE_AI_SEARCH_SCORING_PROFILE,
       process.env.AZURE_AI_SEARCH_SCORING_PROFILE,
     );
-    this.returnAllFields = String(
-      this._env(
-        fields.AZURE_AI_SEARCH_RETURN_ALL_FIELDS,
-        process.env.AZURE_AI_SEARCH_RETURN_ALL_FIELDS || 'true',
-      ),
-    ).toLowerCase() === 'true';
+    this.returnAllFields =
+      String(
+        this._env(
+          fields.AZURE_AI_SEARCH_RETURN_ALL_FIELDS,
+          process.env.AZURE_AI_SEARCH_RETURN_ALL_FIELDS || 'true',
+        ),
+      ).toLowerCase() === 'true';
 
     // Vector options
     this.vectorFields = (() => {
       const v =
-        this._env(fields.AZURE_AI_SEARCH_CYCLOPEDIA_VECTOR_FIELDS,
-          process.env.AZURE_AI_SEARCH_CYCLOPEDIA_VECTOR_FIELDS) ||
-        this._env(fields.AZURE_AI_SEARCH_VECTOR_FIELDS, process.env.AZURE_AI_SEARCH_VECTOR_FIELDS) ||
+        this._env(
+          fields.AZURE_AI_SEARCH_CYCLOPEDIA_VECTOR_FIELDS,
+          process.env.AZURE_AI_SEARCH_CYCLOPEDIA_VECTOR_FIELDS,
+        ) ||
+        this._env(
+          fields.AZURE_AI_SEARCH_VECTOR_FIELDS,
+          process.env.AZURE_AI_SEARCH_VECTOR_FIELDS,
+        ) ||
         WoodlandAISearchCyclopedia.DEFAULT_VECTOR_FIELDS;
-      return String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+      return String(v || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     })();
     this.vectorK = Number(
-      this._env(fields.AZURE_AI_SEARCH_CYCLOPEDIA_VECTOR_K,
-        process.env.AZURE_AI_SEARCH_CYCLOPEDIA_VECTOR_K) ||
-      this._env(fields.AZURE_AI_SEARCH_VECTOR_K, process.env.AZURE_AI_SEARCH_VECTOR_K) ||
-      WoodlandAISearchCyclopedia.DEFAULT_VECTOR_K,
+      this._env(
+        fields.AZURE_AI_SEARCH_CYCLOPEDIA_VECTOR_K,
+        process.env.AZURE_AI_SEARCH_CYCLOPEDIA_VECTOR_K,
+      ) ||
+        this._env(fields.AZURE_AI_SEARCH_VECTOR_K, process.env.AZURE_AI_SEARCH_VECTOR_K) ||
+        WoodlandAISearchCyclopedia.DEFAULT_VECTOR_K,
     );
 
-    const extractiveEnabled = String(
-      this._env(fields.WOODLAND_SEARCH_ENABLE_EXTRACTIVE, process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE) ??
-        DEFAULT_EXTRACTIVE,
-    )
-      .toLowerCase()
-      .trim() === 'true';
+    const extractiveEnabled =
+      String(
+        this._env(
+          fields.WOODLAND_SEARCH_ENABLE_EXTRACTIVE,
+          process.env.WOODLAND_SEARCH_ENABLE_EXTRACTIVE,
+        ) ?? DEFAULT_EXTRACTIVE,
+      )
+        .toLowerCase()
+        .trim() === 'true';
 
     this.defaultAnswerMode = extractiveEnabled ? 'extractive' : 'none';
     this.defaultCaptionMode = extractiveEnabled ? 'extractive' : 'none';
@@ -287,14 +326,18 @@ class WoodlandAISearchCyclopedia extends Tool {
           delete sanitized.answers;
           delete sanitized.captions;
           changed = true;
-          logger.info('[woodland-ai-search-cyclopedia] Semantic config missing on index — falling back to simple query');
+          logger.info(
+            '[woodland-ai-search-cyclopedia] Semantic config missing on index — falling back to simple query',
+          );
         }
 
         if (/orderby/i.test(msg) && String(sanitized.queryType).toLowerCase() === 'semantic') {
           if (sanitized.orderBy) {
             delete sanitized.orderBy;
             changed = true;
-            logger.info('[woodland-ai-search-cyclopedia] Removing orderBy for semantic query and retrying');
+            logger.info(
+              '[woodland-ai-search-cyclopedia] Removing orderBy for semantic query and retrying',
+            );
           }
         }
 
@@ -323,7 +366,9 @@ class WoodlandAISearchCyclopedia extends Tool {
             if (sanitized.filter) {
               delete sanitized.filter;
               changed = true;
-              logger.info('[woodland-ai-search-cyclopedia] Dropping filter due to unknown fields and retrying');
+              logger.info(
+                '[woodland-ai-search-cyclopedia] Dropping filter due to unknown fields and retrying',
+              );
             }
             if (sanitized.orderBy) {
               delete sanitized.orderBy;
@@ -336,7 +381,9 @@ class WoodlandAISearchCyclopedia extends Tool {
           delete sanitized.searchFields;
           droppedSearchFields = true;
           changed = true;
-          logger.info('[woodland-ai-search-cyclopedia] Dropping searchFields entirely and retrying');
+          logger.info(
+            '[woodland-ai-search-cyclopedia] Dropping searchFields entirely and retrying',
+          );
         }
 
         if (!changed) break;
@@ -349,14 +396,27 @@ class WoodlandAISearchCyclopedia extends Tool {
   async _call(data) {
     const { query, top: topIn } = data;
     const finalTop =
-      typeof topIn === 'number' && Number.isFinite(topIn) ? Math.max(1, Math.floor(topIn)) : this.top;
+      typeof topIn === 'number' && Number.isFinite(topIn)
+        ? Math.max(1, Math.floor(topIn))
+        : this.top;
 
     // Per-call overrides
     const perCallSelect =
-      typeof data?.select === 'string' ? data.select.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+      typeof data?.select === 'string'
+        ? data.select
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined;
     const perCallSearchFields =
-      typeof data?.searchFields === 'string' ? data.searchFields.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
-    const filter = typeof data?.filter === 'string' && data.filter.trim() ? data.filter.trim() : undefined;
+      typeof data?.searchFields === 'string'
+        ? data.searchFields
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined;
+    const filter =
+      typeof data?.filter === 'string' && data.filter.trim() ? data.filter.trim() : undefined;
     const perCallAnswers = data?.answers;
     const perCallCaptions = data?.captions;
     const perCallSpeller = data?.speller;
@@ -379,13 +439,11 @@ class WoodlandAISearchCyclopedia extends Tool {
       const options = {
         searchMode: inferredMode,
         top: finalTop,
-        filter
+        filter,
       };
 
       const semanticConfigName =
-        typeof this.semanticConfiguration === 'string'
-          ? this.semanticConfiguration.trim()
-          : '';
+        typeof this.semanticConfiguration === 'string' ? this.semanticConfiguration.trim() : '';
       const allowSemantic = !!semanticConfigName;
 
       if (allowSemantic) {
@@ -430,7 +488,7 @@ class WoodlandAISearchCyclopedia extends Tool {
         queryType: options.queryType,
         hasSemantic: !!options.semanticSearchOptions,
         answers: options.answers,
-        captions: options.captions
+        captions: options.captions,
       });
 
       const res = await this._safeSearch(query, options);
@@ -492,3 +550,4 @@ class WoodlandAISearchCyclopedia extends Tool {
 }
 
 module.exports = WoodlandAISearchCyclopedia;
+WoodlandAISearchCyclopedia.enableReusableInstance = true;

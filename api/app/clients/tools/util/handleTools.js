@@ -41,7 +41,7 @@ const {
   createOpenAIImageTools,
 
   StructuredWoodlandAIEngineHistory,
-  StructuredWoodlandAIProductHistory
+  StructuredWoodlandAIProductHistory,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -127,10 +127,27 @@ const validateTools = async (user, tools = []) => {
  * @param {Object} options Optional parameters to be passed to the tool constructor alongside authentication values.
  * @returns {() => Promise<Tool>} An Async function that, when called, asynchronously initializes and returns an instance of the tool with authentication.
  */
+const TOOL_INSTANCE_CACHE = new Map();
+
 const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => {
+  const { __cacheKey, __disableCache, ...toolOptions } = options || {};
+  const shouldReuse =
+    ToolConstructor && ToolConstructor.enableReusableInstance && __disableCache !== true;
+  let cacheKey = null;
+  if (shouldReuse) {
+    cacheKey = __cacheKey || `${ToolConstructor?.name || 'Tool'}::${userId}`;
+  }
+
   return async function () {
+    if (cacheKey && TOOL_INSTANCE_CACHE.has(cacheKey)) {
+      return TOOL_INSTANCE_CACHE.get(cacheKey);
+    }
     const authValues = await loadAuthValues({ userId, authFields });
-    return new ToolConstructor({ ...options, ...authValues, userId });
+    const instance = new ToolConstructor({ ...toolOptions, ...authValues, userId });
+    if (cacheKey) {
+      TOOL_INSTANCE_CACHE.set(cacheKey, instance);
+    }
+    return instance;
   };
 };
 
@@ -415,7 +432,9 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
   if (returnMap) {
     return requestedTools;
   }
-  logger.info('[handleTools] Tools queued for initialization', { queued: Object.keys(requestedTools) });
+  logger.info('[handleTools] Tools queued for initialization', {
+    queued: Object.keys(requestedTools),
+  });
 
   const toolPromises = [];
   for (const tool of tools) {

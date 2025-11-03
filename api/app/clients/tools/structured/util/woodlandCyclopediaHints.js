@@ -31,9 +31,10 @@ const DEFAULT_STEP_PATTERNS = [
 ];
 
 const STEP_MATCHERS = (() => {
-  const patterns = Array.isArray(config?.stepMatchers) && config.stepMatchers.length > 0
-    ? config.stepMatchers
-    : DEFAULT_STEP_PATTERNS;
+  const patterns =
+    Array.isArray(config?.stepMatchers) && config.stepMatchers.length > 0
+      ? config.stepMatchers
+      : DEFAULT_STEP_PATTERNS;
   return patterns.map(compilePattern).filter(Boolean);
 })();
 
@@ -94,9 +95,10 @@ const DEFAULT_SCENARIO_RULES = [
 ];
 
 const SCENARIO_RULES = (() => {
-  const rules = Array.isArray(config?.scenarioRules) && config.scenarioRules.length > 0
-    ? config.scenarioRules
-    : DEFAULT_SCENARIO_RULES;
+  const rules =
+    Array.isArray(config?.scenarioRules) && config.scenarioRules.length > 0
+      ? config.scenarioRules
+      : DEFAULT_SCENARIO_RULES;
   return rules
     .map((rule) => {
       const patterns = Array.isArray(rule.patterns)
@@ -188,9 +190,7 @@ const deriveCyclopediaHints = (doc = {}) => {
     steps,
     checklists,
     scenarios,
-    hasTroubleshooting:
-      steps.length > 0 ||
-      checklists.length > 0,
+    hasTroubleshooting: steps.length > 0 || checklists.length > 0,
   };
 };
 
