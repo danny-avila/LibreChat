@@ -126,5 +126,16 @@ describe('DragDropModal - Provider Detection', () => {
           isDocumentSupportedProvider(scenario.currentProvider),
       ).toBe(false);
     });
+    it('should handle agents endpoints with document supported providers', () => {
+      const scenario = {
+        currentProvider: EModelEndpoint.google,
+        endpointType: EModelEndpoint.agents,
+      };
+
+      expect(
+        isDocumentSupportedProvider(scenario.endpointType) ||
+          isDocumentSupportedProvider(scenario.currentProvider),
+      ).toBe(true);
+    });
   });
 });
