@@ -48,13 +48,13 @@ export default function DesktopArtifacts({
         className={cn(
           'flex h-full w-full flex-col bg-surface-primary text-xl text-text-primary shadow-2xl',
           isVisible && !isClosing
-            ? 'duration-350 translate-x-0 opacity-100 transition-all'
-            : 'translate-x-5 opacity-0 transition-all duration-300',
+            ? 'duration-350 translate-x-0 opacity-100 transition-[transform,opacity]'
+            : 'translate-x-5 opacity-0 transition-[transform,opacity] duration-300',
         )}
         style={{ overflow: 'hidden' }}
       >
         {/* Header */}
-        <div className={cn('flex items-center transition-all duration-500')}>
+        <div className={cn('flex items-center transition-[height,padding] duration-500')}>
           <ArtifactsHeader
             activeTab={activeTab}
             setActiveTab={setActiveTab}
@@ -72,12 +72,19 @@ export default function DesktopArtifacts({
         </div>
 
         {/* Content */}
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-primary">
+        <div
+          className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-primary"
+          style={{
+            contain: 'layout style paint',
+            willChange: 'contents',
+          }}
+        >
           <div className="absolute inset-0 flex flex-col">
             <ArtifactTabs
               artifact={currentArtifact}
               editorRef={editorRef}
               previewRef={previewRef}
+              activeTab={activeTab}
             />
           </div>
 

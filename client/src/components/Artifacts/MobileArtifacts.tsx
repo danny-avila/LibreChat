@@ -175,6 +175,7 @@ export default function MobileArtifacts({
                 artifact={currentArtifact}
                 editorRef={editorRef}
                 previewRef={previewRef}
+                activeTab={activeTab}
               />
             </div>
 

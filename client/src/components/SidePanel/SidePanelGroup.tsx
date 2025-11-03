@@ -2,19 +2,13 @@ import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
 import { getConfigDefaults } from 'librechat-data-provider';
-import {
-  ResizableHandleAlt,
-  ResizablePanel,
-  ResizablePanelGroup,
-  useMediaQuery,
-} from '@librechat/client';
+import { ResizablePanel, ResizablePanelGroup, useMediaQuery } from '@librechat/client';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { useGetStartupConfig } from '~/data-provider';
+import ArtifactsPanel from './ArtifactsPanel';
 import { normalizeLayout } from '~/utils';
 import SidePanel from './SidePanel';
 import store from '~/store';
-
-const ANIMATION_DURATION = 500;
 
 interface SidePanelProps {
   defaultLayout?: number[] | undefined;
@@ -44,42 +38,14 @@ const SidePanelGroup = memo(
     );
 
     const panelRef = useRef<ImperativePanelHandle>(null);
-    const artifactsPanelRef = useRef<ImperativePanelHandle>(null);
     const [minSize, setMinSize] = useState(defaultMinSize);
     const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
     const [fullCollapse, setFullCollapse] = useState(fullPanelCollapse);
     const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
     const [shouldRenderArtifacts, setShouldRenderArtifacts] = useState(artifacts != null);
-    const artifactsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const isSmallScreen = useMediaQuery('(max-width: 767px)');
     const hideSidePanel = useRecoilValue(store.hideSidePanel);
-
-    useEffect(() => {
-      if (artifacts != null) {
-        if (artifactsTimeoutRef.current) {
-          clearTimeout(artifactsTimeoutRef.current);
-          artifactsTimeoutRef.current = null;
-        }
-        setShouldRenderArtifacts(true);
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            artifactsPanelRef.current?.expand();
-          });
-        });
-      } else if (shouldRenderArtifacts) {
-        artifactsPanelRef.current?.collapse();
-        artifactsTimeoutRef.current = setTimeout(() => {
-          setShouldRenderArtifacts(false);
-        }, ANIMATION_DURATION);
-      }
-
-      return () => {
-        if (artifactsTimeoutRef.current) {
-          clearTimeout(artifactsTimeoutRef.current);
-        }
-      };
-    }, [artifacts, shouldRenderArtifacts]);
 
     const calculateLayout = useCallback(() => {
       if (artifacts == null) {
@@ -100,8 +66,27 @@ const SidePanelGroup = memo(
       () =>
         throttle((sizes: number[]) => {
           const normalizedSizes = normalizeLayout(sizes);
-          localStorage.setItem('react-resizable-panels:layout', JSON.stringify(normalizedSizes));
-        }, 350),
+          // Use requestIdleCallback to avoid blocking main thread during resize
+          // Fallback to setTimeout if requestIdleCallback is not available
+          if (typeof requestIdleCallback !== 'undefined') {
+            requestIdleCallback(
+              () => {
+                localStorage.setItem(
+                  'react-resizable-panels:layout',
+                  JSON.stringify(normalizedSizes),
+                );
+              },
+              { timeout: 1000 },
+            );
+          } else {
+            setTimeout(() => {
+              localStorage.setItem(
+                'react-resizable-panels:layout',
+                JSON.stringify(normalizedSizes),
+              );
+            }, 0);
+          }
+        }, 500), // Increased from 350ms to 500ms for better performance
       [],
     );
 
@@ -148,30 +133,23 @@ const SidePanelGroup = memo(
             order={1}
             id="messages-view"
             className="relative h-full w-full flex-1 overflow-auto bg-presentation"
+            style={{
+              contain: 'layout style',
+            }}
           >
             {children}
           </ResizablePanel>
-          {shouldRenderArtifacts && !isSmallScreen && (
-            <>
-              {artifacts != null && (
-                <ResizableHandleAlt
-                  withHandle
-                  className="ml-3 bg-border-medium text-text-primary"
-                />
-              )}
-              <ResizablePanel
-                ref={artifactsPanelRef}
-                defaultSize={artifacts != null ? currentLayout[1] : 0}
-                minSize={minSizeMain}
-                collapsible={true}
-                collapsedSize={0}
-                order={2}
-                id="artifacts-panel"
-              >
-                <div className="h-full min-w-[400px] overflow-hidden">{artifacts}</div>
-              </ResizablePanel>
-            </>
+
+          {!isSmallScreen && (
+            <ArtifactsPanel
+              artifacts={artifacts}
+              currentLayout={currentLayout}
+              minSizeMain={minSizeMain}
+              shouldRender={shouldRenderArtifacts}
+              onRenderChange={setShouldRenderArtifacts}
+            />
           )}
+
           {!hideSidePanel && interfaceConfig.sidePanel === true && (
             <SidePanel
               panelRef={panelRef}
