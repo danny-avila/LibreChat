@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Switch, useToastContext } from '@librechat/client';
 import { useGetUserQuery, useUpdateMemoryPreferencesMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import DisplayUsernameMessages from './Account/DisplayUsernameMessages';
 
 interface PersonalizationProps {
   hasMemoryOptOut: boolean;
@@ -46,17 +47,11 @@ export default function Personalization({
     updateMemoryPreferencesMutation.mutate({ memories: checked });
   };
 
-  if (!hasAnyPersonalizationFeature) {
-    return (
-      <div className="flex flex-col gap-3 text-sm text-text-primary">
-        <div className="text-text-secondary">{localize('com_ui_no_personalization_available')}</div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-3 text-sm text-text-primary">
-      {/* Memory Settings Section */}
+      {!hasAnyPersonalizationFeature && (
+        <div className="text-text-secondary">{localize('com_ui_no_personalization_available')}</div>
+      )}
       {hasMemoryOptOut && (
         <>
           <div className="border-b border-border-medium pb-3">
@@ -85,6 +80,9 @@ export default function Personalization({
           </div>
         </>
       )}
+      <div className={hasMemoryOptOut ? 'border-t border-border-medium pt-3' : undefined}>
+        <DisplayUsernameMessages />
+      </div>
     </div>
   );
 }

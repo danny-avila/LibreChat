@@ -6,7 +6,6 @@ import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@
 import {
   GearIcon,
   DataIcon,
-  UserIcon,
   SpeechIcon,
   useMediaQuery,
   PersonalizationIcon,
@@ -44,7 +43,6 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       ...(hasAnyPersonalizationFeature ? [SettingsTabValues.PERSONALIZATION] : []),
       SettingsTabValues.DATA,
       ...(startupConfig?.balance?.enabled ? [SettingsTabValues.BALANCE] : []),
-      SettingsTabValues.ACCOUNT,
     ];
     const currentIndex = tabs.indexOf(activeTab);
 
@@ -116,11 +114,6 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           },
         ]
       : ([] as { value: SettingsTabValues; icon: React.JSX.Element; label: TranslationKeys }[])),
-    {
-      value: SettingsTabValues.ACCOUNT,
-      icon: <UserIcon />,
-      label: 'com_nav_setting_account',
-    },
   ];
 
   const handleTabChange = (value: string) => {
