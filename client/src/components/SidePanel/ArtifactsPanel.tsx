@@ -55,12 +55,13 @@ export default function ArtifactsPanel({
   return (
     <>
       {artifacts != null && (
-        <ResizableHandleAlt withHandle className="ml-3 bg-border-medium text-text-primary" />
+        <ResizableHandleAlt withHandle className="bg-border-medium text-text-primary" />
       )}
       <ResizablePanel
         ref={artifactsPanelRef}
         defaultSize={artifacts != null ? currentLayout[1] : 0}
         minSize={minSizeMain}
+        maxSize={70}
         collapsible={true}
         collapsedSize={0}
         order={2}
