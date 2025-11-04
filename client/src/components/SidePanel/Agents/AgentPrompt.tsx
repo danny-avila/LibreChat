@@ -24,42 +24,28 @@ export default function AgentPrompt({
 }) {
   const [isHovering, setIsHovering] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const updateUserPlugins = useUpdateUserPluginsMutation();
   const { getValues, setValue } = useFormContext<AgentForm>();
   const promptValues = getValues('mcp_prompts') || [];
   const savedPrompts = localStorage.getItem('agent-prompts') ?? '';
-  if (!mcpPrompts) {
-    return null;
-  }
-  const currentPrompt = mcpPrompts[prompt];
-  const jsonSavedPrompts = savedPrompts ? JSON.parse(savedPrompts) : [];
-  const isGroup = currentPrompt.prompts && currentPrompt.prompts.length > 0;
-  // eslint-disable-next-line react-hooks/rules-of-hooks
+
   useEffect(() => {
+    const jsonSavedPrompts = savedPrompts ? JSON.parse(savedPrompts) : [];
     if (
       (promptValues.length === 0 || promptValues.length !== jsonSavedPrompts.length) &&
       jsonSavedPrompts.length > 0
     ) {
       setValue('mcp_prompts', jsonSavedPrompts);
     }
-  }, [promptValues.length, setValue, jsonSavedPrompts]);
+  }, [promptValues.length, setValue, savedPrompts]);
 
-  const getSelectedPrompts = () => {
-    if (!currentPrompt) return [];
-    let formPrompts = getValues('mcp_prompts') || [];
-    if (formPrompts.length === 0 && savedPrompts) {
-      formPrompts = JSON.parse(savedPrompts);
-      const jsonSavedPrompts = JSON.parse(savedPrompts);
-    }
-    if (formPrompts) {
-      return formPrompts.filter((prompt) => prompt === currentPrompt.promptKey);
-    } else {
-      return null;
-    }
-  };
+  if (!mcpPrompts) {
+    return null;
+  }
+  const currentPrompt = mcpPrompts[prompt];
+  const isGroup = currentPrompt.prompts && currentPrompt.prompts.length > 0;
 
   const removePrompt = (promptName: string) => {
     if (promptName) {
@@ -91,7 +77,6 @@ export default function AgentPrompt({
   if (!currentPrompt) {
     return null;
   }
-  const selectedPrompts = getSelectedPrompts();
   return (
     <OGDialog>
       <div

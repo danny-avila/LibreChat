@@ -178,7 +178,7 @@ function PromptsCommand({
       if (group.mcpData) {
         const mcpPromptData = group.mcpData;
         const hasVariables = detectVariables(mcpPromptData.description ?? '');
-        
+
         if (hasVariables) {
           if (e && e.key === 'Tab') {
             e.preventDefault();

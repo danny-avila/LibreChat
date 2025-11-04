@@ -817,7 +817,6 @@ class AgentClient extends BaseClient {
         let mcpPromptData = '';
         if (mcpPrompts.length > 0) {
           const cachedPrompts = await getCachedPrompts();
-          console.log("mcpPrompts", mcpPrompts);
           for (const prompt of mcpPrompts) {
             let cachedPrompt = cachedPrompts[prompt];
             mcpPromptData += cachedPrompt ? `\n${cachedPrompt.description}` : '';

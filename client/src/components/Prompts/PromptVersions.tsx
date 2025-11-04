@@ -2,12 +2,7 @@ import React from 'react';
 import { format } from 'date-fns';
 import { Layers3, Crown, Zap } from 'lucide-react';
 import { Tag, TooltipAnchor, Label } from '@librechat/client';
-import type {
-  TMCPPromptArgument,
-  TPrompt,
-  TPromptGroup,
-  MCPPromptResponse,
-} from 'librechat-data-provider';
+import type { TPrompt, TPromptGroup, MCPPromptResponse } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -87,7 +82,6 @@ const VersionTags = ({ tags }: { tags: string[] }) => {
 
 const VersionCard = ({
   prompt,
-  mcpPrompt,
   index,
   isSelected,
   totalVersions,
@@ -132,9 +126,9 @@ const VersionCard = ({
 
         <div className="flex items-center gap-1 lg:flex-col xl:flex-row">
           {authorName && (
+            // eslint-disable-next-line i18next/no-literal-string
             <Label className="text-left text-xs text-text-secondary">by {authorName}</Label>
           )}
-
           {tags.length > 0 && <VersionTags tags={tags} />}
         </div>
       </div>

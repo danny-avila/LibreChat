@@ -103,7 +103,7 @@ export class MCPServersRegistry {
             return null;
           }),
         ]);
-        
+
         // Extract prompts from fetchServerCapabilities result
         const capabilitiesResult = results[1];
         if (capabilitiesResult.status === 'fulfilled') {
@@ -251,13 +251,13 @@ export class MCPServersRegistry {
     const capabilities = conn.client.getServerCapabilities();
     if (!capabilities) return null;
     config.capabilities = JSON.stringify(capabilities);
-    
+
     // Fetch tools if supported
     if (capabilities.tools) {
       const tools = await conn.client.listTools();
       config.tools = tools.tools.map((tool) => tool.name).join(', ');
     }
-    
+
     // Fetch and return prompts if supported
     if (capabilities.prompts) {
       const prompts = await conn.client.listPrompts();
@@ -270,7 +270,7 @@ export class MCPServersRegistry {
       console.log(`[DEBUG][${serverName}] Created MCP prompts:`, mcpPrompts);
       return mcpPrompts;
     }
-    
+
     return null;
   }
 

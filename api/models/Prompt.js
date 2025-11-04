@@ -539,7 +539,6 @@ module.exports = {
     }
   },
   getMCPPromptGroup: async (serverName, promptName) => {
-    logger.debug("getMCPPromptGroup", serverName, promptName)
     try {
       const mcpManager = getMCPManager();
       return await getServerMCPPrompt(mcpManager, serverName, promptName);
@@ -549,7 +548,6 @@ module.exports = {
     }
   },
   getMCPPrompt: async (serverName, promptName, userId, combinedNames) => {
-    logger.debug("getMCPPrompt", serverName, promptName)
     try {
       let options = { userId, serverName, promptName };
       let cachedPrompt = await getCachedPrompts(options);

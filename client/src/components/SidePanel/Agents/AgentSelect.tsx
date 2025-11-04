@@ -152,7 +152,7 @@ export default function AgentSelect({
       if (!agent) {
         console.warn('Agent not found');
         const agentSelected = localStorage.getItem('agent-selected');
-        console.log("agentSelected", agentSelected);
+        console.log('agentSelected', agentSelected);
         if (agentSelected) {
           setCurrentAgentId(agentSelected);
         }

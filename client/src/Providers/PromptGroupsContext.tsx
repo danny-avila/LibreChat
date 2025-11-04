@@ -93,7 +93,7 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
           console.log(`Filtering "${prompt.name}" (name defined):`, hasCodeInName);
           return hasCodeInName;
         });
-        console.log("Filtered prompts (name is defined):", codePrompts);
+        console.log('Filtered prompts (name is defined):', codePrompts);
         return codePrompts;
       } else {
         return allPrompts;
@@ -101,7 +101,7 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
     },
   });
 
-  console.log("MCP Prompts Data:", mcpPromptsData);
+  console.log('MCP Prompts Data:', mcpPromptsData);
 
   const contextValue = useMemo(() => {
     return {

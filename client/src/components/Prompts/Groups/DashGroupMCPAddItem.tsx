@@ -1,4 +1,4 @@
-import { memo, useState, useRef, useCallback, KeyboardEvent, useEffect } from 'react';
+import { memo, useState, useCallback, KeyboardEvent, useEffect } from 'react';
 import { XCircle, PlusCircleIcon } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useFormContext } from 'react-hook-form';

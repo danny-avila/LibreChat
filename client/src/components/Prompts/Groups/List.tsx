@@ -89,7 +89,7 @@ export default function List({
             return (
               <DashGroupItem key={group._id} group={group} instanceProjectId={instanceProjectId} />
             );
-          })} 
+          })}
           {mcpPrompts &&
             typeof mcpPrompts === 'object' &&
             Object.keys(mcpPrompts).length > 0 &&

@@ -103,7 +103,6 @@ router.get(
 router.get('/mcpgroups/:groupId', async (req, res) => {
   console.log('mcp');
   let serverName = req.params.groupId;
-  const user = req.user;
   const parts = serverName.split(':');
   try {
     // if (parts) {

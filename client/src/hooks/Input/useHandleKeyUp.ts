@@ -55,11 +55,11 @@ const useHandleKeyUp = ({
     permissionType: PermissionTypes.MULTI_CONVO,
     permission: Permissions.USE,
   });
-  
+
   // Check for MCP prompts availability
   const { data: mcpPromptsData } = useGetAllMCPPrompts();
   const hasMCPPrompts = mcpPromptsData && Object.keys(mcpPromptsData).length > 0;
-  
+
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
 

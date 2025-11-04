@@ -49,7 +49,6 @@ const RightPanel = React.memo(
     selectionIndex,
     setSelectionIndex,
   }: RightPanelProps) => {
-
     const editorMode = useRecoilValue(store.promptsEditorMode);
     const hasShareAccess = useHasAccess({
       permissionType: PermissionTypes.PROMPTS,
@@ -109,9 +108,12 @@ const RightPanel = React.memo(
               ))
             : mcp_prompts.length > 0 && (
                 <PromptVersions
-                  group={group}
+                  group={{ ...group, author: group?.author ?? '' }}
                   prompts={[]}
-                  mcpPrompts={mcp_prompts}
+                  mcpPrompts={mcp_prompts.map((p) => ({
+                    ...p,
+                    description: p.description ?? '',
+                  }))}
                   selectionIndex={selectionIndex}
                   setSelectionIndex={setSelectionIndex}
                 />
@@ -153,11 +155,11 @@ const MCPPromptForm = () => {
     queryClient.invalidateQueries({
       queryKey: ['mcpPrompt', serverPromptCombined],
     });
-}, [serverPromptCombined, queryClient]);
+  }, [serverPromptCombined, queryClient]);
 
   const { data: group, isLoading: isLoadingGroup } = useGetMCPPromptGroup(serverPromptCombined, {
     staleTime: 0, // Always consider data stale
-});
+  });
 
   const { data: mcp_prompts, isLoading: isLoadingPrompts } = useGetMCPPrompt(serverPromptCombined, {
     staleTime: 0, // Always consider data stale
@@ -171,7 +173,7 @@ const MCPPromptForm = () => {
       category: group ? group.category : '',
     },
   });
-  const { handleSubmit, setValue, reset, watch } = methods;
+  const { handleSubmit, setValue, reset } = methods;
   const promptText = mcp_prompts?.description;
 
   const selectedPrompt = useMemo(() => mcp_prompts ?? undefined, [mcp_prompts]);
@@ -275,7 +277,7 @@ const MCPPromptForm = () => {
   }, [params.promptId, editorMode, group?.name, mcp_prompts, handleLoadingComplete]);
 
   useEffect(() => {
-    setValue('mcp_prompts', group?.description ? mcp_prompts?.description : '', {
+    setValue('mcp_prompt', group?.description ? mcp_prompts?.description : '', {
       shouldDirty: false,
     });
     setValue('category', group ? group.category : '', { shouldDirty: false });
@@ -367,7 +369,7 @@ const MCPPromptForm = () => {
                       <div className="hidden lg:block">
                         {editorMode === PromptsEditorMode.SIMPLE && (
                           <RightPanel
-                            group={group}
+                            group={{ ...group, author: group?.author ?? '' }}
                             mcp_prompts={Array.isArray(mcp_prompts) ? mcp_prompts : []}
                             selectedPrompt={selectedPrompt}
                             selectionIndex={selectionIndex}
@@ -390,16 +392,9 @@ const MCPPromptForm = () => {
                       isEditing={isEditing}
                       mcp={true}
                       setIsEditing={(value) => canEdit && setIsEditing(value)}
-                      promptValue={mcp_prompts?.description || promptText}
+                      promptValue={mcp_prompts?.description ?? promptText ?? ''}
                     />
                     <MCPPromptVariables promptArguments={mcp_prompts?.arguments} />
-                    {/* Add debugging */}
-                    {console.log('Debug Description Values:', {
-                      groupDescription: group?.description,
-                      promptsDescription: mcp_prompts?.description,
-                      selectedPromptDescription: selectedPrompt?.description,
-                      promptText: promptText,
-                    })}
                     <Description
                       initialValue={'On MCP Server: ' + serverName}
                       onValueChange={handleUpdateOneliner}
@@ -412,7 +407,7 @@ const MCPPromptForm = () => {
               {editorMode === PromptsEditorMode.ADVANCED && (
                 <div className="hidden w-1/4 border-l border-border-light lg:block">
                   <RightPanel
-                    group={group}
+                    group={{ ...group, author: group?.author ?? '' }}
                     mcp_prompts={Array.isArray(mcp_prompts) ? mcp_prompts : []}
                     selectionIndex={selectionIndex}
                     selectedPrompt={selectedPrompt}

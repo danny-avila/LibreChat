@@ -1,4 +1,4 @@
-import { useState, useMemo, memo } from 'react';
+import { useState, memo } from 'react';
 import { Menu as MenuIcon, Edit as EditIcon, TextSearch } from 'lucide-react';
 import {
   DropdownMenu,

@@ -1,9 +1,7 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Variable } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { Separator } from '@librechat/client';
-import { specialVariables } from 'librechat-data-provider';
-import { cn, extractUniqueVariables } from '~/utils';
+import { cn } from '~/utils';
 import { CodeVariableGfm } from './Markdown';
 import { useLocalize } from '~/hooks';
 
@@ -11,13 +9,7 @@ const components: {
   [nodeType: string]: React.ElementType;
 } = { code: CodeVariableGfm };
 
-const MCPPromptVariables = ({
-  promptArguments,
-  showInfo = true,
-}: {
-  promptArguments: any;
-  showInfo?: boolean;
-}) => {
+const MCPPromptVariables = ({ promptArguments }: { promptArguments: any; showInfo?: boolean }) => {
   const localize = useLocalize();
   let argumentArray = promptArguments;
   if (typeof promptArguments === 'object' && promptArguments !== null) {
