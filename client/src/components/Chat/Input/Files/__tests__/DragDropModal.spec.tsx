@@ -1,23 +1,3 @@
-/**
- * Tests for DragDropModal provider detection fix
- *
- * Issue: Custom endpoints (like LiteLLM) pointing to OpenAI models weren't showing
- * "Upload to Provider" because currentProvider was checked before endpointType.
- *
- * Fix (line 60): Check both endpointType and currentProvider for document support
- * - Changed from: isDocumentSupportedProvider(currentProvider || endpointType)
- * - Changed to:   isDocumentSupportedProvider(endpointType) || isDocumentSupportedProvider(currentProvider)
- *
- * We need to check both because, for agents, the endpointType is populated as EModelEndpoint.agents
- * and the currentProvider is the actual provider (e.g. 'google'), so just shortcircuiting within the args
- * would fail to identify the provider as document supported since it would evaluate isDocumentSupportedProvider('agents') to false,
- * missing the correct provider information currentProvider: 'google' and not displaying the upload to provider option in the drag drop modal.
- *
- * Conversely, for an OpenAI-compatible gateway (e.g. 'litellm'), if the provider were shortcircuited in the args with currentProvider first,
- * it would not identify the provider as document supported since it would evaluate isDocumentSupportedProvider('litellm') to false,
- * missing the correct provider information endpointType: 'openai' and not displaying the upload to provider option in the drag drop modal.
- */
-
 import { EModelEndpoint, isDocumentSupportedProvider } from 'librechat-data-provider';
 
 describe('DragDropModal - Provider Detection', () => {
