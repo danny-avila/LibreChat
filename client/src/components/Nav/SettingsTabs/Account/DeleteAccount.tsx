@@ -20,7 +20,7 @@ import { cn } from '~/utils';
 const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolean }) => {
   const localize = useLocalize();
   const { user, logout } = useAuthContext();
-  const { mutate: deleteUser, isLoading: isDeleting } = useDeleteUserMutation({
+  const { mutate: deleteUser, isPending: isDeleting } = useDeleteUserMutation({
     onMutate: () => logout(),
   });
 

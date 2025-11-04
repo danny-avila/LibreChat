@@ -203,7 +203,7 @@ export default function AssistantPanel({
 
   let submitContext: string | JSX.Element;
 
-  if (create.isLoading || update.isLoading) {
+  if (create.isPending || update.isPending) {
     submitContext = <Spinner className="icon-md" />;
   } else if (assistant_id) {
     submitContext = localize('com_ui_save');

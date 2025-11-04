@@ -50,7 +50,7 @@ export default function ArchivedChatsTable({
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
     useConversationsInfiniteQuery(queryParams, {
       staleTime: 0,
-      cacheTime: 5 * 60 * 1000,
+      gcTime: 5 * 60 * 1000,
       refetchOnWindowFocus: false,
       refetchOnMount: false,
     });
@@ -224,9 +224,9 @@ export default function ArchivedChatsTable({
                       })
                     }
                     title={localize('com_ui_unarchive')}
-                    disabled={unarchiveMutation.isLoading}
+                    disabled={unarchiveMutation.isPending}
                   >
-                    {unarchiveMutation.isLoading ? (
+                    {unarchiveMutation.isPending ? (
                       <Spinner />
                     ) : (
                       <ArchiveRestore className="size-4" />
@@ -299,9 +299,9 @@ export default function ArchivedChatsTable({
                   conversationId: deleteConversation?.conversationId ?? '',
                 })
               }
-              disabled={deleteMutation.isLoading}
+              disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isLoading ? <Spinner /> : localize('com_ui_delete')}
+              {deleteMutation.isPending ? <Spinner /> : localize('com_ui_delete')}
             </Button>
           </div>
         </OGDialogContent>

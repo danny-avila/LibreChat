@@ -225,7 +225,9 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
       return;
     }
     clearMessagesCache(queryClient, conversation?.conversationId);
-    queryClient.invalidateQueries([QueryKeys.messages]);
+    queryClient.invalidateQueries({
+      queryKey: [QueryKeys.messages]
+    });
     newConversation();
   };
 

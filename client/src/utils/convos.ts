@@ -203,9 +203,7 @@ export function addConversationToAllConversationsQueries(
   newConversation: TConversation,
 ) {
   // Find all keys that start with QueryKeys.allConversations
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
+  const queries = queryClient.getQueryCache().findAll({ queryKey: [QueryKeys.allConversations] });
 
   for (const query of queries) {
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (old) => {
@@ -320,9 +318,7 @@ export function storeEndpointSettings(conversation: TConversation | null) {
 
 // Add
 export function addConvoToAllQueries(queryClient: QueryClient, newConvo: TConversation) {
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
+  const queries = queryClient.getQueryCache().findAll({ queryKey: [QueryKeys.allConversations] });
 
   for (const query of queries) {
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
@@ -356,9 +352,7 @@ export function updateConvoInAllQueries(
   conversationId: string,
   updater: (c: TConversation) => TConversation,
 ) {
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
+  const queries = queryClient.getQueryCache().findAll({ queryKey: [QueryKeys.allConversations] });
 
   for (const query of queries) {
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
@@ -380,9 +374,7 @@ export function updateConvoInAllQueries(
 
 // Remove
 export function removeConvoFromAllQueries(queryClient: QueryClient, conversationId: string) {
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
+  const queries = queryClient.getQueryCache().findAll({ queryKey: [QueryKeys.allConversations] });
 
   for (const query of queries) {
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {

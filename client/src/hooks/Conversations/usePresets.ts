@@ -85,10 +85,14 @@ export default function usePresets() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.presets]);
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.presets]
+      });
     },
     onError: (error) => {
-      queryClient.invalidateQueries([QueryKeys.presets]);
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.presets]
+      });
       console.error('Error deleting the preset:', error);
       showToast({
         message: localize('com_endpoint_preset_delete_error'),
@@ -112,7 +116,9 @@ export default function usePresets() {
       showToast({
         message,
       });
-      queryClient.invalidateQueries([QueryKeys.presets]);
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.presets]
+      });
     },
     onError: (error) => {
       console.error('Error updating the preset:', error);
@@ -133,7 +139,9 @@ export default function usePresets() {
           showToast({
             message: localize('com_endpoint_preset_import'),
           });
-          queryClient.invalidateQueries([QueryKeys.presets]);
+          queryClient.invalidateQueries({
+            queryKey: [QueryKeys.presets]
+          });
         },
         onError: (error) => {
           console.error('Error uploading the preset:', error);

@@ -51,9 +51,10 @@ const useNavigateToConvo = (index = 0) => {
       return;
     }
     try {
-      const data = await queryClient.fetchQuery([QueryKeys.conversation, conversationId], () =>
-        dataService.getConversationById(conversationId),
-      );
+      const data = await queryClient.fetchQuery({
+        queryKey: [QueryKeys.conversation, conversationId],
+        queryFn: () => dataService.getConversationById(conversationId),
+      });
       logger.log('conversation', 'Fetched fresh conversation data', data);
       setConversation(data);
       navigate(`/c/${conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
@@ -113,7 +114,9 @@ const useNavigateToConvo = (index = 0) => {
     clearAllConversations(true);
     clearMessagesCache(queryClient, currentConvoId);
     if (convo.conversationId !== Constants.NEW_CONVO && convo.conversationId) {
-      queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.conversation, convo.conversationId]
+      });
       fetchFreshData(convo);
     } else {
       setConversation(convo);

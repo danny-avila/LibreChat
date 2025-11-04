@@ -1,10 +1,6 @@
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, dataService, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
-import type {
-  QueryObserverResult,
-  UseQueryOptions,
-  UseInfiniteQueryOptions,
-} from '@tanstack/react-query';
+import type { UseQueryResult, UseQueryOptions, UseInfiniteQueryOptions } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import { isEphemeralAgent } from '~/common';
 
@@ -18,12 +14,14 @@ export const defaultAgentParams: t.AgentListParams = {
 /**
  * Hook for getting all available tools for A
  */
-export const useAvailableAgentToolsQuery = (): QueryObserverResult<t.TPlugin[]> => {
+export const useAvailableAgentToolsQuery = (): UseQueryResult<t.TPlugin[], unknown> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
 
   const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
-  return useQuery<t.TPlugin[]>([QueryKeys.tools], () => dataService.getAvailableAgentTools(), {
+  return useQuery({
+    queryKey: [QueryKeys.tools],
+    queryFn: () => dataService.getAvailableAgentTools(),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -36,29 +34,29 @@ export const useAvailableAgentToolsQuery = (): QueryObserverResult<t.TPlugin[]> 
  */
 export const useListAgentsQuery = <TData = t.AgentListResponse>(
   params: t.AgentListParams = defaultAgentParams,
-  config?: UseQueryOptions<t.AgentListResponse, unknown, TData>,
-): QueryObserverResult<TData> => {
+  config?: Omit<UseQueryOptions<t.AgentListResponse, unknown, TData>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<TData, unknown> => {
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
 
   const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
-  return useQuery<t.AgentListResponse, unknown, TData>(
-    [QueryKeys.agents, params],
-    () => dataService.listAgents(params),
-    {
-      // Example selector to sort them by created_at
-      // select: (res) => {
-      //   return res.data.sort((a, b) => a.created_at - b.created_at);
-      // },
-      staleTime: 1000 * 5,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-      enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
-    },
-  );
+  return useQuery({
+    queryKey: [QueryKeys.agents, params],
+    queryFn: () => dataService.listAgents(params),
+
+    // Example selector to sort them by created_at
+    // select: (res) => {
+    //   return res.data.sort((a, b) => a.created_at - b.created_at);
+    // },
+    staleTime: 1000 * 5,
+
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+    enabled: config?.enabled !== undefined ? config.enabled && enabled : enabled,
+  });
 };
 
 /**
@@ -66,25 +64,25 @@ export const useListAgentsQuery = <TData = t.AgentListResponse>(
  */
 export const useGetAgentByIdQuery = (
   agent_id: string | null | undefined,
-  config?: UseQueryOptions<t.Agent>,
-): QueryObserverResult<t.Agent> => {
+  config?: Omit<UseQueryOptions<t.Agent, unknown, t.Agent>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.Agent, unknown> => {
   const isValidAgentId = !!agent_id && !isEphemeralAgent(agent_id);
 
-  return useQuery<t.Agent>(
-    [QueryKeys.agent, agent_id],
-    () =>
+  return useQuery({
+    queryKey: [QueryKeys.agent, agent_id],
+
+    queryFn: () =>
       dataService.getAgentById({
         agent_id: agent_id as string,
       }),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      enabled: isValidAgentId && (config?.enabled ?? true),
-      ...config,
-    },
-  );
+
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    enabled: isValidAgentId && (config?.enabled ?? true),
+    ...config
+  });
 };
 
 /**
@@ -92,22 +90,22 @@ export const useGetAgentByIdQuery = (
  */
 export const useGetExpandedAgentByIdQuery = (
   agent_id: string,
-  config?: UseQueryOptions<t.Agent>,
-): QueryObserverResult<t.Agent> => {
-  return useQuery<t.Agent>(
-    [QueryKeys.agent, agent_id, 'expanded'],
-    () =>
+  config?: Omit<UseQueryOptions<t.Agent, unknown, t.Agent>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.Agent, unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.agent, agent_id, 'expanded'],
+
+    queryFn: () =>
       dataService.getExpandedAgentById({
         agent_id,
       }),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      retry: false,
-      ...config,
-    },
-  );
+
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: false,
+    ...config,
+  });
 };
 
 /**
@@ -117,25 +115,26 @@ export const useGetExpandedAgentByIdQuery = (
  * Hook for getting agent categories for marketplace tabs
  */
 export const useGetAgentCategoriesQuery = (
-  config?: UseQueryOptions<t.TMarketplaceCategory[]>,
-): QueryObserverResult<t.TMarketplaceCategory[]> => {
-  return useQuery<t.TMarketplaceCategory[]>(
-    [QueryKeys.agentCategories],
-    () => dataService.getAgentCategories(),
-    {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-      ...config,
-    },
-  );
+  config?: Omit<UseQueryOptions<t.TMarketplaceCategory[], unknown, t.TMarketplaceCategory[]>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<t.TMarketplaceCategory[], unknown> => {
+  return useQuery({
+    queryKey: [QueryKeys.agentCategories],
+    queryFn: () => dataService.getAgentCategories(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+
+    // Cache for 5 minutes
+    staleTime: 5 * 60 * 1000,
+
+    ...config,
+  });
 };
 
 /**
  * Hook for infinite loading of marketplace agents with cursor-based pagination
  */
-export const useMarketplaceAgentsInfiniteQuery = (
+export const useMarketplaceAgentsInfiniteQuery = <TData = InfiniteData<t.AgentListResponse, unknown>>(
   params: {
     requiredPermission: number;
     category?: string;
@@ -144,9 +143,9 @@ export const useMarketplaceAgentsInfiniteQuery = (
     promoted?: 0 | 1;
     cursor?: string; // For pagination
   },
-  config?: UseInfiniteQueryOptions<t.AgentListResponse, unknown>,
+  config?: Omit<UseInfiniteQueryOptions<t.AgentListResponse, Error, TData>, 'queryKey' | 'queryFn' | 'initialPageParam' | 'getNextPageParam'>,
 ) => {
-  return useInfiniteQuery<t.AgentListResponse>({
+  return useInfiniteQuery<t.AgentListResponse, Error, TData>({
     queryKey: [QueryKeys.marketplaceAgents, params],
     queryFn: ({ pageParam }) => {
       const queryParams = { ...params };
@@ -155,11 +154,11 @@ export const useMarketplaceAgentsInfiniteQuery = (
       }
       return dataService.getMarketplaceAgents(queryParams);
     },
-    getNextPageParam: (lastPage) => lastPage?.after ?? undefined,
+    getNextPageParam: (lastPage) => lastPage?.after ?? null,
     enabled: !!params.requiredPermission,
-    keepPreviousData: true,
+    initialPageParam: undefined,
     staleTime: 2 * 60 * 1000, // 2 minutes
-    cacheTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,

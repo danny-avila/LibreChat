@@ -294,7 +294,7 @@ export default function MemoryViewer() {
                   checked={referenceSavedMemories}
                   onCheckedChange={handleMemoryToggle}
                   aria-label={localize('com_ui_reference_saved_memories')}
-                  disabled={updateMemoryPreferencesMutation.isLoading}
+                  disabled={updateMemoryPreferencesMutation.isPending}
                 />
               </div>
             )}

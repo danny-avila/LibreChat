@@ -202,7 +202,7 @@ export default function ActionsInput({
   };
 
   const submitContext = () => {
-    if (updateAction.isLoading) {
+    if (updateAction.isPending) {
       return <Spinner className="icon-md" />;
     } else if (action?.action_id.length ?? 0) {
       return localize('com_ui_update');

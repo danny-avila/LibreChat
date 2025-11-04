@@ -381,14 +381,14 @@ export default function GenericGrantAccessDialog({
               <Button
                 onClick={handleSave}
                 disabled={
-                  updatePermissionsMutation.isLoading ||
+                  updatePermissionsMutation.isPending ||
                   !submitButtonActive ||
                   (hasChanges && !hasAtLeastOneOwner)
                 }
                 className="min-w-[120px]"
                 aria-label={localize('com_ui_save_changes')}
               >
-                {updatePermissionsMutation.isLoading ? (
+                {updatePermissionsMutation.isPending ? (
                   <div className="flex items-center gap-2">
                     <Spinner className="h-4 w-4" />
                     {localize('com_ui_saving')}
