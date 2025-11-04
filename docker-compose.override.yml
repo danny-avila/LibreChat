@@ -1,21 +1,34 @@
 services:
   api:
-    volumes:
-      - type: bind
-        source: ./librechat.yaml
-        target: /app/librechat.yaml
-    # (optional) also put the api on the NPM network if you want to proxy directly to it
     networks:
       - default
       - npm-network
 
   client:
-    # Remove 80/443 host bindings so we don't conflict with NPM
+    # disable host ports completely so NPM can proxy instead
     ports: []
     networks:
       - default
       - npm-network
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    networks:
+      - default
+    volumes:
+      - ollama:/root/.ollama
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+        reservations:
+          memory: 512m
+
 networks:
   npm-network:
     external: true
+
+volumes:
+  ollama:
