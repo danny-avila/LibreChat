@@ -737,6 +737,27 @@ describe('getOpenAIConfig', () => {
       ).toBeUndefined();
     });
 
+    it('should create correct Azure baseURL when response api is selected', () => {
+      const azure = {
+        azureOpenAIApiInstanceName: 'test-instance',
+        azureOpenAIApiDeploymentName: 'test-deployment',
+        azureOpenAIApiVersion: '2023-08-15',
+        azureOpenAIApiKey: 'azure-key',
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        azure,
+        modelOptions: { useResponsesApi: true },
+        reverseProxyUrl:
+          'https://${INSTANCE_NAME}.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}',
+      });
+
+      expect(result.configOptions?.baseURL).toBe(
+        'https://test-instance.openai.azure.com/openai/v1',
+      );
+      expect(result.configOptions?.baseURL).not.toContain('deployments');
+    });
+
     it('should handle Azure with organization from environment', () => {
       const originalOrg = process.env.OPENAI_ORGANIZATION;
       process.env.OPENAI_ORGANIZATION = 'test-org-123';

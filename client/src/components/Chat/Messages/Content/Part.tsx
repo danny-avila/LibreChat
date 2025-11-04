@@ -65,6 +65,10 @@ const Part = memo(
       if (part.tool_call_ids != null && !text) {
         return null;
       }
+      /** Skip rendering if text is only whitespace to avoid empty Container */
+      if (!isLast && text.length > 0 && /^\s*$/.test(text)) {
+        return null;
+      }
       return (
         <Container>
           <Text text={text} isCreatedByUser={isCreatedByUser} showCursor={showCursor} />
@@ -75,7 +79,7 @@ const Part = memo(
       if (typeof reasoning !== 'string') {
         return null;
       }
-      return <Reasoning reasoning={reasoning} />;
+      return <Reasoning reasoning={reasoning} isLast={isLast ?? false} />;
     } else if (part.type === ContentTypes.TOOL_CALL) {
       const toolCall = part[ContentTypes.TOOL_CALL];
 

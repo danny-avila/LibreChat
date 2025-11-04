@@ -5,6 +5,7 @@ import type { MCPOAuthTokens } from './types';
 import { OAuthReconnectionTracker } from './OAuthReconnectionTracker';
 import { FlowStateManager } from '~/flow/manager';
 import { MCPManager } from '~/mcp/MCPManager';
+import { mcpServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 
 const DEFAULT_CONNECTION_TIMEOUT_MS = 10_000; // ms
 
@@ -72,7 +73,7 @@ export class OAuthReconnectionManager {
 
     // 1. derive the servers to reconnect
     const serversToReconnect = [];
-    for (const serverName of this.mcpManager.getOAuthServers()) {
+    for (const serverName of await mcpServersRegistry.getOAuthServers()) {
       const canReconnect = await this.canReconnect(userId, serverName);
       if (canReconnect) {
         serversToReconnect.push(serverName);
@@ -104,7 +105,7 @@ export class OAuthReconnectionManager {
 
     logger.info(`${logPrefix} Attempting reconnection`);
 
-    const config = this.mcpManager.getRawConfig(serverName);
+    const config = await mcpServersRegistry.getServerConfig(serverName, userId);
 
     const cleanupOnFailedReconnect = () => {
       this.reconnectionsTracker.setFailed(userId, serverName);
