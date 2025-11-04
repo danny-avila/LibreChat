@@ -53,12 +53,26 @@ export interface MCPPrompt {
   name: string;
   description?: string;
   arguments?: Array<{ name: string }>;
+  mcpServerName?: string;
+  promptKey?: string;
+}
+export interface MCPPromptArgument {
+  name: string;
+  mcpServerName: string;
+  category: 'mcpServer';
+  description?: string;
+  arguments?: Array<{ name: string }>;
+  required?: boolean;
+  author?: string;
+  authorName: 'MCP Server';
 }
 
+export type LCAvailableMCPPrompts = Record<string, MCPPrompt>;
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 export type MCPTool = z.infer<typeof t.ToolSchema>;
 export type MCPToolListResponse = z.infer<typeof t.ListToolsResultSchema>;
+export type MCPPromptListResponse = z.infer<typeof t.ListPromptsResultSchema>;
 export type ToolContentPart = t.TextContent | t.ImageContent | t.EmbeddedResource | t.AudioContent;
 export type ImageContent = Extract<ToolContentPart, { type: 'image' }>;
 export type MCPToolCallResponse =
@@ -151,6 +165,7 @@ export type ParsedServerConfig = MCPOptions & {
   oauthMetadata?: Record<string, unknown> | null;
   capabilities?: string;
   tools?: string;
+  mcp_prompts?: string;
   toolFunctions?: LCAvailableTools;
   initDuration?: number;
 };

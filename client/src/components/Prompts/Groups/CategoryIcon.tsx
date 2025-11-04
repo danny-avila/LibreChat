@@ -9,6 +9,7 @@ import {
   PlaneTakeoffIcon,
   GraduationCapIcon,
   TerminalSquareIcon,
+  ServerIcon,
   // NEW: Add these for agent categories
   Users as UsersIcon,
   Beaker as BeakerIcon,
@@ -26,6 +27,7 @@ const categoryIconMap: Record<string, React.ElementType> = {
   code: TerminalSquareIcon,
   travel: PlaneTakeoffIcon,
   teach_or_explain: GraduationCapIcon,
+  mcpServer: ServerIcon,
   // NEW: Agent categories
   general: BoxIcon,
   hr: UsersIcon,
@@ -52,6 +54,7 @@ const categoryColorMap: Record<string, string> = {
   it: 'text-red-500',
   sales: 'text-orange-500',
   aftersales: 'text-yellow-500',
+  mcpServer: 'text-green-500',
 };
 
 export default function CategoryIcon({

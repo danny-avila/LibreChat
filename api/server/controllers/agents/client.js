@@ -49,7 +49,7 @@ const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
-
+const { getCachedPrompts } = require('~/server/services/Config');
 const omitTitleOptions = new Set([
   'stream',
   'thinking',
@@ -811,6 +811,15 @@ class AgentClient extends BaseClient {
        * @param {Record<string, number>} [currentIndexCountMap]
        */
       const runAgent = async (agent, _messages, i = 0, contentData = [], _currentIndexCountMap) => {
+        let mcpPrompts = this.options.agent.mcp_prompts ?? [];
+        let mcpPromptData = '';
+        if (mcpPrompts.length > 0) {
+          const cachedPrompts = await getCachedPrompts();
+          for (const prompt of mcpPrompts) {
+            let cachedPrompt = cachedPrompts[prompt];
+            mcpPromptData += cachedPrompt ? `\n${cachedPrompt.description}` : '';
+          }
+        }
         config.configurable.model = agent.model_parameters.model;
         const currentIndexCountMap = _currentIndexCountMap ?? indexTokenCountMap;
         if (i > 0) {
@@ -843,6 +852,7 @@ class AgentClient extends BaseClient {
           systemMessage,
           agent.instructions ?? '',
           i !== 0 ? (agent.additional_instructions ?? '') : '',
+          mcpPromptData ?? '',
         ]
           .join('\n')
           .trim();

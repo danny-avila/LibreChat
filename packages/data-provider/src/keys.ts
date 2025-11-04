@@ -38,6 +38,8 @@ export enum QueryKeys {
   customConfigSpeech = 'customConfigSpeech',
   prompts = 'prompts',
   prompt = 'prompt',
+  mcp_prompts = 'mcp_prompts',
+  mcp_prompt = 'mcp_prompt',
   promptGroups = 'promptGroups',
   allPromptGroups = 'allPromptGroups',
   promptGroup = 'promptGroup',

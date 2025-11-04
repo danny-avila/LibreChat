@@ -653,3 +653,21 @@ export type TBalanceResponse = {
   lastRefill?: Date;
   refillAmount?: number;
 };
+export interface MCPPromptResponse {
+  name: string;
+  description: string;
+  arguments?: [];
+  mcpServerName: string;
+  promptKey: string;
+}
+export type MCPPromptResponseArray = MCPPromptResponse[];
+export type TMCPPromptArgument = {
+  name: string;
+  mcpServerName: string;
+  category?: 'mcpServer';
+  description?: string;
+  required?: boolean;
+  author?: string;
+  authorName?: 'MCP Server';
+  promptKey: string;
+};

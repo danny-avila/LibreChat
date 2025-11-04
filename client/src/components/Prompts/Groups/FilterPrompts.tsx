@@ -34,6 +34,11 @@ export default function FilterPrompts({ className = '' }: { className?: string }
         label: localize('com_ui_shared_prompts'),
         icon: <Share2 className="h-4 w-4 text-text-primary" />,
       },
+      {
+        value: SystemCategories.MCP_PROMPTS,
+        label: localize('com_ui_mcp_prompts'),
+        icon: <User className="h-4 w-4 text-text-primary" />,
+      },
       { divider: true, value: null },
     ];
 

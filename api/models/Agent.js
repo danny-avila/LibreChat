@@ -11,7 +11,7 @@ const {
   getProjectByName,
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
-const { getMCPServerTools } = require('~/server/services/Config');
+const { getMCPServerTools, getCachedPrompts } = require('~/server/services/Config');
 const { getActions } = require('./Action');
 const { Agent } = require('~/db/models');
 
@@ -76,6 +76,7 @@ const loadEphemeralAgent = async ({ req, spec, agent_id, endpoint, model_paramet
   if (spec != null && spec !== '') {
     modelSpec = modelSpecs?.find((s) => s.name === spec) || null;
   }
+  const availablePrompts = await getCachedPrompts({ userId: req.user.id, includeGlobal: true });
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;
   const mcpServers = new Set(ephemeralAgent?.mcp);
@@ -87,7 +88,8 @@ const loadEphemeralAgent = async ({ req, spec, agent_id, endpoint, model_paramet
   }
   /** @type {string[]} */
   const tools = [];
-  if (ephemeralAgent?.execute_code === true || modelSpec?.executeCode === true) {
+  const mcp_prompts = [];
+  if (ephemeralAgent?.execute_code === true) {
     tools.push(Tools.execute_code);
   }
   if (ephemeralAgent?.file_search === true || modelSpec?.fileSearch === true) {
@@ -112,6 +114,16 @@ const loadEphemeralAgent = async ({ req, spec, agent_id, endpoint, model_paramet
       tools.push(...Object.keys(serverTools));
       addedServers.add(mcpServer);
     }
+
+    for (const promptKey of Object.keys(availablePrompts)) {
+      if (!promptKey.includes(mcp_delimiter)) {
+        continue;
+      }
+      const mcpServer = promptKey.split(mcp_delimiter)?.[1];
+      if (mcpServer && mcpServers.has(mcpServer)) {
+        mcp_prompts.push(promptKey);
+      }
+    }
   }
 
   const instructions = req.body.promptPrefix;
@@ -122,6 +134,7 @@ const loadEphemeralAgent = async ({ req, spec, agent_id, endpoint, model_paramet
     model_parameters,
     model,
     tools,
+    mcp_prompts,
   };
 
   if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {

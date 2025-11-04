@@ -12,6 +12,9 @@ function usePluginDialogHelpers() {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
   const [selectedPlugin, setSelectedPlugin] = useState<TPlugin | undefined>(undefined);
+  const [selectedMCPPlugin, setSelectedMCPPlugin] = useState<TMCPPromptArgument | undefined>(
+    undefined,
+  );
 
   const calculateColumns = (node: HTMLElement) => {
     const width = node.offsetWidth;
@@ -73,6 +76,8 @@ function usePluginDialogHelpers() {
     setShowPluginAuthForm,
     selectedPlugin,
     setSelectedPlugin,
+    selectedMCPPlugin,
+    setSelectedMCPPlugin,
   };
 }
 
