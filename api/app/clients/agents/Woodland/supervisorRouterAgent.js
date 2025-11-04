@@ -233,6 +233,16 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
     const wrappedTool = tool(
       async ({ input }) => {
         const agent = await ensureAgent();
+        if (agent?.memory?.clear) {
+          try {
+            await agent.memory.clear();
+          } catch (error) {
+            logger?.warn?.('[SupervisorRouter] Failed to clear agent memory', {
+              agent: name,
+              error: error?.message,
+            });
+          }
+        }
         const payload = typeof input === 'string' ? input : JSON.stringify(input);
         const result = await agent.invoke({ input: payload });
         if (!result || typeof result === 'string') {
