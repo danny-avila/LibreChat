@@ -36,9 +36,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     enabled: !isEphemeralAgent(agent_id),
   });
 
-  const { data: regularTools } = useAvailableToolsQuery(EModelEndpoint.agents, {
-    enabled: !isEphemeralAgent(agent_id),
-  });
+  const { data: regularTools } = useAvailableToolsQuery(EModelEndpoint.agents);
 
   const { data: allMCPPrompts } = useGetAllMCPPrompts();
 

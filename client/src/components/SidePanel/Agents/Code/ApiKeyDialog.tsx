@@ -104,6 +104,7 @@ export default function ApiKeyDialog({
             <Button
               onClick={onRevoke}
               className="bg-destructive text-white transition-all duration-200 hover:bg-destructive/80"
+              aria-label={localize('com_ui_revoke')}
             >
               {localize('com_ui_revoke')}
             </Button>

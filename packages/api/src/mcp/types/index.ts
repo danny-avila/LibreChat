@@ -166,6 +166,8 @@ export type ParsedServerConfig = MCPOptions & {
   capabilities?: string;
   tools?: string;
   mcp_prompts?: string;
+  toolFunctions?: LCAvailableTools;
+  initDuration?: number;
 };
 
 export interface BasicConnectionOptions {

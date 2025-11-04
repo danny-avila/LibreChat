@@ -134,16 +134,16 @@ const initializeAgent = async ({
   });
 
   const tokensModel =
-    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : modelOptions.model;
-  const maxTokens = optionalChainWithEmptyCheck(
-    modelOptions.maxOutputTokens,
-    modelOptions.maxTokens,
+    agent.provider === EModelEndpoint.azureOpenAI ? agent.model : options.llmConfig?.model;
+  const maxOutputTokens = optionalChainWithEmptyCheck(
+    options.llmConfig?.maxOutputTokens,
+    options.llmConfig?.maxTokens,
     0,
   );
   const agentMaxContextTokens = optionalChainWithEmptyCheck(
     maxContextTokens,
     getModelMaxTokens(tokensModel, providerEndpointMap[provider], options.endpointTokenConfig),
-    4096,
+    18000,
   );
 
   if (
@@ -203,7 +203,7 @@ const initializeAgent = async ({
     userMCPAuthMap,
     toolContextMap,
     useLegacyContent: !!options.useLegacyContent,
-    maxContextTokens: Math.round((agentMaxContextTokens - maxTokens) * 0.9),
+    maxContextTokens: Math.round((agentMaxContextTokens - maxOutputTokens) * 0.9),
   };
 };
 

@@ -9,6 +9,7 @@ import { MCPTokenStorage, MCPOAuthHandler } from '~/mcp/oauth';
 import { sanitizeUrlForLogging } from './utils';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
+import { withTimeout } from '~/utils/promise';
 
 /**
  * Factory for creating MCP connections with optional OAuth authentication.
@@ -142,6 +143,7 @@ export class MCPConnectionFactory {
           serverName: metadata.serverName,
           clientInfo: metadata.clientInfo,
         },
+        this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
       );
     };
@@ -161,6 +163,7 @@ export class MCPConnectionFactory {
               this.serverName,
               data.serverUrl || '',
               this.userId!,
+              config?.oauth_headers ?? {},
               config?.oauth,
             );
 
@@ -229,14 +232,11 @@ export class MCPConnectionFactory {
   /** Attempts to establish connection with timeout handling */
   protected async attemptToConnect(connection: MCPConnection): Promise<void> {
     const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
-    const connectionTimeout = new Promise<void>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`Connection timeout after ${connectTimeout}ms`)),
-        connectTimeout,
-      ),
+    await withTimeout(
+      this.connectTo(connection),
+      connectTimeout,
+      `Connection timeout after ${connectTimeout}ms`,
     );
-    const connectionAttempt = this.connectTo(connection);
-    await Promise.race([connectionAttempt, connectionTimeout]);
 
     if (await connection.isConnected()) return;
     logger.error(`${this.logPrefix} Failed to establish connection.`);
@@ -358,6 +358,7 @@ export class MCPConnectionFactory {
         this.serverName,
         serverUrl,
         this.userId!,
+        this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
       );
 

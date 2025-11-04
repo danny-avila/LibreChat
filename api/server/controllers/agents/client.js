@@ -8,6 +8,7 @@ const {
   Tokenizer,
   checkAccess,
   logAxiosError,
+  sanitizeTitle,
   resolveHeaders,
   getBalanceConfig,
   memoryInstructions,
@@ -211,16 +212,13 @@ class AgentClient extends BaseClient {
    * @returns {Promise<Array<Partial<MongoFile>>>}
    */
   async addImageURLs(message, attachments) {
-    const { files, text, image_urls } = await encodeAndFormat(
+    const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
       this.options.agent.provider,
       VisionModes.agents,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;
-    if (text && text.length) {
-      message.ocr = text;
-    }
     return files;
   }
 
@@ -248,19 +246,18 @@ class AgentClient extends BaseClient {
 
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
+      const latestMessage = orderedMessages[orderedMessages.length - 1];
 
       if (this.message_file_map) {
-        this.message_file_map[orderedMessages[orderedMessages.length - 1].messageId] = attachments;
+        this.message_file_map[latestMessage.messageId] = attachments;
       } else {
         this.message_file_map = {
-          [orderedMessages[orderedMessages.length - 1].messageId]: attachments,
+          [latestMessage.messageId]: attachments,
         };
       }
 
-      const files = await this.processAttachments(
-        orderedMessages[orderedMessages.length - 1],
-        attachments,
-      );
+      await this.addFileContextToMessage(latestMessage, attachments);
+      const files = await this.processAttachments(latestMessage, attachments);
 
       this.options.attachments = files;
     }
@@ -280,21 +277,21 @@ class AgentClient extends BaseClient {
         assistantName: this.options?.modelLabel,
       });
 
-      if (message.ocr && i !== orderedMessages.length - 1) {
+      if (message.fileContext && i !== orderedMessages.length - 1) {
         if (typeof formattedMessage.content === 'string') {
-          formattedMessage.content = message.ocr + '\n' + formattedMessage.content;
+          formattedMessage.content = message.fileContext + '\n' + formattedMessage.content;
         } else {
           const textPart = formattedMessage.content.find((part) => part.type === 'text');
           textPart
-            ? (textPart.text = message.ocr + '\n' + textPart.text)
-            : formattedMessage.content.unshift({ type: 'text', text: message.ocr });
+            ? (textPart.text = message.fileContext + '\n' + textPart.text)
+            : formattedMessage.content.unshift({ type: 'text', text: message.fileContext });
         }
-      } else if (message.ocr && i === orderedMessages.length - 1) {
-        systemContent = [systemContent, message.ocr].join('\n');
+      } else if (message.fileContext && i === orderedMessages.length - 1) {
+        systemContent = [systemContent, message.fileContext].join('\n');
       }
 
       const needsTokenCount =
-        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.ocr;
+        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.fileContext;
 
       /* If tokens were never counted, or, is a Vision request and the message has files, count again */
       if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
@@ -779,6 +776,7 @@ class AgentClient extends BaseClient {
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
       config = {
+        runName: 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
           last_agent_index: this.agentConfigs?.size ?? 0,
@@ -1247,6 +1245,10 @@ class AgentClient extends BaseClient {
               handleLLMEnd,
             },
           ],
+          configurable: {
+            thread_id: this.conversationId,
+            user_id: this.user ?? this.options.req.user?.id,
+          },
         },
       });
 
@@ -1284,7 +1286,7 @@ class AgentClient extends BaseClient {
         );
       });
 
-      return titleResult.title;
+      return sanitizeTitle(titleResult.title);
     } catch (err) {
       logger.error('[api/server/controllers/agents/client.js #titleConvo] Error', err);
       return;

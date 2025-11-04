@@ -1934,7 +1934,7 @@ describe('models/Agent', () => {
       getCachedPrompts.mockResolvedValue({});
 
       // Mock getMCPServerTools to return tools for each server
-      getMCPServerTools.mockImplementation(async (server) => {
+      getMCPServerTools.mockImplementation(async (_userId, server) => {
         if (server === 'server1') {
           return { tool1_mcp_server1: {} };
         } else if (server === 'server2') {
@@ -2131,7 +2131,7 @@ describe('models/Agent', () => {
         getCachedPrompts.mockResolvedValue({});
 
         // Mock getMCPServerTools to return all tools for server1
-        getMCPServerTools.mockImplementation(async (server) => {
+        getMCPServerTools.mockImplementation(async (_userId, server) => {
           if (server === 'server1') {
             return availableTools; // All 100 tools belong to server1
           }
@@ -2681,7 +2681,7 @@ describe('models/Agent', () => {
       getCachedPrompts.mockResolvedValue({});
 
       // Mock getMCPServerTools to return only tools matching the server
-      getMCPServerTools.mockImplementation(async (server) => {
+      getMCPServerTools.mockImplementation(async (_userId, server) => {
         if (server === 'server1') {
           // Only return tool that correctly matches server1 format
           return { tool_mcp_server1: {} };
