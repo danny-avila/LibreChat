@@ -66,6 +66,17 @@ export class MCPManager extends UserConnectionManager {
       );
     }
   }
+  /** Returns all available MCP prompts from app-level connections */
+  public async getAppMCPPrompts(): Promise<t.LCAvailableMCPPrompts | null> {
+    const prompts: t.LCAvailableMCPPrompts = {};
+    const configs = await registry.getAllServerConfigs();
+    for (const config of Object.values(configs)) {
+      if (config.mcp_prompts != null) {
+        Object.assign(prompts, config.mcp_prompts);
+      }
+    }
+    return prompts;
+  }
 
   /** Returns all available tool functions from app-level connections */
   public async getAppToolFunctions(): Promise<t.LCAvailableTools> {
@@ -77,29 +88,6 @@ export class MCPManager extends UserConnectionManager {
       }
     }
     return toolFunctions;
-  public getAppToolFunctions(): t.LCAvailableTools {
-    return this.serversRegistry.toolFunctions;
-  }
-
-  /** Returns all available MCP prompts from app-level connections */
-  public getAppMCPPrompts(): t.LCAvailableMCPPrompts {
-    return this.serversRegistry.mcpPrompt;
-  }
-
-  /** Returns all available tool functions from all connections available to user */
-  public async getAllToolFunctions(userId: string): Promise<t.LCAvailableTools | null> {
-    const allToolFunctions: t.LCAvailableTools = this.getAppToolFunctions() ?? {};
-    const userConnections = this.getUserConnections(userId);
-    if (!userConnections || userConnections.size === 0) {
-      return allToolFunctions;
-    }
-
-    for (const [serverName, connection] of userConnections.entries()) {
-      const toolFunctions = await this.serversRegistry.getToolFunctions(serverName, connection);
-      Object.assign(allToolFunctions, toolFunctions);
-    }
-
-    return allToolFunctions;
   }
 
   /** Returns all available tool functions from all connections available to user */
