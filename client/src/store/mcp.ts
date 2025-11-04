@@ -13,6 +13,18 @@ export const mcpValuesAtomFamily = atomFamily((conversationId: string | null) =>
 });
 
 /**
+ * Stores disabled MCP tools per conversation and server
+ */
+export const mcpDisabledToolsAtomFamily = atomFamily((conversationId: string | null) => {
+  const key = conversationId ?? Constants.NEW_CONVO;
+  const storageKey = `${LocalStorageKeys.LAST_MCP_DISABLED_TOOLS_}${key}`;
+
+  return atomWithStorage<Record<string, string[]>>(storageKey, {}, undefined, {
+    getOnInit: true,
+  });
+});
+
+/**
  * Global storage atom for MCP pinned state (shared across all conversations)
  */
 export const mcpPinnedAtom = atomWithStorage<boolean>(LocalStorageKeys.PIN_MCP_, true, undefined, {

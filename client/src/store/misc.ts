@@ -27,10 +27,16 @@ const chatBadges = atomWithLocalStorage<Pick<BadgeItem, 'id'>[]>('chatBadges', [
   // { id: '2' },
 ]);
 
+const modelAvailability = atom<Record<string, string>>({
+  key: 'modelAvailability',
+  default: {},
+});
+
 export default {
   hideBannerHint,
   messageAttachmentsMap,
   queriesEnabled,
   isEditingBadges,
   chatBadges,
+  modelAvailability,
 };

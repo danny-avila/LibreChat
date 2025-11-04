@@ -10,6 +10,42 @@ import { useBadgeRowContext } from '~/Providers';
 import { useMCPToolsQuery } from '~/data-provider';
 import { cn } from '~/utils';
 
+type TogglePillProps = {
+  enabled: boolean;
+  disabled?: boolean;
+  onToggle: (next: boolean) => void;
+  label: string;
+};
+
+function TogglePill({ enabled, disabled = false, onToggle, label }: TogglePillProps) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (disabled) {
+          return;
+        }
+        onToggle(!enabled);
+      }}
+      aria-pressed={enabled}
+      aria-label={label}
+      disabled={disabled}
+      className={cn(
+        'relative inline-flex h-5 w-10 items-center rounded-full border border-border-light transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong',
+        enabled ? 'bg-emerald-400 dark:bg-emerald-500' : 'bg-surface-tertiary',
+        disabled && 'cursor-not-allowed opacity-50',
+      )}
+    >
+      <span
+        className={cn(
+          'ml-1 inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+          enabled ? 'translate-x-4' : 'translate-x-0',
+        )}
+      />
+    </button>
+  );
+}
+
 function MCPSelectContent() {
   const { conversationId, mcpServerManager } = useBadgeRowContext();
   const {
@@ -22,6 +58,8 @@ function MCPSelectContent() {
     batchToggleServers,
     getConfigDialogProps,
     getServerStatusIconProps,
+    setToolEnabled,
+    isToolEnabled,
   } = mcpServerManager;
 
   const queryClient = useQueryClient();
@@ -124,6 +162,38 @@ function MCPSelectContent() {
   const toolsMenuStore = Ariakit.useMenuStore({ placement: 'bottom-end', gutter: 12 });
   const isToolsMenuOpen = toolsMenuStore.useState('open');
 
+  useEffect(() => {
+    if (!isToolsMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement;
+      const menuElement = toolsMenuStore.getState().contentElement;
+      const triggerElement = toolsMenuStore.getState().triggerElement;
+
+      if (!menuElement) {
+        return;
+      }
+
+      if (menuElement.contains(target)) {
+        return;
+      }
+
+      if (triggerElement && triggerElement.contains(target)) {
+        return;
+      }
+
+      toolsMenuStore.hide();
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+    };
+  }, [toolsMenuStore, isToolsMenuOpen]);
+
   const refreshTools = useCallback(
     async ({ silent = false, animate = false }: { silent?: boolean; animate?: boolean } = {}) => {
       if (animate) {
@@ -160,9 +230,17 @@ function MCPSelectContent() {
     [queryClient, showToast, localize],
   );
 
+  const hasInitializedToolsRef = useRef(false);
+
   useEffect(() => {
-    if (isToolsMenuOpen) {
+    if (isToolsMenuOpen && !hasInitializedToolsRef.current) {
+      hasInitializedToolsRef.current = true;
       void refreshTools({ silent: true });
+      return;
+    }
+
+    if (!isToolsMenuOpen && hasInitializedToolsRef.current) {
+      hasInitializedToolsRef.current = false;
     }
   }, [isToolsMenuOpen, refreshTools]);
 
@@ -337,53 +415,63 @@ function MCPSelectContent() {
                 </div>
               ) : (
                 <div className="flex max-h-[380px] flex-col gap-3 overflow-y-auto pr-1">
-                  {filteredSections.map((section) => (
-                    <div
-                      key={section.serverName}
-                      className="space-y-3 rounded-2xl border border-border-light bg-surface-primary/80 p-3 shadow-sm"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-border-light bg-surface-tertiary text-xs font-semibold uppercase text-text-secondary">
-                            {section.serverName.slice(0, 2)}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-text-primary">
-                              {section.serverName}
-                            </p>
-                            {section.parentServer && section.parentServer !== section.serverName ? (
-                              <p className="truncate text-[0.7rem] text-text-tertiary">
-                                {localize('com_ui_mcp_via_server', { 0: section.parentServer })}
-                              </p>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="text-[0.65rem] uppercase text-text-tertiary">
-                          {localize('com_ui_mcp_tools_summary', { 0: section.tools.length })}
-                        </div>
-                      </div>
+                  {filteredSections.map((section) => {
+                    const controllingServerName = selectedServers.has(section.serverName)
+                      ? section.serverName
+                      : section.parentServer && selectedServers.has(section.parentServer)
+                        ? section.parentServer
+                        : null;
 
-                      <div className="space-y-2">
-                        {section.tools.map((tool, index) => (
-                          <div
-                            key={tool.pluginKey}
-                            className={cn(
-                              'space-y-1 border-b border-border-light pb-2',
-                              index === section.tools.length - 1 && 'border-none pb-0',
-                            )}
-                          >
-                            <p className="truncate text-sm font-semibold text-text-primary">
-                              {tool.name}
-                            </p>
-                            <p className="text-[0.65rem] uppercase text-text-tertiary">
-                              {tool.source || section.parentServer || section.serverName}
-                              {tool.version ? ` • v${tool.version}` : ''}
-                            </p>
+                    const isServerInteractive =
+                      controllingServerName != null &&
+                      selectedServers.has(controllingServerName) &&
+                      !isInitializing(controllingServerName);
+
+                    return (
+                      <div
+                        key={section.serverName}
+                        className="space-y-2 rounded-2xl border border-border-light bg-surface-primary/80 p-3 shadow-sm"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-tertiary text-xs font-semibold uppercase text-text-secondary">
+                              {section.serverName.slice(0, 2)}
+                            </div>
+                            <span className="truncate text-sm font-semibold text-text-primary">
+                              {section.serverName}
+                            </span>
                           </div>
-                        ))}
+                          <span className="text-xs text-text-tertiary">
+                            {localize('com_ui_mcp_tools_summary', { 0: section.tools.length })}
+                          </span>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          {section.tools.map((tool) => {
+                            const serverKey = controllingServerName ?? section.serverName;
+                            const enabled = isToolEnabled(serverKey, tool.pluginKey);
+
+                            return (
+                              <div
+                                key={tool.pluginKey}
+                                className="flex items-center justify-between rounded-lg border border-border-light bg-surface-primary px-3 py-2"
+                              >
+                                <span className="truncate text-sm text-text-primary">
+                                  {tool.name}
+                                </span>
+                                <TogglePill
+                                  enabled={enabled}
+                                  disabled={!isServerInteractive}
+                                  onToggle={(next) => setToolEnabled(serverKey, tool.pluginKey, next)}
+                                  label={tool.name}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

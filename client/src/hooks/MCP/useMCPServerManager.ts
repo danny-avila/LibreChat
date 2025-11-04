@@ -25,7 +25,14 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const { data: startupConfig } = useGetStartupConfig();
-  const { mcpValues, setMCPValues, isPinned, setIsPinned } = useMCPSelect({ conversationId });
+  const {
+    mcpValues,
+    setMCPValues,
+    isPinned,
+    setIsPinned,
+    mcpDisabledTools,
+    setMCPDisabledTools,
+  } = useMCPSelect({ conversationId });
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
@@ -453,6 +460,93 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     [mcpValues, setMCPValues, connectionStatus, initializeServer, isInitializing],
   );
 
+  const setToolEnabled = useCallback(
+    (serverName: string | null | undefined, pluginKey: string | null | undefined, enabled: boolean) => {
+      if (!serverName || !pluginKey) {
+        return;
+      }
+
+      setMCPDisabledTools((prev) => {
+        const disabledList = prev[serverName] ?? [];
+        const currentlyEnabled = !disabledList.includes(pluginKey);
+        if (enabled === currentlyEnabled) {
+          return prev;
+        }
+
+        const next = { ...prev };
+        const current = new Set(next[serverName] ?? []);
+
+        if (enabled) {
+          current.delete(pluginKey);
+        } else {
+          current.add(pluginKey);
+        }
+
+        if (current.size === 0) {
+          delete next[serverName];
+        } else {
+          next[serverName] = Array.from(current);
+        }
+
+        return next;
+      });
+    },
+    [setMCPDisabledTools],
+  );
+
+  const setAllToolsEnabled = useCallback(
+    (serverName: string | null | undefined, pluginKeys: string[], enabled: boolean) => {
+      if (!serverName) {
+        return;
+      }
+
+      setMCPDisabledTools((prev) => {
+        const next = { ...prev };
+
+        if (enabled) {
+          if (!next[serverName]) {
+            return prev;
+          }
+          delete next[serverName];
+          return next;
+        }
+
+        if (pluginKeys.length === 0) {
+          return prev;
+        }
+
+        const uniqueKeys = Array.from(new Set(pluginKeys));
+        const existing = next[serverName] ?? [];
+        const alreadyMatches =
+          existing.length === uniqueKeys.length &&
+          uniqueKeys.every((key) => existing.includes(key));
+
+        if (alreadyMatches) {
+          return prev;
+        }
+
+        next[serverName] = uniqueKeys;
+        return next;
+      });
+    },
+    [setMCPDisabledTools],
+  );
+
+  const isToolEnabled = useCallback(
+    (serverName: string | null | undefined, pluginKey: string) => {
+      if (!serverName) {
+        return true;
+      }
+
+      const disabled = mcpDisabledTools[serverName];
+      if (!disabled) {
+        return true;
+      }
+      return !disabled.includes(pluginKey);
+    },
+    [mcpDisabledTools],
+  );
+
   const handleConfigSave = useCallback(
     (targetName: string, authData: Record<string, string>) => {
       if (selectedToolForConfig && selectedToolForConfig.name === targetName) {
@@ -641,6 +735,10 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     batchToggleServers,
     toggleServerSelection,
     localize,
+    mcpDisabledTools,
+    setToolEnabled,
+    setAllToolsEnabled,
+    isToolEnabled,
 
     isConfigModalOpen,
     handleDialogOpenChange,

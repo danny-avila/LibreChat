@@ -1649,6 +1649,8 @@ export enum LocalStorageKeys {
   SHOW_ANALYSIS_CODE = 'showAnalysisCode',
   /** Last selected MCP values per conversation ID */
   LAST_MCP_ = 'LAST_MCP_',
+  /** Disabled MCP tools per conversation ID */
+  LAST_MCP_DISABLED_TOOLS_ = 'LAST_MCP_DISABLED_TOOLS_',
   /** Last checked toggle for Code Interpreter API per conversation ID */
   LAST_CODE_TOGGLE_ = 'LAST_CODE_TOGGLE_',
   /** Last checked toggle for Web Search per conversation ID */

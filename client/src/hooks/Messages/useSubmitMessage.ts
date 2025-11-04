@@ -2,8 +2,10 @@ import { v4 } from 'uuid';
 import { useCallback } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Constants, replaceSpecialVars } from 'librechat-data-provider';
+import { useToastContext } from '@librechat/client';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useLocalize, useRequiresKey } from '~/hooks';
 import store from '~/store';
 
 const appendIndex = (index: number, value?: string) => {
@@ -18,6 +20,10 @@ export default function useSubmitMessage() {
   const methods = useChatFormContext();
   const { ask, index, getMessages, setMessages, latestMessage } = useChatContext();
   const { addedIndex, ask: askAdditional, conversation: addedConvo } = useAddedChatContext();
+  const { requiresKey, endpointLabel, expiryTime, isExpired } = useRequiresKey();
+  const { showToast } = useToastContext();
+  const localize = useLocalize();
+  const displayEndpointLabel = endpointLabel || localize('com_endpoint_ai');
 
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
   const activeConvos = useRecoilValue(store.allConversationsSelector);
@@ -28,6 +34,27 @@ export default function useSubmitMessage() {
       if (!data) {
         return console.warn('No data provided to submitMessage');
       }
+
+      if (requiresKey) {
+        let message = localize('com_endpoint_config_placeholder');
+        if (isExpired && expiryTime && expiryTime !== 'never') {
+          try {
+            const formatted = new Date(expiryTime).toLocaleString();
+            message = localize('com_error_expired_user_key', {
+              0: displayEndpointLabel,
+              1: formatted,
+            });
+          } catch {
+            message = localize('com_error_expired_user_key', {
+              0: displayEndpointLabel,
+              1: expiryTime,
+            });
+          }
+        }
+        showToast({ message, status: 'error' });
+        return;
+      }
+
       const rootMessages = getMessages();
       const isLatestInRootMessages = rootMessages?.some(
         (message) => message.messageId === latestMessage?.messageId,
@@ -76,6 +103,12 @@ export default function useSubmitMessage() {
       activeConvos,
       askAdditional,
       latestMessage,
+      requiresKey,
+      displayEndpointLabel,
+      expiryTime,
+      isExpired,
+      localize,
+      showToast,
     ],
   );
 
