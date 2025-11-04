@@ -10,6 +10,7 @@ const {
   getAppConfig,
 } = require('~/server/services/Config');
 const { getMCPManager } = require('~/config');
+const { mcpServersRegistry } = require('@librechat/api');
 
 /**
  * Get all MCP tools available to the user
@@ -65,7 +66,7 @@ const getMCPTools = async (req, res) => {
 
         // Get server config once
         const serverConfig = appConfig.mcpConfig[serverName];
-        const rawServerConfig = mcpManager.getRawConfig(serverName);
+        const rawServerConfig = await mcpServersRegistry.getServerConfig(serverName, userId);
 
         // Initialize server object with all server-level data
         const server = {
