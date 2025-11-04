@@ -94,7 +94,6 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
         // Proxy configuration failed, but continue without it
       }
     }
-    
     return result;
   }
 
