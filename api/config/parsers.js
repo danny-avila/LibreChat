@@ -67,35 +67,6 @@ const redactFormat = winston.format((info) => {
 });
 
 /**
- * Truncates long strings, especially base64 image data, within log messages.
- *
- * @param {any} value - The value to be inspected and potentially truncated.
- * @param {number} [length] - The length at which to truncate the value. Default: 100.
- * @returns {any} - The truncated or original value.
- */
-const truncateLongStrings = (value, length = 100) => {
-  if (typeof value === 'string') {
-    return value.length > length ? value.substring(0, length) + '... [truncated]' : value;
-  }
-
-  return value;
-};
-
-/**
- * An array mapping function that truncates long strings (objects converted to JSON strings).
- * @param {any} item - The item to be condensed.
- * @returns {any} - The condensed item.
- */
-const condenseArray = (item) => {
-  if (typeof item === 'string') {
-    return truncateLongStrings(JSON.stringify(item));
-  } else if (typeof item === 'object') {
-    return truncateLongStrings(JSON.stringify(item));
-  }
-  return item;
-};
-
-/**
  * Formats log messages for debugging purposes.
  * - Truncates long strings within log messages.
  * - Condenses arrays by truncating long strings and objects as strings within array items.
@@ -118,7 +89,7 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
     return `${timestamp} ${level}: ${JSON.stringify(message)}`;
   }
 
-  let msg = `${timestamp} ${level}: ${truncateLongStrings(message?.trim(), 150)}`;
+  let msg = `${timestamp} ${level}: ${message?.trim()}`;
   try {
     if (level !== 'debug') {
       return msg;
@@ -135,7 +106,7 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
     }
 
     if (debugValue && Array.isArray(debugValue)) {
-      msg += `\n${JSON.stringify(debugValue.map(condenseArray))}`;
+      msg += `\n${JSON.stringify(debugValue)}`;
       return msg;
     }
 
@@ -165,14 +136,12 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
       const currentKey = this?.key ?? 'unknown';
 
       if (this.isLeaf && typeof value === 'string') {
-        const truncatedText = truncateLongStrings(value);
-        msg += `\n${tabs}${parentKey}${currentKey}: ${JSON.stringify(truncatedText)},`;
+        msg += `\n${tabs}${parentKey}${currentKey}: ${JSON.stringify(value)},`;
       } else if (this.notLeaf && Array.isArray(value) && value.length > 0) {
         const currentMessage = `\n${tabs}// ${value.length} ${currentKey.replace(/s$/, '')}(s)`;
         this.update(currentMessage, true);
         msg += currentMessage;
-        const stringifiedArray = value.map(condenseArray);
-        msg += `\n${tabs}${parentKey}${currentKey}: [${stringifiedArray}],`;
+        msg += `\n${tabs}${parentKey}${currentKey}: ${JSON.stringify(value)},`;
       } else if (this.isLeaf && typeof value === 'function') {
         msg += `\n${tabs}${parentKey}${currentKey}: function,`;
       } else if (this.isLeaf) {
