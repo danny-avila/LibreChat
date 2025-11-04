@@ -359,6 +359,7 @@
   "com_endpoint_use_search_grounding": "Antworten mit Google-Suche anreichern",
   "com_endpoint_verbosity": "Ausführlichkeit",
   "com_error_endpoint_models_not_loaded": "Modelle für {{0}} konnten nicht geladen werden. Bitte lade die Seite neu und versuch es erneut.",
+  "com_error_endpoint_no_local_models": "Es wurden keine lokalen Modelle gefunden. Bitte lade Modelle für Ollama aus unserer LLM-Bibliothek herunter und versuch es erneut.",
   "com_error_expired_user_key": "Der angegebene API-Key für {{0}} ist am {{1}} abgelaufen. Bitte gebe einen neuen API-Key ein und versuche es erneut.",
   "com_error_files_dupe": "Doppelte Datei erkannt.",
   "com_error_files_empty": "Leere Dateien sind nicht zulässig",

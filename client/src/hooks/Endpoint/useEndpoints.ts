@@ -5,6 +5,7 @@ import {
   alternateName,
   EModelEndpoint,
   PermissionTypes,
+  KnownEndpoints,
 } from 'librechat-data-provider';
 import type {
   TEndpointsConfig,
@@ -53,23 +54,46 @@ export const useEndpoints = ({
     [assistantsMap],
   );
 
+  const allowedEndpointValues = useMemo(
+    () =>
+      new Set<string>([
+        EModelEndpoint.openAI,
+        EModelEndpoint.anthropic,
+        EModelEndpoint.google,
+        KnownEndpoints.ollama,
+      ]),
+    [],
+  );
+
   const filteredEndpoints = useMemo(() => {
     if (!interfaceConfig.modelSelect) {
       return [];
     }
-    const result: EModelEndpoint[] = [];
+    const result: Array<EModelEndpoint | string> = [];
     for (let i = 0; i < endpoints.length; i++) {
-      if (endpoints[i] === EModelEndpoint.agents && !hasAgentAccess) {
+      const currentEndpoint = endpoints[i];
+      const endpointKey = String(currentEndpoint);
+
+      if (!allowedEndpointValues.has(endpointKey)) {
         continue;
       }
-      if (includedEndpoints.size > 0 && !includedEndpoints.has(endpoints[i])) {
+      if (currentEndpoint === EModelEndpoint.agents && !hasAgentAccess) {
         continue;
       }
-      result.push(endpoints[i]);
+      if (includedEndpoints.size > 0 && !includedEndpoints.has(currentEndpoint)) {
+        continue;
+      }
+      result.push(currentEndpoint);
     }
 
     return result;
-  }, [endpoints, hasAgentAccess, includedEndpoints, interfaceConfig.modelSelect]);
+  }, [
+    endpoints,
+    hasAgentAccess,
+    includedEndpoints,
+    interfaceConfig.modelSelect,
+    allowedEndpointValues,
+  ]);
 
   const endpointRequiresUserKey = useCallback(
     (ep: string) => {
@@ -79,11 +103,12 @@ export const useEndpoints = ({
   );
 
   const mappedEndpoints: Endpoint[] = useMemo(() => {
-    return filteredEndpoints.map((ep) => {
+    const mapped = filteredEndpoints.map((ep) => {
       const endpointType = getEndpointField(endpointsConfig, ep, 'type');
       const iconKey = getIconKey({ endpoint: ep, endpointsConfig, endpointType });
       const Icon = icons[iconKey];
       const endpointIconURL = getEndpointField(endpointsConfig, ep, 'iconURL');
+      const requiresKey = !!getEndpointField(endpointsConfig, ep, 'userProvide');
       const hasModels =
         (ep === EModelEndpoint.agents && (agents?.length ?? 0) > 0) ||
         (ep === EModelEndpoint.assistants && assistants?.length > 0) ||
@@ -104,6 +129,7 @@ export const useEndpoints = ({
               endpoint: ep,
             })
           : null,
+        requiresKey,
       };
 
       // Handle agents case
@@ -177,6 +203,10 @@ export const useEndpoints = ({
 
       return result;
     });
+
+    mapped.sort((a, b) => Number(Boolean(a.requiresKey)) - Number(Boolean(b.requiresKey)));
+
+    return mapped;
   }, [filteredEndpoints, endpointsConfig, modelsQuery.data, agents, assistants, azureAssistants]);
 
   return {

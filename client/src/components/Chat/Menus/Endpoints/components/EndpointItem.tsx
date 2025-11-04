@@ -185,12 +185,29 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
       </Menu>
     );
   } else {
+    const isUnavailable = !endpoint.hasModels && (!endpoint.models || endpoint.models.length === 0);
+    const unavailableMessage = isUnavailable
+      ? endpoint.value === 'ollama'
+        ? localize('com_error_endpoint_no_local_models')
+        : localize('com_error_endpoint_models_not_loaded', { 0: endpoint.label })
+      : null;
     return (
       <MenuItem
         id={`endpoint-${endpoint.value}-menu`}
         key={`endpoint-${endpoint.value}-item`}
-        onClick={() => handleSelectEndpoint(endpoint)}
-        className="flex h-8 w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2 text-sm"
+        disabled={isLocked || isUnavailable}
+        onClick={(event) => {
+          if (isLocked || isUnavailable) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          handleSelectEndpoint(endpoint);
+        }}
+        className={cn(
+          'flex w-full flex-col gap-1 rounded-xl px-3 py-2 text-sm',
+          isLocked || isUnavailable ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+        )}
       >
         <div className="group flex w-full min-w-0 items-center justify-between">
           {renderIconLabel()}
@@ -217,6 +234,11 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
             )}
           </div>
         </div>
+        {isUnavailable && (
+          <div className="mt-2 w-full text-left text-xs text-text-secondary">
+            {unavailableMessage}
+          </div>
+        )}
       </MenuItem>
     );
   }
