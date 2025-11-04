@@ -29,7 +29,7 @@ jest.mock('~/components/SharePoint', () => ({
 }));
 
 jest.mock('@librechat/client', () => {
-  const React = require('react');
+  const React = jest.requireActual('react');
   return {
     FileUpload: React.forwardRef(({ children, handleFileChange }: any, ref: any) => (
       <div data-testid="file-upload">
@@ -78,7 +78,9 @@ const mockUseAgentCapabilities = jest.requireMock('~/hooks').useAgentCapabilitie
 const mockUseGetAgentsConfig = jest.requireMock('~/hooks').useGetAgentsConfig;
 const mockUseFileHandling = jest.requireMock('~/hooks').useFileHandling;
 const mockUseLocalize = jest.requireMock('~/hooks').useLocalize;
-const mockUseSharePointFileHandling = jest.requireMock('~/hooks/Files/useSharePointFileHandling').default;
+const mockUseSharePointFileHandling = jest.requireMock(
+  '~/hooks/Files/useSharePointFileHandling',
+).default;
 const mockUseGetStartupConfig = jest.requireMock('~/data-provider').useGetStartupConfig;
 
 describe('AttachFileMenu', () => {
@@ -96,13 +98,13 @@ describe('AttachFileMenu', () => {
     // Default mock implementations
     mockUseLocalize.mockReturnValue((key: string) => {
       const translations: Record<string, string> = {
-        'com_ui_upload_provider': 'Upload to Provider',
-        'com_ui_upload_image_input': 'Upload Image',
-        'com_ui_upload_ocr_text': 'Upload OCR Text',
-        'com_ui_upload_file_search': 'Upload for File Search',
-        'com_ui_upload_code_files': 'Upload Code Files',
-        'com_sidepanel_attach_files': 'Attach Files',
-        'com_files_upload_sharepoint': 'Upload from SharePoint',
+        com_ui_upload_provider: 'Upload to Provider',
+        com_ui_upload_image_input: 'Upload Image',
+        com_ui_upload_ocr_text: 'Upload OCR Text',
+        com_ui_upload_file_search: 'Upload for File Search',
+        com_ui_upload_code_files: 'Upload Code Files',
+        com_sidepanel_attach_files: 'Attach Files',
+        com_files_upload_sharepoint: 'Upload from SharePoint',
       };
       return translations[key] || key;
     });
@@ -150,12 +152,9 @@ describe('AttachFileMenu', () => {
     return render(
       <QueryClientProvider client={queryClient}>
         <RecoilRoot>
-          <AttachFileMenu
-            conversationId="test-conversation"
-            {...props}
-          />
+          <AttachFileMenu conversationId="test-conversation" {...props} />
         </RecoilRoot>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
   };
 
@@ -553,6 +552,7 @@ describe('AttachFileMenu', () => {
       fireEvent.click(button);
 
       const uploadProviderButton = screen.getByText('Upload to Provider');
+      expect(uploadProviderButton).toBeInTheDocument();
       fireEvent.click(uploadProviderButton);
 
       // Implementation detail - multimodal type is used
