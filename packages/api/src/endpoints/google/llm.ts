@@ -196,7 +196,6 @@ export function getGoogleConfig(
   if (options.proxy) {
     (llmConfig as GoogleClientOptions).proxyUrl = options.proxy;
   }
-
   const tools: GoogleAIToolType[] = [];
 
   if (web_search) {
