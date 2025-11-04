@@ -4,6 +4,7 @@ import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
+import { useEndpointKeyStatus } from '~/hooks/Endpoint';
 
 interface ModelSpecItemProps {
   spec: TModelSpec;
@@ -13,12 +14,24 @@ interface ModelSpecItemProps {
 export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
   const { handleSelectSpec, endpointsConfig } = useModelSelectorContext();
   const { showIconInMenu = true } = spec;
+  const specEndpoint = spec.preset?.endpoint ?? spec.group ?? null;
+  const { requiresKey, keyProvided } = useEndpointKeyStatus(specEndpoint, endpointsConfig);
+  const isLocked = requiresKey && !keyProvided;
   return (
     <MenuItem
       key={spec.name}
-      onClick={() => handleSelectSpec(spec)}
+      disabled={isLocked}
+      onClick={(event) => {
+        if (isLocked) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        handleSelectSpec(spec);
+      }}
       className={cn(
-        'flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm',
+        'flex w-full items-center justify-between rounded-lg px-2 text-sm',
+        isLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
       )}
     >
       <div
