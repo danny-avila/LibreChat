@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useAtom } from 'jotai';
 import isEqual from 'lodash/isEqual';
 import { useRecoilState } from 'recoil';
@@ -12,6 +12,29 @@ import {
 import { useGetStartupConfig } from '~/data-provider';
 import { setTimestamp } from '~/utils/timestamps';
 
+const sanitizeDisabledToolsMap = (value?: Record<string, string[]> | null) => {
+  const sanitized: Record<string, string[]> = {};
+
+  if (!value) {
+    return sanitized;
+  }
+
+  Object.entries(value).forEach(([serverName, tools]) => {
+    if (!Array.isArray(tools)) {
+      return;
+    }
+
+    const filtered = tools.filter((tool) => typeof tool === 'string' && tool.trim().length > 0);
+    if (filtered.length === 0) {
+      return;
+    }
+
+    sanitized[serverName] = Array.from(new Set(filtered));
+  });
+
+  return sanitized;
+};
+
 export function useMCPSelect({ conversationId }: { conversationId?: string | null }) {
   const key = conversationId ?? Constants.NEW_CONVO;
   const { data: startupConfig } = useGetStartupConfig();
@@ -23,6 +46,7 @@ export function useMCPSelect({ conversationId }: { conversationId?: string | nul
   const [mcpValues, setMCPValuesRaw] = useAtom(mcpValuesAtomFamily(key));
   const [mcpDisabledTools, setMCPDisabledToolsRaw] = useAtom(mcpDisabledToolsAtomFamily(key));
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
+  const skipEphemeralSyncRef = useRef(false);
 
   // Sync Jotai state with ephemeral agent state
   useEffect(() => {
@@ -37,30 +61,31 @@ export function useMCPSelect({ conversationId }: { conversationId?: string | nul
   }, [ephemeralAgent?.mcp, setMCPValuesRaw, configuredServers]);
 
   useEffect(() => {
-    const disabledTools = ephemeralAgent?.mcpDisabledTools ?? {};
-    const sanitized: Record<string, string[]> = {};
-    Object.entries(disabledTools).forEach(([serverName, tools]) => {
-      if (Array.isArray(tools) && tools.length > 0) {
-        sanitized[serverName] = Array.from(new Set(tools));
-      }
-    });
+    if (ephemeralAgent?.mcpDisabledTools === undefined) {
+      skipEphemeralSyncRef.current = false;
+      return;
+    }
 
-    setMCPDisabledToolsRaw((prev) => {
-      if (isEqual(prev, sanitized)) {
-        return prev;
-      }
-      return sanitized;
-    });
-  }, [ephemeralAgent?.mcpDisabledTools, setMCPDisabledToolsRaw]);
+    const sanitized = sanitizeDisabledToolsMap(ephemeralAgent.mcpDisabledTools);
+
+    if (Object.keys(sanitized).length === 0 && Object.keys(mcpDisabledTools).length > 0) {
+      skipEphemeralSyncRef.current = false;
+      return;
+    }
+
+    if (skipEphemeralSyncRef.current) {
+      skipEphemeralSyncRef.current = false;
+      return;
+    }
+
+    if (!isEqual(mcpDisabledTools, sanitized)) {
+      setMCPDisabledToolsRaw(sanitized);
+    }
+  }, [ephemeralAgent?.mcpDisabledTools, mcpDisabledTools, setMCPDisabledToolsRaw]);
 
   useEffect(() => {
     setEphemeralAgent((prev) => {
-      const sanitizedDisabledTools: Record<string, string[]> = {};
-      Object.entries(mcpDisabledTools).forEach(([serverName, tools]) => {
-        if (Array.isArray(tools) && tools.length > 0) {
-          sanitizedDisabledTools[serverName] = Array.from(new Set(tools));
-        }
-      });
+      const sanitizedDisabledTools = sanitizeDisabledToolsMap(mcpDisabledTools);
 
       const hasMcpChanged = !isEqual(prev?.mcp, mcpValues);
       const hasDisabledChanged = !isEqual(prev?.mcpDisabledTools ?? {}, sanitizedDisabledTools);
@@ -102,33 +127,24 @@ export function useMCPSelect({ conversationId }: { conversationId?: string | nul
         | Record<string, string[]>
         | ((prev: Record<string, string[]>) => Record<string, string[]> | null | undefined),
     ) => {
-      let nextValue: Record<string, string[]> | null | undefined;
-
-      if (typeof value === 'function') {
-        nextValue = value(mcpDisabledTools);
-      } else {
-        nextValue = value;
-      }
+      const nextValue =
+        typeof value === 'function' ? value(mcpDisabledTools) : value;
 
       if (nextValue == null || typeof nextValue !== 'object') {
         return;
       }
 
-      const sanitized: Record<string, string[]> = {};
-      Object.entries(nextValue).forEach(([serverName, tools]) => {
-        if (Array.isArray(tools) && tools.length > 0) {
-          sanitized[serverName] = Array.from(new Set(tools));
-        }
-      });
+      const sanitized = sanitizeDisabledToolsMap(nextValue);
 
-      setMCPDisabledToolsRaw((prev) => {
-        if (isEqual(prev, sanitized)) {
-          return prev;
-        }
-        return sanitized;
-      });
+      if (isEqual(mcpDisabledTools, sanitized)) {
+        skipEphemeralSyncRef.current = false;
+        return;
+      }
+
+      skipEphemeralSyncRef.current = true;
+      setMCPDisabledToolsRaw(sanitized);
     },
-    [setMCPDisabledToolsRaw],
+    [mcpDisabledTools, setMCPDisabledToolsRaw],
   );
 
   return {
