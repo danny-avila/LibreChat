@@ -2,13 +2,50 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import * as Ariakit from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Wrench, ChevronDown, Search } from 'lucide-react';
-import { MultiSelect, MCPIcon, Button, useToastContext } from '@librechat/client';
+import { MCPIcon, Button, useToastContext } from '@librechat/client';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { useBadgeRowContext } from '~/Providers';
 import { useMCPToolsQuery } from '~/data-provider';
 import { cn } from '~/utils';
+
+function useMenuOutsideClickClose(
+  menuStore: ReturnType<typeof Ariakit.useMenuStore>,
+  isOpen: boolean,
+) {
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement;
+      const menuElement = menuStore.getState().contentElement;
+      const triggerElement = menuStore.getState().triggerElement;
+
+      if (!menuElement) {
+        return;
+      }
+
+      if (menuElement.contains(target)) {
+        return;
+      }
+
+      if (triggerElement && triggerElement.contains(target)) {
+        return;
+      }
+
+      menuStore.hide();
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+    };
+  }, [menuStore, isOpen]);
+}
 
 type TogglePillProps = {
   enabled: boolean;
@@ -52,14 +89,14 @@ function MCPSelectContent() {
     localize,
     isPinned,
     mcpValues,
-    isInitializing,
     placeholderText,
     configuredServers,
-    batchToggleServers,
     getConfigDialogProps,
     getServerStatusIconProps,
     setToolEnabled,
     isToolEnabled,
+    toggleServerSelection,
+    isInitializing,
   } = mcpServerManager;
 
   const queryClient = useQueryClient();
@@ -84,6 +121,14 @@ function MCPSelectContent() {
         configured: configuredServers.includes(name),
       }));
   }, [configuredServers, mcpToolsData?.servers]);
+
+  const availableServersMap = useMemo(() => {
+    const map = new Map<string, (typeof availableServers)[number]>();
+    availableServers.forEach((info) => {
+      map.set(info.name, info);
+    });
+    return map;
+  }, [availableServers]);
 
   const selectedServers = useMemo(() => new Set(mcpValues ?? []), [mcpValues]);
 
@@ -159,40 +204,13 @@ function MCPSelectContent() {
 
   const hasSelection = selectedServers.size > 0;
   const showToolsButton = toolCount > 0;
+  const serverMenuStore = Ariakit.useMenuStore({ placement: 'bottom-start', gutter: 12 });
   const toolsMenuStore = Ariakit.useMenuStore({ placement: 'bottom-end', gutter: 12 });
+  const isServerMenuOpen = serverMenuStore.useState('open');
   const isToolsMenuOpen = toolsMenuStore.useState('open');
 
-  useEffect(() => {
-    if (!isToolsMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as HTMLElement;
-      const menuElement = toolsMenuStore.getState().contentElement;
-      const triggerElement = toolsMenuStore.getState().triggerElement;
-
-      if (!menuElement) {
-        return;
-      }
-
-      if (menuElement.contains(target)) {
-        return;
-      }
-
-      if (triggerElement && triggerElement.contains(target)) {
-        return;
-      }
-
-      toolsMenuStore.hide();
-    };
-
-    document.addEventListener('pointerdown', handlePointerDown);
-
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-    };
-  }, [toolsMenuStore, isToolsMenuOpen]);
+  useMenuOutsideClickClose(serverMenuStore, isServerMenuOpen);
+  useMenuOutsideClickClose(toolsMenuStore, isToolsMenuOpen);
 
   const refreshTools = useCallback(
     async ({ silent = false, animate = false }: { silent?: boolean; animate?: boolean } = {}) => {
@@ -273,62 +291,96 @@ function MCPSelectContent() {
     [localize],
   );
 
-  const renderItemContent = useCallback(
-    (serverName: string, defaultContent: React.ReactNode) => {
-      const statusIconProps = getServerStatusIconProps(serverName);
-      const isServerInitializing = isInitializing(serverName);
-
-      const mainContentWrapper = (
-        <button
-          type="button"
-          className={cn(
-            'flex flex-grow items-center rounded bg-transparent p-0 text-left transition-colors focus:outline-none',
-            isServerInitializing && 'opacity-50',
-          )}
-          tabIndex={0}
-          disabled={isServerInitializing}
-        >
-          {defaultContent}
-        </button>
-      );
-
-      const statusIcon = statusIconProps && <MCPServerStatusIcon {...statusIconProps} />;
-
-      if (statusIcon) {
-        return (
-          <div className="flex w-full items-center justify-between">
-            {mainContentWrapper}
-            <div className="ml-2 flex items-center">{statusIcon}</div>
-          </div>
-        );
-      }
-
-      return mainContentWrapper;
-    },
-    [getServerStatusIconProps, isInitializing],
-  );
-
   if (!isPinned && !hasSelection) {
     return null;
   }
 
   const configDialogProps = getConfigDialogProps();
+  const serverButtonLabel = renderSelectedValues(mcpValues ?? [], placeholderText);
 
   return (
     <div className="flex items-center gap-3">
-      <MultiSelect
-        items={configuredServers}
-        selectedValues={mcpValues ?? []}
-        setSelectedValues={batchToggleServers}
-        renderSelectedValues={renderSelectedValues}
-        renderItemContent={renderItemContent}
-        placeholder={placeholderText}
-        popoverClassName="min-w-fit"
-        className="badge-icon min-w-fit"
-        selectIcon={<MCPIcon className="icon-md text-text-primary" />}
-        selectItemsClassName="border border-blue-600/50 bg-blue-500/10 hover:bg-blue-700/10"
-        selectClassName="group relative inline-flex items-center justify-center gap-2 rounded-full border border-border-medium bg-transparent px-3 py-2 text-sm font-medium transition-all shadow-sm hover:bg-surface-hover hover:shadow-md active:shadow-inner"
-      />
+      <Ariakit.MenuProvider store={serverMenuStore}>
+        <Ariakit.MenuButton
+          store={serverMenuStore}
+          className={cn(
+            'badge-icon inline-flex min-w-fit items-center gap-2 rounded-full border border-border-medium bg-transparent px-3 py-2 text-sm font-medium text-text-primary shadow-sm transition-all',
+            'hover:bg-surface-hover hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong',
+          )}
+        >
+          <MCPIcon className="icon-md text-text-primary" />
+          <span className="max-w-[140px] truncate text-left">{serverButtonLabel}</span>
+          <ChevronDown className="h-4 w-4 text-text-tertiary" />
+        </Ariakit.MenuButton>
+        <Ariakit.Menu
+          store={serverMenuStore}
+          portal={true}
+          className={cn(
+            'animate-popover z-50 w-[320px] max-w-[90vw] rounded-2xl border border-border-light bg-surface-secondary p-0 text-text-primary shadow-xl',
+          )}
+        >
+          <div className="flex flex-col gap-4 p-4">
+            <p className="text-sm font-semibold text-text-primary">
+              {localize('com_ui_mcp_servers')}
+            </p>
+            <div className="flex max-h-[340px] flex-col gap-2 overflow-y-auto pr-1">
+              {configuredServers.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border-light bg-surface-primary/60 px-4 py-6 text-center text-sm text-text-tertiary">
+                  {localize('com_sidepanel_mcp_no_servers_with_vars')}
+                </div>
+              ) : (
+                configuredServers
+                  .slice()
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((serverName) => {
+                const isSelected = selectedServers.has(serverName);
+                const serverInfo = availableServersMap.get(serverName);
+                const statusIconProps = getServerStatusIconProps(serverName);
+                const statusIcon = statusIconProps ? (
+                  <MCPServerStatusIcon {...statusIconProps} />
+                ) : null;
+                const serverToolCount = serverInfo?.server?.tools?.length ?? 0;
+                const initializing = isInitializing(serverName);
+
+                return (
+                  <div
+                    key={serverName}
+                    className="flex items-center justify-between rounded-lg border border-border-light bg-surface-primary px-3 py-2"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-tertiary text-xs font-semibold uppercase text-text-secondary">
+                        {serverName.slice(0, 2)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-semibold text-text-primary">
+                            {serverName}
+                          </span>
+                          {statusIcon}
+                        </div>
+                        <span className="text-[0.65rem] uppercase text-text-tertiary">
+                          {localize('com_ui_mcp_tools_summary', { 0: serverToolCount })}
+                        </span>
+                      </div>
+                    </div>
+                    <TogglePill
+                      enabled={isSelected}
+                      disabled={initializing}
+                      onToggle={(next) => {
+                        if (next !== isSelected) {
+                          toggleServerSelection(serverName);
+                        }
+                      }}
+                      label={serverName}
+                    />
+                  </div>
+                );
+              })
+              )}
+            </div>
+          </div>
+        </Ariakit.Menu>
+      </Ariakit.MenuProvider>
 
       {showToolsButton && hasSelection && (
         <Ariakit.MenuProvider store={toolsMenuStore}>
