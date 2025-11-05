@@ -93,7 +93,7 @@
     "node-fetch": "^2.7.0",
     "nodemailer": "^7.0.9",
     "ollama": "^0.5.0",
-    "openai": "^5.10.1",
+    "openai": "5.10.1",
     "openid-client": "^6.5.0",
     "passport": "^0.6.0",
     "passport-apple": "^2.0.2",
