@@ -106,5 +106,9 @@
     "tiktoken": "^1.0.15",
     "undici": "^7.10.0",
     "zod": "^3.22.4"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ssm": "^3.848.0",
+    "@aws-sdk/client-secrets-manager": "^3.848.0"
   }
 }
