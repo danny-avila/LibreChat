@@ -18,5 +18,5 @@ jobs:
 
             - name: Push upstream tags to origin
               run: |
-                git remote set-url downstream https://x-access-token:${{ secrets.SYNC_TAGS_PAT_TOKEN }}@github.com/paychex/LibreChat.git
+                git remote add downstream https://x-access-token:${{ secrets.SYNC_TAGS_PAT_TOKEN }}@github.com/paychex/LibreChat.git
                 git push downstream --tags
