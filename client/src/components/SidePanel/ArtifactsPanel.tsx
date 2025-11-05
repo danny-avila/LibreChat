@@ -66,11 +66,6 @@ export default function ArtifactsPanel({
         collapsedSize={0}
         order={2}
         id="artifacts-panel"
-        style={{
-          willChange: 'width',
-          contain: 'layout style paint',
-          transform: 'translateZ(0)',
-        }}
       >
         <div className="h-full min-w-[400px] overflow-hidden">{artifacts}</div>
       </ResizablePanel>

@@ -66,27 +66,8 @@ const SidePanelGroup = memo(
       () =>
         throttle((sizes: number[]) => {
           const normalizedSizes = normalizeLayout(sizes);
-          // Use requestIdleCallback to avoid blocking main thread during resize
-          // Fallback to setTimeout if requestIdleCallback is not available
-          if (typeof requestIdleCallback !== 'undefined') {
-            requestIdleCallback(
-              () => {
-                localStorage.setItem(
-                  'react-resizable-panels:layout',
-                  JSON.stringify(normalizedSizes),
-                );
-              },
-              { timeout: 1000 },
-            );
-          } else {
-            setTimeout(() => {
-              localStorage.setItem(
-                'react-resizable-panels:layout',
-                JSON.stringify(normalizedSizes),
-              );
-            }, 0);
-          }
-        }, 500), // Increased from 350ms to 500ms for better performance
+          localStorage.setItem('react-resizable-panels:layout', JSON.stringify(normalizedSizes));
+        }, 350),
       [],
     );
 
@@ -132,10 +113,6 @@ const SidePanelGroup = memo(
             minSize={minSizeMain}
             order={1}
             id="messages-view"
-            className="relative h-full w-full flex-1 overflow-auto bg-presentation"
-            style={{
-              contain: 'layout style',
-            }}
           >
             {children}
           </ResizablePanel>
