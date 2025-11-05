@@ -307,7 +307,7 @@ export default function Artifacts() {
             >
               <div
                 className={cn(
-                  'transition-transform duration-300 ease-in-out',
+                  'text-white transition-transform duration-300 ease-in-out dark:text-black',
                   isRefreshing ? 'scale-100' : 'scale-95',
                 )}
               >
