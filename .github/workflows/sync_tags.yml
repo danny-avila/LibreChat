@@ -18,6 +18,6 @@ jobs:
 
             - name: Push upstream tags to origin
               env:
-                GH_TOKEN: ${{ secrets.SYNC_TAGS_PAT_TOKEN }}
+                GITHUB_TOKEN: ${{ secrets.SYNC_TAGS_PAT_TOKEN }}
               run: |
                 git push origin --tags
