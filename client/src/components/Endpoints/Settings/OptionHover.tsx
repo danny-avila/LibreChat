@@ -27,6 +27,7 @@ const types = {
     maxoutputtokens: 'com_endpoint_anthropic_maxoutputtokens',
     resend: openAI.resend,
     promptcache: 'com_endpoint_anthropic_prompt_cache',
+    cacheduration: 'com_endpoint_anthropic_cache_duration',
   },
   google: {
     temp: 'com_endpoint_google_temp',

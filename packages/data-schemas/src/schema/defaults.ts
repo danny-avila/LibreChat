@@ -78,6 +78,10 @@ export const conversationPreset = {
   promptCache: {
     type: Boolean,
   },
+  cacheDuration: {
+    type: String,
+    default: '5m',
+  },
   thinking: {
     type: Boolean,
   },

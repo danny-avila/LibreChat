@@ -13,8 +13,8 @@ describe('addCacheControl', () => {
     const result = addCacheControl(messages);
 
     expect(result[0].content[0]).not.toHaveProperty('cache_control');
-    expect(result[2].content[0].cache_control).toEqual({ type: 'ephemeral' });
-    expect(result[4].content[0].cache_control).toEqual({ type: 'ephemeral' });
+    expect(result[2].content[0].cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
+    expect(result[4].content[0].cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
   });
 
   test('should add cache control to the last two user messages with string content', () => {
@@ -32,12 +32,12 @@ describe('addCacheControl', () => {
     expect(result[2].content[0]).toEqual({
       type: 'text',
       text: 'How are you?',
-      cache_control: { type: 'ephemeral' },
+      cache_control: { type: 'ephemeral', ttl: '5m' },
     });
     expect(result[4].content[0]).toEqual({
       type: 'text',
       text: 'Great!',
-      cache_control: { type: 'ephemeral' },
+      cache_control: { type: 'ephemeral', ttl: '5m' },
     });
   });
 
@@ -53,9 +53,9 @@ describe('addCacheControl', () => {
     expect(result[0].content[0]).toEqual({
       type: 'text',
       text: 'Hello',
-      cache_control: { type: 'ephemeral' },
+      cache_control: { type: 'ephemeral', ttl: '5m' },
     });
-    expect(result[2].content[0].cache_control).toEqual({ type: 'ephemeral' });
+    expect(result[2].content[0].cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
   });
 
   test('should handle less than two user messages', () => {
@@ -69,7 +69,7 @@ describe('addCacheControl', () => {
     expect(result[0].content[0]).toEqual({
       type: 'text',
       text: 'Hello',
-      cache_control: { type: 'ephemeral' },
+      cache_control: { type: 'ephemeral', ttl: '5m' },
     });
     expect(result[1].content).toBe('Hi there');
   });
@@ -127,11 +127,11 @@ describe('addCacheControl', () => {
 
     expect(result[0].content[0]).not.toHaveProperty('cache_control');
     expect(result[0].content[1]).not.toHaveProperty('cache_control');
-    expect(result[0].content[2].cache_control).toEqual({ type: 'ephemeral' });
+    expect(result[0].content[2].cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
     expect(result[2].content[0]).toEqual({
       type: 'text',
       text: 'How are you?',
-      cache_control: { type: 'ephemeral' },
+      cache_control: { type: 'ephemeral', ttl: '5m' },
     });
   });
 
@@ -150,13 +150,13 @@ describe('addCacheControl', () => {
     expect(result[2].content[0]).toEqual({
       type: 'text',
       text: 'How are you?',
-      cache_control: { type: 'ephemeral' },
+      cache_control: { type: 'ephemeral', ttl: '5m' },
     });
     expect(result[4].content).toEqual([
       {
         type: 'text',
         text: 'Great!',
-        cache_control: { type: 'ephemeral' },
+        cache_control: { type: 'ephemeral', ttl: '5m' },
       },
     ]);
     expect(result[1].content).toBe('Hi there');
@@ -187,11 +187,11 @@ describe('addCacheControl', () => {
 
     expect(result[0].content[0]).not.toHaveProperty('cache_control');
     expect(result[0].content[1]).not.toHaveProperty('cache_control');
-    expect(result[0].content[2].cache_control).toEqual({ type: 'ephemeral' });
+    expect(result[0].content[2].cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
     expect(result[2].content[0]).toEqual({
       type: 'text',
       text: 'Correct!',
-      cache_control: { type: 'ephemeral' },
+      cache_control: { type: 'ephemeral', ttl: '5m' },
     });
   });
 
@@ -221,7 +221,33 @@ describe('addCacheControl', () => {
     expect(result[2].content[0]).toEqual({
       type: 'text',
       text: 'Correct!',
-      cache_control: { type: 'ephemeral' },
+      cache_control: { type: 'ephemeral', ttl: '5m' },
     });
+  });
+
+  test('should add 1-hour cache control when ttl is specified as 1h', () => {
+    const messages = [
+      { role: 'user', content: [{ type: 'text', text: 'Hello' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'Hi there' }] },
+      { role: 'user', content: [{ type: 'text', text: 'How are you?' }] },
+    ];
+
+    const result = addCacheControl(messages, '1h');
+
+    expect(result[0].content[0].cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+    expect(result[2].content[0].cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+  });
+
+  test('should default to 5m cache when no ttl is specified', () => {
+    const messages = [
+      { role: 'user', content: [{ type: 'text', text: 'Hello' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'Hi' }] },
+      { role: 'user', content: [{ type: 'text', text: 'Bye' }] },
+    ];
+
+    const result = addCacheControl(messages);
+
+    expect(result[0].content[0].cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
+    expect(result[2].content[0].cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
   });
 });

@@ -30,28 +30,37 @@ function checkPromptCacheSupport(modelName: string): boolean {
  * Gets the appropriate headers for Claude models with cache control
  * @param {string} model The model name
  * @param {boolean} supportsCacheControl Whether the model supports cache control
+ * @param {string} cacheDuration The cache duration ('5m' or '1h'). Defaults to '5m'
  * @returns {AnthropicClientOptions['extendedOptions']['defaultHeaders']|undefined} The headers object or undefined if not applicable
  */
 function getClaudeHeaders(
   model: string,
   supportsCacheControl: boolean,
+  cacheDuration: '5m' | '1h' = '5m',
 ): Record<string, string> | undefined {
   if (!supportsCacheControl) {
     return undefined;
   }
 
+  const extendedCacheBeta = cacheDuration === '1h' ? 'extended-cache-ttl-2025-04-11,' : '';
+
   if (/claude-3[-.]5-sonnet/.test(model)) {
     return {
-      'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
+      'anthropic-beta': `${extendedCacheBeta}max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31`,
     };
   } else if (/claude-3[-.]7/.test(model)) {
     return {
-      'anthropic-beta':
-        'token-efficient-tools-2025-02-19,output-128k-2025-02-19,prompt-caching-2024-07-31',
+      'anthropic-beta': `${extendedCacheBeta}token-efficient-tools-2025-02-19,output-128k-2025-02-19,prompt-caching-2024-07-31`,
     };
-  } else if (/claude-sonnet-4/.test(model)) {
+  } else if (/claude-sonnet-4[-.]5/.test(model) || /claude-4[-.]5-sonnet/.test(model)) {
+    // Sonnet 4.5 specific headers
     return {
-      'anthropic-beta': 'prompt-caching-2024-07-31,context-1m-2025-08-07',
+      'anthropic-beta': `${extendedCacheBeta}prompt-caching-2024-07-31,context-1m-2025-08-07`,
+    };
+  } else if (/claude-sonnet-4(?![-.]5)/.test(model)) {
+    // Sonnet 4 (but not 4.5)
+    return {
+      'anthropic-beta': `${extendedCacheBeta}prompt-caching-2024-07-31,context-1m-2025-08-07`,
     };
   } else if (
     /claude-(?:sonnet|opus|haiku)-[4-9]/.test(model) ||
@@ -59,11 +68,11 @@ function getClaudeHeaders(
     /claude-4(?:-(?:sonnet|opus|haiku))?/.test(model)
   ) {
     return {
-      'anthropic-beta': 'prompt-caching-2024-07-31',
+      'anthropic-beta': `${extendedCacheBeta}prompt-caching-2024-07-31`,
     };
   } else {
     return {
-      'anthropic-beta': 'prompt-caching-2024-07-31',
+      'anthropic-beta': `${extendedCacheBeta}prompt-caching-2024-07-31`,
     };
   }
 }

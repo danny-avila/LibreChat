@@ -17,6 +17,7 @@ function getLLMConfig(
   const systemOptions = {
     thinking: options.modelOptions?.thinking ?? anthropicSettings.thinking.default,
     promptCache: options.modelOptions?.promptCache ?? anthropicSettings.promptCache.default,
+    cacheDuration: options.modelOptions?.cacheDuration ?? anthropicSettings.cacheDuration.default,
     thinkingBudget:
       options.modelOptions?.thinkingBudget ?? anthropicSettings.thinkingBudget.default,
   };
@@ -27,6 +28,7 @@ function getLLMConfig(
   if (options.modelOptions) {
     delete options.modelOptions.thinking;
     delete options.modelOptions.promptCache;
+    delete options.modelOptions.cacheDuration;
     delete options.modelOptions.thinkingBudget;
   } else {
     throw new Error('No modelOptions provided');
@@ -67,7 +69,8 @@ function getLLMConfig(
 
   const supportsCacheControl =
     systemOptions.promptCache === true && checkPromptCacheSupport(requestOptions.model ?? '');
-  const headers = getClaudeHeaders(requestOptions.model ?? '', supportsCacheControl);
+  const cacheDuration = systemOptions.cacheDuration as '5m' | '1h';
+  const headers = getClaudeHeaders(requestOptions.model ?? '', supportsCacheControl, cacheDuration);
   if (headers && requestOptions.clientOptions) {
     requestOptions.clientOptions.defaultHeaders = headers;
   }

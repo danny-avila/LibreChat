@@ -366,6 +366,10 @@ export const anthropicSettings = {
   promptCache: {
     default: true as const,
   },
+  cacheDuration: {
+    default: '5m' as const,
+    options: ['5m', '1h'] as const,
+  },
   thinking: {
     default: true as const,
   },
@@ -710,6 +714,7 @@ export const tConversationSchema = z.object({
   max_tokens: coerceNumber.optional(),
   /* Anthropic */
   promptCache: z.boolean().optional(),
+  cacheDuration: z.enum(['5m', '1h']).optional(),
   system: z.string().optional(),
   thinking: z.boolean().optional(),
   thinkingBudget: coerceNumber.optional(),
@@ -857,6 +862,7 @@ export const tQueryParamsSchema = tConversationSchema
     maxOutputTokens: true,
     /** @endpoints anthropic */
     promptCache: true,
+    cacheDuration: true,
     thinking: true,
     thinkingBudget: true,
     /** @endpoints bedrock */
@@ -1223,6 +1229,7 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   topK: true,
   resendFiles: true,
   promptCache: true,
+  cacheDuration: true,
   thinking: true,
   thinkingBudget: true,
   artifacts: true,

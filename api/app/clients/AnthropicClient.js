@@ -124,6 +124,7 @@ class AnthropicClient extends BaseClient {
       /claude-[4-9]/.test(modelMatch)
     );
     this.supportsCacheControl = this.options.promptCache && checkPromptCacheSupport(modelMatch);
+    this.cacheDuration = this.options.cacheDuration || anthropicSettings.cacheDuration.default;
 
     if (
       isLegacyOutput &&
@@ -204,7 +205,11 @@ class AnthropicClient extends BaseClient {
       options.baseURL = this.options.reverseProxyUrl;
     }
 
-    const headers = getClaudeHeaders(requestOptions?.model, this.supportsCacheControl);
+    const headers = getClaudeHeaders(
+      requestOptions?.model,
+      this.supportsCacheControl,
+      this.cacheDuration,
+    );
     if (headers) {
       options.defaultHeaders = headers;
     }
@@ -797,7 +802,7 @@ class AnthropicClient extends BaseClient {
         {
           type: 'text',
           text: this.systemMessage,
-          cache_control: { type: 'ephemeral' },
+          cache_control: { type: 'ephemeral', ttl: this.cacheDuration },
         },
       ];
     } else if (this.systemMessage) {
@@ -805,7 +810,7 @@ class AnthropicClient extends BaseClient {
     }
 
     if (this.supportsCacheControl === true && this.useMessages) {
-      requestOptions.messages = addCacheControl(requestOptions.messages);
+      requestOptions.messages = addCacheControl(requestOptions.messages, this.cacheDuration);
     }
 
     logger.debug('[AnthropicClient]', { ...requestOptions });
@@ -884,6 +889,7 @@ class AnthropicClient extends BaseClient {
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
       promptCache: this.options.promptCache,
+      cacheDuration: this.options.cacheDuration,
       thinking: this.options.thinking,
       thinkingBudget: this.options.thinkingBudget,
       resendFiles: this.options.resendFiles,

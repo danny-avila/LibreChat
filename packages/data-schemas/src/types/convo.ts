@@ -27,6 +27,7 @@ export interface IConversation extends Document {
   file_ids?: string[];
   resendImages?: boolean;
   promptCache?: boolean;
+  cacheDuration?: '5m' | '1h';
   thinking?: boolean;
   thinkingBudget?: number;
   system?: string;

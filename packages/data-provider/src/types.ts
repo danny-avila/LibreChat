@@ -51,6 +51,7 @@ export type TEndpointOption = Pick<
   | 'additionalModelRequestFields'
   // Anthropic-specific
   | 'promptCache'
+  | 'cacheDuration'
   | 'thinking'
   | 'thinkingBudget'
   // Assistant/Agent fields
