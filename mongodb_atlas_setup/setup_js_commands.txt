@@ -1,0 +1,29 @@
+// MongoDB script to create collection and search index for LibreChat database
+
+// Connect to the LibreChat database
+db = db.getSiblingDB('LibreChat');
+
+// Create a collection (assuming we want to create a 'messages' collection)
+db.createCollection('ragcollection');
+console.log('Collection "ragcollection" created successfully');
+
+// Create a search index on the collection
+db.ragcollection.createSearchIndex(
+  "vectorindex",
+  "vectorSearch", //index type
+  {
+    "fields": [
+      {
+        "numDimensions": 1536,
+        "path": "embedding",
+        "similarity": "cosine",
+        "type": "vector"
+      },
+      {
+        "path": "file_id",
+        "type": "filter"
+      }
+    ]
+  }
+);
+console.log('Search index created successfully on "ragcollection" collection');

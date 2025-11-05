@@ -127,6 +127,8 @@ helm/**/.values.yaml
 !/client/src/@types/i18next.d.ts
 
 # SAML Idp cert
+config-db
+# SAML Id p cert
 *.cert
 
 # AI Assistants
@@ -137,4 +139,5 @@ helm/**/.values.yaml
 /.openai/
 /.tabnine/
 /.codeium
+*.local.md
 *.local.md

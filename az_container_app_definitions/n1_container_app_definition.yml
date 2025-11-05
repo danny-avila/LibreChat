@@ -1,0 +1,220 @@
+id: /subscriptions/819386da-14b6-4ae4-a16d-7475c98e6a9b/resourceGroups/rg-playai-eastus-n1-001/providers/Microsoft.App/containerapps/conpaichateastusn1001
+name: conpaichateastusn1001
+type: Microsoft.App/containerApps
+location: East US
+tags:
+  payx_application: ai
+  payx_aqg-component-guid: N/A
+  payx_aqg-version-guid: N/A
+  payx_environment: n1
+  payx_externally-facing: "true"
+  payx_infrastructure-version: N/A
+  payx_lob: corp
+  payx_owner: cloudplatforms@paychex.com
+  payx_production: nonprod
+  payx_reaper: "true"
+  payx_resource-scope: "false"
+  payx_sensitive-data: "false"
+  payx_sensitive-data-type: "true"
+  payx_servicenow-group: Cloudplat
+systemData:
+  createdBy: 1ff1eaed-3696-4a58-8c80-11bd97f8b039
+  createdByType: Application
+  createdAt: '2025-04-22T19:12:55.2881264'
+  lastModifiedBy: ssmithra_alt@paychex.com
+  lastModifiedByType: User
+  lastModifiedAt: '2025-06-02T14:15:38.2574104'
+properties:
+  provisioningState: Succeeded
+  # runningStatus: Running
+  managedEnvironmentId: /subscriptions/819386da-14b6-4ae4-a16d-7475c98e6a9b/resourceGroups/rg-playai-eastus-n1-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-n1-001
+  environmentId: /subscriptions/819386da-14b6-4ae4-a16d-7475c98e6a9b/resourceGroups/rg-playai-eastus-n1-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-n1-001
+  workloadProfileName: paychexai
+  outboundIpAddresses: null
+  latestRevisionName: conpaichateastusn1001--0000024
+  latestReadyRevisionName: conpaichateastusn1001--0000024
+  latestRevisionFqdn: conpaichateastusn1001--0000024.wittysmoke-fd7d7688.eastus.azurecontainerapps.io
+  customDomainVerificationId: 05E5DEA83F4117621C7BB09FF979569CF31EE59F1D7D28098CB323154D696151
+  configuration:
+    secrets:
+      - name: openid-session-secret
+        keyVaultUrl: https://kv-pyxplayai-n1-001.vault.azure.net/secrets/N1-OPENID-SESSION-SECRET
+        identity: system
+      - name: creds-iv
+        keyVaultUrl: https://kv-pyxplayai-n1-001.vault.azure.net/secrets/N1-LIBRECHAT-CREDS-IV
+        identity: system
+      - name: jwt-refresh-secret
+        keyVaultUrl: https://kv-pyxplayai-n1-001.vault.azure.net/secrets/N1-LIBRECHAT-JWT-REFRESH-SECRET
+        identity: system
+      - name: jwt-secret
+        keyVaultUrl: https://kv-pyxplayai-n1-001.vault.azure.net/secrets/N1-JWT-SECRET
+        identity: system
+      - name: mongo-connection-string
+        keyVaultUrl: https://kv-pyxplayai-n1-001.vault.azure.net/secrets/N1-MONGO-CONNECTION-STRING
+        identity: system
+      - name: rag-mongo-connection-string
+        keyVaultUrl: https://kv-pyxplayai-n1-001.vault.azure.net/secrets/N1-RAG-API-MONGO-CONNECTION-STRING
+        identity: system
+      - name: client-secret
+        keyVaultUrl: https://kv-pyxplayai-n1-001.vault.azure.net/secrets/N1-LIBRECHAT-CLIENT-SECRET
+        identity: system
+      - name: creds-key
+        keyVaultUrl: https://kv-pyxplayai-n1-001.vault.azure.net/secrets/N1-LIBRECHAT-CREDS-KEY
+        identity: system
+      - name: maas-api-key
+        keyVaultUrl: https://kv-pyxplayai-n1-001.vault.azure.net/secrets/N1-LIBRECHAT-MAAS-API-KEY
+        identity: system
+    activeRevisionsMode: Single
+    ingress:
+      fqdn: conpaichateastusn1001.wittysmoke-fd7d7688.eastus.azurecontainerapps.io
+      external: true
+      targetPort: 3080
+      exposedPort: 0
+      transport: Auto
+      traffic:
+        - weight: 100
+          latestRevision: true
+      customDomains:
+        - name: play.ain1.paychex.com
+          certificateId: /subscriptions/819386da-14b6-4ae4-a16d-7475c98e6a9b/resourceGroups/rg-playai-eastus-n1-001/providers/Microsoft.App/managedEnvironments/cenv-playai-eastus-n1-001/certificates/play-ain1-paychex-com
+          bindingType: SniEnabled
+      allowInsecure: false
+      ipSecurityRestrictions: null
+      corsPolicy: null
+      clientCertificateMode: Ignore
+      stickySessions:
+        affinity: sticky
+      additionalPortMappings:
+        - external: false
+          targetPort: 8000
+          exposedPort: 8000
+    registries:
+      - server: conpaychexaiprod001.azurecr.io
+        username: ""
+        passwordSecretRef: ""
+        identity: system
+    dapr: null
+    runtime: null
+    maxInactiveRevisions: 100
+    service: null
+    identitySettings: []
+  template:
+    revisionSuffix: ""
+    terminationGracePeriodSeconds: null
+    containers:
+      - image: conpaychexaiprod001.azurecr.io/paychex/librechat:n1.latest
+        name: conpaichat
+        env:
+          - name: OPENID_CALLBACK_URL
+            value: /oauth/openid/callback
+          - name: MONGO_URI
+            secretRef: mongo-connection-string
+          - name: OPENID_SCOPE
+            value: openid profile email
+          - name: OPENID_SESSION_SECRET
+            secretRef: openid-session-secret
+          - name: OPENID_ISSUER
+            value: https://login.microsoftonline.com/bcc529c5-dfce-4f97-b44f-debd50891d83/v2.0/
+          - name: OPENID_CLIENT_SECRET
+            secretRef: client-secret
+          - name: OPENID_CLIENT_ID
+            value: 89b0e6f6-6b38-4016-8f98-13fd6af9b589
+          - name: JWT_SECRET
+            secretRef: jwt-secret
+          - name: JWT_REFRESH_SECRET
+            secretRef: jwt-refresh-secret
+          - name: AZURE_OPENAI_BASEURL
+            value: https://service-internal-n1.paychex.com/is/librechat/azure/openai/deployments/${DEPLOYMENT_NAME}
+          - name: AZURE_OPENAI_API_KEY
+            secretRef: maas-api-key
+          - name: ALLOW_REGISTRATION
+            value: FALSE
+          - name: ALLOW_EMAIL_LOGIN
+            value: FALSE
+          - name: DOMAIN_CLIENT
+            value: https://play.ain1.paychex.com
+          - name: DOMAIN_SERVER
+            value: https://play.ain1.paychex.com
+          - name: HOST
+            value: 0.0.0.0
+          - name: CREDS_KEY
+            secretRef: creds-key
+          - name: CREDS_IV
+            secretRef: creds-iv
+          - name: ALLOW_SOCIAL_LOGIN
+            value: TRUE
+          - name: NODE_EXTRA_CA_CERTS
+            value: /app/paychex-root.pem
+          - name: RAG_API_URL
+            value: http://conpaichateastusn1001:8000
+          - name: RAG_USE_FULL_CONTEXT
+            value: TRUE
+          - name: CONSOLE_JSON
+            value: TRUE
+          - name: DEBUG_LOGGING
+            value: TRUE
+          
+        resources:
+          cpu: 1
+          memory: 2Gi
+          ephemeralStorage: 4Gi
+        probes: []
+      - image: conpaychexaiprod001.azurecr.io/paychex/rag_api:n1.latest
+        name: conpairag
+        env:
+          - name: RAG_AZURE_OPENAI_API_KEY
+            secretRef: maas-api-key
+          - name: RAG_AZURE_OPENAI_ENDPOINT
+            value: https://service-internal-n1.paychex.com/is/librechat/azure/
+          - name: RAG_AZURE_OPENAI_API_VERSION
+            value: 2024-10-21
+          - name: EMBEDDINGS_PROVIDER
+            value: azure
+          - name: EMBEDDINGS_MODEL
+            value: text-embedding-ada-002
+          - name: RAG_PORT
+            value: '8000'
+          - name: RAG_HOST
+            value: 0.0.0.0
+          - name: COLLECTION_NAME
+            value: ragcollection
+          - name: ATLAS_SEARCH_INDEX
+            value: vectorindex
+          - name: VECTOR_DB_TYPE
+            value: atlas-mongo
+          - name: ATLAS_MONGO_DB_URI
+            secretRef: rag-mongo-connection-string
+          - name: REQUESTS_CA_BUNDLE
+            value: /etc/ssl/certs/ca-certificates.crt
+          - name: RAG_USE_FULL_CONTEXT
+            value: TRUE
+          - name: DEBUG_RAG_API
+            value: 'true'
+          - name: CURL_CA_BUNDLE
+            value: /app/paychex-root.pem
+        resources:
+          cpu: 1
+          memory: 2Gi
+          ephemeralStorage: 4Gi
+        probes: []
+        volumeMounts:
+          - volumeName: fspaichateastusn1001
+            mountPath: /app/uploads
+    initContainers: null
+    scale:
+      minReplicas: 3
+      maxReplicas: 6
+      cooldownPeriod: 300
+      pollingInterval: 30
+      rules: null
+    volumes:
+      - name: fspaichateastusn1001
+        storageType: AzureFile
+        storageName: uploads-n1
+    serviceBinds: null
+  eventStreamEndpoint: https://eastus.azurecontainerapps.dev/subscriptions/819386da-14b6-4ae4-a16d-7475c98e6a9b/resourceGroups/rg-playai-eastus-n1-001/containerApps/conpaichateastusn1001/eventstream
+  delegatedIdentities: []
+identity:
+  type: SystemAssigned
+  principalId: 452fd52a-93f2-4ae1-8c5c-9531eeae95aa
+  tenantId: bcc529c5-dfce-4f97-b44f-debd50891d83
