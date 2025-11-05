@@ -126,7 +126,6 @@
     "typescript-eslint": "^8.24.0"
   },
   "overrides": {
-    "@langchain/openai": "0.5.18",
     "axios": "1.12.1",
     "elliptic": "^6.6.1",
     "form-data": "^4.0.4",
