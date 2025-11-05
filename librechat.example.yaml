@@ -136,6 +136,16 @@ registration:
 #       apiKey: '${TTS_API_KEY}'
 #       model: ''
 #       voices: ['']
+#     azureOpenAI:
+#       # instanceName: The <NAME> part of your Azure endpoint URL
+#       # For example, if your endpoint is: https://my-instance.cognitiveservices.azure.com
+#       # Then instanceName should be: 'my-instance' (not the full URL)
+#       instanceName: '${AZURE_TTS_INSTANCE_NAME}'
+#       apiKey: '${AZURE_TTS_API_KEY}'
+#       deploymentName: '${AZURE_TTS_DEPLOYMENT_NAME}'
+#       apiVersion: '2024-02-01'
+#       model: 'tts-1'
+#       voices: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
 
 #
 #   stt:
@@ -143,6 +153,15 @@ registration:
 #       url: ''
 #       apiKey: '${STT_API_KEY}'
 #       model: ''
+#     azureOpenAI:
+#       # instanceName: The <NAME> part of your Azure endpoint URL
+#       # For example, if your endpoint is: https://my-instance.cognitiveservices.azure.com
+#       # Then instanceName should be: 'my-instance' (not the full URL)
+#       # Note: The code also supports full domain format for backward compatibility
+#       instanceName: '${AZURE_STT_INSTANCE_NAME}'
+#       apiKey: '${AZURE_STT_API_KEY}'
+#       deploymentName: '${AZURE_STT_DEPLOYMENT_NAME}'
+#       apiVersion: '2024-02-01'
 
 # rateLimits:
 #   fileUploads:
