@@ -105,8 +105,5 @@
     "tiktoken": "^1.0.15",
     "undici": "^7.10.0",
     "zod": "^3.22.4"
-  },
-  "dependencies": {
-    "@librechat/agents": "^3.0.2"
   }
 }
