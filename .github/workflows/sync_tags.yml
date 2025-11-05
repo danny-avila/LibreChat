@@ -20,5 +20,5 @@ jobs:
               env:
                 GITHUB_TOKEN: ${{ secrets.SYNC_TAGS_PAT_TOKEN }}
               run: |
-                git remote set-url origin https://x-access-token:${{env.GITHUB_TOKEN}}@github.com/paychex/Librechat.git
+                git remote set-url origin https://x-access-token:${{env.GITHUB_TOKEN}}@github.com/paychex/LibreChat.git
                 git push origin --tags
