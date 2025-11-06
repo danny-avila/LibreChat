@@ -15,6 +15,7 @@ const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
 const { deleteToolCalls } = require('~/models/ToolCall');
+const { deleteAllSharedLinks } = require('~/models');
 const getLogStores = require('~/cache/getLogStores');
 
 const assistantClients = {
@@ -136,6 +137,7 @@ router.delete('/all', async (req, res) => {
   try {
     const dbResponse = await deleteConvos(req.user.id, {});
     await deleteToolCalls(req.user.id);
+    await deleteAllSharedLinks(req.user.id);
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);
