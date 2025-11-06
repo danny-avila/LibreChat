@@ -771,16 +771,11 @@ class OpenAIClient extends BaseClient {
   }
 
   /**
-   * Process OpenAI response for RAG citations and enhancements
+   * Process OpenAI response for Affiliatea  and enhancements
    * @param {string} content - The response content from OpenAI
-   * @returns {Promise<string>} - Enhanced content with RAG citations
+   * @returns {Promise<string>} - Enhanced content with citations
    */
-  async processRAGResponse(content) {
-    // Check if RAG is enabled
-    if (!process.env.RAG_ENABLED || process.env.RAG_ENABLED !== 'true') {
-      return content;
-    }
-
+  async processAffiliateResponse(content) {
     // Skip RAG processing for title generation
     if (this.options.context === 'title') {
       return content;
@@ -788,6 +783,7 @@ class OpenAIClient extends BaseClient {
 
     try {
         
+      const appConfig = this.options.req?.config;
       if (appConfig?.turnOffCitations === true &&
         content?.includes('<sup>1.</sup>')
       ) {
@@ -799,7 +795,7 @@ class OpenAIClient extends BaseClient {
       }
 
       // Append Affiliate Links if applicable
-      const affiliateConfig = getAffiliateConfig(appConfig);
+      const affiliateConfig = getAffiliateConfig();
       if (affiliateConfig?.enableAffiliateLinks && !getAffiliateInjected()) {
         content = injectAffiliateLinks(content);
       } else {
@@ -1207,16 +1203,16 @@ class OpenAIClient extends BaseClient {
         this.options.context !== 'title' &&
         !message.content.startsWith('<think>')
       ) {
-        return await this.processRAGResponse(this.getStreamText());
+        return await this.processAffiliateResponse(this.getStreamText());
       } else if (
         this.streamHandler.reasoningTokens.length > 0 &&
         this.options.context !== 'title' &&
         message.content.startsWith('<think>')
       ) {
-        return await this.processRAGResponse(this.getStreamText());
+        return await this.processAffiliateResponse(this.getStreamText());
       }
 
-      return await this.processRAGResponse(message.content);
+      return await this.processAffiliateResponse(message.content);
     } catch (err) {
       if (
         err?.message?.includes('abort') ||
