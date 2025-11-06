@@ -45,6 +45,7 @@ export function getReasoningKey(
 type RunAgent = Omit<Agent, 'tools'> & {
   tools?: GenericTool[];
   maxContextTokens?: number;
+  useLegacyContent?: boolean;
   toolContextMap?: Record<string, string>;
 };
 
@@ -139,6 +140,7 @@ export async function createRun({
       clientOptions: llmConfig,
       instructions: systemContent,
       maxContextTokens: agent.maxContextTokens,
+      useLegacyContent: agent.useLegacyContent ?? false,
     };
     agentInputs.push(agentInput);
   };
