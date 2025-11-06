@@ -40,14 +40,19 @@ function loadAffiliates() {
     const affiliatesPath = path.join(__dirname, 'affiliates.json');
     const affiliatesData = JSON.parse(fs.readFileSync(affiliatesPath, 'utf8'));
     
-    // Flatten all categories into a single object
-    AFFILIATE_DATA = {
-      ...affiliatesData,
-    };
+    // Convert the affiliates array to an object keyed by name
+    AFFILIATE_DATA = {};
+    if (affiliatesData.affiliates && Array.isArray(affiliatesData.affiliates)) {
+      affiliatesData.affiliates.forEach(affiliate => {
+        if (affiliate.name) {
+          AFFILIATE_DATA[affiliate.name] = affiliate;
+        }
+      });
+    }
 
     logger.info('[AffiliateLinks] Loaded affiliates data from JSON file', {
       totalAffiliates: Object.keys(AFFILIATE_DATA).length,
-      categories: Object.keys(affiliatesData)
+      affiliateNames: Object.keys(AFFILIATE_DATA)
     });
     
   } catch (error) {
@@ -55,9 +60,11 @@ function loadAffiliates() {
     
     // Fallback to a minimal set of affiliates if JSON loading fails
     AFFILIATE_DATA = {
-		"name": "Real Estate Affiliate Fallback",
-		"content": "Earn commissions by promoting products on Amazon.",
-		"urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+		"Real Estate Affiliate Fallback": {
+			"name": "Real Estate Affiliate Fallback",
+			"content": "Earn commissions by promoting products on Amazon.",
+			"urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+		}
 	};
 
     logger.warn('[AffiliateLinks] Using fallback affiliates data due to JSON loading error');
@@ -75,8 +82,8 @@ function reloadAffiliates() {
   loadAffiliates();
   return {
     success: true,
-    totalKeywords: Object.keys(FISHING_KEYWORDS).length,
-    message: 'Keywords reloaded successfully'
+    totalAffiliates: Object.keys(AFFILIATE_DATA).length,
+    message: 'Affiliates reloaded successfully'
   };
 }
 
@@ -94,33 +101,33 @@ function getAffiliates() {
  * Get random affiliate from affiliates
  */
 function getRandomAffiliate() {
-  const affiliates  = Object.keys(AFFILIATE_DATA)
-  if (affiliates.length === 0) return null;
+  const affiliateNames = Object.keys(AFFILIATE_DATA);
+  if (affiliateNames.length === 0) return null;
   
-  const randomIndex = Math.floor(Math.random() * affiliates.length);
-  return affiliates[randomIndex];
+  const randomIndex = Math.floor(Math.random() * affiliateNames.length);
+  const randomAffiliateName = affiliateNames[randomIndex];
+  return AFFILIATE_DATA[randomAffiliateName];
 }
 
 /**
- * Inject Amazon affiliate links into response text
+ * Inject affiliate links into response text
  * @param {string} text - The response text to process
  * @returns {string} - Text with affiliate links injected
  */
 function injectAffiliateLinks(text) {
-  logger.log('[AffiliateLinks] AFFILIATE_CONFIG:', AFFILIATE_CONFIG);
-  logger.log('[AffiliateLinks] injectAffiliateLinks called', {
+  logger.debug('[AffiliateLinks] injectAffiliateLinks called', {
     textLength: text?.length || 0,
     textPreview: text?.substring(0, 100) || '',
     enableAffiliateLinks: AFFILIATE_CONFIG.enableAffiliateLinks,
   });
 
   if (!AFFILIATE_CONFIG.enableAffiliateLinks || !text || typeof text !== 'string') {
-    console.log('Affiliate links injection is disabled or invalid text provided.');
+    logger.debug('[AffiliateLinks] Affiliate links injection is disabled or invalid text provided.');
     return text;
   }
 
   if (affiliateInjected) {
-    logger.log('[AffiliateLinks] Affiliate links already injected in this session, skipping re-injection');
+    logger.debug('[AffiliateLinks] Affiliate links already injected in this session, skipping re-injection');
     return text;
   }
 
@@ -132,39 +139,22 @@ function injectAffiliateLinks(text) {
       return text;
     }
 
-    const addedLinks = new Set(); // Prevent duplicate links    
-    const linkText = createAffiliateLink(affiliate);
+    // Create affiliate link text
+    const linkText = affiliate.content ? affiliate.content : `Check out ${affiliate.name}`;
     
-    logger.info('[AffiliateLinks] Keyword matched, adding affiliate link', {
-      keyword,
-      searchTerm,
-      affiliateUrl,
-      linkText
+    logger.info('[AffiliateLinks] Adding affiliate link', {
+      affiliateName: affiliate.name,
+      content: affiliate.content
     });
     
-    // Add link at the end of relevant paragraph or section
-
-    addedLinks.add(affiliate.name);
-    
-    // Add affiliate link with context
-    const contextualText = `\n\n💡 **Sponser**: ${linkText}`;
+    // Add affiliate link with context at the end
+    const contextualText = `\n\n💡 **Sponsor**: ${linkText}`;
     modifiedText += contextualText;
     
-    logger.debug(`[AffiliateLinks] Added link for: ${keyword}`);
     logger.info('[AffiliateLinks] Affiliate link successfully added', {
-      keyword,
-      contextualText,
+      affiliateName: affiliate.name,
       originalLength: text.length,
       modifiedLength: modifiedText.length
-    });
-
-    console.log('Final message text with affiliate links:', modifiedText);
-    logger.info('[AffiliateLinks] Processing complete', {
-      originalLength: text.length,
-      modifiedLength: modifiedText.length,
-      linksAdded: addedLinks.size,
-      addedKeywords: Array.from(addedLinks),
-      textChanged: text !== modifiedText
     });
 
     affiliateInjected = true;
