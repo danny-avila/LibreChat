@@ -10,6 +10,10 @@ jest.mock('@librechat/agents', () => ({
   }),
 }));
 
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+}));
+
 describe('AgentClient - titleConvo', () => {
   let client;
   let mockRun;
@@ -250,6 +254,38 @@ describe('AgentClient - titleConvo', () => {
       const result = await client.titleConvo({ text, abortController });
 
       expect(result).toBe('Generated Title');
+    });
+
+    it('should sanitize the generated title by removing think blocks', async () => {
+      const titleWithThinkBlock = '<think>reasoning about the title</think> User Hi Greeting';
+      mockRun.generateTitle.mockResolvedValue({
+        title: titleWithThinkBlock,
+      });
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      // Should remove the <think> block and return only the clean title
+      expect(result).toBe('User Hi Greeting');
+      expect(result).not.toContain('<think>');
+      expect(result).not.toContain('</think>');
+    });
+
+    it('should return fallback title when sanitization results in empty string', async () => {
+      const titleOnlyThinkBlock = '<think>only reasoning no actual title</think>';
+      mockRun.generateTitle.mockResolvedValue({
+        title: titleOnlyThinkBlock,
+      });
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      // Should return the fallback title since sanitization would result in empty string
+      expect(result).toBe('Untitled Conversation');
     });
 
     it('should handle errors gracefully and return undefined', async () => {
