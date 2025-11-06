@@ -40,6 +40,16 @@ Next, copy the contents of `.env.paychex` into `.env`. There are certain sensiti
 
 Next, copy the contents of `librechat.n2a.yml` into `librechat.yaml`. NOTE: The file extension for `librechat.yaml` is `.yaml`. This is important.
 
+Next, in `payx-docker-compose.override-yaml`, change the Librechat Image tag to the tag you are working with. ie. `image: ghcr.io/danny-avila/librechat:v0.8.0-rc2`:
+
+```
+api:
+    container_name: LibreChat
+    ports:
+      - "${PORT}:${PORT}"
+    image: ghcr.io/danny-avila/librechat:v0.8.0-rc2 #This part here
+```
+
 Next, run the compose files: `docker compose -f docker-compose.yml -f payx-docker-compose.override.yaml up`. This will merge the two compose files together and start up the cluster.
 
 Navigate to `localhost:3080` in browser. If running in a VSCode terminal via remote ssh, ensure the Port is forwarded.
