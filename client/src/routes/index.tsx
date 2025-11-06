@@ -20,6 +20,7 @@ import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
+import { HelpAndFAQ, PrivacyPolicy, TermsAndServices } from '~/components/Static';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -76,6 +77,21 @@ export const router = createBrowserRouter(
       element: <VerifyEmail />,
       errorElement: <RouteErrorBoundary />,
     },
+    {
+      path: 'faq',
+      element: <HelpAndFAQ />,
+      errorElement: <RouteErrorBoundary />,
+    },    
+    {
+      path: 'privacy',
+      element: <PrivacyPolicy />,
+      errorElement: <RouteErrorBoundary />,
+    },
+    {
+      path: 'terms',
+      element: <TermsAndServices />,
+      errorElement: <RouteErrorBoundary />,
+    },    
     {
       element: <AuthLayout />,
       errorElement: <RouteErrorBoundary />,
