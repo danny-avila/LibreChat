@@ -33,6 +33,7 @@ const { handleOpenAIErrors } = require('./tools/util');
 const { OllamaClient } = require('./OllamaClient');
 const { extractBaseURL } = require('~/utils');
 const BaseClient = require('./BaseClient');
+const { injectAffiliateLinks, getAffiliateConfig, getAffiliateInjected } = require('~/server/utils/affiliateLinks');
 
 class OpenAIClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -759,6 +760,16 @@ class OpenAIClient extends BaseClient {
     };
   }
 
+  removeCitations(text) {
+    if (!text || typeof text !== 'string') {
+      return text;
+    }
+
+    // The regex should replace the <sup></sup> tags and everything inbetween
+    const supPattern = /<sup>.*?<\/sup>/g;
+    return text.replace(supPattern, '');
+  }
+
   /**
    * Process OpenAI response for RAG citations and enhancements
    * @param {string} content - The response content from OpenAI
@@ -776,7 +787,25 @@ class OpenAIClient extends BaseClient {
     }
 
     try {
-    
+        
+      if (appConfig?.turnOffCitations === true &&
+        content?.includes('<sup>1.</sup>')
+      ) {
+        logger.debug('[BaseClient] Removing citations from response due to startup config.');
+        content = content.split('<sup>1.</sup>')[0];
+        content = this.removeCitations(content);
+      } else {
+        logger.debug('[BaseClient] Citations remain in response.');
+      }
+
+      // Append Affiliate Links if applicable
+      const affiliateConfig = getAffiliateConfig(appConfig);
+      if (affiliateConfig?.enableAffiliateLinks && !getAffiliateInjected()) {
+        content = injectAffiliateLinks(content);
+      } else {
+        logger.debug('[BaseClient] Affiliate links not injected due to configuration.');
+      }
+
       return content;
     } catch (error) {
       logger.error('[OpenAIClient] RAG processing error:', error);

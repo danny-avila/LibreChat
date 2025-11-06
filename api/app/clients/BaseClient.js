@@ -750,7 +750,7 @@ class BaseClient {
       responseMessage.text = completion.join('');
     }
 
-    if (startUpConfig?.turnOffCitations === true &&
+    if (appConfig?.turnOffCitations === true &&
       responseMessage?.text?.includes('<sup>1.</sup>')
     ) {
       logger.debug('[BaseClient] Removing citations from response due to startup config.');
