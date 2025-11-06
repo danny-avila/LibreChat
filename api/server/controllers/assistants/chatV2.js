@@ -490,6 +490,12 @@ const chatV2 = async (req, res) => {
         thread_id,
       },
     });
+
+    logger.info('[ChatV2] Response sent, completing request processing');
+    logger.debug('[ChatV2] Response sent, completing request processing');
+    logger.warn('[ChatV2] Response sent, completing request processing');
+    logger.error('[ChatV2] Response sent, completing request processing');
+
     res.end();
 
     if (userMessagePromise) {
