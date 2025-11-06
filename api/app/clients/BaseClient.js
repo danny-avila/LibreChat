@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
+const { injectAffiliateLinks, getAffiliateConfig, getAffiliateInjected } = require('~/server/utils/affiliateLinks');
 const {
   getBalanceConfig,
   extractFileContext,
@@ -737,6 +738,14 @@ class BaseClient {
       }
     } else if (Array.isArray(completion)) {
       responseMessage.text = completion.join('');
+    }
+
+    // Append Affiliate Links if applicable
+    const affiliateConfig = getAffiliateConfig(appConfig);
+    if (affiliateConfig?.enableAffiliateLinks && !getAffiliateInjected()) {
+      responseMessage.text = injectAffiliateLinks(responseMessage.text);
+    } else {
+      logger.debug('[BaseClient] Affiliate links not injected due to configuration.');
     }
 
     if (
