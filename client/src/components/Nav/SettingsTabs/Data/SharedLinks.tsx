@@ -13,7 +13,6 @@ import {
   useMediaQuery,
   OGDialogHeader,
   OGDialogTitle,
-  TooltipAnchor,
   DataTable,
   Spinner,
   Button,
@@ -246,37 +245,27 @@ export default function SharedLinks() {
         },
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
-            <TooltipAnchor
-              description={localize('com_ui_view_source')}
-              render={
-                <Button
-                  variant="ghost"
-                  className="h-8 w-8 p-0 hover:bg-surface-hover"
-                  onClick={() => {
-                    window.open(`/c/${row.original.conversationId}`, '_blank');
-                  }}
-                  title={localize('com_ui_view_source')}
-                >
-                  <MessageSquare className="size-4" />
-                </Button>
-              }
-            />
-            <TooltipAnchor
-              description={localize('com_ui_delete')}
-              render={
-                <Button
-                  variant="ghost"
-                  className="h-8 w-8 p-0 hover:bg-surface-hover"
-                  onClick={() => {
-                    setDeleteRow(row.original);
-                    setIsDeleteOpen(true);
-                  }}
-                  title={localize('com_ui_delete')}
-                >
-                  <TrashIcon className="size-4" />
-                </Button>
-              }
-            />
+            <Button
+              variant="ghost"
+              className="h-8 w-8 p-0 hover:bg-surface-hover"
+              onClick={() => {
+                window.open(`/c/${row.original.conversationId}`, '_blank');
+              }}
+              aria-label={`${localize('com_ui_view_source')} - ${row.original.title || localize('com_ui_untitled')}`}
+            >
+              <MessageSquare className="size-4" aria-hidden="true" />
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-8 w-8 p-0 hover:bg-surface-hover"
+              onClick={() => {
+                setDeleteRow(row.original);
+                setIsDeleteOpen(true);
+              }}
+              aria-label={`${localize('com_ui_delete')} - ${row.original.title || localize('com_ui_untitled')}`}
+            >
+              <TrashIcon className="size-4" aria-hidden="true" />
+            </Button>
           </div>
         ),
       },

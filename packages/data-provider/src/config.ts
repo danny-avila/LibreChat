@@ -992,6 +992,8 @@ const sharedOpenAIModels = [
 const sharedAnthropicModels = [
   'claude-sonnet-4-5',
   'claude-sonnet-4-5-20250929',
+  'claude-haiku-4-5',
+  'claude-haiku-4-5-20251001',
   'claude-opus-4-1',
   'claude-opus-4-1-20250805',
   'claude-sonnet-4-20250514',
@@ -1017,6 +1019,9 @@ const sharedAnthropicModels = [
 ];
 
 export const bedrockModels = [
+  'anthropic.claude-sonnet-4-5-20250929-v1:0',
+  'anthropic.claude-haiku-4-5-20251001-v1:0',
+  'anthropic.claude-opus-4-1-20250805-v1:0',
   'anthropic.claude-3-5-sonnet-20241022-v2:0',
   'anthropic.claude-3-5-sonnet-20240620-v1:0',
   'anthropic.claude-3-5-haiku-20241022-v1:0',
@@ -1568,9 +1573,9 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.8.0',
+  VERSION = 'v0.8.1-rc1',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.0',
+  CONFIG_VERSION = '1.3.1',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
@@ -1603,6 +1608,8 @@ export enum Constants {
   mcp_prefix = 'mcp_',
   /** Unique value to indicate all MCP servers. For backend use only. */
   mcp_all = 'sys__all__sys',
+  /** Unique value to indicate clearing MCP servers from UI state. For frontend use only. */
+  mcp_clear = 'sys__clear__sys',
   /**
    * Unique value to indicate the MCP tool was added to an agent.
    * This helps inform the UI if the mcp server was previously added.

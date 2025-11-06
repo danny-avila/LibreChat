@@ -6,6 +6,7 @@ import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { setTimestamp } from '~/utils/timestamps';
 import { useMCPSelect } from '../useMCPSelect';
+import * as dataProvider from '~/data-provider';
 
 // Mock dependencies
 jest.mock('~/utils/timestamps', () => ({
@@ -14,9 +15,20 @@ jest.mock('~/utils/timestamps', () => ({
 
 jest.mock('lodash/isEqual', () => jest.fn((a, b) => JSON.stringify(a) === JSON.stringify(b)));
 
-const createWrapper = () => {
+jest.mock('~/data-provider', () => ({
+  ...jest.requireActual('~/data-provider'),
+  useGetStartupConfig: jest.fn(),
+}));
+
+const createWrapper = (mcpServers: string[] = []) => {
   // Create a new Jotai store for each test to ensure clean state
   const store = createStore();
+
+  // Mock the startup config
+  (dataProvider.useGetStartupConfig as jest.Mock).mockReturnValue({
+    data: { mcpServers: Object.fromEntries(mcpServers.map((v) => [v, {}])) },
+    isLoading: false,
+  });
 
   const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <RecoilRoot>
@@ -65,7 +77,7 @@ describe('useMCPSelect', () => {
   describe('State Updates', () => {
     it('should update mcpValues when setMCPValues is called', async () => {
       const { result } = renderHook(() => useMCPSelect({}), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper(['value1', 'value2']),
       });
 
       const newValues = ['value1', 'value2'];
@@ -229,7 +241,7 @@ describe('useMCPSelect', () => {
       const { result, rerender } = renderHook(
         ({ conversationId }) => useMCPSelect({ conversationId }),
         {
-          wrapper: createWrapper(),
+          wrapper: createWrapper(['convo1-value', 'convo2-value']),
           initialProps: { conversationId: 'convo1' },
         },
       );
@@ -271,7 +283,7 @@ describe('useMCPSelect', () => {
   describe('Ephemeral Agent Synchronization', () => {
     it('should sync mcpValues when ephemeralAgent is updated externally', async () => {
       // Create a shared wrapper for both hooks to share the same Recoil/Jotai context
-      const wrapper = createWrapper();
+      const wrapper = createWrapper(['external-value1', 'external-value2']);
 
       // Create a component that uses both hooks to ensure they share state
       const TestComponent = () => {
@@ -298,9 +310,75 @@ describe('useMCPSelect', () => {
       });
     });
 
+    it('should filter out MCPs not in configured servers', async () => {
+      const wrapper = createWrapper(['server1', 'server2']);
+
+      const TestComponent = () => {
+        const mcpHook = useMCPSelect({});
+        const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { mcpHook, setEphemeralAgent };
+      };
+
+      const { result } = renderHook(() => TestComponent(), { wrapper });
+
+      act(() => {
+        result.current.setEphemeralAgent({
+          mcp: ['server1', 'removed-server', 'server2'],
+        });
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual(['server1', 'server2']);
+      });
+    });
+
+    it('should clear all MCPs when none are in configured servers', async () => {
+      const wrapper = createWrapper(['server1', 'server2']);
+
+      const TestComponent = () => {
+        const mcpHook = useMCPSelect({});
+        const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { mcpHook, setEphemeralAgent };
+      };
+
+      const { result } = renderHook(() => TestComponent(), { wrapper });
+
+      act(() => {
+        result.current.setEphemeralAgent({
+          mcp: ['removed1', 'removed2', 'removed3'],
+        });
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual([]);
+      });
+    });
+
+    it('should keep all MCPs when all are in configured servers', async () => {
+      const wrapper = createWrapper(['server1', 'server2', 'server3']);
+
+      const TestComponent = () => {
+        const mcpHook = useMCPSelect({});
+        const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { mcpHook, setEphemeralAgent };
+      };
+
+      const { result } = renderHook(() => TestComponent(), { wrapper });
+
+      act(() => {
+        result.current.setEphemeralAgent({
+          mcp: ['server1', 'server2'],
+        });
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual(['server1', 'server2']);
+      });
+    });
+
     it('should update ephemeralAgent when mcpValues changes through hook', async () => {
       // Create a shared wrapper for both hooks
-      const wrapper = createWrapper();
+      const wrapper = createWrapper(['hook-value1', 'hook-value2']);
 
       // Create a component that uses both the hook and accesses Recoil state
       const TestComponent = () => {
@@ -326,7 +404,7 @@ describe('useMCPSelect', () => {
 
     it('should handle empty ephemeralAgent.mcp array correctly', async () => {
       // Create a shared wrapper
-      const wrapper = createWrapper();
+      const wrapper = createWrapper(['initial-value']);
 
       // Create a component that uses both hooks
       const TestComponent = () => {
@@ -358,9 +436,44 @@ describe('useMCPSelect', () => {
       expect(result.current.mcpHook.mcpValues).toEqual(['initial-value']);
     });
 
+    it('should handle ephemeralAgent with clear mcp value', async () => {
+      // Create a shared wrapper
+      const wrapper = createWrapper(['server1', 'server2']);
+
+      // Create a component that uses both hooks
+      const TestComponent = () => {
+        const mcpHook = useMCPSelect({});
+        const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { mcpHook, setEphemeralAgent };
+      };
+
+      const { result } = renderHook(() => TestComponent(), { wrapper });
+
+      // Set initial values
+      act(() => {
+        result.current.mcpHook.setMCPValues(['server1', 'server2']);
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual(['server1', 'server2']);
+      });
+
+      // Set ephemeralAgent with clear value
+      act(() => {
+        result.current.setEphemeralAgent({
+          mcp: [Constants.mcp_clear as string],
+        });
+      });
+
+      // mcpValues should be cleared
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual([]);
+      });
+    });
+
     it('should properly sync non-empty arrays from ephemeralAgent', async () => {
       // Additional test to ensure non-empty arrays DO sync
-      const wrapper = createWrapper();
+      const wrapper = createWrapper(['value1', 'value2', 'value3', 'value4', 'value5']);
 
       const TestComponent = () => {
         const mcpHook = useMCPSelect({});
@@ -401,7 +514,7 @@ describe('useMCPSelect', () => {
   describe('Edge Cases', () => {
     it('should handle undefined conversationId', () => {
       const { result } = renderHook(() => useMCPSelect({ conversationId: undefined }), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper(['test']),
       });
 
       expect(result.current.mcpValues).toEqual([]);
@@ -422,11 +535,10 @@ describe('useMCPSelect', () => {
     });
 
     it('should handle very large arrays without performance issues', async () => {
-      const { result } = renderHook(() => useMCPSelect({}), {
-        wrapper: createWrapper(),
-      });
-
       const largeArray = Array.from({ length: 1000 }, (_, i) => `value-${i}`);
+      const { result } = renderHook(() => useMCPSelect({}), {
+        wrapper: createWrapper(largeArray),
+      });
 
       const startTime = performance.now();
 
@@ -457,8 +569,9 @@ describe('useMCPSelect', () => {
 
   describe('Memory Leak Prevention', () => {
     it('should not leak memory on repeated updates', async () => {
+      const values = Array.from({ length: 100 }, (_, i) => `value-${i}`);
       const { result } = renderHook(() => useMCPSelect({}), {
-        wrapper: createWrapper(),
+        wrapper: createWrapper(values),
       });
 
       // Perform many updates to test for memory leaks

@@ -151,6 +151,7 @@ export default function Settings({
               min={0}
               step={0.01}
               className="flex h-4 w-full"
+              aria-labelledby="temp-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={optionEndpoint ?? ''} type="temp" side={ESide.Left} />
@@ -160,7 +161,9 @@ export default function Settings({
             <div className="flex justify-between">
               <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_top_p')}{' '}
-                <small className="opacity-40">({localize('com_endpoint_default')}: 1)</small>
+                <small className="opacity-40">
+                  ({localize('com_endpoint_default_with_num', { 0: '1' })})
+                </small>
               </Label>
               <InputNumber
                 id="top-p-int"
@@ -189,6 +192,7 @@ export default function Settings({
               min={0}
               step={0.01}
               className="flex h-4 w-full"
+              aria-labelledby="top-p-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={optionEndpoint ?? ''} type="topp" side={ESide.Left} />
@@ -199,7 +203,9 @@ export default function Settings({
             <div className="flex justify-between">
               <Label htmlFor="freq-penalty-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_frequency_penalty')}{' '}
-                <small className="opacity-40">({localize('com_endpoint_default')}: 0)</small>
+                <small className="opacity-40">
+                  ({localize('com_endpoint_default_with_num', { 0: '0' })})
+                </small>
               </Label>
               <InputNumber
                 id="freq-penalty-int"
@@ -228,6 +234,7 @@ export default function Settings({
               min={-2}
               step={0.01}
               className="flex h-4 w-full"
+              aria-labelledby="freq-penalty-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={optionEndpoint ?? ''} type="freq" side={ESide.Left} />
@@ -238,7 +245,9 @@ export default function Settings({
             <div className="flex justify-between">
               <Label htmlFor="pres-penalty-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_presence_penalty')}{' '}
-                <small className="opacity-40">({localize('com_endpoint_default')}: 0)</small>
+                <small className="opacity-40">
+                  ({localize('com_endpoint_default_with_num', { 0: '0' })})
+                </small>
               </Label>
               <InputNumber
                 id="pres-penalty-int"
@@ -267,6 +276,7 @@ export default function Settings({
               min={-2}
               step={0.01}
               className="flex h-4 w-full"
+              aria-labelledby="pres-penalty-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={optionEndpoint ?? ''} type="pres" side={ESide.Left} />
@@ -306,6 +316,7 @@ export default function Settings({
                   onCheckedChange={(checked: boolean) => setResendFiles(checked)}
                   disabled={readonly}
                   className="flex"
+                  aria-label={localize('com_endpoint_plug_resend_files')}
                 />
                 <OptionHover endpoint={optionEndpoint ?? ''} type="resend" side={ESide.Bottom} />
               </HoverCardTrigger>
@@ -323,6 +334,7 @@ export default function Settings({
                   max={2}
                   min={0}
                   step={1}
+                  aria-label={localize('com_endpoint_plug_image_detail')}
                 />
                 <OptionHover endpoint={optionEndpoint ?? ''} type="detail" side={ESide.Bottom} />
               </HoverCardTrigger>
