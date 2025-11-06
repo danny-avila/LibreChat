@@ -813,44 +813,6 @@ class OpenAIClient extends BaseClient {
     }
   }
 
-  /*
-  async processRAGResponse(content) {
-    // Check if RAG is enabled
-    if (!process.env.RAG_ENABLED || process.env.RAG_ENABLED !== 'true') {
-      return content;
-    }
-
-    // Skip RAG processing for title generation
-    if (this.options.context === 'title') {
-      return content;
-    }
-
-    try {
-      // Call your RAG API to enhance the response
-      const response = await fetch(`${process.env.RAG_API_URL}/enhance-response`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content,
-          conversationId: this.conversationId,
-          userId: this.user,
-          messageId: this.responseMessageId
-        })
-      });
-
-      if (!response.ok) {
-        logger.warn('[OpenAIClient] RAG API returned non-OK status:', response.status);
-        return content;
-      }
-
-      const { enhancedContent } = await response.json();
-      return enhancedContent || content;
-    } catch (error) {
-      logger.error('[OpenAIClient] RAG processing error:', error);
-      return content; // Return original content on error
-    }
-  } */
-
   async chatCompletion({ payload, onProgress, abortController = null }) {
     const appConfig = this.options.req?.config;
     let error = null;
