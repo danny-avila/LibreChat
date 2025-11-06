@@ -997,11 +997,11 @@ class OpenAIClient extends BaseClient {
       if (appConfig?.turnOffCitations === true &&
         content?.includes('<sup>1.</sup>')
       ) {
-        logger.debug('[BaseClient] Removing citations from response due to startup config.');
+        logger.debug('[OpenAIClient] Removing citations from response due to startup config.');
         content = content.split('<sup>1.</sup>')[0];
         content = this.removeCitations(content);
       } else {
-        logger.debug('[BaseClient] Citations remain in response.');
+        logger.debug('[OpenAIClient] Citations remain in response.');
       }
 
       // Append Affiliate Links if applicable
@@ -1009,12 +1009,12 @@ class OpenAIClient extends BaseClient {
       if (affiliateConfig?.enableAffiliateLinks && !getAffiliateInjected()) {
         content = injectAffiliateLinks(content);
       } else {
-        logger.debug('[BaseClient] Affiliate links not injected due to configuration.');
+        logger.debug('[OpenAIClient] Affiliate links not injected due to configuration.');
       }
 
       return content;
     } catch (error) {
-      logger.error('[OpenAIClient] RAG processing error:', error);
+      logger.error('[OpenAIClient] Affiliate processing error:', error);
       return content; // Return original content on error
     }
   }
