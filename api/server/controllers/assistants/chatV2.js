@@ -35,6 +35,21 @@ const { getOpenAIClient } = require('./helpers');
 const { injectAffiliateLinks, getAffiliateConfig, getAffiliateInjected } = require('~/server/utils/affiliateLinks');
 
 /**
+ * Removes citation tags from text content
+ * @param {string} text - The text to remove citations from
+ * @returns {string} - Text with citations removed
+ */
+const removeCitations = (text) => {
+  if (!text || typeof text !== 'string') {
+    return text;
+  }
+
+  // The regex should replace the <sup></sup> tags and everything inbetween
+  const supPattern = /<sup>.*?<\/sup>/g;
+  return text.replace(supPattern, '');
+};
+
+/**
  * @route POST /
  * @desc Chat with an assistant
  * @access Public
@@ -420,24 +435,29 @@ const chatV2 = async (req, res) => {
 
     completedRun = response.run;
 
-    // Process affiliate links
+    // Process citations and affiliate links
     let processedText = response.text;
     try {
+      // Check if citations should be removed
+      if (appConfig?.turnOffCitations === true && processedText?.includes('<sup>1.</sup>')) {
+        console.log('[ChatV2] Removing citations from response due to startup config');
+        processedText = processedText.split('<sup>1.</sup>')[0];
+        processedText = removeCitations(processedText);
+      } else {
+        console.log('[ChatV2] Citations remain in response');
+      }
+
+      // Process affiliate links
       const affiliateConfig = await getAffiliateConfig();
-      if (affiliateConfig.enabled) {
+      if (affiliateConfig.enableAffiliateLinks) {
         console.log('[ChatV2] Processing affiliates for response text:', processedText?.substring(0, 100) + '...');
-        const affiliateResult = await injectAffiliateLinks(processedText);
-        if (affiliateResult.injected) {
-          processedText = affiliateResult.content;
-          console.log('[ChatV2] Affiliate links injected successfully');
-        } else {
-          console.log('[ChatV2] No affiliate injection occurred');
-        }
+        const affiliateText =  injectAffiliateLinks(processedText);
+        processedText = affiliateText;
       } else {
         console.log('[ChatV2] Affiliate processing disabled in config');
       }
     } catch (error) {
-      console.error('[ChatV2] Error processing affiliates:', error);
+      console.error('[ChatV2] Error processing citations and affiliates:', error);
     }
 
     /** @type {ResponseMessage} */
