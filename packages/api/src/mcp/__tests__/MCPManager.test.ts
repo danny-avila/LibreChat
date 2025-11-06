@@ -31,6 +31,8 @@ jest.mock('~/mcp/registry/MCPServersRegistry', () => ({
 jest.mock('~/mcp/registry/MCPServersInitializer', () => ({
   MCPServersInitializer: {
     initialize: jest.fn(),
+    reInitializeServer: jest.fn(),
+    initPrivateServers: jest.fn(),
   },
 }));
 
@@ -58,7 +60,7 @@ describe('MCPManager', () => {
     appConnectionsConfig: Partial<ConnectionsRepository>,
   ): jest.MockedClass<typeof ConnectionsRepository> {
     const mock = {
-      has: jest.fn().mockReturnValue(false),
+      has: jest.fn().mockResolvedValue(false),
       get: jest.fn().mockResolvedValue({} as unknown as MCPConnection),
       ...appConnectionsConfig,
     };
@@ -303,7 +305,7 @@ describe('MCPManager', () => {
       });
 
       mockAppConnections({
-        has: jest.fn().mockReturnValue(true),
+        has: jest.fn().mockResolvedValue(true),
       });
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
@@ -321,7 +323,7 @@ describe('MCPManager', () => {
       (MCPServerInspector.getToolFunctions as jest.Mock) = jest.fn().mockResolvedValue({});
 
       mockAppConnections({
-        has: jest.fn().mockReturnValue(false),
+        has: jest.fn().mockResolvedValue(false),
       });
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
@@ -357,7 +359,7 @@ describe('MCPManager', () => {
         .mockResolvedValue(expectedTools);
 
       mockAppConnections({
-        has: jest.fn().mockReturnValue(true),
+        has: jest.fn().mockResolvedValue(true),
       });
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
@@ -376,7 +378,7 @@ describe('MCPManager', () => {
       });
 
       mockAppConnections({
-        has: jest.fn().mockReturnValue(true),
+        has: jest.fn().mockResolvedValue(true),
       });
 
       const manager = await MCPManager.createInstance(newMCPServersConfig(specificServerName));

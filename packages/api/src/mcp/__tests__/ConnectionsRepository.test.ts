@@ -2,12 +2,14 @@ import { logger } from '@librechat/data-schemas';
 import { ConnectionsRepository } from '../ConnectionsRepository';
 import { MCPConnectionFactory } from '../MCPConnectionFactory';
 import { MCPConnection } from '../connection';
+import type { ServerConfigsCache } from '../registry/cache/ServerConfigsCacheFactory';
 import type * as t from '../types';
 
 // Mock external dependencies
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     error: jest.fn(),
+    info: jest.fn(),
   },
 }));
 
@@ -23,7 +25,8 @@ const mockLogger = logger as jest.Mocked<typeof logger>;
 
 describe('ConnectionsRepository', () => {
   let repository: ConnectionsRepository;
-  let mockServerConfigs: t.MCPServers;
+  let mockCache: jest.Mocked<ServerConfigsCache>;
+  let mockServerConfigs: Record<string, t.ParsedServerConfig>;
   let mockConnection: jest.Mocked<MCPConnection>;
 
   beforeEach(() => {
@@ -33,14 +36,29 @@ describe('ConnectionsRepository', () => {
       server3: { url: 'ws://localhost:8080', type: 'websocket' },
     };
 
+    // Create mock cache with all required methods
+    mockCache = {
+      get: jest.fn((serverName: string) =>
+        Promise.resolve(mockServerConfigs[serverName] || undefined),
+      ),
+      getAll: jest.fn(() => Promise.resolve(mockServerConfigs)),
+      add: jest.fn(),
+      update: jest.fn(),
+      remove: jest.fn(),
+      getUpdatedAt: jest.fn(),
+      reset: jest.fn(),
+    } as unknown as jest.Mocked<ServerConfigsCache>;
+
     mockConnection = {
       isConnected: jest.fn().mockResolvedValue(true),
       disconnect: jest.fn().mockResolvedValue(undefined),
+      createdAt: Date.now(),
+      isStale: jest.fn().mockReturnValue(false),
     } as unknown as jest.Mocked<MCPConnection>;
 
     (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
 
-    repository = new ConnectionsRepository(mockServerConfigs);
+    repository = new ConnectionsRepository(mockCache);
 
     jest.clearAllMocks();
   });
@@ -50,12 +68,12 @@ describe('ConnectionsRepository', () => {
   });
 
   describe('has', () => {
-    it('should return true for existing server', () => {
-      expect(repository.has('server1')).toBe(true);
+    it('should return true for existing server', async () => {
+      expect(await repository.has('server1')).toBe(true);
     });
 
-    it('should return false for non-existing server', () => {
-      expect(repository.has('nonexistent')).toBe(false);
+    it('should return false for non-existing server', async () => {
+      expect(await repository.has('nonexistent')).toBe(false);
     });
   });
 
@@ -102,6 +120,89 @@ describe('ConnectionsRepository', () => {
         },
         undefined,
       );
+    });
+
+    it('should recreate connection when existing connection is stale', async () => {
+      const connectionCreatedAt = Date.now();
+      const configCachedAt = connectionCreatedAt + 10000; // Config updated 10 seconds after connection was created
+
+      const staleConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        disconnect: jest.fn().mockResolvedValue(undefined),
+        createdAt: connectionCreatedAt,
+        isStale: jest.fn().mockReturnValue(true),
+      } as unknown as jest.Mocked<MCPConnection>;
+
+      // Update server config with cachedAt timestamp
+      const configWithCachedAt = {
+        ...mockServerConfigs.server1,
+        cachedAt: configCachedAt,
+      };
+      mockCache.get.mockResolvedValue(configWithCachedAt);
+
+      repository['connections'].set('server1', staleConnection);
+
+      const result = await repository.get('server1');
+
+      // Verify stale check was called with the config's cachedAt timestamp
+      expect(staleConnection.isStale).toHaveBeenCalledWith(configCachedAt);
+
+      // Verify old connection was disconnected
+      expect(staleConnection.disconnect).toHaveBeenCalled();
+
+      // Verify new connection was created
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        {
+          serverName: 'server1',
+          serverConfig: configWithCachedAt,
+        },
+        undefined,
+      );
+
+      // Verify new connection is returned
+      expect(result).toBe(mockConnection);
+
+      // Verify the new connection replaced the stale one in the repository
+      expect(repository['connections'].get('server1')).toBe(mockConnection);
+      expect(repository['connections'].get('server1')).not.toBe(staleConnection);
+    });
+
+    it('should return existing connection when it is not stale', async () => {
+      const connectionCreatedAt = Date.now();
+      const configCachedAt = connectionCreatedAt - 10000; // Config is older than connection
+
+      const freshConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        disconnect: jest.fn().mockResolvedValue(undefined),
+        createdAt: connectionCreatedAt,
+        isStale: jest.fn().mockReturnValue(false),
+      } as unknown as jest.Mocked<MCPConnection>;
+
+      // Update server config with cachedAt timestamp
+      const configWithCachedAt = {
+        ...mockServerConfigs.server1,
+        cachedAt: configCachedAt,
+      };
+      mockCache.get.mockResolvedValue(configWithCachedAt);
+
+      repository['connections'].set('server1', freshConnection);
+
+      const result = await repository.get('server1');
+
+      // Verify stale check was called
+      expect(freshConnection.isStale).toHaveBeenCalledWith(configCachedAt);
+
+      // Verify connection was not disconnected
+      expect(freshConnection.disconnect).not.toHaveBeenCalled();
+
+      // Verify no new connection was created
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+
+      // Verify existing connection is returned
+      expect(result).toBe(freshConnection);
+
+      // Verify repository still has the same connection
+      expect(repository['connections'].get('server1')).toBe(freshConnection);
     });
 
     it('should throw error for non-existent server configuration', async () => {

@@ -16,8 +16,8 @@ import {
  * Handles server lifecycle operations including adding, removing, and querying configurations.
  */
 class MCPServersRegistry {
-  public readonly sharedAppServers = ServerConfigsCacheFactory.create('App', true);
-  public readonly sharedUserServers = ServerConfigsCacheFactory.create('User', true);
+  public readonly sharedAppServers = ServerConfigsCacheFactory.create('App', false); // changing to false to allow runtime updates when user shares an app with everyone. => initlizer takes care of race condition,
+  public readonly sharedUserServers = ServerConfigsCacheFactory.create('User', false);
   private readonly privateUserServers: Map<string | undefined, ServerConfigsCache> = new Map();
 
   public async addPrivateUserServer(
@@ -62,6 +62,20 @@ class MCPServersRegistry {
     return undefined;
   }
 
+  public async getPrivateServerConfig(
+    serverName: string,
+    userId: string,
+  ): Promise<t.ParsedServerConfig | undefined> {
+    if (!userId) {
+      throw new Error('userId is required for getPrivateServerConfig');
+    }
+    const userCache = this.privateUserServers.get(userId);
+    if (!userCache) {
+      throw new Error(`No private server cache found for user "${userId}"`);
+    }
+    return await userCache.get(serverName);
+  }
+
   public async getAllServerConfigs(userId?: string): Promise<Record<string, t.ParsedServerConfig>> {
     return {
       ...(await this.sharedAppServers.getAll()),
@@ -78,6 +92,23 @@ class MCPServersRegistry {
     return new Set(oauthServers.map(([name]) => name));
   }
 
+  /**
+   * Add a shared server configuration.
+   * Automatically routes to appropriate cache (app vs user) based on config properties.
+   * - Servers requiring OAuth or with startup=false → sharedUserServers
+   * - All other servers → sharedAppServers
+   *
+   * @param serverName - Name of the MCP server
+   * @param config - Parsed server configuration
+   */
+  public async addSharedServer(serverName: string, config: t.ParsedServerConfig): Promise<void> {
+    if (config.requiresOAuth || config.startup === false) {
+      await this.sharedUserServers.add(serverName, config);
+    } else {
+      await this.sharedAppServers.add(serverName, config);
+    }
+  }
+
   public async reset(): Promise<void> {
     await this.sharedAppServers.reset();
     await this.sharedUserServers.reset();
@@ -85,6 +116,32 @@ class MCPServersRegistry {
       await cache.reset();
     }
     this.privateUserServers.clear();
+  }
+
+  public async resetServer(serverName: string, userId?: string): Promise<void> {
+    const cacheLocation = await this.getCurrentServerCacheLocation(serverName, userId);
+    await cacheLocation.remove(serverName);
+  }
+
+  private async getCurrentServerCacheLocation(
+    serverName: string,
+    userId?: string,
+  ): Promise<ServerConfigsCache> {
+    const appServer = await this.sharedAppServers.get(serverName);
+    if (appServer) {
+      return this.sharedAppServers;
+    }
+    const userServer = await this.sharedUserServers.get(serverName);
+    if (userServer) {
+      return this.sharedUserServers;
+    }
+    if (userId) {
+      const privateServerCache = await this.privateUserServers.get(userId);
+      if (privateServerCache && (await privateServerCache.get(serverName))) {
+        return privateServerCache;
+      }
+    }
+    throw new Error(`Server ${serverName} not found`);
   }
 }
 
