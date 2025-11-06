@@ -58,6 +58,7 @@ const removeCitations = (text) => {
  * @returns {void}
  */
 const chatV2 = async (req, res) => {
+  console.log('=== CHATV2 ENDPOINT HIT ===');
   logger.info('[/assistants/chat/] ChatV2 endpoint hit');
   logger.debug('[/assistants/chat/] req.body', req.body);
   const appConfig = req.config;
@@ -438,6 +439,7 @@ const chatV2 = async (req, res) => {
 
     // Process citations and affiliate links
     let processedText = response.text;
+    console.log('=== STARTING AFFILIATE PROCESSING ===');
     try {
       logger.info('[ChatV2] Starting citation and affiliate processing');
       
