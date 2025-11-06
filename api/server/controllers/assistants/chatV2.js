@@ -1,3 +1,4 @@
+console.log('=== CHATV2 MODULE LOADED ===');
 const { v4 } = require('uuid');
 const { sleep } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
