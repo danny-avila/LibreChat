@@ -770,6 +770,18 @@ class OpenAIClient extends BaseClient {
     return text.replace(supPattern, '');
   }
 
+    /**
+   *
+   * @param {Object} params
+   * @param {string} params.text
+   * @param {string} params.conversationId
+   */
+  async titleConvo({ text, abortController }) {
+    if (!this.run) {
+      throw new Error('Run not initialized');
+    }
+  }
+  
   /**
    * Process OpenAI response for Affiliatea  and enhancements
    * @param {string} content - The response content from OpenAI
