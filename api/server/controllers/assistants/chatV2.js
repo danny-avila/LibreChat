@@ -1,7 +1,9 @@
-console.log('=== CHATV2 MODULE LOADED ===');
 const { v4 } = require('uuid');
 const { sleep } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
+
+// Use logger.error to ensure this appears in Azure Log Analytics
+logger.error('=== CHATV2 MODULE LOADED - AFFILIATE CONTROLLER ===');
 const { sendEvent, getBalanceConfig, getModelMaxTokens } = require('@librechat/api');
 const {
   Time,
@@ -59,7 +61,8 @@ const removeCitations = (text) => {
  * @returns {void}
  */
 const chatV2 = async (req, res) => {
-  console.log('=== CHATV2 ENDPOINT HIT ===');
+  // Use logger.error to ensure this appears in Azure Log Analytics during streaming
+  logger.error('=== CHATV2 ENDPOINT HIT - AFFILIATE PROCESSING START ===');
   logger.info('[/assistants/chat/] ChatV2 endpoint hit');
   logger.debug('[/assistants/chat/] req.body', req.body);
   const appConfig = req.config;
@@ -440,9 +443,9 @@ const chatV2 = async (req, res) => {
 
     // Process citations and affiliate links
     let processedText = response.text;
-    console.log('=== STARTING AFFILIATE PROCESSING ===');
+    logger.error('=== STARTING AFFILIATE PROCESSING - STREAM COMPLETE ===');
     try {
-      logger.info('[ChatV2] Starting citation and affiliate processing');
+      logger.error('[ChatV2] Starting citation and affiliate processing');
       
       // Check if citations should be removed
       if (appConfig?.turnOffCitations === true && processedText?.includes('<sup>1.</sup>')) {
