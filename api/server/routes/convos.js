@@ -12,10 +12,10 @@ const {
 const { getConvosByCursor, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
+const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
 const { deleteToolCalls } = require('~/models/ToolCall');
-const { deleteAllSharedLinks } = require('~/models');
 const getLogStores = require('~/cache/getLogStores');
 
 const assistantClients = {
@@ -125,7 +125,10 @@ router.delete('/', async (req, res) => {
 
   try {
     const dbResponse = await deleteConvos(req.user.id, filter);
-    await deleteToolCalls(req.user.id, filter.conversationId);
+    if (filter.conversationId) {
+      await deleteToolCalls(req.user.id, filter.conversationId);
+      await deleteConvoSharedLink(req.user.id, filter.conversationId);
+    }
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);
