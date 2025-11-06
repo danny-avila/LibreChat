@@ -68,8 +68,7 @@ async function loadConfigModels(req) {
 
     modelsConfig[name] = [];
 
-    const isHelicone = name.toLowerCase() === 'helicone';
-    const shouldFetch = models.fetch && ((!isUserProvided(API_KEY) && !isUserProvided(BASE_URL)) || isHelicone);
+    const shouldFetch = models.fetch && !isUserProvided(API_KEY) && !isUserProvided(BASE_URL);
 
     if (shouldFetch) {
       fetchPromisesMap[uniqueKey] =

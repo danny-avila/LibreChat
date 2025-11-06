@@ -960,7 +960,7 @@ export const alternateName = {
   [KnownEndpoints.deepseek]: 'DeepSeek',
   [KnownEndpoints.xai]: 'xAI',
   [KnownEndpoints.vercel]: 'Vercel',
-  [KnownEndpoints.helicone]: 'Helicone'
+  [KnownEndpoints.helicone]: 'Helicone',
 };
 
 const sharedOpenAIModels = [
