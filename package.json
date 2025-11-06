@@ -5,7 +5,8 @@
   "workspaces": [
     "api",
     "client",
-    "packages/*"
+    "packages/*",
+    "ws-local"
   ],
   "scripts": {
     "update": "node config/update.js",
@@ -94,6 +95,11 @@
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
   "homepage": "https://librechat.ai/",
+  "dependencies": {
+    "@smithy/eventstream-codec": "^2.0.5",
+    "@smithy/protocol-http": "^3.0.6",
+    "@smithy/signature-v4": "^2.0.10"
+  },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.1",
     "@eslint/compat": "^1.2.6",

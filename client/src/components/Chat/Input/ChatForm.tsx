@@ -1,6 +1,6 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
-import { TextareaAutosize, Button } from '@librechat/client';
+import { TextareaAutosize, Button, useToastContext } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import {
   Constants,
@@ -52,6 +52,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   useFocusChatEffect(textAreaRef);
   const localize = useLocalize();
 
+  const { showToast } = useToastContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [, setIsScrollable] = useState(false);

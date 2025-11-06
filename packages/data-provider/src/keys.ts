@@ -14,6 +14,7 @@ export enum QueryKeys {
   endpoints = 'endpoints',
   presets = 'presets',
   searchResults = 'searchResults',
+  webStatus = 'webStatus',
   tokenCount = 'tokenCount',
   availablePlugins = 'availablePlugins',
   startupConfig = 'startupConfig',

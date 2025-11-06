@@ -1,11 +1,12 @@
 import { webSearchAuth } from '@librechat/data-schemas';
-import { SafeSearchTypes, AuthType } from 'librechat-data-provider';
-import type {
-  ScraperProviders,
-  TWebSearchConfig,
+import {
+  SafeSearchTypes,
+  AuthType,
   SearchProviders,
-  TCustomConfig,
+  ScraperProviders,
   RerankerTypes,
+  type TWebSearchConfig,
+  type TCustomConfig,
 } from 'librechat-data-provider';
 import { loadWebSearchAuth, extractWebSearchEnvVars } from './web';
 
@@ -85,6 +86,10 @@ describe('web.ts', () => {
         jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: SearchProviders.SERPER,
+        scraperProvider: ScraperProviders.FIRECRAWL,
+        rerankerType: RerankerTypes.JINA,
+        wsLocalBaseUrl: '${WS_LOCAL_BASE_URL}',
       };
     });
 
@@ -121,6 +126,28 @@ describe('web.ts', () => {
       expect(result.authResult).toHaveProperty('searchProvider', 'serper');
       expect(result.authResult).toHaveProperty('scraperProvider', 'firecrawl');
       expect(['jina', 'cohere']).toContain(result.authResult.rerankerType as string);
+    });
+
+    it('should authenticate the local stack without requiring credentials', async () => {
+      webSearchConfig = {
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: SearchProviders.LOCAL,
+        scraperProvider: ScraperProviders.LOCAL,
+        rerankerType: RerankerTypes.NONE,
+        wsLocalBaseUrl: '${WS_LOCAL_BASE_URL}',
+      };
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.searchProvider).toBe(SearchProviders.LOCAL);
+      expect(result.authResult.scraperProvider).toBe(ScraperProviders.LOCAL);
+      expect(result.authResult.rerankerType).toBe(RerankerTypes.NONE);
+      expect(result.authResult.wsLocalBaseUrl).toBe('http://ws-local:7001');
     });
 
     it('should return authenticated=false when a required category is not authenticated', async () => {

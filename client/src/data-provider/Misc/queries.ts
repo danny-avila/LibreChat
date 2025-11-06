@@ -43,3 +43,16 @@ export const useGetSearchEnabledQuery = (
     enabled: (config?.enabled ?? true) === true && queriesEnabled,
   });
 };
+
+export const useWebStatusQuery = (
+  config?: UseQueryOptions<t.WebStatusResponse>,
+): QueryObserverResult<t.WebStatusResponse> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
+  return useQuery<t.WebStatusResponse>([QueryKeys.webStatus], () => dataService.getWebStatus(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+    enabled: (config?.enabled ?? true) === true && queriesEnabled,
+  });
+};

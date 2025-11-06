@@ -695,16 +695,20 @@ export enum SearchCategories {
 }
 
 export enum SearchProviders {
+  LOCAL = 'local',
   SERPER = 'serper',
   SEARXNG = 'searxng',
 }
 
 export enum ScraperProviders {
+  LOCAL = 'local',
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
 }
 
 export enum RerankerTypes {
+  LOCAL = 'local',
+  NONE = 'none',
   JINA = 'jina',
   COHERE = 'cohere',
 }
@@ -725,6 +729,7 @@ export const webSearchSchema = z.object({
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
+  wsLocalBaseUrl: z.string().optional().default('${WS_LOCAL_BASE_URL}'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),

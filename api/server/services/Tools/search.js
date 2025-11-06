@@ -5,7 +5,7 @@ const { logger } = require('@librechat/data-schemas');
 /**
  * Creates a function to handle search results and stream them as attachments
  * @param {import('http').ServerResponse} res - The HTTP server response object
- * @returns {{ onSearchResults: function(SearchResult, GraphRunnableConfig): void; onGetHighlights: function(string): void}} - Function that takes search results and returns or streams an attachment
+ * @returns {{ onSearchResults: function(SearchResult, GraphRunnableConfig): void; onGetHighlights: function(string): void; onStatus: function(object): void}} - Functions that handle search results, highlights, and status updates
  */
 function createOnSearchResults(res) {
   const context = {
@@ -15,6 +15,40 @@ function createOnSearchResults(res) {
     attachmentName: undefined,
     messageId: undefined,
     conversationId: undefined,
+    query: undefined,
+  };
+
+  const sendStatus = (status) => {
+    if (!res) {
+      return;
+    }
+
+    const payload = {
+      id: status?.id ?? nanoid(),
+      timestamp: status?.timestamp ?? Date.now(),
+      ...status,
+    };
+
+    if (payload.conversationId == null) {
+      payload.conversationId = context.conversationId;
+    }
+    if (payload.messageId == null) {
+      payload.messageId = context.messageId;
+    }
+    if (payload.toolCallId == null) {
+      payload.toolCallId = context.toolCallId;
+    }
+    if (payload.query == null) {
+      payload.query = context.query;
+    } else {
+      context.query = payload.query;
+    }
+
+    try {
+      res.write(`event: websearch_status\ndata: ${JSON.stringify(payload)}\n\n`);
+    } catch (error) {
+      logger.error('[onSearchResults] Failed to stream web search status', error);
+    }
   };
 
   /**
@@ -63,6 +97,9 @@ function createOnSearchResults(res) {
     context.toolCallId = runnableConfig.toolCall.id;
     context.messageId = runnableConfig.metadata.run_id;
     context.conversationId = runnableConfig.metadata.thread_id;
+    if (results.query) {
+      context.query = results.query;
+    }
     context.attachmentName = `${runnableConfig.toolCall.name}_${context.toolCallId}_${nanoid()}`;
 
     const attachment = buildAttachment(context);
@@ -98,6 +135,7 @@ function createOnSearchResults(res) {
   return {
     onSearchResults,
     onGetHighlights,
+    onStatus: sendStatus,
   };
 }
 

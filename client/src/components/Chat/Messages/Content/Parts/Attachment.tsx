@@ -5,6 +5,7 @@ import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
 import { useAttachmentLink } from './LogLink';
 import { cn } from '~/utils';
+import WebResults from '../WebResults';
 
 const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
   const [isVisible, setIsVisible] = useState(false);
@@ -108,6 +109,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
 
   const fileAttachments: TAttachment[] = [];
   const imageAttachments: TAttachment[] = [];
+  const webAttachments: TAttachment[] = [];
 
   attachments.forEach((attachment) => {
     const { width, height, filepath = null } = attachment as TFile & TAttachmentMetadata;
@@ -118,15 +120,21 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
         filepath != null
       : false;
 
+    if (attachment.type === Tools.web_search && attachment[Tools.web_search]) {
+      webAttachments.push(attachment);
+      return;
+    }
+
     if (isImage) {
       imageAttachments.push(attachment);
-    } else if (attachment.type !== Tools.web_search) {
+    } else {
       fileAttachments.push(attachment);
     }
   });
 
   return (
     <>
+      {webAttachments.length > 0 && <WebResults attachments={webAttachments} />}
       {fileAttachments.length > 0 && (
         <div className="my-2 flex flex-wrap items-center gap-2.5">
           {fileAttachments.map((attachment, index) =>

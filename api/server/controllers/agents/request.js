@@ -1,4 +1,4 @@
-const { sendEvent } = require('@librechat/api');
+const { sendEvent, loadWebSearchAuth } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
 const {
@@ -8,6 +8,9 @@ const {
 } = require('~/server/middleware');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { saveMessage } = require('~/models');
+const { createOnSearchResults } = require('~/server/services/Tools/search');
+const { loadAuthValues } = require('~/server/services/Tools/credentials');
+const { WebSearchShim } = require('~/server/services/WebSearch/shim');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -149,6 +152,38 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     }
     client = result.client;
 
+    const appConfig = req.config;
+    let webSearchShim = null;
+
+    if (appConfig?.webSearch) {
+      try {
+        const webSearchAuth = await loadWebSearchAuth({
+          userId,
+          webSearchConfig: appConfig.webSearch,
+          loadAuthValues,
+          throwError: false,
+        });
+
+        if (
+          webSearchAuth?.authResult &&
+          (webSearchAuth.authenticated || webSearchAuth.authResult.searchProvider === 'local')
+        ) {
+          const { onSearchResults, onGetHighlights } = createOnSearchResults(res);
+          webSearchShim = new WebSearchShim({
+            req,
+            res,
+            authResult: webSearchAuth.authResult,
+            webSearchConfig: appConfig.webSearch,
+            onSearchResults,
+            onGetHighlights,
+            logger,
+          });
+        }
+      } catch (error) {
+        logger.error('[AgentController] Failed to initialize web search shim', error);
+      }
+    }
+
     // Register client with finalization registry if available
     if (clientRegistry) {
       clientRegistry.register(client, { userId }, client);
@@ -202,8 +237,10 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       isEdited: !!editedContent,
       userMCPAuthMap: result.userMCPAuthMap,
       responseMessageId: editedResponseMessageId,
+      webSearchShim,
       progressOptions: {
         res,
+        webSearchShim,
       },
     };
 

@@ -14,6 +14,8 @@ const {
   Permissions,
   EToolResources,
   PermissionTypes,
+  SearchProviders,
+  ScraperProviders,
   replaceSpecialVars,
 } = require('librechat-data-provider');
 const {
@@ -32,6 +34,7 @@ const {
   createYouTubeTools,
   TavilySearchResults,
   createOpenAIImageTools,
+  createWebSearchTool,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -40,6 +43,7 @@ const { createMCPTool, createMCPTools } = require('~/server/services/MCP');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getRoleByName } = require('~/models/Role');
+const { buildRuntimeConfig } = require('~/server/services/WebSearch/config');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -324,7 +328,11 @@ const loadTools = async ({
         loadAuthValues,
         webSearchConfig: webSearch,
       });
-      const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
+      const { onSearchResults, onGetHighlights, onStatus } = options?.[Tools.web_search] ?? {};
+      const runtimeConfig = buildRuntimeConfig({
+        authResult: result.authResult,
+        webSearchConfig: webSearch,
+      });
       requestedTools[tool] = async () => {
         toolContextMap[tool] = `# \`${tool}\`:
 Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
@@ -335,7 +343,23 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
 5. **Tailor your approach to the query type** (academic, news, coding, etc.) while maintaining an expert, journalistic, unbiased tone.
 6. **Provide comprehensive information** with specific details, examples, and as much relevant context as possible from search results.
 7. **Avoid moralizing language.**
+8. If you cannot call tools directly, respond with the pattern \`[[WEB: <your search query>]]\` to request browsing.
+9. **When calling this tool, pass a JSON object** such as \`{"operation":"search_and_read","query":"best used cars"}\` or \`{"operation":"read","urls":["https://example.com"]}\`. A raw string argument like \`"latest AI news"\` is also accepted.
+10. **Do not call \`${tool}\` repeatedly** once you have results unless the user explicitly asks for another search.
 `.trim();
+        if (
+          runtimeConfig.search.kind === SearchProviders.LOCAL &&
+          runtimeConfig.scraper.kind === ScraperProviders.LOCAL
+        ) {
+          return createWebSearchTool({
+            authResult: result.authResult,
+            webSearchConfig: webSearch,
+            onSearchResults,
+            onGetHighlights,
+            onStatus,
+            logger,
+          });
+        }
         return createSearchTool({
           ...result.authResult,
           onSearchResults,

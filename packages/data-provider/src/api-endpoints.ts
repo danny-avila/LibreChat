@@ -120,6 +120,9 @@ export const search = (q: string, cursor?: string | null) =>
 
 export const searchEnabled = () => `${BASE_URL}/api/search/enable`;
 
+export const webSearch = () => `${BASE_URL}/api/web/search`;
+export const webStatus = () => `${BASE_URL}/api/web/status`;
+
 export const presets = () => `${BASE_URL}/api/presets`;
 
 export const deletePreset = () => `${BASE_URL}/api/presets/delete`;

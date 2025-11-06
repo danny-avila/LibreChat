@@ -33,9 +33,27 @@ const createOnProgress = (
   const basePayload = Object.assign({}, base, { text: tokens || '' });
 
   const progressCallback = (chunk, { res, ...rest }) => {
-    basePayload.text = basePayload.text + chunk;
+    const { webSearchShim, ...payloadRest } = rest;
+    let updatedText = basePayload.text + chunk;
 
-    const payload = Object.assign({}, basePayload, rest);
+    if (webSearchShim) {
+      const shimResult = webSearchShim.handleProgress({
+        accumulatedText: updatedText,
+        chunk,
+        basePayload,
+      });
+
+      updatedText = shimResult?.text ?? updatedText;
+      basePayload.text = updatedText;
+
+      if (shimResult?.skip) {
+        return;
+      }
+    } else {
+      basePayload.text = updatedText;
+    }
+
+    const payload = Object.assign({}, basePayload, payloadRest);
     sendEvent(res, payload);
     if (_onProgress) {
       _onProgress(payload);

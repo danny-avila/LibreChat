@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
-import { useSetRecoilState } from 'recoil';
+import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
   request,
   Constants,
@@ -21,6 +21,7 @@ import { useToastContext } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import useEventHandlers from './useEventHandlers';
 import store from '~/store';
+import type { WebSearchStatus } from '~/common';
 
 const clearDraft = (conversationId?: string | null) => {
   if (conversationId) {
@@ -198,6 +199,24 @@ export default function useSSE(
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
   const setModelAvailability = useSetRecoilState(store.modelAvailability);
+  const updateWebSearchStatuses = useRecoilCallback(
+    ({ set, reset }) =>
+      (conversationId: string, status?: WebSearchStatus | null, options?: { reset?: boolean }) => {
+        const atom = store.webSearchStatusFamily(conversationId);
+        if (options?.reset) {
+          reset(atom);
+          return;
+        }
+        if (!status) {
+          return;
+        }
+        set(atom, (prev = []) => {
+          const filtered = prev.filter((entry) => entry.id !== status.id);
+          return [...filtered, { ...status, timestamp: status.timestamp ?? Date.now() }];
+        });
+      },
+    [],
+  );
 
   const {
     setMessages,
@@ -266,6 +285,7 @@ export default function useSSE(
 
     let textIndex = null;
     clearStepMaps();
+    updateWebSearchStatuses(submissionConvoId, null, { reset: true });
 
     const sse = new SSE(payloadData.server, {
       payload: JSON.stringify(payload),
@@ -276,6 +296,24 @@ export default function useSSE(
       try {
         const data = JSON.parse(e.data);
         attachmentHandler({ data, submission: submission as EventSubmission });
+      } catch (error) {
+        console.error(error);
+      }
+    });
+
+    sse.addEventListener('websearch_status', (e: MessageEvent) => {
+      try {
+        const status = JSON.parse(e.data) as WebSearchStatus;
+        const conversationId = normalizeConversationId(
+          status.conversationId ?? submissionConvoId,
+        );
+        updateWebSearchStatuses(conversationId, status);
+
+        if (status.done || status.phase === 'complete') {
+          setTimeout(() => {
+            updateWebSearchStatuses(conversationId, null, { reset: true });
+          }, 1500);
+        }
       } catch (error) {
         console.error(error);
       }
@@ -300,6 +338,7 @@ export default function useSSE(
           }
           return prev;
         });
+        updateWebSearchStatuses(successConvoId, null, { reset: true });
         console.log('final', data);
         return;
       } else if (data.created != null) {
@@ -348,6 +387,7 @@ export default function useSSE(
     });
 
     sse.addEventListener('cancel', async () => {
+      updateWebSearchStatuses(submissionConvoId, null, { reset: true });
       const streamKey = (submission as TSubmission | null)?.['initialResponse']?.messageId;
       if (completed.has(streamKey)) {
         setIsSubmitting(false);
@@ -397,6 +437,7 @@ export default function useSSE(
 
       console.log('error in server stream.');
       (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
+      updateWebSearchStatuses(submissionConvoId, null, { reset: true });
 
       let data: TResData | undefined = undefined;
       const rawMessage = typeof e.data === 'string' ? e.data : null;
@@ -452,6 +493,7 @@ export default function useSSE(
     sse.stream();
 
     return () => {
+      updateWebSearchStatuses(submissionConvoId, null, { reset: true });
       const isCancelled = sse.readyState <= 1;
       sse.close();
       if (isCancelled) {

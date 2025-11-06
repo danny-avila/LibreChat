@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { Globe, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
-import { TooltipAnchor, DropdownPopup, PinIcon, VectorIcon } from '@librechat/client';
+import { TooltipAnchor, DropdownPopup, PinIcon, VectorIcon, Switch } from '@librechat/client';
 import type { MenuItemProps } from '~/common';
 import {
   AuthType,
@@ -78,15 +78,24 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     return !authTypes.every(([, authType]) => authType === AuthType.SYSTEM_DEFINED);
   }, [webSearchAuthData?.authTypes]);
 
+  const isWebSearchEnabled = Boolean(webSearch.toggleState);
+  const stopPropagation = useCallback((event: React.SyntheticEvent) => {
+    event.stopPropagation();
+  }, []);
+
   const showCodeSettings = useMemo(
     () => codeAuthData?.message !== AuthType.SYSTEM_DEFINED,
     [codeAuthData?.message],
   );
 
-  const handleWebSearchToggle = useCallback(() => {
-    const newValue = !webSearch.toggleState;
-    webSearch.debouncedChange({ value: newValue });
-  }, [webSearch]);
+  const handleWebSearchToggle = useCallback(
+    (value?: boolean) => {
+      const currentValue = Boolean(webSearch.toggleState);
+      const nextValue = typeof value === 'boolean' ? value : !currentValue;
+      webSearch.debouncedChange({ value: nextValue });
+    },
+    [webSearch],
+  );
 
   const handleCodeInterpreterToggle = useCallback(() => {
     const newValue = !codeInterpreter.toggleState;
@@ -163,10 +172,17 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
 
   if (canUseWebSearch && webSearchEnabled) {
     dropdownItems.push({
-      onClick: handleWebSearchToggle,
+      onClick: () => handleWebSearchToggle(),
       hideOnClick: false,
-      render: (props) => (
-        <div {...props}>
+      render: ({ className, ...itemProps }) => (
+        <div
+          {...itemProps}
+          className={cn(
+            'flex items-center justify-between',
+            className,
+            isWebSearchEnabled && 'bg-surface-secondary/70',
+          )}
+        >
           <div className="flex items-center gap-2">
             <Globe className="icon-md" />
             <span>{localize('com_ui_web_search')}</span>
@@ -209,6 +225,15 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
                 <PinIcon unpin={isSearchPinned} />
               </div>
             </button>
+            <Switch
+              checked={isWebSearchEnabled}
+              onCheckedChange={(checked) => handleWebSearchToggle(checked)}
+              aria-label={localize('com_ui_web_search')}
+              className="ml-1"
+              onClick={stopPropagation}
+              onPointerDown={stopPropagation}
+              onKeyDown={stopPropagation}
+            />
           </div>
         </div>
       ),
@@ -321,17 +346,19 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   );
 
   return (
-    <DropdownPopup
-      itemClassName="flex w-full cursor-pointer rounded-lg items-center justify-between hover:bg-surface-hover gap-5"
-      menuId="tools-dropdown-menu"
-      isOpen={isPopoverActive}
-      setIsOpen={setIsPopoverActive}
-      modal={true}
-      unmountOnHide={true}
-      trigger={menuTrigger}
-      items={dropdownItems}
-      iconClassName="mr-0"
-    />
+    <>
+      <DropdownPopup
+        itemClassName="flex w-full cursor-pointer rounded-lg items-center justify-between hover:bg-surface-hover gap-5"
+        menuId="tools-dropdown-menu"
+        isOpen={isPopoverActive}
+        setIsOpen={setIsPopoverActive}
+        modal={true}
+        unmountOnHide={true}
+        trigger={menuTrigger}
+        items={dropdownItems}
+        iconClassName="mr-0"
+      />
+    </>
   );
 };
 

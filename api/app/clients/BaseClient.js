@@ -584,10 +584,15 @@ class BaseClient {
 
   async sendMessage(message, opts = {}) {
     const appConfig = this.options.req?.config;
+    const webSearchShim = opts.webSearchShim;
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
       await this.handleStartMethods(message, opts);
+
+    if (webSearchShim) {
+      webSearchShim.setAbortController(this.abortController);
+    }
 
     if (opts.progressCallback) {
       opts.onProgress = opts.progressCallback.call(null, {
@@ -650,16 +655,6 @@ class BaseClient {
       opts,
     );
 
-    if (tokenCountMap) {
-      logger.debug('[BaseClient] tokenCountMap', tokenCountMap);
-      if (tokenCountMap[userMessage.messageId]) {
-        userMessage.tokenCount = tokenCountMap[userMessage.messageId];
-        logger.debug('[BaseClient] userMessage', userMessage);
-      }
-
-      this.handleTokenCountMap(tokenCountMap);
-    }
-
     if (!isEdited && !this.skipSaveUserMessage) {
       userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user);
       this.savedMessageIds.add(userMessage.messageId);
@@ -670,27 +665,62 @@ class BaseClient {
       }
     }
 
+    /** @type {string|string[]|undefined} */
+    let completion;
     const balanceConfig = getBalanceConfig(appConfig);
-    if (
-      balanceConfig?.enabled &&
-      supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
-    ) {
-      await checkBalance({
-        req: this.options.req,
-        res: this.options.res,
-        txData: {
-          user: this.user,
-          tokenType: 'prompt',
-          amount: promptTokens,
-          endpoint: this.options.endpoint,
-          model: this.modelOptions?.model ?? this.model,
-          endpointTokenConfig: this.options.endpointTokenConfig,
-        },
-      });
+    const shouldCheckBalance =
+      balanceConfig?.enabled && supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint];
+    while (true) {
+      try {
+        if (shouldCheckBalance) {
+          await checkBalance({
+            req: this.options.req,
+            res: this.options.res,
+            txData: {
+              user: this.user,
+              tokenType: 'prompt',
+              amount: promptTokens,
+              endpoint: this.options.endpoint,
+              model: this.modelOptions?.model ?? this.model,
+              endpointTokenConfig: this.options.endpointTokenConfig,
+            },
+          });
+        }
+
+        completion = await this.sendCompletion(payload, opts);
+        break;
+      } catch (error) {
+        if (webSearchShim?.shouldResume(error)) {
+          const nextRun = await webSearchShim.prepareNextRun({
+            client: this,
+            userMessage,
+            parentMessageId,
+            opts: { ...opts, saveOptions },
+          });
+
+          if (!nextRun) {
+            throw error;
+          }
+
+          ({ payload, tokenCountMap, promptTokens } = nextRun);
+          continue;
+        }
+
+        throw error;
+      }
+    }
+    webSearchShim?.reset?.();
+
+    if (tokenCountMap) {
+      logger.debug('[BaseClient] tokenCountMap', tokenCountMap);
+      if (tokenCountMap[userMessage.messageId]) {
+        userMessage.tokenCount = tokenCountMap[userMessage.messageId];
+        logger.debug('[BaseClient] userMessage', userMessage);
+      }
+
+      this.handleTokenCountMap(tokenCountMap);
     }
 
-    /** @type {string|string[]|undefined} */
-    const completion = await this.sendCompletion(payload, opts);
     if (this.abortController) {
       this.abortController.requestCompleted = true;
     }

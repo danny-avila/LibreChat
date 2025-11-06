@@ -9,6 +9,7 @@ services:
     depends_on:
       - mongodb
       - rag_api
+      - ws-local
     build:
       context: .
       dockerfile: Dockerfile
@@ -22,6 +23,13 @@ services:
       - MEILI_HOST=http://meilisearch:7700
       - RAG_PORT=${RAG_PORT:-8000}
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+      - WS_LOCAL_BASE_URL=http://ws-local:7001
+      - WEB_SEARCH_PROVIDER=${WEB_SEARCH_PROVIDER:-local}
+      - WEB_SCRAPER=${WEB_SCRAPER:-local}
+      - WEB_RERANK=${WEB_RERANK:-none}
+      - WEB_SEARCH_MAX_URLS=${WEB_SEARCH_MAX_URLS:-10}
+      - WEB_SEARCH_TIMEOUT_MS=${WEB_SEARCH_TIMEOUT_MS:-30000}
+      - WEB_SEARCH_AUTO=${WEB_SEARCH_AUTO:-false}
     volumes:
       - type: bind
         source: ./librechat.example.yaml
@@ -105,6 +113,33 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  searxng:
+    container_name: searxng
+    image: searxng/searxng:latest
+    restart: always
+    environment:
+      - SEARXNG_BASE_URL=${SEARXNG_BASE_URL:-http://searxng:8080}
+      - INSTANCE_NAME=${SEARXNG_INSTANCE_NAME:-LibreChat SearxNG}
+      - BIND_ADDRESS=0.0.0.0
+    volumes:
+      - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+
+  ws-local:
+    build:
+      context: ./ws-local
+    container_name: ws-local
+    restart: always
+    depends_on:
+      - searxng
+    environment:
+      - PORT=7001
+      - SEARXNG_URL=${SEARXNG_BASE_URL:-http://searxng:8080}
+      - MAX_FETCH_URLS=${WEB_SEARCH_MAX_URLS:-10}
+      - MAX_TEXT_BYTES=204800
+      - CACHE_TTL_MS=600000
+      - PLAYWRIGHT_NAV_TIMEOUT=8000
+      - TOTAL_TIMEOUT_MS=30000
 
 volumes:
   pgdata2:

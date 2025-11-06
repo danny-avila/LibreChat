@@ -4,6 +4,9 @@ import type { TWebSearchKeys, TWebSearchCategories } from '~/types/web';
 
 export const webSearchAuth = {
   providers: {
+    local: {
+      wsLocalBaseUrl: 0 as const,
+    },
     serper: {
       serperApiKey: 1 as const,
     },
@@ -14,6 +17,9 @@ export const webSearchAuth = {
     },
   },
   scrapers: {
+    local: {
+      wsLocalBaseUrl: 0 as const,
+    },
     firecrawl: {
       firecrawlApiKey: 1 as const,
       /** Optional (0) */
@@ -25,6 +31,10 @@ export const webSearchAuth = {
     },
   },
   rerankers: {
+    local: {
+      wsLocalBaseUrl: 0 as const,
+    },
+    none: {},
     jina: {
       jinaApiKey: 1 as const,
       /** Optional (0) */
@@ -72,6 +82,7 @@ export function loadWebSearchConfig(
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
+  const wsLocalBaseUrl = config?.wsLocalBaseUrl ?? '${WS_LOCAL_BASE_URL}';
   const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
 
   return {
@@ -80,6 +91,7 @@ export function loadWebSearchConfig(
     jinaApiKey,
     jinaApiUrl,
     cohereApiKey,
+    wsLocalBaseUrl,
     serperApiKey,
     searxngApiKey,
     firecrawlApiKey,

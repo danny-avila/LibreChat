@@ -1,0 +1,19 @@
+{
+  "name": "@librechat/ws-local",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.4.4",
+    "axios": "^1.12.1",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "helmet": "^7.0.0",
+    "jsdom": "^24.1.0",
+    "morgan": "^1.10.0",
+    "playwright": "1.56.1"
+  }
+}
