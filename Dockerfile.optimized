@@ -1,0 +1,90 @@
+# v0.8.0 - Multi-stage Optimized
+
+# ===========================
+# Build Stage
+# ===========================
+FROM node:20-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    make \
+    g++ \
+    && rm -rf /var/cache/apk/*
+
+WORKDIR /app
+
+# Copy package files for better layer caching
+COPY package.json package-lock.json ./
+COPY api/package.json ./api/package.json
+COPY client/package.json ./client/package.json
+COPY packages/data-provider/package.json ./packages/data-provider/package.json
+COPY packages/data-schemas/package.json ./packages/data-schemas/package.json
+COPY packages/api/package.json ./packages/api/package.json
+
+# Install ALL dependencies (including dev)
+RUN npm ci --no-audit --no-fund --silent
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN NODE_OPTIONS="--max-old-space-size=2048" npm run frontend
+
+# Install only production dependencies in a clean directory
+RUN rm -rf node_modules && \
+    npm ci --only=production --no-audit --no-fund --silent
+
+# ===========================
+# Runtime Stage  
+# ===========================
+FROM node:20-alpine AS runtime
+
+# Install only runtime dependencies
+RUN apk add --no-cache \
+    jemalloc \
+    uv \
+    && rm -rf /var/cache/apk/*
+
+# Set environment variable to use jemalloc
+ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
+
+# Add `uv` for extended MCP support
+COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
+
+# Create app directory with proper permissions
+RUN mkdir -p /app && chown node:node /app
+WORKDIR /app
+
+USER node
+
+# Copy only production files from builder
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/api ./api
+COPY --from=builder --chown=node:node /app/client/dist ./client/dist
+COPY --from=builder --chown=node:node /app/client/public ./client/public
+COPY --from=builder --chown=node:node /app/packages ./packages
+COPY --from=builder --chown=node:node /app/package.json ./package.json
+
+# Copy only necessary config files
+COPY --chown=node:node librechat.yaml ./
+
+# Create required directories
+RUN mkdir -p \
+    /app/client/public/images \
+    /app/api/logs \
+    /app/uploads \
+    && touch .env
+
+COPY --from=builder --chown=node:node /app/client/public/assets /app/client/public/images
+
+# Expose port
+EXPOSE 3080
+
+# Set environment
+ENV HOST=0.0.0.0
+ENV NODE_ENV=production
+
+# Start the application
+CMD ["npm", "run", "backend"]
