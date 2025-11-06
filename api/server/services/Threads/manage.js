@@ -11,6 +11,7 @@ const { recordMessage, getMessages } = require('~/models/Message');
 const { countTokens, escapeRegExp } = require('~/server/utils');
 const { spendTokens } = require('~/models/spendTokens');
 const { saveConvo } = require('~/models/Conversation');
+const { injectAffiliateLinks, getAffiliateConfig, getAffiliateInjected } = require('~/server/utils/affiliateLinks');
 
 /**
  * Initializes a new thread or adds messages to an existing thread.
@@ -678,6 +679,19 @@ async function processMessages({ openai, client, messages = [] }) {
     Array.from(sources.entries()).forEach(([source, index], arrayIndex) => {
       text += `^${index}.^ ${source}${arrayIndex === sources.size - 1 ? '' : '\n'}`;
     });
+  }
+
+  // Process affiliate links for assistant responses
+  try {
+    const affiliateConfig = getAffiliateConfig();
+    if (affiliateConfig?.enableAffiliateLinks && !getAffiliateInjected()) {
+      text = injectAffiliateLinks(text);
+      console.log('[processMessages] Affiliate links injected into assistant response');
+    } else {
+      console.log('[processMessages] Affiliate links not injected - config:', affiliateConfig?.enableAffiliateLinks, 'injected:', getAffiliateInjected());
+    }
+  } catch (error) {
+    console.error('[processMessages] Affiliate processing error:', error);
   }
 
   return { messages: sorted, text, edited };
