@@ -78,6 +78,16 @@ class BaseClient {
     throw new Error("Method 'setOptions' must be implemented.");
   }
 
+  removeCitations(text) {
+    if (!text || typeof text !== 'string') {
+      return text;
+    }
+
+    // The regex should replace the <sup></sup> tags and everything inbetween
+    const supPattern = /<sup>.*?<\/sup>/g;
+    return text.replace(supPattern, '');
+  }
+
   async getCompletion() {
     throw new Error("Method 'getCompletion' must be implemented.");
   }
@@ -738,6 +748,16 @@ class BaseClient {
       }
     } else if (Array.isArray(completion)) {
       responseMessage.text = completion.join('');
+    }
+
+    if (startUpConfig?.turnOffCitations === true &&
+      responseMessage?.text?.includes('<sup>1.</sup>')
+    ) {
+      logger.debug('[BaseClient] Removing citations from response due to startup config.');
+      responseMessage.text = responseMessage.text.split('<sup>1.</sup>')[0];
+      responseMessage.text = this.removeCitations(responseMessage.text);
+    } else {
+      logger.debug('[BaseClient] Citations remain in response.');
     }
 
     // Append Affiliate Links if applicable
