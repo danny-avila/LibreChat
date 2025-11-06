@@ -1,6 +1,13 @@
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { sleep, SplitStreamHandler, CustomOpenAIClient: OpenAI } = require('@librechat/agents');
+const { 
+  sleep, 
+  SplitStreamHandler, 
+  CustomOpenAIClient: OpenAI, 
+  Providers,
+  TitleMethod,
+  createMetadataAggregator,
+} = require('@librechat/agents');
 const {
   isEnabled,
   Tokenizer,
@@ -11,6 +18,10 @@ const {
   genAzureChatCompletion,
   getModelMaxOutputTokens,
   createStreamEventHandlers,
+  sanitizeTitle,
+  getBalanceConfig,
+  getTransactionsConfig,
+  getProviderConfig,
 } = require('@librechat/api');
 const {
   Constants,
@@ -24,6 +35,7 @@ const {
   getResponseSender,
   validateVisionModel,
   mapModelToAzureConfig,
+  omitTitleOptions,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { formatMessage, createContextHandlers } = require('./prompts');
@@ -777,11 +789,197 @@ class OpenAIClient extends BaseClient {
    * @param {string} params.conversationId
    */
   async titleConvo({ text, abortController }) {
-    if (!this.run) {
+   if (!this.run) {
       throw new Error('Run not initialized');
     }
+    const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
+    const { req, res, agent } = this.options;
+    const appConfig = req.config;
+    let endpoint = agent.endpoint;
+
+    /** @type {import('@librechat/agents').ClientOptions} */
+    let clientOptions = {
+      model: agent.model || agent.model_parameters.model,
+    };
+
+    let titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
+
+    /** @type {TEndpoint | undefined} */
+    const endpointConfig =
+      appConfig.endpoints?.all ??
+      appConfig.endpoints?.[endpoint] ??
+      titleProviderConfig.customEndpointConfig;
+    if (!endpointConfig) {
+      logger.debug(
+        `[api/apps/clients/OpenAIClient.js #titleConvo] No endpoint config for "${endpoint}"`,
+      );
+    }
+
+    if (endpointConfig?.titleConvo === false) {
+      logger.debug(
+        `[api/apps/clients/OpenAIClient.js #titleConvo] Title generation disabled for endpoint "${endpoint}"`,
+      );
+      return;
+    }
+
+    if (endpointConfig?.titleEndpoint && endpointConfig.titleEndpoint !== endpoint) {
+      try {
+        titleProviderConfig = getProviderConfig({
+          provider: endpointConfig.titleEndpoint,
+          appConfig,
+        });
+        endpoint = endpointConfig.titleEndpoint;
+      } catch (error) {
+        logger.warn(
+          `[api/apps/clients/OpenAIClient.js #titleConvo] Error getting title endpoint config for "${endpointConfig.titleEndpoint}", falling back to default`,
+          error,
+        );
+        // Fall back to original provider config
+        endpoint = agent.endpoint;
+        titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
+      }
+    }
+
+    if (
+      endpointConfig &&
+      endpointConfig.titleModel &&
+      endpointConfig.titleModel !== Constants.CURRENT_MODEL
+    ) {
+      clientOptions.model = endpointConfig.titleModel;
+    }
+
+    const options = await titleProviderConfig.getOptions({
+      req,
+      res,
+      optionsOnly: true,
+      overrideEndpoint: endpoint,
+      overrideModel: clientOptions.model,
+      endpointOption: { model_parameters: clientOptions },
+    });
+
+    let provider = options.provider ?? titleProviderConfig.overrideProvider ?? agent.provider;
+    if (
+      endpoint === EModelEndpoint.azureOpenAI &&
+      options.llmConfig?.azureOpenAIApiInstanceName == null
+    ) {
+      provider = Providers.OPENAI;
+    } else if (
+      endpoint === EModelEndpoint.azureOpenAI &&
+      options.llmConfig?.azureOpenAIApiInstanceName != null &&
+      provider !== Providers.AZURE
+    ) {
+      provider = Providers.AZURE;
+    }
+
+    /** @type {import('@librechat/agents').ClientOptions} */
+    clientOptions = { ...options.llmConfig };
+    if (options.configOptions) {
+      clientOptions.configuration = options.configOptions;
+    }
+
+    if (clientOptions.maxTokens != null) {
+      delete clientOptions.maxTokens;
+    }
+    if (clientOptions?.modelKwargs?.max_completion_tokens != null) {
+      delete clientOptions.modelKwargs.max_completion_tokens;
+    }
+    if (clientOptions?.modelKwargs?.max_output_tokens != null) {
+      delete clientOptions.modelKwargs.max_output_tokens;
+    }
+
+    clientOptions = Object.assign(
+      Object.fromEntries(
+        Object.entries(clientOptions).filter(([key]) => !omitTitleOptions.has(key)),
+      ),
+    );
+
+    if (
+      provider === Providers.GOOGLE &&
+      (endpointConfig?.titleMethod === TitleMethod.FUNCTIONS ||
+        endpointConfig?.titleMethod === TitleMethod.STRUCTURED)
+    ) {
+      clientOptions.json = true;
+    }
+
+    /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
+     *  non-custom endpoints, needs consideration of varying provider header configs.
+     */
+    if (clientOptions?.configuration?.defaultHeaders != null) {
+      clientOptions.configuration.defaultHeaders = resolveHeaders({
+        headers: clientOptions.configuration.defaultHeaders,
+        body: {
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          parentMessageId: this.parentMessageId,
+        },
+      });
+    }
+
+    try {
+      const titleResult = await this.run.generateTitle({
+        provider,
+        clientOptions,
+        inputText: text,
+        contentParts: this.contentParts,
+        titleMethod: endpointConfig?.titleMethod,
+        titlePrompt: endpointConfig?.titlePrompt,
+        titlePromptTemplate: endpointConfig?.titlePromptTemplate,
+        chainOptions: {
+          signal: abortController.signal,
+          callbacks: [
+            {
+              handleLLMEnd,
+            },
+          ],
+          configurable: {
+            thread_id: this.conversationId,
+            user_id: this.user ?? this.options.req.user?.id,
+          },
+        },
+      });
+
+      const collectedUsage = collectedMetadata.map((item) => {
+        let input_tokens, output_tokens;
+
+        if (item.usage) {
+          input_tokens =
+            item.usage.prompt_tokens || item.usage.input_tokens || item.usage.inputTokens;
+          output_tokens =
+            item.usage.completion_tokens || item.usage.output_tokens || item.usage.outputTokens;
+        } else if (item.tokenUsage) {
+          input_tokens = item.tokenUsage.promptTokens;
+          output_tokens = item.tokenUsage.completionTokens;
+        }
+
+        return {
+          input_tokens: input_tokens,
+          output_tokens: output_tokens,
+        };
+      });
+
+      const balanceConfig = getBalanceConfig(appConfig);
+      const transactionsConfig = getTransactionsConfig(appConfig);
+      await this.recordCollectedUsage({
+        collectedUsage,
+        context: 'title',
+        model: clientOptions.model,
+        balance: balanceConfig,
+        transactions: transactionsConfig,
+      }).catch((err) => {
+        logger.error(
+          '[api/apps/clients/OpenAIClient.js #titleConvo] Error recording collected usage',
+          err,
+        );
+      });
+
+      return sanitizeTitle(titleResult.title);
+    } catch (err) {
+      logger.error('[api/apps/clients/OpenAIClient.js #titleConvo] Error', err);
+      return;
+    }
   }
-  
+
+
   /**
    * Process OpenAI response for Affiliatea  and enhancements
    * @param {string} content - The response content from OpenAI
