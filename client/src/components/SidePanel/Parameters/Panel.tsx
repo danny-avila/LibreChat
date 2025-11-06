@@ -7,6 +7,8 @@ import {
   getSettingsKeys,
   SettingDefinition,
   tConvoUpdateSchema,
+  getGoogleConfig,
+  EModelEndpoint,
 } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import { SaveAsPresetDialog } from '~/components/Endpoints';
@@ -41,7 +43,15 @@ export default function Parameters() {
     const customParams = endpointsConfig[provider]?.customParams ?? {};
     const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model);
     const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
-    const defaultParams = paramSettings[combinedKey] ?? paramSettings[overriddenEndpointKey] ?? [];
+    
+    let defaultParams: SettingDefinition[] = [];
+    if (provider === EModelEndpoint.google) {
+      const disableWebSearch = endpointsConfig[provider]?.disableWebSearch ?? false;
+      defaultParams = getGoogleConfig(disableWebSearch);
+    } else {
+      defaultParams = paramSettings[combinedKey] ?? paramSettings[overriddenEndpointKey] ?? [];
+    }
+    
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
     return defaultParams

@@ -214,6 +214,14 @@ export const bedrockEndpointSchema = baseEndpointSchema.merge(
   }),
 );
 
+export const googleEndpointSchema = baseEndpointSchema.merge(
+  z.object({
+    disableWebSearch: z.boolean().optional().default(false),
+  }),
+);
+
+export type TGoogleEndpoint = z.infer<typeof googleEndpointSchema>;
+
 const modelItemSchema = z.union([
   z.string(),
   z.object({
@@ -858,7 +866,7 @@ export const configSchema = z.object({
     .object({
       all: baseEndpointSchema.optional(),
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
-      [EModelEndpoint.google]: baseEndpointSchema.optional(),
+      [EModelEndpoint.google]: googleEndpointSchema.optional(),
       [EModelEndpoint.anthropic]: baseEndpointSchema.optional(),
       [EModelEndpoint.gptPlugins]: baseEndpointSchema.optional(),
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),

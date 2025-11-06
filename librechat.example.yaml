@@ -193,6 +193,9 @@ actions:
 
 # Definition of custom endpoints
 endpoints:
+  # google:
+  #   # Disable Google Search Grounding feature globally
+  #   disableWebSearch: true
   # assistants:
   #   disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
   #   pollIntervalMs: 3000  # Polling interval for checking assistant updates

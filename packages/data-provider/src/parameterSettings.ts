@@ -659,6 +659,20 @@ const googleCol2: SettingsConfiguration = [
   librechat.fileTokenLimit,
 ];
 
+export function getGoogleConfig(disableWebSearch?: boolean): SettingsConfiguration {
+  if (disableWebSearch) {
+    return googleConfig.filter((setting) => setting !== google.web_search);
+  }
+  return googleConfig;
+}
+
+export function getGoogleCol2(disableWebSearch?: boolean): SettingsConfiguration {
+  if (disableWebSearch) {
+    return googleCol2.filter((setting) => setting !== google.web_search);
+  }
+  return googleCol2;
+}
+
 const openAI: SettingsConfiguration = [
   librechat.modelLabel,
   librechat.promptPrefix,
