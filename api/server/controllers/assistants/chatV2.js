@@ -32,6 +32,7 @@ const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const { countTokens } = require('~/server/utils');
 const { getOpenAIClient } = require('./helpers');
+const { injectAffiliateLinks, getAffiliateConfig, getAffiliateInjected } = require('~/server/utils/affiliateLinks');
 
 /**
  * @route POST /
@@ -419,10 +420,30 @@ const chatV2 = async (req, res) => {
 
     completedRun = response.run;
 
+    // Process affiliate links
+    let processedText = response.text;
+    try {
+      const affiliateConfig = await getAffiliateConfig();
+      if (affiliateConfig.enabled) {
+        console.log('[ChatV2] Processing affiliates for response text:', processedText?.substring(0, 100) + '...');
+        const affiliateResult = await injectAffiliateLinks(processedText);
+        if (affiliateResult.injected) {
+          processedText = affiliateResult.content;
+          console.log('[ChatV2] Affiliate links injected successfully');
+        } else {
+          console.log('[ChatV2] No affiliate injection occurred');
+        }
+      } else {
+        console.log('[ChatV2] Affiliate processing disabled in config');
+      }
+    } catch (error) {
+      console.error('[ChatV2] Error processing affiliates:', error);
+    }
+
     /** @type {ResponseMessage} */
     const responseMessage = {
       ...(response.responseMessage ?? response.finalMessage),
-      text: response.text,
+      text: processedText,
       parentMessageId: userMessageId,
       conversationId,
       user: req.user.id,
@@ -452,7 +473,7 @@ const chatV2 = async (req, res) => {
     if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
       addTitle(req, {
         text,
-        responseText: response.text,
+        responseText: processedText,
         conversationId,
         client,
       });
