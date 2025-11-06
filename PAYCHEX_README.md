@@ -18,12 +18,19 @@ git push origin --tags #pushes all tags to our forked repo
 ## Changing Paychex specific files
 The following is a list of files that are specific to the Paychex build and release of Librechat:
 -`az_container_app_definitions` - contains the yaml definitions for the ACA.
+
 - `mongodb_atlas_setup` - contains one time JS commands to create Vector-related objects in MongoDB Atlas.
+  
 -`.paychex.dockerignore` - contains files to ignore when building the Paychex docker image.
+
 -`librechat.n1.yml` - contains the N1 configuration for the n1 deployment.
+
 -`librechat.n2a.yml` - contains the N2a configuration for the n2a deployment.
+
 -`librechat.prod.yml` - contains the prod configuration for the prod deployment.
+
 -`paychex-root.pem` - contains the Paychex SSL cert.
+
 -`payx-docker-compose.override.yml` - contains the Paychex docker compose override file.
 
 Only these files exist on `paychex-integration-branch` branch. **If you need to modify or add, it has to be done on this branch.**
