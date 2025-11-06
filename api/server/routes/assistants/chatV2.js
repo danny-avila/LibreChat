@@ -1,3 +1,4 @@
+console.log('=== CHATV2 ROUTE MODULE LOADED ===');
 const express = require('express');
 
 const router = express.Router();
