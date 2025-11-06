@@ -130,7 +130,6 @@
     "elliptic": "^6.6.1",
     "form-data": "^4.0.4",
     "mdast-util-gfm-autolink-literal": "2.0.0",
-    "openai": "5.10.1",
     "remark-gfm": {
       "mdast-util-gfm-autolink-literal": "2.0.0"
     },
