@@ -1,0 +1,132 @@
+{
+    "affiliates": [
+        {
+            "audience": "bonus-niche",
+            "name": "BiggerPockets",
+            "content": "Community/education for real estate investors — affiliate payouts for membership/lead generation.",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "bonus-niche",
+            "name": "LandCentury",
+            "content": "Off-grid land/wholesale land marketplace",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },    
+        {
+            "audience": "bonus-niche",
+            "name": "Mashvisor",
+            "content": "Analytics for rental/Airbnb investors",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },  
+        {
+            "audience": "bonus-niche",
+            "name": "Corporate Housing By Owner",
+            "content": "Corporate housing rental listings marketplace",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },                      
+        {
+            "audience": "agent-broker",
+            "name": "Buildium",
+            "content": "If you’re looking for software to streamline operations, check out Buildium",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "agent-broker",
+            "name": "LeadsBridge",
+            "content": "You might want to explore LeadsBridge to connect your ads to your CRM",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "agent-broker",
+            "name": "Luxury Presence",
+            "content": "Here’s a branding/website partner that many luxury teams use (Luxury Presence)",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "agent-broker",
+            "name": "Showcase IDX",
+            "content": "Showcase IDX is a plugin used by many agents; here’s the link",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "agent-broker",
+            "name": "Colibri Real Estate",
+            "content": "Are you interested in certification/ongoing education?Are you interested in certification/ongoing education?",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "agent-broker",
+            "name": "Architectural Designs",
+            "content": "If you have clients building homes, Architectural Designs might be a relevant affiliate resource",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        
+        
+        {
+            "audience": "buyers-sellers",
+            "name": "Realtor.com",
+            "content": "",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "buyers-sellers",
+            "name": "VRBO",
+            "content": "Find and book vacation rental properties with VRBO",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "buyers-sellers",
+            "name": "Nolo",
+            "content": "Here’s a legal-document service you might use",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "buyers-sellers",
+            "name": "All Things Real Estate",
+            "content": "Comprehensive real estate resources and guides",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "buyers-sellers",
+            "name": "Architectural Designs",
+            "content": "Browse house plans and architectural designs for your dream home",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "investor-landlord",
+            "name": "Deal Check",
+            "content": "DealCheck is a tool many investors use to evaluate cash-flow/ROI",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "investor-landlord",
+            "name": "Avail",
+            "content": "If you’ll be managing the rental yourself, you might like Avail to help with tenant screening/leases",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "investor-landlord",
+            "name": "Turbo Tenant",
+            "content": "TurboTenant offers property management tools for landlords including tenant screening and rent collection",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "investor-landlord",
+            "name": "New Silver",
+            "content": "If you’re looking for hard-money/bridge financing for your flip, New Silver is one lender affiliate.",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "investor-landlord",
+            "name": "Credit Suite",
+            "content": "If you’re a real estate investor and need business credit/capital, Credit Suite is worth looking into.",
+            "urlTemplate": "https://www.amazon.com/dp/{productId}/?tag=your-affiliate-id"
+        },
+        {
+            "audience": "investor-landlord",
+            "name": "Foreclosure.com",
+            "content": "For finding pre-foreclosure/auction deals you may want to check Foreclosure.com.",
+            "urlTemplate": "https://www.ebay.com/itm/{productId}?campid=your-affiliate-id"
+        }
+    ]
+}
