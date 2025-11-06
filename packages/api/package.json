@@ -82,7 +82,7 @@
     "@azure/storage-blob": "^12.27.0",
     "@keyv/redis": "^4.3.3",
     "@langchain/core": "^0.3.72",
-    "@librechat/agents": "^3.0.2",
+    "@librechat/agents": "^3.0.5",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.17.1",
     "axios": "^1.12.1",
