@@ -15,7 +15,7 @@ export class ServerConfigsCacheInMemory {
       throw new Error(
         `Server "${serverName}" already exists in cache. Use update() to modify existing configs.`,
       );
-    this.cache.set(serverName, config);
+    this.cache.set(serverName, { ...config, cachedAt: Date.now() });
   }
 
   public async update(serverName: string, config: ParsedServerConfig): Promise<void> {
@@ -23,7 +23,7 @@ export class ServerConfigsCacheInMemory {
       throw new Error(
         `Server "${serverName}" does not exist in cache. Use add() to create new configs.`,
       );
-    this.cache.set(serverName, config);
+    this.cache.set(serverName, { ...config, cachedAt: Date.now() });
   }
 
   public async remove(serverName: string): Promise<void> {

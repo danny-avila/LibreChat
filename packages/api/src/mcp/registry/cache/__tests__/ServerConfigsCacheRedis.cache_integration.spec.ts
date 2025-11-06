@@ -1,5 +1,8 @@
 import { expect } from '@playwright/test';
 import { ParsedServerConfig } from '~/mcp/types';
+const FIXED_TIME = 1699564800000;
+const originalDateNow = Date.now;
+Date.now = jest.fn(() => FIXED_TIME);
 
 describe('ServerConfigsCacheRedis Integration Tests', () => {
   let ServerConfigsCacheRedis: typeof import('../ServerConfigsCacheRedis').ServerConfigsCacheRedis;
@@ -13,12 +16,14 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
     command: 'node',
     args: ['server1.js'],
     env: { TEST: 'value1' },
+    cachedAt: FIXED_TIME,
   };
 
   const mockConfig2: ParsedServerConfig = {
     command: 'python',
     args: ['server2.py'],
     env: { TEST: 'value2' },
+    cachedAt: FIXED_TIME,
   };
 
   const mockConfig3: ParsedServerConfig = {
@@ -26,6 +31,7 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
     args: ['server3.js'],
     url: 'http://localhost:3000',
     requiresOAuth: true,
+    cachedAt: FIXED_TIME,
   };
 
   beforeAll(async () => {
@@ -78,6 +84,8 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
   });
 
   afterAll(async () => {
+    Date.now = originalDateNow;
+
     // Clear leader key to allow other tests to become leader
     if (keyvRedisClient) await keyvRedisClient.del(LeaderElection.LEADER_KEY);
 

@@ -41,8 +41,21 @@ export class MCPManager extends UserConnectionManager {
   /** Initializes the MCPManager by setting up server registry and app connections */
   public async initialize(configs: t.MCPServers) {
     await MCPServersInitializer.initialize(configs);
-    const appConfigs = await registry.sharedAppServers.getAll();
-    this.appConnections = new ConnectionsRepository(appConfigs);
+    this.appConnections = new ConnectionsRepository(registry.sharedAppServers);
+  }
+  /** update  config of an mcp server with possibility to change Server Tier based on whether it is private and or its configuration*/
+  public async updateConfig(args: {
+    serverName: string;
+    config: t.MCPOptions;
+    user?: TUser;
+    isPrivateServer?: boolean;
+  }): Promise<void> {
+    await MCPServersInitializer.reInitializeServer(args);
+  }
+
+  /** ensure the registry is updated with private servers */
+  public async initPrivateServers(userId: string, configs: t.MCPServers) {
+    await MCPServersInitializer.initPrivateServers(configs, userId);
   }
 
   /** Retrieves an app-level or user-specific connection based on provided arguments */
@@ -54,7 +67,7 @@ export class MCPManager extends UserConnectionManager {
       flowManager?: FlowStateManager<MCPOAuthTokens | null>;
     } & Omit<t.OAuthConnectionOptions, 'useOAuth' | 'user' | 'flowManager'>,
   ): Promise<MCPConnection> {
-    if (this.appConnections!.has(args.serverName)) {
+    if (await this.appConnections!.has(args.serverName)) {
       return this.appConnections!.get(args.serverName);
     } else if (args.user?.id) {
       return this.getUserConnection(args as Parameters<typeof this.getUserConnection>[0]);
@@ -84,7 +97,7 @@ export class MCPManager extends UserConnectionManager {
     serverName: string,
   ): Promise<t.LCAvailableTools | null> {
     try {
-      if (this.appConnections?.has(serverName)) {
+      if (this.appConnections && (await this.appConnections.has(serverName))) {
         return MCPServerInspector.getToolFunctions(
           serverName,
           await this.appConnections.get(serverName),
