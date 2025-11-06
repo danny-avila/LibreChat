@@ -176,7 +176,7 @@ module.exports = {
   reloadAffiliates,
   getAffiliates,
   loadAffiliates,
-  getAffiliates,
+  getRandomAffiliate,
   getAffiliateInjected,
   getAffiliateConfig,
   AFFILIATE_CONFIG,
