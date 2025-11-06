@@ -58,6 +58,7 @@ const removeCitations = (text) => {
  * @returns {void}
  */
 const chatV2 = async (req, res) => {
+  logger.info('[/assistants/chat/] ChatV2 endpoint hit');
   logger.debug('[/assistants/chat/] req.body', req.body);
   const appConfig = req.config;
 
@@ -438,26 +439,30 @@ const chatV2 = async (req, res) => {
     // Process citations and affiliate links
     let processedText = response.text;
     try {
+      logger.info('[ChatV2] Starting citation and affiliate processing');
+      
       // Check if citations should be removed
       if (appConfig?.turnOffCitations === true && processedText?.includes('<sup>1.</sup>')) {
-        console.log('[ChatV2] Removing citations from response due to startup config');
+        logger.info('[ChatV2] Removing citations from response due to startup config');
         processedText = processedText.split('<sup>1.</sup>')[0];
         processedText = removeCitations(processedText);
       } else {
-        console.log('[ChatV2] Citations remain in response');
+        logger.info('[ChatV2] Citations remain in response');
       }
 
       // Process affiliate links
       const affiliateConfig = await getAffiliateConfig();
+      logger.info('[ChatV2] Affiliate config:', affiliateConfig);
       if (affiliateConfig.enableAffiliateLinks) {
-        console.log('[ChatV2] Processing affiliates for response text:', processedText?.substring(0, 100) + '...');
+        logger.info('[ChatV2] Processing affiliates for response text:', processedText?.substring(0, 100) + '...');
         const affiliateText =  injectAffiliateLinks(processedText);
         processedText = affiliateText;
+        logger.info('[ChatV2] Affiliate processing completed');
       } else {
-        console.log('[ChatV2] Affiliate processing disabled in config');
+        logger.info('[ChatV2] Affiliate processing disabled in config');
       }
     } catch (error) {
-      console.error('[ChatV2] Error processing citations and affiliates:', error);
+      logger.error('[ChatV2] Error processing citations and affiliates:', error);
     }
 
     /** @type {ResponseMessage} */
