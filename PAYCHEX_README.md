@@ -14,6 +14,7 @@ git push origin --tags #pushes all tags to our forked repo
 ```
 
 
+
 ## Changing Paychex specific files
 The following is a list of files that are specific to the Paychex build and release of Librechat:
 -`az_container_app_definitions` - contains the yaml definitions for the ACA.
@@ -27,13 +28,28 @@ The following is a list of files that are specific to the Paychex build and rele
 
 Only these files exist on `paychex-integration-branch` branch. **If you need to modify or add, it has to be done on this branch.**
 
-## Creating a new Paychex-ified Release
+
+## Running Librechat Locally
 This process is a somewhat complicated git dance.
 1. Fetch branches and tags `git fetch --tags`.
 2. Ensure you have the latest integration branch, `git checkout paychex-integration-branch && git pull origin paychex-integration-branch`
-3. Checkout the tag you want to release. For example, `git checkout v0.8.0-rc2`. You'll now be in Detached Head Mode.
+3. Checkout the tag you want to run locally. For example, `git checkout v0.8.0-rc2`. You'll now be in Detached Head Mode.
 4. Run a `git merge paychex-integration-branch --allow-unrelated-histories`. Git will complain about the merge unless you have that flag.
-5. Once you have merged the paychex files into this tag, you can make any necessary changes if they are needed. NOTE: You'll need to manually port these changes into `paychex-integration-branch`.
-6. Create a new tag with the pattern `{original_tag}-payx`. For example, `git tag v0.8.0-rc2-payx`.
-7. Push the new tag up. `git push origin --tags`
-8. Run the workflow for the environment you are targeting. Use the new tag you've created as the input tag. Optionally build the RAG API image (usually this is done once for a new release, and can be skipped if deploying the same release again maybe after troubleshooting, etc.).
+
+Next, copy the contents of `.env.paychex` into `.env`. There are certain sensitive values you'll need, ask Shane for these.
+
+Next, copy the contents of `librechat.n2a.yml` into `librechat.yaml`. NOTE: The file extension for `librechat.yaml` is `.yaml`. This is important.
+
+Next, run the compose files: `docker compose -f docker-compose.yml -f payx-docker-compose.override.yaml up`. This will merge the two compose files together and start up the cluster.
+
+Navigate to `localhost:3080` in browser. If running in a VSCode terminal via remote ssh, ensure the Port is forwarded.
+
+Register a test user using the sign-up form, and then login with that test user.
+
+Make any changes to the configuration files as needed. Then, use the following instructions to release.
+
+## Creating a new Paychex-ified Release
+6. Manually port any Paychex file changes into `paychex-integration-branch`. Usually editing the files via Github editor is easiest.
+7. Create a new tag with the pattern `{original_tag}-payx`. For example, `git tag v0.8.0-rc2-payx`.
+8. Push the new tag up. `git push origin --tags`
+9. Run the workflow for the environment you are targeting. Use the new tag you've created as the input tag. Optionally build the RAG API image (usually this is done once for a new release, and can be skipped if deploying the same release again maybe after troubleshooting, etc.).
