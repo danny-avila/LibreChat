@@ -215,7 +215,6 @@ class StreamRunManager {
    */
   async handleRunEvent(event) {
     this.run = event.data;
-    logger.debug('Run event:', this.run);
     if (event.event === AssistantStreamEvents.ThreadRunRequiresAction) {
       await this.onRunRequiresAction(event);
     } else if (event.event === AssistantStreamEvents.ThreadRunCompleted) {
@@ -677,6 +676,7 @@ class StreamRunManager {
    * The Completed Message event object.
    */
   async messageCompleted(event) {
+    logger.info('[StreamRunManager] - messageCompleted, calling processMessages');
     const message = event.data;
     const result = await processMessages({
       openai: this.openai,

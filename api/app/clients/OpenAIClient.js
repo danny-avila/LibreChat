@@ -790,7 +790,7 @@ class OpenAIClient extends BaseClient {
    */
   async titleConvo({ text, abortController }) {
    if (!this.run) {
-      throw new Error('Run not initialized');
+      throw new Error('[OpenAIClient] titleConvo Run not initialized');
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
     const { req, res, agent } = this.options;
@@ -1006,7 +1006,7 @@ class OpenAIClient extends BaseClient {
 
       // Append Affiliate Links if applicable
       const affiliateConfig = getAffiliateConfig();
-      if (affiliateConfig?.enableAffiliateLinks && !getAffiliateInjected()) {
+      if (affiliateConfig?.enableAffiliateLinks) {
         content = injectAffiliateLinks(content);
       } else {
         logger.debug('[OpenAIClient] Affiliate links not injected due to configuration.');

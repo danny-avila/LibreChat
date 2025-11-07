@@ -946,7 +946,7 @@ class AgentClient extends BaseClient {
    */
   async titleConvo({ text, abortController }) {
     if (!this.run) {
-      throw new Error('Run not initialized');
+      throw new Error('[api/server/controllers/agents/client.js #titleConvo] Run not initialized');
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
     const { req, res, agent } = this.options;

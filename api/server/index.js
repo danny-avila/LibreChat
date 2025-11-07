@@ -89,7 +89,6 @@ const startServer = async () => {
   app.use((req, res, next) => {
     if (req.url.includes('/api/assistants')) {
       const logger = require('~/config/winston');
-      logger.error(`GLOBAL REQUEST LOGGER: ${req.method} ${req.url} at ${new Date().toISOString()}`);
     }
     next();
   });

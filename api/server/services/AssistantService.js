@@ -295,6 +295,7 @@ function createInProgressHandler(openai, thread_id, messages) {
         openai.index++;
       }
 
+      logger.info('[AssistantService] - messageCompleted, calling processMessages');
       const result = await processMessages({ openai, client: openai, messages: [message] });
       openai.addContentData({
         [ContentTypes.TEXT]: { value: result.text },
