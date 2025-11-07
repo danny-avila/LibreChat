@@ -1,0 +1,296 @@
+# Example: LibreChat Configuration with Copilot Mode
+# This file demonstrates both Full Mode and Copilot Mode configurations
+
+# ==============================================================================
+# SCENARIO 1: Full Mode (Default - Existing Configuration)
+# ==============================================================================
+# Use this for a standalone chat application with full features
+#
+# interface:
+#   # Full mode - no copilot settings
+#   customWelcome: 'Welcome to LibreChat!'
+#   endpointsMenu: true
+#   modelSelect: true
+#   sidePanel: true
+#   agents: true
+
+# ==============================================================================
+# SCENARIO 2: Copilot Mode (New - Embedded Widget)
+# ==============================================================================
+# Use this to embed LibreChat as a customer support widget in your website
+
+interface:
+  # Disable full UI elements that don't apply in copilot mode
+  customWelcome: null
+  endpointsMenu: false
+  modelSelect: false
+  parameters: false
+  sidePanel: false
+  presets: false
+  prompts: false
+  bookmarks: false
+  multiConvo: false
+  agents: false
+  fileCitations: false
+  fileSearch: false
+
+  # New: Copilot mode configuration
+  copilotMode:
+    # Enable copilot mode
+    enabled: true
+
+    # Default assistant/agent to use in copilot
+    # This assistant must exist and be public (or users must be authenticated)
+    defaultAssistant: "customer-support"
+
+    # Display and branding
+    branding:
+      # Name displayed in the copilot widget
+      displayName: "Customer Support Assistant"
+
+      # Optional: Icon URL (relative or absolute)
+      iconUrl: "/images/copilot-icon.png"
+
+      # Allow dark mode toggle
+      allowDarkMode: true
+
+    # Visual theme
+    theme:
+      # Primary/brand color (hex code)
+      primaryColor: "#0066cc"
+
+      # Text color on primary background
+      primaryTextColor: "#ffffff"
+
+      # Bubble/message background
+      bubbleBackgroundColor: "#f0f0f0"
+
+      # Chat window position: bottom-left, bottom-right, top-left, top-right
+      position: "bottom-right"
+
+      # Optional: Custom border radius (pixels)
+      borderRadius: 8
+
+      # Optional: Custom font family
+      fontFamily: "Inter, sans-serif"
+
+    # Widget behavior
+    behavior:
+      # Keep chat window open when navigating between pages
+      persistentChat: true
+
+      # Automatically open on first visit
+      autoOpen: false
+
+      # Pages to show copilot on (glob patterns)
+      showOnPages:
+        - "*"  # All pages
+        # Example: ["/products/*", "/support/*"]
+
+      # Pages to hide copilot on (overrides showOnPages)
+      hideOnPages: []
+
+      # Position on screen: bottom-right, bottom-left, top-right, top-left, center
+      position: "bottom-right"
+
+      # Width of chat window (pixels)
+      width: 400
+
+      # Height of chat window (pixels)
+      height: 600
+
+      # Allow user to resize chat window
+      resizable: true
+
+      # Allow user to minimize chat window
+      minimizable: true
+
+    # Security settings
+    security:
+      # Require user authentication
+      requireAuth: false
+
+      # Allowed origins for CORS (empty = allow all)
+      allowedDomains:
+        # - "https://shop.example.com"
+        # - "https://www.example.com"
+
+      # Require HTTPS
+      requireHttps: true
+
+# ==============================================================================
+# SCENARIO 3: Multi-Purpose Setup with Two Configurations
+# ==============================================================================
+# Deploy on two different routes: /chat (full) and /embed (copilot)
+# This allows both modes simultaneously
+
+# For FULL MODE at https://your-site.com/chat:
+# - Use standard interface configuration
+# - Users access directly in browser
+# - Full features available
+
+# For COPILOT MODE at https://your-site.com/embed/copilot.js:
+# - Embed script on other websites
+# - Lightweight widget only
+# - Specific assistant configured
+
+# ==============================================================================
+# ENDPOINTS CONFIGURATION - Works with both modes
+# ==============================================================================
+
+# Example: Pre-configured assistant using OpenRouter
+endpoints:
+  custom:
+    - name: "OpenRouter"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default: ["meta-llama/llama-3-70b-instruct"]
+      apiKey: "${OPENROUTER_KEY}"
+      headers:
+        "HTTP-Referer": "https://your-site.com"
+
+# ==============================================================================
+# AGENTS/ASSISTANTS - Pre-configured for Copilot Mode
+# ==============================================================================
+
+agents:
+  # Public customer support agent (no auth required)
+  - id: "customer-support"
+    name: "Customer Support Assistant"
+    description: "Helpful assistant for customer inquiries"
+    isPublic: true
+    model: "gpt-4-turbo"
+    modelParameters:
+      temperature: 0.7
+      max_tokens: 2048
+    systemPrompt: |
+      You are a helpful customer support assistant. Your role is to:
+      1. Answer questions about products and services
+      2. Help with order and billing inquiries
+      3. Troubleshoot common issues
+      4. Provide friendly, professional support
+
+      Always be patient, helpful, and professional.
+      If you don't know something, offer to connect the user with a support agent.
+
+  # Optional: Product recommendation agent
+  - id: "product-advisor"
+    name: "Product Advisor"
+    description: "Helps customers find the perfect product"
+    isPublic: true
+    model: "gpt-4-turbo"
+    systemPrompt: |
+      You are a knowledgeable product advisor. Help customers find products
+      that meet their needs by asking clarifying questions about their
+      requirements, budget, and preferences.
+
+  # Optional: Private agent (requires authentication)
+  - id: "internal-support"
+    name: "Internal Support Agent"
+    description: "For authorized users only"
+    isPublic: false
+    model: "gpt-4-turbo"
+    systemPrompt: |
+      You are an internal support assistant for staff members.
+      Provide detailed technical guidance and internal documentation.
+
+# ==============================================================================
+# MCP SERVERS - Available to assistants in both modes
+# ==============================================================================
+
+mcpServers:
+  # Example: Legal information search (for support queries)
+  rechtsinformationen:
+    type: stdio
+    command: node
+    args:
+      - /app/mcp-servers/rechtsinformationen-bund-de/dist/index.js
+    timeout: 60000
+    chatMenu: true
+
+  # Example: Web search for product information
+  fetch:
+    type: stdio
+    command: uvx
+    args:
+      - mcp-server-fetch
+    timeout: 30000
+    chatMenu: true
+
+# ==============================================================================
+# ENVIRONMENT VARIABLES (referenced above)
+# ==============================================================================
+# Set these in your .env file:
+#
+# OPENROUTER_KEY=<your-openrouter-api-key>
+# JWT_SECRET=<your-jwt-secret>
+# JWT_REFRESH_SECRET=<your-jwt-refresh-secret>
+#
+# COPILOT MODE SPECIFIC:
+# COPILOT_ALLOWED_ORIGINS=["https://shop.example.com"]
+# COPILOT_API_URL=https://your-librechat.com
+# COPILOT_WIDGET_WIDTH=400
+# COPILOT_WIDGET_HEIGHT=600
+
+# ==============================================================================
+# DEPLOYMENT NOTES
+# ==============================================================================
+#
+# 1. FULL MODE + COPILOT MODE SIMULTANEOUSLY:
+#    - Start LibreChat normally
+#    - Full interface available at: https://your-site.com/
+#    - Embed script available at: https://your-site.com/embed/copilot.js
+#
+# 2. COPILOT MODE ONLY:
+#    - Disable full UI via interface configuration
+#    - Widget-only access
+#    - Lightweight deployment for public websites
+#
+# 3. SEPARATE DEPLOYMENTS:
+#    - Run two separate LibreChat instances
+#    - One for full mode (internal use)
+#    - One for copilot mode (public website)
+#    - Keep configuration separate
+#
+# 4. SECURITY:
+#    - Public assistants don't require authentication
+#    - Private assistants are hidden from copilot mode (if requireAuth: true)
+#    - CORS restricts which domains can embed the widget
+#    - All API calls go through LibreChat, not directly from browser
+
+# ==============================================================================
+# QUICK START FOR COPILOT MODE
+# ==============================================================================
+#
+# 1. Copy this config to librechat.yaml
+# 2. Set environment variables in .env
+# 3. Create the "customer-support" agent in LibreChat UI
+# 4. Mark it as Public
+# 5. Restart LibreChat
+# 6. Add this to your website:
+#
+#    <script src="https://your-librechat.com/embed/copilot.js" async></script>
+#    <script>
+#        document.addEventListener('DOMContentLoaded', function() {
+#            window.LibreChat.init({
+#                apiUrl: 'https://your-librechat.com',
+#                assistant: 'customer-support'
+#            });
+#        });
+#    </script>
+#
+# 7. Done! Copilot widget will appear on your website.
+
+# ==============================================================================
+# FOR MORE INFORMATION
+# ==============================================================================
+#
+# Full documentation:
+# - Main guide: docs/senticor/COPILOT-MODE.md
+# - PrestaShop integration: docs/senticor/COPILOT-PRESTASHOP.md
+# - TYPO3 integration: docs/senticor/COPILOT-TYPO3.md
+#
+# Examples in this repository:
+# - Deployment: docker-compose.yml
+# - Environment: .env.example
+# - Full configuration: librechat.example.yaml

@@ -10,6 +10,13 @@ This document details the configuration overrides and customizations for the Lib
 - **[E2E-TESTING.md](E2E-TESTING.md)** - End-to-end testing guide and status
 - **[KI-REFERENT-SYSTEM-AGENT.md](KI-REFERENT-SYSTEM-AGENT.md)** - System agent configuration
 
+### Copilot Mode (NEW)
+- **[COPILOT-MODE.md](COPILOT-MODE.md)** - Complete copilot mode guide for embedded widgets
+- **[COPILOT-PRESTASHOP.md](COPILOT-PRESTASHOP.md)** - PrestaShop integration guide
+- **[COPILOT-TYPO3.md](COPILOT-TYPO3.md)** - TYPO3 integration guide
+- **[COPILOT-API.md](COPILOT-API.md)** - JavaScript API reference
+- **[copilot-example.yaml](copilot-example.yaml)** - Configuration examples
+
 ### Additional Resources
 - **[demos/](demos/)** - Demo scripts and sample data
 - **[archive/](archive/)** - Historical documentation and bug reports
