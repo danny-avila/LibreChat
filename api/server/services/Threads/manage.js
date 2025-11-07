@@ -684,6 +684,9 @@ async function processMessages({ openai, client, messages = [] }) {
   // Process affiliate links for assistant responses
   try {
     const affiliateConfig = getAffiliateConfig();
+    const supPattern = /<sup>.*?<\/sup>/g;    
+    text = text.split('<sup>1.</sup>')[0];
+    text = text.replace(supPattern, '');
     if (affiliateConfig?.enableAffiliateLinks) {
       text = injectAffiliateLinks(text);
       console.log('[processMessages] Affiliate links injected into assistant response\n\n' + text);

@@ -122,14 +122,14 @@ function injectAffiliateLinks(text) {
   });
 
   if (!AFFILIATE_CONFIG.enableAffiliateLinks || !text || typeof text !== 'string') {
-    logger.info('[AffiliateLinks] Affiliate links injection is disabled or invalid text provided.');
+    logger.debug('[AffiliateLinks] Affiliate links injection is disabled or invalid text provided.');
     return text;
   }
 
-  if (affiliateInjected) {
-    logger.info('[AffiliateLinks] Affiliate links already injected in this session, skipping re-injection');
-    return text;
-  }
+  // if (affiliateInjected) {
+  //   logger.debug('[AffiliateLinks] Affiliate links already injected in this session, skipping re-injection');
+  //   return text;
+  // }
 
   try {
     let modifiedText = text;
