@@ -1,9 +1,5 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-
-// Use logger.error to ensure this appears in Azure Log Analytics
-logger.error('=== CHATV2 ROUTE MODULE LOADED - AFFILIATE ROUTE ===');
-
 const router = express.Router();
 const {
   setHeaders,
@@ -29,7 +25,6 @@ router.post('/abort', handleAbort());
 router.post(
   '/',
   (req, res, next) => {
-    logger.error('=== CHATV2 ROUTE HIT - REQUEST RECEIVED ===');
     logger.error(`[ChatV2 Route] Method: ${req.method}, URL: ${req.url}, Body preview: ${JSON.stringify(req.body).substring(0, 100)}`);
     next();
   },

@@ -1,9 +1,6 @@
 const { v4 } = require('uuid');
 const { sleep } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
-
-// Use logger.error to ensure this appears in Azure Log Analytics
-logger.error('=== CHATV2 MODULE LOADED - AFFILIATE CONTROLLER ===');
 const { sendEvent, getBalanceConfig, getModelMaxTokens } = require('@librechat/api');
 const {
   Time,
@@ -62,9 +59,6 @@ const removeCitations = (text) => {
  */
 const chatV2 = async (req, res) => {
   // Use logger.error to ensure this appears in Azure Log Analytics during streaming
-  logger.error('=== CHATV2 ENDPOINT HIT - AFFILIATE PROCESSING START ===');
-  logger.info('[/assistants/chat/] ChatV2 endpoint hit');
-  logger.debug('[/assistants/chat/] req.body', req.body);
   const appConfig = req.config;
 
   /** @type {{files: MongoFile[]}} */
