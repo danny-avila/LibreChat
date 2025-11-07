@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { EndpointFileConfig, FileConfig } from './types/files';
-import { EModelEndpoint, isAgentsEndpoint } from './schemas';
+import { EModelEndpoint, isAgentsEndpoint, isDocumentSupportedProvider } from './schemas';
 import { normalizeEndpointName } from './utils';
 
 export const supportsFiles = {
@@ -342,18 +342,25 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
  * @returns The endpoint file configuration or undefined
  */
 /**
- * Merges an endpoint config with the default config to ensure all fields are populated
+ * Merges an endpoint config with the default config to ensure all fields are populated.
+ * For document-supported providers, uses the comprehensive MIME type list (includes videos/audio).
  */
 function mergeWithDefault(
   endpointConfig: EndpointFileConfig,
   defaultConfig: EndpointFileConfig,
+  endpoint?: string | null,
 ): EndpointFileConfig {
+  /** Use comprehensive MIME types for document-supported providers */
+  const defaultMimeTypes = isDocumentSupportedProvider(endpoint)
+    ? supportedMimeTypes
+    : defaultConfig.supportedMimeTypes;
+
   return {
     disabled: endpointConfig.disabled ?? defaultConfig.disabled,
     fileLimit: endpointConfig.fileLimit ?? defaultConfig.fileLimit,
     fileSizeLimit: endpointConfig.fileSizeLimit ?? defaultConfig.fileSizeLimit,
     totalSizeLimit: endpointConfig.totalSizeLimit ?? defaultConfig.totalSizeLimit,
-    supportedMimeTypes: endpointConfig.supportedMimeTypes ?? defaultConfig.supportedMimeTypes,
+    supportedMimeTypes: endpointConfig.supportedMimeTypes ?? defaultMimeTypes,
   };
 }
 
@@ -393,21 +400,29 @@ export function getEndpointFileConfig(params: {
   if (isCustomEndpoint) {
     /** 1. Check direct endpoint lookup (could be normalized or not) */
     if (endpoint && mergedFileConfig.endpoints[endpoint]) {
-      return mergeWithDefault(mergedFileConfig.endpoints[endpoint], defaultConfig);
+      return mergeWithDefault(mergedFileConfig.endpoints[endpoint], defaultConfig, endpoint);
     }
     /** 2. Check normalized endpoint lookup (skip standard endpoint keys) */
     for (const key in mergedFileConfig.endpoints) {
       if (!standardEndpoints.has(key) && normalizeEndpointName(key) === normalizedEndpoint) {
-        return mergeWithDefault(mergedFileConfig.endpoints[key], defaultConfig);
+        return mergeWithDefault(mergedFileConfig.endpoints[key], defaultConfig, key);
       }
     }
     /** 3. Fallback to generic 'custom' config if any */
     if (mergedFileConfig.endpoints[EModelEndpoint.custom]) {
-      return mergeWithDefault(mergedFileConfig.endpoints[EModelEndpoint.custom], defaultConfig);
+      return mergeWithDefault(
+        mergedFileConfig.endpoints[EModelEndpoint.custom],
+        defaultConfig,
+        endpoint,
+      );
     }
     /** 4. Fallback to 'agents' (all custom endpoints are non-assistants) */
     if (mergedFileConfig.endpoints[EModelEndpoint.agents]) {
-      return mergeWithDefault(mergedFileConfig.endpoints[EModelEndpoint.agents], defaultConfig);
+      return mergeWithDefault(
+        mergedFileConfig.endpoints[EModelEndpoint.agents],
+        defaultConfig,
+        endpoint,
+      );
     }
     /** 5. Fallback to default */
     return defaultConfig;
@@ -415,23 +430,31 @@ export function getEndpointFileConfig(params: {
 
   /** Check endpointType first (most reliable for standard endpoints) */
   if (endpointType && mergedFileConfig.endpoints[endpointType]) {
-    return mergeWithDefault(mergedFileConfig.endpoints[endpointType], defaultConfig);
+    return mergeWithDefault(mergedFileConfig.endpoints[endpointType], defaultConfig, endpointType);
   }
 
   /** Check direct endpoint lookup */
   if (endpoint && mergedFileConfig.endpoints[endpoint]) {
-    return mergeWithDefault(mergedFileConfig.endpoints[endpoint], defaultConfig);
+    return mergeWithDefault(mergedFileConfig.endpoints[endpoint], defaultConfig, endpoint);
   }
 
   /** Check normalized endpoint */
   if (normalizedEndpoint && mergedFileConfig.endpoints[normalizedEndpoint]) {
-    return mergeWithDefault(mergedFileConfig.endpoints[normalizedEndpoint], defaultConfig);
+    return mergeWithDefault(
+      mergedFileConfig.endpoints[normalizedEndpoint],
+      defaultConfig,
+      normalizedEndpoint,
+    );
   }
 
   /** Fallback to agents if endpoint is explicitly agents */
   const isAgents = isAgentsEndpoint(normalizedEndpointType || normalizedEndpoint);
   if (isAgents && mergedFileConfig.endpoints[EModelEndpoint.agents]) {
-    return mergeWithDefault(mergedFileConfig.endpoints[EModelEndpoint.agents], defaultConfig);
+    return mergeWithDefault(
+      mergedFileConfig.endpoints[EModelEndpoint.agents],
+      defaultConfig,
+      EModelEndpoint.agents,
+    );
   }
 
   /** Return default config */
