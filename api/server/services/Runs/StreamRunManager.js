@@ -229,8 +229,6 @@ class StreamRunManager {
    * The run step event object.
    */
   async handleRunStepEvent(event) {
-    logger.debug('Run step event:', event.data);
-
     const step = event.data;
     this.steps.set(step.id, step);
 
