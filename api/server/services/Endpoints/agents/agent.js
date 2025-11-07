@@ -44,11 +44,11 @@ const initializeAgent = async ({
   res,
   agent,
   loadTools,
+  requestFiles,
   conversationId,
   endpointOption,
   allowedProviders,
   isInitialAgent = false,
-  requestFiles: _requestFiles,
 }) => {
   const appConfig = req.config;
   if (
@@ -75,12 +75,6 @@ const initializeAgent = async ({
   const provider = agent.provider;
   agent.endpoint = provider;
 
-  const requestFiles = filterFilesByEndpointConfig(req, {
-    files: _requestFiles,
-    endpoint: agent.endpoint || endpointOption?.endpoint,
-    endpointType: endpointOption?.endpointType,
-  });
-
   if (isInitialAgent && conversationId != null && resendFiles) {
     const fileIds = (await getConvoFiles(conversationId)) ?? [];
     /** @type {Set<EToolResources>} */
@@ -97,6 +91,12 @@ const initializeAgent = async ({
   } else if (isInitialAgent && requestFiles.length) {
     currentFiles = await processFiles(requestFiles);
   }
+
+  currentFiles = filterFilesByEndpointConfig(req, {
+    files: currentFiles,
+    endpoint: agent.endpoint || endpointOption?.endpoint,
+    endpointType: endpointOption?.endpointType,
+  });
 
   const { attachments, tool_resources } = await primeResources({
     req,
