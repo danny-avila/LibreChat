@@ -1,12 +1,12 @@
 import type {
   TEndpoint,
   FileSources,
+  TFileConfig,
   TAzureConfig,
   TCustomConfig,
   TMemoryConfig,
   EModelEndpoint,
   TAgentsEndpoint,
-  FileConfigInput,
   TCustomEndpoints,
   TAssistantEndpoint,
 } from 'librechat-data-provider';
@@ -83,7 +83,7 @@ export interface AppConfig {
   /** MCP server configuration */
   mcpConfig?: TCustomConfig['mcpServers'] | null;
   /** File configuration */
-  fileConfig?: FileConfigInput;
+  fileConfig?: TFileConfig;
   /** Secure image links configuration */
   secureImageLinks?: TCustomConfig['secureImageLinks'];
   /** Processed model specifications */
