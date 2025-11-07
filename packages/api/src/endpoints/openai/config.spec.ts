@@ -230,7 +230,7 @@ describe('getOpenAIConfig', () => {
     const result = getOpenAIConfig(mockApiKey, { modelOptions });
 
     expect(result.llmConfig.useResponsesApi).toBe(true);
-    expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
+    expect(result.tools).toEqual([{ type: 'web_search' }]);
   });
 
   it('should handle web_search from addParams overriding modelOptions', () => {
@@ -247,7 +247,7 @@ describe('getOpenAIConfig', () => {
     const result = getOpenAIConfig(mockApiKey, { modelOptions, addParams });
 
     expect(result.llmConfig.useResponsesApi).toBe(true);
-    expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
+    expect(result.tools).toEqual([{ type: 'web_search' }]);
     // web_search should not be in modelKwargs or llmConfig
     expect((result.llmConfig as Record<string, unknown>).web_search).toBeUndefined();
     expect(result.llmConfig.modelKwargs).toEqual({ customParam: 'value' });
@@ -299,7 +299,7 @@ describe('getOpenAIConfig', () => {
 
     // Should keep the original web_search from modelOptions since addParams value is not boolean
     expect(result.llmConfig.useResponsesApi).toBe(true);
-    expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
+    expect(result.tools).toEqual([{ type: 'web_search' }]);
     expect(result.llmConfig.temperature).toBe(0.7);
     // web_search should not be added to modelKwargs
     expect(result.llmConfig.modelKwargs).toBeUndefined();
@@ -335,7 +335,7 @@ describe('getOpenAIConfig', () => {
 
     // web_search should trigger the tool but not appear in config
     expect(result.llmConfig.useResponsesApi).toBe(true);
-    expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
+    expect(result.tools).toEqual([{ type: 'web_search' }]);
     expect((result.llmConfig as Record<string, unknown>).web_search).toBeUndefined();
     expect(result.llmConfig.temperature).toBe(0.5);
     expect(result.llmConfig.modelKwargs).toEqual({ customParam1: 'value1' });
@@ -1164,7 +1164,7 @@ describe('getOpenAIConfig', () => {
         text: { verbosity: Verbosity.medium },
         customParam: 'custom-value',
       });
-      expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
+      expect(result.tools).toEqual([{ type: 'web_search' }]);
       expect(result.configOptions).toMatchObject({
         baseURL: 'https://api.custom.com',
         defaultHeaders: { 'X-Custom': 'value' },

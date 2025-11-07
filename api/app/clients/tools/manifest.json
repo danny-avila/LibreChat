@@ -85,19 +85,6 @@
     ]
   },
   {
-    "name": "Serpapi",
-    "pluginKey": "serpapi",
-    "description": "SerpApi is a real-time API to access search engine results.",
-    "icon": "https://i.imgur.com/5yQHUz4.png",
-    "authConfig": [
-      {
-        "authField": "SERPAPI_API_KEY",
-        "label": "Serpapi Private API Key",
-        "description": "Private Key for Serpapi. Register at <a href='https://serpapi.com/'>Serpapi</a> to obtain a private key."
-      }
-    ]
-  },
-  {
     "name": "DALL-E-3",
     "pluginKey": "dalle",
     "description": "[DALL-E-3] Create realistic images and art from a description in natural language",

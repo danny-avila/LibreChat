@@ -96,6 +96,19 @@ class ModelEndHandler {
 }
 
 /**
+ * @deprecated Agent Chain helper
+ * @param {string | undefined} [last_agent_id]
+ * @param {string | undefined} [langgraph_node]
+ * @returns {boolean}
+ */
+function checkIfLastAgent(last_agent_id, langgraph_node) {
+  if (!last_agent_id || !langgraph_node) {
+    return false;
+  }
+  return langgraph_node?.endsWith(last_agent_id);
+}
+
+/**
  * Get default handlers for stream events.
  * @param {Object} options - The options object.
  * @param {ServerResponse} options.res - The options object.
@@ -125,7 +138,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
       handle: (event, data, metadata) => {
         if (data?.stepDetails.type === StepTypes.TOOL_CALLS) {
           sendEvent(res, { event, data });
-        } else if (metadata?.last_agent_index === metadata?.agent_index) {
+        } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           sendEvent(res, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
           sendEvent(res, { event, data });
@@ -154,7 +167,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
       handle: (event, data, metadata) => {
         if (data?.delta.type === StepTypes.TOOL_CALLS) {
           sendEvent(res, { event, data });
-        } else if (metadata?.last_agent_index === metadata?.agent_index) {
+        } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           sendEvent(res, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
           sendEvent(res, { event, data });
@@ -172,7 +185,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
       handle: (event, data, metadata) => {
         if (data?.result != null) {
           sendEvent(res, { event, data });
-        } else if (metadata?.last_agent_index === metadata?.agent_index) {
+        } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           sendEvent(res, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
           sendEvent(res, { event, data });
@@ -188,7 +201,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: (event, data, metadata) => {
-        if (metadata?.last_agent_index === metadata?.agent_index) {
+        if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           sendEvent(res, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
           sendEvent(res, { event, data });
@@ -204,7 +217,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: (event, data, metadata) => {
-        if (metadata?.last_agent_index === metadata?.agent_index) {
+        if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           sendEvent(res, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
           sendEvent(res, { event, data });

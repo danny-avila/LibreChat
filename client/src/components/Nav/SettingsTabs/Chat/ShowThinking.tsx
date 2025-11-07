@@ -1,18 +1,18 @@
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { Switch, InfoHoverCard, ESide } from '@librechat/client';
+import { showThinkingAtom } from '~/store/showThinking';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 
 export default function SaveDraft({
   onCheckedChange,
 }: {
   onCheckedChange?: (value: boolean) => void;
 }) {
-  const [showThinking, setSaveDrafts] = useRecoilState<boolean>(store.showThinking);
+  const [showThinking, setShowThinking] = useAtom(showThinkingAtom);
   const localize = useLocalize();
 
   const handleCheckedChange = (value: boolean) => {
-    setSaveDrafts(value);
+    setShowThinking(value);
     if (onCheckedChange) {
       onCheckedChange(value);
     }

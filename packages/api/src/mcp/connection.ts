@@ -18,6 +18,7 @@ import type {
   Response as UndiciResponse,
 } from 'undici';
 import type { MCPOAuthTokens } from './oauth/types';
+import { withTimeout } from '~/utils/promise';
 import type * as t from './types';
 import { sanitizeUrlForLogging } from './utils';
 import { mcpConfig } from './mcpConfig';
@@ -457,15 +458,11 @@ export class MCPConnection extends EventEmitter {
         this.setupTransportDebugHandlers();
 
         const connectTimeout = this.options.initTimeout ?? 120000;
-        await Promise.race([
+        await withTimeout(
           this.client.connect(this.transport),
-          new Promise((_resolve, reject) =>
-            setTimeout(
-              () => reject(new Error(`Connection timeout after ${connectTimeout}ms`)),
-              connectTimeout,
-            ),
-          ),
-        ]);
+          connectTimeout,
+          `Connection timeout after ${connectTimeout}ms`,
+        );
 
         this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');

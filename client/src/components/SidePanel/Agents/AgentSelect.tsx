@@ -103,6 +103,11 @@ export default function AgentSelect({
           return;
         }
 
+        if (name === 'edges' && Array.isArray(value)) {
+          formValues[name] = value;
+          return;
+        }
+
         if (!keys.has(name)) {
           return;
         }
