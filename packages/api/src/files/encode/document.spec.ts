@@ -384,14 +384,15 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       );
     });
 
-    it('should respect user-configured higher limit (but provider limit still applies)', async () => {
+    it('should respect user-configured higher limit (allows API changes)', async () => {
       /**
-       * Scenario: User sets openAI.fileSizeLimit = 50MB (higher than 10MB provider limit)
-       * Uploads 8MB PDF
-       * Expected: Validation called with 50MB limit, but validation will use min(50, 10) = 10MB
+       * Scenario: User sets openAI.fileSizeLimit = 50MB (higher than 10MB provider default)
+       * Uploads 15MB PDF
+       * Expected: Validation called with 50MB limit, allowing files between 10-50MB
+       * This allows users to take advantage of API limit increases
        */
       const req = createMockRequest(50) as ServerRequest;
-      const file = createMockFile(8);
+      const file = createMockFile(15);
 
       const mockContent = Buffer.from('test-pdf-content').toString('base64');
       mockedGetFileStream.mockResolvedValue({

@@ -51,10 +51,7 @@ async function validateAnthropicPdf(
 ): Promise<PDFValidationResult> {
   try {
     const providerLimit = mbToBytes(32);
-    const effectiveLimit =
-      configuredFileSizeLimit !== undefined
-        ? Math.min(configuredFileSizeLimit, providerLimit)
-        : providerLimit;
+    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
 
     if (fileSize > effectiveLimit) {
       const limitMB = Math.round(effectiveLimit / (1024 * 1024));
@@ -121,11 +118,8 @@ async function validateOpenAIPdf(
   fileSize: number,
   configuredFileSizeLimit?: number,
 ): Promise<PDFValidationResult> {
-  const providerLimit = 10 * 1024 * 1024;
-  const effectiveLimit =
-    configuredFileSizeLimit !== undefined
-      ? Math.min(configuredFileSizeLimit, providerLimit)
-      : providerLimit;
+  const providerLimit = mbToBytes(10);
+  const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
 
   if (fileSize > effectiveLimit) {
     const limitMB = Math.round(effectiveLimit / (1024 * 1024));
@@ -148,11 +142,8 @@ async function validateGooglePdf(
   fileSize: number,
   configuredFileSizeLimit?: number,
 ): Promise<PDFValidationResult> {
-  const providerLimit = 20 * 1024 * 1024;
-  const effectiveLimit =
-    configuredFileSizeLimit !== undefined
-      ? Math.min(configuredFileSizeLimit, providerLimit)
-      : providerLimit;
+  const providerLimit = mbToBytes(20);
+  const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
 
   if (fileSize > effectiveLimit) {
     const limitMB = Math.round(effectiveLimit / (1024 * 1024));
@@ -180,11 +171,8 @@ export async function validateVideo(
   configuredFileSizeLimit?: number,
 ): Promise<VideoValidationResult> {
   if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
-    const providerLimit = 20 * 1024 * 1024;
-    const effectiveLimit =
-      configuredFileSizeLimit !== undefined
-        ? Math.min(configuredFileSizeLimit, providerLimit)
-        : providerLimit;
+    const providerLimit = mbToBytes(20);
+    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
 
     if (fileSize > effectiveLimit) {
       const limitMB = Math.round(effectiveLimit / (1024 * 1024));
@@ -220,11 +208,8 @@ export async function validateAudio(
   configuredFileSizeLimit?: number,
 ): Promise<AudioValidationResult> {
   if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
-    const providerLimit = 20 * 1024 * 1024;
-    const effectiveLimit =
-      configuredFileSizeLimit !== undefined
-        ? Math.min(configuredFileSizeLimit, providerLimit)
-        : providerLimit;
+    const providerLimit = mbToBytes(20);
+    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
 
     if (fileSize > effectiveLimit) {
       const limitMB = Math.round(effectiveLimit / (1024 * 1024));

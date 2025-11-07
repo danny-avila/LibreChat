@@ -41,14 +41,13 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
       expect(result.error).toContain('5MB');
     });
 
-    it('should use provider limit when configured limit is higher', async () => {
-      const configuredLimit = 50 * 1024 * 1024; // 50MB (higher than provider limit)
-      const pdfBuffer = createMockPdfBuffer(12); // Between provider and configured limit
+    it('should allow configured limit higher than provider default', async () => {
+      const configuredLimit = 50 * 1024 * 1024; // 50MB (higher than 10MB provider default)
+      const pdfBuffer = createMockPdfBuffer(12); // Between provider default and configured limit
       const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, configuredLimit);
 
-      expect(result.isValid).toBe(false);
-      expect(result.error).toContain('12MB');
-      expect(result.error).toContain('10MB');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
     });
 
     it('should accept PDF within both configured and provider limits', async () => {
@@ -109,14 +108,13 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
       expect(result.error).toContain('15MB');
     });
 
-    it('should use provider limit when configured limit is higher', async () => {
-      const configuredLimit = mbToBytes(50); // 50MB (higher than provider limit)
-      const pdfBuffer = createMockPdfBuffer(35); // Between provider and configured limit
+    it('should allow configured limit higher than provider default', async () => {
+      const configuredLimit = mbToBytes(50); // 50MB (higher than 32MB provider default)
+      const pdfBuffer = createMockPdfBuffer(35); // Between provider default and configured limit
       const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, configuredLimit);
 
-      expect(result.isValid).toBe(false);
-      expect(result.error).toContain('35MB');
-      expect(result.error).toContain('32MB');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
     });
 
     it('should reject encrypted PDFs regardless of size', async () => {
@@ -177,14 +175,13 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
       expect(result.error).toContain('10MB');
     });
 
-    it('should use provider limit when configured limit is higher', async () => {
-      const configuredLimit = 50 * 1024 * 1024; // 50MB (higher than provider limit)
-      const pdfBuffer = createMockPdfBuffer(25); // Between provider and configured limit
+    it('should allow configured limit higher than provider default', async () => {
+      const configuredLimit = 50 * 1024 * 1024; // 50MB (higher than 20MB provider default)
+      const pdfBuffer = createMockPdfBuffer(25); // Between provider default and configured limit
       const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, configuredLimit);
 
-      expect(result.isValid).toBe(false);
-      expect(result.error).toContain('25MB');
-      expect(result.error).toContain('20MB');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
     });
   });
 
@@ -293,7 +290,7 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
       /**
        * Original bug: User configures openAI.fileSizeLimit = 50MB in librechat.yaml
        * Uploads a 15MB PDF to OpenAI endpoint
-       * Expected: Should be accepted (within 50MB config, within 10MB provider limit uses min)
+       * Expected: Should be accepted (within 50MB config)
        * Actual (before fix): Rejected with "exceeds 10MB limit"
        */
       const configuredLimit = mbToBytes(50); // User configured 50MB
@@ -307,12 +304,11 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
       );
 
       /**
-       * After fix: Should be rejected because effective limit is min(50MB, 10MB) = 10MB
-       * and 15MB > 10MB
+       * After fix: Should be accepted because configured limit (50MB) overrides
+       * provider default (10MB), allowing for API changes
        */
-      expect(result.isValid).toBe(false);
-      expect(result.error).toContain('15MB');
-      expect(result.error).toContain('10MB');
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
     });
 
     it('should allow user to set stricter limits than provider', async () => {
@@ -400,9 +396,9 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
         expect(result.error).toContain('10MB');
       });
 
-      it('should use provider limit when configured limit is higher', async () => {
-        const configuredLimit = mbToBytes(50); // 50MB (higher than provider limit)
-        const videoBuffer = createMockMediaBuffer(25); // Between provider and configured limit
+      it('should allow configured limit higher than provider default', async () => {
+        const configuredLimit = mbToBytes(50); // 50MB (higher than 20MB provider default)
+        const videoBuffer = createMockMediaBuffer(25); // Between provider default and configured limit
         const result = await validateVideo(
           videoBuffer,
           videoBuffer.length,
@@ -410,9 +406,8 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
           configuredLimit,
         );
 
-        expect(result.isValid).toBe(false);
-        expect(result.error).toContain('25MB');
-        expect(result.error).toContain('20MB');
+        expect(result.isValid).toBe(true);
+        expect(result.error).toBeUndefined();
       });
 
       it('should accept video within lower configured limit', async () => {
@@ -473,9 +468,9 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
         expect(result.error).toContain('10MB');
       });
 
-      it('should use provider limit when configured limit is higher', async () => {
-        const configuredLimit = mbToBytes(50); // 50MB (higher than provider limit)
-        const audioBuffer = createMockMediaBuffer(25); // Between provider and configured limit
+      it('should allow configured limit higher than provider default', async () => {
+        const configuredLimit = mbToBytes(50); // 50MB (higher than 20MB provider default)
+        const audioBuffer = createMockMediaBuffer(25); // Between provider default and configured limit
         const result = await validateAudio(
           audioBuffer,
           audioBuffer.length,
@@ -483,9 +478,8 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
           configuredLimit,
         );
 
-        expect(result.isValid).toBe(false);
-        expect(result.error).toContain('25MB');
-        expect(result.error).toContain('20MB');
+        expect(result.isValid).toBe(true);
+        expect(result.error).toBeUndefined();
       });
 
       it('should accept audio within lower configured limit', async () => {
