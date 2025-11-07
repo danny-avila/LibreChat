@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { EModelEndpoint } from './schemas';
 import type { EndpointFileConfig, FileConfig } from './types/files';
+import { EModelEndpoint, isAssistantsEndpoint } from './schemas';
+import { normalizeEndpointName } from './utils';
 
 export const supportsFiles = {
   [EModelEndpoint.openAI]: true,
@@ -330,6 +331,55 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
     }
     return acc;
   }, []);
+
+/**
+ * Gets the appropriate endpoint file configuration with standardized lookup logic.
+ *
+ * @param params - Object containing fileConfig, endpoint, and optional conversationEndpoint
+ * @param params.fileConfig - The merged file configuration
+ * @param params.endpoint - The endpoint name to look up
+ * @param params.conversationEndpoint - Optional conversation endpoint for additional context
+ * @returns The endpoint file configuration or undefined
+ */
+export function getEndpointFileConfig(params: {
+  fileConfig?: FileConfig | null;
+  endpoint?: string | null;
+  endpointType?: string | null;
+}): EndpointFileConfig {
+  const { fileConfig: mergedFileConfig, endpoint, endpointType } = params;
+
+  if (!mergedFileConfig?.endpoints) {
+    return fileConfig.endpoints.default;
+  }
+
+  const normalizedEndpoint = normalizeEndpointName(endpoint ?? '');
+
+  if (endpointType === EModelEndpoint.custom) {
+    /** Get direct lookup */
+    if (endpoint && mergedFileConfig.endpoints[endpoint]) {
+      return mergedFileConfig.endpoints[endpoint];
+    }
+    /** Fallback to normalized lookup */
+    for (const key in mergedFileConfig.endpoints) {
+      if (normalizeEndpointName(key) === normalizedEndpoint) {
+        return mergedFileConfig.endpoints[key];
+      }
+    }
+    /** Fallback to 'custom' config if any */
+    if (mergedFileConfig.endpoints[EModelEndpoint.custom]) {
+      return mergedFileConfig.endpoints[EModelEndpoint.custom];
+    }
+  }
+
+  if (
+    !isAssistantsEndpoint(normalizedEndpoint) &&
+    mergedFileConfig.endpoints[EModelEndpoint.agents]
+  ) {
+    return mergedFileConfig.endpoints[EModelEndpoint.agents];
+  }
+
+  return mergedFileConfig.endpoints.default ?? fileConfig.endpoints.default;
+}
 
 export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | undefined): FileConfig {
   const mergedConfig: FileConfig = {

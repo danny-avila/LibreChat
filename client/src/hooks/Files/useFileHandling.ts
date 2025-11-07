@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useMemo, useState } from 'react';
 import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
@@ -6,15 +6,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   QueryKeys,
   Constants,
-  EModelEndpoint,
   EToolResources,
   mergeFileConfig,
   isAssistantsEndpoint,
+  getEndpointFileConfig,
   defaultAssistantsVersion,
-  fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import debounce from 'lodash/debounce';
-import type { EndpointFileConfig, TEndpointsConfig, TError } from 'librechat-data-provider';
+import type { TEndpointsConfig, TError } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
@@ -29,7 +28,6 @@ import useUpdateFiles from './useUpdateFiles';
 type UseFileHandling = {
   fileSetter?: FileSetter;
   fileFilter?: (file: File) => boolean;
-  overrideEndpointFileConfig?: EndpointFileConfig;
   additionalMetadata?: Record<string, string | undefined>;
 };
 
@@ -52,15 +50,12 @@ const useFileHandling = (params?: UseFileHandling) => {
 
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
+  const endpointType = useMemo(() => conversation?.endpointType, [conversation?.endpointType]);
+  const endpoint = useMemo(() => conversation?.endpoint ?? 'default', [conversation?.endpoint]);
 
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
-
-  const endpoint = useMemo(
-    () => conversation?.endpointType ?? conversation?.endpoint ?? 'default',
-    [conversation?.endpointType, conversation?.endpoint],
-  );
 
   const displayToast = useCallback(() => {
     if (errors.length > 1) {
@@ -166,10 +161,7 @@ const useFileHandling = (params?: UseFileHandling) => {
 
     const formData = new FormData();
     formData.append('endpoint', endpoint);
-    formData.append(
-      'original_endpoint',
-      conversation?.endpointType || conversation?.endpoint || '',
-    );
+    formData.append('endpointType', endpointType ?? '');
     formData.append('file', extendedFile.file as File, encodeURIComponent(filename));
     formData.append('file_id', extendedFile.file_id);
 
@@ -191,7 +183,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       }
     }
 
-    if (!isAssistantsEndpoint(endpoint)) {
+    if (!isAssistantsEndpoint(endpointType ?? endpoint)) {
       if (!agent_id) {
         formData.append('message_file', 'true');
       }
@@ -259,20 +251,19 @@ const useFileHandling = (params?: UseFileHandling) => {
     /* Validate files */
     let filesAreValid: boolean;
     try {
-      const endpointFileConfig =
-        params?.overrideEndpointFileConfig ??
-        fileConfig?.endpoints?.[endpoint] ??
-        fileConfig?.endpoints?.default ??
-        defaultFileConfig.endpoints[endpoint] ??
-        defaultFileConfig.endpoints.default;
+      const endpointFileConfig = getEndpointFileConfig({
+        endpoint,
+        fileConfig,
+        endpointType,
+      });
 
       filesAreValid = validateFiles({
         files,
         fileList,
         setError,
+        fileConfig,
         endpointFileConfig,
         toolResource: _toolResource,
-        fileConfig: fileConfig,
       });
     } catch (error) {
       console.error('file validation error', error);
