@@ -1,8 +1,7 @@
 import getStream from 'get-stream';
 import { FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { Request } from 'express';
-import type { StrategyFunctions, ProcessedFile } from '~/types/files';
+import type { ServerRequest, StrategyFunctions, ProcessedFile } from '~/types';
 
 /**
  * Processes a file by downloading and encoding it to base64
@@ -13,7 +12,7 @@ import type { StrategyFunctions, ProcessedFile } from '~/types/files';
  * @returns Processed file with content and metadata, or null if filepath missing
  */
 export async function getFileStream(
-  req: Request,
+  req: ServerRequest,
   file: IMongoFile,
   encodingMethods: Record<string, StrategyFunctions>,
   getStrategyFunctions: (source: string) => StrategyFunctions,
