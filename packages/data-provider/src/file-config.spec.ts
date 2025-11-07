@@ -358,7 +358,6 @@ describe('getEndpointFileConfig', () => {
       const result = getEndpointFileConfig({
         fileConfig,
         endpoint: EModelEndpoint.agents,
-        endpointType: EModelEndpoint.agents,
       });
 
       expect(result.disabled).toBe(false);
@@ -524,7 +523,6 @@ describe('getEndpointFileConfig', () => {
       getEndpointFileConfig({
         fileConfig,
         endpoint: EModelEndpoint.openAI,
-        endpointType: EModelEndpoint.openAI,
       });
 
       /** Config should not be mutated */
@@ -620,7 +618,6 @@ describe('getEndpointFileConfig', () => {
       const result = getEndpointFileConfig({
         fileConfig,
         endpoint: EModelEndpoint.agents,
-        endpointType: EModelEndpoint.agents,
       });
 
       expect(result.disabled).toBe(false);
@@ -642,7 +639,6 @@ describe('getEndpointFileConfig', () => {
       const result = getEndpointFileConfig({
         fileConfig: merged,
         endpoint: EModelEndpoint.openAI,
-        endpointType: EModelEndpoint.openAI,
       });
 
       expect(result.disabled).toBe(true);
@@ -668,7 +664,6 @@ describe('getEndpointFileConfig', () => {
       const result = getEndpointFileConfig({
         fileConfig: merged,
         endpoint: EModelEndpoint.anthropic,
-        endpointType: EModelEndpoint.anthropic,
       });
 
       expect(result.disabled).toBe(false);
@@ -691,7 +686,6 @@ describe('getEndpointFileConfig', () => {
       const result = getEndpointFileConfig({
         fileConfig: merged,
         endpoint: EModelEndpoint.anthropic,
-        endpointType: EModelEndpoint.anthropic,
       });
 
       expect(result.disabled).toBe(false);
@@ -836,6 +830,107 @@ describe('getEndpointFileConfig', () => {
     });
   });
 
+  describe('partial config merging', () => {
+    it('should merge partial endpoint config with default config', () => {
+      const dynamicConfig = {
+        endpoints: {
+          google: {
+            fileSizeLimit: 500,
+            /** Note: supportedMimeTypes not configured */
+          },
+        },
+      };
+
+      const merged = mergeFileConfig(dynamicConfig);
+      const result = getEndpointFileConfig({
+        fileConfig: merged,
+        endpoint: EModelEndpoint.google,
+      });
+
+      /** Should have the configured fileSizeLimit */
+      expect(result.fileSizeLimit).toBe(500 * 1024 * 1024);
+      /** Should have supportedMimeTypes from default config */
+      expect(result.supportedMimeTypes).toBeDefined();
+      expect(Array.isArray(result.supportedMimeTypes)).toBe(true);
+      expect(result.supportedMimeTypes!.length).toBeGreaterThan(0);
+      /** Should have other fields from default */
+      expect(result.fileLimit).toBeDefined();
+      expect(result.totalSizeLimit).toBeDefined();
+    });
+
+    it('should not override explicitly set fields with default', () => {
+      const dynamicConfig = {
+        endpoints: {
+          anthropic: {
+            disabled: true,
+            fileLimit: 3,
+          },
+        },
+      };
+
+      const merged = mergeFileConfig(dynamicConfig);
+      const result = getEndpointFileConfig({
+        fileConfig: merged,
+        endpoint: EModelEndpoint.anthropic,
+      });
+
+      /** Should keep explicitly configured values */
+      expect(result.disabled).toBe(true);
+      expect(result.fileLimit).toBe(0); /** disabled: true sets to 0 in merge */
+      /** But still get supportedMimeTypes from... wait, disabled: true clears this */
+      expect(result.supportedMimeTypes).toEqual([]);
+    });
+
+    it('should handle endpoint with only fileSizeLimit configured', () => {
+      const dynamicConfig = {
+        endpoints: {
+          openAI: {
+            fileSizeLimit: 100,
+          },
+        },
+      };
+
+      const merged = mergeFileConfig(dynamicConfig);
+      const result = getEndpointFileConfig({
+        fileConfig: merged,
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      expect(result.fileSizeLimit).toBe(100 * 1024 * 1024);
+      /** Should get these from default */
+      expect(result.supportedMimeTypes).toBeDefined();
+      expect(result.fileLimit).toBeDefined();
+      expect(result.disabled).not.toBe(true);
+    });
+
+    it('should merge supportedMimeTypes from default when only fileSizeLimit is configured', () => {
+      /** This tests the exact scenario from the issue */
+      const dynamicConfig = {
+        endpoints: {
+          google: {
+            fileSizeLimit: 1000000024,
+          },
+        },
+      };
+
+      const merged = mergeFileConfig(dynamicConfig);
+      const result = getEndpointFileConfig({
+        fileConfig: merged,
+        endpoint: EModelEndpoint.google,
+      });
+
+      /** Should have the massive fileSizeLimit configured */
+      expect(result.fileSizeLimit).toBe(1000000024 * 1024 * 1024);
+      /** CRITICAL: Should have supportedMimeTypes from default, not undefined or [] */
+      expect(result.supportedMimeTypes).toBeDefined();
+      expect(Array.isArray(result.supportedMimeTypes)).toBe(true);
+      expect(result.supportedMimeTypes!.length).toBeGreaterThan(0);
+      /** Should have other default fields */
+      expect(result.fileLimit).toBe(10);
+      expect(result.disabled).toBe(false);
+    });
+  });
+
   describe('real-world scenarios', () => {
     it('should handle multi-provider custom endpoint configuration', () => {
       const fileConfig: FileConfig = {
@@ -898,14 +993,12 @@ describe('getEndpointFileConfig', () => {
       const openaiResult = getEndpointFileConfig({
         fileConfig,
         endpoint: EModelEndpoint.openAI,
-        endpointType: EModelEndpoint.openAI,
       });
       expect(openaiResult.disabled).toBe(true);
 
       const anthropicResult = getEndpointFileConfig({
         fileConfig,
         endpoint: EModelEndpoint.anthropic,
-        endpointType: EModelEndpoint.anthropic,
       });
       expect(anthropicResult.disabled).toBe(false);
       expect(anthropicResult.fileLimit).toBe(15);

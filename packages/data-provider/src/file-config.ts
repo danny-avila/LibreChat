@@ -341,6 +341,22 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
  * @param params.conversationEndpoint - Optional conversation endpoint for additional context
  * @returns The endpoint file configuration or undefined
  */
+/**
+ * Merges an endpoint config with the default config to ensure all fields are populated
+ */
+function mergeWithDefault(
+  endpointConfig: EndpointFileConfig,
+  defaultConfig: EndpointFileConfig,
+): EndpointFileConfig {
+  return {
+    disabled: endpointConfig.disabled ?? defaultConfig.disabled,
+    fileLimit: endpointConfig.fileLimit ?? defaultConfig.fileLimit,
+    fileSizeLimit: endpointConfig.fileSizeLimit ?? defaultConfig.fileSizeLimit,
+    totalSizeLimit: endpointConfig.totalSizeLimit ?? defaultConfig.totalSizeLimit,
+    supportedMimeTypes: endpointConfig.supportedMimeTypes ?? defaultConfig.supportedMimeTypes,
+  };
+}
+
 export function getEndpointFileConfig(params: {
   fileConfig?: FileConfig | null;
   endpoint?: string | null;
@@ -351,6 +367,8 @@ export function getEndpointFileConfig(params: {
   if (!mergedFileConfig?.endpoints) {
     return fileConfig.endpoints.default;
   }
+
+  const defaultConfig = mergedFileConfig.endpoints.default ?? fileConfig.endpoints.default;
 
   const normalizedEndpoint = normalizeEndpointName(endpoint ?? '');
   const standardEndpoints = new Set([
@@ -375,49 +393,49 @@ export function getEndpointFileConfig(params: {
   if (isCustomEndpoint) {
     /** 1. Check direct endpoint lookup (could be normalized or not) */
     if (endpoint && mergedFileConfig.endpoints[endpoint]) {
-      return mergedFileConfig.endpoints[endpoint];
+      return mergeWithDefault(mergedFileConfig.endpoints[endpoint], defaultConfig);
     }
     /** 2. Check normalized endpoint lookup (skip standard endpoint keys) */
     for (const key in mergedFileConfig.endpoints) {
       if (!standardEndpoints.has(key) && normalizeEndpointName(key) === normalizedEndpoint) {
-        return mergedFileConfig.endpoints[key];
+        return mergeWithDefault(mergedFileConfig.endpoints[key], defaultConfig);
       }
     }
     /** 3. Fallback to generic 'custom' config if any */
     if (mergedFileConfig.endpoints[EModelEndpoint.custom]) {
-      return mergedFileConfig.endpoints[EModelEndpoint.custom];
+      return mergeWithDefault(mergedFileConfig.endpoints[EModelEndpoint.custom], defaultConfig);
     }
     /** 4. Fallback to 'agents' (all custom endpoints are non-assistants) */
     if (mergedFileConfig.endpoints[EModelEndpoint.agents]) {
-      return mergedFileConfig.endpoints[EModelEndpoint.agents];
+      return mergeWithDefault(mergedFileConfig.endpoints[EModelEndpoint.agents], defaultConfig);
     }
     /** 5. Fallback to default */
-    return mergedFileConfig.endpoints.default ?? fileConfig.endpoints.default;
+    return defaultConfig;
   }
 
   /** Check endpointType first (most reliable for standard endpoints) */
   if (endpointType && mergedFileConfig.endpoints[endpointType]) {
-    return mergedFileConfig.endpoints[endpointType];
+    return mergeWithDefault(mergedFileConfig.endpoints[endpointType], defaultConfig);
   }
 
   /** Check direct endpoint lookup */
   if (endpoint && mergedFileConfig.endpoints[endpoint]) {
-    return mergedFileConfig.endpoints[endpoint];
+    return mergeWithDefault(mergedFileConfig.endpoints[endpoint], defaultConfig);
   }
 
   /** Check normalized endpoint */
   if (normalizedEndpoint && mergedFileConfig.endpoints[normalizedEndpoint]) {
-    return mergedFileConfig.endpoints[normalizedEndpoint];
+    return mergeWithDefault(mergedFileConfig.endpoints[normalizedEndpoint], defaultConfig);
   }
 
   /** Fallback to agents if endpoint is explicitly agents */
   const isAgents = isAgentsEndpoint(normalizedEndpointType || normalizedEndpoint);
   if (isAgents && mergedFileConfig.endpoints[EModelEndpoint.agents]) {
-    return mergedFileConfig.endpoints[EModelEndpoint.agents];
+    return mergeWithDefault(mergedFileConfig.endpoints[EModelEndpoint.agents], defaultConfig);
   }
 
   /** Return default config */
-  return mergedFileConfig.endpoints.default ?? fileConfig.endpoints.default;
+  return defaultConfig;
 }
 
 export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | undefined): FileConfig {
