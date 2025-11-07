@@ -72,9 +72,12 @@ const initializeAgent = async ({
 
   const { resendFiles, maxContextTokens, modelOptions } = extractLibreChatParams(_modelOptions);
 
+  const provider = agent.provider;
+  agent.endpoint = provider;
+
   const requestFiles = filterFilesByEndpointConfig(req, {
     files: _requestFiles,
-    endpoint: agent.provider || endpointOption?.endpoint,
+    endpoint: agent.endpoint || endpointOption?.endpoint,
     endpointType: endpointOption?.endpointType,
   });
 
@@ -105,7 +108,6 @@ const initializeAgent = async ({
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
   });
 
-  const provider = agent.provider;
   const {
     tools: structuredTools,
     toolContextMap,
@@ -120,7 +122,6 @@ const initializeAgent = async ({
     tool_resources,
   })) ?? {};
 
-  agent.endpoint = provider;
   const { getOptions, overrideProvider } = getProviderConfig({ provider, appConfig });
   if (overrideProvider !== agent.provider) {
     agent.provider = overrideProvider;
