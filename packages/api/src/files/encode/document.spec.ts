@@ -12,20 +12,41 @@ jest.mock('~/files/validation', () => ({
 /** Mock the utils module */
 jest.mock('./utils', () => ({
   getFileStream: jest.fn(),
+  getConfiguredFileSizeLimit: jest.fn(),
 }));
 
 import { validatePdf } from '~/files/validation';
-import { getFileStream } from './utils';
+import { getFileStream, getConfiguredFileSizeLimit } from './utils';
 import { Types } from 'mongoose';
 
 const mockedValidatePdf = validatePdf as jest.MockedFunction<typeof validatePdf>;
 const mockedGetFileStream = getFileStream as jest.MockedFunction<typeof getFileStream>;
+const mockedGetConfiguredFileSizeLimit = getConfiguredFileSizeLimit as jest.MockedFunction<
+  typeof getConfiguredFileSizeLimit
+>;
 
 describe('encodeAndFormatDocuments - fileConfig integration', () => {
   const mockStrategyFunctions = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
+    /** Default mock implementation for getConfiguredFileSizeLimit */
+    mockedGetConfiguredFileSizeLimit.mockImplementation((req, provider) => {
+      if (!req.config?.fileConfig) {
+        return undefined;
+      }
+      const fileConfig = req.config.fileConfig;
+      const endpoints = fileConfig.endpoints;
+      if (endpoints?.[provider]) {
+        const limit = endpoints[provider].fileSizeLimit;
+        return limit !== undefined ? mbToBytes(limit) : undefined;
+      }
+      if (endpoints?.default) {
+        const limit = endpoints.default.fileSizeLimit;
+        return limit !== undefined ? mbToBytes(limit) : undefined;
+      }
+      return undefined;
+    });
   });
 
   /** Helper to create a mock request with file config */
@@ -119,7 +140,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       );
     });
 
-    it('should use default config when fileConfig.endpoints is not defined', async () => {
+    it('should pass undefined when fileConfig.endpoints is not defined', async () => {
       const req = {
         config: {
           fileConfig: {},
@@ -143,12 +164,12 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         mockStrategyFunctions,
       );
 
-      /** mergeFileConfig provides a default limit when no endpoints config is specified */
+      /** When fileConfig has no endpoints, getConfiguredFileSizeLimit returns undefined */
       expect(mockedValidatePdf).toHaveBeenCalledWith(
         expect.any(Buffer),
         expect.any(Number),
         Providers.OPENAI,
-        expect.any(Number), // Just verify a limit is passed
+        undefined,
       );
     });
 
@@ -230,7 +251,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       );
     });
 
-    it('should use base default config when provider-specific config not found', async () => {
+    it('should pass undefined when provider-specific config not found and no default', async () => {
       const req = {
         config: {
           fileConfig: {
@@ -261,12 +282,12 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         mockStrategyFunctions,
       );
 
-      /** When provider-specific config not found, uses base default */
+      /** When provider-specific config not found and no default, returns undefined */
       expect(mockedValidatePdf).toHaveBeenCalledWith(
         expect.any(Buffer),
         expect.any(Number),
         Providers.OPENAI,
-        expect.any(Number), // Just verify a limit is passed
+        undefined,
       );
     });
   });

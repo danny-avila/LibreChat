@@ -1,9 +1,5 @@
 import { Providers } from '@librechat/agents';
-import {
-  isOpenAILikeProvider,
-  isDocumentSupportedProvider,
-  mergeFileConfig,
-} from 'librechat-data-provider';
+import { isOpenAILikeProvider, isDocumentSupportedProvider } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type {
   AnthropicDocumentBlock,
@@ -11,17 +7,8 @@ import type {
   DocumentResult,
   ServerRequest,
 } from '~/types';
+import { getFileStream, getConfiguredFileSizeLimit } from './utils';
 import { validatePdf } from '~/files/validation';
-import { getFileStream } from './utils';
-
-const getConfiguredFileSizeLimit = (req: ServerRequest, provider: Providers) => {
-  if (!req.config?.fileConfig) {
-    return undefined;
-  }
-  const fileConfig = mergeFileConfig(req.config.fileConfig);
-  const endpointConfig = fileConfig.endpoints[provider] ?? fileConfig.endpoints.default;
-  return endpointConfig?.fileSizeLimit;
-};
 
 /**
  * Processes and encodes document files for various providers
