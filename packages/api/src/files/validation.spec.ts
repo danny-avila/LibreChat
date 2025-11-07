@@ -1,6 +1,6 @@
 import { Providers } from '@librechat/agents';
 import { mbToBytes } from 'librechat-data-provider';
-import { validatePdf } from './validation';
+import { validatePdf, validateVideo, validateAudio } from './validation';
 
 describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
   /** Helper to create a PDF buffer with valid header */
@@ -355,6 +355,210 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
 
       expect(result.isValid).toBe(true);
       expect(result.error).toBeUndefined();
+    });
+  });
+
+  describe('Video and Audio Validation with fileConfig', () => {
+    /** Helper to create a mock video/audio buffer */
+    const createMockMediaBuffer = (sizeInMB: number): Buffer => {
+      const bytes = Math.floor(sizeInMB * 1024 * 1024);
+      return Buffer.alloc(bytes);
+    };
+
+    describe('validateVideo - Google provider', () => {
+      const provider = Providers.GOOGLE;
+
+      it('should accept video within provider limit when no config provided', async () => {
+        const videoBuffer = createMockMediaBuffer(15);
+        const result = await validateVideo(videoBuffer, videoBuffer.length, provider);
+
+        expect(result.isValid).toBe(true);
+        expect(result.error).toBeUndefined();
+      });
+
+      it('should reject video exceeding provider limit when no config provided', async () => {
+        const videoBuffer = createMockMediaBuffer(25);
+        const result = await validateVideo(videoBuffer, videoBuffer.length, provider);
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('25MB');
+        expect(result.error).toContain('20MB');
+      });
+
+      it('should use configured limit when it is lower than provider limit', async () => {
+        const configuredLimit = mbToBytes(10); // 10MB
+        const videoBuffer = createMockMediaBuffer(15); // Between configured and provider limit
+        const result = await validateVideo(
+          videoBuffer,
+          videoBuffer.length,
+          provider,
+          configuredLimit,
+        );
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('15MB');
+        expect(result.error).toContain('10MB');
+      });
+
+      it('should use provider limit when configured limit is higher', async () => {
+        const configuredLimit = mbToBytes(50); // 50MB (higher than provider limit)
+        const videoBuffer = createMockMediaBuffer(25); // Between provider and configured limit
+        const result = await validateVideo(
+          videoBuffer,
+          videoBuffer.length,
+          provider,
+          configuredLimit,
+        );
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('25MB');
+        expect(result.error).toContain('20MB');
+      });
+
+      it('should accept video within lower configured limit', async () => {
+        const configuredLimit = mbToBytes(8);
+        const videoBuffer = createMockMediaBuffer(7);
+        const result = await validateVideo(
+          videoBuffer,
+          videoBuffer.length,
+          provider,
+          configuredLimit,
+        );
+
+        expect(result.isValid).toBe(true);
+        expect(result.error).toBeUndefined();
+      });
+
+      it('should reject videos that are too small', async () => {
+        const videoBuffer = Buffer.alloc(5);
+        const result = await validateVideo(videoBuffer, videoBuffer.length, provider);
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('too small');
+      });
+    });
+
+    describe('validateAudio - Google provider', () => {
+      const provider = Providers.GOOGLE;
+
+      it('should accept audio within provider limit when no config provided', async () => {
+        const audioBuffer = createMockMediaBuffer(15);
+        const result = await validateAudio(audioBuffer, audioBuffer.length, provider);
+
+        expect(result.isValid).toBe(true);
+        expect(result.error).toBeUndefined();
+      });
+
+      it('should reject audio exceeding provider limit when no config provided', async () => {
+        const audioBuffer = createMockMediaBuffer(25);
+        const result = await validateAudio(audioBuffer, audioBuffer.length, provider);
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('25MB');
+        expect(result.error).toContain('20MB');
+      });
+
+      it('should use configured limit when it is lower than provider limit', async () => {
+        const configuredLimit = mbToBytes(10); // 10MB
+        const audioBuffer = createMockMediaBuffer(15); // Between configured and provider limit
+        const result = await validateAudio(
+          audioBuffer,
+          audioBuffer.length,
+          provider,
+          configuredLimit,
+        );
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('15MB');
+        expect(result.error).toContain('10MB');
+      });
+
+      it('should use provider limit when configured limit is higher', async () => {
+        const configuredLimit = mbToBytes(50); // 50MB (higher than provider limit)
+        const audioBuffer = createMockMediaBuffer(25); // Between provider and configured limit
+        const result = await validateAudio(
+          audioBuffer,
+          audioBuffer.length,
+          provider,
+          configuredLimit,
+        );
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('25MB');
+        expect(result.error).toContain('20MB');
+      });
+
+      it('should accept audio within lower configured limit', async () => {
+        const configuredLimit = mbToBytes(8);
+        const audioBuffer = createMockMediaBuffer(7);
+        const result = await validateAudio(
+          audioBuffer,
+          audioBuffer.length,
+          provider,
+          configuredLimit,
+        );
+
+        expect(result.isValid).toBe(true);
+        expect(result.error).toBeUndefined();
+      });
+
+      it('should reject audio files that are too small', async () => {
+        const audioBuffer = Buffer.alloc(5);
+        const result = await validateAudio(audioBuffer, audioBuffer.length, provider);
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('too small');
+      });
+    });
+
+    describe('validateVideo and validateAudio - VertexAI provider', () => {
+      const provider = Providers.VERTEXAI;
+
+      it('should respect configured video limit for VertexAI', async () => {
+        const configuredLimit = mbToBytes(10);
+        const videoBuffer = createMockMediaBuffer(15);
+        const result = await validateVideo(
+          videoBuffer,
+          videoBuffer.length,
+          provider,
+          configuredLimit,
+        );
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('10MB');
+      });
+
+      it('should respect configured audio limit for VertexAI', async () => {
+        const configuredLimit = mbToBytes(10);
+        const audioBuffer = createMockMediaBuffer(15);
+        const result = await validateAudio(
+          audioBuffer,
+          audioBuffer.length,
+          provider,
+          configuredLimit,
+        );
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('10MB');
+      });
+    });
+
+    describe('validateVideo and validateAudio - Unsupported providers', () => {
+      it('should return valid for video from unsupported provider', async () => {
+        const videoBuffer = createMockMediaBuffer(100);
+        const provider = Providers.OPENAI;
+        const result = await validateVideo(videoBuffer, videoBuffer.length, provider);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should return valid for audio from unsupported provider', async () => {
+        const audioBuffer = createMockMediaBuffer(100);
+        const provider = Providers.OPENAI;
+        const result = await validateAudio(audioBuffer, audioBuffer.length, provider);
+
+        expect(result.isValid).toBe(true);
+      });
     });
   });
 });

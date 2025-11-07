@@ -170,18 +170,27 @@ async function validateGooglePdf(
  * @param videoBuffer - The video file as a buffer
  * @param fileSize - The file size in bytes
  * @param provider - The provider to validate for
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
  * @returns Promise that resolves to validation result
  */
 export async function validateVideo(
   videoBuffer: Buffer,
   fileSize: number,
   provider: Providers,
+  configuredFileSizeLimit?: number,
 ): Promise<VideoValidationResult> {
   if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
-    if (fileSize > 20 * 1024 * 1024) {
+    const providerLimit = 20 * 1024 * 1024;
+    const effectiveLimit =
+      configuredFileSizeLimit !== undefined
+        ? Math.min(configuredFileSizeLimit, providerLimit)
+        : providerLimit;
+
+    if (fileSize > effectiveLimit) {
+      const limitMB = Math.round(effectiveLimit / (1024 * 1024));
       return {
         isValid: false,
-        error: `Video file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds Google's 20MB limit`,
+        error: `Video file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
       };
     }
   }
@@ -201,18 +210,27 @@ export async function validateVideo(
  * @param audioBuffer - The audio file as a buffer
  * @param fileSize - The file size in bytes
  * @param provider - The provider to validate for
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
  * @returns Promise that resolves to validation result
  */
 export async function validateAudio(
   audioBuffer: Buffer,
   fileSize: number,
   provider: Providers,
+  configuredFileSizeLimit?: number,
 ): Promise<AudioValidationResult> {
   if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
-    if (fileSize > 20 * 1024 * 1024) {
+    const providerLimit = 20 * 1024 * 1024;
+    const effectiveLimit =
+      configuredFileSizeLimit !== undefined
+        ? Math.min(configuredFileSizeLimit, providerLimit)
+        : providerLimit;
+
+    if (fileSize > effectiveLimit) {
+      const limitMB = Math.round(effectiveLimit / (1024 * 1024));
       return {
         isValid: false,
-        error: `Audio file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds Google's 20MB limit`,
+        error: `Audio file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
       };
     }
   }
