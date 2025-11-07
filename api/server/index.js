@@ -85,6 +85,15 @@ const startServer = async () => {
   app.use(cors());
   app.use(cookieParser());
 
+  // Global request logging for debugging
+  app.use((req, res, next) => {
+    if (req.url.includes('/api/assistants')) {
+      const logger = require('~/config/winston');
+      logger.error(`GLOBAL REQUEST LOGGER: ${req.method} ${req.url} at ${new Date().toISOString()}`);
+    }
+    next();
+  });
+
   if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());
   } else {
