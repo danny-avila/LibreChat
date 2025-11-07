@@ -46,12 +46,10 @@ export default function FileContext({
   });
 
   const { handleFileChange } = useFileHandling({
-    overrideEndpoint: EModelEndpoint.agents,
     additionalMetadata: { agent_id, tool_resource: EToolResources.context },
     fileSetter: setFiles,
   });
   const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
-    overrideEndpoint: EModelEndpoint.agents,
     additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
     fileSetter: setFiles,
   });

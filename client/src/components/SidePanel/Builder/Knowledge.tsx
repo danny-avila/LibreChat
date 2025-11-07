@@ -42,7 +42,6 @@ export default function Knowledge({
     select: (data) => mergeFileConfig(data),
   });
   const { handleFileChange } = useFileHandling({
-    overrideEndpoint: endpoint,
     additionalMetadata: { assistant_id },
     fileSetter: setFiles,
   });

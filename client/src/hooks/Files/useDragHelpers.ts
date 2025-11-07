@@ -33,9 +33,7 @@ export default function useDragHelpers() {
     [conversation?.endpoint],
   );
 
-  const { handleFiles } = useFileHandling({
-    overrideEndpoint: isAssistants ? undefined : EModelEndpoint.agents,
-  });
+  const { handleFiles } = useFileHandling();
 
   const handleOptionSelect = useCallback(
     (toolResource: EToolResources | undefined) => {

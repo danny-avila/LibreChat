@@ -32,7 +32,6 @@ export default function CodeFiles({
     select: (data) => mergeFileConfig(data),
   });
   const { handleFileChange } = useFileHandling({
-    overrideEndpoint: endpoint,
     additionalMetadata: { assistant_id, tool_resource },
     fileSetter: setFiles,
   });

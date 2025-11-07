@@ -43,13 +43,11 @@ export default function FileSearch({
   });
 
   const { handleFileChange } = useFileHandling({
-    overrideEndpoint: EModelEndpoint.agents,
     additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
     fileSetter: setFiles,
   });
 
   const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
-    overrideEndpoint: EModelEndpoint.agents,
     additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
     fileSetter: setFiles,
   });

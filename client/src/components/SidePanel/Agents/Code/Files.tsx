@@ -35,7 +35,6 @@ export default function Files({
   });
   const { abortUpload, handleFileChange } = useFileHandling({
     fileSetter: setFiles,
-    overrideEndpoint: EModelEndpoint.agents,
     additionalMetadata: { agent_id, tool_resource },
   });
 

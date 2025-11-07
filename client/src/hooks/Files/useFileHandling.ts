@@ -9,7 +9,6 @@ import {
   EModelEndpoint,
   EToolResources,
   mergeFileConfig,
-  isAgentsEndpoint,
   isAssistantsEndpoint,
   defaultAssistantsVersion,
   fileConfig as defaultFileConfig,
@@ -29,7 +28,6 @@ import useUpdateFiles from './useUpdateFiles';
 
 type UseFileHandling = {
   fileSetter?: FileSetter;
-  overrideEndpoint?: EModelEndpoint;
   fileFilter?: (file: File) => boolean;
   overrideEndpointFileConfig?: EndpointFileConfig;
   additionalMetadata?: Record<string, string | undefined>;
@@ -60,9 +58,8 @@ const useFileHandling = (params?: UseFileHandling) => {
   });
 
   const endpoint = useMemo(
-    () =>
-      params?.overrideEndpoint ?? conversation?.endpointType ?? conversation?.endpoint ?? 'default',
-    [params?.overrideEndpoint, conversation?.endpointType, conversation?.endpoint],
+    () => conversation?.endpointType ?? conversation?.endpoint ?? 'default',
+    [conversation?.endpointType, conversation?.endpoint],
   );
 
   const displayToast = useCallback(() => {
@@ -194,7 +191,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       }
     }
 
-    if (isAgentsEndpoint(endpoint)) {
+    if (!isAssistantsEndpoint(endpoint)) {
       if (!agent_id) {
         formData.append('message_file', 'true');
       }
@@ -205,9 +202,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       if (conversation?.agent_id != null && formData.get('agent_id') == null) {
         formData.append('agent_id', conversation.agent_id);
       }
-    }
 
-    if (!isAssistantsEndpoint(endpoint)) {
       uploadFile.mutate(formData);
       return;
     }

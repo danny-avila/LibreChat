@@ -62,11 +62,9 @@ const AttachFileMenu = ({
   );
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
   const { handleFileChange } = useFileHandling({
-    overrideEndpoint: EModelEndpoint.agents,
     overrideEndpointFileConfig: endpointFileConfig,
   });
   const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
-    overrideEndpoint: EModelEndpoint.agents,
     overrideEndpointFileConfig: endpointFileConfig,
     toolResource,
   });
