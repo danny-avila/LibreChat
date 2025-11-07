@@ -353,24 +353,31 @@ export function getEndpointFileConfig(params: {
   }
 
   const normalizedEndpoint = normalizeEndpointName(endpoint ?? '');
+  const standardEndpoints = new Set([
+    'default',
+    EModelEndpoint.agents,
+    EModelEndpoint.assistants,
+    EModelEndpoint.azureAssistants,
+    EModelEndpoint.openAI,
+    EModelEndpoint.azureOpenAI,
+    EModelEndpoint.anthropic,
+    EModelEndpoint.google,
+    EModelEndpoint.bedrock,
+  ]);
 
-  if (endpointType === EModelEndpoint.custom) {
+  const normalizedEndpointType = normalizeEndpointName(endpointType ?? '');
+  const isCustomEndpoint =
+    endpointType === EModelEndpoint.custom ||
+    (!standardEndpoints.has(normalizedEndpointType) &&
+      normalizedEndpoint &&
+      !standardEndpoints.has(normalizedEndpoint));
+
+  if (isCustomEndpoint) {
     /** 1. Check direct endpoint lookup (could be normalized or not) */
     if (endpoint && mergedFileConfig.endpoints[endpoint]) {
       return mergedFileConfig.endpoints[endpoint];
     }
     /** 2. Check normalized endpoint lookup (skip standard endpoint keys) */
-    const standardEndpoints = new Set([
-      'default',
-      EModelEndpoint.agents,
-      EModelEndpoint.assistants,
-      EModelEndpoint.azureAssistants,
-      EModelEndpoint.openAI,
-      EModelEndpoint.azureOpenAI,
-      EModelEndpoint.anthropic,
-      EModelEndpoint.google,
-      EModelEndpoint.bedrock,
-    ]);
     for (const key in mergedFileConfig.endpoints) {
       if (!standardEndpoints.has(key) && normalizeEndpointName(key) === normalizedEndpoint) {
         return mergedFileConfig.endpoints[key];
@@ -404,7 +411,6 @@ export function getEndpointFileConfig(params: {
   }
 
   /** Fallback to agents if endpoint is explicitly agents */
-  const normalizedEndpointType = normalizeEndpointName(endpointType ?? '');
   const isAgents = isAgentsEndpoint(normalizedEndpointType || normalizedEndpoint);
   if (isAgents && mergedFileConfig.endpoints[EModelEndpoint.agents]) {
     return mergedFileConfig.endpoints[EModelEndpoint.agents];
