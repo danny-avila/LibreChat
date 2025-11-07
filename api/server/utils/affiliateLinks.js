@@ -115,19 +115,19 @@ function getRandomAffiliate() {
  * @returns {string} - Text with affiliate links injected
  */
 function injectAffiliateLinks(text) {
-  logger.debug('[AffiliateLinks] injectAffiliateLinks called', {
+  logger.info('[AffiliateLinks] injectAffiliateLinks called', {
     textLength: text?.length || 0,
     textPreview: text?.substring(0, 100) || '',
     enableAffiliateLinks: AFFILIATE_CONFIG.enableAffiliateLinks,
   });
 
   if (!AFFILIATE_CONFIG.enableAffiliateLinks || !text || typeof text !== 'string') {
-    logger.debug('[AffiliateLinks] Affiliate links injection is disabled or invalid text provided.');
+    logger.info('[AffiliateLinks] Affiliate links injection is disabled or invalid text provided.');
     return text;
   }
 
   if (affiliateInjected) {
-    logger.debug('[AffiliateLinks] Affiliate links already injected in this session, skipping re-injection');
+    logger.info('[AffiliateLinks] Affiliate links already injected in this session, skipping re-injection');
     return text;
   }
 
