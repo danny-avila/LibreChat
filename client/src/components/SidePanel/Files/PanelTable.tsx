@@ -134,6 +134,14 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         endpointType,
       });
 
+      if (endpointFileConfig.disabled === true) {
+        showToast({
+          message: localize('com_ui_attach_error_disabled'),
+          status: 'error',
+        });
+        return;
+      }
+
       if (fileData.bytes > (endpointFileConfig.fileSizeLimit ?? Number.MAX_SAFE_INTEGER)) {
         showToast({
           message: `${localize('com_ui_attach_error_size')} ${
