@@ -43,7 +43,7 @@ export default function Parameters() {
     const customParams = endpointsConfig[provider]?.customParams ?? {};
     const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model);
     const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
-    
+
     let defaultParams: SettingDefinition[] = [];
     if (provider === EModelEndpoint.google) {
       const disableWebSearch = endpointsConfig[provider]?.disableWebSearch ?? false;
@@ -51,7 +51,7 @@ export default function Parameters() {
     } else {
       defaultParams = paramSettings[combinedKey] ?? paramSettings[overriddenEndpointKey] ?? [];
     }
-    
+
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
     return defaultParams
