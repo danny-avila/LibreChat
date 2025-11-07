@@ -20,17 +20,18 @@ export async function validatePdf(
   pdfBuffer: Buffer,
   fileSize: number,
   provider: Providers,
+  configuredFileSizeLimit?: number,
 ): Promise<PDFValidationResult> {
   if (provider === Providers.ANTHROPIC) {
-    return validateAnthropicPdf(pdfBuffer, fileSize);
+    return validateAnthropicPdf(pdfBuffer, fileSize, configuredFileSizeLimit);
   }
 
   if (isOpenAILikeProvider(provider)) {
-    return validateOpenAIPdf(fileSize);
+    return validateOpenAIPdf(fileSize, configuredFileSizeLimit);
   }
 
   if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
-    return validateGooglePdf(fileSize);
+    return validateGooglePdf(fileSize, configuredFileSizeLimit);
   }
 
   return { isValid: true };
@@ -40,17 +41,26 @@ export async function validatePdf(
  * Validates if a PDF meets Anthropic's requirements
  * @param pdfBuffer - The PDF file as a buffer
  * @param fileSize - The file size in bytes
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
  * @returns Promise that resolves to validation result
  */
 async function validateAnthropicPdf(
   pdfBuffer: Buffer,
   fileSize: number,
+  configuredFileSizeLimit?: number,
 ): Promise<PDFValidationResult> {
   try {
-    if (fileSize > mbToBytes(32)) {
+    const providerLimit = mbToBytes(32);
+    const effectiveLimit =
+      configuredFileSizeLimit !== undefined
+        ? Math.min(configuredFileSizeLimit, providerLimit)
+        : providerLimit;
+
+    if (fileSize > effectiveLimit) {
+      const limitMB = Math.round(effectiveLimit / (1024 * 1024));
       return {
         isValid: false,
-        error: `PDF file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds Anthropic's 32MB limit`,
+        error: `PDF file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
       };
     }
 
@@ -101,22 +111,54 @@ async function validateAnthropicPdf(
   }
 }
 
-async function validateOpenAIPdf(fileSize: number): Promise<PDFValidationResult> {
-  if (fileSize > 10 * 1024 * 1024) {
+/**
+ * Validates if a PDF meets OpenAI's requirements
+ * @param fileSize - The file size in bytes
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
+ * @returns Promise that resolves to validation result
+ */
+async function validateOpenAIPdf(
+  fileSize: number,
+  configuredFileSizeLimit?: number,
+): Promise<PDFValidationResult> {
+  const providerLimit = 10 * 1024 * 1024;
+  const effectiveLimit =
+    configuredFileSizeLimit !== undefined
+      ? Math.min(configuredFileSizeLimit, providerLimit)
+      : providerLimit;
+
+  if (fileSize > effectiveLimit) {
+    const limitMB = Math.round(effectiveLimit / (1024 * 1024));
     return {
       isValid: false,
-      error: "PDF file size exceeds OpenAI's 10MB limit",
+      error: `PDF file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
     };
   }
 
   return { isValid: true };
 }
 
-async function validateGooglePdf(fileSize: number): Promise<PDFValidationResult> {
-  if (fileSize > 20 * 1024 * 1024) {
+/**
+ * Validates if a PDF meets Google's requirements
+ * @param fileSize - The file size in bytes
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
+ * @returns Promise that resolves to validation result
+ */
+async function validateGooglePdf(
+  fileSize: number,
+  configuredFileSizeLimit?: number,
+): Promise<PDFValidationResult> {
+  const providerLimit = 20 * 1024 * 1024;
+  const effectiveLimit =
+    configuredFileSizeLimit !== undefined
+      ? Math.min(configuredFileSizeLimit, providerLimit)
+      : providerLimit;
+
+  if (fileSize > effectiveLimit) {
+    const limitMB = Math.round(effectiveLimit / (1024 * 1024));
     return {
       isValid: false,
-      error: "PDF file size exceeds Google's 20MB limit",
+      error: `PDF file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
     };
   }
 
