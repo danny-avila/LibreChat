@@ -772,16 +772,6 @@ class OpenAIClient extends BaseClient {
     };
   }
 
-  removeCitations(text) {
-    if (!text || typeof text !== 'string') {
-      return text;
-    }
-
-    // The regex should replace the <sup></sup> tags and everything inbetween
-    const supPattern = /<sup>.*?<\/sup>/g;
-    return text.replace(supPattern, '');
-  }
-
     /**
    *
    * @param {Object} params
@@ -992,17 +982,6 @@ class OpenAIClient extends BaseClient {
     }
 
     try {
-        
-      const appConfig = this.options.req?.config;
-      if (appConfig?.turnOffCitations === true &&
-        content?.includes('<sup>1.</sup>')
-      ) {
-        logger.debug('[OpenAIClient] Removing citations from response due to startup config.');
-        content = content.split('<sup>1.</sup>')[0];
-        content = this.removeCitations(content);
-      } else {
-        logger.debug('[OpenAIClient] Citations remain in response.');
-      }
 
       // Append Affiliate Links if applicable
       const affiliateConfig = getAffiliateConfig();

@@ -35,21 +35,6 @@ const { getOpenAIClient } = require('./helpers');
 const { injectAffiliateLinks, getAffiliateConfig, getAffiliateInjected } = require('~/server/utils/affiliateLinks');
 
 /**
- * Removes citation tags from text content
- * @param {string} text - The text to remove citations from
- * @returns {string} - Text with citations removed
- */
-const removeCitations = (text) => {
-  if (!text || typeof text !== 'string') {
-    return text;
-  }
-
-  // The regex should replace the <sup></sup> tags and everything inbetween
-  const supPattern = /<sup>.*?<\/sup>/g;
-  return text.replace(supPattern, '');
-};
-
-/**
  * @route POST /
  * @desc Chat with an assistant
  * @access Public
@@ -439,16 +424,7 @@ const chatV2 = async (req, res) => {
     let processedText = response.text;
     logger.error('=== STARTING AFFILIATE PROCESSING - STREAM COMPLETE ===');
     try {
-      logger.error('[ChatV2] Starting citation and affiliate processing');
-      
-      // Check if citations should be removed
-      if (appConfig?.turnOffCitations === true && processedText?.includes('<sup>1.</sup>')) {
-        logger.info('[ChatV2] Removing citations from response due to startup config');
-        processedText = processedText.split('<sup>1.</sup>')[0];
-        processedText = removeCitations(processedText);
-      } else {
-        logger.info('[ChatV2] Citations remain in response');
-      }
+      logger.error('[ChatV2] Starting Affiliate processing');
 
       // Process affiliate links
       const affiliateConfig = await getAffiliateConfig();
@@ -502,6 +478,14 @@ const chatV2 = async (req, res) => {
     await saveAssistantMessage(req, { ...responseMessage, model });
 
     logger.info('[chatV2.js] About to generate a title')
+
+    if (!_thread_id) {
+      logger.info('[chatV2.js] !_thread_id')
+    }
+
+    if (parentMessageId === Constants.NO_PARENT) {
+      logger.info('[chatV2.js] parentMessageId === Constants.NO_PARENT')
+    }
 
     if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
       addTitle(req, {
