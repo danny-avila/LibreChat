@@ -1,8 +1,7 @@
 import { Providers } from '@librechat/agents';
 import { isDocumentSupportedProvider } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { Request } from 'express';
-import type { StrategyFunctions, AudioResult } from '~/types/files';
+import type { ServerRequest, StrategyFunctions, AudioResult } from '~/types';
 import { validateAudio } from '~/files/validation';
 import { getFileStream } from './utils';
 
@@ -15,7 +14,7 @@ import { getFileStream } from './utils';
  * @returns Promise that resolves to audio and file metadata
  */
 export async function encodeAndFormatAudios(
-  req: Request,
+  req: ServerRequest,
   files: IMongoFile[],
   provider: Providers,
   getStrategyFunctions: (source: string) => StrategyFunctions,
