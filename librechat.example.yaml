@@ -315,7 +315,7 @@ endpoints:
       titleConvo: true
       titleModel: 'gpt-4o-mini'
       modelDisplayLabel: 'Helicone'
-      iconURL: https://marketing-assets-helicone.s3.us-west-2.amazonaws.com/logo-box.png
+      iconURL: https://marketing-assets-helicone.s3.us-west-2.amazonaws.com/helicone.png
 
     # Portkey AI Example
     - name: 'Portkey'
