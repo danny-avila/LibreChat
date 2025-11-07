@@ -317,6 +317,8 @@ export const fileConfigSchema = z.object({
     .optional(),
 });
 
+export type TFileConfig = z.infer<typeof fileConfigSchema>;
+
 /** Helper function to safely convert string patterns to RegExp objects */
 export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
   patterns.reduce((acc: RegExp[], pattern) => {

@@ -1,10 +1,9 @@
 import { Providers } from '@librechat/agents';
 import { isDocumentSupportedProvider } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { Request } from 'express';
-import type { StrategyFunctions, AudioResult } from '~/types/files';
+import type { ServerRequest, StrategyFunctions, AudioResult } from '~/types';
+import { getFileStream, getConfiguredFileSizeLimit } from './utils';
 import { validateAudio } from '~/files/validation';
-import { getFileStream } from './utils';
 
 /**
  * Encodes and formats audio files for different providers
@@ -15,7 +14,7 @@ import { getFileStream } from './utils';
  * @returns Promise that resolves to audio and file metadata
  */
 export async function encodeAndFormatAudios(
-  req: Request,
+  req: ServerRequest,
   files: IMongoFile[],
   provider: Providers,
   getStrategyFunctions: (source: string) => StrategyFunctions,
@@ -53,7 +52,16 @@ export async function encodeAndFormatAudios(
     }
 
     const audioBuffer = Buffer.from(content, 'base64');
-    const validation = await validateAudio(audioBuffer, audioBuffer.length, provider);
+
+    /** Extract configured file size limit from fileConfig for this endpoint */
+    const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, provider);
+
+    const validation = await validateAudio(
+      audioBuffer,
+      audioBuffer.length,
+      provider,
+      configuredFileSizeLimit,
+    );
 
     if (!validation.isValid) {
       throw new Error(`Audio validation failed: ${validation.error}`);

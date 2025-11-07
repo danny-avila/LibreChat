@@ -1,10 +1,14 @@
 import { Providers } from '@librechat/agents';
 import { isOpenAILikeProvider, isDocumentSupportedProvider } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { Request } from 'express';
-import type { StrategyFunctions, DocumentResult, AnthropicDocumentBlock } from '~/types/files';
+import type {
+  AnthropicDocumentBlock,
+  StrategyFunctions,
+  DocumentResult,
+  ServerRequest,
+} from '~/types';
+import { getFileStream, getConfiguredFileSizeLimit } from './utils';
 import { validatePdf } from '~/files/validation';
-import { getFileStream } from './utils';
 
 /**
  * Processes and encodes document files for various providers
@@ -15,7 +19,7 @@ import { getFileStream } from './utils';
  * @returns Promise that resolves to documents and file metadata
  */
 export async function encodeAndFormatDocuments(
-  req: Request,
+  req: ServerRequest,
   files: IMongoFile[],
   { provider, useResponsesApi }: { provider: Providers; useResponsesApi?: boolean },
   getStrategyFunctions: (source: string) => StrategyFunctions,
@@ -62,7 +66,16 @@ export async function encodeAndFormatDocuments(
 
     if (file.type === 'application/pdf' && isDocumentSupportedProvider(provider)) {
       const pdfBuffer = Buffer.from(content, 'base64');
-      const validation = await validatePdf(pdfBuffer, pdfBuffer.length, provider);
+
+      /** Extract configured file size limit from fileConfig for this endpoint */
+      const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, provider);
+
+      const validation = await validatePdf(
+        pdfBuffer,
+        pdfBuffer.length,
+        provider,
+        configuredFileSizeLimit,
+      );
 
       if (!validation.isValid) {
         throw new Error(`PDF validation failed: ${validation.error}`);
