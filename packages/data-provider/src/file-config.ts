@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { EndpointFileConfig, FileConfig } from './types/files';
-import { EModelEndpoint, isAssistantsEndpoint } from './schemas';
+import { EModelEndpoint, isAgentsEndpoint } from './schemas';
 import { normalizeEndpointName } from './utils';
 
 export const supportsFiles = {
@@ -355,35 +355,71 @@ export function getEndpointFileConfig(params: {
   const normalizedEndpoint = normalizeEndpointName(endpoint ?? '');
 
   if (endpointType === EModelEndpoint.custom) {
-    /** Get direct lookup */
+    /** 1. Check direct endpoint lookup (could be normalized or not) */
     if (endpoint && mergedFileConfig.endpoints[endpoint]) {
       return mergedFileConfig.endpoints[endpoint];
     }
-    /** Fallback to normalized lookup */
+    /** 2. Check normalized endpoint lookup (skip standard endpoint keys) */
+    const standardEndpoints = new Set([
+      'default',
+      EModelEndpoint.agents,
+      EModelEndpoint.assistants,
+      EModelEndpoint.azureAssistants,
+      EModelEndpoint.openAI,
+      EModelEndpoint.azureOpenAI,
+      EModelEndpoint.anthropic,
+      EModelEndpoint.google,
+      EModelEndpoint.bedrock,
+    ]);
     for (const key in mergedFileConfig.endpoints) {
-      if (normalizeEndpointName(key) === normalizedEndpoint) {
+      if (!standardEndpoints.has(key) && normalizeEndpointName(key) === normalizedEndpoint) {
         return mergedFileConfig.endpoints[key];
       }
     }
-    /** Fallback to 'custom' config if any */
+    /** 3. Fallback to generic 'custom' config if any */
     if (mergedFileConfig.endpoints[EModelEndpoint.custom]) {
       return mergedFileConfig.endpoints[EModelEndpoint.custom];
     }
+    /** 4. Fallback to 'agents' (all custom endpoints are non-assistants) */
+    if (mergedFileConfig.endpoints[EModelEndpoint.agents]) {
+      return mergedFileConfig.endpoints[EModelEndpoint.agents];
+    }
+    /** 5. Fallback to default */
+    return mergedFileConfig.endpoints.default ?? fileConfig.endpoints.default;
   }
 
-  if (
-    !isAssistantsEndpoint(normalizedEndpoint) &&
-    mergedFileConfig.endpoints[EModelEndpoint.agents]
-  ) {
+  /** Check endpointType first (most reliable for standard endpoints) */
+  if (endpointType && mergedFileConfig.endpoints[endpointType]) {
+    return mergedFileConfig.endpoints[endpointType];
+  }
+
+  /** Check direct endpoint lookup */
+  if (endpoint && mergedFileConfig.endpoints[endpoint]) {
+    return mergedFileConfig.endpoints[endpoint];
+  }
+
+  /** Check normalized endpoint */
+  if (normalizedEndpoint && mergedFileConfig.endpoints[normalizedEndpoint]) {
+    return mergedFileConfig.endpoints[normalizedEndpoint];
+  }
+
+  /** Fallback to agents if endpoint is explicitly agents */
+  const normalizedEndpointType = normalizeEndpointName(endpointType ?? '');
+  const isAgents = isAgentsEndpoint(normalizedEndpointType || normalizedEndpoint);
+  if (isAgents && mergedFileConfig.endpoints[EModelEndpoint.agents]) {
     return mergedFileConfig.endpoints[EModelEndpoint.agents];
   }
 
+  /** Return default config */
   return mergedFileConfig.endpoints.default ?? fileConfig.endpoints.default;
 }
 
 export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | undefined): FileConfig {
   const mergedConfig: FileConfig = {
     ...fileConfig,
+    endpoints: {
+      ...fileConfig.endpoints,
+    },
     ocr: {
       ...fileConfig.ocr,
       supportedMimeTypes: fileConfig.ocr?.supportedMimeTypes || [],
@@ -448,8 +484,11 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
   for (const key in dynamic.endpoints) {
     const dynamicEndpoint = (dynamic.endpoints as Record<string, EndpointFileConfig>)[key];
 
+    /** Deep copy the base endpoint config if it exists to prevent mutation */
     if (!mergedConfig.endpoints[key]) {
       mergedConfig.endpoints[key] = {};
+    } else {
+      mergedConfig.endpoints[key] = { ...mergedConfig.endpoints[key] };
     }
 
     const mergedEndpoint = mergedConfig.endpoints[key];
@@ -477,6 +516,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
         mergedEndpoint[field] = dynamicEndpoint[field];
       }
     });
+
+    if (dynamicEndpoint.disabled !== undefined) {
+      mergedEndpoint.disabled = dynamicEndpoint.disabled;
+    }
 
     if (dynamicEndpoint.supportedMimeTypes) {
       mergedEndpoint.supportedMimeTypes = convertStringsToRegex(

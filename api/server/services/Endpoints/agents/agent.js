@@ -44,11 +44,11 @@ const initializeAgent = async ({
   res,
   agent,
   loadTools,
-  requestFiles,
   conversationId,
   endpointOption,
   allowedProviders,
   isInitialAgent = false,
+  requestFiles: _requestFiles,
 }) => {
   const appConfig = req.config;
   if (
@@ -72,6 +72,12 @@ const initializeAgent = async ({
 
   const { resendFiles, maxContextTokens, modelOptions } = extractLibreChatParams(_modelOptions);
 
+  const requestFiles = filterFilesByEndpointConfig(req, {
+    files: _requestFiles,
+    endpoint: agent.provider || endpointOption?.endpoint,
+    endpointType: endpointOption?.endpointType,
+  });
+
   if (isInitialAgent && conversationId != null && resendFiles) {
     const fileIds = (await getConvoFiles(conversationId)) ?? [];
     /** @type {Set<EToolResources>} */
@@ -83,12 +89,10 @@ const initializeAgent = async ({
     }
     const toolFiles = await getToolFilesByIds(fileIds, toolResourceSet);
     if (requestFiles.length || toolFiles.length) {
-      const processedFiles = await processFiles(requestFiles.concat(toolFiles));
-      currentFiles = filterFilesByEndpointConfig(req, processedFiles, agent.provider);
+      currentFiles = await processFiles(requestFiles.concat(toolFiles));
     }
   } else if (isInitialAgent && requestFiles.length) {
-    const processedFiles = await processFiles(requestFiles);
-    currentFiles = filterFilesByEndpointConfig(req, processedFiles, agent.provider);
+    currentFiles = await processFiles(requestFiles);
   }
 
   const { attachments, tool_resources } = await primeResources({
