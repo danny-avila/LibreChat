@@ -3,6 +3,7 @@ const {
   primeResources,
   getModelMaxTokens,
   extractLibreChatParams,
+  filterFilesByEndpointConfig,
   optionalChainWithEmptyCheck,
 } = require('@librechat/api');
 const {
@@ -82,10 +83,12 @@ const initializeAgent = async ({
     }
     const toolFiles = await getToolFilesByIds(fileIds, toolResourceSet);
     if (requestFiles.length || toolFiles.length) {
-      currentFiles = await processFiles(requestFiles.concat(toolFiles));
+      const processedFiles = await processFiles(requestFiles.concat(toolFiles));
+      currentFiles = filterFilesByEndpointConfig(req, processedFiles, agent.provider);
     }
   } else if (isInitialAgent && requestFiles.length) {
-    currentFiles = await processFiles(requestFiles);
+    const processedFiles = await processFiles(requestFiles);
+    currentFiles = filterFilesByEndpointConfig(req, processedFiles, agent.provider);
   }
 
   const { attachments, tool_resources } = await primeResources({
