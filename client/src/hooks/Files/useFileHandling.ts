@@ -264,16 +264,18 @@ const useFileHandling = (params?: UseFileHandling) => {
     /* Validate files */
     let filesAreValid: boolean;
     try {
+      const endpointFileConfig =
+        params?.overrideEndpointFileConfig ??
+        fileConfig?.endpoints?.[endpoint] ??
+        fileConfig?.endpoints?.default ??
+        defaultFileConfig.endpoints[endpoint] ??
+        defaultFileConfig.endpoints.default;
+
       filesAreValid = validateFiles({
         files,
         fileList,
         setError,
-        endpointFileConfig:
-          params?.overrideEndpointFileConfig ??
-          fileConfig?.endpoints?.[endpoint] ??
-          fileConfig?.endpoints?.default ??
-          defaultFileConfig.endpoints[endpoint] ??
-          defaultFileConfig.endpoints.default,
+        endpointFileConfig,
         toolResource: _toolResource,
         fileConfig: fileConfig,
       });
