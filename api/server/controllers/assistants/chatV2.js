@@ -501,6 +501,8 @@ const chatV2 = async (req, res) => {
     }
     await saveAssistantMessage(req, { ...responseMessage, model });
 
+    logger.info('[chatV2.js] About to generate a title')
+
     if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
       addTitle(req, {
         text,
@@ -508,6 +510,9 @@ const chatV2 = async (req, res) => {
         conversationId,
         client,
       });
+      logger.info('[chatV2.js] Tried generate a title')
+    } else {
+      logger.info('[chatV2.js] Did not generate a title')
     }
 
     await addThreadMetadata({
