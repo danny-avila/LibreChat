@@ -129,7 +129,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     isSubmitting: isSubmitting || isSubmittingAdded,
   });
 
-  const { submitMessage, submitPrompt } = useSubmitMessage();
+  const { submitMessage, submitPrompt, isWebhookLoading } = useSubmitMessage();
 
   const handleKeyUp = useHandleKeyUp({
     index,
@@ -331,6 +331,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                       ref={submitButtonRef}
                       control={methods.control}
                       disabled={filesLoading || isSubmitting || disableInputs || isNotAppendable}
+                      isLoading={isWebhookLoading}
                     />
                   )
                 )}

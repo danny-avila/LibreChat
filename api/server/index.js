@@ -144,6 +144,7 @@ const startServer = async () => {
 
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+  app.use('/api/n8n', routes.n8n);
 
   app.use(ErrorController);
 
