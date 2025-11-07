@@ -31,14 +31,16 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     /** Default mock implementation for getConfiguredFileSizeLimit */
-    mockedGetConfiguredFileSizeLimit.mockImplementation((req, provider) => {
+    mockedGetConfiguredFileSizeLimit.mockImplementation((req, params) => {
       if (!req.config?.fileConfig) {
         return undefined;
       }
+      const { provider, endpoint } = params;
+      const lookupKey = endpoint ?? provider;
       const fileConfig = req.config.fileConfig;
       const endpoints = fileConfig.endpoints;
-      if (endpoints?.[provider]) {
-        const limit = endpoints[provider].fileSizeLimit;
+      if (endpoints?.[lookupKey]) {
+        const limit = endpoints[lookupKey].fileSizeLimit;
         return limit !== undefined ? mbToBytes(limit) : undefined;
       }
       if (endpoints?.default) {

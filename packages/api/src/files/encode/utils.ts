@@ -1,24 +1,33 @@
 import getStream from 'get-stream';
 import { Providers } from '@librechat/agents';
-import { FileSources, mergeFileConfig } from 'librechat-data-provider';
+import { FileSources, mergeFileConfig, getEndpointFileConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions, ProcessedFile } from '~/types';
 
 /**
  * Extracts the configured file size limit for a specific provider from fileConfig
  * @param req - The server request object containing config
- * @param provider - The provider to get the limit for
+ * @param params - Object containing provider and optional endpoint
+ * @param params.provider - The provider to get the limit for
+ * @param params.endpoint - Optional endpoint name for lookup
  * @returns The configured file size limit in bytes, or undefined if not configured
  */
 export const getConfiguredFileSizeLimit = (
   req: ServerRequest,
-  provider: Providers,
+  params: {
+    provider: Providers;
+    endpoint?: string;
+  },
 ): number | undefined => {
   if (!req.config?.fileConfig) {
     return undefined;
   }
+  const { provider, endpoint } = params;
   const fileConfig = mergeFileConfig(req.config.fileConfig);
-  const endpointConfig = fileConfig.endpoints[provider] ?? fileConfig.endpoints.default;
+  const endpointConfig = getEndpointFileConfig({
+    fileConfig,
+    endpoint: endpoint ?? provider,
+  });
   return endpointConfig?.fileSizeLimit;
 };
 

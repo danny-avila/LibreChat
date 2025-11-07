@@ -84,11 +84,15 @@ const blobStorageSources = new Set([FileSources.azure_blob, FileSources.s3]);
  * Encodes and formats the given files.
  * @param {ServerRequest} req - The request object.
  * @param {Array<MongoFile>} files - The array of files to encode and format.
- * @param {EModelEndpoint} [endpoint] - Optional: The endpoint for the image.
+ * @param {object} params - Object containing provider/endpoint information
+ * @param {Providers | EModelEndpoint | string} [params.provider] - The provider for the image
+ * @param {string} [params.endpoint] - Optional: The endpoint for the image
  * @param {string} [mode] - Optional: The endpoint mode for the image.
  * @returns {Promise<{ files: MongoFile[]; image_urls: MessageContentImageUrl[] }>} - A promise that resolves to the result object containing the encoded images and file details.
  */
-async function encodeAndFormat(req, files, endpoint, mode) {
+async function encodeAndFormat(req, files, params, mode) {
+  const { provider, endpoint } = params;
+  const effectiveEndpoint = endpoint ?? provider;
   const promises = [];
   /** @type {Record<FileSources, Pick<ReturnType<typeof getStrategyFunctions>, 'prepareImagePayload' | 'getDownloadStream'>>} */
   const encodingMethods = {};
@@ -134,7 +138,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
       } catch (error) {
         logger.error('Error processing image from blob storage:', error);
       }
-    } else if (source !== FileSources.local && base64Only.has(endpoint)) {
+    } else if (source !== FileSources.local && base64Only.has(effectiveEndpoint)) {
       const [_file, imageURL] = await preparePayload(req, file);
       promises.push([_file, await fetchImageToBase64(imageURL)]);
       continue;
@@ -184,15 +188,19 @@ async function encodeAndFormat(req, files, endpoint, mode) {
       continue;
     }
 
-    if (endpoint && endpoint === EModelEndpoint.google && mode === VisionModes.generative) {
+    if (
+      effectiveEndpoint &&
+      effectiveEndpoint === EModelEndpoint.google &&
+      mode === VisionModes.generative
+    ) {
       delete imagePart.image_url;
       imagePart.inlineData = {
         mimeType: file.type,
         data: imageContent,
       };
-    } else if (endpoint && endpoint === EModelEndpoint.google) {
+    } else if (effectiveEndpoint && effectiveEndpoint === EModelEndpoint.google) {
       imagePart.image_url = imagePart.image_url.url;
-    } else if (endpoint && endpoint === EModelEndpoint.anthropic) {
+    } else if (effectiveEndpoint && effectiveEndpoint === EModelEndpoint.anthropic) {
       imagePart.type = 'image';
       imagePart.source = {
         type: 'base64',

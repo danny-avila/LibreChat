@@ -14,16 +14,20 @@ import { validatePdf } from '~/files/validation';
  * Processes and encodes document files for various providers
  * @param req - Express request object
  * @param files - Array of file objects to process
- * @param provider - The provider name
+ * @param params - Object containing provider, endpoint, and other options
+ * @param params.provider - The provider name
+ * @param params.endpoint - Optional endpoint name for file config lookup
+ * @param params.useResponsesApi - Whether to use responses API format
  * @param getStrategyFunctions - Function to get strategy functions
  * @returns Promise that resolves to documents and file metadata
  */
 export async function encodeAndFormatDocuments(
   req: ServerRequest,
   files: IMongoFile[],
-  { provider, useResponsesApi }: { provider: Providers; useResponsesApi?: boolean },
+  params: { provider: Providers; endpoint?: string; useResponsesApi?: boolean },
   getStrategyFunctions: (source: string) => StrategyFunctions,
 ): Promise<DocumentResult> {
+  const { provider, endpoint, useResponsesApi } = params;
   if (!files?.length) {
     return { documents: [], files: [] };
   }
@@ -68,7 +72,10 @@ export async function encodeAndFormatDocuments(
       const pdfBuffer = Buffer.from(content, 'base64');
 
       /** Extract configured file size limit from fileConfig for this endpoint */
-      const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, provider);
+      const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, {
+        provider,
+        endpoint,
+      });
 
       const validation = await validatePdf(
         pdfBuffer,
