@@ -68,9 +68,7 @@ async function loadConfigModels(req) {
 
     modelsConfig[name] = [];
 
-    const shouldFetch = models.fetch && !isUserProvided(API_KEY) && !isUserProvided(BASE_URL);
-
-    if (shouldFetch) {
+    if (models.fetch && !isUserProvided(API_KEY) && !isUserProvided(BASE_URL)) {
       fetchPromisesMap[uniqueKey] =
         fetchPromisesMap[uniqueKey] ||
         fetchModels({
