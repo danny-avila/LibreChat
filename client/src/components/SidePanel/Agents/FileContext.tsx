@@ -5,7 +5,7 @@ import {
   EModelEndpoint,
   EToolResources,
   mergeFileConfig,
-  fileConfig as defaultFileConfig,
+  getEndpointFileConfig,
 } from 'librechat-data-provider';
 import {
   HoverCard,
@@ -41,7 +41,7 @@ export default function FileContext({
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
 
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+  const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
 
@@ -63,8 +63,12 @@ export default function FileContext({
     750,
   );
 
-  const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.agents];
-  const isUploadDisabled = endpointFileConfig.disabled ?? false;
+  const endpointFileConfig = getEndpointFileConfig({
+    fileConfig,
+    endpoint: EModelEndpoint.agents,
+    endpointType: EModelEndpoint.agents,
+  });
+  const isUploadDisabled = endpointFileConfig?.disabled ?? false;
   const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
     try {
       await handleSharePointFiles(sharePointFiles);
