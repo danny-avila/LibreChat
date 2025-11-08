@@ -1615,6 +1615,10 @@ export enum Constants {
    * This helps inform the UI if the mcp server was previously added.
    * */
   mcp_server = 'sys__server__sys',
+  /**
+   * Handoff Tool Name Prefix
+   */
+  LC_TRANSFER_TO_ = 'lc_transfer_to_',
   /** Placeholder Agent ID for Ephemeral Agents */
   EPHEMERAL_AGENT_ID = 'ephemeral',
 }

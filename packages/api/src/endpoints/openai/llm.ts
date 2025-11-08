@@ -190,7 +190,7 @@ export function getOpenAILLMConfig({
   } else if (enableWebSearch) {
     /** Standard OpenAI web search uses tools API */
     llmConfig.useResponsesApi = true;
-    tools.push({ type: 'web_search_preview' });
+    tools.push({ type: 'web_search' });
   }
 
   /**

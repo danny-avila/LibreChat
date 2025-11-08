@@ -1,7 +1,9 @@
 import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
 import { MCPManager } from '~/mcp/MCPManager';
-import { MCPServersRegistry } from '~/mcp/MCPServersRegistry';
+import { mcpServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
+import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnection } from '../connection';
 
@@ -15,7 +17,24 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-jest.mock('~/mcp/MCPServersRegistry');
+jest.mock('~/mcp/registry/MCPServersRegistry', () => ({
+  mcpServersRegistry: {
+    sharedAppServers: {
+      getAll: jest.fn(),
+    },
+    getServerConfig: jest.fn(),
+    getAllServerConfigs: jest.fn(),
+    getOAuthServers: jest.fn(),
+  },
+}));
+
+jest.mock('~/mcp/registry/MCPServersInitializer', () => ({
+  MCPServersInitializer: {
+    initialize: jest.fn(),
+  },
+}));
+
+jest.mock('~/mcp/registry/MCPServerInspector');
 jest.mock('~/mcp/ConnectionsRepository');
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
@@ -28,20 +47,12 @@ describe('MCPManager', () => {
     // Reset MCPManager singleton state
     (MCPManager as unknown as { instance: null }).instance = null;
     jest.clearAllMocks();
-  });
 
-  function mockRegistry(
-    registryConfig: Partial<MCPServersRegistry>,
-  ): jest.MockedClass<typeof MCPServersRegistry> {
-    const mock = {
-      initialize: jest.fn().mockResolvedValue(undefined),
-      getToolFunctions: jest.fn().mockResolvedValue(null),
-      ...registryConfig,
-    };
-    return (MCPServersRegistry as jest.MockedClass<typeof MCPServersRegistry>).mockImplementation(
-      () => mock as unknown as MCPServersRegistry,
-    );
-  }
+    // Set up default mock implementations
+    (MCPServersInitializer.initialize as jest.Mock).mockResolvedValue(undefined);
+    (mcpServersRegistry.sharedAppServers.getAll as jest.Mock).mockResolvedValue({});
+    (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({});
+  });
 
   function mockAppConnections(
     appConnectionsConfig: Partial<ConnectionsRepository>,
@@ -66,12 +77,229 @@ describe('MCPManager', () => {
     };
   }
 
+  describe('getAppToolFunctions', () => {
+    it('should return empty object when no servers have tool functions', async () => {
+      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        server1: { type: 'stdio', command: 'test', args: [] },
+        server2: { type: 'stdio', command: 'test2', args: [] },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.getAppToolFunctions();
+
+      expect(result).toEqual({});
+    });
+
+    it('should collect tool functions from multiple servers', async () => {
+      const toolFunctions1 = {
+        tool1_mcp_server1: {
+          type: 'function' as const,
+          function: {
+            name: 'tool1_mcp_server1',
+            description: 'Tool 1',
+            parameters: { type: 'object' as const },
+          },
+        },
+      };
+
+      const toolFunctions2 = {
+        tool2_mcp_server2: {
+          type: 'function' as const,
+          function: {
+            name: 'tool2_mcp_server2',
+            description: 'Tool 2',
+            parameters: { type: 'object' as const },
+          },
+        },
+      };
+
+      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        server1: {
+          type: 'stdio',
+          command: 'test',
+          args: [],
+          toolFunctions: toolFunctions1,
+        },
+        server2: {
+          type: 'stdio',
+          command: 'test2',
+          args: [],
+          toolFunctions: toolFunctions2,
+        },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.getAppToolFunctions();
+
+      expect(result).toEqual({
+        ...toolFunctions1,
+        ...toolFunctions2,
+      });
+    });
+
+    it('should handle servers with null or undefined toolFunctions', async () => {
+      const toolFunctions1 = {
+        tool1_mcp_server1: {
+          type: 'function' as const,
+          function: {
+            name: 'tool1_mcp_server1',
+            description: 'Tool 1',
+            parameters: { type: 'object' as const },
+          },
+        },
+      };
+
+      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        server1: {
+          type: 'stdio',
+          command: 'test',
+          args: [],
+          toolFunctions: toolFunctions1,
+        },
+        server2: {
+          type: 'stdio',
+          command: 'test2',
+          args: [],
+          toolFunctions: null,
+        },
+        server3: {
+          type: 'stdio',
+          command: 'test3',
+          args: [],
+        },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.getAppToolFunctions();
+
+      expect(result).toEqual(toolFunctions1);
+    });
+  });
+
+  describe('formatInstructionsForContext', () => {
+    it('should return empty string when no servers have instructions', async () => {
+      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        server1: { type: 'stdio', command: 'test', args: [] },
+        server2: { type: 'stdio', command: 'test2', args: [] },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.formatInstructionsForContext();
+
+      expect(result).toBe('');
+    });
+
+    it('should format instructions from multiple servers', async () => {
+      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        github: {
+          type: 'sse',
+          url: 'https://api.github.com',
+          serverInstructions: 'Use GitHub API with care',
+        },
+        files: {
+          type: 'stdio',
+          command: 'node',
+          args: ['files.js'],
+          serverInstructions: 'Only read/write files in allowed directories',
+        },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.formatInstructionsForContext();
+
+      expect(result).toContain('# MCP Server Instructions');
+      expect(result).toContain('## github MCP Server Instructions');
+      expect(result).toContain('Use GitHub API with care');
+      expect(result).toContain('## files MCP Server Instructions');
+      expect(result).toContain('Only read/write files in allowed directories');
+    });
+
+    it('should filter instructions by server names when provided', async () => {
+      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        github: {
+          type: 'sse',
+          url: 'https://api.github.com',
+          serverInstructions: 'Use GitHub API with care',
+        },
+        files: {
+          type: 'stdio',
+          command: 'node',
+          args: ['files.js'],
+          serverInstructions: 'Only read/write files in allowed directories',
+        },
+        database: {
+          type: 'stdio',
+          command: 'node',
+          args: ['db.js'],
+          serverInstructions: 'Be careful with database operations',
+        },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.formatInstructionsForContext(['github', 'database']);
+
+      expect(result).toContain('## github MCP Server Instructions');
+      expect(result).toContain('Use GitHub API with care');
+      expect(result).toContain('## database MCP Server Instructions');
+      expect(result).toContain('Be careful with database operations');
+      expect(result).not.toContain('files');
+      expect(result).not.toContain('Only read/write files in allowed directories');
+    });
+
+    it('should handle servers with null or undefined instructions', async () => {
+      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        github: {
+          type: 'sse',
+          url: 'https://api.github.com',
+          serverInstructions: 'Use GitHub API with care',
+        },
+        files: {
+          type: 'stdio',
+          command: 'node',
+          args: ['files.js'],
+          serverInstructions: null,
+        },
+        database: {
+          type: 'stdio',
+          command: 'node',
+          args: ['db.js'],
+        },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.formatInstructionsForContext();
+
+      expect(result).toContain('## github MCP Server Instructions');
+      expect(result).toContain('Use GitHub API with care');
+      expect(result).not.toContain('files');
+      expect(result).not.toContain('database');
+    });
+
+    it('should return empty string when filtered servers have no instructions', async () => {
+      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        github: {
+          type: 'sse',
+          url: 'https://api.github.com',
+          serverInstructions: 'Use GitHub API with care',
+        },
+        files: {
+          type: 'stdio',
+          command: 'node',
+          args: ['files.js'],
+        },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.formatInstructionsForContext(['files']);
+
+      expect(result).toBe('');
+    });
+  });
+
   describe('getServerToolFunctions', () => {
     it('should catch and handle errors gracefully', async () => {
-      mockRegistry({
-        getToolFunctions: jest.fn(() => {
-          throw new Error('Connection failed');
-        }),
+      (MCPServerInspector.getToolFunctions as jest.Mock) = jest.fn(() => {
+        throw new Error('Connection failed');
       });
 
       mockAppConnections({
@@ -90,9 +318,7 @@ describe('MCPManager', () => {
     });
 
     it('should catch synchronous errors from getUserConnections', async () => {
-      mockRegistry({
-        getToolFunctions: jest.fn().mockResolvedValue({}),
-      });
+      (MCPServerInspector.getToolFunctions as jest.Mock) = jest.fn().mockResolvedValue({});
 
       mockAppConnections({
         has: jest.fn().mockReturnValue(false),
@@ -126,9 +352,9 @@ describe('MCPManager', () => {
         },
       };
 
-      mockRegistry({
-        getToolFunctions: jest.fn().mockResolvedValue(expectedTools),
-      });
+      (MCPServerInspector.getToolFunctions as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue(expectedTools);
 
       mockAppConnections({
         has: jest.fn().mockReturnValue(true),
@@ -145,10 +371,8 @@ describe('MCPManager', () => {
     it('should include specific server name in error messages', async () => {
       const specificServerName = 'github_mcp_server';
 
-      mockRegistry({
-        getToolFunctions: jest.fn(() => {
-          throw new Error('Server specific error');
-        }),
+      (MCPServerInspector.getToolFunctions as jest.Mock) = jest.fn(() => {
+        throw new Error('Server specific error');
       });
 
       mockAppConnections({

@@ -14,7 +14,7 @@ import { logger } from '@librechat/data-schemas';
 import session, { MemoryStore } from 'express-session';
 import { RedisStore as ConnectRedis } from 'connect-redis';
 import type { SendCommandFn } from 'rate-limit-redis';
-import { keyvRedisClient, ioredisClient, GLOBAL_PREFIX_SEPARATOR } from './redisClients';
+import { keyvRedisClient, ioredisClient } from './redisClients';
 import { cacheConfig } from './cacheConfig';
 import { violationFile } from './keyvFiles';
 
@@ -31,7 +31,7 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
       const keyvRedis = new KeyvRedis(keyvRedisClient);
       const cache = new Keyv(keyvRedis, { namespace, ttl });
       keyvRedis.namespace = cacheConfig.REDIS_KEY_PREFIX;
-      keyvRedis.keyPrefixSeparator = GLOBAL_PREFIX_SEPARATOR;
+      keyvRedis.keyPrefixSeparator = cacheConfig.GLOBAL_PREFIX_SEPARATOR;
 
       cache.on('error', (err) => {
         logger.error(`Cache error in namespace ${namespace}:`, err);

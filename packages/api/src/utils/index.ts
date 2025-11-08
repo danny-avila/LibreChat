@@ -10,6 +10,7 @@ export * from './key';
 export * from './llm';
 export * from './math';
 export * from './openid';
+export * from './promise';
 export * from './sanitizeTitle';
 export * from './tempChatRetention';
 export * from './text';
