@@ -29,6 +29,9 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
+let COOKIE_DOMAIN = process.env['COOKIE_DOMAIN'] ?? '';
+logger.info(`[AuthService] cookies are set to domain ${COOKIE_DOMAIN || domains.server}`);
+
 const isProduction = process.env.NODE_ENV === 'production';
 const genericVerificationMessage = 'Please check your email to verify your email address.';
 
@@ -388,12 +391,14 @@ const setAuthTokens = async (userId, res, _session = null) => {
       httpOnly: true,
       secure: isProduction,
       sameSite: 'strict',
+      domain: COOKIE_DOMAIN,
     });
     res.cookie('token_provider', 'librechat', {
       expires: new Date(refreshTokenExpires),
       httpOnly: true,
       secure: isProduction,
       sameSite: 'strict',
+      domain: COOKIE_DOMAIN,
     });
     return token;
   } catch (error) {
