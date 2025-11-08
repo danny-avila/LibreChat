@@ -1,0 +1,5 @@
+This change intrduces a new env variable `COOKIE_DOMAIN`. This is exposes the domain in which authorization cookies are set.
+
+## Motivation
+
+I've talked about motivatin in [\[Enhancement\]: Customizable cookie domain #10416](https://github.com/danny-avila/LibreChat/discussions/10416).
