@@ -150,6 +150,12 @@
         "authField": "AZURE_AI_SEARCH_API_KEY",
         "label": "Azure AI Search API Key",
         "description": "You need to provide your API Key for Azure AI Search."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_VECTOR_FIELD",
+        "label": "Azure AI Search Vector Field",
+        "description": "The name of the vector field in your Azure AI Search index to use for vector search queries. Leave empty if you don't use vector search.",
+        "optional": true
       }
     ]
   },
