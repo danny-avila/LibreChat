@@ -9,17 +9,13 @@ services:
     depends_on:
       #- mongodb
       - rag_api
-    image: ghcr.io/danny-avila/librechat-dev:latest
+    image: acrcribmetrics.azurecr.io/cribmetrics:0.0.0.1143
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    environment:
-      - HOST=0.0.0.0
-      #- MONGO_URI=mongodb://mongodb:27017/LibreChat
-      - MEILI_HOST=http://meilisearch:7700
-      - RAG_PORT=${RAG_PORT:-8000}
-      - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+    env_file:
+      - .env
     volumes:
       - type: bind
         source: ./.env

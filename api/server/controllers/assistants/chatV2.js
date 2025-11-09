@@ -465,27 +465,12 @@ const chatV2 = async (req, res) => {
       },
     });
 
-    logger.info('[ChatV2] Response sent, completing request processing');
-    logger.debug('[ChatV2] Response sent, completing request processing');
-    logger.warn('[ChatV2] Response sent, completing request processing');
-    logger.error('[ChatV2] Response sent, completing request processing');
-
     res.end();
 
     if (userMessagePromise) {
       await userMessagePromise;
     }
     await saveAssistantMessage(req, { ...responseMessage, model });
-
-    logger.info('[chatV2.js] About to generate a title')
-
-    if (!_thread_id) {
-      logger.info('[chatV2.js] !_thread_id')
-    }
-
-    if (parentMessageId === Constants.NO_PARENT) {
-      logger.info('[chatV2.js] parentMessageId === Constants.NO_PARENT')
-    }
 
     if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
       addTitle(req, {

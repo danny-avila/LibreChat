@@ -30,7 +30,7 @@ RUN npm ci --no-audit --no-fund --silent
 COPY . .
 
 # Build the application
-RUN NODE_OPTIONS="--max-old-space-size=2048" npm run frontend
+RUN NODE_OPTIONS="--max-old-space-size=4096" npm run frontend
 
 # Install only production dependencies in a clean directory
 RUN rm -rf node_modules && \

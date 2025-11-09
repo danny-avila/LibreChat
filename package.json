@@ -144,7 +144,9 @@
       "micromark-extension-math": {
         "katex": "^0.16.21"
       }
-    }
+    },
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0"    
   },
   "nodemonConfig": {
     "ignore": [
@@ -154,5 +156,11 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "cohere-ai": "^7.19.0",
+    "keyv": "^5.5.3",
+    "langchain": "^0.0.214",
+    "openai-chat-tokens": "^0.2.8"
   }
 }
