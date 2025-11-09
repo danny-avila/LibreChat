@@ -121,10 +121,15 @@ function injectAffiliateLinks(text) {
     enableAffiliateLinks: AFFILIATE_CONFIG.enableAffiliateLinks,
   });
 
-  if (!AFFILIATE_CONFIG.enableAffiliateLinks || !text || typeof text !== 'string') {
-    logger.debug('[AffiliateLinks] Affiliate links injection is disabled or invalid text provided.');
+  if (!AFFILIATE_CONFIG.enableAffiliateLinks) {
+    logger.debug('[AffiliateLinks] Affiliate links injection is disabled.', AFFILIATE_CONFIG.enableAffiliateLinks);
     return text;
   }
+
+  if (!text || typeof text !== 'string') {
+    logger.debug('[AffiliateLinks] Affiliate links injection has invalid text provided.', text);
+    return text;
+  }  
 
   try {
     let modifiedText = text;
