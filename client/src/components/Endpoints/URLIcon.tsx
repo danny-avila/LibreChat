@@ -1,6 +1,48 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { icons } from '~/hooks/Endpoint/Icons';
+
+/**
+ * Dynamically load an SVG icon from a URL
+ * This is needed in order to support the currentColor attribute in the SVG icon.
+ * @param url - The URL of the SVG icon
+ * @returns Div with the SVG icon
+ */
+const DynamicSVGIcon = ({ url }: { url: string }) => {
+  const [svgContent, setSvgContent] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(url)
+      .then((res) => res.text())
+      .then((svg) => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(svg, 'image/svg+xml');
+        if (doc.documentElement.nodeName !== 'svg') {
+          console.error('Content is not an SVG element:', doc.documentElement.nodeName);
+          return;
+        }
+        const svgElement = doc.querySelector('svg');
+        if (svgElement) {
+          svgElement.setAttribute('width', '100%');
+          svgElement.setAttribute('height', '100%');
+          setSvgContent(svgElement.outerHTML);
+        } else {
+          setSvgContent(svg);
+        }
+      });
+  }, [url]);
+
+  if (!svgContent) {
+    return null;
+  }
+
+  return (
+    <div
+      style={{ width: '100%', height: '100%'}}
+      dangerouslySetInnerHTML={{ __html: svgContent }}
+    />
+  );
+};
 
 export const URLIcon = memo(
   ({
@@ -47,17 +89,21 @@ export const URLIcon = memo(
 
     return (
       <div className={className} style={containerStyle}>
-        <img
-          src={iconURL}
-          alt={altName ?? 'Icon'}
-          style={imageStyle}
-          className="object-cover"
-          onError={handleImageError}
-          loading="lazy"
-          decoding="async"
-          width={Number(containerStyle.width) || 20}
-          height={Number(containerStyle.height) || 20}
-        />
+        {iconURL.endsWith('.svg') ? (
+          <DynamicSVGIcon url={iconURL} />
+        ) : (
+          <img
+            src={iconURL}
+            alt={altName ?? 'Icon'}
+            style={imageStyle}
+            className="object-cover"
+            onError={handleImageError}
+            loading="lazy"
+            decoding="async"
+            width={Number(containerStyle.width) || 20}
+            height={Number(containerStyle.height) || 20}
+          />
+        )}
       </div>
     );
   },
