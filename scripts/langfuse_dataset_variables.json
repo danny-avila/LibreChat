@@ -1,0 +1,582 @@
+[
+  {
+    "variables": "{\"input\": \"Can the Cyclone Rake hook up to the John Deere Power Flow Bagger?\"}",
+    "expected_output": "We have some customers successfully connect the Cyclone Rake to the John Deere Power Flow Bagger, but we would recommend our MDA instead for the easiest connection. It's possible to do, but tricky and may require some extra parts that we don't supply. When you separate the chute from the outlet of the power flow blower the opening is rectangular, and also the neck does not protrude that much, so overlapping and securing securing the round hose is a bit difficult. On the other hand, it is a bit of a pain in the neck to remove and re-attach the power flow system on and off the deck when you want. It is a belt driven mechanism, and requires a bit of work.",
+    "metadata": "{\"id\": \"Q - 226\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I convert my Commander to use the Commercial Pro Bag?\"}",
+    "expected_output": "Unfortunately, the Commander model you currently have will not accommodate the larger 415 gallon collector bag. The chassis is too small and there would be many components needed to convert it to the larger bag style. While we understand the 415 gallon capacity could be more accommodating for you, we do not recommended converting the Commander model you have. Down the road, if you have any questions about our larger units or would like information with current pricing, we would be glad to help you!",
+    "metadata": "{\"id\": \"Q - 205\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for Replacement Chassis for #101 - Standard Complete Platinum Standard Platinum?\"}",
+    "expected_output": "Part #01-01-600A --Chassis Unit Complete (31- 3/4 inches wide)",
+    "metadata": "{\"id\": \"Q - 178\"}"
+  },
+  {
+    "variables": "{\"input\": \"Do the engines have a valve seat?\"}",
+    "expected_output": "Yes, sort of. There is a metal ring that is pressed into the cylinder head that the valve rests on when it is in the closed position. This is not a common problem for these engines. This is not a replaceable part - Briggs recommends replacing the entire head.",
+    "metadata": "{\"id\": \"Q - 234\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Engine for a                    104 - Commercial PRO Commercial Pro?\"}",
+    "expected_output": "Part #01-04-158 -- Briggs & Stratton XR950 PRO Engine Upgrade Kit                                                                                                                                                                             Part #01-04-306 -- Briggs & Stratton 6.5HP Vanguard Cyclonic Upgrade Kit",
+    "metadata": "{\"id\": \"Q - 167\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Engine for a                    107 - Commercial PRO JetPath Commercial Pro?\"}",
+    "expected_output": "Part #01-04-158 -- Briggs & Stratton XR950 PRO Engine Upgrade Kit                                                                                                                                                                             Part #01-04-306 -- Briggs & Stratton 6.5HP Vanguard Cyclonic Upgrade Kit",
+    "metadata": "{\"id\": \"Q - 168\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the Difference between the XR950 and 6.5HP Cyclonic Vanguard?\"}",
+    "expected_output": "Both the Briggs & Stratton XR950-PRO and the 6.5HP Cyclonic Vanguard engines deliver excellent performance for your Cyclone Rake. However, the Vanguard engine offers several premium features that may enhance your experience.\n\nKey Advantages of the XR950-PRO Engine:\n\n1. 9.50 ft-lbs Gross Torque for reliable power and performance\n2. 208cc displacement for efficient operation\n3. Compact and lightweight design (Approx. 35.5 lbs) for ease of use\n\nKey Advantages of the 6.5HP Cyclonic Vanguard Engine:\n\n1. Extended 3-year warranty (compared to 2 years with XR950-PRO)\n2. Transport Guard™ System prevents oil and fuel mixing during transport\n3. High-capacity air cleaner for enhanced filtration and engine protection\n4. Low-tone muffler system for quieter operation\n5. Commercial-grade carburetor for improved fuel efficiency and consistent performance\n\nBoth engines are designed to power your Cyclone Rake effectively, but the Vanguard engine includes additional premium features that offer increased durability and convenience.",
+    "metadata": "{\"id\": \"Q - 230\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can the Cyclone Rake connect to a Ventrac mower?\"}",
+    "expected_output": "While it is theoretically possible to connect the Cyclone Rake to a Ventrac mower, we strongly advise against it. We can connect the hitch, MDA, and deck hose to the mower, but you will not be able to make a left-hand turn and turning right will be difficult. A hanger bracket will need to be manufactured and the overall length makes it cumbersome. Based on customer feedback, we do not recommend connecting to this mower. (One of our customers needed 14 feet of hose to use the Cyclone Rake).\n\nYou could use a longer hose, but you would have to pay extra for additional hose, and it undercuts the fundamental design of the Cyclone Rake. Not only does the dual pin hitch allow a rigid mount, and makes it impossible to jackknife, it also allows us to use the shortest, and straightest length of deck hose possible. The dual pin hitch allows us to use a fixed length of hose, all but eliminating the opportunity for the clogging and hassle you see in other machines with long, winding hoses. Having the mower articulate would defeat the purpose of our design.",
+    "metadata": "{\"id\": \"Q - 224\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for  New Three Piece Side Tubes (Aug 2023)?\"}",
+    "expected_output": "Part #01-03-2195-Set of 1 Three Piece Side Tubes                                                                                                                                                                                                                                             Part #01-03-2196-Set of 2 Three Piece Side Tubes",
+    "metadata": "{\"id\": \"Q - 179\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for Replacement Exit Chute #101 - Standard Complete Platinum Standard Platinum\"}",
+    "expected_output": "Part #01-02-077 -- Standard Platinum Exit Chute",
+    "metadata": "{\"id\": \"Q - 175\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I use the 3rd Wheel Jackstand with a different leaf and lawn vacuum or cart?\"}",
+    "expected_output": "Our 3rd Wheel Jackstand was designed specifically for the Cyclone Rake only. We don't know how it would work with other leaf and lawn vacuum systems or on a separate cart, but you can check out the instructions below to get an idea of how it attaches on the Cyclone Rake. Keep in mind the 3rd Wheel Jackstand is for storage purposes only!",
+    "metadata": "{\"id\": \"Q - 220\"}"
+  },
+  {
+    "variables": "{\"input\": \"Rear wheel rubber boot torn for 109 - Commander. What is the replacement for this part?\"}",
+    "expected_output": "The replacement part is 02-04-700A.",
+    "metadata": "{\"id\": \"Q - 005\"}"
+  },
+  {
+    "variables": "{\"input\": \"Is this part under warranty?\"}",
+    "expected_output": "Yes, we provide 2 years of warranty and this vacuum is still applicable.",
+    "metadata": "{\"id\": \"Q - 006\"}"
+  },
+  {
+    "variables": "{\"input\": \"Lawn-and-leaf vacuum for a 1-acre property that is battery-operated with self-propelling features.\"}",
+    "expected_output": "Thank you for reaching out to us with your question! I am happy to help you.\n\nWhile the Cyclone Rake lineup is known for its power and high-capacity vacuuming (especially for properties your size), all Cyclone Rake models are tow-behind units powered by gas engines, and not battery-operated or self-propelled in the traditional walk-behind sense.\n\nThat said, here’s what I’d recommend based on your needs:\n\nFor Larger Properties Like Yours:\nCyclone Rake Commander or Commercial PRO: These models are great for 1-acre+ properties and tow behind your riding mower or zero-turn.\n\nThey don’t require pushing or walking—your mower does all the work.\n\nThey come with powerful Briggs & Stratton engines, large capacity, and excellent suction for leaves, pine needles, and debris.\n\nWhile not battery-powered, they save time and physical effort, and outperform most walk-behind vacuums in terms of debris volume and speed.\n\nIf you're set on a battery-powered, walk-behind unit, those are typically best suited for smaller yards or spot cleanup. We don’t currently manufacture that type of unit, but we focus on higher-capacity vacuum systems for serious yard work.",
+    "metadata": "{\"id\": \"Q - 007\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the status of my order? Order #174892 Shipping Delay\"}",
+    "expected_output": "Thanks for reaching out about your order status! I'm happy to help you with this.\n\nI looked into your order #174892 and saw that it's currently experiencing a shipping delay. I know how frustrating that can be, and I’m sorry for the inconvenience.\n\nOur shipping manager will be reaching out to FedEx right away to get a clearer picture of what’s causing the holdup. As soon as we hear back, we’ll follow up with you directly with an update on the status and expected delivery.\n\nThanks for your patience, and we’ll be in touch very soon!",
+    "metadata": "{\"id\": \"Q - 010\"}"
+  },
+  {
+    "variables": "{\"input\": \"My Hawk V-Twin 720 is making a loud clicking sound when I start it. It still runs, but I’m concerned it might cause damage. Is the loud clicking sound on my new 107 - Commercial Pro 8\" Jetpath normal?\"}",
+    "expected_output": "hanks for reaching out with your question! I’m happy to clarify this for you.\n\nThe Hawk V-Twin 720 is not an engine that came with your 107 – Commercial PRO Cyclone Rake, and it’s not a product we offer or support. Because of that, we’re not able to troubleshoot or diagnose any engine-related issues with it.\n\nIf you're concerned about the loud clicking sound, we recommend contacting the engine manufacturer or a qualified service technician who’s familiar with that brand.\n\nIf you ever have questions about your Cyclone Rake or its components, I’m always happy to help with that!",
+    "metadata": "{\"id\": \"Q - 011\"}"
+  },
+  {
+    "variables": "{\"input\": \"How can I check warranty status for my 102 - Commercial?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nSince you purchased your 110 – Commercial PRO in June 2023 and it’s equipped with the XR960 PRO engine, your unit is covered by a 2-year warranty from the date of purchase. Even if you can’t find your receipt, you’re still within that warranty window.\n\nIf you'd like, we can:\n\nEmail you a copy of your original invoice for your records, or\n\nYou can log into your account on our website to view your past orders and warranty details.\n\nHere’s a helpful article that outlines what’s included in your coverage:\nUnderstanding Your Cyclone Rake Warranty Coverage\n\nJust let me know how you’d like to proceed—we’re happy to help either way!",
+    "metadata": "{\"id\": \"Q - 014\"}"
+  },
+  {
+    "variables": "{\"input\": \"Could this be a faulty switch on my 112 - Z-10*?\"}",
+    "expected_output": "Thanks for contacting us about your Cyclone Rake technical issue! I'll get you back up and running quickly.\n\nIf you’re pressing the power button on your 112 – Z-10 and getting no response at all, even with a fully charged battery, here’s what to check first:\n\nKey things to inspect:\nBattery Charge: You’ve already confirmed it’s fully charged—great first step.\n\nFuel Lever: Make sure it's pushed to the right—this is the “ON” position.\n\nWiring Connections: Check that all harnesses are properly secured:\n\nEngine Harness:\n\nRed wire to solenoid\n\nBlack wire grounded to engine block\n\nBoth should meet at a grey connector\n\nBattery Harness:\n\nRed to (+) terminal, black to (–)\n\nAlso meeting at a grey connector\n\nIf the engine starts by pull start, the battery shows proper voltage, and you’ve confirmed good connectivity across the solenoid, then yes—it’s very possible the issue is with the key start switch itself. In that case, replacing it with the Key and Switch Assembly (part #01-02-1978) should solve the problem.\n\nFor more details on checking the solenoid, see this article:\nTroubleshooting Cyclone Rake 8–10HP Electric Start Issues\n\nLet me know how it goes or if you need help ordering that part!",
+    "metadata": "{\"id\": \"Q - 015\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for the engine maintainance kit for an Intek 6 HP?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nLooks like you're all set to get your Cyclone Rake 101 – Standard Complete Platinum in top shape with our Engine Maintenance Kit for the Briggs INTEK 6 HP engine. Your model uses part #01-02-200, and it includes everything you need for a quick tune-up before jumping into your yard work.\n\nHere’s what comes in the kit:\n\nAir Filter – Helps increase airflow and improve engine efficiency\n\nOil – Keeps the engine well-lubricated and reduces wear\n\nSpark Plug & Socket – Ensures smooth starts and clean combustion\n\nFuel Treatment – Protects your fuel system with premium stabilizer\n\nFunnel – For clean and easy oil changes\n\nShop Towel – Handy for wiping up any spills\n\nYou can find the kit here:\nEngine Maintenance Kit – Briggs INTEK 6HP (Part #01-02-200)\n\nAnd here’s a helpful article with step-by-step instructions:\nUsing Your Engine Maintenance Kit\n\nLet me know if you need anything else!",
+    "metadata": "{\"id\": \"Q - 127\"}"
+  },
+  {
+    "variables": "{\"input\": \"Do I have to grease the single or dual wheels?\"}",
+    "expected_output": "Our current wheel design uses sealed bearings, which means:\n\n1. No lubrication or greasing is necessary\n2. The sealed design prevents any lubricant from reaching the bearings\n3. This design ensures the bearings stay protected and remain maintenance-free\n4. This applies to both single and dual wheel configurations",
+    "metadata": "{\"id\": \"Q - 233\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I use premium gas in the engine?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nYes, you can use premium gasoline in your Cyclone Rake engine, but it's not required.\n\nRecommended Fuel:\nUnleaded gasoline, minimum 87 octane\n\nUp to 10% ethanol (E10) is acceptable\n\nPremium gas (higher octane) is perfectly fine to use, but it won't necessarily improve performance\n\nThe most important thing is to use fresh, clean fuel to ensure smooth starting and efficient operation.\n\nLet me know if you have any other fuel-related questions!",
+    "metadata": "{\"id\": \"Q - 219\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can Cyclone Rake connect to a finishing mower?\"}",
+    "expected_output": "Thanks for reaching out with your question! I'm happy to help you with this.\n\nA finishing mower isn't compatible with the Cyclone Rake system. Since finishing mowers are pulled behind the tractor rather than mounted beneath it, there's no way to properly connect the Cyclone Rake’s hitch and deck hose to that setup.\n\nThe Cyclone Rake is designed to work with mid- or rear-discharge mower decks that are mounted directly under the tractor chassis.\n\nYou can find more compatibility details in this article:\nCyclone Rake Mower Compatibility Guide\n\nLet me know if there is a different kind of tractor and mower that can be used and I'd be glad to confirm if there's a setup that would work for you.",
+    "metadata": "{\"id\": \"Q - 196\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for Replacement Key for a Electric Start Engine?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe correct replacement key for your Cyclone Rake electric start engine is:\n\nPart #01-01-1978 – Key, Electric Start\n\nIf you need help with anything else, please let me know!",
+    "metadata": "{\"id\": \"Q - 169\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement collector bag for the 107 - Commercial PRO JetPath Commercial Pro model?\"}",
+    "expected_output": "Thanks for reaching out with your question! I’m happy to help you with this.\n\nThe replacement collector bag for the 107 – Commercial PRO model is part #05-03-308.\n\nYou can view or order it here:\nCommercial PRO, XL, and Z-10 Collector Bag – Velcro Style\n\nLet me know if you need anything else to get your setup back in top shape!",
+    "metadata": "{\"id\": \"Q - 133\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          107 - Commercial PRO JetPath Commercial Pro 8\" (Intek Model)?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe correct replacement impeller for the 107 – Commercial PRO JetPath with the 7HP Intek engine is part number 02-03-020. This is the 5-blade orange impeller, and it includes the full hardware kit for installation.\n\nIf you need any help with removing the old impeller or installing the new one, I’d be glad to guide you through it.\n\nYou can also view available parts here:\nCommercial PRO Replacement Parts",
+    "metadata": "{\"id\": \"Q - 147\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for Replacement Caster Wheels for Engine/Motor Frame?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe correct part number for replacement caster wheels for your Cyclone Rake Engine/Motor Frame is:\n\nPart #01-02-126 – 4 Caster Wheels with Nuts and Washers (Motor Frame)\n\nIf you have any additional questions, please feel free to ask!",
+    "metadata": "{\"id\": \"Q - 170\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for Replacement Chassis for  XL?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe correct replacement chassis for your Cyclone Rake XL model is:\n\nPart #02-04-700A – Large Chassis Unit Complete (36-3/4 inches wide)\n\nPlease let me know if you have any other questions or if there's anything else I can do for you!",
+    "metadata": "{\"id\": \"Q - 174\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for Top Brace Assembly with hardware?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe correct replacement part for the Top Brace Assembly specifically for your Cyclone Rake Classic is:\n\nPart #01-03-360 – Top Brace with Brackets (34.8\" Long) - Classic\n\nPlease let me know if you have any other questions or need further assistance!",
+    "metadata": "{\"id\": \"Q - 177\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can the Cyclone Rake be used with an electric mower?\"}",
+    "expected_output": "Thanks for reaching out with your question! I'm happy to help you with this.\n\nThe Cyclone Rake can work with some electric mowers, but there are important factors to consider. Because electric mowers come in many styles—rear-engine, zero-turn, mid-mount, etc.—compatibility depends on your specific setup.\n\nKey things to check:\nDischarge Type: Your mower must have a rear or side discharge deck (not mulching only).\n\nPower Capacity: The mower must be able to handle the added load of towing the Cyclone Rake and collecting debris.\n\nHitch Mounting: Your electric mower needs a standard rear hitch to connect the Cyclone Rake.\n\nBattery Life: Keep in mind that hauling the rake may reduce your run time significantly.\n\nWe recommend sending us your mower’s make and model so we can check compatibility for you.\n\nYou can also read more details here:\nUsing Cyclone Rake with Electric Mowers – Important Considerations\n\nLet me know what kind of mower you're using—I’d be glad to take a closer look!",
+    "metadata": "{\"id\": \"Q - 222\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I purchase just the MDA hardware pack? (Skin board hardware part numbers)\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nYes, you can absolutely purchase just the hardware pack for your Mower Deck Adapter (MDA) without buying the full adapter. It’s a great option if you’re replacing worn parts or just want to keep some extras on hand.\n\nTo get the right hardware set, we’ll need:\nYour mower’s make and model\n\nYour mower deck size\n\nYour current MDA model (if you're replacing an existing setup)\n\nOnce we have that info, we can quickly look up the correct part number for you and help place your order.\n\nYou can give us a call, request a callback, or reach out through our Contact Us page—whatever’s easiest for you!",
+    "metadata": "{\"id\": \"Q - 210\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I Use A Regular Charger For My Electric Start Engine Battery?\"}",
+    "expected_output": "Thanks for reaching out with your question! I'm happy to help you with this.\n\nFor your electric start engine battery, it’s important to use the charger we provide with your Cyclone Rake. That charger is designed with a built-in microprocessor that delivers the precise charge your battery needs.\n\nWhy this matters:\nIt prevents overcharging, which can shorten the battery’s life\n\nIt avoids undercharging, which can reduce performance\n\nIt ensures safe, long-term charging—especially if you're leaving it connected between uses\n\nUsing a standard or generic charger may seem convenient, but it could lead to reduced battery capacity or even damage over time.\n\nLet me know if you need a replacement charger—we’ll be happy to help with that too.",
+    "metadata": "{\"id\": \"Q - 215\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          104 - Commercial PRO Commercial Pro (Intek)?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your 104 – Commercial PRO model with a Briggs & Stratton Intek 7HP engine, the correct replacement impeller is:\n\nPart #02-03-020 – 5-Blade Orange Impeller w/ Hardware Kit\nThis impeller is compatible with Tecumseh, B&S Intek, and Phase I & II Vanguard engines, and provides excellent suction performance for heavy-duty use.\n\nYou can view and order the impeller here:\n5-Blade Orange Impeller w/ Hardware Kit\n\nHere’s a helpful guide for the installation process:\nReplacing Your Cyclone Rake Impeller\n\nAnd you can find other compatible parts for your model in our\nAftermarket Parts section.\n\nLet me know if you have any questions or need help placing your order!",
+    "metadata": "{\"id\": \"Q - 146\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I use other companies\" parts on my Cyclone Rake?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nWe do not recommend using third-party parts with your Cyclone Rake. Every component is engineered and manufactured specifically for the Cyclone Rake system, and combining it with non-original parts can compromise both performance and safety.\n\nHere’s why:\nAll parts are designed to exact specs by our engineering team for maximum durability and performance\n\nUsing non-Cyclone Rake parts may lead to fitment issues, reduced performance, or damage\n\nMost importantly, using third-party parts can void your warranty\n\nOur in-house team is always working to improve materials and functionality, and that level of detail and quality is something we can only guarantee with our original parts.\n\nIf you need help finding the right Cyclone Rake component, just let me know—I’m happy to assist!",
+    "metadata": "{\"id\": \"Q - 218\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Exhaust Deflector Screw, 3/8\" sheet metal screw?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe correct replacement part number for the Exhaust Deflector Screw (#8-3/8 sheet metal screw) is:\n\nPart #01-01-298 – Exhaust Deflector Screw, #8-3/8 Sheet Metal Screw\n\nIf you need anything else, please don't hesitate to let me know!",
+    "metadata": "{\"id\": \"Q - 171\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Engine for a                    110 - Commercial PRO  with a Vanguard 6.5 Phase II engine?\"}",
+    "expected_output": "Thanks for reaching out about your Cyclone Rake engine replacement—I’m happy to help with this.\n\nBased on your note, it sounds like you currently have a Vanguard 6.5HP Phase II engine on your Commercial PRO model (model 110). You’ve got two great upgrade options available:\n\nPart #01-04-158 – Briggs & Stratton XR950 PRO Engine Upgrade Kit\n\nPart #01-04-306 – Briggs & Stratton 6.5HP Vanguard Cyclonic Upgrade Kit\n\nHere's a quick breakdown:\nIf you're replacing an original Vanguard 6.5HP Phase I or Phase II, you can choose either:\n\nXR950 PRO Upgrade Kit (#01-04-158) – great performance and reliability\n\nVanguard Cyclonic Upgrade Kit (#01-04-306) – powerful, with enhanced air filtration for longer life\n\nFor more details on engine types and compatibility, you can check out this article:\nMastering Cyclone Rake Engines – A Deep Dive into Briggs & Stratton Engines\n\nLet me know if you'd like help choosing between these two, or if you’re unsure which engine is currently on your unit.",
+    "metadata": "{\"id\": \"Q - 164\"}"
+  },
+  {
+    "variables": "{\"input\": \"There\"s a lot of dust coming out of the collector bag vents\"}",
+    "expected_output": "Cyclone Rake's powerful suction is a game-changer for yard cleanup, but it can sometimes create dust that might concern some property owners. We've discovered some practical, low-tech strategies to help minimize dust generation during your lawn collection process.\n\nDust Reduction Techniques:\n\n1. Timing Your Collection\n\nCollect leaves early in the day\nIdeal conditions: After light rain or when dew is present\nMoisture helps naturally suppress dust particles\n\n2. Throttle Control Management\n\nExperiment with throttle settings\nReduce from 100% to approximately 75%\n\nBenefits:\n\n1. Reduces airflow\n2. Minimizes dust generation\n3. Maintains collection performance\n\nImportant Considerations:\n\n1. Performance remains a priority\n2. Adjust throttle carefully to avoid operational issues\n3. Some dust is inevitable, especially in bare lawn areas",
+    "metadata": "{\"id\": \"Q - 189\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for Replacement Blower Unit for a  110 - Commercial PRO Commercial Pro (NOT XR and Cyclonic)?\"}",
+    "expected_output": "For your Cyclone Rake 110 – Commercial PRO model with a Vanguard 6.5HP Phase 1 engine, there are a few replacement blower unit options depending on what you need and whether you’d like the impeller and liner included:\n\nBlower Only (No Impeller):\n\nPart #01-03-1038 – Standard liner\n\nPart #01-03-1068 – Blue Diamond liner (upgraded durability)\n\nBlower with 5-Blade Impeller:\n\nPart #01-04-038 – Standard liner\n\nPart #01-04-068 – Blue Diamond liner  (upgraded durability)\n\nEach option is fully compatible with your Cyclone Rake's Vanguard engine. If you're not sure whether you need a new impeller or liner, I’d be glad to help you figure that out.\n\nYou can review more part details here:\nCommercial PRO Replacement Parts\n\nLet me know which kit you'd like to go with or if you need help placing your order.",
+    "metadata": "{\"id\": \"Q - 154\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          Z10?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your Cyclone Rake Z-10, the correct replacement impeller is the:\n\n5-Blade Green Impeller – Part #02-03-023\n\nThis impeller is specifically configured for the engine used in the Z-10 and is built for heavy-duty performance.\n\nYou can view and order it here:\n5-Blade Green Impeller (Part #02-03-023)\n\nIf your blower housing is also worn, it may be a good time to consider a full Blower Replacement Kit, which includes the housing, impeller, and either a steel or Blue Diamond liner already installed. You can view those options here:\nBlower Replacement Kits\n\nAnd here’s a step-by-step guide for the impeller swap:\nReplacing Your Cyclone Rake Impeller\n\nLet me know if you'd like help ordering or confirming which setup is best for you!",
+    "metadata": "{\"id\": \"Q - 140\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I get a pre cut MDA?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nYes, in many cases, you can get a pre-cut Mower Deck Adapter (MDA)—it just depends on your specific mower make and model.\n\nHere’s how it works:\nPre-Cut (Custom-Cut) MDAs:\nThese are available for mower decks with unique or complex shapes that would be difficult to cut at home. If your mower matches one of those specific designs, we’ll send you a pre-cut MDA tailored to it.\n\nUncut MDAs:\nFor more common, rectangular-shaped deck openings, we provide uncut MDAs. Even among similar decks, there can be small differences—cutting your own ensures the best fit.\nDon’t worry—it comes with clear instructions and a helpful video tutorial, and all you need are basic tools.\n\nTo confirm whether a pre-cut MDA is available for your mower, just let us know your mower’s make, model, and deck size, and we’ll look it up for you.",
+    "metadata": "{\"id\": \"Q - 207\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a XL?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nTo replace the impeller in your Cyclone Rake XL you can purchase the 5-blade green impeller, configured specifically for your engine. Simply follow the link below to purchase one:\n\nThe part # for the 5-blade Green Impeller is # 02-03-023 on this PAGE. \n\nYou can view the instruction sheet for replacing the impeller by clicking HERE.\n\nIs your blower housing still in good shape? If not, then it may be a good idea to replace both the blower housing and impeller at the same time. We do sell blower replacement kits that come with the blower housing, impeller, and steel liner or the upgraded Blue Diamond Liner installed. You can check out your options HERE.",
+    "metadata": "{\"id\": \"Q - 138\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I buy just an MDA without the Cyclone Rake?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nYes, you can purchase a Mower Deck Adapter (MDA) without buying a full Cyclone Rake system.\n\nHere’s what to know:\nWe offer MDAs in multiple sizes to match different vacuum systems:\n\n6-inch systems – compatible with many non-Cyclone Rake vacuums\n\n7-inch, 8-inch, and 10-inch systems – for larger-capacity setups\n\nOur MDAs are designed to provide smooth debris flow and reduce clogging, even when used with other brands’ equipment\n\nPricing & Shipping:\nMDAs typically range from $139 to $169, depending on size\n\n$30 flat-rate shipping applies\n\nSales tax added where applicable\n\nIf you let me know your hose diameter and mower deck type, I’d be happy to help you pick the best fit!",
+    "metadata": "{\"id\": \"Q - 202\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for Replacement Safety Cover for Z10 Blower Unit?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe replacement Safety Cover for the Z-10 Cyclone Rake is part number 06-02-009. This is the 10\" yellow safety cover and it comes complete with the bolt and nut needed for installation.\n\nIf you need help installing it or have any other questions about your Z10 unit, I’m here to help.\n\nYou can find more details on replacement parts here:\nZ10 Blower Replacement Parts",
+    "metadata": "{\"id\": \"Q - 155\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          101 - Standard Complete Platinum Standard (Not XR or Cyclonic)?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your Cyclone Rake 101 – Standard Complete Platinum model with the Tecumseh 5HP engine, you have two compatible impeller options:\n\nPart #02-03-017 – 4-blade yellow impeller with hardware kit (original style for this model)\n\nPart #02-03-020 – 5-blade orange impeller with hardware kit (performance upgrade option)\n\nBoth options will fit your unit, so you can choose based on whether you want to stick with the original design or upgrade for improved debris shredding.\n\nLet me know if you'd like help placing the order or deciding between the two options.",
+    "metadata": "{\"id\": \"Q - 141\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          109 - Commander Commander (Not XR or Cyclonic)?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nTo replace the impeller in your Cyclone Rake Commander with a Vanguard 6.5HP Phase 1 engine, you can purchase the 4-blade yellow impeller, or you can choose the 5-blade orange impeller, which would provide you with 25% more suction power. You can follow the links below to purchase one:\n\nPart #02-03-017 -- 4-Blade Yellow Impeller w/hardware kit -for Tecumseh, INTEK, Phase 1 & 2 Vanguard Engines\n\nPart #02-03-020 -- 5-Blade Orange Impeller w/hardware kit - for Tecumseh, B&S Intek, Phase I & II Vanguard\n\nYou can view the instruction sheet for replacing the impeller by clicking HERE. To find other replacement parts for your Cyclone Rake you can find them in the Aftermarket Parts section of our website.",
+    "metadata": "{\"id\": \"Q - 139\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the tongue weight of the Cyclone Rake Commercial PRO?\"}",
+    "expected_output": "Thanks for reaching out with your question! I'm happy to help you with this.\n\nThe tongue weight of the Cyclone Rake Commercial PRO is approximately 90 to 100 pounds when fully assembled and empty. The total assembled weight of the unit is 225 pounds.\n\nThat tongue weight is the amount of downward pressure placed on your mower’s hitch, so it's helpful to make sure your mower can handle that safely.\n\nYou can see the full specs for all models here:\nCyclone Rake Weight Specifications\n\nLet me know if you’d like help checking compatibility with your mower!",
+    "metadata": "{\"id\": \"Q - 182\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I remove the key from the e-start engine once it has started?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nYes, you can remove the key from your electric-start engine once it’s running, and the engine will continue to operate normally.\n\nJust be sure to store the key somewhere safe, like your pocket or toolbox, so it doesn’t get misplaced while you work.\n\nLet me know if you have any other questions!",
+    "metadata": "{\"id\": \"Q - 212\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Engine for a                    106 - Commander PRO JetPath  with a Intek 6 HP engine?\"}",
+    "expected_output": "Thanks for reaching out about your engine replacement—I’m happy to help with this.\n\nIf you have a Commander PRO JetPath (Model 106) with a 6HP Briggs & Stratton Intek engine, you’ve got two solid upgrade options to replace that engine:\n\nPart #01-04-158 – Briggs & Stratton XR950 PRO Engine Upgrade Kit\n\nPart #01-04-306 – Briggs & Stratton 6.5HP Vanguard Cyclonic Upgrade Kit\n\nHere’s a quick summary:\nBoth kits are fully compatible with your Commander PRO JetPath and will replace the older Intek 6HP engine.\n\nThe XR950 PRO offers reliable performance and is an excellent all-around upgrade.\n\nThe Vanguard Cyclonic has advanced air filtration and a bit more power for tougher conditions.\n\nYou can find more details on these engine options and what sets them apart in this article:\nMastering Cyclone Rake Engines – A Deep Dive into Briggs & Stratton Engines\n\nLet me know if you’d like help choosing between the two!",
+    "metadata": "{\"id\": \"Q - 166\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can the Cyclone Rake connect to articulating mower?\"}",
+    "expected_output": "Thanks for reaching out with your question! I'm happy to help you with this.\n\nUnfortunately, the Cyclone Rake can’t be connected to articulating mowers. These machines are designed with a pivoting frame, and that constant movement causes problems for how the Cyclone Rake connects and operates.\n\nHere’s why it won’t work:\nThe hose connection becomes unstable—as the deck pivots away from the engine-blower unit, the hose can pull loose or kink.\n\nOur system relies on a fixed-length hose and Dual Pin Hitch, which work best with rigid-frame mowers to minimize clogs and hose movement.\n\nFor more details on compatible mower styles, check out this article:\nCyclone Rake Mower Compatibility Guide\n\nIf you have another mower in mind or want to double-check your setup, just let me know your model and deck size—I’ll be happy to look into it for you.",
+    "metadata": "{\"id\": \"Q - 225\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for Replacement Safety Cover for XL Blower Unit?\"}",
+    "expected_output": "Thanks for reaching out with your question! I’m happy to help you with this.\n\nThe replacement safety cover for the XL Blower Unit is:\nPart #05-02-1160 – Safety Cover Yellow 8\" with Bolt & Nut\n\nThis part includes everything you need to securely replace the cover on your XL model’s blower housing.\n\nLet me know if you’d like help ordering or confirming fit with your setup.",
+    "metadata": "{\"id\": \"Q - 156\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the tongue weight of the Cyclone Rake Commander?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe tongue weight of the Cyclone Rake Commander is approximately 90–100 pounds.\n\nHere’s a quick breakdown of the weights:\n\nEngine/Blower Unit: 85 pounds\n\nTongue Weight (Commander): 90–100 pounds\n\nTotal Assembled Weight: 200 pounds\n\nIf you have any other questions, please feel free to ask!",
+    "metadata": "{\"id\": \"Q - 181\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Engine for a                    103 - PRO PRO?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your Cyclone Rake 103 – PRO model, you have two engine upgrade options depending on your preference:\n\nPart #01-04-158 – Briggs & Stratton XR950 PRO Engine Upgrade Kit\n\nPart #01-04-306 – Briggs & Stratton 6.5HP Vanguard Cyclonic Upgrade Kit\n\nBoth kits are fully compatible with your PRO unit and come with all the necessary components for a smooth replacement.\n\nIf you're not sure which engine your unit currently has or want help deciding between the two, just let me know—I’d be happy to assist.",
+    "metadata": "{\"id\": \"Q - 165\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is Decibel Rating for XL and Z-10\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nBoth the Cyclone Rake XL and Z-10 have a decibel rating of approximately 102 dB, which is about as loud as a chainsaw at 3 feet or a snowmobile.\n\nFor your safety while operating:\nAlways wear ear protection to prevent hearing damage\n\nWear eye protection to guard against flying debris\n\nConsider using gloves and sturdy footwear for added protection\n\nIf you have any other questions about safe operation or equipment specs, feel free to ask!",
+    "metadata": "{\"id\": \"Q - 228\"}"
+  },
+  {
+    "variables": "{\"input\": \"Customer wants to recycle/upcycle their Cyclone Rake\"}",
+    "expected_output": "When you're ready to part ways with your Cyclone Rake, there are several environmentally responsible options to consider. We appreciate your commitment to reducing waste and making sure your equipment finds new life or is properly recycled.\n\nIf your Cyclone Rake is still in good working condition, selling it is a great option:\n\n1. Our Facebook Community Page is an excellent marketplace with members who understand the value of Cyclone Rake products\n2. Other popular platforms include eBay, Craigslist, and Facebook Marketplace\n3. Used Cyclone Rakes typically have a robust resale market due to their durability and quality\n4. We can provide you with your original sales order if needed for your listing or to show potential buyers\n5. We're happy to provide you with digital copies of the manual and parts list to help with your sale listing\n6. These documents can help potential buyers understand the features and maintenance requirements of your Cyclone Rake\n\nPlease be aware that the Cyclone Rake warranty is not transferable to the new owner. If you're considering selling, you should inform potential buyers about this policy. Please note these policies regarding used Cyclone Rake equipment:\n\n1. We do not buy back or purchase used Cyclone Rakes\n2. We cannot provide recommendations for resale pricing",
+    "metadata": "{\"id\": \"Q - 227\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement collector bag for the 109 - Commander Commander model?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your 109 – Commander model, the correct replacement collector bag is:\n\nPart #03-03-308 – Commander Collector Bag (Velcro style)\n\nYou can view and order the replacement bag right here:\nCommander Collector Bag – Velcro\n\nLet me know if you need help with installation or anything else!",
+    "metadata": "{\"id\": \"Q - 131\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I buy individual parts if I don\"t own a Cyclone Rake?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nWhile you’re welcome to browse and purchase parts from our website, please note that our components are specifically designed for use with the Cyclone Rake system. Because of that, we can’t guarantee how well they’ll work with other lawn and leaf vacuums, and we’re not able to advise on compatibility for non-Cyclone Rake setups.\n\nThat said, here are a few parts that might still be useful:\nDeck hoses (7\", 8\", or 10\") – These are heavy-duty and could potentially work with other machines\n\nMower deck adapters – These may fit your setup depending on the mower deck design\n\nFeel free to explore the Parts section on our website, and if you do end up with a Cyclone Rake in the future, we’ll be glad to help you get it fully equipped!",
+    "metadata": "{\"id\": \"Q - 198\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I get a Honda Engine?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nAt this time, we do not offer a Honda engine option with Cyclone Rake units.\n\nWe exclusively use Briggs & Stratton Vanguard engines because they’re engineered to perform in tough conditions and deliver the durability our customers expect. Here’s why we’ve chosen them:\n\nProven reliability across various types of power equipment\n\nExcellent performance under demanding yard cleanup jobs\n\nIndustry-leading support network with over 25,000 authorized service centers worldwide\n\nWe truly believe these engines give our customers the best mix of performance, support, and long-term value.\n\nIf you have any other questions or need help with engine options, I’m here to help!",
+    "metadata": "{\"id\": \"Q - 206\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I buy a second top brace for my Cyclone Rake?\"}",
+    "expected_output": "The Cyclone Rake features a single top brace bar that serves to maintain separation between the rear end of the side tubes, making the dumping process easier. However, due to the wider dimensions of the collector bags in models like the Commander, Commercial Pro, XL, and Z-10, it is not possible to incorporate a second top brace bar for the front. Instead, the holes located at the front of the side tubes are specifically designed for attaching the optional Roof Rack Carrier accessory.\n\nThe Roof Rack Carrier is an accessory that can be added to the Cyclone Rake, providing users with a convenient way to secure additional equipment or items on top of their Collector Bag. It consists of two heavy-duty steel struts and quick-release knobs, ensuring easy attachment to the Collector Bag without the need for tools.",
+    "metadata": "{\"id\": \"Q - 197\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I Attach My Hitch 16\" Above Ground? What\\\"s the ideal height for the hitch?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nIf your hitch is mounted 16 inches above the ground, that’s outside the recommended range for optimal Cyclone Rake performance.\n\nIdeal Hitch Height:\n10 to 14 inches from the ground\n\nCentered between your mower’s rear wheels\n\nLevel to the ground — avoid tilting the hitch up or down\n\nMounting the hitch higher than 14 inches can cause issues with balance, hose alignment, and maneuverability. For best results, we recommend adjusting the hitch or adding a mounting plate to get it within the ideal range.\n\nLet me know if you’d like help troubleshooting your setup—I’m happy to assist!",
+    "metadata": "{\"id\": \"Q - 200\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement impeller for a                    101 - Standard Complete Platinum with an Intek engine?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your Cyclone Rake 101 - Standard Complete Platinum model with an Intek engine, you have two replacement impeller options:\n\nPart #02-03-017 – 4-Blade Yellow Impeller with Hardware Kit\n(Original replacement impeller designed specifically for your model.)\n\nPart #02-03-020 – 5-Blade Orange Impeller with Hardware Kit\n(Upgraded option providing approximately 25% more suction compared to the original.)\n\nLet me know if you need anything else!",
+    "metadata": "{\"id\": \"Q - 160\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Engine for a                    102 - Commercial?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your Cyclone Rake 102 - Commercial, you have two suitable replacement engine options:\n\nPart #01-04-158 – Briggs & Stratton XR950 PRO Engine Upgrade Kit\n(Reliable upgrade option with excellent overall performance.)\n\nPart #01-04-306 – Briggs & Stratton 6.5HP Vanguard Cyclonic Upgrade Kit\n(Enhanced upgrade featuring improved air filtration and durability.)\n\nIf you have any additional questions or need help choosing, please let me know!",
+    "metadata": "{\"id\": \"Q - 161\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the dimensions of wheel bearings (01-01-334)?\"}",
+    "expected_output": "Thanks for reaching out with your question! I'm happy to help you with this.\n\nThe wheel bearing dimensions for the Cyclone Rake are as follows:\n\nInner Diameter (ID): 30mm\n\nOuter Diameter (OD): 35mm\n\nWidth (Thickness): 19mm\n\nOverall Dimensions: 30mm x 35mm x 19mm (metric)\n\nIf you're replacing a bearing or just checking for compatibility, these measurements should help you confirm a proper fit.",
+    "metadata": "{\"id\": \"Q - 231\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          110 - Commercial PRO 6.5 HP Vanguard Phase ll engine?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe correct replacement impeller for your Cyclone Rake 110 - Commercial PRO with the 6.5 HP Vanguard Phase II engine is:\n\nPart #02-03-020 – 5-Blade Orange Impeller with Hardware Kit\n\nPlease let me know if there's anything else I can assist you with!",
+    "metadata": "{\"id\": \"Q - 152\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I Install An Hour Meter On My Engine?\"}",
+    "expected_output": "Thanks for reaching out with your question! I'm happy to help you with this.\n\nWhile it’s a great idea to track your engine run time, we don’t offer hour meters for sale. After checking with our technician, we recommend reaching out directly to Briggs & Stratton for guidance on hour meter compatibility and installation for your engine model.\n\nYou can use this link to find a Briggs & Stratton dealer near you who can assist:\nBriggs & Stratton Dealer Locator\n\nLet me know if you have any other questions about maintaining your Cyclone Rake—we’re always here to help.",
+    "metadata": "{\"id\": \"Q - 208\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          102 - Commercial (Intek)?\"}",
+    "expected_output": "For your 102 – Commercial model with an Intek engine, you have two compatible replacement impeller options:\n\nYou have two compatible impeller options:\nPart #02-03-017 – 4-Blade Yellow Impeller with Hardware Kit\nThis is the original replacement for your model.\n\nPart #02-03-020 – 5-Blade Orange Impeller with Hardware Kit\nThis upgraded impeller delivers 25% more suction and fits your unit as well.\n\nLet me know if you’d like help choosing between the two or placing an order!",
+    "metadata": "{\"id\": \"Q - 144\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Engine for a                    Z-10?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your Cyclone Rake Z-10, here are the correct replacement engine options:\n\nPart #06-02-301 – Briggs & Stratton 10HP Vanguard Phase II (Pull-Start)\n\nPart #06-02-301E – Briggs & Stratton 10HP Vanguard Phase II (Electric-Start)\n\nBoth engines are built for powerful performance and long-term reliability. Let me know if you’d like help placing an order or choosing between the two options!",
+    "metadata": "{\"id\": \"Q - 162\"}"
+  },
+  {
+    "variables": "{\"input\": \"can I stop the electric start engine with the starter key?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nNo, the starter key does not stop the electric start engine. It’s only used to crank the engine during startup and does not control the ignition.\n\n🔑 Here's how the switch works:\nPosition 1: Normal (key at rest)\n\nPosition 2: Start (spring-loaded—only used while cranking)\n\n✅ To stop the engine:\nIdle down for 15–30 seconds using the throttle lever\n\nMove the red fuel shutoff lever to the OFF position\n\nRemove the key\n\nKeep in mind, the key cannot be turned to the left like a car ignition. It doesn’t cut power to the engine.",
+    "metadata": "{\"id\": \"Q - 199\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement collector bag for the XL model?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nSince you own a Cyclone Rake XL, the correct part number for the replacement collector bag is 05-03-308. This is the full collector bag assembly designed specifically for the XL model and includes the Velcro-style rear panel.\n\nYou can view and order the part here:\nCommercial PRO, XL, and Z-10 Collector Bag – Velcro\n\nLet me know if you need help with installation or anything else!",
+    "metadata": "{\"id\": \"Q - 129\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          106 - Commander PRO JetPath Commander Pro (Intek)?\"}",
+    "expected_output": "For your Cyclone Rake 106 – Commander PRO JetPath model with the Briggs & Stratton Intek 6HP engine, you have two compatible impeller options:\n\nPart #02-03-017 – 4-blade yellow impeller with hardware kit \n\nPart #02-03-020 – 5-blade orange impeller with hardware kit \n\nBoth will work with your unit, so it depends on whether you’d prefer the standard replacement or the upgraded performance.",
+    "metadata": "{\"id\": \"Q - 145\"}"
+  },
+  {
+    "variables": "{\"input\": \"The deck hose is short by a few inches/pulled out of the collar\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nIf your deck hose feels too short or is pulling out of the collar, here are a few easy troubleshooting steps you can try:\n\n✅ Troubleshooting a Short Deck Hose:\nAdjust the insertion depth: The hose doesn’t need to be fully threaded into the collar. Try pulling it out slightly—this can give you a few extra inches.\n\nModify the hitch position: Loosen the hitch fork assembly and move the Cyclone Rake slightly closer to your mower. This small adjustment can make a big difference.\n\nLet the hose expand: New hoses are tightly packed for shipping and may need a bit of time (and warmth) to fully stretch out. Laying the hose out in a warm spot can help it reach its full length.\n\nStill too short?\nNo problem—just send us a few photos of your setup, and we’ll be happy to send you a replacement hose that fits properly.\n\nLet me know how it goes or if you’d like to start a replacement request!",
+    "metadata": "{\"id\": \"Q - 188\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Engine for a                    101 - Standard Complete Platinum Standard/Complete/Platinum?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nIf you need a replacement engine for your 101 – Standard Complete Platinum Cyclone Rake with a Tecumseh 5HP engine, there are two excellent upgrade options, depending on what you're looking for in terms of performance and features:\n\n✅ Option 1: Briggs & Stratton XR950PRO Upgrade Kit\n\nPart #: 01-04-158\n\nA powerful, professional-grade engine designed for durability and consistent performance\n\nComes with a 2-year warranty\n\nView the XR950PRO Upgrade Kit\n\n✅ Option 2: 6.5HP Vanguard Cyclonic Upgrade Kit\n\nPart #: 01-04-306\n\nAdds premium features like:\n\nTransport Guard to prevent fuel and oil mixing during transport\n\nHigh-capacity air cleaner for longer maintenance intervals\n\nLower-tone muffler for quieter operation\n\nCommercial-style carburetor\n\nBacked by a 3-year commercial warranty\n\nView the Vanguard Cyclonic Engine Upgrade Kit\n\nEither option will be a solid replacement!\n\nAnd don’t forget—we recommend tuning up your engine after the first 5 hours of use, and then once a year. You can find the right Engine Maintenance Kit for either of these engines to help extend their life and performance.\n\nLet me know if you'd like help choosing between the two or placing an order!",
+    "metadata": "{\"id\": \"Q - 157\"}"
+  },
+  {
+    "variables": "{\"input\": \"Are the wheels rubber or pneumatic?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe wheels on the Cyclone Rake are pneumatic and made of real rubber, not plastic. They’re built for durability, smooth performance, and lawn-friendly operation.\n\nHere’s what makes them stand out:\nPneumatic (air-filled) tires for better traction and a smoother ride\n\nPremium rubber construction – not plastic or composite\n\nDurable metal hubs for long-lasting strength\n\nManufacturer name stamped on each tire – no generic parts\n\nDesigned to protect your lawn while offering stable performance across various terrain\n\nLet me know if you have any more questions—I’m happy to help!",
+    "metadata": "{\"id\": \"Q - 193\"}"
+  },
+  {
+    "variables": "{\"input\": \"Do we have a hitch to attach to a John Deere Click-n-go hitch setup?\"}",
+    "expected_output": "Thanks for reaching out with your question! I'm happy to help you with this.\n\nWe don’t offer a hitch that connects directly to the John Deere Click-n-Go bracket system, but that doesn’t necessarily mean you're out of options. Depending on how the back of your mower is set up, we may still have a compatible hitch for your John Deere tractor.\n\nHere’s what we’ll need to check compatibility:\nYour John Deere model number\n\nYour mower deck size\n\nWith that info, I can look up the right hitch option for your setup.\n\nLet me know when you have those details handy—I’ll be glad to help get you squared away!",
+    "metadata": "{\"id\": \"Q - 235\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the tongue weight of the Cyclone Rake XL?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe tongue weight of the Cyclone Rake XL is approximately 120 pounds.\n\nHere's a quick breakdown of the weights for your Cyclone Rake XL:\n\nEngine/Blower Unit: 110 pounds\n\nTongue Weight: ~120 pounds\n\nTotal Assembled Weight: 250 pounds\n\nLet me know if you need anything else!",
+    "metadata": "{\"id\": \"Q - 183\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can the Cyclone Rake go on hills?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nYes, your Cyclone Rake can be used on hills, but there are a few important safety and performance guidelines to keep in mind to protect both your equipment and yourself:\n\n✅ Maximum Slope Guidelines\nThe Cyclone Rake is safe to use on slopes up to 20 degrees\n\nSlopes steeper than that can cause:\n\nHitch pin binding\n\nExcess stress on your mower and rake\n\nPotential safety hazards\n\n⛽ Engine Performance on Hills\nIf your engine stalls when going up or down hills, it’s likely a fuel delivery issue:\n\nThe fuel pickup hose is in the corner of the tank, so steep angles and low fuel can cause the engine to starve\n\nKeep your fuel tank more than half full to prevent stalling\n\nTackle sloped areas early on, when your tank is full\n\n⚠️ Safety Tips for Sloped Terrain\nAlways drive straight up or down the slope — never across\n\nAvoid wet grass for better traction\n\nMonitor for signs of stress or binding on your equipment and stop if anything feels off\n\nThe engine uses splash lubrication, so avoid long periods on steep slopes to prevent overheating\n\n🛠 Best Practices:\nWork in dry conditions when possible\n\nPlan your mowing path to minimize time spent on hills\n\nStart with a full tank\n\nFor steep yards, work downhill first, while the tank is fullest\n\nFollowing these guidelines will help you get great performance on hilly terrain while keeping everything running safely and smoothly.\n\nLet me know if you need anything else!",
+    "metadata": "{\"id\": \"Q - 187\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I use my Cyclone Rake in the rain?\"}",
+    "expected_output": "We would not recommend using your Cyclone Rake in the rain, or leaving it exposed to any kind of precipitation. There are electrical connections maintaining the spark within your Cyclone Rake engine, as it is an internal combustion engine. Water can affect those connections negatively. Additionally, water entering the inside of the engine can damage parts when running.\n\nAll that is to say - it's not ideal to run the engine in the rain, or to leave the engine uncovered if stored outside. Keep your Cyclone Rake in a dry sheltered place. Be sure to get out any organic debris from the bag before putting it away for storage. Acorns, nuts, and other debris will attract mice and rodents. Mothballs will help keep them away!\n\nLastly, always add fuel stabilizer to keep the fuel fresh. There is no need to drain gasoline from the engine if a fuel stabilizer is added. Fuel can become stale when stored for over 30 days. Adding fuel stabilizer will prevent gum and varnish buildup. Keep the gas tank 95% full to avoid condensation buildup in the tank during storage. Run the engine for 5 minutes after adding the stabilizer to treat the entire fuel system. This prepares the engine and gasoline for up to 24 months of storage. While not specifically required for daily use, Briggs & Stratton does recommend the use of fuel treatment and stabilizer as a regular part of the refueling process.",
+    "metadata": "{\"id\": \"Q - 216\"}"
+  },
+  {
+    "variables": "{\"input\": \"Do we have Tecumseh engine parts?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nUnfortunately, we no longer carry replacement parts for Tecumseh engines, as Tecumseh closed its operations in 2009 and we discontinued using their engines some time ago. However, I can still point you in the right direction depending on what you need:\n\n🔧 Finding Parts for Older Tecumseh Engines\nThe Cyclone Rake originally used:\n\nModel #OHH50 (5.0HP engine)\n\nModel #OHH60 (6.0HP engine)\n\nFor parts, we recommend:\n\nVisiting Jack's Small Engines – they specialize in older mower and tractor engine parts\n\nChecking with a local small engine repair shop\n\n🛠️ Common Tecumseh Issue – Slipping Throttle\nIf your throttle slips down during use, here’s a quick fix:\n\nRemove the air filter to access the carburetor area\n\nFind the small brass nut or screw next to the throttle\n\nTighten it gently but firmly – this presses a plate against the throttle slider and helps it stay in place\n\n🔄 Engine Replacement Options\nIf you're looking to replace your Tecumseh engine, we offer two great upgrade options that work with older Cyclone Rake models:\n\nXR950 PRO Engine Upgrade Kit\n\n6.5HP Cyclonic Vanguard Engine Upgrade Kit\n\nBoth offer improved performance, easier starting, and better long-term reliability.\n\nLet me know if you'd like help choosing the best replacement for your setup!",
+    "metadata": "{\"id\": \"Q - 186\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the tongue weight of the Cyclone Rake Classic?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe tongue weight of the Cyclone Rake Classic is approximately 85 - 90 pounds.\n\nHere’s a quick summary of the weights:\n\nEngine/Blower Unit: 85 pounds\n\nTongue Weight (Classic): 85 - 90 pounds\n\nTotal Assembled Weight: 200 pounds\n\nIf you have any more questions, please feel free to ask!",
+    "metadata": "{\"id\": \"Q - 180\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          110 - Commercial PRO XR950 Pro?\"}",
+    "expected_output": "Thanks for reaching out with your question! I’m happy to help you with this.\n\nThe replacement impeller for your 110 – Commercial PRO with XR950 Pro engine is:\nPart #02-03-021 – 5-Blade Orange Impeller Replacement Kit – XR950 and 6.5 HP Vanguard Cyclonic\n\nThis is the correct impeller for your model and includes all the necessary hardware for installation.\n\nLet me know if you need help placing the order or installing the new part!",
+    "metadata": "{\"id\": \"Q - 149\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Engine for a                    105 - Classic with 6.5 Vanguard Phase 1 engine?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your Cyclone Rake 105 - Classic, originally equipped with the 6.5HP Vanguard Phase 1 engine, you have two replacement engine options:\n\nPart #01-04-158 – Briggs & Stratton XR950 PRO Engine Upgrade Kit\n(A reliable upgrade providing excellent performance.)\n\nPart #01-04-306 – Briggs & Stratton 6.5HP Vanguard Cyclonic Upgrade Kit\n(Features improved air filtration and enhanced durability.)\n\nTo help you choose the right option for your needs, we've put together a detailed comparison here:\n\nXR950 PRO vs 6.5HP Cyclonic Vanguard Engine Comparison\n\nIf you need anything else, please let me know!",
+    "metadata": "{\"id\": \"Q - 158\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          Classic Vanguard Phase 1 ?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your Cyclone Rake Classic with a 6.5 HP Vanguard Phase 1 engine, the correct replacement impeller options are:\n\nPart #02-03-017 – 4-Blade Yellow Impeller with Hardware Kit\n(This is the original impeller replacement for your unit.)\n\nPart #02-03-020 – 5-Blade Orange Impeller with Hardware Kit\n(This is an upgraded option offering around 25% more suction compared to the original.)\n\nFeel free to reach out if you have any other questions!",
+    "metadata": "{\"id\": \"Q - 150\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the Diameter of hole in the clevis pin and the cotter pin(Bridge pin)?\"}",
+    "expected_output": "Thanks for reaching out with your question! I'm happy to help you with this.\n\nHere are the dimensions you're looking for:\n\nClevis Pin Hole Diameter: 0.75 mm (0.0295 in)\n\nCotter Pin Diameter: 2.2 mm (0.0870 in)\n\nThese sizes are standard for securing parts on your Cyclone Rake, and they’re matched to ensure a snug and secure fit.\n\nLet me know if you're replacing parts or need help finding the correct hardware—I'm glad to assist!",
+    "metadata": "{\"id\": \"Q - 229\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can the Cyclone Rake connect to a Power Take Off Feature? PTO\"}",
+    "expected_output": "Thanks for reaching out with your question! I'm happy to help you with this.\n\nThe Cyclone Rake does not connect to a tractor’s PTO (Power Take-Off) system. Instead, it’s designed with its own Briggs & Stratton engine, which powers the vacuum independently of your tractor.\n\nHere’s why that’s a benefit:\nYou don’t need to rely on your tractor’s PTO or worry about compatibility\n\nThe Cyclone Rake engine provides consistent, reliable performance all on its own\n\nYour PTO remains free for other attachments when needed\n\nYou can find more helpful details on tractor and mower compatibility here:\nCyclone Rake Mower Compatibility Guide\n\nLet me know your tractor’s make and model if you’d like help confirming the best setup!",
+    "metadata": "{\"id\": \"Q - 223\"}"
+  },
+  {
+    "variables": "{\"input\": \"I bought a used Cyclone Rake. Can you tell me which model I have?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I’m happy to help you identify your Cyclone Rake model.\n\nCongrats on your pre-owned Cyclone Rake!\nWe can definitely help you figure out which model you have. There are a couple of ways to do this:\n\nOption 1: Previous Owner Lookup\nIf you know the name of the original owner, we can check our records (if they purchased directly from us). That’s the fastest way to confirm the exact model and configuration.\n\nOption 2: Visual & Measurement Clues\nIf you don’t have that info, no problem! Please take a look at these features and send us your answers:\n\nCollector Bag Color: Is it green or black?\n\nCollector Bag Shape: Is it wider in the back or uniform all around?\n\nDeck Hose Size: What’s the inside diameter of the hose?\n\n7-inch\n\n8-inch\n\n10-inch\n\nEngine Info: Check for a label on the engine — what’s the horsepower and model number?\n\nPhotos Help!\nIf you can, send us a few clear photos of the:\n\nEngine\n\nCollector bag\n\nBlower housing\n\nChassis/frame area\n\nWith this info, we’ll be able to identify your model and guide you on compatible parts or upgrades.\n\nLooking forward to helping you get the most out of your Cyclone Rake!",
+    "metadata": "{\"id\": \"Q - 192\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          109 - Commander 6.5 Vanguard Phse 1\"}",
+    "expected_output": "Thanks for reaching out with your question! I looked into the replacement parts for your 109 – Commander with the 6.5 HP Vanguard Phase 1 engine, and here are your compatible impeller options:\n\nAvailable Impeller Options:\nPart #02-03-017 – 4-Blade Yellow Impeller with Hardware Kit\nThis is the original replacement impeller designed for your unit.\n\nPart #02-03-020 – 5-Blade Orange Impeller with Hardware Kit\nThis is an upgraded option that delivers around 25% more suction than the original.\n\nEither one will fit your Commander model, depending on whether you prefer the standard performance or an extra boost in suction.\n\nLet me know if you’d like help placing an order or if you have any other questions!",
+    "metadata": "{\"id\": \"Q - 148\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the tongue weight of the Cyclone Rake Z10?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe tongue weight of the Cyclone Rake Z10 is approximately 120 pounds.\n\nHere’s a quick breakdown of weights for your reference:\n\nEngine/Blower Unit: 110 pounds\n\nTongue Weight (Z10): ~120 pounds\n\nTotal Assembled Weight: 250 pounds\n\nIf you need anything else, feel free to ask!",
+    "metadata": "{\"id\": \"Q - 184\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement collector bag for the 102 - Commercial Commercial model?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe correct replacement collector bag for the Cyclone Rake Commercial model (unit 102) is part number 04-03-303. \n\nIf you need any additional parts, feel free to let me know—I’ll be happy to assist.",
+    "metadata": "{\"id\": \"Q - 135\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement collector bag for the 104 - Commercial PRO Commercial Pro model?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe correct replacement collector bag for the Cyclone Rake Commercial PRO (model 104) is part number 05-03-308. \n\nIf you’re also looking for other replacement parts, just let me know and I’d be glad to help with that too.",
+    "metadata": "{\"id\": \"Q - 136\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for Replacement Chassis for  103 - PRO 7\" Pro?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe correct replacement chassis for your Cyclone Rake 103 - PRO 7\" Pro model is:\n\nPart #01-01-600A – Chassis Unit Complete (31-3/4 inches wide)\n\nIf there's anything else you need, please don't hesitate to ask!",
+    "metadata": "{\"id\": \"Q - 173\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement collector bag for the 106 - Commander PRO JetPath Commander Pro model?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your 106 – Commander PRO model with the 8\" JetPath system, the correct replacement collector bag is:\n\nPart #03-03-308 – Commander Collector Bag (Velcro style)\n\nYou can view and order the replacement bag here:\nCommander Collector Bag – Velcro\n\nLet me know if you need help installing it or have any other questions!",
+    "metadata": "{\"id\": \"Q - 134\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I buy one half of the roof rack carrier?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nIf you need to replace one side or strut of the Roof Rack Carrier, you’ll need to purchase the entire Roof Rack Carrier assembly, as we don’t offer the individual struts separately.\n\nLet me know if you'd like help placing an order or if you have any other questions—I’m here to help!",
+    "metadata": "{\"id\": \"Q - 203\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I buy the liner separate and install it myself?\"}",
+    "expected_output": "Among the parts we sell, the blower housing liner is the only one not sold separately and we want to share with you why.\n\nWith 25 years of experience selling and supporting Cyclone Rakes, we have a deep understanding of its operation and how parts wear.\n\nAs materials move through the blower housing, the liner protects the inside of the housing from the abrasive conditions. If the liner wears through, it exposes the housing to the abrasion, resulting in a failure. Furthermore, we have found that when the liner fails, the housing can also experience excessive wear.\n\nThe reason for not selling it separately is that an improperly installed liner could cause other problems and pose safety concerns. A properly seated liner is critical since the impeller must never come in contact with the liner. If this occurs, it can create chips in the impeller and lead to an “out-of-round situation”, which can damage both the impeller and the engine. As you can understand, a liner that has not been installed properly and comes loose during operation is also a safety hazard that we take very seriously.\n\nWe understand many of our customers are handy around the shop and take very good care of their tools. We're not here to tell you how to maintain your property and respect your decision to use and repair your tools as you see fit. However, we also want you to understand why we made this decision and why it is in place today.",
+    "metadata": "{\"id\": \"Q - 204\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement collector bag for the Z10 model?\"}",
+    "expected_output": "Part #05-03-308",
+    "metadata": "{\"id\": \"Q - 130\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for a Latch Upgrade Kit on a Classic Collector Bag?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe correct replacement part number for the Latch Upgrade Kit for your Classic Collector Bag is:\n\nPart #01-02-010 – Latch Upgrade Kit (for old-style Collector Bag with elastic collar)\n\nIf you have any additional questions or need further assistance, please let me know!",
+    "metadata": "{\"id\": \"Q - 172\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for a Collector bag repair kit?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nSince you own a 101-Stand Complete Platinum Cyclone Rake, the correct part number for the Collector Bag Repair Kit is 01-04-152. This kit includes everything you’ll need to patch small holes or tears in your collector bag—green fabric patch, patching tape, alcohol pads, and a tube of vinyl adhesive. It’s a great way to keep your equipment in top shape without needing a full replacement.\n\nYou can find the kit here:\nGreen Cloth Repair Kit – Complete\n\nAnd here’s a helpful article that walks through the repair process:\nRepairing Your Cyclone Rake Collector Bag\n\nLet me know if there’s anything else I can do for you!",
+    "metadata": "{\"id\": \"Q - 128\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Engine for a                    109 - Commander Commander?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your Cyclone Rake 109 – Commander model, there are a few different engine replacement options depending on the engine currently installed on your unit.\n\nIf you're replacing a Tecumseh, Briggs & Stratton Intek™, or an older 6.5HP Vanguard (Phase I or II):\nPart #01-04-158 – Briggs & Stratton XR950 PRO Engine Upgrade Kit\n\nPart #01-04-306 – Briggs & Stratton 6.5HP Vanguard Cyclonic Upgrade Kit\n\nThese upgrade kits include all necessary components to convert your current setup to the latest engine design.\n\nIf you already have the XR950 PRO or 6.5HP Vanguard Cyclonic:\nPart #04-02-302 – Briggs & Stratton XR950 PRO Replacement Kit\n\nPart #01-04-307 – Briggs & Stratton 6.5HP Vanguard Cyclonic Replacement Kit\n\nLet me know which engine you currently have, and I’d be glad to confirm the right kit for your setup.\n\nYou can find more info here:\nCommander Replacement Parts",
+    "metadata": "{\"id\": \"Q - 163\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can a fabric repair kit help repair the pocket for the side tube?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nWhile the fabric repair kit is great for patching small tears on the collector bag, it’s not strong enough for repairing the side tube pocket, which handles a lot more stress and weight.\n\nHere are your options for side tube pocket damage:\nTry a DIY repair: Use heavy-duty fishing line or outdoor-grade thread to sew the tear closed. Reinforce the stitching well, since this part of the bag supports a lot of pressure.\n\nReplace the collector bag: If sewing isn't practical or the damage is extensive, the best long-term solution is to replace the entire collector bag.\n\nLet me know if you'd like help ordering a replacement or have any questions about the repair!",
+    "metadata": "{\"id\": \"Q - 194\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          105 - Classic Classic (XR or Cyclonic Models)?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your 105 – Classic model equipped with the XR950 PRO engine, you have two great options for a replacement impeller:\n\nPart #02-03-018 – 4-Blade Yellow Impeller Replacement Kit\nThis is the standard replacement for the XR950 and 6.5HP Vanguard Cyclonic engines.\n\nPart #02-03-021 – 5-Blade Orange Impeller Replacement Kit\nThis upgraded impeller gives you increased suction power and performance, ideal for heavier leaf loads or damp material.\n\nBoth kits include the hardware you need for installation. If you'd like to see how to replace the impeller, here’s a handy guide:\nReplacing Your Cyclone Rake Impeller\n\nYou can also explore other replacement parts for your unit in the\nAftermarket Parts section of our website.\n\nLet me know if you’d like help choosing the best option or placing an order!",
+    "metadata": "{\"id\": \"Q - 142\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for Replacement Blower Unit for a Commercial PRO with a Cyclonic engine?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your Cyclone Rake Commercial PRO model with a Cyclonic engine, the correct replacement blower unit options are:\n\nPart #01-04-104 – Commercial PRO (Standard Liner, with 5-Blade Impeller)\n(Complete blower kit including impeller, with standard liner.)\n\nPart #01-04-107 – Commercial PRO JetPath (Blue Diamond Liner, with 5-Blade Impeller)\n(Complete blower kit including impeller, with upgraded Blue Diamond liner for enhanced durability.)\n\nIf you prefer the blower replacement without an impeller, you have these options:\n\nPart #01-03-103 – PRO (Standard Liner, No Impeller)\n\nPart #01-03-106 – Commander PRO JetPath (Blue Diamond Liner, No Impeller)\n\nPlease let me know if you have any further questions or need additional assistance!",
+    "metadata": "{\"id\": \"Q - 153\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          103 - PRO Pro 7\" (Not XR or Cyclonic)?\"}",
+    "expected_output": "Thanks for reaching out with your question! I looked into this for your 103 – PRO with the standard 7\" JetPath, and here’s what you need to know.\n\nYou have two compatible impeller options:\nPart #02-03-017 – 4-Blade Yellow Impeller with Hardware Kit\nThis is the original replacement for your model.\n4-Blade Yellow Impeller – Tecumseh, Intek Phase 1 & 2, Vanguard\n\nPart #02-03-020 – 5-Blade Orange Impeller with Hardware Kit\nThis upgraded impeller delivers 25% more suction and fits your unit as well.\n5-Blade Orange Impeller – Intek Phase I & II, Vanguard\n\nLet me know if you’d like help choosing between the two or placing an order!",
+    "metadata": "{\"id\": \"Q - 151\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can Cyclone Rake be used to clean up stump chip debris?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe Cyclone Rake is not recommended for cleaning up stump chip debris. While it’s great for leaves, grass, and light yard waste, stump grinding chips are typically too heavy and dense for the system to handle effectively.\n\nHere's why:\nThe extension hose can’t generate enough lift for heavy wood debris\n\nChips may clog the hose or strain the impeller and engine\n\nIt can lead to reduced performance or potential damage over time\n\nFor cleanup after stump grinding, we recommend using a shovel, rake, or front-end loader instead.\n\nLet me know if you have any other questions—I’m here to help!",
+    "metadata": "{\"id\": \"Q - 195\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement collector bag for the 105 - Classic model?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor the Cyclone Rake Classic model (unit 105), you have two options for a replacement collector bag, depending on the capacity you'd like:\n\nPart #01-03-308 – Standard 200-gallon collector bag (original size for the Classic)\n\nPart #03-03-303 – Optional upgrade to the 285-gallon collector bag (used on the Commercial model, compatible with your unit)\n\nBoth options come ready to install, so you can choose based on your yard size and how often you want to unload.\n\nYou can browse more details here:\nClassic Replacement Parts",
+    "metadata": "{\"id\": \"Q - 137\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I use my Cyclone Rake or engine in a high altitude environment?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nYes, you can use your Cyclone Rake and engine in high-altitude environments, but there are a few key adjustments to ensure proper performance and compliance.\n\nWhat to Know About High Altitude Operation:\nFuel Requirement:\nAt elevations over 5,000 feet (1,524 meters), use fuel with a minimum 85 octane / 85 AKI (89 RON) rating.\n\nEngine Adjustment Needed:\nEngines operating at high altitudes may require a carburetor adjustment to maintain:\n\nProper fuel-to-air mixture\n\nEmissions compliance\n\nOptimal performance\nRunning without this adjustment can cause fouled spark plugs, hard starts, excess fuel use, and reduced power.\n\nWhen to Consider Adjustments:\nIf you're operating at 3,000–4,000 feet or higher and notice your engine is running “rich,” it’s a sign you may need to adjust.\n\nWhat to Do:\nWe recommend contacting a Briggs & Stratton authorized dealer for a proper high-altitude kit or carburetor adjustment. They can make the necessary modifications based on your elevation.\n\nLet me know if you need help locating a service center near you!",
+    "metadata": "{\"id\": \"Q - 217\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement collector bag for the 110 - Commercial PRO Commercial Pro model?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your 110 – Commercial PRO model, the correct part number for the replacement collector bag is 05-03-308. This is the full Velcro-style collector bag assembly that fits the Commercial PRO, XL, and Z-10 models.\n\nYou can find the replacement bag here:\nCommercial PRO, XL, and Z-10 Collector Bag – Velcro\n\nLet me know if you need help with installation or anything else!",
+    "metadata": "{\"id\": \"Q - 132\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Engine for a                    XL?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your Cyclone Rake XL, there are two replacement engine options available:\n\nPart #05-02-302 – Briggs & Stratton 8HP Vanguard Phase II (Pull-Start)\n(Standard manual pull-start option.)\n\nPart #05-02-302E – Briggs & Stratton 8HP Vanguard Phase II (Electric-Start)\n(Upgraded option featuring convenient electric start.)\n\nTo help you decide whether the electric-start option is right for you, we've created a helpful article comparing the two:\n\nElectric Start Engine Benefits\n\nIf you have any other questions, please let me know!",
+    "metadata": "{\"id\": \"Q - 159\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for replacement Impeller for a          105 - Classic Classic (Not XR or Cyclonic)?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nFor your 105 – Classic model with a Vanguard 6.5HP Phase 1 engine, you have two compatible replacement impeller options:\n\nPart #02-03-017 – 4-Blade Yellow Impeller w/ Hardware Kit\nThis is the standard replacement for Tecumseh, INTEK, and Phase 1 & 2 Vanguard engines.\n\nPart #02-03-020 – 5-Blade Orange Impeller w/ Hardware Kit\nThis upgraded version delivers about 25% more suction power, which is great if you're handling heavier or more compacted debris.\n\nYou can view the installation guide here:\nReplacing Your Cyclone Rake Impeller\n\nAnd for other parts you may need, check out the\nAftermarket Parts section on our website.\n\nLet me know if you’d like help choosing the right option or placing your order!",
+    "metadata": "{\"id\": \"Q - 143\"}"
+  },
+  {
+    "variables": "{\"input\": \"What is the part number for 7\" x 8\" MDA collar?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nThe correct part number for the 7\" x 8\" MDA Collar is:\n\nPart #01-02-486 – 7\" x 8\" MDA Collar, with Latches and Band Clamp\n\nPlease let me know if you have any other questions—I'm here to help!",
+    "metadata": "{\"id\": \"Q - 176\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I add an electric start to my pull-start engine?\"}",
+    "expected_output": "Unfortunately we don't sell an electric starter kit that can be added to a pull-start engine. You may be able to contact Briggs & Stratton to ask if they would be able to retro fit an electric starter kit to your engine. However, it wouldn't be easy or cheap. They would have to tear apart the engine and add a gear to the flywheel, starter motor, wiring, key switch and battery. We do have complete electric start engines, but only for our XL and Z-10 models.",
+    "metadata": "{\"id\": \"Q - 185\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I use the Rake to Vacuum out insulation from my attic or saw dust from my shop?\"}",
+    "expected_output": "Thanks for reaching out with your question! I'm happy to help you with this.\n\nThe Cyclone Rake is not designed for use with insulation or sawdust—it’s specifically built to collect organic yard debris like leaves, grass, and small twigs, either from your mower deck or using the Power Vacuum Pickup.\n\nHere’s why it’s not suitable for insulation or sawdust:\nThe system isn’t sealed, so fine materials like sawdust or insulation would be blown out through the top screen, creating a bigger mess.\n\nThe blower unit is designed to process outdoor debris, not lightweight or airborne materials like attic insulation.\n\nIt could also lead to clogs or premature wear on parts not intended for this kind of material.\n\nTo keep your Cyclone Rake working its best, we recommend using it only for outdoor yard cleanup.\n\nLet me know if you have questions about any other uses or attachments—we’re always here to help!",
+    "metadata": "{\"id\": \"Q - 221\"}"
+  },
+  {
+    "variables": "{\"input\": \"Why Are My Wheels Shaking So Much!?\"}",
+    "expected_output": "It's not uncommon to notice some wheel shaking or wobbling when using your Cyclone Rake. While a certain amount of movement is actually by design, excessive shaking can be addressed with a few simple adjustments.\n\nOur engineers purposely designed the Cyclone Rake wheels with some flexibility to help navigate bumpy terrain. If you're experiencing more wheel movement than seems normal, consider these common factors:\n\n1. Operating Speed\n\nWheels tend to shake more at higher speeds, especially on hard surfaces like pavement or concrete\nTry reducing your speed to see if this reduces the shaking\nRemember that the Cyclone Rake is designed primarily for use on lawn surfaces, not for high-speed transportation\n\n2. Load Distribution\n\nAn empty collector can lead to more noticeable wobbling\nAs the collector fills, the added weight often stabilizes the wheels\nThis is why the shaking might decrease as you collect more debris\n\n3. Surface Type\n\nHard, flat surfaces like driveways or pavement tend to amplify wheel movement\nSofter surfaces like grass and soil naturally dampen vibrations\nThe wheels will typically shake less on the turf areas where you'll be doing most of your work\n\nQuick Fixes for Wheel Shaking\n\nAdjust Tire Pressure\nOne of the most effective solutions is ensuring proper tire inflation:\nDual-PRO Super Wheels: Maintain 12-15 PSI per tire\nSingle Wheels: Maintain 20-25 PSI per tire\nUse slower speeds when operating on hard surfaces\nTake turns more gradually\nAvoid rapid acceleration and deceleration\n\nIncorrect tire pressure is frequently the cause of excessive wheel shaking. Check your pressure and adjust accordingly.",
+    "metadata": "{\"id\": \"Q - 190\"}"
+  },
+  {
+    "variables": "{\"input\": \"Do I have to charge the battery on my electric start engine every time?\"}",
+    "expected_output": "Thanks for reaching out with your question! I'm happy to help you with this.\n\nYou don’t need to charge the battery after every use on your electric start engine. The engine includes an alternator that recharges the battery while it's running, so under normal use, it stays topped off.\n\nWhen should you charge it?\nIf the engine will sit unused for 3 months or more, we do recommend plugging it in to charge using the original charger that came with your unit.\n\nThis helps maintain the battery’s health and ensures it’ll be ready to go when you need it next.\n\nFor more tips and guidance, check out these helpful articles:\n\nElectric Start Engine Tips & FAQs\n\nCharging Your Cyclone Rake Electric Start Battery – Step-by-Step Guide\n\nLet me know if you have any other battery or engine questions—I’m always here to help.",
+    "metadata": "{\"id\": \"Q - 232\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I store my Cyclone Rake dry?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nWhile it may seem convenient, we don’t recommend storing your Cyclone Rake engine dry for long periods. Here’s why:\n\nWhy You Shouldn’t Store It Dry:\nEven though we ship the engine without fluids, small amounts of oil and fuel residue are left behind from factory testing\n\nOver time, these residues can dry out and cause internal issues, like stuck valves or gummed-up fuel components\n\nIf You Do Choose to Store It Dry:\nPlan to take it out of storage in early spring (around March)\n\nAdd fresh oil, gas, and fuel stabilizer\n\nRun the engine for about 30 minutes to circulate fluids and keep internal parts in good shape\n\nAfter that, you can let it cool and store it again until fall if needed\n\nThis helps prevent startup issues and keeps your engine healthy during the off-season.\n\nLet me know if you'd like guidance on proper storage or spring startup steps!",
+    "metadata": "{\"id\": \"Q - 213\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I use a Cyclone Rake alongside a Mulching Kit?\"}",
+    "expected_output": "Thank you so much for reaching out with your question! I'm happy to help you with this.\n\nUnfortunately, you cannot use a mulching kit while your Cyclone Rake is connected to your mower. The two systems are not compatible during operation.\n\nHere's why:\nMulching kits block the mower’s discharge chute, which is exactly where the Cyclone Rake connects\n\nThe Cyclone Rake requires a completely open discharge chute to generate proper airflow and suction\n\nThe mulching cover or plug physically interferes with the Mower Deck Adapter (MDA) or rubber collar connection\n\nWhat You’ll Need to Do:\nTo use the Cyclone Rake:\n\nRemove the mulching kit\n\nEnsure the chute is clear\n\nAttach the MDA and hose as instructed\n\nTo mulch again:\n\nDisconnect the Cyclone Rake\n\nReinstall the mulching kit\n\nLet me know if you need help removing the kit or setting up your MDA—I’m here to help!",
+    "metadata": "{\"id\": \"Q - 214\"}"
+  },
+  {
+    "variables": "{\"input\": \"Can I put an 8 or 10hp engine on smaller rake\"}",
+    "expected_output": "Thanks for reaching out with your question! I'm happy to help you with this.\n\nYou can’t install an 8HP or 10HP engine onto one of our smaller Cyclone Rake models. Each Cyclone Rake is designed with a specific engine and blower configuration to ensure everything lines up and functions properly.\n\nHere’s why we don’t recommend it:\nThe shaft height of a larger engine won’t align correctly with the blower unit\n\nThe impeller would not sit properly inside the housing, which can affect performance and safety\n\nEach unit is engineered and tested as a complete system, so mixing components can cause major issues\n\nWe always recommend using the original engine model matched to your Cyclone Rake to keep it running safely and effectively.\n\nLet me know which model you have—I’d be glad to confirm the correct engine or upgrade options for you.",
+    "metadata": "{\"id\": \"Q - 211\"}"
+  },
+  {
+    "variables": "{\"input\": \"109 - Commander* vs 110 - Commercial Pro*, which one is quieter?\"}",
+    "expected_output": "The 109 - Commander* is much quieter than the 110 - Commercial Pro.",
+    "metadata": "{\"id\": \"Q - 012\"}"
+  },
+  {
+    "variables": "{\"input\": \"How to get missing items for my new 107 - Commercial Pro 8\" Jetpath?\"}",
+    "expected_output": "We'll ship this directly to the customer.",
+    "metadata": "{\"id\": \"Q - 013\"}"
+  },
+  {
+    "variables": "{\"input\": \"What lawn-and-leaf vacuum do you recommend for my dad?\"}",
+    "expected_output": "102 - Commercial is a great vacuum for small backyards.",
+    "metadata": "{\"id\": \"Q - 016\"}"
+  }
+]
