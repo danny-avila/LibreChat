@@ -66,7 +66,7 @@ export default function ProgressText({
     if (progress < 1) {
       return authText ?? inProgressText;
     }
-    return finishedText;
+    return ""; //finishedText;
   };
 
   const getIcon = () => {
@@ -76,7 +76,7 @@ export default function ProgressText({
     if (progress < 1) {
       return <Spinner />;
     }
-    return <FinishedIcon />;
+    return <></>; //<FinishedIcon />;
   };
 
   const text = getText();

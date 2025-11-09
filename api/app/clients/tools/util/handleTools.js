@@ -287,12 +287,13 @@ const loadTools = async ({
         let fileCitations;
         if (fileCitations == null && options.req?.user != null) {
           try {
-            fileCitations = await checkAccess({
-              user: options.req.user,
-              permissionType: PermissionTypes.FILE_CITATIONS,
-              permissions: [Permissions.USE],
-              getRoleByName,
-            });
+            // fileCitations = await checkAccess({
+            //   user: options.req.user,
+            //   permissionType: PermissionTypes.FILE_CITATIONS,
+            //   permissions: [Permissions.USE],
+            //   getRoleByName,
+            // });
+            fileCitations = false;
           } catch (error) {
             logger.error('[handleTools] FILE_CITATIONS permission check failed:', error);
             fileCitations = false;

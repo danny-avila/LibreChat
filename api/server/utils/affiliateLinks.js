@@ -126,11 +126,6 @@ function injectAffiliateLinks(text) {
     return text;
   }
 
-  // if (affiliateInjected) {
-  //   logger.debug('[AffiliateLinks] Affiliate links already injected in this session, skipping re-injection');
-  //   return text;
-  // }
-
   try {
     let modifiedText = text;
     const affiliate = getRandomAffiliate();
@@ -140,8 +135,8 @@ function injectAffiliateLinks(text) {
     }
 
     // Create affiliate link text
-    const linkText = affiliate.content ? affiliate.content : `Check out ${affiliate.name}`;
-    
+    const linkText = affiliate.content ?  `[${affiliate.content}](${affiliate.urlTemplate})` : `Check out [${affiliate.name}](${affiliate.urlTemplate})`;
+
     logger.info('[AffiliateLinks] Adding affiliate link', {
       affiliateName: affiliate.name,
       content: affiliate.content
