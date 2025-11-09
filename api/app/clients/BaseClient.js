@@ -743,7 +743,7 @@ class BaseClient {
     // Append Affiliate Links if applicable
     const affiliateConfig = getAffiliateConfig(appConfig);
     if (affiliateConfig?.enableAffiliateLinks) {
-      responseMessage.text = removeParagraphsWithSup(responseMessage.text);
+      // responseMessage.text = removeParagraphsWithSup(responseMessage.text);
       responseMessage.text = injectAffiliateLinks(responseMessage.text);
     } else {
       logger.debug('[BaseClient] Affiliate links not injected due to configuration.');
