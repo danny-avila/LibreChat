@@ -162,14 +162,15 @@ function injectAffiliateLinks(text) {
   }
 }
 
-function removeParagraphsWithSup(html) {
-  // Create a DOM parser
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
+const jsdom = require('jsdom');
+const { JSDOM } = jsdom;
 
-  // Select all <p> elements
-  doc.querySelectorAll('p').forEach(p => {
-    // Check for a <sup> child with text like "1.", "2.", etc.
+function removeParagraphsWithSup(html) {
+  // Use jsdom to parse HTML on the server
+  const dom = new JSDOM(html);
+  const { document } = dom.window;
+
+  document.querySelectorAll('p').forEach(p => {
     const sup = p.querySelector('sup');
     if (sup && /^\d+\.$/.test(sup.textContent.trim())) {
       logger.debug('[AffiliateLinks] Removing paragraph with superscript citation:');
@@ -177,7 +178,7 @@ function removeParagraphsWithSup(html) {
     }
   });
 
-  return doc.body.innerHTML;
+  return document.body.innerHTML;
 }
 
 function getAffiliateInjected() {
