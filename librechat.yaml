@@ -158,6 +158,9 @@ endpoints:
     minRelevanceScore: 0.7
     maxCitations: 8
     maxCitationsPerFile: 3
+    file_search:
+      files:
+        - file_qa_knowledge_1762640078433
     
  
 # fileConfig:

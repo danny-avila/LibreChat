@@ -1,0 +1,6 @@
+# Test Reports
+/reports/*.html
+/reports/*.json
+
+# Keep reports directory structure
+!/reports/.gitkeep

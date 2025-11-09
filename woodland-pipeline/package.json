@@ -1,0 +1,53 @@
+{
+  "name": "@woodland/knowledge-pipeline",
+  "version": "1.0.0",
+  "description": "Woodland AI Knowledge Dataset Pipeline - Processes QA, training, sales, and document data for RAG and Azure AI Search",
+  "private": true,
+  "main": "scripts/buildKnowledgeDataset.js",
+  "scripts": {
+    "build": "node scripts/buildKnowledgeDataset.js --qa data/qa --training 'data/training/*.json' --sales 'data/sales/*.json' --documents 'data/documents/*.docx' --output build/datasets",
+    "build:qa-only": "node scripts/buildKnowledgeDataset.js --qa data/qa --output build/datasets",
+    "build:incremental": "node scripts/buildKnowledgeDataset.js --qa data/qa --training 'data/training/*.json' --sales 'data/sales/*.json' --documents 'data/documents/*.docx' --output build/datasets --incremental",
+    "validate": "node scripts/validateDataset.js --dir build/datasets --report build/validation_report.json",
+    "index:rag": "node scripts/indexQAKnowledge.js --input build/datasets/unified/all_knowledge.csv",
+    "index:azure": "node scripts/indexQAToAzureSearch.js --input build/datasets/unified/all_knowledge.csv --create-index",
+    "index": "npm run index:rag && npm run index:azure",
+    "pipeline": "npm run build && npm run validate && npm run index",
+  "verify": "node scripts/verifyEmbedding.js --file-id $WOODLAND_QA_FILE_ID",
+  "verify:query": "node scripts/verifyEmbedding.js --file-id $WOODLAND_QA_FILE_ID --query 'oil change'",
+    "dry-run": "node scripts/buildKnowledgeDataset.js --qa data/qa --training 'data/training/*.json' --sales 'data/sales/*.json' --documents 'data/documents/*.docx' --dry-run",
+    "test": "node tests/e2e/runPipelineTests.js",
+    "test:unit": "node tests/unit/testParsers.js",
+    "test:integration": "node tests/integration/testAgentIntegration.js",
+    "test:e2e": "node tests/e2e/runPipelineTests.js",
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e",
+    "test:report": "node tests/e2e/runPipelineTests.js --report tests/reports/test-report.html"
+  },
+  "keywords": [
+    "knowledge-base",
+    "rag",
+    "ai-search",
+    "dataset-builder",
+    "langfuse",
+    "woodland"
+  ],
+  "author": "Woodland Team",
+  "license": "MIT",
+  "dependencies": {
+    "@azure/search-documents": "^12.0.0",
+    "axios": "^1.7.9",
+    "commander": "^12.1.0",
+    "csv-parser": "^3.0.0",
+    "dotenv": "^16.4.5",
+    "form-data": "^4.0.1",
+    "glob": "^11.0.0",
+    "mammoth": "^1.8.0",
+    "uuid": "^11.0.5"
+  },
+  "devDependencies": {
+    "chalk": "^4.1.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

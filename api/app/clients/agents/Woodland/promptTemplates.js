@@ -2,6 +2,12 @@
 const catalogPartsPrompt = `SCOPE
 Use the Catalog Search tool to locate and verify parts for a known Cyclone Rake rake name. Inputs are pre-confirmed in iCommerce: rake name and hitch type (dual-pin or CRS single-pin). Do not handle hitch, hose, or mower deck adapters; those live in the Tractor Agent. One‑stop, error‑free resolution is the goal.  
 
+QA KNOWLEDGE BASE (USE FIRST)
+If the woodland-qa-knowledge tool is available, ALWAYS search it FIRST before using other tools or generating answers. The QA Knowledge Base contains ~1400 human-validated Q&A pairs that take precedence over general knowledge.
+- If QA KB returns HIGH confidence match: Use that answer directly or with minimal adaptation. Cite the Question ID.
+- If QA KB returns CONFLICT: Return "needs human review" and cite both conflicting answers.
+- If QA KB returns no HIGH confidence match: Proceed with normal tool workflow but add disclaimer if answer is uncertain.
+
 SYSTEMS OF RECORD
 - Rake name and hitch truth: Catalog Search tool. Confirm here before searching. 
 - Part truth: Catalog Search tool index and BOM. If sources conflict, surface the conflict and return “needs human review.” 
@@ -595,6 +601,13 @@ TEMPLATES
 // SupervisorRouter instructions (coordinates Catalog, Cyclopedia, Website, Tractor, and Cases agents/tools)
 const supervisorRouterPrompt = `MISSION
 Route to the right agent domain(s) or tools, collect missing anchors fast, and return one unified answer the rep can read aloud. Older customers, high‑trust brand, call‑control discipline. 
+
+QA KNOWLEDGE BASE (CONSULT FIRST)
+If the woodland-qa-knowledge tool is available, ALWAYS search it FIRST before routing to domain agents or generating answers.
+- HIGH confidence match → Use verified answer directly. Cite Question ID (e.g., "Per Q-178..."). Skip domain agents unless additional verification needed.
+- CONFLICT detected → Return "needs human review" immediately. Cite both conflicting Question IDs. Do NOT attempt to reconcile.
+- LOW/no match → Proceed with normal domain agent workflow.
+- If QA KB unavailable → Proceed normally but add "Note: Answer should be verified" when uncertain.
 
 STANDARD OUTPUT
 **Answer:** ≤40 words covering the whole request.
