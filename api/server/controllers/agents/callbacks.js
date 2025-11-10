@@ -41,7 +41,11 @@ class ModelEndHandler {
     }
 
     try {
-      if (metadata.provider === Providers.GOOGLE || graph.clientOptions?.disableStreaming) {
+      const agentContext = graph.getAgentContext(metadata);
+      if (
+        agentContext.provider === Providers.GOOGLE ||
+        agentContext.clientOptions?.disableStreaming
+      ) {
         handleToolCalls(data?.output?.tool_calls, metadata, graph);
       }
 
@@ -49,14 +53,13 @@ class ModelEndHandler {
       if (!usage) {
         return;
       }
-      if (metadata?.model) {
-        usage.model = metadata.model;
+      const modelName = metadata?.ls_model_name || agentContext.clientOptions?.model;
+      if (modelName) {
+        usage.model = modelName;
       }
 
       this.collectedUsage.push(usage);
-      const streamingDisabled = !!(
-        graph.clientOptions?.disableStreaming || graph?.boundModel?.disableStreaming
-      );
+      const streamingDisabled = !!agentContext.clientOptions?.disableStreaming;
       if (!streamingDisabled) {
         return;
       }
