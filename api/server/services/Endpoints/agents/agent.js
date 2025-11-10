@@ -10,6 +10,7 @@ const {
   ErrorTypes,
   EModelEndpoint,
   EToolResources,
+  paramEndpoints,
   isAgentsEndpoint,
   replaceSpecialVars,
   providerEndpointMap,
@@ -92,11 +93,21 @@ const initializeAgent = async ({
     currentFiles = await processFiles(requestFiles);
   }
 
-  currentFiles = filterFilesByEndpointConfig(req, {
-    files: currentFiles,
-    endpoint: agent.endpoint || endpointOption?.endpoint,
-    endpointType: endpointOption?.endpointType,
-  });
+  if (currentFiles && currentFiles.length) {
+    /** Prioritize endpointType derived from agent.endpoint over endpointOption.endpointType; do not default if absent */
+    let endpointType = endpointOption?.endpointType;
+    if (!paramEndpoints.has(agent.endpoint)) {
+      endpointType = EModelEndpoint.custom;
+    } else {
+      endpointType = undefined;
+    }
+
+    currentFiles = filterFilesByEndpointConfig(req, {
+      files: currentFiles,
+      endpoint: agent.endpoint || endpointOption?.endpoint,
+      endpointType,
+    });
+  }
 
   const { attachments, tool_resources } = await primeResources({
     req,
