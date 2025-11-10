@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import type { ZodError } from 'zod';
-import type { TModelsConfig } from './types';
+import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
+import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
-import { apiBaseUrl } from './api-endpoints';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -1737,3 +1737,24 @@ export const specialVariables = {
 };
 
 export type TSpecialVarLabel = `com_ui_special_var_${keyof typeof specialVariables}`;
+
+/**
+ * Retrieves a specific field from the endpoints configuration for a given endpoint key.
+ * Does not infer or default any endpoint type when absent.
+ */
+export function getEndpointField<
+  K extends TConfig[keyof TConfig] extends never ? never : keyof TConfig,
+>(
+  endpointsConfig: TEndpointsConfig | undefined | null,
+  endpoint: EModelEndpoint | string | null | undefined,
+  property: K,
+): TConfig[K] | undefined {
+  if (!endpointsConfig || endpoint === null || endpoint === undefined) {
+    return undefined;
+  }
+  const config = endpointsConfig[endpoint];
+  if (!config) {
+    return undefined;
+  }
+  return config[property];
+}

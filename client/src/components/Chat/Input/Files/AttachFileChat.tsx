@@ -5,12 +5,12 @@ import {
   EModelEndpoint,
   mergeFileConfig,
   isAgentsEndpoint,
+  getEndpointField,
   isAssistantsEndpoint,
   getEndpointFileConfig,
 } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import { useGetFileConfig, useGetEndpointsQuery } from '~/data-provider';
-import { getEndpointField } from '~/utils/endpoints';
 import AttachFileMenu from './AttachFileMenu';
 import AttachFile from './AttachFile';
 
