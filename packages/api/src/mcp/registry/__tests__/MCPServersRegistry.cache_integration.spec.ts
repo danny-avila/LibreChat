@@ -160,13 +160,14 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
       );
     });
 
-    it('should throw error when updating server for non-existent user', async () => {
+    it('should throw error when updating non-existent server (lazy-loads cache)', async () => {
       const userId = 'nonexistent_user';
       const serverName = 'private_server';
 
+      // With lazy-loading, cache is created but server doesn't exist in it
       await expect(
         registry.updatePrivateUserServer(userId, serverName, testParsedConfig),
-      ).rejects.toThrow('No private servers found for user "nonexistent_user".');
+      ).rejects.toThrow('Server "private_server" does not exist in cache. Use add() to create new configs.');
     });
   });
 
@@ -198,12 +199,12 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
       );
     });
 
-    it('should throw error when user has no private server cache', async () => {
+    it('should return undefined when user has no private servers (lazy-loads cache)', async () => {
       const userId = 'user_with_no_cache';
 
-      await expect(registry.getPrivateServerConfig('server_name', userId)).rejects.toThrow(
-        'No private server cache found for user "user_with_no_cache"',
-      );
+      // With lazy-loading, cache is created but is empty
+      const config = await registry.getPrivateServerConfig('server_name', userId);
+      expect(config).toBeUndefined();
     });
 
     it('should isolate private servers between different users', async () => {
