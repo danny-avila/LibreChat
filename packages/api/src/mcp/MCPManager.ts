@@ -41,7 +41,7 @@ export class MCPManager extends UserConnectionManager {
   /** Initializes the MCPManager by setting up server registry and app connections */
   public async initialize(configs: t.MCPServers) {
     await MCPServersInitializer.initialize(configs);
-    this.appConnections = new ConnectionsRepository(registry.sharedAppServers);
+    this.appConnections = new ConnectionsRepository(undefined);
   }
   /** update  config of an mcp server with possibility to change Server Tier based on whether it is private and or its configuration*/
   public async updateConfig(args: {
