@@ -2,7 +2,6 @@ import { logger } from '@librechat/data-schemas';
 import { ConnectionsRepository } from '../ConnectionsRepository';
 import { MCPConnectionFactory } from '../MCPConnectionFactory';
 import { MCPConnection } from '../connection';
-import type { ServerConfigsCache } from '../registry/cache/ServerConfigsCacheFactory';
 import type * as t from '../types';
 
 // Mock external dependencies
@@ -21,11 +20,22 @@ jest.mock('../MCPConnectionFactory', () => ({
 
 jest.mock('../connection');
 
+// Mock the registry
+jest.mock('../registry/MCPServersRegistry', () => ({
+  mcpServersRegistry: {
+    getServerConfig: jest.fn(),
+    getAllServerConfigs: jest.fn(),
+  },
+}));
+
 const mockLogger = logger as jest.Mocked<typeof logger>;
+
+// Import mocked registry
+import { mcpServersRegistry as registry } from '../registry/MCPServersRegistry';
+const mockRegistry = registry as jest.Mocked<typeof registry>;
 
 describe('ConnectionsRepository', () => {
   let repository: ConnectionsRepository;
-  let mockCache: jest.Mocked<ServerConfigsCache>;
   let mockServerConfigs: Record<string, t.ParsedServerConfig>;
   let mockConnection: jest.Mocked<MCPConnection>;
 
@@ -36,18 +46,14 @@ describe('ConnectionsRepository', () => {
       server3: { url: 'ws://localhost:8080', type: 'websocket' },
     };
 
-    // Create mock cache with all required methods
-    mockCache = {
-      get: jest.fn((serverName: string) =>
-        Promise.resolve(mockServerConfigs[serverName] || undefined),
-      ),
-      getAll: jest.fn(() => Promise.resolve(mockServerConfigs)),
-      add: jest.fn(),
-      update: jest.fn(),
-      remove: jest.fn(),
-      getUpdatedAt: jest.fn(),
-      reset: jest.fn(),
-    } as unknown as jest.Mocked<ServerConfigsCache>;
+    // Setup mock registry
+    mockRegistry.getServerConfig = jest.fn((serverName: string, ownerId?: string) =>
+      Promise.resolve(mockServerConfigs[serverName] || undefined),
+    ) as jest.Mock;
+
+    mockRegistry.getAllServerConfigs = jest.fn((ownerId?: string) =>
+      Promise.resolve(mockServerConfigs),
+    ) as jest.Mock;
 
     mockConnection = {
       isConnected: jest.fn().mockResolvedValue(true),
@@ -58,7 +64,8 @@ describe('ConnectionsRepository', () => {
 
     (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
 
-    repository = new ConnectionsRepository(mockCache);
+    // Create repository with undefined ownerId (app-level)
+    repository = new ConnectionsRepository(undefined);
 
     jest.clearAllMocks();
   });
@@ -138,7 +145,7 @@ describe('ConnectionsRepository', () => {
         ...mockServerConfigs.server1,
         cachedAt: configCachedAt,
       };
-      mockCache.get.mockResolvedValue(configWithCachedAt);
+      mockRegistry.getServerConfig.mockResolvedValueOnce(configWithCachedAt);
 
       repository['connections'].set('server1', staleConnection);
 
@@ -183,7 +190,7 @@ describe('ConnectionsRepository', () => {
         ...mockServerConfigs.server1,
         cachedAt: configCachedAt,
       };
-      mockCache.get.mockResolvedValue(configWithCachedAt);
+      mockRegistry.getServerConfig.mockResolvedValueOnce(configWithCachedAt);
 
       repository['connections'].set('server1', freshConnection);
 
