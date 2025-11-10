@@ -26,7 +26,7 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
       - run: |
-          docker build --build-arg RUNNER_VERSION=${{ env.RUNNER_VERSION }} -t ${{ secrets.REGISTRY_LOGIN_SERVER }}/pwd9000-github-runner-lin:${{ env.RUNNER_VERSION }} .
+          docker build --build-arg RUNNER_VERSION=${{ env.RUNNER_VERSION }} --build-arg NODE_MAX_OLD_SPACE_SIZE=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }} -t ${{ secrets.REGISTRY_LOGIN_SERVER }}/pwd9000-github-runner-lin:${{ env.RUNNER_VERSION }} .
 
       - name: 'Push container image to ACR'
         uses: azure/docker-login@v1
