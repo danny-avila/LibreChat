@@ -376,6 +376,8 @@ function disposeClient(client) {
     client.options = null;
   } catch {
     // Ignore errors during disposal
+  } finally {
+    logger.debug('[disposeClient] Client disposed');
   }
 }
 
