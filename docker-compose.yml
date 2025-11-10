@@ -4,6 +4,7 @@
 services:
   api:
     container_name: LibreChat
+    image: ${API_IMAGE:-librechatneo-api}
     ports:
       - "${PORT:-3080}:${PORT:-3080}"
     depends_on:
@@ -116,16 +117,18 @@ services:
 
   searxng:
     container_name: searxng
-    image: searxng/searxng:latest
+    image: ${SEARXNG_IMAGE:-librechatneo-searxng}
+    build:
+      context: ./docker/searxng
     restart: always
     environment:
       - SEARXNG_BASE_URL=${SEARXNG_BASE_URL:-http://searxng:8080}
       - INSTANCE_NAME=${SEARXNG_INSTANCE_NAME:-LibreChat SearxNG}
       - BIND_ADDRESS=0.0.0.0
-    volumes:
-      - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-local_websearch_secret}
 
   ws-local:
+    image: ${WS_LOCAL_IMAGE:-librechatneo-ws-local}
     build:
       context: ./ws-local
     container_name: ws-local
