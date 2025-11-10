@@ -238,6 +238,7 @@ describe('Tool Handlers', () => {
         'userId',
         'DALLE3_API_KEY',
         true,
+        undefined,
       );
     });
 

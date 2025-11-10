@@ -495,11 +495,18 @@ export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
 export const extendedModelEndpointSchema = z.union([eModelEndpointSchema, z.string()]);
 
+/**
+ * Placeholder value used to mask sensitive plugin auth fields in API responses.
+ * This value indicates that a sensitive field has a value but the actual value is not exposed.
+ */
+export const SENSITIVE_FIELD_REDACTED = '<redacted>';
+
 export const tPluginAuthConfigSchema = z.object({
   authField: z.string(),
   label: z.string(),
   description: z.string(),
   optional: z.boolean().optional(),
+  sensitive: z.boolean().optional(),
 });
 
 export type TPluginAuthConfig = z.infer<typeof tPluginAuthConfigSchema>;

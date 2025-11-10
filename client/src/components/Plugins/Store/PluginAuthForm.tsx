@@ -1,7 +1,13 @@
 import { Save } from 'lucide-react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { HoverCard, HoverCardTrigger } from '@librechat/client';
-import { TPlugin, TPluginAuthConfig, TPluginAction } from 'librechat-data-provider';
+import {
+  TPlugin,
+  TPluginAuthConfig,
+  TPluginAction,
+  SENSITIVE_FIELD_REDACTED,
+} from 'librechat-data-provider';
 import PluginTooltip from './PluginTooltip';
 import { useLocalize } from '~/hooks';
 
@@ -9,23 +15,66 @@ type TPluginAuthFormProps = {
   plugin: TPlugin | undefined;
   onSubmit: (installActionData: TPluginAction) => void;
   isEntityTool?: boolean;
+  initialValues?: Record<string, string>;
 };
 
-function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps) {
+function PluginAuthForm({
+  plugin,
+  onSubmit,
+  isEntityTool,
+  initialValues = {},
+}: TPluginAuthFormProps) {
+  const localize = useLocalize();
+  const authConfig = useMemo(() => plugin?.authConfig ?? [], [plugin?.authConfig]);
+
+  // Process initialValues: replace masked placeholders with empty strings for sensitive fields
+  const processedInitialValues = useMemo(() => {
+    const processed: Record<string, string> = {};
+    authConfig.forEach((config) => {
+      const authField = config.authField.split('||')[0];
+      const isSensitive = config.sensitive ?? false;
+      const value = initialValues[authField];
+
+      // For sensitive fields, if value is the masked placeholder, set to empty string
+      // This ensures the input is empty but we know a value exists (via placeholder)
+      if (isSensitive && value === SENSITIVE_FIELD_REDACTED) {
+        processed[authField] = '';
+      } else {
+        processed[authField] = value || '';
+      }
+    });
+    return processed;
+  }, [initialValues, authConfig]);
+
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors, isDirty, isValid, isSubmitting },
-  } = useForm();
+  } = useForm({
+    defaultValues: processedInitialValues,
+  });
 
-  const localize = useLocalize();
-  const authConfig = plugin?.authConfig ?? [];
+  // Track previous initialValues to only reset when they actually change
+  const prevInitialValuesRef = useRef<string>('');
+  const initialValuesKey = JSON.stringify(initialValues);
+
+  useEffect(() => {
+    // Only reset if initialValues prop actually changed (not on every render or when user types)
+    if (prevInitialValuesRef.current !== initialValuesKey) {
+      prevInitialValuesRef.current = initialValuesKey;
+      // Only reset if we have initial values (for edit mode), otherwise let user type freely
+      if (Object.keys(initialValues).length > 0) {
+        reset(processedInitialValues);
+      }
+    }
+  }, [initialValuesKey, processedInitialValues, reset, initialValues]);
 
   return (
     <div className="flex w-full flex-col items-center gap-2">
-      <div className="grid w-full gap-6 sm:grid-cols-2">
+      <div className="w-full">
         <form
-          className="col-span-1 flex w-full flex-col items-start justify-start gap-2"
+          className="flex w-full flex-col items-start justify-start gap-2"
           method="POST"
           onSubmit={handleSubmit((auth) =>
             onSubmit({
@@ -39,6 +88,18 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
           {authConfig.map((config: TPluginAuthConfig, i: number) => {
             const authField = config.authField.split('||')[0];
             const isOptional = config.optional ?? false;
+            const isSensitive = config.sensitive ?? false;
+            // Check if a value exists (for sensitive fields, this will be the masked placeholder)
+            const hasExistingValue =
+              initialValues[authField] !== undefined && initialValues[authField] !== '';
+            // For sensitive fields with existing values, show masked placeholder
+            const placeholder =
+              isSensitive &&
+              hasExistingValue &&
+              initialValues[authField] === SENSITIVE_FIELD_REDACTED
+                ? SENSITIVE_FIELD_REDACTED
+                : undefined;
+
             return (
               <div key={`${authField}-${i}`} className="flex w-full flex-col gap-1">
                 <label
@@ -62,9 +123,14 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
                       aria-describedby={`${authField}-error`}
                       aria-label={config.label}
                       aria-required={!isOptional}
+                      {...(isSensitive && placeholder ? { placeholder } : {})}
                       {...register(authField, {
-                        required: isOptional ? false : `${config.label} is required.`,
-                        ...(isOptional
+                        // For sensitive fields with existing values, make them optional to allow skipping updates
+                        required:
+                          isOptional || (isSensitive && hasExistingValue)
+                            ? false
+                            : `${config.label} is required.`,
+                        ...(isOptional || (isSensitive && hasExistingValue)
                           ? {}
                           : {
                               minLength: {

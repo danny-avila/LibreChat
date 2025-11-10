@@ -7,9 +7,18 @@ const { getUserPluginAuthValue } = require('~/server/services/PluginService');
  * @param {string[]} params.authFields
  * @param {Set<string>} [params.optional]
  * @param {boolean} [params.throwError]
+ * @param {string} [params.pluginKey] - Optional plugin key to make the lookup more specific
+ * @param {boolean} [params.skipEnvVars] - If true, skip checking environment variables (only return user-specific values)
  * @returns
  */
-const loadAuthValues = async ({ userId, authFields, optional, throwError = true }) => {
+const loadAuthValues = async ({
+  userId,
+  authFields,
+  optional,
+  throwError = true,
+  pluginKey,
+  skipEnvVars = false,
+}) => {
   let authValues = {};
 
   /**
@@ -19,12 +28,15 @@ const loadAuthValues = async ({ userId, authFields, optional, throwError = true 
    */
   const findAuthValue = async (fields) => {
     for (const field of fields) {
-      let value = process.env[field];
-      if (value) {
-        return { authField: field, authValue: value };
+      let value = null;
+      if (!skipEnvVars) {
+        value = process.env[field];
+        if (value) {
+          return { authField: field, authValue: value };
+        }
       }
       try {
-        value = await getUserPluginAuthValue(userId, field, throwError);
+        value = await getUserPluginAuthValue(userId, field, throwError, pluginKey);
       } catch (err) {
         if (optional && optional.has(field)) {
           return { authField: field, authValue: undefined };

@@ -476,4 +476,5 @@ module.exports = {
   loadToolWithAuth,
   validateTools,
   loadTools,
+  getAuthFields,
 };

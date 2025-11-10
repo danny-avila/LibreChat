@@ -73,3 +73,20 @@ export const useMCPAuthValuesQuery = (
     },
   );
 };
+
+export const usePluginAuthValuesQuery = (
+  pluginKey: string,
+  config?: UseQueryOptions<t.PluginAuthValuesResponse>,
+): QueryObserverResult<t.PluginAuthValuesResponse> => {
+  return useQuery<t.PluginAuthValuesResponse>(
+    [QueryKeys.pluginAuthValues, pluginKey],
+    () => dataService.getPluginAuthValues(pluginKey),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      enabled: !!pluginKey,
+      ...config,
+    },
+  );
+};

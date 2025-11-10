@@ -8,6 +8,7 @@ const {
   Permissions,
   ToolCallTypes,
   PermissionTypes,
+  SENSITIVE_FIELD_REDACTED,
 } = require('librechat-data-provider');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
@@ -245,8 +246,69 @@ const getToolCalls = async (req, res) => {
   }
 };
 
+/**
+ * Get plugin auth values for a specific tool
+ * @param {ServerRequest} req - The request object
+ * @param {ServerResponse} res - The response object
+ * @returns {Promise<void>} A promise that resolves when the function has completed
+ */
+const getPluginAuthValues = async (req, res) => {
+  try {
+    const { pluginKey } = req.params;
+    const { manifestToolMap } = require('~/app/clients/tools');
+    const { getAuthFields } = require('~/app/clients/tools/util/handleTools');
+
+    const tool = manifestToolMap[pluginKey];
+    if (!tool || !tool.authConfig) {
+      return res.status(404).json({ message: 'Tool not found or has no auth config' });
+    }
+
+    const authFields = getAuthFields(pluginKey);
+    if (!authFields || authFields.length === 0) {
+      return res.status(200).json({ authValues: {} });
+    }
+
+    // Only return user-specific auth values, not system-level environment variables
+    // This ensures users can only see and edit their own credentials
+    const authValues = await loadAuthValues({
+      userId: req.user.id,
+      authFields,
+      throwError: false,
+      pluginKey,
+      skipEnvVars: true,
+    });
+
+    // For sensitive fields, replace actual values with masked placeholders
+    const sensitiveFields = new Set();
+    tool.authConfig.forEach((config) => {
+      if (config.sensitive) {
+        // Handle alternate fields (e.g., "FIELD1||FIELD2")
+        const fields = config.authField.split('||');
+        fields.forEach((field) => sensitiveFields.add(field));
+      }
+    });
+
+    const processedAuthValues = {};
+    Object.keys(authValues).forEach((key) => {
+      if (sensitiveFields.has(key) && authValues[key]) {
+        // Replace sensitive field values with masked placeholder
+        processedAuthValues[key] = SENSITIVE_FIELD_REDACTED;
+      } else {
+        // Keep non-sensitive fields as-is
+        processedAuthValues[key] = authValues[key];
+      }
+    });
+
+    res.status(200).json({ authValues: processedAuthValues });
+  } catch (error) {
+    logger.error('Error getting plugin auth values', error);
+    res.status(500).json({ message: 'Error getting plugin auth values' });
+  }
+};
+
 module.exports = {
   callTool,
   getToolCalls,
   verifyToolAuth,
+  getPluginAuthValues,
 };

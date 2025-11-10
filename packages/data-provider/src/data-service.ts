@@ -316,6 +316,14 @@ export const getVerifyAgentToolAuth = (
   );
 };
 
+export const getPluginAuthValues = (pluginKey: string): Promise<q.PluginAuthValuesResponse> => {
+  return request.get(
+    endpoints.agents({
+      path: `tools/${pluginKey}/auth-values`,
+    }),
+  );
+};
+
 export const callTool = <T extends m.ToolId>({
   toolId,
   toolParams,
