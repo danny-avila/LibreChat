@@ -10,6 +10,7 @@ export interface Endpoint {
   agentNames?: Record<string, string>;
   assistantNames?: Record<string, string>;
   modelIcons?: Record<string, string | undefined>;
+  requiresKey?: boolean;
 }
 
 export interface SelectedValues {

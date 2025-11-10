@@ -159,6 +159,22 @@ export type FileSetter =
   | SetterOrUpdater<Map<string, ExtendedFile>>
   | React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
 
+export interface WebSearchStatus {
+  id: string;
+  phase: string;
+  message: string;
+  timestamp: number;
+  conversationId?: string | null;
+  messageId?: string | null;
+  toolCallId?: string | null;
+  query?: string;
+  url?: string;
+  total?: number;
+  current?: number;
+  blocked?: number;
+  done?: boolean;
+}
+
 export type ActionAuthForm = {
   /* General */
   type: t.AuthTypeEnum;
@@ -536,9 +552,20 @@ export type PromptOption = MentionOption & {
   id: string;
 };
 
+export type TPinnedWebSource = {
+  id: string;
+  url: string;
+  title?: string;
+  snippet?: string;
+  text?: string;
+  score?: number | null;
+  pinnedAt: string;
+};
+
 export type TOptionSettings = {
   showExamples?: boolean;
   isCodeChat?: boolean;
+  pinnedWebSources?: TPinnedWebSource[];
 };
 
 export interface ExtendedFile {

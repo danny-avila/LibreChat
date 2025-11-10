@@ -2,17 +2,37 @@ import {
   AuthType,
   SafeSearchTypes,
   SearchCategories,
-  extractVariableName,
-} from 'librechat-data-provider';
-import { webSearchAuth } from '@librechat/data-schemas';
-import type {
   RerankerTypes,
-  TCustomConfig,
   SearchProviders,
   ScraperProviders,
-  TWebSearchConfig,
+  extractVariableName,
+  type TCustomConfig,
+  type TWebSearchConfig,
 } from 'librechat-data-provider';
+import { webSearchAuth } from '@librechat/data-schemas';
 import type { TWebSearchKeys, TWebSearchCategories } from '@librechat/data-schemas';
+
+const DEFAULT_WS_LOCAL_BASE_URL = 'http://ws-local:7001';
+
+function resolveConfigValue(
+  value: string | undefined,
+  fallbackEnvVar: string,
+  defaultValue: string,
+): string {
+  if (value && typeof value === 'string') {
+    const varName = extractVariableName(value);
+    if (varName) {
+      return process.env[varName] ?? defaultValue;
+    }
+    return value;
+  }
+
+  if (process.env[fallbackEnvVar]) {
+    return process.env[fallbackEnvVar] as string;
+  }
+
+  return defaultValue;
+}
 
 export function extractWebSearchEnvVars({
   keys,
@@ -76,6 +96,11 @@ export async function loadWebSearchAuth({
 }): Promise<WebSearchAuthResult> {
   let authenticated = true;
   const authResult: Partial<TWebSearchConfig> = {};
+  const wsLocalBaseUrl = resolveConfigValue(
+    webSearchConfig?.wsLocalBaseUrl,
+    'WS_LOCAL_BASE_URL',
+    DEFAULT_WS_LOCAL_BASE_URL,
+  );
 
   /** Type-safe iterator for the category-service combinations */
   async function checkAuth<C extends TWebSearchCategories>(
@@ -100,6 +125,31 @@ export async function loadWebSearchAuth({
       : (Object.keys(webSearchAuth[category]) as ServiceType[]);
 
     for (const service of services) {
+      const isLocalService =
+        (category === SearchCategories.PROVIDERS &&
+          service === (SearchProviders.LOCAL as unknown as ServiceType)) ||
+        (category === SearchCategories.SCRAPERS &&
+          service === (ScraperProviders.LOCAL as unknown as ServiceType)) ||
+        (category === SearchCategories.RERANKERS &&
+          service === (RerankerTypes.LOCAL as unknown as ServiceType));
+      const isNoneReranker =
+        category === SearchCategories.RERANKERS &&
+        service === (RerankerTypes.NONE as unknown as ServiceType);
+
+      if (isLocalService || isNoneReranker) {
+        if (category === SearchCategories.PROVIDERS) {
+          authResult.searchProvider = SearchProviders.LOCAL;
+        } else if (category === SearchCategories.SCRAPERS) {
+          authResult.scraperProvider = ScraperProviders.LOCAL;
+        } else if (category === SearchCategories.RERANKERS) {
+          authResult.rerankerType = isNoneReranker ? RerankerTypes.NONE : RerankerTypes.LOCAL;
+        }
+        if (isLocalService) {
+          authResult.wsLocalBaseUrl = wsLocalBaseUrl;
+        }
+        return [true, false];
+      }
+
       // Skip if the service doesn't exist in the webSearchAuth config
       if (!webSearchAuth[category][service]) {
         continue;
@@ -174,6 +224,7 @@ export async function loadWebSearchAuth({
         continue;
       }
     }
+
     return [false, isUserProvided];
   }
 

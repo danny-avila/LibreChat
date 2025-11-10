@@ -1,4 +1,4 @@
-import { EModelEndpoint, extractEnvVariable } from 'librechat-data-provider';
+import { EModelEndpoint, extractEnvVariable, extractVariableName } from 'librechat-data-provider';
 import type { TCustomEndpoints, TEndpoint, TConfig } from 'librechat-data-provider';
 import type { TCustomEndpointsConfig } from '~/types/endpoints';
 import { isUserProvided, normalizeEndpointName } from '~/utils';
@@ -42,13 +42,30 @@ export function loadCustomEndpointsConfig(
       } = endpoint;
       const name = normalizeEndpointName(configName);
 
+      const trimmedApiKey = typeof apiKey === 'string' ? apiKey.trim() : '';
+      const trimmedBaseURL = typeof baseURL === 'string' ? baseURL.trim() : '';
+
       const resolvedApiKey = extractEnvVariable(apiKey ?? '');
       const resolvedBaseURL = extractEnvVariable(baseURL ?? '');
 
+      const apiKeyEnv = extractVariableName(trimmedApiKey);
+      const baseUrlEnv = extractVariableName(trimmedBaseURL);
+
+      const apiKeyUnresolved = !!apiKeyEnv && resolvedApiKey === trimmedApiKey;
+      const baseURLUnresolved = !!baseUrlEnv && resolvedBaseURL === trimmedBaseURL;
+
+      const isOllamaEndpoint = name === 'ollama';
+
+      const userProvideKey = isOllamaEndpoint
+        ? false
+        : isUserProvided(resolvedApiKey) || apiKeyUnresolved || !resolvedApiKey || !resolvedApiKey.trim();
+      const userProvideUrl =
+        isUserProvided(resolvedBaseURL) || baseURLUnresolved || !resolvedBaseURL || !resolvedBaseURL.trim();
+
       customEndpointsConfig[name] = {
         type: EModelEndpoint.custom,
-        userProvide: isUserProvided(resolvedApiKey),
-        userProvideURL: isUserProvided(resolvedBaseURL),
+        userProvide: userProvideKey,
+        userProvideURL: userProvideUrl,
         customParams: customParams as TConfig['customParams'],
         modelDisplayLabel,
         iconURL,

@@ -5,6 +5,7 @@ import * as a from './types/assistants';
 import * as ag from './types/agents';
 import * as m from './types/mutations';
 import * as q from './types/queries';
+import * as w from './types/web';
 import * as f from './types/files';
 import * as config from './config';
 import request from './request';
@@ -84,6 +85,14 @@ export function deletePreset(arg: s.TPreset | undefined): Promise<m.PresetDelete
 
 export function getSearchEnabled(): Promise<boolean> {
   return request.get(endpoints.searchEnabled());
+}
+
+export function runWebSearch(payload: w.WebSearchRequest): Promise<w.WebSearchResponse> {
+  return request.post(endpoints.webSearch(), payload);
+}
+
+export function getWebStatus(): Promise<w.WebStatusResponse> {
+  return request.get(endpoints.webStatus());
 }
 
 export function getUser(): Promise<t.TUser> {

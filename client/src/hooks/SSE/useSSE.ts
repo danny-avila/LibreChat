@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
-import { useSetRecoilState } from 'recoil';
+import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
   request,
   Constants,
@@ -9,14 +9,19 @@ import {
   createPayload,
   LocalStorageKeys,
   removeNullishValues,
+  ErrorTypes,
+  alternateName,
 } from 'librechat-data-provider';
 import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useToastContext } from '@librechat/client';
+import { useLocalize } from '~/hooks';
 import useEventHandlers from './useEventHandlers';
 import store from '~/store';
+import type { WebSearchStatus } from '~/common';
 
 const clearDraft = (conversationId?: string | null) => {
   if (conversationId) {
@@ -26,6 +31,145 @@ const clearDraft = (conversationId?: string | null) => {
     localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}`);
     localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.NEW_CONVO}`);
   }
+};
+
+const API_KEY_MESSAGE_REGEX = /api[\s-]*key/i;
+const API_KEY_CONTEXT_REGEX =
+  /(missing|invalid|provide|provided|available|unavailable|expired|set|configured|no\s+user|no\s*api|not\s+provided|not\s+set|required)/i;
+const API_KEY_ERROR_CODES = new Set<string>(
+  [
+    ErrorTypes.NO_USER_KEY,
+    ErrorTypes.INVALID_USER_KEY,
+    ErrorTypes.EXPIRED_USER_KEY,
+    'invalid_api_key',
+    'no_api_key',
+    'missing_api_key',
+    'api_key_missing',
+  ].map((code) => code.toLowerCase()),
+);
+
+const containsApiKeyError = (rawMessage: string | null, data?: unknown): boolean => {
+  if (!rawMessage && data == null) {
+    return false;
+  }
+
+  const visited = new Set<unknown>();
+  const queue: unknown[] = [];
+
+  if (rawMessage) {
+    queue.push(rawMessage);
+  }
+
+  if (data !== undefined) {
+    queue.push(data);
+  }
+
+  while (queue.length > 0) {
+    const value = queue.shift();
+
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      if (!normalized) {
+        continue;
+      }
+      const lower = normalized.toLowerCase();
+
+      if (API_KEY_ERROR_CODES.has(lower)) {
+        return true;
+      }
+
+      if (API_KEY_MESSAGE_REGEX.test(normalized) && API_KEY_CONTEXT_REGEX.test(normalized)) {
+        return true;
+      }
+
+      continue;
+    }
+
+    if (value == null || typeof value === 'number' || typeof value === 'boolean') {
+      continue;
+    }
+
+    if (typeof value === 'object') {
+      if (visited.has(value)) {
+        continue;
+      }
+      visited.add(value);
+
+      if (Array.isArray(value)) {
+        queue.push(...value);
+      } else {
+        queue.push(...Object.values(value as Record<string, unknown>));
+      }
+    }
+  }
+
+  return false;
+};
+
+const normalizeConversationId = (id?: string | null) => {
+  if (id && id.length) {
+    return id;
+  }
+  return Constants.NEW_CONVO;
+};
+
+const deriveModelStatusReason = ({
+  rawMessage,
+  data,
+}: {
+  rawMessage: string | null;
+  data?: unknown;
+}): 'api' | 'unavailable' | 'connection' | null => {
+  if (containsApiKeyError(rawMessage, data)) {
+    return 'api';
+  }
+
+  const inspect = (value: unknown): string | null => {
+    if (!value) {
+      return null;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.toLowerCase();
+      if (
+        /model/.test(normalized) &&
+        (normalized.includes('not') ||
+          normalized.includes('missing') ||
+          normalized.includes('load') ||
+          normalized.includes('unavailable') ||
+          normalized.includes('inactive'))
+      ) {
+        return 'unavailable';
+      }
+
+      if (normalized.includes('connect') && normalized.includes('failed')) {
+        return 'connection';
+      }
+
+      return null;
+    }
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const result = inspect(entry);
+        if (result) {
+          return result;
+        }
+      }
+    } else if (typeof value === 'object') {
+      for (const val of Object.values(value as Record<string, unknown>)) {
+        const result = inspect(val);
+        if (result) {
+          return result;
+        }
+      }
+    }
+
+    return null;
+  };
+
+  return (inspect(data) as 'unavailable' | 'connection' | null) ??
+    ((inspect(rawMessage) as 'unavailable' | 'connection' | null) ?? null);
 };
 
 type ChatHelpers = Pick<
@@ -48,9 +192,31 @@ export default function useSSE(
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
   const { token, isAuthenticated } = useAuthContext();
+  const { showToast } = useToastContext();
+  const localize = useLocalize();
+  const hasShownApiKeyToast = useRef(false);
   const [completed, setCompleted] = useState(new Set());
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
+  const setModelAvailability = useSetRecoilState(store.modelAvailability);
+  const updateWebSearchStatuses = useRecoilCallback(
+    ({ set, reset }) =>
+      (conversationId: string, status?: WebSearchStatus | null, options?: { reset?: boolean }) => {
+        const atom = store.webSearchStatusFamily(conversationId);
+        if (options?.reset) {
+          reset(atom);
+          return;
+        }
+        if (!status) {
+          return;
+        }
+        set(atom, (prev = []) => {
+          const filtered = prev.filter((entry) => entry.id !== status.id);
+          return [...filtered, { ...status, timestamp: status.timestamp ?? Date.now() }];
+        });
+      },
+    [],
+  );
 
   const {
     setMessages,
@@ -95,6 +261,22 @@ export default function useSSE(
       return;
     }
 
+    const submissionConvoId = normalizeConversationId(
+      submission.userMessage?.conversationId ?? submission.conversation?.conversationId,
+    );
+
+    setModelAvailability((prev) => {
+      if (!prev || !Object.keys(prev).length) {
+        return prev;
+      }
+      if (prev[submissionConvoId]) {
+        const next = { ...prev };
+        delete next[submissionConvoId];
+        return next;
+      }
+      return prev;
+    });
+    hasShownApiKeyToast.current = false;
     let { userMessage } = submission;
 
     const payloadData = createPayload(submission);
@@ -103,6 +285,7 @@ export default function useSSE(
 
     let textIndex = null;
     clearStepMaps();
+    updateWebSearchStatuses(submissionConvoId, null, { reset: true });
 
     const sse = new SSE(payloadData.server, {
       payload: JSON.stringify(payload),
@@ -118,6 +301,24 @@ export default function useSSE(
       }
     });
 
+    sse.addEventListener('websearch_status', (e: MessageEvent) => {
+      try {
+        const status = JSON.parse(e.data) as WebSearchStatus;
+        const conversationId = normalizeConversationId(
+          status.conversationId ?? submissionConvoId,
+        );
+        updateWebSearchStatuses(conversationId, status);
+
+        if (status.done || status.phase === 'complete') {
+          setTimeout(() => {
+            updateWebSearchStatuses(conversationId, null, { reset: true });
+          }, 1500);
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    });
+
     sse.addEventListener('message', (e: MessageEvent) => {
       const data = JSON.parse(e.data);
 
@@ -126,6 +327,18 @@ export default function useSSE(
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins } as EventSubmission);
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
+        const successConvoId = normalizeConversationId(
+          data.conversation?.conversationId ?? submissionConvoId,
+        );
+        setModelAvailability((prev) => {
+          if (prev[successConvoId]) {
+            const next = { ...prev };
+            delete next[successConvoId];
+            return next;
+          }
+          return prev;
+        });
+        updateWebSearchStatuses(successConvoId, null, { reset: true });
         console.log('final', data);
         return;
       } else if (data.created != null) {
@@ -174,6 +387,7 @@ export default function useSSE(
     });
 
     sse.addEventListener('cancel', async () => {
+      updateWebSearchStatuses(submissionConvoId, null, { reset: true });
       const streamKey = (submission as TSubmission | null)?.['initialResponse']?.messageId;
       if (completed.has(streamKey)) {
         setIsSubmitting(false);
@@ -223,14 +437,53 @@ export default function useSSE(
 
       console.log('error in server stream.');
       (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
+      updateWebSearchStatuses(submissionConvoId, null, { reset: true });
 
       let data: TResData | undefined = undefined;
-      try {
-        data = JSON.parse(e.data) as TResData;
-      } catch (error) {
-        console.error(error);
-        console.log(e);
-        setIsSubmitting(false);
+      const rawMessage = typeof e.data === 'string' ? e.data : null;
+      if (rawMessage) {
+        try {
+          data = JSON.parse(rawMessage) as TResData;
+        } catch (error) {
+          console.error(error);
+          console.log(e);
+          setIsSubmitting(false);
+        }
+      } else if (typeof e.data === 'object' && e.data !== null) {
+        data = e.data as TResData;
+      }
+
+      if (!hasShownApiKeyToast.current && containsApiKeyError(rawMessage, data)) {
+        hasShownApiKeyToast.current = true;
+        showToast({
+          message: localize('com_error_no_user_key'),
+          status: 'error',
+        });
+      }
+
+      const availabilityReason = deriveModelStatusReason({ rawMessage, data });
+      if (availabilityReason) {
+        const statusConversationId = normalizeConversationId(
+          data?.conversationId ??
+            data?.conversation?.conversationId ??
+            userMessage.conversationId ??
+            submission.conversation?.conversationId ??
+            submissionConvoId,
+        );
+        const endpoint = submission.conversation?.endpoint ?? submission.endpointOption?.endpoint;
+        const endpointLabel = (endpoint && alternateName[endpoint]) || endpoint;
+        let message = '';
+
+        const providerLabel = endpointLabel ?? localize('com_endpoint_ai');
+        if (availabilityReason === 'api') {
+          message = `${providerLabel} requires an API key or service configuration before it can be used.`;
+        } else if (availabilityReason === 'connection') {
+          message = `${providerLabel} connection failed. Please ensure the service is running.`;
+        } else {
+          message = localize('com_error_endpoint_models_not_loaded', { 0: providerLabel });
+        }
+
+        setModelAvailability((prev) => ({ ...prev, [statusConversationId]: message }));
       }
 
       errorHandler({ data, submission: { ...submission, userMessage } as EventSubmission });
@@ -240,6 +493,7 @@ export default function useSSE(
     sse.stream();
 
     return () => {
+      updateWebSearchStatuses(submissionConvoId, null, { reset: true });
       const isCancelled = sse.readyState <= 1;
       sse.close();
       if (isCancelled) {

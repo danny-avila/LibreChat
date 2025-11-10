@@ -79,6 +79,7 @@ const loadEphemeralAgent = async ({ req, spec, agent_id, endpoint, model_paramet
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;
   const mcpServers = new Set(ephemeralAgent?.mcp);
+  const mcpDisabledTools = ephemeralAgent?.mcpDisabledTools ?? {};
   if (modelSpec?.mcpServers) {
     for (const mcpServer of modelSpec.mcpServers) {
       mcpServers.add(mcpServer);
@@ -108,7 +109,21 @@ const loadEphemeralAgent = async ({ req, spec, agent_id, endpoint, model_paramet
         addedServers.add(mcpServer);
         continue;
       }
-      tools.push(...Object.keys(serverTools));
+      const allServerToolKeys = Object.keys(serverTools);
+      const disabledTools = Array.isArray(mcpDisabledTools[mcpServer])
+        ? new Set(mcpDisabledTools[mcpServer])
+        : null;
+
+      const filteredTools = disabledTools
+        ? allServerToolKeys.filter((toolKey) => !disabledTools.has(toolKey))
+        : allServerToolKeys;
+
+      if (filteredTools.length === 0) {
+        // User disabled every tool for this server
+        continue;
+      }
+
+      tools.push(...filteredTools);
       addedServers.add(mcpServer);
     }
   }

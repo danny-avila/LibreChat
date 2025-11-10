@@ -96,6 +96,11 @@ export type TEndpointOption = Pick<
 
 export type TEphemeralAgent = {
   mcp?: string[];
+  /**
+   * Optional mapping of MCP server names to the MCP tool plugin keys that should be
+   * disabled for that server. When omitted or empty, all tools remain enabled.
+   */
+  mcpDisabledTools?: Record<string, string[]>;
   web_search?: boolean;
   file_search?: boolean;
   execute_code?: boolean;

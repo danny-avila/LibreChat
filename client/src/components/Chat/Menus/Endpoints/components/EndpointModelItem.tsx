@@ -4,14 +4,21 @@ import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider'
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
+import { cn } from '~/utils';
 
 interface EndpointModelItemProps {
   modelId: string | null;
   endpoint: Endpoint;
   isSelected: boolean;
+  disabled?: boolean;
 }
 
-export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointModelItemProps) {
+export function EndpointModelItem({
+  modelId,
+  endpoint,
+  isSelected,
+  disabled = false,
+}: EndpointModelItemProps) {
   const { handleSelectModel } = useModelSelectorContext();
   let isGlobal = false;
   let modelName = modelId;
@@ -35,8 +42,19 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
   return (
     <MenuItem
       key={modelId}
-      onClick={() => handleSelectModel(endpoint, modelId ?? '')}
-      className="flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm"
+      disabled={disabled}
+      onClick={(event) => {
+        if (disabled) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        handleSelectModel(endpoint, modelId ?? '');
+      }}
+      className={cn(
+        'flex w-full items-center justify-between rounded-lg px-2 text-sm',
+        disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+      )}
     >
       <div className="flex w-full min-w-0 items-center gap-2 px-1 py-1">
         {avatarUrl ? (
@@ -82,8 +100,10 @@ export function renderEndpointModels(
   models: Array<{ name: string; isGlobal?: boolean }>,
   selectedModel: string | null,
   filteredModels?: string[],
+  options?: { disabled?: boolean },
 ) {
   const modelsToRender = filteredModels || models.map((model) => model.name);
+  const disabled = options?.disabled ?? false;
 
   return modelsToRender.map(
     (modelId) =>
@@ -93,6 +113,7 @@ export function renderEndpointModels(
           modelId={modelId}
           endpoint={endpoint}
           isSelected={selectedModel === modelId}
+          disabled={disabled}
         />
       ),
   );

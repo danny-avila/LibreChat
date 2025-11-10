@@ -71,7 +71,7 @@ const localStorageAtoms = {
   cacheTTS: atomWithLocalStorage('cacheTTS', true),
 
   // Account settings
-  UsernameDisplay: atomWithLocalStorage('UsernameDisplay', true),
+  UsernameDisplay: atomWithLocalStorage('UsernameDisplay', false),
 };
 
 export default { ...staticAtoms, ...localStorageAtoms };

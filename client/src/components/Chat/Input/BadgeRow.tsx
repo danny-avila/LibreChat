@@ -22,6 +22,8 @@ import Artifacts from './Artifacts';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
 import store from '~/store';
+import { Constants } from 'librechat-data-provider';
+import WebSearchStatusBar from './WebSearchStatusBar';
 
 interface BadgeRowProps {
   showEphemeralBadges?: boolean;
@@ -163,6 +165,10 @@ function BadgeRow({
 
   const allBadges = useChatBadges();
   const isEditing = useRecoilValue(store.isEditingBadges);
+  const normalizedConversationId = conversationId ?? Constants.NEW_CONVO;
+  const webSearchStatuses = useRecoilValue(
+    store.webSearchStatusFamily(normalizedConversationId),
+  );
 
   const badges = useMemo(
     () => allBadges.filter((badge) => badge.isAvailable !== false),
@@ -321,7 +327,11 @@ function BadgeRow({
 
   return (
     <BadgeRowProvider conversationId={conversationId} isSubmitting={isSubmitting}>
-      <div ref={containerRef} className="relative flex flex-wrap items-center gap-2">
+      <div
+        ref={containerRef}
+        className="relative flex flex-wrap items-center gap-2"
+        data-badge-row-container
+      >
         {showEphemeralBadges === true && <ToolsDropdown />}
         {tempBadges.map((badge, index) => (
           <React.Fragment key={badge.id}>
@@ -396,6 +406,7 @@ function BadgeRow({
           </div>
         )}
       </div>
+      <WebSearchStatusBar statuses={webSearchStatuses} />
       <ToolDialogs />
     </BadgeRowProvider>
   );

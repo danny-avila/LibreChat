@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ApiKeyDialog from './ApiKeyDialog';
 import { AuthType, SearchCategories, RerankerTypes } from 'librechat-data-provider';
-import { useGetStartupConfig } from '~/data-provider';
+import { useGetStartupConfig, useWebStatusQuery } from '~/data-provider';
 
 // Mock useLocalize to just return the key
 jest.mock('~/hooks', () => ({
@@ -11,6 +11,7 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: jest.fn(),
+  useWebStatusQuery: jest.fn(),
 }));
 
 const mockRegister = (name: string) => ({
@@ -37,8 +38,16 @@ const defaultProps = {
 
 describe('ApiKeyDialog', () => {
   const mockUseGetStartupConfig = useGetStartupConfig as jest.Mock;
+  const mockUseWebStatusQuery = useWebStatusQuery as jest.Mock;
 
-  afterEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    mockUseWebStatusQuery.mockReturnValue({ data: { ok: true }, isLoading: false });
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+    mockUseWebStatusQuery.mockReset();
+  });
 
   it('shows all dropdowns and both reranker fields when no config is set', () => {
     mockUseGetStartupConfig.mockReturnValue({ data: {} });

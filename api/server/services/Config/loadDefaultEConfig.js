@@ -1,6 +1,41 @@
 const { EModelEndpoint, getEnabledEndpoints } = require('librechat-data-provider');
 const loadAsyncEndpoints = require('./loadAsyncEndpoints');
 const { config } = require('./EndpointService');
+const { generateConfig } = require('~/server/utils/handleText');
+
+const fallbackConfigs = {
+  [EModelEndpoint.openAI]: () => ({ userProvide: true }),
+  [EModelEndpoint.google]: () => ({ userProvide: true }),
+  [EModelEndpoint.anthropic]: () => ({ userProvide: true }),
+  [EModelEndpoint.bedrock]: () => ({ userProvide: true }),
+  [EModelEndpoint.assistants]: () =>
+    generateConfig('user_provided', undefined, EModelEndpoint.assistants),
+  [EModelEndpoint.azureAssistants]: () =>
+    Object.assign(
+      generateConfig('user_provided', undefined, EModelEndpoint.azureAssistants),
+      { userProvideURL: true },
+    ),
+  [EModelEndpoint.azureOpenAI]: () => ({ userProvide: true, userProvideURL: true }),
+  [EModelEndpoint.chatGPTBrowser]: () => ({ userProvide: true }),
+  [EModelEndpoint.gptPlugins]: () => ({
+    userProvide: true,
+    azure: false,
+    availableAgents: ['classic', 'functions'],
+  }),
+};
+
+const resolveConfig = (endpointKey, value) => {
+  if (value) {
+    return value;
+  }
+
+  const fallbackFactory = fallbackConfigs[endpointKey];
+  if (typeof fallbackFactory === 'function') {
+    return fallbackFactory();
+  }
+
+  return value;
+};
 
 /**
  * Load async endpoints and return a configuration object
@@ -14,16 +49,34 @@ async function loadDefaultEndpointsConfig(appConfig) {
   const enabledEndpoints = getEnabledEndpoints();
 
   const endpointConfig = {
-    [EModelEndpoint.openAI]: config[EModelEndpoint.openAI],
+    [EModelEndpoint.openAI]: resolveConfig(
+      EModelEndpoint.openAI,
+      config[EModelEndpoint.openAI],
+    ),
     [EModelEndpoint.agents]: config[EModelEndpoint.agents],
-    [EModelEndpoint.assistants]: assistants,
-    [EModelEndpoint.azureAssistants]: azureAssistants,
-    [EModelEndpoint.azureOpenAI]: azureOpenAI,
-    [EModelEndpoint.google]: google,
-    [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
-    [EModelEndpoint.gptPlugins]: gptPlugins,
-    [EModelEndpoint.anthropic]: config[EModelEndpoint.anthropic],
-    [EModelEndpoint.bedrock]: config[EModelEndpoint.bedrock],
+    [EModelEndpoint.assistants]: resolveConfig(EModelEndpoint.assistants, assistants),
+    [EModelEndpoint.azureAssistants]: resolveConfig(
+      EModelEndpoint.azureAssistants,
+      azureAssistants,
+    ),
+    [EModelEndpoint.azureOpenAI]: resolveConfig(
+      EModelEndpoint.azureOpenAI,
+      azureOpenAI,
+    ),
+    [EModelEndpoint.google]: resolveConfig(EModelEndpoint.google, google),
+    [EModelEndpoint.chatGPTBrowser]: resolveConfig(
+      EModelEndpoint.chatGPTBrowser,
+      chatGPTBrowser,
+    ),
+    [EModelEndpoint.gptPlugins]: resolveConfig(EModelEndpoint.gptPlugins, gptPlugins),
+    [EModelEndpoint.anthropic]: resolveConfig(
+      EModelEndpoint.anthropic,
+      config[EModelEndpoint.anthropic],
+    ),
+    [EModelEndpoint.bedrock]: resolveConfig(
+      EModelEndpoint.bedrock,
+      config[EModelEndpoint.bedrock],
+    ),
   };
 
   const orderedAndFilteredEndpoints = enabledEndpoints.reduce((config, key, index) => {

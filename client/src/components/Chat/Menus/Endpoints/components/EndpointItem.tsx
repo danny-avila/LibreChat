@@ -11,6 +11,7 @@ import { ModelSpecItem } from './ModelSpecItem';
 import { filterModels } from '../utils';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import { useEndpointKeyStatus } from '~/hooks/Endpoint';
 
 interface EndpointItemProps {
   endpoint: Endpoint;
@@ -66,6 +67,7 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
     endpointSearchValues,
     setEndpointSearchValue,
     endpointRequiresUserKey,
+    endpointsConfig,
   } = useModelSelectorContext();
   const {
     model: selectedModel,
@@ -83,6 +85,8 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
 
   const searchValue = endpointSearchValues[endpoint.value] || '';
   const isUserProvided = useMemo(() => endpointRequiresUserKey(endpoint.value), [endpoint.value]);
+  const { requiresKey, keyProvided } = useEndpointKeyStatus(endpoint.value, endpointsConfig);
+  const isLocked = requiresKey && !keyProvided;
 
   const renderIconLabel = () => (
     <div className="flex items-center gap-2">
@@ -95,6 +99,7 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         className={cn(
           'truncate text-left',
           isUserProvided ? 'group-hover:w-24 group-focus:w-24' : '',
+          isLocked ? 'opacity-60' : '',
         )}
       >
         {endpoint.label}
@@ -140,7 +145,10 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         label={
           <div
             onClick={() => handleSelectEndpoint(endpoint)}
-            className="group flex w-full flex-shrink cursor-pointer items-center justify-between rounded-xl px-1 py-1 text-sm"
+            className={cn(
+              'group flex w-full flex-shrink cursor-pointer items-center justify-between rounded-xl px-1 py-1 text-sm',
+              isLocked ? 'opacity-60' : '',
+            )}
           >
             {renderIconLabel()}
             {isUserProvided && (
@@ -161,19 +169,45 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
             ))}
             {/* Render endpoint models */}
             {filteredModels
-              ? renderEndpointModels(endpoint, endpoint.models || [], selectedModel, filteredModels)
-              : endpoint.models && renderEndpointModels(endpoint, endpoint.models, selectedModel)}
+              ? renderEndpointModels(
+                  endpoint,
+                  endpoint.models || [],
+                  selectedModel,
+                  filteredModels,
+                  { disabled: isLocked },
+                )
+              : endpoint.models &&
+                renderEndpointModels(endpoint, endpoint.models, selectedModel, undefined, {
+                  disabled: isLocked,
+                })}
           </>
         )}
       </Menu>
     );
   } else {
+    const isUnavailable = !endpoint.hasModels && (!endpoint.models || endpoint.models.length === 0);
+    const unavailableMessage = isUnavailable
+      ? endpoint.value === 'ollama'
+        ? localize('com_error_endpoint_no_local_models')
+        : localize('com_error_endpoint_models_not_loaded', { 0: endpoint.label })
+      : null;
     return (
       <MenuItem
         id={`endpoint-${endpoint.value}-menu`}
         key={`endpoint-${endpoint.value}-item`}
-        onClick={() => handleSelectEndpoint(endpoint)}
-        className="flex h-8 w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2 text-sm"
+        disabled={isLocked || isUnavailable}
+        onClick={(event) => {
+          if (isLocked || isUnavailable) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          handleSelectEndpoint(endpoint);
+        }}
+        className={cn(
+          'flex w-full flex-col gap-1 rounded-xl px-3 py-2 text-sm',
+          isLocked || isUnavailable ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+        )}
       >
         <div className="group flex w-full min-w-0 items-center justify-between">
           {renderIconLabel()}
@@ -200,6 +234,11 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
             )}
           </div>
         </div>
+        {isUnavailable && (
+          <div className="mt-2 w-full text-left text-xs text-text-secondary">
+            {unavailableMessage}
+          </div>
+        )}
       </MenuItem>
     );
   }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button, OGDialog, OGDialogTemplate } from '@librechat/client';
 import {
   AuthType,
@@ -10,8 +10,9 @@ import {
 import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
 import InputSection, { type DropdownOption } from './InputSection';
-import { useGetStartupConfig } from '~/data-provider';
+import { useGetStartupConfig, useWebStatusQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 export default function ApiKeyDialog({
   isOpen,
@@ -49,6 +50,37 @@ export default function ApiKeyDialog({
     config?.webSearch?.scraperProvider || ScraperProviders.FIRECRAWL,
   );
 
+  const isLocalProvider = selectedProvider === SearchProviders.LOCAL;
+  const { data: webStatus, isLoading: webStatusLoading } = useWebStatusQuery({
+    enabled: isLocalProvider,
+  });
+
+  const statusText = useMemo(() => {
+    if (!isLocalProvider) {
+      return null;
+    }
+    if (webStatusLoading) {
+      return localize('com_ui_web_search_status_checking');
+    }
+    if (webStatus?.ok) {
+      return localize('com_ui_web_search_status_running');
+    }
+    return localize('com_ui_web_search_status_unavailable');
+  }, [isLocalProvider, webStatusLoading, webStatus?.ok, localize]);
+
+  const statusClasses = useMemo(() => {
+    if (!isLocalProvider) {
+      return '';
+    }
+    if (webStatusLoading) {
+      return 'bg-amber-500/15 text-amber-500';
+    }
+    if (webStatus?.ok) {
+      return 'bg-emerald-500/15 text-emerald-500';
+    }
+    return 'bg-red-500/15 text-red-500';
+  }, [isLocalProvider, webStatusLoading, webStatus?.ok]);
+
   const providerOptions: DropdownOption[] = [
     {
       key: SearchProviders.SERPER,
@@ -77,6 +109,10 @@ export default function ApiKeyDialog({
           type: 'password' as const,
         },
       },
+    },
+    {
+      key: SearchProviders.LOCAL,
+      label: localize('com_ui_web_search_provider_local'),
     },
   ];
 
@@ -117,6 +153,14 @@ export default function ApiKeyDialog({
         },
       },
     },
+    {
+      key: RerankerTypes.LOCAL,
+      label: localize('com_ui_web_search_reranker_local'),
+    },
+    {
+      key: RerankerTypes.NONE,
+      label: localize('com_ui_web_search_reranker_none'),
+    },
   ];
 
   const scraperOptions: DropdownOption[] = [
@@ -151,6 +195,10 @@ export default function ApiKeyDialog({
           },
         },
       },
+    },
+    {
+      key: ScraperProviders.LOCAL,
+      label: localize('com_ui_web_search_scraper_local'),
     },
   ];
 
@@ -190,22 +238,36 @@ export default function ApiKeyDialog({
           <>
             <div className="mb-4 text-center font-medium">{localize('com_ui_web_search')}</div>
             <form onSubmit={handleSubmit(onSubmit)}>
-              {/* Provider Section */}
-              {providerAuthType !== AuthType.SYSTEM_DEFINED && (
-                <InputSection
-                  title={localize('com_ui_web_search_provider')}
-                  selectedKey={selectedProvider}
-                  onSelectionChange={handleProviderChange}
-                  dropdownOptions={providerOptions}
-                  showDropdown={!config?.webSearch?.searchProvider}
-                  register={register}
-                  dropdownOpen={dropdownOpen.provider}
-                  setDropdownOpen={(open) =>
-                    setDropdownOpen((prev) => ({ ...prev, provider: open }))
-                  }
-                  dropdownKey="provider"
-                />
+          {/* Provider Section */}
+          {providerAuthType !== AuthType.SYSTEM_DEFINED && (
+            <>
+              <InputSection
+                title={localize('com_ui_web_search_provider')}
+                selectedKey={selectedProvider}
+                onSelectionChange={handleProviderChange}
+                dropdownOptions={providerOptions}
+                showDropdown={!config?.webSearch?.searchProvider}
+                register={register}
+                dropdownOpen={dropdownOpen.provider}
+                setDropdownOpen={(open) =>
+                  setDropdownOpen((prev) => ({ ...prev, provider: open }))
+                }
+                dropdownKey="provider"
+              />
+              {isLocalProvider && statusText && (
+                <div className="mb-4">
+                  <span
+                    className={cn(
+                      'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium',
+                      statusClasses,
+                    )}
+                  >
+                    {statusText}
+                  </span>
+                </div>
               )}
+            </>
+          )}
 
               {/* Scraper Section */}
               {scraperAuthType !== AuthType.SYSTEM_DEFINED && (

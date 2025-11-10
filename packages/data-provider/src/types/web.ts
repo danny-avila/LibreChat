@@ -11,8 +11,8 @@ export enum DATE_RANGE {
   PAST_YEAR = 'y',
 }
 
-export type SearchProvider = 'serper' | 'searxng';
-export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'none';
+export type SearchProvider = 'local' | 'serper' | 'searxng';
+export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'none' | 'local';
 
 export interface Highlight {
   score: number;
@@ -74,6 +74,7 @@ export interface SearchConfig {
   serperApiKey?: string;
   searxngInstanceUrl?: string;
   searxngApiKey?: string;
+  wsLocalBaseUrl?: string;
 }
 
 export type References = {
@@ -195,6 +196,54 @@ export type UsedReferences = {
   originalIndex: number;
   reference: MediaReference;
 }[];
+
+export interface WebDoc {
+  url: string;
+  title?: string;
+  snippet?: string;
+  text?: string;
+  lang?: string | null;
+  tokens?: number;
+  score?: number | null;
+  fetchedAt?: string;
+}
+
+export interface WebSearchRequest {
+  operation: 'search_and_read' | 'read';
+  query?: string;
+  urls?: string[];
+  k?: number;
+  max_chars_per_doc?: number;
+  allow_rerank?: boolean;
+}
+
+export interface WebSearchResponse {
+  docs: WebDoc[];
+  blocked?: Array<{ url: string; reason: string }>;
+  meta?: {
+    tookMs?: number;
+    operation?: string;
+    totalDocs?: number;
+  };
+}
+
+export interface WebStatusResponse {
+  ok: boolean;
+  authenticated: boolean;
+  reason?: string;
+  search?: {
+    kind?: string;
+    ok: boolean;
+  };
+  scraper?: {
+    kind?: string;
+    ok: boolean;
+  };
+  rerank?: {
+    kind?: string;
+    ok: boolean;
+  };
+}
 
 /** Firecrawl */
 
