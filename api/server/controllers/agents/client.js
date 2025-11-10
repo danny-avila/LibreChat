@@ -13,7 +13,6 @@ const {
   memoryInstructions,
   getTransactionsConfig,
   createMemoryProcessor,
-  addBedrockCacheControl,
 } = require('@librechat/api');
 const {
   Callback,
