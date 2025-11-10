@@ -72,10 +72,11 @@ Since both containers live on the compose network, keep them alongside the API s
 
 ## Quick Reference
 
-| Service  | Source / Image                    | Internal URL          | Config Highlights                                   | Responsibilities                                     |
-|----------|-----------------------------------|-----------------------|-----------------------------------------------------|------------------------------------------------------|
-| searxng  | `searxng/searxng:latest` + `docker/searxng/settings.yml` | `http://searxng:8080` | `SEARXNG_BASE_URL`, engine list in `settings.yml`   | Aggregate meta-search results                         |
-| ws-local | Built from `./ws-local` (Playwright v1.56.1)             | `http://ws-local:7001` | Env limits in `docker-compose.yml`, `ws-local/src`  | Orchestrate search, scraping, rerank, safety filtering |
+| Service  | Source / Image                              | Internal URL          | Config Highlights                                    | Responsibilities                                     |
+|----------|---------------------------------------------|-----------------------|------------------------------------------------------|------------------------------------------------------|
+| searxng  | `${SEARXNG_IMAGE:-searxng/searxng:latest}`   | `http://searxng:8080` | Configure via env (`SEARXNG_BASE_URL`, etc.)         | Aggregate meta-search results                         |
+| ws-local | `ws-local/Dockerfile` → `${WS_LOCAL_IMAGE:-librechatneo-ws-local}` | `http://ws-local:7001` | Env limits in `docker-compose.yml`, `WS_LOCAL_BASE_URL` in API | Orchestrate search, scraping, rerank, safety filtering |
 
-Use this document whenever you customize browsing, upgrade Playwright/SearxNG, or debug web-search behavior in LibreChat.
+### Pre-built Images & CI
 
+`docker-compose.yml` tags the services with overridable image names (e.g., `API_IMAGE`, `WS_LOCAL_IMAGE`, `SEARXNG_IMAGE`). Build/push the API and ws-local images in CI so deploy targets can `docker compose pull && docker compose up -d`. SearxNG defaults to the upstream image, so no custom build is necessary unless you want to pin a fork. Use this document whenever you customize browsing, upgrade Playwright/SearxNG, or debug web-search behavior in LibreChat.
