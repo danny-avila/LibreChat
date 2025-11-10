@@ -350,6 +350,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         /** Placeholder used for UI purposes */
         continue;
       }
+      //TODO: the config needs to be fetched from the registry
       if (serverName && options.req?.config?.mcpConfig?.[serverName] == null) {
         logger.warn(
           `MCP server "${serverName}" for "${toolName}" tool is not configured${agent?.id != null && agent.id ? ` but attached to "${agent.id}"` : ''}`,

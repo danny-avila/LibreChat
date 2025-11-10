@@ -10,12 +10,12 @@ import type { RequestBody } from '~/types';
 import type * as t from './types';
 import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
-import { MCPServerInspector } from './registry/MCPServerInspector';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { mcpServersRegistry as registry } from './registry/MCPServersRegistry';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
+import { MCPToolBox } from './MCPToolBox';
 
 /**
  * Centralized manager for MCP server connections and tool execution.
@@ -42,6 +42,7 @@ export class MCPManager extends UserConnectionManager {
   public async initialize(configs: t.MCPServers) {
     await MCPServersInitializer.initialize(configs);
     this.appConnections = new ConnectionsRepository(undefined);
+    this.appToolBox = new MCPToolBox(undefined);
   }
   /** update  config of an mcp server with possibility to change Server Tier based on whether it is private and or its configuration*/
   public async updateConfig(args: {
@@ -81,14 +82,11 @@ export class MCPManager extends UserConnectionManager {
 
   /** Returns all available tool functions from app-level connections */
   public async getAppToolFunctions(): Promise<t.LCAvailableTools> {
-    const toolFunctions: t.LCAvailableTools = {};
-    const configs = await registry.getAllServerConfigs();
-    for (const config of Object.values(configs)) {
-      if (config.toolFunctions != null) {
-        Object.assign(toolFunctions, config.toolFunctions);
-      }
+    if (!this.appToolBox || !this.appConnections) {
+      return {};
     }
-    return toolFunctions;
+    const appConnections = await this.appConnections.getAll();
+    return this.appToolBox.getAllTools(appConnections);
   }
 
   /** Returns all available tool functions from all connections available to user */
@@ -98,10 +96,11 @@ export class MCPManager extends UserConnectionManager {
   ): Promise<t.LCAvailableTools | null> {
     try {
       if (this.appConnections && (await this.appConnections.has(serverName))) {
-        return MCPServerInspector.getToolFunctions(
-          serverName,
-          await this.appConnections.get(serverName),
-        );
+        if (!this.appToolBox) {
+          return null;
+        }
+        const connection = await this.appConnections.get(serverName);
+        return this.appToolBox.getToolsForServer(serverName, connection);
       }
 
       const userConnections = this.getUserConnections(userId);
@@ -112,7 +111,9 @@ export class MCPManager extends UserConnectionManager {
         return null;
       }
 
-      return MCPServerInspector.getToolFunctions(serverName, userConnections.get(serverName)!);
+      const userToolBox = this.getOrCreateUserToolBox(userId);
+      const connection = userConnections.get(serverName)!;
+      return userToolBox.getToolsForServer(serverName, connection);
     } catch (error) {
       logger.warn(
         `[getServerToolFunctions] Error getting tool functions for server ${serverName}`,
