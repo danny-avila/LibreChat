@@ -5,6 +5,8 @@ module.exports = {
   testEnvironmentOptions: {
     url: 'http://localhost:3080',
   },
+  maxWorkers: process.env.CI ? 1 : '50%',
+  workerIdleMemoryLimit: '512MB',
   collectCoverage: true,
   collectCoverageFrom: [
     'src/**/*.{js,jsx,ts,tsx}',
