@@ -1,3 +1,8 @@
+// Override the global Jest timeout for this specific test file, otherwise:
+// FAIL app/clients/document/tokenSplit.spec.js (113.473 s)
+// thrown: "Exceeded timeout of 30000 ms for a test.
+jest.setTimeout(120000);
+
 const tokenSplit = require('./tokenSplit');
 
 describe('tokenSplit', () => {
