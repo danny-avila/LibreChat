@@ -94,17 +94,14 @@ const initializeAgent = async ({
   }
 
   if (currentFiles && currentFiles.length) {
-    /** Prioritize endpointType derived from agent.endpoint over endpointOption.endpointType; do not default if absent */
-    let endpointType = endpointOption?.endpointType;
+    let endpointType;
     if (!paramEndpoints.has(agent.endpoint)) {
       endpointType = EModelEndpoint.custom;
-    } else {
-      endpointType = undefined;
     }
 
     currentFiles = filterFilesByEndpointConfig(req, {
       files: currentFiles,
-      endpoint: agent.endpoint || endpointOption?.endpoint,
+      endpoint: agent.endpoint,
       endpointType,
     });
   }
