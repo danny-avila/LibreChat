@@ -42,11 +42,22 @@ class ModelEndHandler {
 
     try {
       const agentContext = graph.getAgentContext(metadata);
-      if (
-        agentContext.provider === Providers.GOOGLE ||
-        agentContext.clientOptions?.disableStreaming
-      ) {
-        handleToolCalls(data?.output?.tool_calls, metadata, graph);
+      const isGoogle = agentContext.provider === Providers.GOOGLE;
+      const streamingDisabled = !!agentContext.clientOptions?.disableStreaming;
+
+      const toolCalls = data?.output?.tool_calls;
+      let hasUnprocessedToolCalls = false;
+      if (Array.isArray(toolCalls) && toolCalls.length > 0 && graph?.toolCallStepIds?.has) {
+        try {
+          hasUnprocessedToolCalls = toolCalls.some(
+            (tc) => tc?.id && !graph.toolCallStepIds.has(tc.id),
+          );
+        } catch {
+          hasUnprocessedToolCalls = false;
+        }
+      }
+      if (isGoogle || streamingDisabled || hasUnprocessedToolCalls) {
+        handleToolCalls(toolCalls, metadata, graph);
       }
 
       const usage = data?.output?.usage_metadata;
@@ -59,7 +70,6 @@ class ModelEndHandler {
       }
 
       this.collectedUsage.push(usage);
-      const streamingDisabled = !!agentContext.clientOptions?.disableStreaming;
       if (!streamingDisabled) {
         return;
       }
