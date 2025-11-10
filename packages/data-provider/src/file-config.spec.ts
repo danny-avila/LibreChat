@@ -546,7 +546,6 @@ describe('getEndpointFileConfig', () => {
       const result = getEndpointFileConfig({
         fileConfig,
         endpoint: EModelEndpoint.assistants,
-        endpointType: EModelEndpoint.assistants,
       });
 
       expect(result.disabled).toBe(false);
@@ -568,7 +567,6 @@ describe('getEndpointFileConfig', () => {
       const result = getEndpointFileConfig({
         fileConfig,
         endpoint: EModelEndpoint.azureAssistants,
-        endpointType: EModelEndpoint.azureAssistants,
       });
 
       expect(result.disabled).toBe(true);
@@ -1002,6 +1000,98 @@ describe('getEndpointFileConfig', () => {
       });
       expect(anthropicResult.disabled).toBe(false);
       expect(anthropicResult.fileLimit).toBe(15);
+    });
+  });
+
+  describe('user-configured default behavior', () => {
+    it('should use user-configured default as effective default when endpoint not found', () => {
+      const dynamicConfig = {
+        endpoints: {
+          default: {
+            fileLimit: 7,
+          },
+        },
+      };
+
+      const merged = mergeFileConfig(dynamicConfig);
+      const result = getEndpointFileConfig({
+        fileConfig: merged,
+        endpoint: EModelEndpoint.google,
+      });
+
+      expect(result.fileLimit).toBe(7);
+      expect(result.disabled).toBe(false);
+      expect(result.supportedMimeTypes).toBeDefined();
+      expect(Array.isArray(result.supportedMimeTypes)).toBe(true);
+      expect(result.supportedMimeTypes!.length).toBeGreaterThan(0);
+    });
+
+    it('should merge endpoint config against user default (not base default)', () => {
+      const dynamicConfig = {
+        endpoints: {
+          default: {
+            fileLimit: 7,
+          },
+          google: {
+            fileSizeLimit: 123,
+          },
+        },
+      };
+
+      const merged = mergeFileConfig(dynamicConfig);
+      const result = getEndpointFileConfig({
+        fileConfig: merged,
+        endpoint: EModelEndpoint.google,
+      });
+
+      /** fileLimit should come from user default */
+      expect(result.fileLimit).toBe(7);
+      /** fileSizeLimit should come from endpoint (converted to bytes) */
+      expect(result.fileSizeLimit).toBe(123 * 1024 * 1024);
+    });
+
+    it('should respect user-configured default supportedMimeTypes override', () => {
+      const dynamicConfig = {
+        endpoints: {
+          default: {
+            supportedMimeTypes: ['^text\\/plain$'],
+          },
+        },
+      };
+
+      const merged = mergeFileConfig(dynamicConfig);
+      const result = getEndpointFileConfig({
+        fileConfig: merged,
+      });
+
+      /** Only text/plain should be allowed */
+      expect(result.supportedMimeTypes).toBeDefined();
+      expect(result.supportedMimeTypes!.length).toBe(1);
+      const [onlyRegex] = result.supportedMimeTypes as RegExp[];
+      expect(onlyRegex.test('text/plain')).toBe(true);
+      expect(onlyRegex.test('image/png')).toBe(false);
+    });
+
+    it('should propagate disabled from user default across fallbacks', () => {
+      const dynamicConfig = {
+        endpoints: {
+          default: {
+            disabled: true,
+          },
+        },
+      };
+
+      const merged = mergeFileConfig(dynamicConfig);
+      const result = getEndpointFileConfig({
+        fileConfig: merged,
+        endpoint: EModelEndpoint.google,
+      });
+
+      expect(result.disabled).toBe(true);
+      expect(result.fileLimit).toBe(0);
+      expect(result.fileSizeLimit).toBe(0);
+      expect(result.totalSizeLimit).toBe(0);
+      expect(result.supportedMimeTypes).toEqual([]);
     });
   });
 });

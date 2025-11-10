@@ -375,7 +375,12 @@ export function getEndpointFileConfig(params: {
     return fileConfig.endpoints.default;
   }
 
-  const defaultConfig = mergedFileConfig.endpoints.default ?? fileConfig.endpoints.default;
+  /** Compute an effective default by merging user-configured default over the base default */
+  const baseDefaultConfig = fileConfig.endpoints.default;
+  const userDefaultConfig = mergedFileConfig.endpoints.default;
+  const defaultConfig = userDefaultConfig
+    ? mergeWithDefault(userDefaultConfig, baseDefaultConfig, 'default')
+    : baseDefaultConfig;
 
   const normalizedEndpoint = normalizeEndpointName(endpoint ?? '');
   const standardEndpoints = new Set([
