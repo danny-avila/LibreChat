@@ -1213,6 +1213,7 @@ class BaseClient {
       attachments,
       {
         provider: this.options.agent?.provider,
+        endpoint: this.options.agent?.endpoint,
         useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
       },
       getStrategyFunctions,
@@ -1228,7 +1229,10 @@ class BaseClient {
     const videoResult = await encodeAndFormatVideos(
       this.options.req,
       attachments,
-      this.options.agent.provider,
+      {
+        provider: this.options.agent?.provider,
+        endpoint: this.options.agent?.endpoint,
+      },
       getStrategyFunctions,
     );
     message.videos =
@@ -1240,7 +1244,10 @@ class BaseClient {
     const audioResult = await encodeAndFormatAudios(
       this.options.req,
       attachments,
-      this.options.agent.provider,
+      {
+        provider: this.options.agent?.provider,
+        endpoint: this.options.agent?.endpoint,
+      },
       getStrategyFunctions,
     );
     message.audios =

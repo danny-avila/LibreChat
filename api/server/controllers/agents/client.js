@@ -210,7 +210,10 @@ class AgentClient extends BaseClient {
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
-      this.options.agent.provider,
+      {
+        provider: this.options.agent.provider,
+        endpoint: this.options.endpoint,
+      },
       VisionModes.agents,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;
