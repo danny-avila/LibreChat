@@ -192,5 +192,196 @@ describe('getOpenAIConfig - Google Compatibility', () => {
         expect(result.llmConfig.modelKwargs?.topK).toBeUndefined();
       });
     });
+
+    describe('defaultParams Support via customParams', () => {
+      it('should apply defaultParams when fields are undefined', () => {
+        const apiKey = JSON.stringify({ GOOGLE_API_KEY: 'test-google-key' });
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'gemini-2.0-flash-exp',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'google',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.6 },
+              { key: 'topK', default: 40 },
+            ],
+          },
+          reverseProxyUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.6);
+        expect(result.llmConfig.modelKwargs?.topK).toBe(40);
+      });
+
+      it('should not override existing modelOptions with defaultParams', () => {
+        const apiKey = JSON.stringify({ GOOGLE_API_KEY: 'test-google-key' });
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'gemini-2.0-flash-exp',
+            temperature: 0.9,
+          },
+          customParams: {
+            defaultParamsEndpoint: 'google',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.5 },
+              { key: 'topK', default: 40 },
+            ],
+          },
+          reverseProxyUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.9);
+        expect(result.llmConfig.modelKwargs?.topK).toBe(40);
+      });
+
+      it('should allow addParams to override defaultParams', () => {
+        const apiKey = JSON.stringify({ GOOGLE_API_KEY: 'test-google-key' });
+
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'gemini-2.0-flash-exp',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'google',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.5 },
+              { key: 'topK', default: 30 },
+            ],
+          },
+          addParams: {
+            temperature: 0.8,
+            topK: 50,
+          },
+          reverseProxyUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.8);
+        expect(result.llmConfig.modelKwargs?.topK).toBe(50);
+      });
+
+      it('should handle defaultParams with web_search', () => {
+        const apiKey = JSON.stringify({ GOOGLE_API_KEY: 'test-google-key' });
+
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'gemini-2.0-flash-exp',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'google',
+            paramDefinitions: [{ key: 'web_search', default: true }],
+          },
+          reverseProxyUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        });
+
+        expect(result.tools).toEqual([{ googleSearch: {} }]);
+      });
+
+      it('should allow addParams to override defaultParams web_search', () => {
+        const apiKey = JSON.stringify({ GOOGLE_API_KEY: 'test-google-key' });
+
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'gemini-2.0-flash-exp',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'google',
+            paramDefinitions: [{ key: 'web_search', default: true }],
+          },
+          addParams: {
+            web_search: false,
+          },
+          reverseProxyUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        });
+
+        expect(result.tools).toEqual([]);
+      });
+
+      it('should handle dropParams overriding defaultParams', () => {
+        const apiKey = JSON.stringify({ GOOGLE_API_KEY: 'test-google-key' });
+
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'gemini-2.0-flash-exp',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'google',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.7 },
+              { key: 'topK', default: 40 },
+              { key: 'web_search', default: true },
+            ],
+          },
+          dropParams: ['topK', 'web_search'],
+          reverseProxyUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.7);
+        expect(result.llmConfig.modelKwargs?.topK).toBeUndefined();
+        expect(result.tools).toEqual([]);
+      });
+
+      it('should preserve order: defaultParams < addParams < modelOptions', () => {
+        const apiKey = JSON.stringify({ GOOGLE_API_KEY: 'test-google-key' });
+
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'gemini-2.0-flash-exp',
+            temperature: 0.9,
+          },
+          customParams: {
+            defaultParamsEndpoint: 'google',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.3 },
+              { key: 'topP', default: 0.5 },
+              { key: 'topK', default: 20 },
+            ],
+          },
+          addParams: {
+            topP: 0.8,
+          },
+          reverseProxyUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.9);
+        expect(result.llmConfig.topP).toBe(0.8);
+        expect(result.llmConfig.modelKwargs?.topK).toBe(20);
+      });
+
+      it('should handle empty paramDefinitions', () => {
+        const apiKey = JSON.stringify({ GOOGLE_API_KEY: 'test-google-key' });
+
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'gemini-2.0-flash-exp',
+            temperature: 0.8,
+          },
+          customParams: {
+            defaultParamsEndpoint: 'google',
+            paramDefinitions: [],
+          },
+          reverseProxyUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.8);
+      });
+
+      it('should handle missing paramDefinitions', () => {
+        const apiKey = JSON.stringify({ GOOGLE_API_KEY: 'test-google-key' });
+
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'gemini-2.0-flash-exp',
+            temperature: 0.8,
+          },
+          customParams: {
+            defaultParamsEndpoint: 'google',
+          },
+          reverseProxyUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.8);
+      });
+    });
   });
 });

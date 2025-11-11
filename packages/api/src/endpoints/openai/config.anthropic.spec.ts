@@ -682,5 +682,241 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
       });
       expect(result.tools).toEqual([]);
     });
+
+    describe('defaultParams Support via customParams', () => {
+      it('should apply defaultParams when fields are undefined', () => {
+        const apiKey = 'sk-defaults';
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'claude-3-5-sonnet-20241022',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'anthropic',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.7 },
+              { key: 'topP', default: 0.9 },
+              { key: 'maxRetries', default: 5 },
+            ],
+          },
+          reverseProxyUrl: 'https://api.anthropic.com',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.7);
+        expect(result.llmConfig.topP).toBe(0.9);
+        expect(result.llmConfig.maxRetries).toBe(5);
+      });
+
+      it('should not override existing modelOptions with defaultParams', () => {
+        const apiKey = 'sk-override';
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'claude-3-5-sonnet-20241022',
+            temperature: 0.9,
+          },
+          customParams: {
+            defaultParamsEndpoint: 'anthropic',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.5 },
+              { key: 'topP', default: 0.8 },
+            ],
+          },
+          reverseProxyUrl: 'https://api.anthropic.com',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.9);
+        expect(result.llmConfig.topP).toBe(0.8);
+      });
+
+      it('should allow addParams to override defaultParams', () => {
+        const apiKey = 'sk-add-override';
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'claude-3-opus-20240229',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'anthropic',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.5 },
+              { key: 'topP', default: 0.7 },
+            ],
+          },
+          addParams: {
+            temperature: 0.8,
+            topP: 0.95,
+          },
+          reverseProxyUrl: 'https://api.anthropic.com',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.8);
+        expect(result.llmConfig.topP).toBe(0.95);
+      });
+
+      it('should handle defaultParams with web_search', () => {
+        const apiKey = 'sk-web-default';
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'claude-3-5-sonnet-latest',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'anthropic',
+            paramDefinitions: [{ key: 'web_search', default: true }],
+          },
+          reverseProxyUrl: 'https://api.anthropic.com',
+        });
+
+        expect(result.tools).toEqual([
+          {
+            type: 'web_search_20250305',
+            name: 'web_search',
+          },
+        ]);
+      });
+
+      it('should allow addParams to override defaultParams web_search', () => {
+        const apiKey = 'sk-web-override';
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'claude-3-opus-20240229',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'anthropic',
+            paramDefinitions: [{ key: 'web_search', default: true }],
+          },
+          addParams: {
+            web_search: false,
+          },
+          reverseProxyUrl: 'https://api.anthropic.com',
+        });
+
+        expect(result.tools).toEqual([]);
+      });
+
+      it('should handle dropParams overriding defaultParams', () => {
+        const apiKey = 'sk-drop';
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'claude-3-opus-20240229',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'anthropic',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.7 },
+              { key: 'topP', default: 0.9 },
+              { key: 'web_search', default: true },
+            ],
+          },
+          dropParams: ['topP', 'web_search'],
+          reverseProxyUrl: 'https://api.anthropic.com',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.7);
+        expect(result.llmConfig.topP).toBeUndefined();
+        expect(result.tools).toEqual([]);
+      });
+
+      it('should preserve order: defaultParams < addParams < modelOptions', () => {
+        const apiKey = 'sk-precedence';
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'claude-3-5-sonnet-20241022',
+            temperature: 0.9,
+          },
+          customParams: {
+            defaultParamsEndpoint: 'anthropic',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.3 },
+              { key: 'topP', default: 0.5 },
+              { key: 'timeout', default: 60000 },
+            ],
+          },
+          addParams: {
+            topP: 0.8,
+          },
+          reverseProxyUrl: 'https://api.anthropic.com',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.9);
+        expect(result.llmConfig.topP).toBe(0.8);
+        expect(result.llmConfig.timeout).toBe(60000);
+      });
+
+      it('should handle Claude 3.7 with defaultParams and thinking disabled', () => {
+        const apiKey = 'sk-37-defaults';
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'claude-3.7-sonnet-20241022',
+            thinking: false,
+          },
+          customParams: {
+            defaultParamsEndpoint: 'anthropic',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.7 },
+              { key: 'topP', default: 0.9 },
+              { key: 'topK', default: 50 },
+            ],
+          },
+          reverseProxyUrl: 'https://api.anthropic.com',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.7);
+        expect(result.llmConfig.topP).toBe(0.9);
+        expect(result.llmConfig.modelKwargs?.topK).toBe(50);
+      });
+
+      it('should handle empty paramDefinitions', () => {
+        const apiKey = 'sk-empty';
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'claude-3-opus-20240229',
+            temperature: 0.8,
+          },
+          customParams: {
+            defaultParamsEndpoint: 'anthropic',
+            paramDefinitions: [],
+          },
+          reverseProxyUrl: 'https://api.anthropic.com',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.8);
+      });
+
+      it('should handle missing paramDefinitions', () => {
+        const apiKey = 'sk-missing';
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'claude-3-opus-20240229',
+            temperature: 0.8,
+          },
+          customParams: {
+            defaultParamsEndpoint: 'anthropic',
+          },
+          reverseProxyUrl: 'https://api.anthropic.com',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.8);
+      });
+
+      it('should handle mixed Anthropic params in defaultParams', () => {
+        const apiKey = 'sk-mixed';
+        const result = getOpenAIConfig(apiKey, {
+          modelOptions: {
+            model: 'claude-3-5-sonnet-20241022',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'anthropic',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.7 },
+              { key: 'topP', default: 0.9 },
+              { key: 'maxRetries', default: 3 },
+            ],
+          },
+          reverseProxyUrl: 'https://api.anthropic.com',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.7);
+        expect(result.llmConfig.topP).toBe(0.9);
+        expect(result.llmConfig.maxRetries).toBe(3);
+      });
+    });
   });
 });
