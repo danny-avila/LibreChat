@@ -59,7 +59,7 @@ export default function Header() {
             <div
               className={`flex items-center gap-2 ${
                 !isSmallScreen ? 'transition-all duration-200 ease-in-out' : ''
-              }`}
+              } `}
             >
               <ModelSelector startupConfig={startupConfig} />
               {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
