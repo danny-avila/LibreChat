@@ -55,22 +55,28 @@ export default function Header() {
               </motion.div>
             )}
           </AnimatePresence>
-
-          <div className={navVisible ? 'flex items-center gap-2' : 'ml-2 flex items-center gap-2'}>
-            <ModelSelector startupConfig={startupConfig} />
-            {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
-            {hasAccessToBookmarks === true && <BookmarkMenu />}
-            {hasAccessToMultiConvo === true && <AddMultiConvo />}
-            {isSmallScreen && (
-              <>
-                <ExportAndShareMenu
-                  isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
-                />
-                <TemporaryChat />
-              </>
-            )}
-          </div>
+          {!isSmallScreen && !navVisible && (
+            <div
+              className={`flex items-center gap-2 ${
+                !isSmallScreen ? 'transition-all duration-200 ease-in-out' : ''
+              }`}
+            >
+              <ModelSelector startupConfig={startupConfig} />
+              {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
+              {hasAccessToBookmarks === true && <BookmarkMenu />}
+              {hasAccessToMultiConvo === true && <AddMultiConvo />}
+              {isSmallScreen && (
+                <>
+                  <ExportAndShareMenu
+                    isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
+                  />
+                  <TemporaryChat />
+                </>
+              )}
+            </div>
+          )}
         </div>
+
         {!isSmallScreen && (
           <div className="flex items-center gap-2">
             <ExportAndShareMenu
