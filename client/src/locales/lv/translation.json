@@ -713,6 +713,7 @@
   "com_ui_assistants_output": "Asistentu izvade",
   "com_ui_at_least_one_owner_required": "Nepieciešams vismaz viens īpašnieks",
   "com_ui_attach_error": "Nevar pievienot failu. Izveidojiet vai atlasiet sarunu vai mēģiniet atsvaidzināt lapu.",
+  "com_ui_attach_error_disabled": "Šim galapunktam failu augšupielāde ir atspējota.",
   "com_ui_attach_error_openai": "Nevar pievienot asistenta failus citiem galapunktiem",
   "com_ui_attach_error_size": "Galapunkta faila lieluma ierobežojums ir pārsniegts:",
   "com_ui_attach_error_type": "Neatbalstīts faila tips galapunktam:",
