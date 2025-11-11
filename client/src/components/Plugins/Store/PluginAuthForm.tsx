@@ -109,7 +109,7 @@ function PluginAuthForm({
                   {config.label}
                   {isOptional && (
                     <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">
-                      ({localize('com_ui_optional')})
+                      {localize('com_ui_optional')}
                     </span>
                   )}
                 </label>

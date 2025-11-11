@@ -12,7 +12,7 @@ jest.mock('~/app/clients/tools', () => ({
           sensitive: true,
         },
         {
-          authField: 'AZURE_AI_SEARCH_VECTOR_FIELD',
+          authField: 'AZURE_AI_SEARCH_VECTOR_FIELDS',
           label: 'Azure AI Search Vector Field',
           optional: true,
         },
@@ -27,7 +27,7 @@ jest.mock('~/app/clients/tools', () => ({
 jest.mock('~/app/clients/tools/util/handleTools', () => ({
   getAuthFields: jest.fn((pluginKey) => {
     if (pluginKey === 'azure_ai_search') {
-      return ['AZURE_AI_SEARCH_API_KEY', 'AZURE_AI_SEARCH_VECTOR_FIELD'];
+      return ['AZURE_AI_SEARCH_API_KEY', 'AZURE_AI_SEARCH_VECTOR_FIELDS'];
     }
     return [];
   }),
@@ -96,7 +96,7 @@ describe('Tools Routes', () => {
     it('should return auth values with sensitive fields masked', async () => {
       loadAuthValues.mockResolvedValue({
         AZURE_AI_SEARCH_API_KEY: 'secret-api-key-12345',
-        AZURE_AI_SEARCH_VECTOR_FIELD: 'vector_field_name',
+        AZURE_AI_SEARCH_VECTOR_FIELDS: 'vector_field_name1,vector_field_name2',
       });
 
       const response = await request(app).get('/api/agents/tools/azure_ai_search/auth-values');
@@ -105,13 +105,13 @@ describe('Tools Routes', () => {
       expect(response.body).toEqual({
         authValues: {
           AZURE_AI_SEARCH_API_KEY: SENSITIVE_FIELD_REDACTED,
-          AZURE_AI_SEARCH_VECTOR_FIELD: 'vector_field_name',
+          AZURE_AI_SEARCH_VECTOR_FIELDS: 'vector_field_name1,vector_field_name2',
         },
       });
 
       expect(loadAuthValues).toHaveBeenCalledWith({
         userId: 'test-user-id',
-        authFields: ['AZURE_AI_SEARCH_API_KEY', 'AZURE_AI_SEARCH_VECTOR_FIELD'],
+        authFields: ['AZURE_AI_SEARCH_API_KEY', 'AZURE_AI_SEARCH_VECTOR_FIELDS'],
         throwError: false,
         pluginKey: 'azure_ai_search',
         skipEnvVars: true,
@@ -139,7 +139,7 @@ describe('Tools Routes', () => {
     it('should not mask empty sensitive fields', async () => {
       loadAuthValues.mockResolvedValue({
         AZURE_AI_SEARCH_API_KEY: '',
-        AZURE_AI_SEARCH_VECTOR_FIELD: 'vector_field_name',
+        AZURE_AI_SEARCH_VECTOR_FIELDS: 'vector_field_name1,vector_field_name2',
       });
 
       const response = await request(app).get('/api/agents/tools/azure_ai_search/auth-values');
@@ -148,7 +148,7 @@ describe('Tools Routes', () => {
       expect(response.body).toEqual({
         authValues: {
           AZURE_AI_SEARCH_API_KEY: '',
-          AZURE_AI_SEARCH_VECTOR_FIELD: 'vector_field_name',
+          AZURE_AI_SEARCH_VECTOR_FIELDS: 'vector_field_name1,vector_field_name2',
         },
       });
     });

@@ -161,9 +161,9 @@
         "sensitive": true
       },
       {
-        "authField": "AZURE_AI_SEARCH_VECTOR_FIELD",
-        "label": "Azure AI Search Vector Field",
-        "description": "The name of the vector field in your Azure AI Search index to use for vector search queries. Leave empty if you don't use vector search.",
+        "authField": "AZURE_AI_SEARCH_VECTOR_FIELDS",
+        "label": "Azure AI Search Vector Fields",
+        "description": "The names of the vector fields in your Azure AI Search index to use for vector search queries. Multiple fields can be specified as comma-separated values (e.g., 'field1,field2'). Leave empty if you don't use vector search.",
         "optional": true
       }
     ]

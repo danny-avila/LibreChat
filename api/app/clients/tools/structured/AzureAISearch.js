@@ -51,12 +51,19 @@ class AzureAISearch extends Tool {
       fields.AZURE_AI_SEARCH_SEARCH_OPTION_SELECT,
       'AZURE_AI_SEARCH_SEARCH_OPTION_SELECT',
     );
-    this.vectorField = this._initializeField(
-      fields.AZURE_AI_SEARCH_VECTOR_FIELD,
-      'AZURE_AI_SEARCH_VECTOR_FIELD',
+    const vectorFieldValue = this._initializeField(
+      fields.AZURE_AI_SEARCH_VECTOR_FIELDS,
+      'AZURE_AI_SEARCH_VECTOR_FIELDS',
     );
+    // Parse comma-separated vector fields
+    this.vectorFields = vectorFieldValue
+      ? vectorFieldValue
+          .split(',')
+          .map((field) => field.trim())
+          .filter((field) => field.length > 0)
+      : [];
 
-    // Define schema conditionally based on vectorField configuration
+    // Define schema conditionally based on vectorFields configuration
     const schemaFields = {
       query: z.string().describe('Text for keyword search'),
       filter: z
@@ -64,7 +71,7 @@ class AzureAISearch extends Tool {
         .optional()
         .describe('The OData $filter expression to apply to the search query.'),
     };
-    if (this.vectorField) {
+    if (this.vectorFields.length > 0) {
       schemaFields.vectorQueryText = z
         .string()
         .optional()
@@ -102,9 +109,9 @@ class AzureAISearch extends Tool {
         filter: filter,
       };
       if (vectorQueryText) {
-        if (!this.vectorField) {
+        if (this.vectorFields.length === 0) {
           throw new Error(
-            'AZURE_AI_SEARCH_VECTOR_FIELD must be configured when using vector search queries.',
+            'AZURE_AI_SEARCH_VECTOR_FIELDS must be configured when using vector search queries.',
           );
         }
         searchOption.vectorSearchOptions = {
@@ -112,7 +119,7 @@ class AzureAISearch extends Tool {
             {
               kind: 'text',
               text: vectorQueryText,
-              fields: [this.vectorField],
+              fields: this.vectorFields,
             },
           ],
         };
