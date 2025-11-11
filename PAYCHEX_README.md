@@ -68,6 +68,6 @@ Make any changes to the configuration files as needed. Then, use the following i
 
 ## Creating a new Paychex-ified Release
 6. Manually port any Paychex file changes into `paychex-integration-branch`. Usually editing the files via Github editor is easiest.
-7. Create a new tag with the pattern `{original_tag}-payx`. For example, `git tag v0.8.0-rc2-payx`.
-8. Push the new tag up. `git push origin --tags`
-9. Run the workflow for the environment you are targeting. Use the new tag you've created as the input tag. Optionally build the RAG API image (usually this is done once for a new release, and can be skipped if deploying the same release again maybe after troubleshooting, etc.).
+7. Commit changes, then create a new branch with branch name pattern `release/{original_tag}-payx`. For example, `git checkout -b release/v0.8.0-rc2-payx`.
+8. Push the new branch up. `git push origin release/v0.8.0-rc2-payx`.
+9. Run the workflow for the environment you are targeting. Use the new branch you've created as the input branch. Optionally build the RAG API image (usually this is done once for a new release, and can be skipped if deploying the same release again maybe after troubleshooting, etc.).
