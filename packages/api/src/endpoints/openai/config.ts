@@ -3,11 +3,11 @@ import { Providers } from '@librechat/agents';
 import { KnownEndpoints, EModelEndpoint } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { getOpenAILLMConfig, extractDefaultParams } from './llm';
 import { getGoogleConfig } from '~/endpoints/google/llm';
 import { transformToOpenAIConfig } from './transform';
 import { constructAzureURL } from '~/utils/azure';
 import { createFetch } from '~/utils/generators';
-import { getOpenAILLMConfig } from './llm';
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -34,6 +34,9 @@ export function getOpenAIConfig(
     reverseProxyUrl: baseURL,
   } = options;
 
+  /** Extract default params from customParams.paramDefinitions */
+  const defaultParams = extractDefaultParams(options.customParams?.paramDefinitions);
+
   let llmConfig: t.OAIClientOptions;
   let tools: t.LLMConfigResult['tools'];
   const isAnthropic = options.customParams?.defaultParamsEndpoint === EModelEndpoint.anthropic;
@@ -59,6 +62,7 @@ export function getOpenAIConfig(
       reverseProxyUrl: baseURL,
       addParams,
       dropParams,
+      defaultParams,
     });
     /** Transform handles addParams/dropParams - it knows about OpenAI params */
     const transformed = transformToOpenAIConfig({
@@ -79,6 +83,7 @@ export function getOpenAIConfig(
       authHeader: true,
       addParams,
       dropParams,
+      defaultParams,
     });
     /** Transform handles addParams/dropParams - it knows about OpenAI params */
     const transformed = transformToOpenAIConfig({
@@ -98,6 +103,7 @@ export function getOpenAIConfig(
       streaming,
       addParams,
       dropParams,
+      defaultParams,
       modelOptions,
       useOpenRouter,
     });

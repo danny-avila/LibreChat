@@ -32,6 +32,19 @@ export const knownGoogleParams = new Set([
   'authOptions',
 ]);
 
+/**
+ * Applies default parameters to the target object only if the field is undefined
+ * @param target - The target object to apply defaults to
+ * @param defaults - Record of default parameter values
+ */
+function applyDefaultParams(target: Record<string, unknown>, defaults: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(defaults)) {
+    if (target[key] === undefined) {
+      target[key] = value;
+    }
+  }
+}
+
 function getThresholdMapping(model: string) {
   const gemini1Pattern = /gemini-(1\.0|1\.5|pro$|1\.0-pro|1\.5-pro|1\.5-flash-001)/;
   const restrictedPattern = /(gemini-(1\.5-flash-8b|2\.0|exp)|learnlm)/;
@@ -222,7 +235,26 @@ export function getGoogleConfig(
     };
   }
 
-  /** Handle addParams - only process Google-native params, leave OpenAI params for transform */
+  /** Handle defaultParams first - only process Google-native params if undefined */
+  if (options.defaultParams && typeof options.defaultParams === 'object') {
+    for (const [key, value] of Object.entries(options.defaultParams)) {
+      /** Handle web_search separately - don't add to config */
+      if (key === 'web_search') {
+        if (enableWebSearch === undefined && typeof value === 'boolean') {
+          enableWebSearch = value;
+        }
+        continue;
+      }
+
+      if (knownGoogleParams.has(key)) {
+        /** Route known Google params to llmConfig only if undefined */
+        applyDefaultParams(llmConfig as Record<string, unknown>, { [key]: value });
+      }
+      /** Leave other params for transform to handle - they might be OpenAI params */
+    }
+  }
+
+  /** Handle addParams - can override defaultParams */
   if (options.addParams && typeof options.addParams === 'object') {
     for (const [key, value] of Object.entries(options.addParams)) {
       /** Handle web_search separately - don't add to config */

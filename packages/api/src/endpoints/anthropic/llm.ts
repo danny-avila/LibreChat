@@ -24,6 +24,19 @@ export const knownAnthropicParams = new Set([
 ]);
 
 /**
+ * Applies default parameters to the target object only if the field is undefined
+ * @param target - The target object to apply defaults to
+ * @param defaults - Record of default parameter values
+ */
+function applyDefaultParams(target: Record<string, unknown>, defaults: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(defaults)) {
+    if (target[key] === undefined) {
+      target[key] = value;
+    }
+  }
+}
+
+/**
  * Generates configuration options for creating an Anthropic language model (LLM) instance.
  * @param apiKey - The API key for authentication with Anthropic.
  * @param options={} - Additional options for configuring the LLM.
@@ -105,7 +118,26 @@ function getLLMConfig(
     requestOptions.anthropicApiUrl = options.reverseProxyUrl;
   }
 
-  /** Handle addParams - only process Anthropic-native params, leave OpenAI params for transform */
+  /** Handle defaultParams first - only process Anthropic-native params if undefined */
+  if (options.defaultParams && typeof options.defaultParams === 'object') {
+    for (const [key, value] of Object.entries(options.defaultParams)) {
+      /** Handle web_search separately - don't add to config */
+      if (key === 'web_search') {
+        if (enableWebSearch === undefined && typeof value === 'boolean') {
+          enableWebSearch = value;
+        }
+        continue;
+      }
+
+      if (knownAnthropicParams.has(key)) {
+        /** Route known Anthropic params to requestOptions only if undefined */
+        applyDefaultParams(requestOptions as Record<string, unknown>, { [key]: value });
+      }
+      /** Leave other params for transform to handle - they might be OpenAI params */
+    }
+  }
+
+  /** Handle addParams - can override defaultParams */
   if (options.addParams && typeof options.addParams === 'object') {
     for (const [key, value] of Object.entries(options.addParams)) {
       /** Handle web_search separately - don't add to config */
