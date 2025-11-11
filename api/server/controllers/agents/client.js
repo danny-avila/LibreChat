@@ -853,12 +853,6 @@ class AgentClient extends BaseClient {
         // ) {
         //   messages = addCacheControl(messages);
         // }
-        // else if (
-        //   this.options.endpoint === EModelEndpoint.bedrock &&
-        //   agent.model_parameters?.promptCache === true
-        // ) {
-        //   messages = addBedrockCacheControl(messages);
-        // }
 
         memoryPromise = this.runMemory(messages);
 
