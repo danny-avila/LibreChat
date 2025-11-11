@@ -41,6 +41,9 @@ const getUserPluginAuthValue = async (userId, authField, throwError = true, plug
 
     const pluginAuth = await findOnePluginAuth(searchParams);
     if (!pluginAuth) {
+      if (!throwError) {
+        return null;
+      }
       const pluginInfo = pluginKey ? ` for plugin ${pluginKey}` : '';
       throw new Error(`No plugin auth ${authField} found for user ${userId}${pluginInfo}`);
     }
@@ -51,35 +54,30 @@ const getUserPluginAuthValue = async (userId, authField, throwError = true, plug
     if (!throwError) {
       return null;
     }
-    logger.error('[getUserPluginAuthValue]', err);
+    // Log the call stack for debugging purposes
+    // Create a new error to capture where this function was called from
+    const callStackError = new Error('Call stack trace');
+    const callStack = callStackError.stack;
+
+    logger.error('[getUserPluginAuthValue] Error:', err);
+
+    // Log the call stack separately (like in S3/crud.js)
+    if (callStack) {
+      logger.error('[getUserPluginAuthValue] Call Stack:');
+      logger.error(callStack);
+    } else {
+      logger.error('[getUserPluginAuthValue] Call Stack: No stack trace available');
+    }
+
+    // Also log the original error's stack if it exists and is different
+    if (err && err.stack && err.stack !== callStack) {
+      logger.error('[getUserPluginAuthValue] Original Error Stack:');
+      logger.error(err.stack);
+    }
+
     throw err;
   }
 };
-
-// const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
-//   try {
-//     const encryptedValue = encrypt(value);
-
-//     const pluginAuth = await PluginAuth.findOneAndUpdate(
-//       { userId, authField },
-//       {
-//         $set: {
-//           value: encryptedValue,
-//           pluginKey
-//         }
-//       },
-//       {
-//         new: true,
-//         upsert: true
-//       }
-//     );
-
-//     return pluginAuth;
-//   } catch (err) {
-//     logger.error('[getUserPluginAuthValue]', err);
-//     return err;
-//   }
-// };
 
 /**
  *

@@ -120,9 +120,10 @@ const validateTools = async (user, tools = []) => {
  * @param {Object} options Optional parameters to be passed to the tool constructor alongside authentication values.
  * @returns {() => Promise<Tool>} An Async function that, when called, asynchronously initializes and returns an instance of the tool with authentication.
  */
-const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => {
+const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}, toolKey) => {
   return async function () {
-    const authValues = await loadAuthValues({ userId, authFields });
+    const optional = toolKey ? getOptionalAuthFields(toolKey) : undefined;
+    const authValues = await loadAuthValues({ userId, authFields, optional });
     return new ToolConstructor({ ...options, ...authValues, userId });
   };
 };
@@ -133,6 +134,21 @@ const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => 
  */
 const getAuthFields = (toolKey) => {
   return manifestToolMap[toolKey]?.authConfig.map((auth) => auth.authField) ?? [];
+};
+
+/**
+ * @param {string} toolKey
+ * @returns {Set<string>}
+ */
+const getOptionalAuthFields = (toolKey) => {
+  const authConfig = manifestToolMap[toolKey]?.authConfig ?? [];
+  const optionalFields = new Set();
+  for (const auth of authConfig) {
+    if (auth.optional === true) {
+      optionalFields.add(auth.authField);
+    }
+  }
+  return optionalFields;
 };
 
 /**
@@ -376,6 +392,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         getAuthFields(tool),
         toolConstructors[tool],
         options,
+        tool,
       );
       requestedTools[tool] = toolInstance;
       continue;
