@@ -1,6 +1,6 @@
 const axios = require('axios');
-const { logAxiosError, validateImage } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { logAxiosError, validateImage } = require('@librechat/api');
 const {
   FileSources,
   VisionModes,
