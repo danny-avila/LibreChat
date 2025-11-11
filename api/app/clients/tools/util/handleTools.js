@@ -276,7 +276,6 @@ const loadTools = async ({
     'stable-diffusion': imageGenOptions,
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
     gemini_image_gen: imageGenOptions,
-
   };
 
   /** @type {Record<string, string>} */
