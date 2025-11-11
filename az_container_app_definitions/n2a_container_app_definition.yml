@@ -56,6 +56,9 @@ properties:
       - name: maas-api-key
         keyVaultUrl: https://kv-pyxplayai-n2a-001.vault.azure.net/secrets/N2A-LIBRECHAT-MAAS-API-KEY
         identity: system
+      - name: tavily-api-key
+        keyVaultUrl: https://kv-pyxplayai-n2a-001.vault.azure.net/secrets/N2A-TAVILY-API-KEY
+        identity: system
     activeRevisionsMode: Single
     ingress:
       external: true
@@ -142,6 +145,8 @@ properties:
             value: TRUE
           - name: DEBUG_LOGGING
             value: TRUE
+          - name: TAVILY_API_KEY
+            secretRef: tavily-api-key
         resources:
           cpu: 2
           memory: 4Gi
