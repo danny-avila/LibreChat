@@ -119,6 +119,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           value={(table.getColumn('filename')?.getFilterValue() as string | undefined) ?? ''}
           onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
           className="flex-1 text-sm"
+          aria-label={localize('com_files_filter_input')}
         />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
