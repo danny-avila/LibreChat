@@ -5,6 +5,33 @@ import type { GoogleAIToolType } from '@langchain/google-common';
 import type * as t from '~/types';
 import { isEnabled } from '~/utils';
 
+/** Known Google/Vertex AI parameters that map directly to the client config */
+export const knownGoogleParams = new Set([
+  'model',
+  'modelName',
+  'temperature',
+  'maxOutputTokens',
+  'maxReasoningTokens',
+  'topP',
+  'topK',
+  'seed',
+  'presencePenalty',
+  'frequencyPenalty',
+  'stopSequences',
+  'stop',
+  'logprobs',
+  'topLogprobs',
+  'safetySettings',
+  'responseModalities',
+  'convertSystemMessageToHumanContent',
+  'speechConfig',
+  'streamUsage',
+  'apiKey',
+  'baseUrl',
+  'location',
+  'authOptions',
+]);
+
 function getThresholdMapping(model: string) {
   const gemini1Pattern = /gemini-(1\.0|1\.5|pro$|1\.0-pro|1\.5-pro|1\.5-flash-001)/;
   const restrictedPattern = /(gemini-(1\.5-flash-8b|2\.0|exp)|learnlm)/;
@@ -112,6 +139,8 @@ export function getGoogleConfig(
     ...modelOptions
   } = options.modelOptions || {};
 
+  let enableWebSearch = web_search;
+
   const llmConfig: GoogleClientOptions | VertexAIClientOptions = removeNullishValues({
     ...(modelOptions || {}),
     model: modelOptions?.model ?? '',
@@ -193,9 +222,42 @@ export function getGoogleConfig(
     };
   }
 
+  /** Handle addParams - only process Google-native params, leave OpenAI params for transform */
+  if (options.addParams && typeof options.addParams === 'object') {
+    for (const [key, value] of Object.entries(options.addParams)) {
+      /** Handle web_search separately - don't add to config */
+      if (key === 'web_search') {
+        if (typeof value === 'boolean') {
+          enableWebSearch = value;
+        }
+        continue;
+      }
+
+      if (knownGoogleParams.has(key)) {
+        /** Route known Google params to llmConfig */
+        (llmConfig as Record<string, unknown>)[key] = value;
+      }
+      /** Leave other params for transform to handle - they might be OpenAI params */
+    }
+  }
+
+  /** Handle dropParams - only drop from Google config */
+  if (options.dropParams && Array.isArray(options.dropParams)) {
+    options.dropParams.forEach((param) => {
+      if (param === 'web_search') {
+        enableWebSearch = false;
+        return;
+      }
+
+      if (param in llmConfig) {
+        delete (llmConfig as Record<string, unknown>)[param];
+      }
+    });
+  }
+
   const tools: GoogleAIToolType[] = [];
 
-  if (web_search) {
+  if (enableWebSearch) {
     tools.push({ googleSearch: {} });
   }
 

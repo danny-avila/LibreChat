@@ -3,6 +3,7 @@ import { Providers } from '@librechat/agents';
 import { KnownEndpoints, EModelEndpoint } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { getGoogleConfig } from '~/endpoints/google/llm';
 import { transformToOpenAIConfig } from './transform';
 import { constructAzureURL } from '~/utils/azure';
 import { createFetch } from '~/utils/generators';
@@ -36,14 +37,18 @@ export function getOpenAIConfig(
   let llmConfig: t.OAIClientOptions;
   let tools: t.LLMConfigResult['tools'];
   const isAnthropic = options.customParams?.defaultParamsEndpoint === EModelEndpoint.anthropic;
+  const isGoogle = options.customParams?.defaultParamsEndpoint === EModelEndpoint.google;
 
   const useOpenRouter =
     !isAnthropic &&
+    !isGoogle &&
     ((baseURL && baseURL.includes(KnownEndpoints.openrouter)) ||
       (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.openrouter)));
   const isVercel =
-    (baseURL && baseURL.includes('ai-gateway.vercel.sh')) ||
-    (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.vercel));
+    !isAnthropic &&
+    !isGoogle &&
+    ((baseURL && baseURL.includes('ai-gateway.vercel.sh')) ||
+      (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.vercel)));
 
   let azure = options.azure;
   let headers = options.headers;
@@ -51,7 +56,11 @@ export function getOpenAIConfig(
     const anthropicResult = getAnthropicLLMConfig(apiKey, {
       modelOptions,
       proxy: options.proxy,
+      reverseProxyUrl: baseURL,
+      addParams,
+      dropParams,
     });
+    /** Transform handles addParams/dropParams - it knows about OpenAI params */
     const transformed = transformToOpenAIConfig({
       addParams,
       dropParams,
@@ -63,6 +72,23 @@ export function getOpenAIConfig(
     if (transformed.configOptions?.defaultHeaders) {
       headers = Object.assign(headers ?? {}, transformed.configOptions?.defaultHeaders);
     }
+  } else if (isGoogle) {
+    const googleResult = getGoogleConfig(apiKey, {
+      modelOptions,
+      reverseProxyUrl: baseURL ?? undefined,
+      authHeader: true,
+      addParams,
+      dropParams,
+    });
+    /** Transform handles addParams/dropParams - it knows about OpenAI params */
+    const transformed = transformToOpenAIConfig({
+      addParams,
+      dropParams,
+      llmConfig: googleResult.llmConfig,
+      fromEndpoint: EModelEndpoint.google,
+    });
+    llmConfig = transformed.llmConfig;
+    tools = googleResult.tools;
   } else {
     const openaiResult = getOpenAILLMConfig({
       azure,
