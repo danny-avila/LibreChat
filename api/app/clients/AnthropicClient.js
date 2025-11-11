@@ -305,11 +305,9 @@ class AnthropicClient extends BaseClient {
   }
 
   async addImageURLs(message, attachments) {
-    const { files, image_urls } = await encodeAndFormat(
-      this.options.req,
-      attachments,
-      EModelEndpoint.anthropic,
-    );
+    const { files, image_urls } = await encodeAndFormat(this.options.req, attachments, {
+      endpoint: EModelEndpoint.anthropic,
+    });
     message.image_urls = image_urls.length ? image_urls : undefined;
     return files;
   }
