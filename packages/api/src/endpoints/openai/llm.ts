@@ -83,9 +83,9 @@ function hasReasoningParams({
  */
 export function extractDefaultParams(
   paramDefinitions?: Partial<SettingDefinition>[],
-): Record<string, unknown> {
+): Record<string, unknown> | undefined {
   if (!paramDefinitions || !Array.isArray(paramDefinitions)) {
-    return {};
+    return undefined;
   }
 
   const defaults: Record<string, unknown> = {};
