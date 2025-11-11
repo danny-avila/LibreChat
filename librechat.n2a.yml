@@ -2,13 +2,14 @@ version: 1.0.0
 cache: true
 interface:
   agents: false
-  webSearch: false
   runCode: false
+mcpServers:
+  tavily:
+    type: streamable-http
+    url: https://mcp.tavily.com/mcp/
+    headers:
+      Authorization: "Bearer ${TAVILY_API_KEY}"
 endpoints:
-  agents:
-    capabilities:
-      - "file_search"
-      - "context"
     
   azureOpenAI:
     # Endpoint-level configuration
