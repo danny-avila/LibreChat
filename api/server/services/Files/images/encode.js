@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { logAxiosError } = require('@librechat/api');
+const { logAxiosError, validateImage } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
   FileSources,
@@ -7,6 +7,8 @@ const {
   ImageDetail,
   ContentTypes,
   EModelEndpoint,
+  mergeFileConfig,
+  getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 
@@ -152,6 +154,17 @@ async function encodeAndFormat(req, files, params, mode) {
   const formattedImages = await Promise.all(promises);
   promises.length = 0;
 
+  /** Extract configured file size limit from fileConfig for this endpoint */
+  let configuredFileSizeLimit;
+  if (req.config?.fileConfig) {
+    const fileConfig = mergeFileConfig(req.config.fileConfig);
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig,
+      endpoint: effectiveEndpoint,
+    });
+    configuredFileSizeLimit = endpointConfig?.fileSizeLimit;
+  }
+
   for (const [file, imageContent] of formattedImages) {
     const fileMetadata = {
       type: file.type,
@@ -170,6 +183,26 @@ async function encodeAndFormat(req, files, params, mode) {
     if (!imageContent) {
       result.files.push(fileMetadata);
       continue;
+    }
+
+    /** Validate image buffer against size limits */
+    if (file.height && file.width) {
+      const imageBuffer = imageContent.startsWith('http')
+        ? null
+        : Buffer.from(imageContent, 'base64');
+
+      if (imageBuffer) {
+        const validation = await validateImage(
+          imageBuffer,
+          imageBuffer.length,
+          effectiveEndpoint,
+          configuredFileSizeLimit,
+        );
+
+        if (!validation.isValid) {
+          throw new Error(`Image validation failed for ${file.filename}: ${validation.error}`);
+        }
+      }
     }
 
     const imagePart = {
