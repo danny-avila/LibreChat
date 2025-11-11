@@ -167,4 +167,76 @@ describe('handleExistingUser', () => {
     // This should throw an error when trying to access oldUser._id
     await expect(handleExistingUser(null, avatarUrl)).rejects.toThrow();
   });
+
+  it('should update email when it has changed', async () => {
+    const oldUser = {
+      _id: 'user123',
+      email: 'old@example.com',
+      avatar: 'https://example.com/avatar.png?manual=true',
+    };
+    const avatarUrl = 'https://example.com/avatar.png';
+    const newEmail = 'new@example.com';
+
+    await handleExistingUser(oldUser, avatarUrl, {}, newEmail);
+
+    expect(updateUser).toHaveBeenCalledWith('user123', { email: 'new@example.com' });
+  });
+
+  it('should update both avatar and email when both have changed', async () => {
+    const oldUser = {
+      _id: 'user123',
+      email: 'old@example.com',
+      avatar: null,
+    };
+    const avatarUrl = 'https://example.com/new-avatar.png';
+    const newEmail = 'new@example.com';
+
+    await handleExistingUser(oldUser, avatarUrl, {}, newEmail);
+
+    expect(updateUser).toHaveBeenCalledWith('user123', {
+      avatar: avatarUrl,
+      email: 'new@example.com',
+    });
+  });
+
+  it('should not update email when it has not changed', async () => {
+    const oldUser = {
+      _id: 'user123',
+      email: 'same@example.com',
+      avatar: 'https://example.com/avatar.png?manual=true',
+    };
+    const avatarUrl = 'https://example.com/avatar.png';
+    const sameEmail = 'same@example.com';
+
+    await handleExistingUser(oldUser, avatarUrl, {}, sameEmail);
+
+    expect(updateUser).not.toHaveBeenCalled();
+  });
+
+  it('should trim email before comparison and update', async () => {
+    const oldUser = {
+      _id: 'user123',
+      email: 'test@example.com',
+      avatar: 'https://example.com/avatar.png?manual=true',
+    };
+    const avatarUrl = 'https://example.com/avatar.png';
+    const newEmailWithSpaces = '  newemail@example.com  ';
+
+    await handleExistingUser(oldUser, avatarUrl, {}, newEmailWithSpaces);
+
+    expect(updateUser).toHaveBeenCalledWith('user123', { email: 'newemail@example.com' });
+  });
+
+  it('should not update when email parameter is not provided', async () => {
+    const oldUser = {
+      _id: 'user123',
+      email: 'test@example.com',
+      avatar: 'https://example.com/avatar.png?manual=true',
+    };
+    const avatarUrl = 'https://example.com/avatar.png';
+
+    await handleExistingUser(oldUser, avatarUrl, {});
+
+    expect(updateUser).not.toHaveBeenCalled();
+  });
 });

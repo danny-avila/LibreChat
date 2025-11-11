@@ -936,6 +936,107 @@ describe('Share Methods', () => {
     });
   });
 
+  describe('deleteConvoSharedLink', () => {
+    test('should delete all shared links for a specific conversation', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId1 = 'conv-to-delete';
+      const conversationId2 = 'conv-to-keep';
+
+      await SharedLink.create([
+        { shareId: 'share1', conversationId: conversationId1, user: userId, isPublic: true },
+        { shareId: 'share2', conversationId: conversationId1, user: userId, isPublic: false },
+        { shareId: 'share3', conversationId: conversationId2, user: userId, isPublic: true },
+      ]);
+
+      const result = await shareMethods.deleteConvoSharedLink(userId, conversationId1);
+
+      expect(result.deletedCount).toBe(2);
+      expect(result.message).toContain('successfully');
+
+      const remainingShares = await SharedLink.find({});
+      expect(remainingShares).toHaveLength(1);
+      expect(remainingShares[0].conversationId).toBe(conversationId2);
+    });
+
+    test('should only delete shares for the specified user and conversation', async () => {
+      const userId1 = new mongoose.Types.ObjectId().toString();
+      const userId2 = new mongoose.Types.ObjectId().toString();
+      const conversationId = 'shared-conv';
+
+      await SharedLink.create([
+        { shareId: 'share1', conversationId, user: userId1, isPublic: true },
+        { shareId: 'share2', conversationId, user: userId2, isPublic: true },
+        { shareId: 'share3', conversationId: 'other-conv', user: userId1, isPublic: true },
+      ]);
+
+      const result = await shareMethods.deleteConvoSharedLink(userId1, conversationId);
+
+      expect(result.deletedCount).toBe(1);
+
+      const remainingShares = await SharedLink.find({});
+      expect(remainingShares).toHaveLength(2);
+      expect(
+        remainingShares.some((s) => s.user === userId2 && s.conversationId === conversationId),
+      ).toBe(true);
+      expect(
+        remainingShares.some((s) => s.user === userId1 && s.conversationId === 'other-conv'),
+      ).toBe(true);
+    });
+
+    test('should handle when no shares exist for the conversation', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = 'nonexistent-conv';
+
+      const result = await shareMethods.deleteConvoSharedLink(userId, conversationId);
+
+      expect(result.deletedCount).toBe(0);
+      expect(result.message).toContain('successfully');
+    });
+
+    test('should throw error when userId is missing', async () => {
+      await expect(shareMethods.deleteConvoSharedLink('', 'conv123')).rejects.toThrow(
+        'Missing required parameters',
+      );
+    });
+
+    test('should throw error when conversationId is missing', async () => {
+      await expect(shareMethods.deleteConvoSharedLink('user123', '')).rejects.toThrow(
+        'Missing required parameters',
+      );
+    });
+
+    test('should delete multiple shared links for same conversation', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = 'conv-with-many-shares';
+
+      await SharedLink.create([
+        { shareId: 'share1', conversationId, user: userId, isPublic: true },
+        {
+          shareId: 'share2',
+          conversationId,
+          user: userId,
+          isPublic: true,
+          targetMessageId: 'msg1',
+        },
+        {
+          shareId: 'share3',
+          conversationId,
+          user: userId,
+          isPublic: true,
+          targetMessageId: 'msg2',
+        },
+        { shareId: 'share4', conversationId, user: userId, isPublic: false },
+      ]);
+
+      const result = await shareMethods.deleteConvoSharedLink(userId, conversationId);
+
+      expect(result.deletedCount).toBe(4);
+
+      const remainingShares = await SharedLink.find({ conversationId, user: userId });
+      expect(remainingShares).toHaveLength(0);
+    });
+  });
+
   describe('Edge Cases and Error Handling', () => {
     test('should handle conversation with special characters in ID', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
