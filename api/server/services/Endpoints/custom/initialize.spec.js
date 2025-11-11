@@ -4,7 +4,6 @@ jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   resolveHeaders: jest.fn(),
   getOpenAIConfig: jest.fn(),
-  createHandleLLMNewToken: jest.fn(),
   getCustomEndpointConfig: jest.fn().mockReturnValue({
     apiKey: 'test-key',
     baseURL: 'https://test.com',

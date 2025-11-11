@@ -42,7 +42,7 @@ const getToolFilesByIds = async (fileIds, toolResourceSet) => {
       $or: [],
     };
 
-    if (toolResourceSet.has(EToolResources.ocr)) {
+    if (toolResourceSet.has(EToolResources.context)) {
       filter.$or.push({ text: { $exists: true, $ne: null }, context: FileContext.agents });
     }
     if (toolResourceSet.has(EToolResources.file_search)) {

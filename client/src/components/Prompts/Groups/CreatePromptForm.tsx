@@ -7,6 +7,7 @@ import CategorySelector from '~/components/Prompts/Groups/CategorySelector';
 import VariablesDropdown from '~/components/Prompts/VariablesDropdown';
 import PromptVariables from '~/components/Prompts/PromptVariables';
 import Description from '~/components/Prompts/Description';
+import { usePromptGroupsContext } from '~/Providers';
 import { useLocalize, useHasAccess } from '~/hooks';
 import Command from '~/components/Prompts/Command';
 import { useCreatePrompt } from '~/data-provider';
@@ -37,10 +38,12 @@ const CreatePromptForm = ({
 }) => {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const hasAccess = useHasAccess({
+  const { hasAccess: hasUseAccess } = usePromptGroupsContext();
+  const hasCreateAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
     permission: Permissions.CREATE,
   });
+  const hasAccess = hasUseAccess && hasCreateAccess;
 
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout>;
@@ -148,6 +151,7 @@ const CreatePromptForm = ({
                       className="w-full rounded border border-border-medium px-2 py-1 focus:outline-none dark:bg-transparent dark:text-gray-200"
                       minRows={6}
                       tabIndex={0}
+                      aria-label={localize('com_ui_prompt_input_field')}
                     />
                     <div
                       className={`mt-1 text-sm text-red-500 ${

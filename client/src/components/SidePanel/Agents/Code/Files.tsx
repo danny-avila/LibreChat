@@ -6,14 +6,14 @@ import {
   EModelEndpoint,
   mergeFileConfig,
   AgentCapabilities,
-  fileConfig as defaultFileConfig,
+  getEndpointFileConfig,
 } from 'librechat-data-provider';
-import type { EndpointFileConfig } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
 import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
 import { useChatContext } from '~/Providers';
+import { isEphemeralAgent } from '~/common';
 
 const tool_resource = EToolResources.execute_code;
 
@@ -29,12 +29,11 @@ export default function Files({
   const { watch } = useFormContext<AgentForm>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+  const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
   const { abortUpload, handleFileChange } = useFileHandling({
     fileSetter: setFiles,
-    overrideEndpoint: EModelEndpoint.agents,
     additionalMetadata: { agent_id, tool_resource },
   });
 
@@ -50,9 +49,11 @@ export default function Files({
 
   const codeChecked = watch(AgentCapabilities.execute_code);
 
-  const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.agents] as
-    | EndpointFileConfig
-    | undefined;
+  const endpointFileConfig = getEndpointFileConfig({
+    fileConfig,
+    endpoint: EModelEndpoint.agents,
+    endpointType: EModelEndpoint.agents,
+  });
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
   if (isUploadDisabled) {
@@ -85,7 +86,7 @@ export default function Files({
         <div>
           <button
             type="button"
-            disabled={!agent_id || codeChecked === false}
+            disabled={isEphemeralAgent(agent_id) || codeChecked === false}
             className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
             onClick={handleButtonClick}
           >
@@ -96,7 +97,7 @@ export default function Files({
                 style={{ display: 'none' }}
                 tabIndex={-1}
                 ref={fileInputRef}
-                disabled={!agent_id || codeChecked === false}
+                disabled={isEphemeralAgent(agent_id) || codeChecked === false}
                 onChange={handleFileChange}
               />
               <AttachmentIcon className="text-token-text-primary h-4 w-4" />

@@ -6,8 +6,10 @@ import type { FlowStateManager } from '~/flow/manager';
 import type { FlowMetadata } from '~/flow/types';
 import type * as t from './types';
 import { MCPTokenStorage, MCPOAuthHandler } from '~/mcp/oauth';
+import { sanitizeUrlForLogging } from './utils';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
+import { withTimeout } from '~/utils/promise';
 
 /**
  * Factory for creating MCP connections with optional OAuth authentication.
@@ -141,6 +143,7 @@ export class MCPConnectionFactory {
           serverName: metadata.serverName,
           clientInfo: metadata.clientInfo,
         },
+        this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
       );
     };
@@ -160,6 +163,7 @@ export class MCPConnectionFactory {
               this.serverName,
               data.serverUrl || '',
               this.userId!,
+              config?.oauth_headers ?? {},
               config?.oauth,
             );
 
@@ -228,14 +232,11 @@ export class MCPConnectionFactory {
   /** Attempts to establish connection with timeout handling */
   protected async attemptToConnect(connection: MCPConnection): Promise<void> {
     const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
-    const connectionTimeout = new Promise<void>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`Connection timeout after ${connectTimeout}ms`)),
-        connectTimeout,
-      ),
+    await withTimeout(
+      this.connectTo(connection),
+      connectTimeout,
+      `Connection timeout after ${connectTimeout}ms`,
     );
-    const connectionAttempt = this.connectTo(connection);
-    await Promise.race([connectionAttempt, connectionTimeout]);
 
     if (await connection.isConnected()) return;
     logger.error(`${this.logPrefix} Failed to establish connection.`);
@@ -308,7 +309,9 @@ export class MCPConnectionFactory {
     metadata?: OAuthMetadata;
   } | null> {
     const serverUrl = (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url;
-    logger.debug(`${this.logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl}`);
+    logger.debug(
+      `${this.logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl ? sanitizeUrlForLogging(serverUrl) : 'undefined'}`,
+    );
 
     if (!this.flowManager || !serverUrl) {
       logger.error(
@@ -326,6 +329,7 @@ export class MCPConnectionFactory {
 
       /** Check if there's already an ongoing OAuth flow for this flowId */
       const existingFlow = await this.flowManager.getFlowState(flowId, 'mcp_oauth');
+
       if (existingFlow && existingFlow.status === 'PENDING') {
         logger.debug(
           `${this.logPrefix} OAuth flow already exists for ${flowId}, waiting for completion`,
@@ -339,11 +343,29 @@ export class MCPConnectionFactory {
           `${this.logPrefix} OAuth flow completed, tokens received for ${this.serverName}`,
         );
 
-        /** Client information from the existing flow metadata */
+        // Re-fetch flow state after completion to get updated credentials
+        const updatedFlowState = await MCPOAuthHandler.getFlowState(
+          flowId,
+          this.flowManager as FlowStateManager<MCPOAuthTokens>,
+        );
+
+        /** Client information from the updated flow metadata */
         const existingMetadata = existingFlow.metadata as unknown as MCPOAuthFlowMetadata;
-        const clientInfo = existingMetadata?.clientInfo;
+        const clientInfo = updatedFlowState?.clientInfo || existingMetadata?.clientInfo;
 
         return { tokens, clientInfo };
+      }
+
+      // Clean up old completed flows: createFlow() may return cached results otherwise
+      if (existingFlow && existingFlow.status !== 'PENDING') {
+        try {
+          await this.flowManager.deleteFlow(flowId, 'mcp_oauth');
+          logger.debug(
+            `${this.logPrefix} Cleared stale ${existingFlow.status} OAuth flow for ${flowId}`,
+          );
+        } catch (error) {
+          logger.warn(`${this.logPrefix} Failed to clear stale OAuth flow`, error);
+        }
       }
 
       logger.debug(`${this.logPrefix} Initiating new OAuth flow for ${this.serverName}...`);
@@ -355,6 +377,7 @@ export class MCPConnectionFactory {
         this.serverName,
         serverUrl,
         this.userId!,
+        this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
       );
 
@@ -379,9 +402,15 @@ export class MCPConnectionFactory {
       }
       logger.info(`${this.logPrefix} OAuth flow completed, tokens received for ${this.serverName}`);
 
-      /** Client information from the flow metadata */
-      const clientInfo = flowMetadata?.clientInfo;
-      const metadata = flowMetadata?.metadata;
+      // Re-fetch flow state after completion to get updated credentials
+      const updatedFlowState = await MCPOAuthHandler.getFlowState(
+        newFlowId,
+        this.flowManager as FlowStateManager<MCPOAuthTokens>,
+      );
+
+      /** Client information from the updated flow state */
+      const clientInfo = updatedFlowState?.clientInfo || flowMetadata?.clientInfo;
+      const metadata = updatedFlowState?.metadata || flowMetadata?.metadata;
 
       return {
         tokens,

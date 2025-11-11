@@ -5,7 +5,6 @@ import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
-  Constants,
   SystemRoles,
   ResourceType,
   EModelEndpoint,
@@ -25,11 +24,11 @@ import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
+import { Panel, isEphemeralAgent } from '~/common';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
 import ModelPanel from './ModelPanel';
-import { Panel } from '~/common';
 
 export default function AgentPanel() {
   const localize = useLocalize();
@@ -57,11 +56,7 @@ export default function AgentPanel() {
   const canEdit = hasPermission(PermissionBits.EDIT);
 
   const expandedAgentQuery = useGetExpandedAgentByIdQuery(current_agent_id ?? '', {
-    enabled:
-      !!(current_agent_id ?? '') &&
-      current_agent_id !== Constants.EPHEMERAL_AGENT_ID &&
-      canEdit &&
-      !permissionsLoading,
+    enabled: !isEphemeralAgent(current_agent_id) && canEdit && !permissionsLoading,
   });
 
   const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
@@ -173,6 +168,7 @@ export default function AgentPanel() {
         model_parameters,
         provider: _provider,
         agent_ids,
+        edges,
         end_after_tools,
         hide_sequential_outputs,
         recursion_limit,
@@ -197,6 +193,7 @@ export default function AgentPanel() {
             provider,
             model_parameters,
             agent_ids,
+            edges,
             end_after_tools,
             hide_sequential_outputs,
             recursion_limit,
@@ -230,6 +227,7 @@ export default function AgentPanel() {
         provider,
         model_parameters,
         agent_ids,
+        edges,
         end_after_tools,
         hide_sequential_outputs,
         recursion_limit,
@@ -288,6 +286,13 @@ export default function AgentPanel() {
                   setCurrentAgentId(undefined);
                 }}
                 disabled={agentQuery.isInitialLoading}
+                aria-label={
+                  localize('com_ui_create') +
+                  ' ' +
+                  localize('com_ui_new') +
+                  ' ' +
+                  localize('com_ui_agent')
+                }
               >
                 <Plus className="mr-1 h-4 w-4" />
                 {localize('com_ui_create') +
@@ -298,7 +303,7 @@ export default function AgentPanel() {
               </Button>
               <Button
                 variant="submit"
-                disabled={!agent_id || agentQuery.isInitialLoading}
+                disabled={isEphemeralAgent(agent_id) || agentQuery.isInitialLoading}
                 onClick={(e) => {
                   e.preventDefault();
                   handleSelectAgent();

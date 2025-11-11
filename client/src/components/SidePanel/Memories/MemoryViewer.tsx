@@ -305,7 +305,11 @@ export default function MemoryViewer() {
           <div className="flex w-full justify-end">
             <MemoryCreateDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
               <OGDialogTrigger asChild>
-                <Button variant="outline" className="w-full bg-transparent">
+                <Button
+                  variant="outline"
+                  className="w-full bg-transparent"
+                  aria-label={localize('com_ui_create_memory')}
+                >
                   <Plus className="size-4" aria-hidden />
                   {localize('com_ui_create_memory')}
                 </Button>
@@ -362,7 +366,7 @@ export default function MemoryViewer() {
                     colSpan={hasUpdateAccess ? 2 : 1}
                     className="h-24 text-center text-sm text-text-secondary"
                   >
-                    {localize('com_ui_no_data')}
+                    {localize('com_ui_no_memories')}
                   </TableCell>
                 </TableRow>
               )}

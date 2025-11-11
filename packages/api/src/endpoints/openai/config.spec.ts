@@ -1,4 +1,9 @@
-import { Verbosity, ReasoningEffort, ReasoningSummary } from 'librechat-data-provider';
+import {
+  Verbosity,
+  EModelEndpoint,
+  ReasoningEffort,
+  ReasoningSummary,
+} from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { OpenAIParameters, AzureOptions } from '~/types';
 import { getOpenAIConfig } from './config';
@@ -103,10 +108,87 @@ describe('getOpenAIConfig', () => {
 
     const result = getOpenAIConfig(mockApiKey, { modelOptions });
 
+    /** When no endpoint is specified, it's treated as non-openAI/azureOpenAI, so uses reasoning object */
+    expect(result.llmConfig.reasoning).toEqual({
+      effort: ReasoningEffort.high,
+      summary: ReasoningSummary.detailed,
+    });
+    expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
+  });
+
+  it('should use reasoning_effort for openAI endpoint without useResponsesApi', () => {
+    const modelOptions = {
+      reasoning_effort: ReasoningEffort.high,
+      reasoning_summary: ReasoningSummary.detailed,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions }, EModelEndpoint.openAI);
+
     expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBe(
       ReasoningEffort.high,
     );
     expect(result.llmConfig.reasoning).toBeUndefined();
+  });
+
+  it('should use reasoning_effort for azureOpenAI endpoint without useResponsesApi', () => {
+    const modelOptions = {
+      reasoning_effort: ReasoningEffort.high,
+      reasoning_summary: ReasoningSummary.detailed,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions }, EModelEndpoint.azureOpenAI);
+
+    expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBe(
+      ReasoningEffort.high,
+    );
+    expect(result.llmConfig.reasoning).toBeUndefined();
+  });
+
+  it('should use reasoning object for openAI endpoint with useResponsesApi=true', () => {
+    const modelOptions = {
+      reasoning_effort: ReasoningEffort.high,
+      reasoning_summary: ReasoningSummary.detailed,
+      useResponsesApi: true,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions }, EModelEndpoint.openAI);
+
+    expect(result.llmConfig.reasoning).toEqual({
+      effort: ReasoningEffort.high,
+      summary: ReasoningSummary.detailed,
+    });
+    expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
+  });
+
+  it('should use reasoning object for azureOpenAI endpoint with useResponsesApi=true', () => {
+    const modelOptions = {
+      reasoning_effort: ReasoningEffort.high,
+      reasoning_summary: ReasoningSummary.detailed,
+      useResponsesApi: true,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions }, EModelEndpoint.azureOpenAI);
+
+    expect(result.llmConfig.reasoning).toEqual({
+      effort: ReasoningEffort.high,
+      summary: ReasoningSummary.detailed,
+    });
+    expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
+  });
+
+  it('should use reasoning object for non-openAI/azureOpenAI endpoints', () => {
+    const modelOptions = {
+      reasoning_effort: ReasoningEffort.high,
+      reasoning_summary: ReasoningSummary.detailed,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions }, 'custom-endpoint');
+
+    expect(result.llmConfig.reasoning).toEqual({
+      effort: ReasoningEffort.high,
+      summary: ReasoningSummary.detailed,
+    });
+    expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
   });
 
   it('should handle OpenRouter configuration', () => {
@@ -148,7 +230,115 @@ describe('getOpenAIConfig', () => {
     const result = getOpenAIConfig(mockApiKey, { modelOptions });
 
     expect(result.llmConfig.useResponsesApi).toBe(true);
-    expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
+    expect(result.tools).toEqual([{ type: 'web_search' }]);
+  });
+
+  it('should handle web_search from addParams overriding modelOptions', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      web_search: false,
+    };
+
+    const addParams = {
+      web_search: true,
+      customParam: 'value',
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions, addParams });
+
+    expect(result.llmConfig.useResponsesApi).toBe(true);
+    expect(result.tools).toEqual([{ type: 'web_search' }]);
+    // web_search should not be in modelKwargs or llmConfig
+    expect((result.llmConfig as Record<string, unknown>).web_search).toBeUndefined();
+    expect(result.llmConfig.modelKwargs).toEqual({ customParam: 'value' });
+  });
+
+  it('should disable web_search when included in dropParams', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      web_search: true,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, {
+      modelOptions,
+      dropParams: ['web_search'],
+    });
+
+    expect(result.llmConfig.useResponsesApi).toBeUndefined();
+    expect(result.tools).toEqual([]);
+  });
+
+  it('should handle web_search false from addParams', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      web_search: true,
+    };
+
+    const addParams = {
+      web_search: false,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions, addParams });
+
+    expect(result.llmConfig.useResponsesApi).toBeUndefined();
+    expect(result.tools).toEqual([]);
+  });
+
+  it('should ignore non-boolean web_search values in addParams', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+      web_search: true,
+    };
+
+    const addParams = {
+      web_search: 'string-value' as unknown,
+      temperature: 0.7,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { modelOptions, addParams });
+
+    // Should keep the original web_search from modelOptions since addParams value is not boolean
+    expect(result.llmConfig.useResponsesApi).toBe(true);
+    expect(result.tools).toEqual([{ type: 'web_search' }]);
+    expect(result.llmConfig.temperature).toBe(0.7);
+    // web_search should not be added to modelKwargs
+    expect(result.llmConfig.modelKwargs).toBeUndefined();
+  });
+
+  it('should handle web_search with both addParams and dropParams', () => {
+    const modelOptions = {
+      model: 'gpt-5',
+    };
+
+    const addParams = {
+      web_search: true,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, {
+      modelOptions,
+      addParams,
+      dropParams: ['web_search'], // dropParams takes precedence
+    });
+
+    expect(result.llmConfig.useResponsesApi).toBeUndefined();
+    expect(result.tools).toEqual([]);
+  });
+
+  it('should not add web_search to modelKwargs or llmConfig', () => {
+    const addParams = {
+      web_search: true,
+      customParam1: 'value1',
+      temperature: 0.5,
+    };
+
+    const result = getOpenAIConfig(mockApiKey, { addParams });
+
+    // web_search should trigger the tool but not appear in config
+    expect(result.llmConfig.useResponsesApi).toBe(true);
+    expect(result.tools).toEqual([{ type: 'web_search' }]);
+    expect((result.llmConfig as Record<string, unknown>).web_search).toBeUndefined();
+    expect(result.llmConfig.temperature).toBe(0.5);
+    expect(result.llmConfig.modelKwargs).toEqual({ customParam1: 'value1' });
   });
 
   it('should drop params for search models', () => {
@@ -547,6 +737,27 @@ describe('getOpenAIConfig', () => {
       ).toBeUndefined();
     });
 
+    it('should create correct Azure baseURL when response api is selected', () => {
+      const azure = {
+        azureOpenAIApiInstanceName: 'test-instance',
+        azureOpenAIApiDeploymentName: 'test-deployment',
+        azureOpenAIApiVersion: '2023-08-15',
+        azureOpenAIApiKey: 'azure-key',
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        azure,
+        modelOptions: { useResponsesApi: true },
+        reverseProxyUrl:
+          'https://${INSTANCE_NAME}.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}',
+      });
+
+      expect(result.configOptions?.baseURL).toBe(
+        'https://test-instance.openai.azure.com/openai/v1',
+      );
+      expect(result.configOptions?.baseURL).not.toContain('deployments');
+    });
+
     it('should handle Azure with organization from environment', () => {
       const originalOrg = process.env.OPENAI_ORGANIZATION;
       process.env.OPENAI_ORGANIZATION = 'test-org-123';
@@ -576,6 +787,82 @@ describe('getOpenAIConfig', () => {
       const result = getOpenAIConfig(mockApiKey, {}, 'openrouter');
 
       expect(result.llmConfig.include_reasoning).toBe(true);
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should handle web_search with OpenRouter using plugins format', () => {
+      const modelOptions = {
+        model: 'gpt-4',
+        web_search: true,
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        modelOptions,
+      });
+
+      // Should use plugins format for OpenRouter, not tools
+      expect(result.llmConfig.modelKwargs).toEqual({
+        plugins: [{ id: 'web' }],
+      });
+      expect(result.tools).toEqual([]);
+      // Should NOT set useResponsesApi for OpenRouter
+      expect(result.llmConfig.useResponsesApi).toBeUndefined();
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should handle web_search false with OpenRouter', () => {
+      const modelOptions = {
+        model: 'gpt-4',
+        web_search: false,
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        modelOptions,
+      });
+
+      // Should not have plugins when web_search is false
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+      expect(result.tools).toEqual([]);
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should handle web_search with OpenRouter from addParams', () => {
+      const addParams = {
+        web_search: true,
+        customParam: 'value',
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        addParams,
+      });
+
+      // Should use plugins format and include other params
+      expect(result.llmConfig.modelKwargs).toEqual({
+        plugins: [{ id: 'web' }],
+        customParam: 'value',
+      });
+      expect(result.tools).toEqual([]);
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should handle web_search with OpenRouter and dropParams', () => {
+      const modelOptions = {
+        model: 'gpt-4',
+        web_search: true,
+      };
+
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        modelOptions,
+        dropParams: ['web_search'],
+      });
+
+      // dropParams should disable web_search even for OpenRouter
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+      expect(result.tools).toEqual([]);
       expect(result.provider).toBe('openrouter');
     });
 
@@ -877,7 +1164,7 @@ describe('getOpenAIConfig', () => {
         text: { verbosity: Verbosity.medium },
         customParam: 'custom-value',
       });
-      expect(result.tools).toEqual([{ type: 'web_search_preview' }]);
+      expect(result.tools).toEqual([{ type: 'web_search' }]);
       expect(result.configOptions).toMatchObject({
         baseURL: 'https://api.custom.com',
         defaultHeaders: { 'X-Custom': 'value' },
@@ -886,6 +1173,45 @@ describe('getOpenAIConfig', () => {
           dispatcher: expect.any(Object),
         }),
       });
+    });
+
+    it('should handle all configuration with OpenRouter and web_search', () => {
+      const complexConfig = {
+        modelOptions: {
+          model: 'gpt-4-turbo',
+          temperature: 0.7,
+          max_tokens: 2000,
+          verbosity: Verbosity.medium,
+          reasoning_effort: ReasoningEffort.high,
+          web_search: true,
+        },
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        headers: { 'X-Custom': 'value' },
+        streaming: false,
+        addParams: {
+          customParam: 'custom-value',
+          temperature: 0.8,
+        },
+      };
+
+      const result = getOpenAIConfig(mockApiKey, complexConfig);
+
+      expect(result.llmConfig).toMatchObject({
+        model: 'gpt-4-turbo',
+        temperature: 0.8,
+        streaming: false,
+        include_reasoning: true, // OpenRouter specific
+      });
+      // Should NOT have useResponsesApi for OpenRouter
+      expect(result.llmConfig.useResponsesApi).toBeUndefined();
+      expect(result.llmConfig.maxTokens).toBe(2000);
+      expect(result.llmConfig.modelKwargs).toEqual({
+        verbosity: Verbosity.medium,
+        customParam: 'custom-value',
+        plugins: [{ id: 'web' }], // OpenRouter web search format
+      });
+      expect(result.tools).toEqual([]); // No tools for OpenRouter web search
+      expect(result.provider).toBe('openrouter');
     });
   });
 

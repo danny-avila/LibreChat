@@ -9,6 +9,7 @@ import { useEditorContext } from '~/Providers';
 import ArtifactTabs from './ArtifactTabs';
 import { CopyCodeButton } from './Code';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 import store from '~/store';
 
 export default function Artifacts() {
@@ -26,7 +27,6 @@ export default function Artifacts() {
 
   const {
     activeTab,
-    isMermaid,
     setActiveTab,
     currentIndex,
     cycleArtifact,
@@ -58,9 +58,10 @@ export default function Artifacts() {
       <div className="flex h-full w-full items-center justify-center">
         {/* Main Container */}
         <div
-          className={`flex h-full w-full flex-col overflow-hidden border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl transition-all duration-500 ease-in-out ${
-            isVisible ? 'scale-100 opacity-100 blur-0' : 'scale-105 opacity-0 blur-sm'
-          }`}
+          className={cn(
+            `flex h-full w-full flex-col overflow-hidden border border-border-medium bg-surface-primary text-xl text-text-primary shadow-xl transition-all duration-500 ease-in-out`,
+            isVisible ? 'scale-100 opacity-100 blur-0' : 'scale-105 opacity-0 blur-sm',
+          )}
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border-medium bg-surface-primary-alt p-2">
@@ -74,16 +75,17 @@ export default function Artifacts() {
               {/* Refresh button */}
               {activeTab === 'preview' && (
                 <button
-                  className={`mr-2 text-text-secondary transition-transform duration-500 ease-in-out ${
-                    isRefreshing ? 'rotate-180' : ''
-                  }`}
+                  className={cn(
+                    'mr-2 text-text-secondary transition-transform duration-500 ease-in-out',
+                    isRefreshing ? 'rotate-180' : '',
+                  )}
                   onClick={handleRefresh}
                   disabled={isRefreshing}
                   aria-label="Refresh"
                 >
                   <RefreshCw
                     size={16}
-                    className={`transform ${isRefreshing ? 'animate-spin' : ''}`}
+                    className={cn('transform', isRefreshing ? 'animate-spin' : '')}
                   />
                 </button>
               )}
@@ -113,7 +115,6 @@ export default function Artifacts() {
           </div>
           {/* Content */}
           <ArtifactTabs
-            isMermaid={isMermaid}
             artifact={currentArtifact}
             editorRef={editorRef as React.MutableRefObject<CodeEditorRef>}
             previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}

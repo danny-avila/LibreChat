@@ -41,6 +41,9 @@ export function getOpenAIConfig(
     !isAnthropic &&
     ((baseURL && baseURL.includes(KnownEndpoints.openrouter)) ||
       (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.openrouter)));
+  const isVercel =
+    (baseURL && baseURL.includes('ai-gateway.vercel.sh')) ||
+    (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.vercel));
 
   let azure = options.azure;
   let headers = options.headers;
@@ -65,6 +68,7 @@ export function getOpenAIConfig(
       azure,
       apiKey,
       baseURL,
+      endpoint,
       streaming,
       addParams,
       dropParams,
@@ -80,7 +84,7 @@ export function getOpenAIConfig(
   if (baseURL) {
     configOptions.baseURL = baseURL;
   }
-  if (useOpenRouter) {
+  if (useOpenRouter || isVercel) {
     configOptions.defaultHeaders = Object.assign(
       {
         'HTTP-Referer': 'https://librechat.ai',
@@ -109,8 +113,10 @@ export function getOpenAIConfig(
         return;
       }
 
+      const updatedUrl = configOptions.baseURL?.replace(/\/deployments(?:\/.*)?$/, '/v1');
+
       configOptions.baseURL = constructAzureURL({
-        baseURL: configOptions.baseURL || 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
+        baseURL: updatedUrl || 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
         azureOptions: azure,
       });
 

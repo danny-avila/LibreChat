@@ -1,12 +1,18 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useAtom } from 'jotai';
+import isEqual from 'lodash/isEqual';
 import { useRecoilState } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import { ephemeralAgentByConvoId, mcpValuesAtomFamily, mcpPinnedAtom } from '~/store';
+import { useGetStartupConfig } from '~/data-provider';
 import { setTimestamp } from '~/utils/timestamps';
 
 export function useMCPSelect({ conversationId }: { conversationId?: string | null }) {
   const key = conversationId ?? Constants.NEW_CONVO;
+  const { data: startupConfig } = useGetStartupConfig();
+  const configuredServers = useMemo(() => {
+    return new Set(Object.keys(startupConfig?.mcpServers ?? {}));
+  }, [startupConfig?.mcpServers]);
 
   const [isPinned, setIsPinned] = useAtom(mcpPinnedAtom);
   const [mcpValues, setMCPValuesRaw] = useAtom(mcpValuesAtomFamily(key));
@@ -14,20 +20,24 @@ export function useMCPSelect({ conversationId }: { conversationId?: string | nul
 
   // Sync Jotai state with ephemeral agent state
   useEffect(() => {
-    if (ephemeralAgent?.mcp && ephemeralAgent.mcp.length > 0) {
-      setMCPValuesRaw(ephemeralAgent.mcp);
+    const mcps = ephemeralAgent?.mcp ?? [];
+    if (mcps.length === 1 && mcps[0] === Constants.mcp_clear) {
+      setMCPValuesRaw([]);
+    } else if (mcps.length > 0) {
+      // Strip out servers that are not available in the startup config
+      const activeMcps = mcps.filter((mcp) => configuredServers.has(mcp));
+      setMCPValuesRaw(activeMcps);
     }
-  }, [ephemeralAgent?.mcp, setMCPValuesRaw]);
+  }, [ephemeralAgent?.mcp, setMCPValuesRaw, configuredServers]);
 
-  // Update ephemeral agent when Jotai state changes
   useEffect(() => {
-    if (mcpValues.length > 0 && JSON.stringify(mcpValues) !== JSON.stringify(ephemeralAgent?.mcp)) {
-      setEphemeralAgent((prev) => ({
-        ...prev,
-        mcp: mcpValues,
-      }));
-    }
-  }, [mcpValues, ephemeralAgent?.mcp, setEphemeralAgent]);
+    setEphemeralAgent((prev) => {
+      if (!isEqual(prev?.mcp, mcpValues)) {
+        return { ...(prev ?? {}), mcp: mcpValues };
+      }
+      return prev;
+    });
+  }, [mcpValues, setEphemeralAgent]);
 
   useEffect(() => {
     const mcpStorageKey = `${LocalStorageKeys.LAST_MCP_}${key}`;

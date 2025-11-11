@@ -1,8 +1,12 @@
-import { EModelEndpoint, removeNullishValues } from 'librechat-data-provider';
-import type { TCustomConfig, TEndpoint, TTransactionsConfig } from 'librechat-data-provider';
-import type { AppConfig } from '~/types';
-import { isEnabled, normalizeEndpointName } from '~/utils';
 import { logger } from '@librechat/data-schemas';
+import {
+  EModelEndpoint,
+  removeNullishValues,
+  normalizeEndpointName,
+} from 'librechat-data-provider';
+import type { TCustomConfig, TEndpoint, TTransactionsConfig } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
+import { isEnabled } from '~/utils';
 
 /**
  * Retrieves the balance configuration object
@@ -24,7 +28,7 @@ export function getBalanceConfig(appConfig?: AppConfig): Partial<TCustomConfig['
 /**
  * Retrieves the transactions configuration object
  * */
-export function getTransactionsConfig(appConfig?: AppConfig): TTransactionsConfig {
+export function getTransactionsConfig(appConfig?: AppConfig): Partial<TTransactionsConfig> {
   const defaultConfig: TTransactionsConfig = { enabled: true };
 
   if (!appConfig) {
@@ -66,5 +70,5 @@ export const getCustomEndpointConfig = ({
 
 export function hasCustomUserVars(appConfig?: AppConfig): boolean {
   const mcpServers = appConfig?.mcpConfig;
-  return Object.values(mcpServers ?? {}).some((server) => server.customUserVars);
+  return Object.values(mcpServers ?? {}).some((server) => server?.customUserVars);
 }

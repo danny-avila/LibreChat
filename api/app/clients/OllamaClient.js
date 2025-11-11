@@ -2,7 +2,7 @@ const { z } = require('zod');
 const axios = require('axios');
 const { Ollama } = require('ollama');
 const { sleep } = require('@librechat/agents');
-const { logAxiosError } = require('@librechat/api');
+const { resolveHeaders } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
 const { deriveBaseURL } = require('~/utils');
@@ -44,6 +44,7 @@ class OllamaClient {
   constructor(options = {}) {
     const host = deriveBaseURL(options.baseURL ?? 'http://localhost:11434');
     this.streamRate = options.streamRate ?? Constants.DEFAULT_STREAM_RATE;
+    this.headers = options.headers ?? {};
     /** @type {Ollama} */
     this.client = new Ollama({ host });
   }
@@ -51,27 +52,32 @@ class OllamaClient {
   /**
    * Fetches Ollama models from the specified base API path.
    * @param {string} baseURL
+   * @param {Object} [options] - Optional configuration
+   * @param {Partial<IUser>} [options.user] - User object for header resolution
+   * @param {Record<string, string>} [options.headers] - Headers to include in the request
    * @returns {Promise<string[]>} The Ollama models.
+   * @throws {Error} Throws if the Ollama API request fails
    */
-  static async fetchModels(baseURL) {
-    let models = [];
+  static async fetchModels(baseURL, options = {}) {
     if (!baseURL) {
-      return models;
-    }
-    try {
-      const ollamaEndpoint = deriveBaseURL(baseURL);
-      /** @type {Promise<AxiosResponse<OllamaListResponse>>} */
-      const response = await axios.get(`${ollamaEndpoint}/api/tags`, {
-        timeout: 5000,
-      });
-      models = response.data.models.map((tag) => tag.name);
-      return models;
-    } catch (error) {
-      const logMessage =
-        "Failed to fetch models from Ollama API. If you are not using Ollama directly, and instead, through some aggregator or reverse proxy that handles fetching via OpenAI spec, ensure the name of the endpoint doesn't start with `ollama` (case-insensitive).";
-      logAxiosError({ message: logMessage, error });
       return [];
     }
+
+    const ollamaEndpoint = deriveBaseURL(baseURL);
+
+    const resolvedHeaders = resolveHeaders({
+      headers: options.headers,
+      user: options.user,
+    });
+
+    /** @type {Promise<AxiosResponse<OllamaListResponse>>} */
+    const response = await axios.get(`${ollamaEndpoint}/api/tags`, {
+      headers: resolvedHeaders,
+      timeout: 5000,
+    });
+
+    const models = response.data.models.map((tag) => tag.name);
+    return models;
   }
 
   /**

@@ -10,6 +10,10 @@ jest.mock('@librechat/agents', () => ({
   }),
 }));
 
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+}));
+
 describe('AgentClient - titleConvo', () => {
   let client;
   let mockRun;
@@ -252,6 +256,38 @@ describe('AgentClient - titleConvo', () => {
       expect(result).toBe('Generated Title');
     });
 
+    it('should sanitize the generated title by removing think blocks', async () => {
+      const titleWithThinkBlock = '<think>reasoning about the title</think> User Hi Greeting';
+      mockRun.generateTitle.mockResolvedValue({
+        title: titleWithThinkBlock,
+      });
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      // Should remove the <think> block and return only the clean title
+      expect(result).toBe('User Hi Greeting');
+      expect(result).not.toContain('<think>');
+      expect(result).not.toContain('</think>');
+    });
+
+    it('should return fallback title when sanitization results in empty string', async () => {
+      const titleOnlyThinkBlock = '<think>only reasoning no actual title</think>';
+      mockRun.generateTitle.mockResolvedValue({
+        title: titleOnlyThinkBlock,
+      });
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      // Should return the fallback title since sanitization would result in empty string
+      expect(result).toBe('Untitled Conversation');
+    });
+
     it('should handle errors gracefully and return undefined', async () => {
       mockRun.generateTitle.mockRejectedValue(new Error('Title generation failed'));
 
@@ -261,6 +297,125 @@ describe('AgentClient - titleConvo', () => {
       const result = await client.titleConvo({ text, abortController });
 
       expect(result).toBeUndefined();
+    });
+
+    it('should skip title generation when titleConvo is set to false', async () => {
+      // Set titleConvo to false in endpoint config
+      mockReq.config = {
+        endpoints: {
+          [EModelEndpoint.openAI]: {
+            titleConvo: false,
+            titleModel: 'gpt-3.5-turbo',
+            titlePrompt: 'Custom title prompt',
+            titleMethod: 'structured',
+            titlePromptTemplate: 'Template: {{content}}',
+          },
+        },
+      };
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      // Should return undefined without generating title
+      expect(result).toBeUndefined();
+
+      // generateTitle should NOT have been called
+      expect(mockRun.generateTitle).not.toHaveBeenCalled();
+
+      // recordCollectedUsage should NOT have been called
+      expect(client.recordCollectedUsage).not.toHaveBeenCalled();
+    });
+
+    it('should skip title generation when titleConvo is false in all config', async () => {
+      // Set titleConvo to false in "all" config
+      mockReq.config = {
+        endpoints: {
+          all: {
+            titleConvo: false,
+            titleModel: 'gpt-4o-mini',
+            titlePrompt: 'All config title prompt',
+            titleMethod: 'completion',
+            titlePromptTemplate: 'All config template',
+          },
+        },
+      };
+
+      const text = 'Test conversation text';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      // Should return undefined without generating title
+      expect(result).toBeUndefined();
+
+      // generateTitle should NOT have been called
+      expect(mockRun.generateTitle).not.toHaveBeenCalled();
+
+      // recordCollectedUsage should NOT have been called
+      expect(client.recordCollectedUsage).not.toHaveBeenCalled();
+    });
+
+    it('should skip title generation when titleConvo is false for custom endpoint scenario', async () => {
+      // This test validates the behavior when customEndpointConfig (retrieved via
+      // getProviderConfig for custom endpoints) has titleConvo: false.
+      //
+      // The code path is:
+      // 1. endpoints?.all is checked (undefined in this test)
+      // 2. endpoints?.[endpoint] is checked (our test config)
+      // 3. Would fall back to titleProviderConfig.customEndpointConfig (for real custom endpoints)
+      //
+      // We simulate a custom endpoint scenario using a dynamically named endpoint config
+
+      // Create a unique endpoint name that represents a custom endpoint
+      const customEndpointName = 'customEndpoint';
+
+      // Configure the endpoint to have titleConvo: false
+      // This simulates what would be in customEndpointConfig for a real custom endpoint
+      mockReq.config = {
+        endpoints: {
+          // No 'all' config - so it will check endpoints[endpoint]
+          // This config represents what customEndpointConfig would contain
+          [customEndpointName]: {
+            titleConvo: false,
+            titleModel: 'custom-model-v1',
+            titlePrompt: 'Custom endpoint title prompt',
+            titleMethod: 'completion',
+            titlePromptTemplate: 'Custom template: {{content}}',
+            baseURL: 'https://api.custom-llm.com/v1',
+            apiKey: 'test-custom-key',
+            // Additional custom endpoint properties
+            models: {
+              default: ['custom-model-v1', 'custom-model-v2'],
+            },
+          },
+        },
+      };
+
+      // Set up agent to use our custom endpoint
+      // Use openAI as base but override with custom endpoint name for this test
+      mockAgent.endpoint = EModelEndpoint.openAI;
+      mockAgent.provider = EModelEndpoint.openAI;
+
+      // Override the endpoint in the config to point to our custom config
+      mockReq.config.endpoints[EModelEndpoint.openAI] =
+        mockReq.config.endpoints[customEndpointName];
+      delete mockReq.config.endpoints[customEndpointName];
+
+      const text = 'Test custom endpoint conversation';
+      const abortController = new AbortController();
+
+      const result = await client.titleConvo({ text, abortController });
+
+      // Should return undefined without generating title because titleConvo is false
+      expect(result).toBeUndefined();
+
+      // generateTitle should NOT have been called
+      expect(mockRun.generateTitle).not.toHaveBeenCalled();
+
+      // recordCollectedUsage should NOT have been called
+      expect(client.recordCollectedUsage).not.toHaveBeenCalled();
     });
 
     it('should pass titleEndpoint configuration to generateTitle', async () => {

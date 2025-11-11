@@ -304,6 +304,7 @@ describe('Apple Login Strategy', () => {
           fileStrategy: 'local',
           balance: { enabled: false },
         }),
+        'jane.doe@example.com',
       );
     });
 

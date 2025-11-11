@@ -1,12 +1,11 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
-import { EModelEndpoint } from 'librechat-data-provider';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
+import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import {
   removeFocusOutlines,
   processAgentOption,
-  getEndpointField,
   defaultTextProps,
   validateEmail,
   getIconKey,
@@ -18,6 +17,7 @@ import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
 import { useLocalize, useVisibleTools } from '~/hooks';
+import { Panel, isEphemeralAgent } from '~/common';
 import { useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
@@ -29,7 +29,6 @@ import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
-import { Panel } from '~/common';
 
 const labelClass = 'mb-2 text-token-text-primary block font-medium';
 const inputClass = cn(
@@ -48,12 +47,12 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   const {
     actions,
     setAction,
+    regularTools,
     agentsConfig,
     startupConfig,
     mcpServersMap,
     setActivePanel,
     endpointsConfig,
-    groupedTools: allTools,
   } = useAgentPanelContext();
 
   const {
@@ -79,9 +78,9 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   }, [fileMap, agentFiles]);
 
   const {
-    ocrEnabled,
     codeEnabled,
     toolsEnabled,
+    contextEnabled,
     actionsEnabled,
     artifactsEnabled,
     webSearchEnabled,
@@ -149,7 +148,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   }, [agent, agent_id, mergedFileMap]);
 
   const handleAddActions = useCallback(() => {
-    if (!agent_id) {
+    if (isEphemeralAgent(agent_id)) {
       showToast({
         message: localize('com_assistants_actions_disabled'),
         status: 'warning',
@@ -177,7 +176,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
     Icon = icons[iconKey];
   }
 
-  const { toolIds, mcpServerNames } = useVisibleTools(tools, allTools, mcpServersMap);
+  const { toolIds, mcpServerNames } = useVisibleTools(tools, regularTools, mcpServersMap);
 
   return (
     <>
@@ -291,7 +290,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         {(codeEnabled ||
           fileSearchEnabled ||
           artifactsEnabled ||
-          ocrEnabled ||
+          contextEnabled ||
           webSearchEnabled) && (
           <div className="mb-4 flex w-full flex-col items-start gap-3">
             <label className="text-token-text-primary block font-medium">
@@ -301,8 +300,8 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
             {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
             {/* Web Search */}
             {webSearchEnabled && <SearchForm />}
-            {/* File Context (OCR) */}
-            {ocrEnabled && <FileContext agent_id={agent_id} files={context_files} />}
+            {/* File Context */}
+            {contextEnabled && <FileContext agent_id={agent_id} files={context_files} />}
             {/* Artifacts */}
             {artifactsEnabled && <Artifacts />}
             {/* File Search */}
@@ -326,16 +325,15 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           </label>
           <div>
             <div className="mb-1">
-              {/* Render all visible IDs (including groups with subtools selected) */}
+              {/* Render all visible IDs */}
               {toolIds.map((toolId, i) => {
-                if (!allTools) return null;
-                const tool = allTools[toolId];
+                const tool = regularTools?.find((t) => t.pluginKey === toolId);
                 if (!tool) return null;
                 return (
                   <AgentTool
                     key={`${toolId}-${i}-${agent_id}`}
                     tool={toolId}
-                    allTools={allTools}
+                    regularTools={regularTools}
                     agent_id={agent_id}
                   />
                 );
@@ -371,7 +369,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
               {(actionsEnabled ?? false) && (
                 <button
                   type="button"
-                  disabled={!agent_id}
+                  disabled={isEphemeralAgent(agent_id)}
                   onClick={handleAddActions}
                   className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
                   aria-haspopup="dialog"
@@ -421,9 +419,16 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                       type="text"
                       placeholder={localize('com_ui_support_contact_name_placeholder')}
                       aria-label="Support contact name"
+                      aria-invalid={error ? 'true' : 'false'}
+                      aria-describedby={error ? 'support-contact-name-error' : undefined}
                     />
                     {error && (
-                      <span className="text-sm text-red-500 transition duration-300 ease-in-out">
+                      <span
+                        id="support-contact-name-error"
+                        className="text-sm text-red-500 transition duration-300 ease-in-out"
+                        role="alert"
+                        aria-live="polite"
+                      >
                         {error.message}
                       </span>
                     )}
@@ -456,9 +461,16 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                       type="email"
                       placeholder={localize('com_ui_support_contact_email_placeholder')}
                       aria-label="Support contact email"
+                      aria-invalid={error ? 'true' : 'false'}
+                      aria-describedby={error ? 'support-contact-email-error' : undefined}
                     />
                     {error && (
-                      <span className="text-sm text-red-500 transition duration-300 ease-in-out">
+                      <span
+                        id="support-contact-email-error"
+                        className="text-sm text-red-500 transition duration-300 ease-in-out"
+                        role="alert"
+                        aria-live="polite"
+                      >
                         {error.message}
                       </span>
                     )}
@@ -474,13 +486,15 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         setIsOpen={setShowToolDialog}
         endpoint={EModelEndpoint.agents}
       />
-      <MCPToolSelectDialog
-        agentId={agent_id}
-        isOpen={showMCPToolDialog}
-        mcpServerNames={mcpServerNames}
-        setIsOpen={setShowMCPToolDialog}
-        endpoint={EModelEndpoint.agents}
-      />
+      {startupConfig?.mcpServers != null && (
+        <MCPToolSelectDialog
+          agentId={agent_id}
+          isOpen={showMCPToolDialog}
+          mcpServerNames={mcpServerNames}
+          setIsOpen={setShowMCPToolDialog}
+          endpoint={EModelEndpoint.agents}
+        />
+      )}
     </>
   );
 }

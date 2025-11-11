@@ -1,4 +1,6 @@
 const { google } = require('googleapis');
+const { sleep } = require('@librechat/agents');
+const { logger } = require('@librechat/data-schemas');
 const { getModelMaxTokens } = require('@librechat/api');
 const { concat } = require('@langchain/core/utils/stream');
 const { ChatVertexAI } = require('@langchain/google-vertexai');
@@ -22,8 +24,6 @@ const {
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images');
 const { spendTokens } = require('~/models/spendTokens');
-const { sleep } = require('~/server/utils');
-const { logger } = require('~/config');
 const {
   formatMessage,
   createContextHandlers,
@@ -305,7 +305,9 @@ class GoogleClient extends BaseClient {
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
-      EModelEndpoint.google,
+      {
+        endpoint: EModelEndpoint.google,
+      },
       mode,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;

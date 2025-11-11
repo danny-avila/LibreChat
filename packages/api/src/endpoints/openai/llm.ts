@@ -1,4 +1,4 @@
-import { removeNullishValues } from 'librechat-data-provider';
+import { EModelEndpoint, removeNullishValues } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
@@ -79,6 +79,7 @@ export function getOpenAILLMConfig({
   azure,
   apiKey,
   baseURL,
+  endpoint,
   streaming,
   addParams,
   dropParams,
@@ -88,6 +89,7 @@ export function getOpenAILLMConfig({
   apiKey: string;
   streaming: boolean;
   baseURL?: string | null;
+  endpoint?: EModelEndpoint | string | null;
   modelOptions: Partial<t.OpenAIParameters>;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
@@ -129,8 +131,17 @@ export function getOpenAILLMConfig({
     hasModelKwargs = true;
   }
 
+  let enableWebSearch = web_search;
+
   if (addParams && typeof addParams === 'object') {
     for (const [key, value] of Object.entries(addParams)) {
+      /** Handle web_search directly here instead of adding to modelKwargs or llmConfig */
+      if (key === 'web_search') {
+        if (typeof value === 'boolean') {
+          enableWebSearch = value;
+        }
+        continue;
+      }
       if (knownOpenAIParams.has(key)) {
         (llmConfig as Record<string, unknown>)[key] = value;
       } else {
@@ -146,7 +157,8 @@ export function getOpenAILLMConfig({
 
   if (
     hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
-    (llmConfig.useResponsesApi === true || useOpenRouter)
+    (llmConfig.useResponsesApi === true ||
+      (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI))
   ) {
     llmConfig.reasoning = removeNullishValues(
       {
@@ -166,9 +178,19 @@ export function getOpenAILLMConfig({
 
   const tools: BindToolsInput[] = [];
 
-  if (web_search) {
+  /** Check if web_search should be disabled via dropParams */
+  if (dropParams && dropParams.includes('web_search')) {
+    enableWebSearch = false;
+  }
+
+  if (useOpenRouter && enableWebSearch) {
+    /** OpenRouter expects web search as a plugins parameter */
+    modelKwargs.plugins = [{ id: 'web' }];
+    hasModelKwargs = true;
+  } else if (enableWebSearch) {
+    /** Standard OpenAI web search uses tools API */
     llmConfig.useResponsesApi = true;
-    tools.push({ type: 'web_search_preview' });
+    tools.push({ type: 'web_search' });
   }
 
   /**
