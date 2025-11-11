@@ -16,6 +16,16 @@ export interface MenuItemProps {
   separate?: boolean;
   hideOnClick?: boolean;
   dialog?: React.ReactElement;
+  ariaHasPopup?:
+    | boolean
+    | 'dialog'
+    | 'menu'
+    | 'true'
+    | 'false'
+    | 'listbox'
+    | 'tree'
+    | 'grid'
+    | undefined;
   ref?: React.Ref<any>;
   render?:
     | RenderProp<React.HTMLAttributes<any> & { ref?: React.Ref<any> | undefined }>

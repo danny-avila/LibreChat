@@ -142,6 +142,7 @@ function ConvoOptions({
         show: startupConfig && startupConfig.sharedLinksEnabled,
         hideOnClick: false,
         ref: shareButtonRef,
+        ariaHasPopup: 'dialog' as const,
       },
       {
         label: localize('com_ui_rename'),
@@ -174,6 +175,7 @@ function ConvoOptions({
         icon: <Trash className="icon-sm mr-2 text-text-primary" />,
         hideOnClick: false,
         ref: deleteButtonRef,
+        ariaHasPopup: 'dialog' as const,
       },
     ],
     [
