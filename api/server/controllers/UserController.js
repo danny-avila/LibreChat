@@ -29,6 +29,7 @@ const { getAppConfig } = require('~/server/services/Config');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const { getLogStores } = require('~/cache');
 const { mcpServersRegistry } = require('@librechat/api');
+const { manifestToolMap } = require('~/app/clients/tools');
 
 const getUserController = async (req, res) => {
   const appConfig = await getAppConfig({ role: req.user?.role });
@@ -151,7 +152,6 @@ const updateUserPluginsController = async (req, res) => {
 
     if (action === 'install') {
       // Get tool config to check for sensitive fields
-      const { manifestToolMap } = require('~/app/clients/tools');
       const tool = manifestToolMap[pluginKey];
       const sensitiveFields = new Set();
       if (tool?.authConfig) {

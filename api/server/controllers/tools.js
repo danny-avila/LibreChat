@@ -17,6 +17,8 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { loadTools } = require('~/app/clients/tools/util');
 const { getRoleByName } = require('~/models/Role');
 const { getMessage } = require('~/models/Message');
+const { manifestToolMap } = require('~/app/clients/tools');
+const { getAuthFields } = require('~/app/clients/tools/util/handleTools');
 
 const fieldsMap = {
   [Tools.execute_code]: [EnvVar.CODE_API_KEY],
@@ -255,8 +257,6 @@ const getToolCalls = async (req, res) => {
 const getPluginAuthValues = async (req, res) => {
   try {
     const { pluginKey } = req.params;
-    const { manifestToolMap } = require('~/app/clients/tools');
-    const { getAuthFields } = require('~/app/clients/tools/util/handleTools');
 
     const tool = manifestToolMap[pluginKey];
     if (!tool || !tool.authConfig) {
