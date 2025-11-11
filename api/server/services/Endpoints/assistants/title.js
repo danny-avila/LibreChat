@@ -5,6 +5,9 @@ const getLogStores = require('~/cache/getLogStores');
 
 const addTitle = async (req, { text, responseText, conversationId, client }) => {
   const { TITLE_CONVO = 'true' } = process.env ?? {};
+
+logger.debug(`[api/server/services/Endpoints/assistants/title.js #addTitle] ${TITLE_CONVO}`);
+
   if (!isEnabled(TITLE_CONVO)) {
     return;
   }

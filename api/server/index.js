@@ -77,6 +77,10 @@ const startServer = async () => {
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
+  // Stripe webhook route must be registered BEFORE any body parser
+  const { stripeWebhookController } = require('./controllers/StripeController');
+  app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhookController);
+
   /* Middleware */
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
@@ -141,6 +145,9 @@ const startServer = async () => {
   app.use('/api/plugins', routes.plugins);
   app.use('/api/config', routes.config);
   app.use('/api/assistants', routes.assistants);
+  app.use('/api/stripe', routes.stripe);
+  app.use('/api/stripe', routes.stripeCheckout);
+  app.use('/api/stripe', routes.stripeCancel);
   app.use('/api/files', await routes.files.initialize());
   app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
   app.use('/api/share', routes.share);

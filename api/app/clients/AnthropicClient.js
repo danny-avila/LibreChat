@@ -935,6 +935,8 @@ class AnthropicClient extends BaseClient {
   ${JSON.stringify(truncateText(responseText))}
   </response>`;
 
+  logger.debug(`[AnthropicClient] titleConvo: ${text}`);
+
     const { ANTHROPIC_TITLE_MODEL } = process.env ?? {};
     const model = this.options.titleModel ?? ANTHROPIC_TITLE_MODEL ?? 'claude-3-haiku-20240307';
     const system = titleFunctionPrompt;

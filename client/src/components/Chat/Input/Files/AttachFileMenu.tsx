@@ -35,6 +35,7 @@ import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
+import { useAuthContext } from '~/hooks';
 
 interface AttachFileMenuProps {
   agentId?: string | null;
@@ -71,11 +72,15 @@ const AttachFileMenu = ({
     toolResource,
   });
 
+  const { user } = useAuthContext();
   const { agentsConfig } = useGetAgentsConfig();
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
-
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
+  const [showSubscriptionDialog, setShowSubscriptionDialog] = useState(false);
+
+  const fileAttachRequiresSubscription = startupConfig?.fileAttachRequiresSubscription;
+  const hasSubscription = user?.subscriptionStatus === 'active';
 
   /** TODO: Ephemeral Agent Capabilities
    * Allow defining agent capabilities on a per-endpoint basis
@@ -92,6 +97,10 @@ const AttachFileMenu = ({
     fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal',
   ) => {
     if (!inputRef.current) {
+      return;
+    }
+    if (fileAttachRequiresSubscription && !hasSubscription) {
+      setShowSubscriptionDialog(true);
       return;
     }
     inputRef.current.value = '';
@@ -275,6 +284,28 @@ const AttachFileMenu = ({
         downloadProgress={downloadProgress}
         maxSelectionCount={endpointFileConfig?.fileLimit}
       />
+      {showSubscriptionDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white dark:bg-surface-primary rounded-lg p-6 shadow-xl flex flex-col gap-4 min-w-[300px]">
+            <div className="text-lg font-semibold">Subscription Required</div>
+            <div>You need an active subscription to upload files. Please subscribe to unlock this feature.</div>
+            <div className="flex gap-4 justify-end mt-2">
+              <button
+                className="px-4 py-2 rounded bg-primary text-white font-medium hover:bg-primary-dark"
+                onClick={() => setShowSubscriptionDialog(false)}
+              >
+                Close
+              </button>
+              <a
+                href="/account/subscription"
+                className="px-4 py-2 rounded bg-surface-secondary text-text-primary font-medium hover:bg-surface-tertiary border border-primary"
+              >
+                View Plans
+              </a>
+            </div>
+          </div>
+        </div>
+      )}            
     </>
   );
 };

@@ -10,6 +10,8 @@ const AttachFile = ({ disabled }: { disabled?: boolean | null }) => {
 
   const { handleFileChange } = useFileHandling();
 
+  console.log('[AttachFile] Attach File');
+
   return (
     <FileUpload ref={inputRef} handleFileChange={handleFileChange}>
       <TooltipAnchor

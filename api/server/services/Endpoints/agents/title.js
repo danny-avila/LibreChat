@@ -9,11 +9,17 @@ const { saveConvo } = require('~/models');
  */
 const addTitle = async (req, { text, response, client }) => {
   const { TITLE_CONVO = true } = process.env ?? {};
+
+  logger.debug(`[api/server/services/Endpoints/agents/title.js #addTitle]  TITLE_CONVO: ${TITLE_CONVO}`);
+  logger.debug(`[api/server/services/Endpoints/agents/title.js #addTitle]  client.options.titleConvo: ${client.options.titleConvo}`);
+
+
   if (!isEnabled(TITLE_CONVO)) {
     return;
   }
 
   if (client.options.titleConvo === false) {
+    logger.debug(`[api/server/services/Endpoints/agents/title.js #addTitle]  client.options: ${client.options}`);
     return;
   }
 
@@ -42,6 +48,7 @@ const addTitle = async (req, { text, response, client }) => {
           }),
         timeoutPromise,
       ]);
+      logger.debug(`[${key}] Title generation started`);      
     } else {
       return;
     }
@@ -55,7 +62,7 @@ const addTitle = async (req, { text, response, client }) => {
     }
 
     if (!title) {
-      logger.debug(`[${key}] No title generated`);
+      logger.debug(`[${key}] No title generated for text ${text}`);
       return;
     }
 

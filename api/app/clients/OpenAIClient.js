@@ -785,6 +785,8 @@ class OpenAIClient extends BaseClient {
       delete this.options.attachments;
     }
 
+    logger.debug(`[OpenAICClient] titleConvo ${text}`);
+
     let title = 'New Chat';
     const convo = `||>User:
 "${truncateText(text)}"

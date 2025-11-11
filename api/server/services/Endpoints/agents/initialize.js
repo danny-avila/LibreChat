@@ -216,7 +216,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       });
     } catch (err) {
       logger.error(
-        '[api/server/controllers/agents/client.js #titleConvo] Error getting custom endpoint config',
+        '[api/server/controllers/agents/client.js #processAgent] Error getting custom endpoint config',
         err,
       );
     }

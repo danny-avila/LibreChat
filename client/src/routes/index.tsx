@@ -15,12 +15,16 @@ import { AuthContextProvider } from '~/hooks/AuthContext';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
+import StaticFilesLayout from './Layouts/StaticFiles'
 import dashboardRoutes from './Dashboard';
 import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
-import { HelpAndFAQ, PrivacyPolicy, TermsAndServices } from '~/components/Static';
+import { HelpAndFAQ, PrivacyPolicy, TermsAndServices, Plans, Landing } from '~/components/Static';
+import SubscriptionSuccess from '~/components/Subscription/Success';
+import SubscriptionCancel from '~/components/Subscription/Cancel';
+import Subscription from '~/components/Nav/SettingsTabs/Account/Subscription';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -79,19 +83,44 @@ export const router = createBrowserRouter(
     },
     {
       path: 'faq',
-      element: <HelpAndFAQ />,
+      element: <StaticFilesLayout />,
+      children: [
+        { path: '', element:  <HelpAndFAQ /> },
+      ],
       errorElement: <RouteErrorBoundary />,
     },    
     {
       path: 'privacy',
-      element: <PrivacyPolicy />,
+      element: <StaticFilesLayout />,
+      children: [
+        { path: '', element:  <PrivacyPolicy /> },
+      ],
       errorElement: <RouteErrorBoundary />,
     },
     {
       path: 'terms',
-      element: <TermsAndServices />,
+      element: <StaticFilesLayout />,
+      children: [
+        { path: '', element:  <TermsAndServices /> },
+      ],
       errorElement: <RouteErrorBoundary />,
     },    
+    {
+      path: 'landing',
+      element: <StaticFilesLayout />,
+      children: [
+        { path: '', element:  <Landing /> },
+      ],
+      errorElement: <RouteErrorBoundary />,
+    },   
+    {
+      path: 'plans',
+      element: <StaticFilesLayout />,
+      children: [
+        { path: '', element:  <Plans /> },
+      ],
+      errorElement: <RouteErrorBoundary />,
+    },           
     {
       element: <AuthLayout />,
       errorElement: <RouteErrorBoundary />,
@@ -142,6 +171,22 @@ export const router = createBrowserRouter(
                   <AgentMarketplace />
                 </MarketplaceProvider>
               ),
+            },
+            {
+              path: 'plans',
+              element: <Plans />,
+            },
+            {
+              path: 'account/subscription',
+              element: <Subscription />,
+            },
+            {
+              path: 'account/subscription/success',
+              element: <SubscriptionSuccess />,
+            },
+            {
+              path: 'account/subscription/canceled',
+              element: <SubscriptionCancel />,
             },
           ],
         },

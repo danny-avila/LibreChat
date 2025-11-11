@@ -8,6 +8,7 @@ const {
   deleteUserController,
   getUserController,
 } = require('~/server/controllers/UserController');
+const { getSubscriptionStatusController } = require('~/server/controllers/UserController');
 const { requireJwtAuth, canDeleteAccount, verifyEmailLimiter } = require('~/server/middleware');
 
 const router = express.Router();
@@ -17,6 +18,7 @@ router.get('/terms', requireJwtAuth, getTermsStatusController);
 router.post('/terms/accept', requireJwtAuth, acceptTermsController);
 router.post('/plugins', requireJwtAuth, updateUserPluginsController);
 router.delete('/delete', requireJwtAuth, canDeleteAccount, deleteUserController);
+router.get('/subscription-status', requireJwtAuth, getSubscriptionStatusController);
 router.post('/verify', verifyEmailController);
 router.post('/verify/resend', verifyEmailLimiter, resendVerificationController);
 

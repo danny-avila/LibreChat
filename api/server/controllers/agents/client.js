@@ -945,6 +945,7 @@ class AgentClient extends BaseClient {
    * @param {string} params.conversationId
    */
   async titleConvo({ text, abortController }) {
+    logger.debug(`[LibreChat/api/server/controllers/agents/client.js] titleConvo: ${text}`);
     if (!this.run) {
       throw new Error('[api/server/controllers/agents/client.js #titleConvo] Run not initialized');
     }

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { FileUp } from 'lucide-react';
 import { cn } from '~/utils/';
 import { useLocalize } from '~/hooks';
+import { useAuthContext } from '~/hooks';
+import { useGetFileConfig } from '~/data-provider/Files/queries';
 
 type FileUploadProps = {
   onFileSelected: (jsonData: Record<string, unknown>) => void;
@@ -27,6 +29,13 @@ const FileUpload: React.FC<FileUploadProps> = ({
   const [statusColor, setStatusColor] = useState<string>('text-gray-600');
   const [status, setStatus] = useState<null | string>(null);
   const localize = useLocalize();
+  const { user } = useAuthContext();
+  const { data: startupConfig } = useGetStartupConfig();  
+  const [showSubscriptionDialog, setShowSubscriptionDialog] = useState(false);
+  const { data: fileConfig } = useGetFileConfig();
+
+  const fileAttachRequiresSubscription = startupConfig?.fileAttachRequiresSubscription;
+  const hasSubscription = user?.subscriptionStatus === 'active';
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
@@ -63,6 +72,13 @@ const FileUpload: React.FC<FileUploadProps> = ({
   }
 
   const handleClick = () => {
+    console.log('File upload clicked');
+    console.log('File upload clicked', hasSubscription);
+    console.log('File upload clicked', fileAttachRequiresSubscription);
+    if (fileAttachRequiresSubscription && !hasSubscription) {
+      setShowSubscriptionDialog(true);
+      return;
+    }
     const fileInput = document.getElementById(`file-upload-${id}`) as HTMLInputElement;
     if (fileInput) {
       fileInput.click();
@@ -93,6 +109,28 @@ const FileUpload: React.FC<FileUploadProps> = ({
         onChange={handleFileChange}
         tabIndex={-1}
       />
+      {showSubscriptionDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white dark:bg-surface-primary rounded-lg p-6 shadow-xl flex flex-col gap-4 min-w-[300px]">
+            <div className="text-lg font-semibold">Subscription Required</div>
+            <div>You need an active subscription to upload files. Please subscribe to unlock this feature.</div>
+            <div className="flex gap-4 justify-end mt-2">
+              <button
+                className="px-4 py-2 rounded bg-primary text-white font-medium hover:bg-primary-dark"
+                onClick={() => setShowSubscriptionDialog(false)}
+              >
+                Close
+              </button>
+              <a
+                href="/account/subscription"
+                className="px-4 py-2 rounded bg-surface-secondary text-text-primary font-medium hover:bg-surface-tertiary border border-primary"
+              >
+                View Plans
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

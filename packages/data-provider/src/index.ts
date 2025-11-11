@@ -1,3 +1,4 @@
+export * from './get-subscription-status';
 /* config */
 export * from './azure';
 export * from './bedrock';

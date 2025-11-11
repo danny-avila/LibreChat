@@ -1,3 +1,5 @@
+// Subscription
+export { getSubscriptionStatus } from './get-subscription-status';
 import type { AxiosResponse } from 'axios';
 import type * as t from './types';
 import * as endpoints from './api-endpoints';

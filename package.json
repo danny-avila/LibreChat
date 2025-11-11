@@ -146,7 +146,7 @@
       }
     },
     "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0"    
+    "@types/react-dom": "^18.2.0"
   },
   "nodemonConfig": {
     "ignore": [
@@ -158,9 +158,17 @@
     ]
   },
   "dependencies": {
+    "@smithy/eventstream-codec": "^2.2.0",
+    "@smithy/protocol-http": "^3.3.0",
+    "@smithy/signature-v4": "^2.3.0",
+    "@smithy/util-utf8": "^2.3.0",
     "cohere-ai": "^7.19.0",
+    "gcp-metadata": "^5.3.0",
     "keyv": "^5.5.3",
     "langchain": "^0.0.214",
-    "openai-chat-tokens": "^0.2.8"
+    "mongodb": "^5.9.2",
+    "openai-chat-tokens": "^0.2.8",
+    "smithy": "^0.6.3",
+    "stripe": "^19.3.0"
   }
 }

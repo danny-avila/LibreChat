@@ -5,6 +5,9 @@ const { saveConvo } = require('~/models');
 
 const addTitle = async (req, { text, response, client }) => {
   const { TITLE_CONVO = 'true' } = process.env ?? {};
+
+  logger.debug(`[api/server/services/Endpoints/anthropic/title.js #addTitle] ${TITLE_CONVO}`);
+
   if (!isEnabled(TITLE_CONVO)) {
     return;
   }

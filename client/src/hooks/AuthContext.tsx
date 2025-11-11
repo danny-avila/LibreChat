@@ -19,6 +19,7 @@ import {
   useLoginUserMutation,
   useLogoutUserMutation,
   useRefreshTokenMutation,
+  useGetSubscriptionStatus,
 } from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
@@ -37,6 +38,7 @@ const AuthContextProvider = ({
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | undefined>(undefined);
   const logoutRedirectRef = useRef<string | undefined>(undefined);
 
   const { data: userRole = null } = useGetRole(SystemRoles.USER, {
@@ -126,6 +128,11 @@ const AuthContextProvider = ({
   );
 
   const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
+  const subscriptionStatusQuery = useGetSubscriptionStatus({
+    enabled: !!(token ?? ''),
+    onSuccess: (data) => setSubscriptionStatus(data?.status),
+    onError: () => setSubscriptionStatus(undefined),
+  });
 
   const login = (data: t.TLoginUser) => {
     loginUser.mutate(data);
@@ -217,9 +224,9 @@ const AuthContextProvider = ({
         [SystemRoles.ADMIN]: adminRole,
       },
       isAuthenticated,
+      subscriptionStatus,
     }),
-
-    [user, error, isAuthenticated, token, userRole, adminRole],
+    [user, error, isAuthenticated, token, userRole, adminRole, subscriptionStatus],
   );
 
   return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;
@@ -227,11 +234,9 @@ const AuthContextProvider = ({
 
 const useAuthContext = () => {
   const context = useContext(AuthContext);
-
   if (context === undefined) {
-    throw new Error('useAuthContext should be used inside AuthProvider');
+    throw new Error('useAuthContext must be used within an AuthContextProvider');
   }
-
   return context;
 };
 

@@ -21,6 +21,7 @@ import {
   Data,
   Balance,
   Account,
+  Subscription,
 } from './SettingsTabs';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
 import { useLocalize, TranslationKeys } from '~/hooks';
@@ -120,6 +121,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       value: SettingsTabValues.ACCOUNT,
       icon: <UserIcon />,
       label: 'com_nav_setting_account',
+    },
+    {
+      value: SettingsTabValues.SUBSCRIPTION,
+      icon: <DollarSign size={18} />,
+      label: 'Subscription', // You may want to localize this
     },
   ];
 
@@ -250,6 +256,9 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     )}
                     <Tabs.Content value={SettingsTabValues.ACCOUNT} tabIndex={-1}>
                       <Account />
+                    </Tabs.Content>
+                    <Tabs.Content value={SettingsTabValues.SUBSCRIPTION} tabIndex={-1}>
+                      <Subscription />
                     </Tabs.Content>
                   </div>
                 </Tabs.Root>
