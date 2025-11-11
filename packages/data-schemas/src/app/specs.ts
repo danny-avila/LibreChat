@@ -1,14 +1,6 @@
 import logger from '~/config/winston';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, normalizeEndpointName } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
-
-/**
- * Normalize the endpoint name to system-expected value.
- * @param name
- */
-function normalizeEndpointName(name = ''): string {
-  return name.toLowerCase() === 'ollama' ? 'ollama' : name;
-}
 
 /**
  * Sets up Model Specs from the config (`librechat.yaml`) file.

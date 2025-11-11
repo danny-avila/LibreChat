@@ -15,6 +15,7 @@ const {
   checkOpenAIStorage,
   removeNullishValues,
   isAssistantsEndpoint,
+  getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
@@ -994,7 +995,7 @@ async function saveBase64Image(
  */
 function filterFile({ req, image, isAvatar }) {
   const { file } = req;
-  const { endpoint, file_id, width, height } = req.body;
+  const { endpoint, endpointType, file_id, width, height } = req.body;
 
   if (!file_id && !isAvatar) {
     throw new Error('No file_id provided');
@@ -1016,9 +1017,13 @@ function filterFile({ req, image, isAvatar }) {
   const appConfig = req.config;
   const fileConfig = mergeFileConfig(appConfig.fileConfig);
 
-  const { fileSizeLimit: sizeLimit, supportedMimeTypes } =
-    fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
-  const fileSizeLimit = isAvatar === true ? fileConfig.avatarSizeLimit : sizeLimit;
+  const endpointFileConfig = getEndpointFileConfig({
+    endpoint,
+    fileConfig,
+    endpointType,
+  });
+  const fileSizeLimit =
+    isAvatar === true ? fileConfig.avatarSizeLimit : endpointFileConfig.fileSizeLimit;
 
   if (file.size > fileSizeLimit) {
     throw new Error(
@@ -1028,7 +1033,10 @@ function filterFile({ req, image, isAvatar }) {
     );
   }
 
-  const isSupportedMimeType = fileConfig.checkType(file.mimetype, supportedMimeTypes);
+  const isSupportedMimeType = fileConfig.checkType(
+    file.mimetype,
+    endpointFileConfig.supportedMimeTypes,
+  );
 
   if (!isSupportedMimeType) {
     throw new Error('Unsupported file type');

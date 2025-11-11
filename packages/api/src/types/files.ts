@@ -1,7 +1,6 @@
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest } from './http';
 import type { Readable } from 'stream';
-import type { Request } from 'express';
 export interface STTService {
   getInstance(): Promise<STTService>;
   getProviderSchema(req: ServerRequest): Promise<[string, object]>;
@@ -131,5 +130,5 @@ export interface ProcessedFile {
 }
 
 export interface StrategyFunctions {
-  getDownloadStream: (req: Request, filepath: string) => Promise<Readable>;
+  getDownloadStream: (req: ServerRequest, filepath: string) => Promise<Readable>;
 }

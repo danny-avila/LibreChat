@@ -4,6 +4,7 @@ import {
   defaultEndpoints,
   modularEndpoints,
   LocalStorageKeys,
+  getEndpointField,
   isAgentsEndpoint,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
@@ -57,24 +58,6 @@ export const getAvailableEndpoints = (
 
   return availableEndpoints;
 };
-
-/** Get the specified field from the endpoint config */
-export function getEndpointField<K extends keyof t.TConfig>(
-  endpointsConfig: t.TEndpointsConfig | undefined | null,
-  endpoint: EModelEndpoint | string | null | undefined,
-  property: K,
-): t.TConfig[K] | undefined {
-  if (!endpointsConfig || endpoint === null || endpoint === undefined) {
-    return undefined;
-  }
-
-  const config = endpointsConfig[endpoint];
-  if (!config) {
-    return undefined;
-  }
-
-  return config[property];
-}
 
 export function mapEndpoints(endpointsConfig: t.TEndpointsConfig) {
   const filter = getEndpointsFilter(endpointsConfig);
