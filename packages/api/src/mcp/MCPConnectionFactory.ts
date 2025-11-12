@@ -7,9 +7,9 @@ import type { FlowMetadata } from '~/flow/types';
 import type * as t from './types';
 import { MCPTokenStorage, MCPOAuthHandler } from '~/mcp/oauth';
 import { sanitizeUrlForLogging } from './utils';
+import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
-import { withTimeout } from '~/utils/promise';
 
 /**
  * Factory for creating MCP connections with optional OAuth authentication.
@@ -343,28 +343,42 @@ export class MCPConnectionFactory {
           `${this.logPrefix} OAuth flow completed, tokens received for ${this.serverName}`,
         );
 
-        // Re-fetch flow state after completion to get updated credentials
-        const updatedFlowState = await MCPOAuthHandler.getFlowState(
-          flowId,
-          this.flowManager as FlowStateManager<MCPOAuthTokens>,
-        );
-
-        /** Client information from the updated flow metadata */
+        /** Client information from the existing flow metadata */
         const existingMetadata = existingFlow.metadata as unknown as MCPOAuthFlowMetadata;
-        const clientInfo = updatedFlowState?.clientInfo || existingMetadata?.clientInfo;
+        const clientInfo = existingMetadata?.clientInfo;
 
         return { tokens, clientInfo };
       }
 
-      // Clean up old completed flows: createFlow() may return cached results otherwise
+      // Clean up old completed/failed flows, but only if they're actually stale
+      // This prevents race conditions where we delete a flow that's still being processed
       if (existingFlow && existingFlow.status !== 'PENDING') {
-        try {
-          await this.flowManager.deleteFlow(flowId, 'mcp_oauth');
+        const STALE_FLOW_THRESHOLD = 2 * 60 * 1000; // 2 minutes
+        const { isStale, age, status } = await this.flowManager.isFlowStale(
+          flowId,
+          'mcp_oauth',
+          STALE_FLOW_THRESHOLD,
+        );
+
+        if (isStale) {
+          try {
+            await this.flowManager.deleteFlow(flowId, 'mcp_oauth');
+            logger.debug(
+              `${this.logPrefix} Cleared stale ${status} OAuth flow (age: ${Math.round(age / 1000)}s)`,
+            );
+          } catch (error) {
+            logger.warn(`${this.logPrefix} Failed to clear stale OAuth flow`, error);
+          }
+        } else {
           logger.debug(
-            `${this.logPrefix} Cleared stale ${existingFlow.status} OAuth flow for ${flowId}`,
+            `${this.logPrefix} Skipping cleanup of recent ${status} flow (age: ${Math.round(age / 1000)}s, threshold: ${STALE_FLOW_THRESHOLD / 1000}s)`,
           );
-        } catch (error) {
-          logger.warn(`${this.logPrefix} Failed to clear stale OAuth flow`, error);
+          // If flow is recent but not pending, something might be wrong
+          if (status === 'FAILED') {
+            logger.warn(
+              `${this.logPrefix} Recent OAuth flow failed, will retry after ${Math.round((STALE_FLOW_THRESHOLD - age) / 1000)}s`,
+            );
+          }
         }
       }
 
@@ -402,15 +416,9 @@ export class MCPConnectionFactory {
       }
       logger.info(`${this.logPrefix} OAuth flow completed, tokens received for ${this.serverName}`);
 
-      // Re-fetch flow state after completion to get updated credentials
-      const updatedFlowState = await MCPOAuthHandler.getFlowState(
-        newFlowId,
-        this.flowManager as FlowStateManager<MCPOAuthTokens>,
-      );
-
-      /** Client information from the updated flow state */
-      const clientInfo = updatedFlowState?.clientInfo || flowMetadata?.clientInfo;
-      const metadata = updatedFlowState?.metadata || flowMetadata?.metadata;
+      /** Client information from the flow metadata */
+      const clientInfo = flowMetadata?.clientInfo;
+      const metadata = flowMetadata?.metadata;
 
       return {
         tokens,
