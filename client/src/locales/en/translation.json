@@ -1112,6 +1112,7 @@
   "com_ui_quality": "Quality",
   "com_ui_read_aloud": "Read aloud",
   "com_ui_redirecting_to_provider": "Redirecting to {{0}}, please wait...",
+  "com_nav_setting_subscription": "Subscription",
   "com_ui_reference_saved_memories": "Reference saved memories",
   "com_ui_reference_saved_memories_description": "Allow the assistant to reference and use your saved memories when responding",
   "com_ui_refresh": "Refresh",

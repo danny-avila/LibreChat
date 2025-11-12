@@ -1,4 +1,4 @@
- :root{
+    :root{
       --primary-blue: #1E5FA4;
       --accent-teal:  #3EC4B5;
       --soft-gray:    #E8ECEF;
@@ -19,7 +19,7 @@
     header{
       background: linear-gradient(135deg, var(--primary-blue), var(--accent-teal));
       color: #fff;
-      padding: 80px 20px;
+      padding: 10px 20px;
       text-align: center;
     }
     header h1{
@@ -160,6 +160,180 @@
       font-size: 0.9rem;
       color: #555;
     }
+	
+
+    .plans {
+      width:100%;
+      /* max-width: var(--max-width); */
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:20px;
+      align-items:start;
+      padding: 0 40px;
+    }
+
+    @media(min-width:860px){
+      .plans { grid-template-columns: 1fr 1fr; gap:28px; }
+    }
+
+    .card{
+      background:var(--card-bg);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:28px;
+      border: 1px solid var(--glass);
+      display:flex;
+      flex-direction:column;
+      gap:18px;
+      min-height: 300px;
+      position:relative;
+      overflow:visible;
+    }
+
+    .card.recommended{
+      border: 1px solid rgba(62,196,181,0.25);
+      transform: translateY(-6px);
+    }
+
+    .badge{
+      position:absolute;
+      top:-12px;
+      right:16px;
+      background:var(--highlight);
+      color: #111;
+      font-weight:600;
+      font-size:13px;
+      padding:8px 12px;
+      border-radius:999px;
+      box-shadow: 0 6px 18px rgba(244,197,66,0.14);
+    }
+
+    .plan-header{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+    }
+
+    .plan-title{
+      font-size:18px;
+      font-weight:700;
+      letter-spacing:0.1px;
+      margin:0;
+    }
+
+    .plan-sub{
+      font-size:13px;
+      color:#55606a;
+      margin:0;
+    }
+
+    .price{
+      font-size:34px;
+      font-weight:800;
+      color:var(--primary-blue);
+      margin:6px 0 0 0;
+      line-height:1;
+    }
+
+    .price small{
+      display:block;
+      font-size:14px;
+      font-weight:600;
+      color:#47535f;
+      margin-top:6px;
+    }
+
+    .features{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      margin-top:6px;
+    }
+
+    .feature{
+      display:flex;
+      gap:12px;
+      align-items:flex-start;
+      font-size:15px;
+      color:#334149;
+    }
+
+    .feature::before{
+      content:"";
+      min-width:18px;
+      height:18px;
+      border-radius:4px;
+      background:var(--soft-gray);
+      display:inline-block;
+      flex-shrink:0;
+      margin-top:3px;
+      box-shadow: inset 0 -2px 0 rgba(0,0,0,0.04);
+    }
+
+    /* CTA */
+    .cta{
+      margin-top:auto;
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+
+    .btn-primary{
+      background:linear-gradient(180deg,var(--accent-teal), #36b9a6);
+      color:white;
+      border:0;
+      padding:12px 18px;
+      font-weight:700;
+      border-radius:10px;
+      font-size:15px;
+      cursor:pointer;
+      box-shadow: 0 8px 20px rgba(62,196,181,0.18);
+    }
+
+    .btn-ghost{
+      background:transparent;
+      color:var(--primary-blue);
+      border:1px solid rgba(30,95,164,0.12);
+      padding:10px 14px;
+      border-radius:10px;
+      font-weight:600;
+      cursor:pointer;
+    }
+
+    .muted{
+      color:#59666f;
+      font-size:13px;
+    }
+
+    /* small helper row */
+    .row{
+      display:flex;
+      gap:12px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+
+    /* subtle ribbon highlight for recommended */
+    .recommended::after{
+      content:"";
+      position:absolute;
+      left:0;
+      bottom:0;
+      height:6px;
+      width:100%;
+      background: linear-gradient(90deg,var(--accent-teal), var(--primary-blue));
+      border-bottom-left-radius:var(--radius);
+      border-bottom-right-radius:var(--radius);
+      opacity:0.95;
+    }
+
+    /* accessibility */
+    .sr-only{
+      position:absolute!important;
+      width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;
+    }	
 
     .margin-left-auto {
       margin-left:auto
@@ -173,4 +347,8 @@
       font-size:18px
     }
 
-    
+    .logo-mask {
+        -webkit-mask-image: url('./assets/icon.png');
+        mask-image: url('./assets/icon.png');
+        background-color: #3a86ff; 
+    }    

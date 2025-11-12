@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import type { TStartupConfig } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
-import AuthLayout from '~/components/Auth/AuthLayout';
+import StaticLayout from '~/components/Static/StaticLayout';
 import { TranslationKeys, useLocalize } from '~/hooks';
 
 const headerMap: Record<string, TranslationKeys> = {
@@ -54,7 +54,7 @@ export default function StaticFilesLayout({ isAuthenticated }: { isAuthenticated
   };
 
   return (
-    <AuthLayout
+    <StaticLayout
       header={headerText ? localize(headerText) : localize(headerMap[location.pathname])}
       isFetching={isFetching}
       startupConfig={startupConfig}
@@ -63,6 +63,6 @@ export default function StaticFilesLayout({ isAuthenticated }: { isAuthenticated
       error={error}
     >
       <Outlet context={contextValue} />
-    </AuthLayout>
+    </StaticLayout>
   );
 }

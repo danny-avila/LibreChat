@@ -79,42 +79,54 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       icon: <GearIcon />,
       label: 'com_nav_setting_general',
     },
-    {
-      value: SettingsTabValues.CHAT,
-      icon: <MessageSquare className="icon-sm" />,
-      label: 'com_nav_setting_chat',
-    },
-    {
-      value: SettingsTabValues.COMMANDS,
-      icon: <Command className="icon-sm" />,
-      label: 'com_nav_commands',
-    },
+    ...(startupConfig?.settingsChat
+      ? [
+          {
+            value: SettingsTabValues.CHAT,
+            icon: <MessageSquare className="icon-sm" />,
+            label: 'com_nav_setting_chat',
+          }
+        ] : []
+      ),        
+    ...(startupConfig?.settingsCommands
+      ? [
+          {
+            value: SettingsTabValues.COMMANDS,
+            icon: <Command className="icon-sm" />,
+            label: 'com_nav_commands',
+          }
+        ] : []
+      ),    
     {
       value: SettingsTabValues.SPEECH,
       icon: <SpeechIcon className="icon-sm" />,
       label: 'com_nav_setting_speech',
     },
-    ...(hasAnyPersonalizationFeature
+    ...(hasAnyPersonalizationFeature || settingsPersonalization
       ? [
           {
             value: SettingsTabValues.PERSONALIZATION,
             icon: <PersonalizationIcon />,
             label: 'com_nav_setting_personalization' as TranslationKeys,
-          },
+          }
         ]
       : []),
-    {
-      value: SettingsTabValues.DATA,
-      icon: <DataIcon />,
-      label: 'com_nav_setting_data',
-    },
+    ...(startupConfig?.settingsDataControls
+      ? [
+          {
+            value: SettingsTabValues.DATA,
+            icon: <DataIcon />,
+            label: 'com_nav_setting_data',
+          }
+        ] : []
+      ),
     ...(startupConfig?.balance?.enabled
       ? [
           {
             value: SettingsTabValues.BALANCE,
             icon: <DollarSign size={18} />,
             label: 'com_nav_setting_balance' as TranslationKeys,
-          },
+          }
         ]
       : ([] as { value: SettingsTabValues; icon: React.JSX.Element; label: TranslationKeys }[])),
     {
@@ -122,11 +134,15 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       icon: <UserIcon />,
       label: 'com_nav_setting_account',
     },
-    {
-      value: SettingsTabValues.SUBSCRIPTION,
-      icon: <DollarSign size={18} />,
-      label: 'Subscription', // You may want to localize this
-    },
+    ...(startupConfig?.stripeSubscriptionsEnabled
+      ? [
+          {
+            value: SettingsTabValues.SUBSCRIPTION,
+            icon: <DollarSign size={18} />,
+            label: 'com_nav_setting_subscription', // You may want to localize this
+          }
+        ] : []
+      )
   ];
 
   const handleTabChange = (value: string) => {

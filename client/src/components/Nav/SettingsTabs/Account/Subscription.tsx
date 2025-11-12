@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { useAuthContext } from '~/hooks';
 import { PLANS } from './plans';
 import { useCreateStripeCheckoutSession } from './useCreateStripeCheckoutSession';
@@ -11,6 +12,7 @@ function Subscription() {
   const { mutate: cancelSubscription, isLoading: canceling } = useCancelSubscription();
   const [showConfirm, setShowConfirm] = useState(false);
   const [billingLoading, setBillingLoading] = useState(false);
+  const navigate = useNavigate();
 
   const getPlanName = (planId: string) => {
     const plan = PLANS.find((p) => p.id === planId);
@@ -31,6 +33,10 @@ function Subscription() {
       },
     });
   };
+
+  const navigateToChat = () => {
+    navigate('/c/new');
+  }
 
   const handleCancel = () => {
     setShowConfirm(true);
@@ -162,6 +168,13 @@ function Subscription() {
                 </div>
               </div>
             ))}
+            <button
+              className="px-4 py-2 rounded bg-primary text-white font-medium hover:bg-primary-dark disabled:opacity-60 w-full"
+              onClick={() => navigateToChat()}
+              disabled={subscribing && subscribingPlan === p.id}
+            >
+              Chat for Free
+            </button>            
           </div>
         </div>        
         // <div>

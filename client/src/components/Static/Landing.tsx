@@ -42,11 +42,11 @@ export default function  Landing() {
       <section>
         <h2>Why Condo Owners & Boards Love DeclaRAY</h2>
         <div className="benefits">
-          <div className="benefit"><span>&check;</span> <div><strong>Instant Clarity</strong><br />AI explanations that translate legal language into everyday English.</div></div>
-          <div className="benefit"><span>&check;</span> <div><strong>Save Hours</strong><br />Skip the guesswork and endless scrolling through dense PDFs.</div></div>
-          <div className="benefit"><span>&check;</span> <div><strong>Built for Communities</strong><br />Designed specifically for condo and HOA governance structures.</div></div>
-          <div className="benefit"><span>&check;</span> <div><strong>Private & Secure</strong><br />Your documents are processed safely — data is never shared externally.</div></div>
-          <div className="benefit"><span>&check;</span> <div><strong>Always Improving</strong><br />DeclaRAY evolves with your documents and community feedback.</div></div>
+          <div className="benefit"><span>✓</span> <div><strong>Instant Clarity</strong><br />AI explanations that translate legal language into everyday English.</div></div>
+          <div className="benefit"><span>✓</span> <div><strong>Save Hours</strong><br />Skip the guesswork and endless scrolling through dense PDFs.</div></div>
+          <div className="benefit"><span>✓</span> <div><strong>Built for Communities</strong><br />Designed specifically for condo and HOA governance structures.</div></div>
+          <div className="benefit"><span>✓</span> <div><strong>Private & Secure</strong><br />Your documents are processed safely — data is never shared externally.</div></div>
+          <div className="benefit"><span>✓</span> <div><strong>Always Improving</strong><br />DeclaRAY evolves with your documents and community feedback.</div></div>
         </div>
       </section>
 

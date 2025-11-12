@@ -1,6 +1,7 @@
 import { useMemo, useEffect, memo } from 'react';
 import { getConfigDefaults } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
+import Footer from '~/components/Auth/Footer';
 
 interface StaticFooterProps {
 
@@ -25,6 +26,7 @@ const StaticFooter = memo(
     return (
     <footer>
       © 2025 DeclaRAY. All rights reserved. | Clarity for Condo Communities.
+      <Footer startupConfig={startupConfig} />
     </footer>          
     );
   },
