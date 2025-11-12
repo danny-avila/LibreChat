@@ -310,7 +310,7 @@ export default function ArchivedChatsTable() {
                 description={localize('com_ui_delete')}
                 render={
                   <Button
-                    variant="destructive"
+                    variant="ghost"
                     className="h-9 w-9 p-0 md:h-8 md:w-8"
                     onClick={() => {
                       setDeleteRow(convo);

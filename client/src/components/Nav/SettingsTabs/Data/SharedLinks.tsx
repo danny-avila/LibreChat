@@ -277,7 +277,7 @@ export default function SharedLinks() {
                 description={localize('com_ui_delete')}
                 render={
                   <Button
-                    variant="destructive"
+                    variant="ghost"
                     className="h-8 w-8 p-0"
                     onClick={() => {
                       setDeleteRow(link);
