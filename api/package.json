@@ -51,7 +51,7 @@
     "@librechat/api": "*",
     "@librechat/data-schemas": "*",
     "@microsoft/microsoft-graph-client": "^3.0.7",
-    "@modelcontextprotocol/sdk": "^1.17.1",
+    "@modelcontextprotocol/sdk": "^1.21.0",
     "@node-saml/passport-saml": "^5.1.0",
     "@waylaidwanderer/fetch-event-source": "^3.0.1",
     "axios": "^1.12.1",
