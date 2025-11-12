@@ -208,12 +208,12 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
             className="flex h-full items-center justify-center"
             role="button"
             tabIndex={0}
-            aria-label={localize(`com_ui_select_row`, { rowDescription })}
+            aria-label={localize(`com_ui_select_row`, { 0: rowDescription })}
           >
             <SelectionCheckbox
               checked={row.getIsSelected()}
               onChange={(value) => row.toggleSelected(value)}
-              ariaLabel={localize(`com_ui_select_row`, { rowDescription })}
+              ariaLabel={localize(`com_ui_select_row`, { 0: rowDescription })}
             />
           </div>
         );
