@@ -7,7 +7,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  IMAGE_API: ghcr.io/${{ github.repository_owner }}/librechat-api
+  IMAGE_API:  ghcr.io/${{ toLower(github.repository_owner) }}/librechat-api
 
 permissions:
   id-token: write        # Needed for OIDC
