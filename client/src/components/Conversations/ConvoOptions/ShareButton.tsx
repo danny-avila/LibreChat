@@ -70,7 +70,7 @@ export default function ShareButton({
         title={localize('com_ui_share_link_to_chat')}
         className="max-h-[90vh] max-w-[550px] overflow-y-auto"
         main={
-          <div>
+          <div id="share-conversation-dialog">
             <div className="h-full py-2 text-text-primary">
               {(() => {
                 if (isLoading === true) {
