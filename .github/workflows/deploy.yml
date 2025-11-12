@@ -83,6 +83,11 @@ jobs:
         id: ec2
         run: |
           INSTANCE_ID="i-060babef69922d8b4"
+          INSTANCE_IP=$(aws ec2 describe-instances \
+            --instance-ids $INSTANCE_ID \
+            --query "Reservations[0].Instances[0].PublicDnsName" \
+            --output text)
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
           echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
       
       - name: Send SSH public key using EC2 Instance Connect
