@@ -41,22 +41,35 @@ class ModelEndHandler {
     }
 
     try {
-      if (metadata.provider === Providers.GOOGLE || graph.clientOptions?.disableStreaming) {
-        handleToolCalls(data?.output?.tool_calls, metadata, graph);
+      const agentContext = graph.getAgentContext(metadata);
+      const isGoogle = agentContext.provider === Providers.GOOGLE;
+      const streamingDisabled = !!agentContext.clientOptions?.disableStreaming;
+
+      const toolCalls = data?.output?.tool_calls;
+      let hasUnprocessedToolCalls = false;
+      if (Array.isArray(toolCalls) && toolCalls.length > 0 && graph?.toolCallStepIds?.has) {
+        try {
+          hasUnprocessedToolCalls = toolCalls.some(
+            (tc) => tc?.id && !graph.toolCallStepIds.has(tc.id),
+          );
+        } catch {
+          hasUnprocessedToolCalls = false;
+        }
+      }
+      if (isGoogle || streamingDisabled || hasUnprocessedToolCalls) {
+        handleToolCalls(toolCalls, metadata, graph);
       }
 
       const usage = data?.output?.usage_metadata;
       if (!usage) {
         return;
       }
-      if (metadata?.model) {
-        usage.model = metadata.model;
+      const modelName = metadata?.ls_model_name || agentContext.clientOptions?.model;
+      if (modelName) {
+        usage.model = modelName;
       }
 
       this.collectedUsage.push(usage);
-      const streamingDisabled = !!(
-        graph.clientOptions?.disableStreaming || graph?.boundModel?.disableStreaming
-      );
       if (!streamingDisabled) {
         return;
       }

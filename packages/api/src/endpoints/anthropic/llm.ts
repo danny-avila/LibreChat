@@ -27,6 +27,38 @@ function parseCredentials(
   return credentials && typeof credentials === 'object' ? credentials : {};
 }
 
+/** Known Anthropic parameters that map directly to the client config */
+export const knownAnthropicParams = new Set([
+  'model',
+  'temperature',
+  'topP',
+  'topK',
+  'maxTokens',
+  'maxOutputTokens',
+  'stopSequences',
+  'stop',
+  'stream',
+  'apiKey',
+  'maxRetries',
+  'timeout',
+  'anthropicVersion',
+  'anthropicApiUrl',
+  'defaultHeaders',
+]);
+
+/**
+ * Applies default parameters to the target object only if the field is undefined
+ * @param target - The target object to apply defaults to
+ * @param defaults - Record of default parameter values
+ */
+function applyDefaultParams(target: Record<string, unknown>, defaults: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(defaults)) {
+    if (target[key] === undefined) {
+      target[key] = value;
+    }
+  }
+}
+
 /**
  * Generates configuration options for creating an Anthropic language model (LLM) instance.
  * @param credentials - The API key for authentication with Anthropic, or credentials object for Vertex AI.
@@ -61,6 +93,8 @@ function getLLMConfig(
   };
 
   const mergedOptions = Object.assign(defaultOptions, options.modelOptions);
+
+  let enableWebSearch = mergedOptions.web_search;
 
   let requestOptions: AnthropicClientOptions & { stream?: boolean } = {
     model: mergedOptions.model,
@@ -121,9 +155,64 @@ function getLLMConfig(
     requestOptions.anthropicApiUrl = options.reverseProxyUrl;
   }
 
+  /** Handle defaultParams first - only process Anthropic-native params if undefined */
+  if (options.defaultParams && typeof options.defaultParams === 'object') {
+    for (const [key, value] of Object.entries(options.defaultParams)) {
+      /** Handle web_search separately - don't add to config */
+      if (key === 'web_search') {
+        if (enableWebSearch === undefined && typeof value === 'boolean') {
+          enableWebSearch = value;
+        }
+        continue;
+      }
+
+      if (knownAnthropicParams.has(key)) {
+        /** Route known Anthropic params to requestOptions only if undefined */
+        applyDefaultParams(requestOptions as Record<string, unknown>, { [key]: value });
+      }
+      /** Leave other params for transform to handle - they might be OpenAI params */
+    }
+  }
+
+  /** Handle addParams - can override defaultParams */
+  if (options.addParams && typeof options.addParams === 'object') {
+    for (const [key, value] of Object.entries(options.addParams)) {
+      /** Handle web_search separately - don't add to config */
+      if (key === 'web_search') {
+        if (typeof value === 'boolean') {
+          enableWebSearch = value;
+        }
+        continue;
+      }
+
+      if (knownAnthropicParams.has(key)) {
+        /** Route known Anthropic params to requestOptions */
+        (requestOptions as Record<string, unknown>)[key] = value;
+      }
+      /** Leave other params for transform to handle - they might be OpenAI params */
+    }
+  }
+
+  /** Handle dropParams - only drop from Anthropic config */
+  if (options.dropParams && Array.isArray(options.dropParams)) {
+    options.dropParams.forEach((param) => {
+      if (param === 'web_search') {
+        enableWebSearch = false;
+        return;
+      }
+
+      if (param in requestOptions) {
+        delete requestOptions[param as keyof AnthropicClientOptions];
+      }
+      if (requestOptions.invocationKwargs && param in requestOptions.invocationKwargs) {
+        delete (requestOptions.invocationKwargs as Record<string, unknown>)[param];
+      }
+    });
+  }
+
   const tools = [];
 
-  if (mergedOptions.web_search) {
+  if (enableWebSearch) {
     tools.push({
       type: 'web_search_20250305',
       name: 'web_search',

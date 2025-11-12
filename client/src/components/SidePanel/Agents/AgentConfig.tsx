@@ -1,12 +1,11 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
-import { EModelEndpoint } from 'librechat-data-provider';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
+import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
 import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
 import {
   removeFocusOutlines,
   processAgentOption,
-  getEndpointField,
   defaultTextProps,
   validateEmail,
   getIconKey,
