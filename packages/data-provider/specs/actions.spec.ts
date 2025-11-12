@@ -9,6 +9,8 @@ import {
   ActionRequest,
   openapiToFunction,
   FunctionSignature,
+  extractDomainFromUrl,
+  validateActionDomain,
   validateAndParseOpenAPISpec,
 } from '../src/actions';
 import {
@@ -1475,6 +1477,365 @@ describe('createURL', () => {
       const paramSchema = func?.parameters.properties['point'] as OpenAPIV3.SchemaObject;
       expect(paramSchema.type).toEqual('string');
       expect(paramSchema.pattern).toEqual('^(-?\\d+(?:\\.\\d+)?),(-?\\d+(?:\\.\\d+)?)$');
+    });
+  });
+});
+
+describe('SSRF Protection', () => {
+  describe('extractDomainFromUrl', () => {
+    it('extracts domain from valid HTTPS URL', () => {
+      expect(extractDomainFromUrl('https://example.com')).toBe('https://example.com');
+      expect(extractDomainFromUrl('https://example.com/path')).toBe('https://example.com');
+      expect(extractDomainFromUrl('https://example.com:8080')).toBe('https://example.com');
+      expect(extractDomainFromUrl('https://example.com:8080/path?query=value')).toBe(
+        'https://example.com',
+      );
+    });
+
+    it('extracts domain from valid HTTP URL', () => {
+      expect(extractDomainFromUrl('http://example.com')).toBe('http://example.com');
+      expect(extractDomainFromUrl('http://example.com/api')).toBe('http://example.com');
+    });
+
+    it('handles subdomains correctly', () => {
+      expect(extractDomainFromUrl('https://api.example.com')).toBe('https://api.example.com');
+      expect(extractDomainFromUrl('https://subdomain.api.example.com/path')).toBe(
+        'https://subdomain.api.example.com',
+      );
+    });
+
+    it('throws error for invalid URLs', () => {
+      expect(() => extractDomainFromUrl('not-a-url')).toThrow('Invalid URL format');
+      expect(() => extractDomainFromUrl('')).toThrow('Invalid URL format');
+      expect(() => extractDomainFromUrl('example.com')).toThrow('Invalid URL format');
+    });
+
+    it('preserves protocol to prevent HTTP/HTTPS confusion', () => {
+      const httpsDomain = extractDomainFromUrl('https://example.com/path');
+      const httpDomain = extractDomainFromUrl('http://example.com/path');
+      expect(httpsDomain).not.toBe(httpDomain);
+      expect(httpsDomain).toBe('https://example.com');
+      expect(httpDomain).toBe('http://example.com');
+    });
+
+    it('handles internal/private IP addresses', () => {
+      expect(extractDomainFromUrl('http://192.168.1.1')).toBe('http://192.168.1.1');
+      expect(extractDomainFromUrl('http://10.0.0.1/admin')).toBe('http://10.0.0.1');
+      expect(extractDomainFromUrl('http://172.16.0.1')).toBe('http://172.16.0.1');
+      expect(extractDomainFromUrl('http://127.0.0.1:8080')).toBe('http://127.0.0.1');
+    });
+
+    it('handles cloud metadata service URLs', () => {
+      // AWS EC2 metadata
+      expect(extractDomainFromUrl('http://169.254.169.254/latest/meta-data/')).toBe(
+        'http://169.254.169.254',
+      );
+      // Google Cloud metadata
+      expect(extractDomainFromUrl('http://metadata.google.internal/computeMetadata/v1/')).toBe(
+        'http://metadata.google.internal',
+      );
+      // Azure metadata
+      expect(extractDomainFromUrl('http://169.254.169.254/metadata/instance')).toBe(
+        'http://169.254.169.254',
+      );
+    });
+  });
+
+  describe('validateAndParseOpenAPISpec - SSRF Prevention', () => {
+    it('returns serverUrl for valid spec', () => {
+      const validSpec = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Test API', version: '1.0.0' },
+        servers: [{ url: 'https://example.com' }],
+        paths: { '/test': {} },
+      });
+
+      const result = validateAndParseOpenAPISpec(validSpec);
+      expect(result.status).toBe(true);
+      expect(result.serverUrl).toBe('https://example.com');
+    });
+
+    it('extracts serverUrl even with path in server URL', () => {
+      const specWithPath = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Test API', version: '1.0.0' },
+        servers: [{ url: 'https://example.com/api/v1' }],
+        paths: { '/test': {} },
+      });
+
+      const result = validateAndParseOpenAPISpec(specWithPath);
+      expect(result.status).toBe(true);
+      expect(result.serverUrl).toBe('https://example.com/api/v1');
+    });
+
+    it('detects potential SSRF attempts with internal IPs', () => {
+      const internalIPSpec = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Test API', version: '1.0.0' },
+        servers: [{ url: 'http://192.168.1.1' }],
+        paths: { '/test': {} },
+      });
+
+      const result = validateAndParseOpenAPISpec(internalIPSpec);
+      expect(result.status).toBe(true);
+      expect(result.serverUrl).toBe('http://192.168.1.1');
+    });
+
+    it('detects potential SSRF attempts with localhost', () => {
+      const localhostSpec = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Test API', version: '1.0.0' },
+        servers: [{ url: 'http://localhost:8080' }],
+        paths: { '/test': {} },
+      });
+
+      const result = validateAndParseOpenAPISpec(localhostSpec);
+      expect(result.status).toBe(true);
+      expect(result.serverUrl).toBe('http://localhost:8080');
+    });
+
+    it('detects potential SSRF attempts with cloud metadata services', () => {
+      const awsMetadataSpec = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Test API', version: '1.0.0' },
+        servers: [{ url: 'http://169.254.169.254/latest/meta-data/' }],
+        paths: { '/test': {} },
+      });
+
+      const result = validateAndParseOpenAPISpec(awsMetadataSpec);
+      expect(result.status).toBe(true);
+      expect(result.serverUrl).toBe('http://169.254.169.254/latest/meta-data/');
+    });
+
+    it('handles multiple servers and returns the first one', () => {
+      const multiServerSpec = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Test API', version: '1.0.0' },
+        servers: [{ url: 'https://api.example.com' }, { url: 'https://backup.example.com' }],
+        paths: { '/test': {} },
+      });
+
+      const result = validateAndParseOpenAPISpec(multiServerSpec);
+      expect(result.status).toBe(true);
+      expect(result.serverUrl).toBe('https://api.example.com');
+    });
+  });
+
+  describe('SSRF Attack Scenarios', () => {
+    it('scenario: attacker tries to use whitelisted domain but different spec URL', () => {
+      const maliciousSpec = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Malicious API', version: '1.0.0' },
+        servers: [{ url: 'http://169.254.169.254/latest/meta-data/' }], // AWS metadata service
+        paths: { '/': { get: { summary: 'Get metadata', operationId: 'getMetadata' } } },
+      });
+
+      const result = validateAndParseOpenAPISpec(maliciousSpec);
+      expect(result.status).toBe(true);
+      expect(result.serverUrl).toBe('http://169.254.169.254/latest/meta-data/');
+
+      // The fix ensures this serverUrl would be validated against the domain whitelist
+      const extractedDomain = extractDomainFromUrl(result.serverUrl!);
+      expect(extractedDomain).toBe('http://169.254.169.254');
+
+      // In the actual validation, this would not match a whitelisted 'example.com'
+      expect(extractedDomain).not.toContain('example.com');
+    });
+
+    it('scenario: attacker tries to use internal network IP', () => {
+      const internalNetworkSpec = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Internal API', version: '1.0.0' },
+        servers: [{ url: 'http://10.0.0.1:8080/admin' }],
+        paths: { '/': { get: { summary: 'Admin endpoint', operationId: 'getAdmin' } } },
+      });
+
+      const result = validateAndParseOpenAPISpec(internalNetworkSpec);
+      expect(result.status).toBe(true);
+      expect(result.serverUrl).toBe('http://10.0.0.1:8080/admin');
+
+      const extractedDomain = extractDomainFromUrl(result.serverUrl!);
+      expect(extractedDomain).toBe('http://10.0.0.1');
+      expect(extractedDomain).not.toContain('example.com');
+    });
+
+    it('scenario: attacker tries to access Google Cloud metadata', () => {
+      const gcpMetadataSpec = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'GCP Metadata', version: '1.0.0' },
+        servers: [{ url: 'http://metadata.google.internal/computeMetadata/v1/' }],
+        paths: { '/': { get: { summary: 'Get GCP metadata', operationId: 'getGCPMetadata' } } },
+      });
+
+      const result = validateAndParseOpenAPISpec(gcpMetadataSpec);
+      expect(result.status).toBe(true);
+      expect(result.serverUrl).toBe('http://metadata.google.internal/computeMetadata/v1/');
+
+      const extractedDomain = extractDomainFromUrl(result.serverUrl!);
+      expect(extractedDomain).toBe('http://metadata.google.internal');
+      expect(extractedDomain).not.toContain('example.com');
+    });
+
+    it('scenario: legitimate use case with correct domain matching', () => {
+      const legitimateSpec = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Legitimate API', version: '1.0.0' },
+        servers: [{ url: 'https://api.example.com/v1' }],
+        paths: { '/data': { get: { summary: 'Get data', operationId: 'getData' } } },
+      });
+
+      const result = validateAndParseOpenAPISpec(legitimateSpec);
+      expect(result.status).toBe(true);
+      expect(result.serverUrl).toBe('https://api.example.com/v1');
+
+      const extractedDomain = extractDomainFromUrl(result.serverUrl!);
+      expect(extractedDomain).toBe('https://api.example.com');
+
+      // This should match when client provides 'api.example.com' or 'https://api.example.com'
+      const clientProvidedDomain = 'api.example.com';
+      const normalizedClientDomain = `https://${clientProvidedDomain}`;
+      expect(extractedDomain).toBe(normalizedClientDomain);
+    });
+
+    it('scenario: protocol mismatch should be detected', () => {
+      const httpSpec = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'HTTP API', version: '1.0.0' },
+        servers: [{ url: 'http://example.com' }],
+        paths: { '/': { get: { summary: 'Get data', operationId: 'getData' } } },
+      });
+
+      const result = validateAndParseOpenAPISpec(httpSpec);
+      expect(result.status).toBe(true);
+      expect(result.serverUrl).toBe('http://example.com');
+
+      const extractedDomain = extractDomainFromUrl(result.serverUrl!);
+      expect(extractedDomain).toBe('http://example.com');
+
+      // If client provided 'https://example.com', there would be a mismatch
+      const clientProvidedHttps = 'https://example.com';
+      expect(extractedDomain).not.toBe(clientProvidedHttps);
+    });
+  });
+
+  describe('validateActionDomain', () => {
+    it('validates matching domains with HTTPS protocol', () => {
+      const result = validateActionDomain('example.com', 'https://example.com/api/v1');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('https://example.com');
+      expect(result.normalizedClientDomain).toBe('https://example.com');
+    });
+
+    it('validates matching domains when client provides full URL', () => {
+      const result = validateActionDomain('https://example.com', 'https://example.com/api');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('https://example.com');
+      expect(result.normalizedClientDomain).toBe('https://example.com');
+    });
+
+    it('rejects mismatched domains', () => {
+      const result = validateActionDomain('example.com', 'https://malicious.com/api');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.message).toContain('example.com');
+      expect(result.message).toContain('https://malicious.com');
+    });
+
+    it('detects SSRF attempt with internal IP', () => {
+      const result = validateActionDomain('example.com', 'http://192.168.1.1/admin');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.normalizedSpecDomain).toBe('http://192.168.1.1');
+    });
+
+    it('detects SSRF attempt with AWS metadata service', () => {
+      const result = validateActionDomain(
+        'api.example.com',
+        'http://169.254.169.254/latest/meta-data/',
+      );
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.normalizedSpecDomain).toBe('http://169.254.169.254');
+    });
+
+    it('detects SSRF attempt with localhost', () => {
+      const result = validateActionDomain('example.com', 'http://localhost:8080/api');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.normalizedSpecDomain).toBe('http://localhost');
+    });
+
+    it('detects protocol mismatch (HTTP vs HTTPS)', () => {
+      const result = validateActionDomain('https://example.com', 'http://example.com/api');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.normalizedSpecDomain).toBe('http://example.com');
+      expect(result.normalizedClientDomain).toBe('https://example.com');
+    });
+
+    it('validates matching subdomains', () => {
+      const result = validateActionDomain('api.example.com', 'https://api.example.com/v1');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('https://api.example.com');
+    });
+
+    it('rejects different subdomains', () => {
+      const result = validateActionDomain('api.example.com', 'https://admin.example.com/v1');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('handles invalid server URL gracefully', () => {
+      const result = validateActionDomain('example.com', 'not-a-valid-url');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Failed to validate domain');
+    });
+
+    it('validates with port numbers', () => {
+      const result = validateActionDomain('example.com', 'https://example.com:8443/api');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('https://example.com');
+    });
+
+    it('detects port-based SSRF attempt', () => {
+      const result = validateActionDomain('example.com', 'http://example.com:6379/');
+      expect(result.isValid).toBe(false);
+      expect(result.normalizedSpecDomain).toBe('http://example.com');
+      expect(result.normalizedClientDomain).toBe('https://example.com');
+    });
+
+    it('validates Google Cloud metadata service detection', () => {
+      const result = validateActionDomain(
+        'example.com',
+        'http://metadata.google.internal/computeMetadata/v1/',
+      );
+      expect(result.isValid).toBe(false);
+      expect(result.normalizedSpecDomain).toBe('http://metadata.google.internal');
+    });
+
+    it('validates Azure metadata service detection', () => {
+      const result = validateActionDomain(
+        'example.com',
+        'http://169.254.169.254/metadata/instance',
+      );
+      expect(result.isValid).toBe(false);
+      expect(result.normalizedSpecDomain).toBe('http://169.254.169.254');
+    });
+
+    it('handles edge case: client provides domain with protocol matching spec', () => {
+      const result = validateActionDomain('http://example.com', 'http://example.com/api');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('http://example.com');
+      expect(result.normalizedClientDomain).toBe('http://example.com');
+    });
+
+    it('validates real-world case: legitimate API with versioned path', () => {
+      const result = validateActionDomain(
+        'api.openai.com',
+        'https://api.openai.com/v1/chat/completions',
+      );
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('https://api.openai.com');
     });
   });
 });

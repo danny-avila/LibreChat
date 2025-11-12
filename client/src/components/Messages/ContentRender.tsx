@@ -1,5 +1,6 @@
-import { useRecoilValue } from 'recoil';
 import { useCallback, useMemo, memo } from 'react';
+import { useAtomValue } from 'jotai';
+import { useRecoilValue } from 'recoil';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
@@ -9,6 +10,7 @@ import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import { useAttachments, useMessageActions } from '~/hooks';
 import SubRow from '~/components/Chat/Messages/SubRow';
+import { fontSizeAtom } from '~/store/fontSize';
 import { cn, logger } from '~/utils';
 import store from '~/store';
 
@@ -60,8 +62,8 @@ const ContentRender = memo(
       isMultiMessage,
       setCurrentEditId,
     });
+    const fontSize = useAtomValue(fontSizeAtom);
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
-    const fontSize = useRecoilValue(store.fontSize);
 
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const isLast = useMemo(
@@ -96,7 +98,10 @@ const ContentRender = memo(
       () =>
         showCardRender && !isLatestMessage
           ? () => {
-              logger.log(`Message Card click: Setting ${msg?.messageId} as latest message`);
+              logger.log(
+                'latest_message',
+                `Message Card click: Setting ${msg?.messageId} as latest message`,
+              );
               logger.dir(msg);
               setLatestMessage(msg!);
             }

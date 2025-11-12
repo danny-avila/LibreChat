@@ -255,6 +255,7 @@ describe('MCPConnectionFactory', () => {
         'test-server',
         'https://api.example.com',
         'user123',
+        {},
         undefined,
       );
       expect(oauthOptions.oauthStart).toHaveBeenCalledWith('https://auth.example.com');

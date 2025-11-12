@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { EModelEndpoint } from './schemas';
 import type { EndpointFileConfig, FileConfig } from './types/files';
+import { EModelEndpoint, isAgentsEndpoint, isDocumentSupportedProvider } from './schemas';
+import { normalizeEndpointName } from './utils';
 
 export const supportsFiles = {
   [EModelEndpoint.openAI]: true,
@@ -317,6 +318,8 @@ export const fileConfigSchema = z.object({
     .optional(),
 });
 
+export type TFileConfig = z.infer<typeof fileConfigSchema>;
+
 /** Helper function to safely convert string patterns to RegExp objects */
 export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
   patterns.reduce((acc: RegExp[], pattern) => {
@@ -329,9 +332,146 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
     return acc;
   }, []);
 
+/**
+ * Gets the appropriate endpoint file configuration with standardized lookup logic.
+ *
+ * @param params - Object containing fileConfig, endpoint, and optional conversationEndpoint
+ * @param params.fileConfig - The merged file configuration
+ * @param params.endpoint - The endpoint name to look up
+ * @param params.conversationEndpoint - Optional conversation endpoint for additional context
+ * @returns The endpoint file configuration or undefined
+ */
+/**
+ * Merges an endpoint config with the default config to ensure all fields are populated.
+ * For document-supported providers, uses the comprehensive MIME type list (includes videos/audio).
+ */
+function mergeWithDefault(
+  endpointConfig: EndpointFileConfig,
+  defaultConfig: EndpointFileConfig,
+  endpoint?: string | null,
+): EndpointFileConfig {
+  /** Use comprehensive MIME types for document-supported providers */
+  const defaultMimeTypes = isDocumentSupportedProvider(endpoint)
+    ? supportedMimeTypes
+    : defaultConfig.supportedMimeTypes;
+
+  return {
+    disabled: endpointConfig.disabled ?? defaultConfig.disabled,
+    fileLimit: endpointConfig.fileLimit ?? defaultConfig.fileLimit,
+    fileSizeLimit: endpointConfig.fileSizeLimit ?? defaultConfig.fileSizeLimit,
+    totalSizeLimit: endpointConfig.totalSizeLimit ?? defaultConfig.totalSizeLimit,
+    supportedMimeTypes: endpointConfig.supportedMimeTypes ?? defaultMimeTypes,
+  };
+}
+
+export function getEndpointFileConfig(params: {
+  fileConfig?: FileConfig | null;
+  endpoint?: string | null;
+  endpointType?: string | null;
+}): EndpointFileConfig {
+  const { fileConfig: mergedFileConfig, endpoint, endpointType } = params;
+
+  if (!mergedFileConfig?.endpoints) {
+    return fileConfig.endpoints.default;
+  }
+
+  /** Compute an effective default by merging user-configured default over the base default */
+  const baseDefaultConfig = fileConfig.endpoints.default;
+  const userDefaultConfig = mergedFileConfig.endpoints.default;
+  const defaultConfig = userDefaultConfig
+    ? mergeWithDefault(userDefaultConfig, baseDefaultConfig, 'default')
+    : baseDefaultConfig;
+
+  const normalizedEndpoint = normalizeEndpointName(endpoint ?? '');
+  const standardEndpoints = new Set([
+    'default',
+    EModelEndpoint.agents,
+    EModelEndpoint.assistants,
+    EModelEndpoint.azureAssistants,
+    EModelEndpoint.openAI,
+    EModelEndpoint.azureOpenAI,
+    EModelEndpoint.anthropic,
+    EModelEndpoint.google,
+    EModelEndpoint.bedrock,
+  ]);
+
+  const normalizedEndpointType = normalizeEndpointName(endpointType ?? '');
+  const isCustomEndpoint =
+    endpointType === EModelEndpoint.custom ||
+    (!standardEndpoints.has(normalizedEndpointType) &&
+      normalizedEndpoint &&
+      !standardEndpoints.has(normalizedEndpoint));
+
+  if (isCustomEndpoint) {
+    /** 1. Check direct endpoint lookup (could be normalized or not) */
+    if (endpoint && mergedFileConfig.endpoints[endpoint]) {
+      return mergeWithDefault(mergedFileConfig.endpoints[endpoint], defaultConfig, endpoint);
+    }
+    /** 2. Check normalized endpoint lookup (skip standard endpoint keys) */
+    for (const key in mergedFileConfig.endpoints) {
+      if (!standardEndpoints.has(key) && normalizeEndpointName(key) === normalizedEndpoint) {
+        return mergeWithDefault(mergedFileConfig.endpoints[key], defaultConfig, key);
+      }
+    }
+    /** 3. Fallback to generic 'custom' config if any */
+    if (mergedFileConfig.endpoints[EModelEndpoint.custom]) {
+      return mergeWithDefault(
+        mergedFileConfig.endpoints[EModelEndpoint.custom],
+        defaultConfig,
+        endpoint,
+      );
+    }
+    /** 4. Fallback to 'agents' (all custom endpoints are non-assistants) */
+    if (mergedFileConfig.endpoints[EModelEndpoint.agents]) {
+      return mergeWithDefault(
+        mergedFileConfig.endpoints[EModelEndpoint.agents],
+        defaultConfig,
+        endpoint,
+      );
+    }
+    /** 5. Fallback to default */
+    return defaultConfig;
+  }
+
+  /** Check endpointType first (most reliable for standard endpoints) */
+  if (endpointType && mergedFileConfig.endpoints[endpointType]) {
+    return mergeWithDefault(mergedFileConfig.endpoints[endpointType], defaultConfig, endpointType);
+  }
+
+  /** Check direct endpoint lookup */
+  if (endpoint && mergedFileConfig.endpoints[endpoint]) {
+    return mergeWithDefault(mergedFileConfig.endpoints[endpoint], defaultConfig, endpoint);
+  }
+
+  /** Check normalized endpoint */
+  if (normalizedEndpoint && mergedFileConfig.endpoints[normalizedEndpoint]) {
+    return mergeWithDefault(
+      mergedFileConfig.endpoints[normalizedEndpoint],
+      defaultConfig,
+      normalizedEndpoint,
+    );
+  }
+
+  /** Fallback to agents if endpoint is explicitly agents */
+  const isAgents = isAgentsEndpoint(normalizedEndpointType || normalizedEndpoint);
+  if (isAgents && mergedFileConfig.endpoints[EModelEndpoint.agents]) {
+    return mergeWithDefault(
+      mergedFileConfig.endpoints[EModelEndpoint.agents],
+      defaultConfig,
+      EModelEndpoint.agents,
+    );
+  }
+
+  /** Return default config */
+  return defaultConfig;
+}
+
 export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | undefined): FileConfig {
   const mergedConfig: FileConfig = {
     ...fileConfig,
+    endpoints: {
+      ...fileConfig.endpoints,
+    },
     ocr: {
       ...fileConfig.ocr,
       supportedMimeTypes: fileConfig.ocr?.supportedMimeTypes || [],
@@ -396,8 +536,11 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
   for (const key in dynamic.endpoints) {
     const dynamicEndpoint = (dynamic.endpoints as Record<string, EndpointFileConfig>)[key];
 
+    /** Deep copy the base endpoint config if it exists to prevent mutation */
     if (!mergedConfig.endpoints[key]) {
       mergedConfig.endpoints[key] = {};
+    } else {
+      mergedConfig.endpoints[key] = { ...mergedConfig.endpoints[key] };
     }
 
     const mergedEndpoint = mergedConfig.endpoints[key];
@@ -425,6 +568,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
         mergedEndpoint[field] = dynamicEndpoint[field];
       }
     });
+
+    if (dynamicEndpoint.disabled !== undefined) {
+      mergedEndpoint.disabled = dynamicEndpoint.disabled;
+    }
 
     if (dynamicEndpoint.supportedMimeTypes) {
       mergedEndpoint.supportedMimeTypes = convertStringsToRegex(

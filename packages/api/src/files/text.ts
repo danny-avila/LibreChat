@@ -3,7 +3,7 @@ import FormData from 'form-data';
 import { createReadStream } from 'fs';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
-import type { Request as ServerRequest } from 'express';
+import type { ServerRequest } from '~/types';
 import { logAxiosError, readFileAsString } from '~/utils';
 import { generateShortLivedToken } from '~/crypto/jwt';
 
@@ -20,9 +20,7 @@ export async function parseText({
   file,
   file_id,
 }: {
-  req: Pick<ServerRequest, 'user'> & {
-    user?: { id: string };
-  };
+  req: ServerRequest;
   file: Express.Multer.File;
   file_id: string;
 }): Promise<{ text: string; bytes: number; source: string }> {

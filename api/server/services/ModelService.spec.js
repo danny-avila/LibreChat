@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { logger } = require('@librechat/data-schemas');
+const { logAxiosError, resolveHeaders } = require('@librechat/api');
 const { EModelEndpoint, defaultModels } = require('librechat-data-provider');
 
 const {
@@ -18,6 +18,8 @@ jest.mock('@librechat/api', () => {
     processModelData: jest.fn((...args) => {
       return originalUtils.processModelData(...args);
     }),
+    logAxiosError: jest.fn(),
+    resolveHeaders: jest.fn((options) => options?.headers || {}),
   };
 });
 
@@ -277,12 +279,51 @@ describe('fetchModels with Ollama specific logic', () => {
 
     expect(models).toEqual(['Ollama-Base', 'Ollama-Advanced']);
     expect(axios.get).toHaveBeenCalledWith('https://api.ollama.test.com/api/tags', {
+      headers: {},
       timeout: 5000,
     });
   });
 
-  it('should handle errors gracefully when fetching Ollama models fails', async () => {
-    axios.get.mockRejectedValue(new Error('Network error'));
+  it('should pass headers and user object to Ollama fetchModels', async () => {
+    const customHeaders = {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer custom-token',
+    };
+    const userObject = {
+      id: 'user789',
+      email: 'test@example.com',
+    };
+
+    resolveHeaders.mockReturnValueOnce(customHeaders);
+
+    const models = await fetchModels({
+      user: 'user789',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.ollama.test.com',
+      name: 'ollama',
+      headers: customHeaders,
+      userObject,
+    });
+
+    expect(models).toEqual(['Ollama-Base', 'Ollama-Advanced']);
+    expect(resolveHeaders).toHaveBeenCalledWith({
+      headers: customHeaders,
+      user: userObject,
+    });
+    expect(axios.get).toHaveBeenCalledWith('https://api.ollama.test.com/api/tags', {
+      headers: customHeaders,
+      timeout: 5000,
+    });
+  });
+
+  it('should handle errors gracefully when fetching Ollama models fails and fallback to OpenAI-compatible fetch', async () => {
+    axios.get.mockRejectedValueOnce(new Error('Ollama API error'));
+    axios.get.mockResolvedValueOnce({
+      data: {
+        data: [{ id: 'fallback-model-1' }, { id: 'fallback-model-2' }],
+      },
+    });
+
     const models = await fetchModels({
       user: 'user789',
       apiKey: 'testApiKey',
@@ -290,8 +331,13 @@ describe('fetchModels with Ollama specific logic', () => {
       name: 'OllamaAPI',
     });
 
-    expect(models).toEqual([]);
-    expect(logger.error).toHaveBeenCalled();
+    expect(models).toEqual(['fallback-model-1', 'fallback-model-2']);
+    expect(logAxiosError).toHaveBeenCalledWith({
+      message:
+        'Failed to fetch models from Ollama API. Attempting to fetch via OpenAI-compatible endpoint.',
+      error: expect.any(Error),
+    });
+    expect(axios.get).toHaveBeenCalledTimes(2);
   });
 
   it('should return an empty array if no baseURL is provided', async () => {

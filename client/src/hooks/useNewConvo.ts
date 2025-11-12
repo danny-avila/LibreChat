@@ -1,15 +1,16 @@
 import { useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
   Constants,
   FileSources,
   EModelEndpoint,
   isParamEndpoint,
+  getEndpointField,
   LocalStorageKeys,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type {
   TPreset,
   TSubmission,
@@ -19,24 +20,25 @@ import type {
 } from 'librechat-data-provider';
 import type { AssistantListItem } from '~/common';
 import {
-  getEndpointField,
-  buildDefaultConvo,
+  updateLastSelectedModel,
+  getDefaultModelSpec,
   getDefaultEndpoint,
   getModelSpecPreset,
-  getDefaultModelSpec,
-  updateLastSelectedModel,
+  buildDefaultConvo,
+  logger,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useResetChatBadges } from './useChatBadges';
+import { useApplyModelSpecEffects } from './Agents';
 import { usePauseGlobalAudio } from './Audio';
-import { logger } from '~/utils';
 import store from '~/store';
 
 const useNewConvo = (index = 0) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { data: startupConfig } = useGetStartupConfig();
+  const applyModelSpecEffects = useApplyModelSpecEffects();
   const clearAllConversations = store.useClearConvoState();
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const { setConversation } = store.useCreateConversationAtom(index);
@@ -179,6 +181,7 @@ const useNewConvo = (index = 0) => {
         }
         setSubmission({} as TSubmission);
         if (!(keepLatestMessage ?? false)) {
+          logger.log('latest_message', 'Clearing all latest messages');
           clearAllLatestMessages();
         }
         if (isCancelled) {
@@ -251,18 +254,26 @@ const useNewConvo = (index = 0) => {
       };
 
       let preset = _preset;
-      const defaultModelSpec = getDefaultModelSpec(startupConfig);
+      const result = getDefaultModelSpec(startupConfig);
+      const defaultModelSpec = result?.default ?? result?.last;
       if (
         !preset &&
         startupConfig &&
         (startupConfig.modelSpecs?.prioritize === true ||
-          (startupConfig.interface?.modelSelect ?? true) !== true) &&
+          (startupConfig.interface?.modelSelect ?? true) !== true ||
+          (result?.last != null && Object.keys(_template).length === 0)) &&
         defaultModelSpec
       ) {
         preset = getModelSpecPreset(defaultModelSpec);
       }
 
-      if (conversation.conversationId === 'new' && !modelsData) {
+      applyModelSpecEffects({
+        startupConfig,
+        specName: preset?.spec,
+        convoId: conversation.conversationId,
+      });
+
+      if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
         const filesToDelete = Array.from(files.values())
           .filter(
             (file) =>
@@ -308,6 +319,7 @@ const useNewConvo = (index = 0) => {
       saveBadgesState,
       pauseGlobalAudio,
       switchToConversation,
+      applyModelSpecEffects,
     ],
   );
 

@@ -52,3 +52,11 @@ export function extractEnvVariable(value: string) {
 
   return result;
 }
+
+/**
+ * Normalize the endpoint name to system-expected value.
+ * @param name
+ */
+export function normalizeEndpointName(name = ''): string {
+  return name.toLowerCase() === 'ollama' ? 'ollama' : name;
+}

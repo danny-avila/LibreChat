@@ -227,7 +227,6 @@ class STTService {
     }
 
     const headers = {
-      'Content-Type': 'multipart/form-data',
       ...(apiKey && { 'api-key': apiKey }),
     };
 

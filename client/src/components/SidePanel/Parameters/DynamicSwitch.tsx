@@ -67,6 +67,9 @@ function DynamicSwitch({
             onCheckedChange={handleCheckedChange}
             disabled={readonly}
             className="flex"
+            aria-label={
+              labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey
+            }
           />
         </HoverCardTrigger>
         {description && (

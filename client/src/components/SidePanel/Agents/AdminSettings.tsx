@@ -56,6 +56,7 @@ const LabelController: React.FC<LabelControllerProps> = ({
           checked={field.value}
           onCheckedChange={field.onChange}
           value={field.value.toString()}
+          aria-label={label}
         />
       )}
     />
@@ -152,6 +153,7 @@ const AdminSettings = () => {
           size={'sm'}
           variant={'outline'}
           className="btn btn-neutral border-token-border-light relative h-9 w-full gap-1 rounded-lg font-medium"
+          aria-label={localize('com_ui_admin_settings')}
         >
           <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
           {localize('com_ui_admin_settings')}

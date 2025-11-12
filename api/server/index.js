@@ -185,8 +185,8 @@ process.on('uncaughtException', (err) => {
     logger.error('There was an uncaught error:', err);
   }
 
-  if (err.message.includes('abort')) {
-    logger.warn('There was an uncatchable AbortController error.');
+  if (err.message && err.message?.toLowerCase()?.includes('abort')) {
+    logger.warn('There was an uncatchable abort error.');
     return;
   }
 

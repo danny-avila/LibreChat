@@ -25,6 +25,12 @@ export const genAzureEndpoint = ({
   azureOpenAIApiInstanceName: string;
   azureOpenAIApiDeploymentName: string;
 }): string => {
+  // Support both old (.openai.azure.com) and new (.cognitiveservices.azure.com) endpoint formats
+  // If instanceName already includes a full domain, use it as-is
+  if (azureOpenAIApiInstanceName.includes('.azure.com')) {
+    return `https://${azureOpenAIApiInstanceName}/openai/deployments/${azureOpenAIApiDeploymentName}`;
+  }
+  // Legacy format for backward compatibility
   return `https://${azureOpenAIApiInstanceName}.openai.azure.com/openai/deployments/${azureOpenAIApiDeploymentName}`;
 };
 

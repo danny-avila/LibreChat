@@ -133,7 +133,7 @@ export default function FileRow({
               >
                 {isImage ? (
                   <Image
-                    url={file.preview ?? file.filepath}
+                    url={file.progress === 1 ? file.filepath : (file.preview ?? file.filepath)}
                     onDelete={handleDelete}
                     progress={file.progress}
                     source={file.source}

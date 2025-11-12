@@ -30,7 +30,7 @@ jest.mock('~/server/services/Config', () => ({
   }),
 }));
 
-const { Calculator } = require('@langchain/community/tools/calculator');
+const { Calculator } = require('@librechat/agents');
 
 const { User } = require('~/db/models');
 const PluginService = require('~/server/services/PluginService');

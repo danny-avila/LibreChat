@@ -1,5 +1,6 @@
 import {
   Tools,
+  Constants,
   ContentTypes,
   ToolCallTypes,
   imageGenTools,
@@ -10,6 +11,7 @@ import type { TMessageContentParts, TAttachment } from 'librechat-data-provider'
 import { OpenAIImageGen, EmptyText, Reasoning, ExecuteCode, AgentUpdate, Text } from './Parts';
 import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
+import AgentHandoff from './AgentHandoff';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
 import WebSearch from './WebSearch';
@@ -65,6 +67,10 @@ const Part = memo(
       if (part.tool_call_ids != null && !text) {
         return null;
       }
+      /** Skip rendering if text is only whitespace to avoid empty Container */
+      if (!isLast && text.length > 0 && /^\s*$/.test(text)) {
+        return null;
+      }
       return (
         <Container>
           <Text text={text} isCreatedByUser={isCreatedByUser} showCursor={showCursor} />
@@ -75,7 +81,7 @@ const Part = memo(
       if (typeof reasoning !== 'string') {
         return null;
       }
-      return <Reasoning reasoning={reasoning} />;
+      return <Reasoning reasoning={reasoning} isLast={isLast ?? false} />;
     } else if (part.type === ContentTypes.TOOL_CALL) {
       const toolCall = part[ContentTypes.TOOL_CALL];
 
@@ -117,6 +123,14 @@ const Part = memo(
             isSubmitting={isSubmitting}
             attachments={attachments}
             isLast={isLast}
+          />
+        );
+      } else if (isToolCall && toolCall.name?.startsWith(Constants.LC_TRANSFER_TO_)) {
+        return (
+          <AgentHandoff
+            args={toolCall.args ?? ''}
+            name={toolCall.name || ''}
+            output={toolCall.output ?? ''}
           />
         );
       } else if (isToolCall) {

@@ -28,6 +28,8 @@ const LoadingSpinner = memo(() => {
   );
 });
 
+LoadingSpinner.displayName = 'LoadingSpinner';
+
 const DateLabel: FC<{ groupName: string }> = memo(({ groupName }) => {
   const localize = useLocalize();
   return (
@@ -74,6 +76,7 @@ const Conversations: FC<ConversationsProps> = ({
   isLoading,
   isSearchLoading,
 }) => {
+  const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
 
@@ -181,7 +184,7 @@ const Conversations: FC<ConversationsProps> = ({
       {isSearchLoading ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner className="text-text-primary" />
-          <span className="ml-2 text-text-primary">Loading...</span>
+          <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
         </div>
       ) : (
         <div className="flex-1">
@@ -198,7 +201,6 @@ const Conversations: FC<ConversationsProps> = ({
                 overscanRowCount={10}
                 className="outline-none"
                 style={{ outline: 'none' }}
-                role="list"
                 aria-label="Conversations"
                 onRowsRendered={handleRowsRendered}
                 tabIndex={-1}

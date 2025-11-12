@@ -1,5 +1,4 @@
-import { memo, useMemo, useState } from 'react';
-import { useRecoilState } from 'recoil';
+import { memo, useMemo } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -7,14 +6,11 @@ import type {
   TAttachment,
   Agents,
 } from 'librechat-data-provider';
-import { ThinkingButton } from '~/components/Artifacts/Thinking';
 import { MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import { mapAttachments } from '~/utils/map';
 import { EditTextPart } from './Parts';
-import { useLocalize } from '~/hooks';
-import store from '~/store';
 import Part from './Part';
 
 type ContentPartsProps = {
@@ -52,31 +48,9 @@ const ContentParts = memo(
     siblingIdx,
     setSiblingIdx,
   }: ContentPartsProps) => {
-    const localize = useLocalize();
-    const [showThinking, setShowThinking] = useRecoilState<boolean>(store.showThinking);
-    const [isExpanded, setIsExpanded] = useState(showThinking);
     const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
 
     const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
-
-    const hasReasoningParts = useMemo(() => {
-      const hasThinkPart = content?.some((part) => part?.type === ContentTypes.THINK) ?? false;
-      const allThinkPartsHaveContent =
-        content?.every((part) => {
-          if (part?.type !== ContentTypes.THINK) {
-            return true;
-          }
-
-          if (typeof part.think === 'string') {
-            const cleanedContent = part.think.replace(/<\/?think>/g, '').trim();
-            return cleanedContent.length > 0;
-          }
-
-          return false;
-        }) ?? false;
-
-      return hasThinkPart && allThinkPartsHaveContent;
-    }, [content]);
 
     if (!content) {
       return null;
@@ -126,57 +100,40 @@ const ContentParts = memo(
         <SearchContext.Provider value={{ searchResults }}>
           <MemoryArtifacts attachments={attachments} />
           <Sources messageId={messageId} conversationId={conversationId || undefined} />
-          {hasReasoningParts && (
-            <div className="mb-5">
-              <ThinkingButton
-                isExpanded={isExpanded}
-                onClick={() =>
-                  setIsExpanded((prev) => {
-                    const val = !prev;
-                    setShowThinking(val);
-                    return val;
-                  })
-                }
-                label={
-                  effectiveIsSubmitting && isLast
-                    ? localize('com_ui_thinking')
-                    : localize('com_ui_thoughts')
-                }
-              />
-            </div>
-          )}
-          {content
-            .filter((part) => part)
-            .map((part, idx) => {
-              const toolCallId =
-                (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
-              const attachments = attachmentMap[toolCallId];
+          {content.map((part, idx) => {
+            if (!part) {
+              return null;
+            }
 
-              return (
-                <MessageContext.Provider
-                  key={`provider-${messageId}-${idx}`}
-                  value={{
-                    messageId,
-                    isExpanded,
-                    conversationId,
-                    partIndex: idx,
-                    nextType: content[idx + 1]?.type,
-                    isSubmitting: effectiveIsSubmitting,
-                    isLatestMessage,
-                  }}
-                >
-                  <Part
-                    part={part}
-                    attachments={attachments}
-                    isSubmitting={effectiveIsSubmitting}
-                    key={`part-${messageId}-${idx}`}
-                    isCreatedByUser={isCreatedByUser}
-                    isLast={idx === content.length - 1}
-                    showCursor={idx === content.length - 1 && isLast}
-                  />
-                </MessageContext.Provider>
-              );
-            })}
+            const toolCallId =
+              (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+            const partAttachments = attachmentMap[toolCallId];
+
+            return (
+              <MessageContext.Provider
+                key={`provider-${messageId}-${idx}`}
+                value={{
+                  messageId,
+                  isExpanded: true,
+                  conversationId,
+                  partIndex: idx,
+                  nextType: content[idx + 1]?.type,
+                  isSubmitting: effectiveIsSubmitting,
+                  isLatestMessage,
+                }}
+              >
+                <Part
+                  part={part}
+                  attachments={partAttachments}
+                  isSubmitting={effectiveIsSubmitting}
+                  key={`part-${messageId}-${idx}`}
+                  isCreatedByUser={isCreatedByUser}
+                  isLast={idx === content.length - 1}
+                  showCursor={idx === content.length - 1 && isLast}
+                />
+              </MessageContext.Provider>
+            );
+          })}
         </SearchContext.Provider>
       </>
     );

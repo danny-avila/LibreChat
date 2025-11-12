@@ -21,27 +21,17 @@ const {
   KnownEndpoints,
   openAISettings,
   ImageDetailCost,
-  CohereConstants,
   getResponseSender,
   validateVisionModel,
   mapModelToAzureConfig,
 } = require('librechat-data-provider');
-const {
-  truncateText,
-  formatMessage,
-  CUT_OFF_PROMPT,
-  titleInstruction,
-  createContextHandlers,
-} = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { formatMessage, createContextHandlers } = require('./prompts');
 const { spendTokens } = require('~/models/spendTokens');
 const { addSpaceIfNeeded } = require('~/server/utils');
 const { handleOpenAIErrors } = require('./tools/util');
 const { OllamaClient } = require('./OllamaClient');
-const { summaryBuffer } = require('./memory');
-const { runTitleChain } = require('./chains');
 const { extractBaseURL } = require('~/utils');
-const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
 
 class OpenAIClient extends BaseClient {
@@ -364,11 +354,9 @@ class OpenAIClient extends BaseClient {
    * @returns {Promise<MongoFile[]>}
    */
   async addImageURLs(message, attachments) {
-    const { files, image_urls } = await encodeAndFormat(
-      this.options.req,
-      attachments,
-      this.options.endpoint,
-    );
+    const { files, image_urls } = await encodeAndFormat(this.options.req, attachments, {
+      endpoint: this.options.endpoint,
+    });
     message.image_urls = image_urls.length ? image_urls : undefined;
     return files;
   }
@@ -618,168 +606,6 @@ class OpenAIClient extends BaseClient {
   }
 
   /**
-   * Generates a concise title for a conversation based on the user's input text and response.
-   * Uses either specified method or starts with the OpenAI `functions` method (using LangChain).
-   * If the `functions` method fails, it falls back to the `completion` method,
-   * which involves sending a chat completion request with specific instructions for title generation.
-   *
-   * @param {Object} params - The parameters for the conversation title generation.
-   * @param {string} params.text - The user's input.
-   * @param {string} [params.conversationId] - The current conversationId, if not already defined on client initialization.
-   * @param {string} [params.responseText=''] - The AI's immediate response to the user.
-   *
-   * @returns {Promise<string | 'New Chat'>} A promise that resolves to the generated conversation title.
-   *                            In case of failure, it will return the default title, "New Chat".
-   */
-  async titleConvo({ text, conversationId, responseText = '' }) {
-    const appConfig = this.options.req?.config;
-    this.conversationId = conversationId;
-
-    if (this.options.attachments) {
-      delete this.options.attachments;
-    }
-
-    let title = 'New Chat';
-    const convo = `||>User:
-"${truncateText(text)}"
-||>Response:
-"${JSON.stringify(truncateText(responseText))}"`;
-
-    const { OPENAI_TITLE_MODEL } = process.env ?? {};
-
-    let model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? openAISettings.model.default;
-    if (model === Constants.CURRENT_MODEL) {
-      model = this.modelOptions.model;
-    }
-
-    const modelOptions = {
-      // TODO: remove the gpt fallback and make it specific to endpoint
-      model,
-      temperature: 0.2,
-      presence_penalty: 0,
-      frequency_penalty: 0,
-      max_tokens: 16,
-    };
-
-    const azureConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
-
-    const resetTitleOptions = !!(
-      (this.azure && azureConfig) ||
-      (azureConfig && this.options.endpoint === EModelEndpoint.azureOpenAI)
-    );
-
-    if (resetTitleOptions) {
-      const { modelGroupMap, groupMap } = azureConfig;
-      const {
-        azureOptions,
-        baseURL,
-        headers = {},
-        serverless,
-      } = mapModelToAzureConfig({
-        modelName: modelOptions.model,
-        modelGroupMap,
-        groupMap,
-      });
-
-      this.options.headers = resolveHeaders({ headers });
-      this.options.reverseProxyUrl = baseURL ?? null;
-      this.langchainProxy = extractBaseURL(this.options.reverseProxyUrl);
-      this.apiKey = azureOptions.azureOpenAIApiKey;
-
-      const groupName = modelGroupMap[modelOptions.model].group;
-      this.options.addParams = azureConfig.groupMap[groupName].addParams;
-      this.options.dropParams = azureConfig.groupMap[groupName].dropParams;
-      this.options.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
-      this.azure = !serverless && azureOptions;
-      if (serverless === true) {
-        this.options.defaultQuery = azureOptions.azureOpenAIApiVersion
-          ? { 'api-version': azureOptions.azureOpenAIApiVersion }
-          : undefined;
-        this.options.headers['api-key'] = this.apiKey;
-      }
-    }
-
-    const titleChatCompletion = async () => {
-      try {
-        modelOptions.model = model;
-
-        if (this.azure) {
-          modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL ?? modelOptions.model;
-          this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
-        }
-
-        const instructionsPayload = [
-          {
-            role: this.options.titleMessageRole ?? (this.isOllama ? 'user' : 'system'),
-            content: `Please generate ${titleInstruction}
-
-${convo}
-
-||>Title:`,
-          },
-        ];
-
-        const promptTokens = this.getTokenCountForMessage(instructionsPayload[0]);
-
-        let useChatCompletion = true;
-
-        if (this.options.reverseProxyUrl === CohereConstants.API_URL) {
-          useChatCompletion = false;
-        }
-
-        title = (
-          await this.sendPayload(instructionsPayload, {
-            modelOptions,
-            useChatCompletion,
-            context: 'title',
-          })
-        ).replaceAll('"', '');
-
-        const completionTokens = this.getTokenCount(title);
-
-        await this.recordTokenUsage({ promptTokens, completionTokens, context: 'title' });
-      } catch (e) {
-        logger.error(
-          '[OpenAIClient] There was an issue generating the title with the completion method',
-          e,
-        );
-      }
-    };
-
-    if (this.options.titleMethod === 'completion') {
-      await titleChatCompletion();
-      logger.debug('[OpenAIClient] Convo Title: ' + title);
-      return title;
-    }
-
-    try {
-      this.abortController = new AbortController();
-      const llm = this.initializeLLM({
-        ...modelOptions,
-        conversationId,
-        context: 'title',
-        tokenBuffer: 150,
-      });
-
-      title = await runTitleChain({ llm, text, convo, signal: this.abortController.signal });
-    } catch (e) {
-      if (e?.message?.toLowerCase()?.includes('abort')) {
-        logger.debug('[OpenAIClient] Aborted title generation');
-        return;
-      }
-      logger.error(
-        '[OpenAIClient] There was an issue generating title with LangChain, trying completion method...',
-        e,
-      );
-
-      await titleChatCompletion();
-    }
-
-    logger.debug('[OpenAIClient] Convo Title: ' + title);
-    return title;
-  }
-
-  /**
    * Get stream usage as returned by this client's API response.
    * @returns {OpenAIUsageMetadata} The stream usage object.
    */
@@ -831,124 +657,6 @@ ${convo}
 
     const currentMessageTokens = totalInputTokens - totalTokensFromMap;
     return currentMessageTokens > 0 ? currentMessageTokens : originalEstimate;
-  }
-
-  async summarizeMessages({ messagesToRefine, remainingContextTokens }) {
-    logger.debug('[OpenAIClient] Summarizing messages...');
-    let context = messagesToRefine;
-    let prompt;
-
-    // TODO: remove the gpt fallback and make it specific to endpoint
-    const { OPENAI_SUMMARY_MODEL = openAISettings.model.default } = process.env ?? {};
-    let model = this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
-    if (model === Constants.CURRENT_MODEL) {
-      model = this.modelOptions.model;
-    }
-
-    const maxContextTokens =
-      getModelMaxTokens(
-        model,
-        this.options.endpointType ?? this.options.endpoint,
-        this.options.endpointTokenConfig,
-      ) ?? 4095; // 1 less than maximum
-
-    // 3 tokens for the assistant label, and 98 for the summarizer prompt (101)
-    let promptBuffer = 101;
-
-    /*
-     * Note: token counting here is to block summarization if it exceeds the spend; complete
-     * accuracy is not important. Actual spend will happen after successful summarization.
-     */
-    const excessTokenCount = context.reduce(
-      (acc, message) => acc + message.tokenCount,
-      promptBuffer,
-    );
-
-    if (excessTokenCount > maxContextTokens) {
-      ({ context } = await this.getMessagesWithinTokenLimit({
-        messages: context,
-        maxContextTokens,
-      }));
-    }
-
-    if (context.length === 0) {
-      logger.debug(
-        '[OpenAIClient] Summary context is empty, using latest message within token limit',
-      );
-
-      promptBuffer = 32;
-      const { text, ...latestMessage } = messagesToRefine[messagesToRefine.length - 1];
-      const splitText = await tokenSplit({
-        text,
-        chunkSize: Math.floor((maxContextTokens - promptBuffer) / 3),
-      });
-
-      const newText = `${splitText[0]}\n...[truncated]...\n${splitText[splitText.length - 1]}`;
-      prompt = CUT_OFF_PROMPT;
-
-      context = [
-        formatMessage({
-          message: {
-            ...latestMessage,
-            text: newText,
-          },
-          userName: this.options?.name,
-          assistantName: this.options?.chatGptLabel,
-        }),
-      ];
-    }
-    // TODO: We can accurately count the tokens here before handleChatModelStart
-    // by recreating the summary prompt (single message) to avoid LangChain handling
-
-    const initialPromptTokens = this.maxContextTokens - remainingContextTokens;
-    logger.debug('[OpenAIClient] initialPromptTokens', initialPromptTokens);
-
-    const llm = this.initializeLLM({
-      model,
-      temperature: 0.2,
-      context: 'summary',
-      tokenBuffer: initialPromptTokens,
-    });
-
-    try {
-      const summaryMessage = await summaryBuffer({
-        llm,
-        debug: this.options.debug,
-        prompt,
-        context,
-        formatOptions: {
-          userName: this.options?.name,
-          assistantName: this.options?.chatGptLabel ?? this.options?.modelLabel,
-        },
-        previous_summary: this.previous_summary?.summary,
-        signal: this.abortController.signal,
-      });
-
-      const summaryTokenCount = this.getTokenCountForMessage(summaryMessage);
-
-      if (this.options.debug) {
-        logger.debug('[OpenAIClient] summaryTokenCount', summaryTokenCount);
-        logger.debug(
-          `[OpenAIClient] Summarization complete: remainingContextTokens: ${remainingContextTokens}, after refining: ${
-            remainingContextTokens - summaryTokenCount
-          }`,
-        );
-      }
-
-      return { summaryMessage, summaryTokenCount };
-    } catch (e) {
-      if (e?.message?.toLowerCase()?.includes('abort')) {
-        logger.debug('[OpenAIClient] Aborted summarization');
-        const { run, runId } = this.runManager.getRunByConversationId(this.conversationId);
-        if (run && run.error) {
-          const { error } = run;
-          this.runManager.removeRun(runId);
-          throw new Error(error);
-        }
-      }
-      logger.error('[OpenAIClient] Error summarizing messages', e);
-      return {};
-    }
   }
 
   /**

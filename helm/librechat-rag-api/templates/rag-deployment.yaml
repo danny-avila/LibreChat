@@ -67,6 +67,9 @@ spec:
                 key: {{ .Values.global.librechat.existingSecretApiKey }}
                 optional: true
           {{- end }}
+          {{- with .Values.env }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
           {{- with .Values.volumeMounts }}
           volumeMounts:
             {{- toYaml . | nindent 12 }}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Label } from '@librechat/client';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
+import { useLocalize } from '~/hooks';
 
 export default function ListCard({
   category,
@@ -15,6 +16,7 @@ export default function ListCard({
   onClick?: React.MouseEventHandler<HTMLDivElement | HTMLButtonElement>;
   children?: React.ReactNode;
 }) {
+  const localize = useLocalize();
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement | HTMLButtonElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -31,7 +33,7 @@ export default function ListCard({
       tabIndex={0}
       aria-labelledby={`card-title-${name}`}
       aria-describedby={`card-snippet-${name}`}
-      aria-label={`Card for ${name}`}
+      aria-label={`${name} Prompt, ${category ? `${localize('com_ui_category')}: ${category}` : ''}`}
     >
       <div className="flex w-full justify-between gap-2">
         <div className="flex flex-row gap-2">

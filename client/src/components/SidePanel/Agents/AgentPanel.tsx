@@ -168,6 +168,7 @@ export default function AgentPanel() {
         model_parameters,
         provider: _provider,
         agent_ids,
+        edges,
         end_after_tools,
         hide_sequential_outputs,
         recursion_limit,
@@ -192,6 +193,7 @@ export default function AgentPanel() {
             provider,
             model_parameters,
             agent_ids,
+            edges,
             end_after_tools,
             hide_sequential_outputs,
             recursion_limit,
@@ -225,6 +227,7 @@ export default function AgentPanel() {
         provider,
         model_parameters,
         agent_ids,
+        edges,
         end_after_tools,
         hide_sequential_outputs,
         recursion_limit,
@@ -283,6 +286,13 @@ export default function AgentPanel() {
                   setCurrentAgentId(undefined);
                 }}
                 disabled={agentQuery.isInitialLoading}
+                aria-label={
+                  localize('com_ui_create') +
+                  ' ' +
+                  localize('com_ui_new') +
+                  ' ' +
+                  localize('com_ui_agent')
+                }
               >
                 <Plus className="mr-1 h-4 w-4" />
                 {localize('com_ui_create') +

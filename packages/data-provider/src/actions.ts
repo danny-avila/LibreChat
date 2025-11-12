@@ -563,7 +563,82 @@ export type ValidationResult = {
   status: boolean;
   message: string;
   spec?: OpenAPIV3.Document;
+  serverUrl?: string;
 };
+
+/**
+ * Extracts the domain from a URL string.
+ * @param {string} url - The URL to extract the domain from.
+ * @returns {string} The extracted domain (hostname with protocol).
+ */
+export function extractDomainFromUrl(url: string): string {
+  try {
+    const parsedUrl = new URL(url);
+    // Return protocol + hostname (e.g., "https://example.com")
+    // This preserves the protocol which is important for SSRF prevention
+    return `${parsedUrl.protocol}//${parsedUrl.hostname}`;
+  } catch {
+    throw new Error(`Invalid URL format: ${url}`);
+  }
+}
+
+export type DomainValidationResult = {
+  isValid: boolean;
+  message?: string;
+  normalizedSpecDomain?: string;
+  normalizedClientDomain?: string;
+};
+
+/**
+ * Validates that a client-provided domain matches the domain from an OpenAPI spec server URL.
+ * This is critical for preventing SSRF attacks where an attacker provides a whitelisted domain
+ * but uses a different (potentially internal) URL in the raw OpenAPI spec.
+ *
+ * @param {string} clientProvidedDomain - The domain provided by the client (may or may not include protocol)
+ * @param {string} specServerUrl - The server URL from the OpenAPI spec
+ * @returns {DomainValidationResult} Validation result with normalized domains
+ */
+export function validateActionDomain(
+  clientProvidedDomain: string,
+  specServerUrl: string,
+): DomainValidationResult {
+  try {
+    // Extract domain from the spec's server URL
+    const specDomain = extractDomainFromUrl(specServerUrl);
+    const normalizedSpecDomain = extractDomainFromUrl(specDomain);
+
+    // Normalize client-provided domain (add https:// if no protocol)
+    const normalizedClientDomain = clientProvidedDomain.startsWith('http')
+      ? clientProvidedDomain
+      : `https://${clientProvidedDomain}`;
+
+    // Compare normalized domains
+    // We check both the normalized client domain and the raw client domain
+    // to handle cases where the client might provide "example.com" vs "https://example.com"
+    if (
+      normalizedSpecDomain !== normalizedClientDomain &&
+      normalizedSpecDomain !== clientProvidedDomain
+    ) {
+      return {
+        isValid: false,
+        message: `Domain mismatch: Client provided '${clientProvidedDomain}', but spec uses '${normalizedSpecDomain}'`,
+        normalizedSpecDomain,
+        normalizedClientDomain,
+      };
+    }
+
+    return {
+      isValid: true,
+      normalizedSpecDomain,
+      normalizedClientDomain,
+    };
+  } catch (error) {
+    return {
+      isValid: false,
+      message: `Failed to validate domain: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
+  }
+}
 
 /**
  * Validates and parses an OpenAPI spec.
@@ -626,6 +701,7 @@ export function validateAndParseOpenAPISpec(specString: string): ValidationResul
       status: true,
       message: messages.join('\n') || 'OpenAPI spec is valid.',
       spec: parsedSpec,
+      serverUrl: parsedSpec.servers[0].url,
     };
   } catch (error) {
     console.error(error);

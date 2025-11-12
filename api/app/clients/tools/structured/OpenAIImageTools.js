@@ -5,6 +5,7 @@ const FormData = require('form-data');
 const { ProxyAgent } = require('undici');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const { logAxiosError, oaiToolkit } = require('@librechat/api');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -348,16 +349,7 @@ Error Message: ${error.message}`);
         };
 
         if (process.env.PROXY) {
-          try {
-            const url = new URL(process.env.PROXY);
-            axiosConfig.proxy = {
-              host: url.hostname.replace(/^\[|\]$/g, ''),
-              port: url.port ? parseInt(url.port, 10) : undefined,
-              protocol: url.protocol.replace(':', ''),
-            };
-          } catch (error) {
-            logger.error('Error parsing proxy URL:', error);
-          }
+          axiosConfig.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
         }
 
         if (process.env.IMAGE_GEN_OAI_AZURE_API_VERSION && process.env.IMAGE_GEN_OAI_BASEURL) {

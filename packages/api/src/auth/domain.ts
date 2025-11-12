@@ -3,6 +3,12 @@
  * @param allowedDomains
  */
 export function isEmailDomainAllowed(email: string, allowedDomains?: string[] | null): boolean {
+  /** If no domain restrictions are configured, allow all */
+  if (!allowedDomains || !Array.isArray(allowedDomains) || !allowedDomains.length) {
+    return true;
+  }
+
+  /** If restrictions exist, validate email format */
   if (!email) {
     return false;
   }
@@ -11,12 +17,6 @@ export function isEmailDomainAllowed(email: string, allowedDomains?: string[] | 
 
   if (!domain) {
     return false;
-  }
-
-  if (!allowedDomains) {
-    return true;
-  } else if (!Array.isArray(allowedDomains) || !allowedDomains.length) {
-    return true;
   }
 
   return allowedDomains.some((allowedDomain) => allowedDomain?.toLowerCase() === domain);

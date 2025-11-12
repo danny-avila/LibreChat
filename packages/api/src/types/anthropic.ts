@@ -54,6 +54,12 @@ export interface AnthropicConfigOptions {
   proxy?: string | null;
   /** URL for a reverse proxy, if used */
   reverseProxyUrl?: string | null;
+  /** Default parameters to apply only if fields are undefined */
+  defaultParams?: Record<string, unknown>;
+  /** Additional parameters to add to the configuration */
+  addParams?: Record<string, unknown>;
+  /** Parameters to drop/exclude from the configuration */
+  dropParams?: string[];
 }
 
 /**
