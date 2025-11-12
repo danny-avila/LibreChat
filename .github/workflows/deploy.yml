@@ -1,38 +1,95 @@
-name: Deploy_GHRunner_Linux_ACI
+name: Build & Deploy LibreChat to EC2 via OIDC
 
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch:
 
 env:
-  RUNNER_VERSION: 2.293.0
-  ACI_RESOURCE_GROUP: 'Demo-ACI-GitHub-Runners-RG'
-  ACI_NAME: 'gh-runner-linux-01'
-  DNS_NAME_LABEL: 'gh-lin-01'
-  GH_OWNER: ${{ github.repository_owner }}
-  GH_REPOSITORY: 'LibreChat' #Change here to deploy self hosted runner ACI to another repo.
+  AWS_REGION: us-east-1
+  IMAGE_API: ghcr.io/${{ github.repository_owner }}/librechat-api
+
+permissions:
+  id-token: write        # Needed for OIDC
+  contents: read
+  packages: write        # For GHCR push
 
 jobs:
-  deploy-gh-runner-aci:
+  build-and-push:
     runs-on: ubuntu-latest
+
     steps:
-      # checkout the repo
-      - name: 'Checkout GitHub Action'
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: 'Login via Azure CLI'
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
-      - name: 'Deploy to Azure Container Instances'
-        uses: 'azure/aci-deploy@v1'
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          resource-group: ${{ env.ACI_RESOURCE_GROUP }}
-          image: ${{ secrets.REGISTRY_LOGIN_SERVER }}/pwd9000-github-runner-lin:${{ env.RUNNER_VERSION }}
-          registry-login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
-          registry-username: ${{ secrets.REGISTRY_USERNAME }}
-          registry-password: ${{ secrets.REGISTRY_PASSWORD }}
-          name: ${{ env.ACI_NAME }}
-          dns-name-label: ${{ env.DNS_NAME_LABEL }}
-          environment-variables: GH_TOKEN=${{ secrets.PAT_TOKEN }} GH_OWNER=${{ env.GH_OWNER }} GH_REPOSITORY=${{ env.GH_REPOSITORY }}
-          location: 'eastus'
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push LibreChat API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          push: true
+          tags: |
+            ${{ env.IMAGE_API }}:latest
+            ${{ env.IMAGE_API }}:${{ github.sha }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Configure AWS Credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::395567831871:role/github-actions
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Retrieve EC2 instance IP
+        id: ec2
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=LibreChat-EC2" \
+            --query "Reservations[0].Instances[0].InstanceId" \
+            --output text)
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          INSTANCE_IP=$(aws ec2 describe-instances \
+            --instance-ids $INSTANCE_ID \
+            --query "Reservations[0].Instances[0].PublicDnsName" \
+            --output text)
+          echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
+
+      - name: Send SSH public key using EC2 Instance Connect
+        run: |
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" > /tmp/tmpkey.pub
+          aws ec2-instance-connect send-ssh-public-key \
+            --instance-id ${{ steps.ec2.outputs.instance_id }} \
+            --availability-zone $(aws ec2 describe-instances --instance-ids ${{ steps.ec2.outputs.instance_id }} --query "Reservations[0].Instances[0].Placement.AvailabilityZone" --output text) \
+            --instance-os-user ubuntu \
+            --ssh-public-key file:///tmp/tmpkey.pub
+
+      - name: Deploy LibreChat on EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ steps.ec2.outputs.instance_ip }} <<'EOF'
+          cd /opt/LibreChat
+          docker compose -f deploy-compose.yml pull
+          docker compose -f deploy-compose.yml up -d --force-recreate
+          docker image prune -af
+          EOF
