@@ -47,7 +47,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.api
+          file: Dockerfile.multi
           push: true
           tags: |
             ${{ env.IMAGE_API }}:latest
