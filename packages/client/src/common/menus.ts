@@ -26,6 +26,7 @@ export interface MenuItemProps {
     | 'tree'
     | 'grid'
     | undefined;
+  ariaControls?: string;
   ref?: React.Ref<any>;
   render?:
     | RenderProp<React.HTMLAttributes<any> & { ref?: React.Ref<any> | undefined }>

@@ -146,6 +146,7 @@ const Menu: React.FC<MenuProps> = ({
               ref={item.ref}
               hideOnClick={item.hideOnClick}
               aria-haspopup={item.ariaHasPopup}
+              aria-controls={item.ariaControls}
               onClick={(event) => {
                 event.preventDefault();
                 if (item.onClick) {

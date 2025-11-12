@@ -143,6 +143,7 @@ function ConvoOptions({
         hideOnClick: false,
         ref: shareButtonRef,
         ariaHasPopup: 'dialog' as const,
+        ariaControls: 'share-conversation-dialog',
       },
       {
         label: localize('com_ui_rename'),
@@ -176,6 +177,7 @@ function ConvoOptions({
         hideOnClick: false,
         ref: deleteButtonRef,
         ariaHasPopup: 'dialog' as const,
+        ariaControls: 'delete-conversation-dialog',
       },
     ],
     [
