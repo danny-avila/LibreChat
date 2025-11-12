@@ -16,7 +16,8 @@ const defaultInterface = getConfigDefaults().interface;
 
 export default function Header() {
   const { data: startupConfig } = useGetStartupConfig();
-  const { navVisible, setNavVisible } = useOutletContext<ContextType>();
+  const { navVisible, setNavVisible, openSidebarRef, closeSidebarRef } =
+    useOutletContext<ContextType>();
 
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
@@ -45,7 +46,12 @@ export default function Header() {
                 !isSmallScreen ? 'transition-all duration-200 ease-in-out' : ''
               } `}
             >
-              <OpenSidebar setNavVisible={setNavVisible} className="max-md:hidden" />
+              <OpenSidebar
+                ref={openSidebarRef}
+                setNavVisible={setNavVisible}
+                closeSidebarRef={closeSidebarRef}
+                className="max-md:hidden"
+              />
               <HeaderNewChat />
             </div>
           )}

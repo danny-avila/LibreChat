@@ -14,12 +14,16 @@ export default function NewChat({
   subHeaders,
   isSmallScreen,
   headerButtons,
+  openSidebarRef,
+  closeSidebarRef,
 }: {
   index?: number;
   toggleNav: () => void;
   isSmallScreen?: boolean;
   subHeaders?: React.ReactNode;
   headerButtons?: React.ReactNode;
+  openSidebarRef?: React.RefObject<HTMLButtonElement>;
+  closeSidebarRef?: React.RefObject<HTMLButtonElement>;
 }) {
   const queryClient = useQueryClient();
   /** Note: this component needs an explicit index passed if using more than one */
@@ -27,6 +31,13 @@ export default function NewChat({
   const navigate = useNavigate();
   const localize = useLocalize();
   const { conversation } = store.useCreateConversationAtom(index);
+
+  const handleToggleNav = useCallback(() => {
+    toggleNav();
+    requestAnimationFrame(() => {
+      openSidebarRef?.current?.focus();
+    });
+  }, [toggleNav, openSidebarRef]);
 
   const clickHandler: React.MouseEventHandler<HTMLButtonElement> = useCallback(
     (e) => {
@@ -52,12 +63,14 @@ export default function NewChat({
           description={localize('com_nav_close_sidebar')}
           render={
             <Button
+              ref={closeSidebarRef}
               size="icon"
               variant="outline"
               data-testid="close-sidebar-button"
               aria-label={localize('com_nav_close_sidebar')}
+              aria-expanded={true}
               className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl"
-              onClick={toggleNav}
+              onClick={handleToggleNav}
             >
               <Sidebar className="max-md:hidden" />
               <MobileSidebar className="m-1 inline-flex size-10 items-center justify-center md:hidden" />
