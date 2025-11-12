@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { silentExit } = require('./helpers');
 const { User, Conversation, Message } = require('@librechat/data-schemas').createModels(mongoose);
+const { Agent } = require('~/db/models');
 const connect = require('./connect');
 
 (async () => {
@@ -20,12 +21,14 @@ const connect = require('./connect');
   for (const user of users) {
     let conversationsCount = (await Conversation.countDocuments({ user: user._id })) ?? 0;
     let messagesCount = (await Message.countDocuments({ user: user._id })) ?? 0;
+    let agentsCount = (await Agent.countDocuments({ author: user._id })) ?? 0;
 
     userData.push({
       User: user.name,
       Email: user.email,
       Conversations: conversationsCount,
       Messages: messagesCount,
+      Agents: agentsCount,
     });
   }
 
@@ -34,7 +37,11 @@ const connect = require('./connect');
       return b.Conversations - a.Conversations;
     }
 
-    return b.Messages - a.Messages;
+    if (a.Messages !== b.Messages) {
+      return b.Messages - a.Messages;
+    }
+
+    return b.Agents - a.Agents;
   });
 
   console.table(userData);
