@@ -139,6 +139,9 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager, oauthHeaders);
     logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 
+    // Re-fetch flow state after completeOAuthFlow to capture any DCR updates
+    const updatedFlowState = await MCPOAuthHandler.getFlowState(flowId, flowManager);
+
     /** Persist tokens immediately so reconnection uses fresh credentials */
     if (flowState?.userId && tokens) {
       try {
@@ -149,8 +152,8 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           createToken,
           updateToken,
           findToken,
-          clientInfo: flowState.clientInfo,
-          metadata: flowState.metadata,
+          clientInfo: updatedFlowState?.clientInfo || flowState.clientInfo,
+          metadata: updatedFlowState?.metadata || flowState.metadata,
         });
         logger.debug('[MCP OAuth] Stored OAuth tokens prior to reconnection', {
           serverName,

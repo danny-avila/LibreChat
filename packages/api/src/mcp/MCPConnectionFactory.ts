@@ -329,6 +329,7 @@ export class MCPConnectionFactory {
 
       /** Check if there's already an ongoing OAuth flow for this flowId */
       const existingFlow = await this.flowManager.getFlowState(flowId, 'mcp_oauth');
+
       if (existingFlow && existingFlow.status === 'PENDING') {
         logger.debug(
           `${this.logPrefix} OAuth flow already exists for ${flowId}, waiting for completion`,
@@ -342,11 +343,29 @@ export class MCPConnectionFactory {
           `${this.logPrefix} OAuth flow completed, tokens received for ${this.serverName}`,
         );
 
-        /** Client information from the existing flow metadata */
+        // Re-fetch flow state after completion to get updated credentials
+        const updatedFlowState = await MCPOAuthHandler.getFlowState(
+          flowId,
+          this.flowManager as FlowStateManager<MCPOAuthTokens>,
+        );
+
+        /** Client information from the updated flow metadata */
         const existingMetadata = existingFlow.metadata as unknown as MCPOAuthFlowMetadata;
-        const clientInfo = existingMetadata?.clientInfo;
+        const clientInfo = updatedFlowState?.clientInfo || existingMetadata?.clientInfo;
 
         return { tokens, clientInfo };
+      }
+
+      // Clean up old completed flows: createFlow() may return cached results otherwise
+      if (existingFlow && existingFlow.status !== 'PENDING') {
+        try {
+          await this.flowManager.deleteFlow(flowId, 'mcp_oauth');
+          logger.debug(
+            `${this.logPrefix} Cleared stale ${existingFlow.status} OAuth flow for ${flowId}`,
+          );
+        } catch (error) {
+          logger.warn(`${this.logPrefix} Failed to clear stale OAuth flow`, error);
+        }
       }
 
       logger.debug(`${this.logPrefix} Initiating new OAuth flow for ${this.serverName}...`);
@@ -383,9 +402,15 @@ export class MCPConnectionFactory {
       }
       logger.info(`${this.logPrefix} OAuth flow completed, tokens received for ${this.serverName}`);
 
-      /** Client information from the flow metadata */
-      const clientInfo = flowMetadata?.clientInfo;
-      const metadata = flowMetadata?.metadata;
+      // Re-fetch flow state after completion to get updated credentials
+      const updatedFlowState = await MCPOAuthHandler.getFlowState(
+        newFlowId,
+        this.flowManager as FlowStateManager<MCPOAuthTokens>,
+      );
+
+      /** Client information from the updated flow state */
+      const clientInfo = updatedFlowState?.clientInfo || flowMetadata?.clientInfo;
+      const metadata = updatedFlowState?.metadata || flowMetadata?.metadata;
 
       return {
         tokens,
