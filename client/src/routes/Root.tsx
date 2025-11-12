@@ -84,7 +84,14 @@ export default function Root() {
                   <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
                     <MobileNav navVisible={navVisible} setNavVisible={setNavVisible} />
                     <Outlet
-                      context={{ navVisible, setNavVisible, openSidebarRef, closeSidebarRef } satisfies ContextType}
+                      context={
+                        {
+                          navVisible,
+                          setNavVisible,
+                          openSidebarRef,
+                          closeSidebarRef,
+                        } satisfies ContextType
+                      }
                     />
                   </div>
                 </div>
