@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback, memo } from 'react';
+import React, { useMemo, useState, useEffect, useRef, memo } from 'react';
 import debounce from 'lodash/debounce';
 import { KeyBinding } from '@codemirror/view';
 import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
@@ -15,15 +15,6 @@ import { useEditArtifact, useGetStartupConfig } from '~/data-provider';
 import { useMutationState, useCodeState } from '~/Providers/EditorContext';
 import { useArtifactsContext } from '~/Providers';
 import { sharedFiles, sharedOptions } from '~/utils/artifacts';
-
-const createDebouncedMutation = (
-  callback: (params: {
-    index: number;
-    messageId: string;
-    original: string;
-    updated: string;
-  }) => void,
-) => debounce(callback, 500);
 
 const CodeEditor = memo(
   ({
@@ -55,63 +46,93 @@ const CodeEditor = memo(
       },
     });
 
-    const mutationCallback = useCallback(
-      (params: { index: number; messageId: string; original: string; updated: string }) => {
-        editArtifact.mutate(params);
-      },
-      [editArtifact],
-    );
-
-    const debouncedMutation = useMemo(
-      () => createDebouncedMutation(mutationCallback),
-      [mutationCallback],
-    );
+    /**
+     * Create stable debounced mutation that doesn't depend on changing callbacks
+     * Use refs to always access the latest values without recreating the debounce
+     */
+    const artifactRef = useRef(artifact);
+    const isMutatingRef = useRef(isMutating);
+    const currentUpdateRef = useRef(currentUpdate);
+    const editArtifactRef = useRef(editArtifact);
+    const setCurrentCodeRef = useRef(setCurrentCode);
 
     useEffect(() => {
-      if (readOnly) {
-        return;
-      }
-      if (isMutating) {
-        return;
-      }
-      if (artifact.index == null) {
-        return;
-      }
+      artifactRef.current = artifact;
+    }, [artifact]);
 
+    useEffect(() => {
+      isMutatingRef.current = isMutating;
+    }, [isMutating]);
+
+    useEffect(() => {
+      currentUpdateRef.current = currentUpdate;
+    }, [currentUpdate]);
+
+    useEffect(() => {
+      editArtifactRef.current = editArtifact;
+    }, [editArtifact]);
+
+    useEffect(() => {
+      setCurrentCodeRef.current = setCurrentCode;
+    }, [setCurrentCode]);
+
+    /**
+     * Create debounced mutation once - never recreate it
+     * All values are accessed via refs so they're always current
+     */
+    const debouncedMutation = useMemo(
+      () =>
+        debounce((code: string) => {
+          if (readOnly) {
+            return;
+          }
+          if (isMutatingRef.current) {
+            return;
+          }
+          if (artifactRef.current.index == null) {
+            return;
+          }
+
+          const artifact = artifactRef.current;
+          const artifactIndex = artifact.index;
+          const isNotOriginal =
+            code && artifact.content != null && code.trim() !== artifact.content.trim();
+          const isNotRepeated =
+            currentUpdateRef.current == null
+              ? true
+              : code != null && code.trim() !== currentUpdateRef.current.trim();
+
+          if (artifact.content && isNotOriginal && isNotRepeated && artifactIndex != null) {
+            setCurrentCodeRef.current(code);
+            editArtifactRef.current.mutate({
+              index: artifactIndex,
+              messageId: artifact.messageId ?? '',
+              original: artifact.content,
+              updated: code,
+            });
+          }
+        }, 500),
+      [readOnly],
+    );
+
+    /**
+     * Listen to Sandpack file changes and trigger debounced mutation
+     */
+    useEffect(() => {
       const currentCode = (sandpack.files['/' + fileKey] as SandpackBundlerFile | undefined)?.code;
-      const isNotOriginal =
-        currentCode && artifact.content != null && currentCode.trim() !== artifact.content.trim();
-      const isNotRepeated =
-        currentUpdate == null
-          ? true
-          : currentCode != null && currentCode.trim() !== currentUpdate.trim();
-
-      if (artifact.content && isNotOriginal && isNotRepeated) {
-        setCurrentCode(currentCode);
-        debouncedMutation({
-          index: artifact.index,
-          messageId: artifact.messageId ?? '',
-          original: artifact.content,
-          updated: currentCode,
-        });
+      if (currentCode) {
+        debouncedMutation(currentCode);
       }
+    }, [sandpack.files, fileKey, debouncedMutation]);
 
+    /**
+     * Cleanup: cancel pending mutations when component unmounts or artifact changes
+     */
+    useEffect(() => {
       return () => {
         debouncedMutation.cancel();
       };
-    }, [
-      fileKey,
-      artifact.index,
-      artifact.content,
-      artifact.messageId,
-      readOnly,
-      isMutating,
-      currentUpdate,
-      setIsMutating,
-      sandpack.files,
-      setCurrentCode,
-      debouncedMutation,
-    ]);
+    }, [artifact.id, debouncedMutation]);
 
     return (
       <SandpackCodeEditor
