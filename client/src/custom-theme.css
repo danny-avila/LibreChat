@@ -1,3 +1,45 @@
+/* Global button and link overrides */
+button,
+input[type="button"],
+input[type="submit"],
+input[type="reset"] {
+  background: var(--primary-blue);
+  color: var(--soft-gray);
+  border: 1px solid var(--primary-blue);
+  border-radius: 4px;
+  padding: 0.5em 1.2em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border 0.2s;
+}
+
+button:hover,
+input[type="button"]:hover,
+input[type="submit"]:hover,
+input[type="reset"]:hover {
+  background: var(--accent-teal);
+  border-color: var(--accent-teal);
+}
+
+button:disabled,
+input[type="button"]:disabled,
+input[type="submit"]:disabled,
+input[type="reset"]:disabled {
+  background: var(--soft-gray);
+  color: #aaa;
+  cursor: not-allowed;
+}
+
+a {
+  color: var(--primary-blue);
+  text-decoration: underline;
+  transition: color 0.2s;
+}
+
+a:hover, a:focus {
+  color: var(--accent-teal);
+  text-decoration: underline wavy var(--highlight);
+}
     :root{
       --primary-blue: #1E5FA4;
       --accent-teal:  #3EC4B5;
@@ -165,11 +207,11 @@
     .plans {
       width:100%;
       /* max-width: var(--max-width); */
-      display:grid;
-      grid-template-columns: 1fr;
-      gap:20px;
+      /* display:grid; */
+      /* grid-template-columns: 1fr; */
+      /* gap:20px; */
       align-items:start;
-      padding: 0 40px;
+      /* padding: 0 40px; */
     }
 
     @media(min-width:860px){
