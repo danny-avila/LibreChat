@@ -122,7 +122,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             className="peer w-full text-sm"
             aria-label={localize('com_files_filter_input')}
           />
-          <label className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-text-secondary transition-all duration-200 peer-focus:-top-2 peer-focus:text-xs peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-top-2 peer-[:not(:placeholder-shown)]:text-xs">
+          <label className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-text-primary transition-all duration-200 peer-focus:-top-2 peer-focus:text-xs peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-top-2 peer-[:not(:placeholder-shown)]:text-xs">
             {localize('com_files_filter')}
           </label>
         </div>
