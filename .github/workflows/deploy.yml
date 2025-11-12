@@ -7,7 +7,6 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  IMAGE_API:  ghcr.io/${{ github.repository_owner,, }}/librechat-api
 
 permissions:
   id-token: write        # Needed for OIDC
@@ -17,24 +16,33 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-
+      
+      - name: Set lowercase repository owner
+        run: |
+          echo "REPO_OWNER_LC=${OWNER,,}" >> ${GITHUB_ENV}
+        env:
+          OWNER: '${{ github.repository_owner }}'
+      
+      - name: Set image name
+        run: |
+          echo "IMAGE_API=ghcr.io/${REPO_OWNER_LC}/librechat-api" >> ${GITHUB_ENV}
+      
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-
+      
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
-
+      
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
+      
       - name: Build & Push LibreChat API
         uses: docker/build-push-action@v6
         with:
@@ -51,17 +59,26 @@ jobs:
     permissions:
       id-token: write
       contents: read
-
     steps:
+      - name: Set lowercase repository owner
+        run: |
+          echo "REPO_OWNER_LC=${OWNER,,}" >> ${GITHUB_ENV}
+        env:
+          OWNER: '${{ github.repository_owner }}'
+      
+      - name: Set image name
+        run: |
+          echo "IMAGE_API=ghcr.io/${REPO_OWNER_LC}/librechat-api" >> ${GITHUB_ENV}
+      
       - name: Configure AWS Credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::395567831871:role/github-actions
           aws-region: ${{ env.AWS_REGION }}
-
+      
       - name: Verify AWS identity
         run: aws sts get-caller-identity
-
+      
       - name: Retrieve EC2 instance IP
         id: ec2
         run: |
@@ -75,7 +92,7 @@ jobs:
             --query "Reservations[0].Instances[0].PublicDnsName" \
             --output text)
           echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
-
+      
       - name: Send SSH public key using EC2 Instance Connect
         run: |
           echo "${{ secrets.SSH_PUBLIC_KEY }}" > /tmp/tmpkey.pub
@@ -84,7 +101,7 @@ jobs:
             --availability-zone $(aws ec2 describe-instances --instance-ids ${{ steps.ec2.outputs.instance_id }} --query "Reservations[0].Instances[0].Placement.AvailabilityZone" --output text) \
             --instance-os-user ubuntu \
             --ssh-public-key file:///tmp/tmpkey.pub
-
+      
       - name: Deploy LibreChat on EC2
         run: |
           ssh -o StrictHostKeyChecking=no ubuntu@${{ steps.ec2.outputs.instance_ip }} <<'EOF'
