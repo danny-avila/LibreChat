@@ -1,4 +1,4 @@
-name: Build & Deploy LibreChat to EC2 via OIDC
+name: Build & Deploy LibreChat to EC2 via OIDC+SSM
 
 on:
   push:
@@ -9,9 +9,9 @@ env:
   AWS_REGION: us-east-1
 
 permissions:
-  id-token: write        # Needed for OIDC
+  id-token: write        # OIDC for AWS
   contents: read
-  packages: write        # For GHCR push
+  packages: write        # Push to GHCR
 
 jobs:
   build-and-push:
@@ -19,35 +19,35 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-      
+
+      # Make owner lowercase for ghcr namespace
       - name: Set lowercase repository owner
-        run: |
-          echo "REPO_OWNER_LC=${OWNER,,}" >> ${GITHUB_ENV}
+        run: echo "REPO_OWNER_LC=${OWNER,,}" >> "${GITHUB_ENV}"
         env:
           OWNER: '${{ github.repository_owner }}'
-      
+
       - name: Set image name
-        run: |
-          echo "IMAGE_API=ghcr.io/${REPO_OWNER_LC}/librechat-api" >> ${GITHUB_ENV}
-      
+        run: echo "IMAGE_API=ghcr.io/${REPO_OWNER_LC}/librechat-api" >> "${GITHUB_ENV}"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-      
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
-      
-      - name: Log in to GitHub Container Registry
+
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Build & Push LibreChat API
+
+      - name: Build & Push LibreChat API (Dockerfile.multi → api-build)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.multi
+          target: api-build
           push: true
           tags: |
             ${{ env.IMAGE_API }}:latest
@@ -59,51 +59,67 @@ jobs:
     permissions:
       id-token: write
       contents: read
+
     steps:
-      - name: Set lowercase repository owner
-        run: |
-          echo "REPO_OWNER_LC=${OWNER,,}" >> ${GITHUB_ENV}
-        env:
-          OWNER: '${{ github.repository_owner }}'
-      
-      - name: Set image name
-        run: |
-          echo "IMAGE_API=ghcr.io/${REPO_OWNER_LC}/librechat-api" >> ${GITHUB_ENV}
-      
-      - name: Configure AWS Credentials using OIDC
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::395567831871:role/github-actions
           aws-region: ${{ env.AWS_REGION }}
-      
-      - name: Verify AWS identity
-        run: aws sts get-caller-identity
-      
-      - name: Retrieve EC2 instance IP
+
+      # Use a repo variable so you don't hardcode the ID in YAML: Settings → Secrets and variables → Variables → EC2_INSTANCE_ID
+      - name: Resolve instance id
         id: ec2
         run: |
-          INSTANCE_ID="i-060babef69922d8b4"
-          INSTANCE_IP=$(aws ec2 describe-instances \
-            --instance-ids $INSTANCE_ID \
-            --query "Reservations[0].Instances[0].PublicDnsName" \
+          INSTANCE_ID= "i-060babef69922d8b4"
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Verify instance is SSM-managed
+        run: |
+          IID="${{ steps.ec2.outputs.instance_id }}"
+          MATCH=$(aws ssm describe-instance-information \
+            --query "InstanceInformationList[?InstanceId=='${IID}'].InstanceId" \
             --output text)
-          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
-          echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
-      
-      - name: Send SSH public key using EC2 Instance Connect
+          if [ "$MATCH" != "$IID" ]; then
+            echo "❌ Instance $IID is not registered with SSM. Ensure the instance role has AmazonSSMManagedInstanceCore and the SSM agent is running."
+            exit 1
+          fi
+          echo "✅ SSM reports instance $IID as managed."
+
+      - name: Deploy LibreChat via SSM (pull new images + restart)
+        id: send
         run: |
-          echo "${{ secrets.SSH_PUBLIC_KEY }}" > /tmp/tmpkey.pub
-          aws ec2-instance-connect send-ssh-public-key \
-            --instance-id ${{ steps.ec2.outputs.instance_id }} \
-            --availability-zone $(aws ec2 describe-instances --instance-ids ${{ steps.ec2.outputs.instance_id }} --query "Reservations[0].Instances[0].Placement.AvailabilityZone" --output text) \
-            --instance-os-user ubuntu \
-            --ssh-public-key file:///tmp/tmpkey.pub
-      
-      - name: Deploy LibreChat on EC2
+          IID="${{ steps.ec2.outputs.instance_id }}"
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$IID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "LibreChat CI deploy" \
+            --parameters 'commands=["cd /opt/LibreChat","docker compose -f deploy-compose.yml pull","docker compose -f deploy-compose.yml up -d --force-recreate","docker image prune -af"]' \
+            --query "Command.CommandId" \
+            --output text)
+          echo "command_id=$CMD_ID" >> "$GITHUB_OUTPUT"
+          echo "Triggered SSM command: $CMD_ID"
+
+      - name: Wait for command completion & print output
         run: |
-          ssh -o StrictHostKeyChecking=no ubuntu@${{ steps.ec2.outputs.instance_ip }} <<'EOF'
-          cd /opt/LibreChat
-          docker compose -f deploy-compose.yml pull
-          docker compose -f deploy-compose.yml up -d --force-recreate
-          docker image prune -af
-          EOF
+          IID="${{ steps.ec2.outputs.instance_id }}"
+          CID="${{ steps.send.outputs.command_id }}"
+
+          # poll status
+          for i in {1..30}; do
+            STATUS=$(aws ssm list-command-invocations \
+              --command-id "$CID" \
+              --details --query "CommandInvocations[0].Status" \
+              --output text)
+            echo "SSM status: $STATUS"
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 5
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$CID" \
+            --instance-id "$IID" \
+            --query '{Status:Status, StdOut:StandardOutputContent, StdErr:StandardErrorContent}' \
+            --output json
