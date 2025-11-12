@@ -273,11 +273,20 @@ describe('useArtifacts', () => {
       expect(mockResetCurrentArtifactId).toHaveBeenCalled();
     });
 
-    it('should reset artifacts when navigating to new conversation', () => {
+    it('should reset artifacts when navigating to new conversation from another conversation', () => {
       (useRecoilValue as jest.Mock).mockReturnValue({});
+
+      /** Start with existing conversation (NOT Constants.NEW_CONVO) */
+      (useArtifactsContext as jest.Mock).mockReturnValue({
+        ...defaultContext,
+        conversationId: 'existing-conv',
+      });
 
       const { rerender } = renderHook(() => useArtifacts());
 
+      jest.clearAllMocks();
+
+      /** Navigate to NEW_CONVO - this should trigger the else if branch */
       (useArtifactsContext as jest.Mock).mockReturnValue({
         ...defaultContext,
         conversationId: Constants.NEW_CONVO,
@@ -295,6 +304,32 @@ describe('useArtifacts', () => {
 
       expect(mockResetArtifacts).not.toHaveBeenCalled();
       expect(mockResetCurrentArtifactId).not.toHaveBeenCalled();
+    });
+
+    it('should reset when transitioning from null to NEW_CONVO', () => {
+      (useRecoilValue as jest.Mock).mockReturnValue({});
+
+      /** Start with null conversationId */
+      (useArtifactsContext as jest.Mock).mockReturnValue({
+        ...defaultContext,
+        conversationId: null,
+      });
+
+      const { rerender } = renderHook(() => useArtifacts());
+
+      jest.clearAllMocks();
+
+      /** Transition to NEW_CONVO - triggers the else if branch (line 44) */
+      (useArtifactsContext as jest.Mock).mockReturnValue({
+        ...defaultContext,
+        conversationId: Constants.NEW_CONVO,
+      });
+
+      rerender();
+
+      /** Should reset because we're now on NEW_CONVO */
+      expect(mockResetArtifacts).toHaveBeenCalled();
+      expect(mockResetCurrentArtifactId).toHaveBeenCalled();
     });
 
     it('should reset state flags when message ID changes', () => {
@@ -585,6 +620,24 @@ describe('useArtifacts', () => {
 
       /** The orderedArtifactIds effect always runs when artifacts change */
       expect(mockSetCurrentArtifactId).toHaveBeenCalledWith('artifact-1');
+    });
+
+    it('should not process when latestMessageId is null', () => {
+      const artifact = createArtifact({});
+      (useRecoilValue as jest.Mock).mockReturnValue({ 'artifact-1': artifact });
+      (useRecoilState as jest.Mock).mockReturnValue([null, mockSetCurrentArtifactId]);
+
+      (useArtifactsContext as jest.Mock).mockReturnValue({
+        ...defaultContext,
+        isSubmitting: true,
+        latestMessageId: null,
+        latestMessageText: ':::artifact{}\ncode\n:::',
+      });
+
+      const { result } = renderHook(() => useArtifacts());
+
+      /** Main effect should exit early and not switch tabs */
+      expect(result.current.activeTab).toBe('preview');
     });
   });
 
