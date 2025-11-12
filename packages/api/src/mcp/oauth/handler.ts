@@ -445,6 +445,7 @@ export class MCPOAuthHandler {
         has_refresh_token: !!tokens.refresh_token,
         expires_in: tokens.expires_in,
         token_type: tokens.token_type,
+        scope: tokens.scope,
       });
 
       const mcpTokens: MCPOAuthTokens = {
