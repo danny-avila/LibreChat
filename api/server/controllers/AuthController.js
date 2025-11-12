@@ -82,7 +82,8 @@ const refreshController = async (req, res) => {
       if (error || !user) {
         return res.status(401).redirect('/login');
       }
-      const token = setOpenIDAuthTokens(tokenset, res, user._id.toString());
+      // Pass the original refresh token as fallback since Cognito doesn't return a new one
+      const token = setOpenIDAuthTokens(tokenset, res, user._id.toString(), refreshToken);
       return res.status(200).send({ token, user });
     } catch (error) {
       logger.error('[refreshController] OpenID token refresh error', error);

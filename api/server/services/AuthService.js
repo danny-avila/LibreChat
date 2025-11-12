@@ -412,7 +412,7 @@ const setAuthTokens = async (userId, res, _session = null) => {
  * @param {string} [userId] - Optional MongoDB user ID for image path validation
  * @returns {String} - access token
  */
-const setOpenIDAuthTokens = (tokenset, res, userId) => {
+const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
   try {
     if (!tokenset) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
@@ -427,11 +427,23 @@ const setOpenIDAuthTokens = (tokenset, res, userId) => {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
       return;
     }
-    if (!tokenset.access_token || !tokenset.refresh_token) {
-      logger.error('[setOpenIDAuthTokens] No access or refresh token found in tokenset');
+    if (!tokenset.access_token) {
+      logger.error('[setOpenIDAuthTokens] No access token found in tokenset');
       return;
     }
-    res.cookie('refreshToken', tokenset.refresh_token, {
+
+    // Use refresh token from tokenset, or fall back to existing one
+    // This is necessary because OAuth refresh token grants typically don't return a new refresh token
+    const refreshToken = tokenset.refresh_token || existingRefreshToken;
+
+    if (!refreshToken) {
+      logger.error(
+        '[setOpenIDAuthTokens] No refresh token available (neither in tokenset nor provided as existing)',
+      );
+      return;
+    }
+
+    res.cookie('refreshToken', refreshToken, {
       expires: expirationDate,
       httpOnly: true,
       secure: isProduction,
