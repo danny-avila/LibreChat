@@ -151,7 +151,23 @@ export class FlowStateManager<T = unknown> {
     const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
 
     if (!flowState) {
+      logger.warn('[FlowStateManager] Cannot complete flow - flow state not found', {
+        flowId,
+        type,
+      });
       return false;
+    }
+
+    /** Prevent duplicate completion */
+    if (flowState.status === 'COMPLETED') {
+      logger.debug(
+        '[FlowStateManager] Flow already completed, skipping to prevent duplicate completion',
+        {
+          flowId,
+          type,
+        },
+      );
+      return true;
     }
 
     const updatedState: FlowState<T> = {
@@ -162,6 +178,12 @@ export class FlowStateManager<T = unknown> {
     };
 
     await this.keyv.set(flowKey, updatedState, this.ttl);
+
+    logger.debug('[FlowStateManager] Flow completed successfully', {
+      flowId,
+      type,
+    });
+
     return true;
   }
 
