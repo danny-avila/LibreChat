@@ -538,11 +538,11 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                       tabIndex={canSort ? 0 : undefined}
                       aria-label={sortAriaLabel}
                       aria-sort={
-                        header.column.getIsSorted() as
-                          | 'ascending'
-                          | 'descending'
-                          | 'none'
-                          | undefined
+                        header.column.getIsSorted() === 'asc'
+                          ? 'ascending'
+                          : header.column.getIsSorted() === 'desc'
+                            ? 'descending'
+                            : undefined
                       }
                     >
                       {isSelectHeader ? (
