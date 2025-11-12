@@ -82,7 +82,7 @@ export function DeleteConversationDialog({
       <OGDialogHeader>
         <OGDialogTitle>{localize('com_ui_delete_conversation')}</OGDialogTitle>
       </OGDialogHeader>
-      <div className="w-full truncate">
+      <div id="delete-conversation-dialog" className="w-full truncate">
         {localize('com_ui_delete_confirm')} <strong>{title}</strong> ?
       </div>
       <div className="flex justify-end gap-4 pt-4">
