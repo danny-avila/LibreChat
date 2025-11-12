@@ -3,7 +3,8 @@ import * as Tabs from '@radix-ui/react-tabs';
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
 import type { CodeEditorRef } from '@codesandbox/sandpack-react';
 import type { Artifact } from '~/common';
-import { useEditorContext, useArtifactsContext } from '~/Providers';
+import { useCodeState } from '~/Providers/EditorContext';
+import { useArtifactsContext } from '~/Providers';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { useAutoScroll } from '~/hooks/Artifacts/useAutoScroll';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
@@ -20,7 +21,7 @@ export default function ArtifactTabs({
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
 }) {
   const { isSubmitting } = useArtifactsContext();
-  const { currentCode, setCurrentCode } = useEditorContext();
+  const { currentCode, setCurrentCode } = useCodeState();
   const { data: startupConfig } = useGetStartupConfig();
   const lastIdRef = useRef<string | null>(null);
 

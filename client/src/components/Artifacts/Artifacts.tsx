@@ -7,7 +7,7 @@ import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-re
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
-import { useEditorContext } from '~/Providers';
+import { useMutationState } from '~/Providers/EditorContext';
 import ArtifactTabs from './ArtifactTabs';
 import { CopyCodeButton } from './Code';
 import { useLocalize } from '~/hooks';
@@ -19,7 +19,7 @@ const MAX_BACKDROP_OPACITY = 0.3;
 
 export default function Artifacts() {
   const localize = useLocalize();
-  const { isMutating } = useEditorContext();
+  const { isMutating } = useMutationState();
   const isMobile = useMediaQuery('(max-width: 868px)');
   const editorRef = useRef<CodeEditorRef>();
   const previewRef = useRef<SandpackPreviewRef>();

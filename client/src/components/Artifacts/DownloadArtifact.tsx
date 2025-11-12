@@ -3,12 +3,12 @@ import { Download, CircleCheckBig } from 'lucide-react';
 import type { Artifact } from '~/common';
 import { Button } from '@librechat/client';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
-import { useEditorContext } from '~/Providers';
+import { useCodeState } from '~/Providers/EditorContext';
 import { useLocalize } from '~/hooks';
 
 const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
   const localize = useLocalize();
-  const { currentCode } = useEditorContext();
+  const { currentCode } = useCodeState();
   const [isDownloaded, setIsDownloaded] = useState(false);
   const { fileKey: fileName } = useArtifactProps({ artifact });
 

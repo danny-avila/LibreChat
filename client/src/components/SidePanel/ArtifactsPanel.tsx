@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, memo } from 'react';
 import { ResizableHandleAlt, ResizablePanel } from '@librechat/client';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 
@@ -12,7 +12,11 @@ interface ArtifactsPanelProps {
   onRenderChange: (shouldRender: boolean) => void;
 }
 
-export default function ArtifactsPanel({
+/**
+ * ArtifactsPanel component - memoized to prevent unnecessary re-renders
+ * Only re-renders when artifacts visibility or layout changes
+ */
+const ArtifactsPanel = memo(function ArtifactsPanel({
   artifacts,
   currentLayout,
   minSizeMain,
@@ -71,4 +75,8 @@ export default function ArtifactsPanel({
       </ResizablePanel>
     </>
   );
-}
+});
+
+ArtifactsPanel.displayName = 'ArtifactsPanel';
+
+export default ArtifactsPanel;
