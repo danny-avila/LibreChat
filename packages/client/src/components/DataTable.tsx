@@ -129,7 +129,7 @@ const TableRowComponent = <TData, TValue>({
               )}
               scope="row"
             >
-              <div className="overflow-hidden text-ellipsis">
+              <div className="overflow-visible text-ellipsis">
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </div>
             </TableHead>
@@ -139,13 +139,13 @@ const TableRowComponent = <TData, TValue>({
         return (
           <TableCell
             key={cell.id}
-            className="w-0 max-w-0 px-2 py-1 align-middle text-xs transition-all duration-300 sm:px-4 sm:py-2 sm:text-sm"
+            className="w-0 max-w-0 overflow-visible px-2 py-1 align-middle text-xs transition-all duration-300 sm:px-4 sm:py-2 sm:text-sm"
             style={getColumnStyle(
               cell.column.columnDef as TableColumn<TData, TValue>,
               isSmallScreen,
             )}
           >
-            <div className="overflow-hidden text-ellipsis">
+            <div className="overflow-visible text-ellipsis">
               {flexRender(cell.column.columnDef.cell, cell.getContext())}
             </div>
           </TableCell>
