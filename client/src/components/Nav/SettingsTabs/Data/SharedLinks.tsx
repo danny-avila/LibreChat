@@ -264,6 +264,8 @@ export default function SharedLinks() {
               aria-label={localize('com_ui_delete_shared_link', {
                 title: row.original.title || localize('com_ui_untitled'),
               })}
+              aria-haspopup="dialog"
+              aria-controls="delete-shared-link-dialog"
             >
               <TrashIcon className="size-4" aria-hidden="true" />
             </Button>
@@ -315,7 +317,10 @@ export default function SharedLinks() {
           className="max-w-[450px]"
           main={
             <>
-              <div className="flex w-full flex-col items-center gap-2">
+              <div
+                id="delete-shared-link-dialog"
+                className="flex w-full flex-col items-center gap-2"
+              >
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor="dialog-confirm-delete" className="text-left text-sm font-medium">
                     {localize('com_ui_delete_confirm')} <strong>{deleteRow?.title}</strong>
