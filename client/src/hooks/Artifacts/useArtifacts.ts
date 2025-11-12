@@ -21,6 +21,7 @@ export default function useArtifacts() {
     );
   }, [artifacts]);
 
+  const prevIsSubmittingRef = useRef<boolean>(false);
   const lastContentRef = useRef<string | null>(null);
   const hasEnclosedArtifactRef = useRef<boolean>(false);
   const hasAutoSwitchedToCodeRef = useRef<boolean>(false);
@@ -35,6 +36,7 @@ export default function useArtifacts() {
       lastRunMessageIdRef.current = null;
       lastContentRef.current = null;
       hasEnclosedArtifactRef.current = false;
+      hasAutoSwitchedToCodeRef.current = false;
     };
     if (conversationId !== prevConversationIdRef.current && prevConversationIdRef.current != null) {
       resetState();
@@ -56,8 +58,17 @@ export default function useArtifacts() {
     }
   }, [setCurrentArtifactId, orderedArtifactIds]);
 
+  /**
+   * Manage artifact selection and code tab switching for non-enclosed artifacts
+   * Runs when artifact content changes
+   */
   useEffect(() => {
-    if (!isSubmitting) {
+    // Check if we just finished submitting (transition from true to false)
+    const justFinishedSubmitting = prevIsSubmittingRef.current && !isSubmitting;
+    prevIsSubmittingRef.current = isSubmitting;
+
+    // Only process during submission OR when just finished
+    if (!isSubmitting && !justFinishedSubmitting) {
       return;
     }
     if (orderedArtifactIds.length === 0) {
@@ -68,23 +79,15 @@ export default function useArtifacts() {
     }
     const latestArtifactId = orderedArtifactIds[orderedArtifactIds.length - 1];
     const latestArtifact = artifacts?.[latestArtifactId];
-    if (latestArtifact?.content === lastContentRef.current) {
+    if (latestArtifact?.content === lastContentRef.current && !justFinishedSubmitting) {
       return;
     }
 
     setCurrentArtifactId(latestArtifactId);
     lastContentRef.current = latestArtifact?.content ?? null;
 
-    const hasEnclosedArtifact =
-      /:::artifact(?:\{[^}]*\})?(?:\s|\n)*(?:```[\s\S]*?```(?:\s|\n)*)?:::/m.test(
-        latestMessageText.trim(),
-      );
-
-    if (hasEnclosedArtifact && !hasEnclosedArtifactRef.current) {
-      setActiveTab('preview');
-      hasEnclosedArtifactRef.current = true;
-      hasAutoSwitchedToCodeRef.current = false;
-    } else if (!hasEnclosedArtifactRef.current && !hasAutoSwitchedToCodeRef.current) {
+    // Only switch to code tab if we haven't detected an enclosed artifact yet
+    if (!hasEnclosedArtifactRef.current && !hasAutoSwitchedToCodeRef.current) {
       const artifactStartContent = latestArtifact?.content?.slice(0, 50) ?? '';
       if (artifactStartContent.length > 0 && latestMessageText.includes(artifactStartContent)) {
         setActiveTab('code');
@@ -99,6 +102,28 @@ export default function useArtifacts() {
     orderedArtifactIds,
     setCurrentArtifactId,
   ]);
+
+  /**
+   * Watch for enclosed artifact pattern during message generation
+   * Optimized: Exits early if already detected, only checks during streaming
+   */
+  useEffect(() => {
+    if (!isSubmitting || hasEnclosedArtifactRef.current) {
+      return;
+    }
+
+    const hasEnclosedArtifact =
+      /:::artifact(?:\{[^}]*\})?(?:\s|\n)*(?:```[\s\S]*?```(?:\s|\n)*)?:::/m.test(
+        latestMessageText.trim(),
+      );
+
+    if (hasEnclosedArtifact) {
+      logger.log('artifacts', 'Enclosed artifact detected during generation, switching to preview');
+      setActiveTab('preview');
+      hasEnclosedArtifactRef.current = true;
+      hasAutoSwitchedToCodeRef.current = false;
+    }
+  }, [isSubmitting, latestMessageText]);
 
   useEffect(() => {
     if (latestMessageId !== lastRunMessageIdRef.current) {
