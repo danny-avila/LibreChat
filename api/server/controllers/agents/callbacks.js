@@ -1,7 +1,7 @@
 const { nanoid } = require('nanoid');
 const { sendEvent } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { Tools, StepTypes, FileContext } = require('librechat-data-provider');
+const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
 const {
   EnvVar,
   Providers,
@@ -27,6 +27,13 @@ class ModelEndHandler {
     this.collectedUsage = collectedUsage;
   }
 
+  finalize(errorMessage) {
+    if (!errorMessage) {
+      return;
+    }
+    throw new Error(errorMessage);
+  }
+
   /**
    * @param {string} event
    * @param {ModelEndData | undefined} data
@@ -40,10 +47,25 @@ class ModelEndHandler {
       return;
     }
 
+    /** @type {string | undefined} */
+    let errorMessage;
     try {
       const agentContext = graph.getAgentContext(metadata);
       const isGoogle = agentContext.provider === Providers.GOOGLE;
       const streamingDisabled = !!agentContext.clientOptions?.disableStreaming;
+      if (data?.output?.additional_kwargs?.stop_reason === 'refusal') {
+        const info = { ...data.output.additional_kwargs };
+        errorMessage = JSON.stringify({
+          type: ErrorTypes.REFUSAL,
+          info,
+        });
+        logger.debug(`[ModelEndHandler] Model refused to respond`, {
+          ...info,
+          userId: metadata.user_id,
+          messageId: metadata.run_id,
+          conversationId: metadata.thread_id,
+        });
+      }
 
       const toolCalls = data?.output?.tool_calls;
       let hasUnprocessedToolCalls = false;
@@ -62,7 +84,7 @@ class ModelEndHandler {
 
       const usage = data?.output?.usage_metadata;
       if (!usage) {
-        return;
+        return this.finalize(errorMessage);
       }
       const modelName = metadata?.ls_model_name || agentContext.clientOptions?.model;
       if (modelName) {
@@ -71,10 +93,10 @@ class ModelEndHandler {
 
       this.collectedUsage.push(usage);
       if (!streamingDisabled) {
-        return;
+        return this.finalize(errorMessage);
       }
       if (!data.output.content) {
-        return;
+        return this.finalize(errorMessage);
       }
       const stepKey = graph.getStepKey(metadata);
       const message_id = getMessageId(stepKey, graph) ?? '';
@@ -104,6 +126,7 @@ class ModelEndHandler {
       }
     } catch (error) {
       logger.error('Error handling model end event:', error);
+      return this.finalize(errorMessage);
     }
   }
 }
