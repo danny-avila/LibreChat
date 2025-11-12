@@ -71,7 +71,7 @@ jobs:
       - name: Resolve instance id
         id: ec2
         run: |
-          INSTANCE_ID= "i-060babef69922d8b4"
+          INSTANCE_ID="i-060babef69922d8b4"
           echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
 
       - name: Verify instance is SSM-managed
