@@ -82,15 +82,7 @@ jobs:
       - name: Retrieve EC2 instance IP
         id: ec2
         run: |
-          INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=LibreChat-EC2" \
-            --query "Reservations[0].Instances[0].InstanceId" \
-            --output text)
-          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
-          INSTANCE_IP=$(aws ec2 describe-instances \
-            --instance-ids $INSTANCE_ID \
-            --query "Reservations[0].Instances[0].PublicDnsName" \
-            --output text)
+          INSTANCE_ID="i-060babef69922d8b4"
           echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
       
       - name: Send SSH public key using EC2 Instance Connect
