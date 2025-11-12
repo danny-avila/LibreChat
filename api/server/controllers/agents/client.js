@@ -764,12 +764,14 @@ class AgentClient extends BaseClient {
     let run;
     /** @type {Promise<(TAttachment | null)[] | undefined>} */
     let memoryPromise;
+    const appConfig = this.options.req.config;
+    const balanceConfig = getBalanceConfig(appConfig);
+    const transactionsConfig = getTransactionsConfig(appConfig);
     try {
       if (!abortController) {
         abortController = new AbortController();
       }
 
-      const appConfig = this.options.req.config;
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
@@ -899,31 +901,7 @@ class AgentClient extends BaseClient {
           );
         });
       }
-
-      try {
-        const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
-        if (attachments && attachments.length > 0) {
-          this.artifactPromises.push(...attachments);
-        }
-
-        const balanceConfig = getBalanceConfig(appConfig);
-        const transactionsConfig = getTransactionsConfig(appConfig);
-        await this.recordCollectedUsage({
-          context: 'message',
-          balance: balanceConfig,
-          transactions: transactionsConfig,
-        });
-      } catch (err) {
-        logger.error(
-          '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
-          err,
-        );
-      }
     } catch (err) {
-      const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
-      if (attachments && attachments.length > 0) {
-        this.artifactPromises.push(...attachments);
-      }
       logger.error(
         '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
         err,
@@ -937,6 +915,24 @@ class AgentClient extends BaseClient {
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
         });
+      }
+    } finally {
+      try {
+        const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
+        if (attachments && attachments.length > 0) {
+          this.artifactPromises.push(...attachments);
+        }
+
+        await this.recordCollectedUsage({
+          context: 'message',
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
+      } catch (err) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #chatCompletion] Error in cleanup phase',
+          err,
+        );
       }
     }
   }
