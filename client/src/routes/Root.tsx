@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet } from 'react-router-dom';
 import type { ContextType } from '~/common';
 import {
@@ -28,6 +28,8 @@ export default function Root() {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
+  const openSidebarRef = useRef<HTMLButtonElement>(null);
+  const closeSidebarRef = useRef<HTMLButtonElement>(null);
 
   const { isAuthenticated, logout } = useAuthContext();
 
@@ -73,10 +75,17 @@ export default function Root() {
               <Banner onHeightChange={setBannerHeight} />
               <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
                 <div className="relative z-0 flex h-full w-full overflow-hidden">
-                  <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
+                  <Nav
+                    navVisible={navVisible}
+                    setNavVisible={setNavVisible}
+                    openSidebarRef={openSidebarRef}
+                    closeSidebarRef={closeSidebarRef}
+                  />
                   <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
                     <MobileNav navVisible={navVisible} setNavVisible={setNavVisible} />
-                    <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
+                    <Outlet
+                      context={{ navVisible, setNavVisible, openSidebarRef, closeSidebarRef } satisfies ContextType}
+                    />
                   </div>
                 </div>
               </div>

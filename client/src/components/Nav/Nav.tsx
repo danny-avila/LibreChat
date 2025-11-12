@@ -48,11 +48,15 @@ const MemoNewChat = memo(NewChat);
 
 const Nav = memo(
   ({
-    navVisible,
+  navVisible,
     setNavVisible,
+    openSidebarRef,
+    closeSidebarRef,
   }: {
     navVisible: boolean;
     setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
+    openSidebarRef?: React.RefObject<HTMLButtonElement>;
+    closeSidebarRef?: React.RefObject<HTMLButtonElement>;
   }) => {
     const localize = useLocalize();
     const { isAuthenticated } = useAuthContext();
@@ -219,6 +223,8 @@ const Nav = memo(
                           toggleNav={toggleNavVisible}
                           headerButtons={headerButtons}
                           isSmallScreen={isSmallScreen}
+                          openSidebarRef={openSidebarRef}
+                          closeSidebarRef={closeSidebarRef}
                         />
                         <Conversations
                           conversations={conversations}
