@@ -1,23 +1,34 @@
-import { memo, useMemo, useState } from 'react';
-import { useRecoilValue } from 'recoil';
+import { memo, useMemo, useState, useCallback, useContext } from 'react';
+import Cookies from 'js-cookie';
+import { useRecoilValue, useRecoilState } from 'recoil';
 import {
   Spinner,
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandleAlt,
   useMediaQuery,
+  ThemeContext,
+  Button,
+  OGDialog,
+  OGDialogContent,
+  OGDialogTrigger,
+  OGDialogHeader,
+  OGDialogTitle,
 } from '@librechat/client';
 import { useParams } from 'react-router-dom';
+import type { PointerDownOutsideEvent, FocusOutsideEvent } from '@radix-ui/react-dialog';
+import { CalendarDays, Settings } from 'lucide-react';
 import { buildTree } from 'librechat-data-provider';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import { useLocalize, useDocumentTitle } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import { ShareContext, ArtifactsProvider, EditorProvider } from '~/Providers';
 import Artifacts from '~/components/Artifacts/Artifacts';
+import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/General';
 import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';
 import store from '~/store';
-import { getLatestText } from '~/utils';
+import { getLatestText, cn } from '~/utils';
 import type { ArtifactsContextValue } from '~/Providers';
 
 const ARTIFACT_PANEL_WIDTH = 420;
@@ -27,6 +38,7 @@ const SHARE_ARTIFACT_PANEL_STORAGE_KEY = 'share:artifacts-panel-size';
 function SharedView() {
   const localize = useLocalize();
   const { data: config } = useGetStartupConfig();
+  const { theme, setTheme } = useContext(ThemeContext);
   const { shareId } = useParams();
   const { data, isLoading } = useGetSharedMessages(shareId ?? '');
   const dataTree = data && buildTree({ messages: data.messages });
@@ -34,6 +46,7 @@ function SharedView() {
 
   const artifacts = useRecoilValue(store.artifactsState);
   const artifactsVisibility = useRecoilValue(store.artifactsVisibility);
+  const [langcode, setLangcode] = useRecoilState(store.lang);
 
   // configure document title
   let docTitle = '';
@@ -67,6 +80,39 @@ function SharedView() {
     artifactsVisibility === true &&
     artifactsContextValue != null &&
     Object.keys(artifacts ?? {}).length > 0;
+
+  const formattedDate =
+    data?.createdAt != null
+      ? new Date(data.createdAt).toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        })
+      : null;
+
+  const handleThemeChange = useCallback(
+    (value: string) => {
+      setTheme(value);
+    },
+    [setTheme],
+  );
+
+  const handleLangChange = useCallback(
+    (value: string) => {
+      let userLang = value;
+      if (value === 'auto') {
+        userLang = navigator.language || navigator.languages[0];
+      }
+
+      requestAnimationFrame(() => {
+        document.documentElement.lang = userLang;
+      });
+
+      setLangcode(userLang);
+      Cookies.set('lang', userLang, { expires: 365 });
+    },
+    [setLangcode],
+  );
 
   const isSmallScreen = useMediaQuery('(max-width: 1023px)');
   const [artifactPanelSize, setArtifactPanelSize] = useState(() => {
@@ -104,19 +150,15 @@ function SharedView() {
   } else if (data && messagesTree && messagesTree.length !== 0) {
     content = (
       <>
-        <div className="final-completion group mx-auto flex min-w-[40rem] flex-col gap-3 pb-6 pt-4 md:max-w-[47rem] md:px-5 lg:px-1 xl:max-w-[55rem] xl:px-5">
-          <h1 className="text-4xl font-bold">{data.title}</h1>
-          {data.createdAt && (
-            <div className="border-b border-border-medium pb-6 text-base text-text-secondary">
-              {new Date(data.createdAt).toLocaleDateString('en-US', {
-                month: 'long',
-                day: 'numeric',
-                year: 'numeric',
-              })}
-            </div>
-          )}
-        </div>
-
+        <ShareHeader
+          title={data.title}
+          formattedDate={formattedDate}
+          theme={theme}
+          langcode={langcode}
+          onThemeChange={handleThemeChange}
+          onLangChange={handleLangChange}
+          settingsLabel={localize('com_nav_settings')}
+        />
         <MessagesView messagesTree={messagesTree} conversationId={data.conversationId} />
       </>
     );
@@ -192,6 +234,89 @@ function SharedView() {
 
 interface ShareArtifactsOverlayProps {
   contextValue: ArtifactsContextValue;
+}
+
+interface ShareHeaderProps {
+  title?: string;
+  formattedDate: string | null;
+  theme: string;
+  langcode: string;
+  settingsLabel: string;
+  onThemeChange: (value: string) => void;
+  onLangChange: (value: string) => void;
+}
+
+function ShareHeader({
+  title,
+  formattedDate,
+  theme,
+  langcode,
+  settingsLabel,
+  onThemeChange,
+  onLangChange,
+}: ShareHeaderProps) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const isMobile = useMediaQuery('(max-width: 767px)');
+
+  const handleDialogOutside = useCallback((event: PointerDownOutsideEvent | FocusOutsideEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('[data-dialog-ignore="true"]')) {
+      event.preventDefault();
+    }
+  }, []);
+
+  return (
+    <section className="mx-auto w-full px-3 pb-4 pt-6 md:px-5">
+      <div className="bg-surface-primary/80 relative mx-auto flex w-full max-w-[60rem] flex-col gap-4 rounded-3xl border border-border-light px-6 py-5 shadow-xl backdrop-blur">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div className="space-y-2">
+            <h1 className="text-4xl font-semibold text-text-primary">{title}</h1>
+            {formattedDate && (
+              <div className="flex items-center gap-2 text-sm text-text-secondary">
+                <CalendarDays className="size-4" aria-hidden="true" />
+                <span>{formattedDate}</span>
+              </div>
+            )}
+          </div>
+
+          <OGDialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+            <OGDialogTrigger asChild>
+              <Button
+                size={isMobile ? 'icon' : 'default'}
+                type="button"
+                variant="outline"
+                aria-label={settingsLabel}
+                className={cn(
+                  'rounded-full border-border-medium text-sm text-text-primary transition-colors',
+                  isMobile
+                    ? 'absolute bottom-4 right-4 justify-center p-0 shadow-lg'
+                    : 'gap-2 self-start px-4 py-2',
+                )}
+              >
+                <Settings className="size-4" aria-hidden="true" />
+                <span className="hidden md:inline">{settingsLabel}</span>
+              </Button>
+            </OGDialogTrigger>
+            <OGDialogContent
+              className="w-11/12 max-w-lg border-border-light bg-surface-primary text-text-primary"
+              showCloseButton={true}
+              onPointerDownOutside={handleDialogOutside}
+              onInteractOutside={handleDialogOutside}
+            >
+              <OGDialogHeader className="text-left">
+                <OGDialogTitle>{settingsLabel}</OGDialogTitle>
+              </OGDialogHeader>
+              <div className="flex flex-col gap-4 pt-2 text-sm">
+                <ThemeSelector theme={theme} onChange={onThemeChange} />
+                <div className="bg-border-medium/60 h-px w-full" />
+                <LangSelector langcode={langcode} onChange={onLangChange} portal={false} />
+              </div>
+            </OGDialogContent>
+          </OGDialog>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function ShareArtifactsOverlay({ contextValue }: ShareArtifactsOverlayProps) {
