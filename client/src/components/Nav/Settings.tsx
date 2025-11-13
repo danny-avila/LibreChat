@@ -34,7 +34,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   const localize = useLocalize();
   const [activeTab, setActiveTab] = useState(SettingsTabValues.GENERAL);
   const tabRefs = useRef({});
-  const { hasAnyPersonalizationFeature, hasMemoryOptOut } = usePersonalizationAccess();
+  let { hasAnyPersonalizationFeature, hasMemoryOptOut } = usePersonalizationAccess();
+
+  if (startupConfig?.settingsPersonalization === false) {
+    hasAnyPersonalizationFeature = false;
+  }
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const tabs: SettingsTabValues[] = [
@@ -42,7 +46,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       SettingsTabValues.CHAT,
       SettingsTabValues.COMMANDS,
       SettingsTabValues.SPEECH,
-      ...(hasAnyPersonalizationFeature ? [SettingsTabValues.PERSONALIZATION] : []),
+      ...(hasAnyPersonalizationFeature || startupConfig?.settingsPersonalization ? [SettingsTabValues.PERSONALIZATION] : []),
       SettingsTabValues.DATA,
       ...(startupConfig?.balance?.enabled ? [SettingsTabValues.BALANCE] : []),
       SettingsTabValues.ACCOUNT,
@@ -102,7 +106,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       icon: <SpeechIcon className="icon-sm" />,
       label: 'com_nav_setting_speech',
     },
-    ...(hasAnyPersonalizationFeature || settingsPersonalization
+    ...(hasAnyPersonalizationFeature || startupConfig?.settingsPersonalization
       ? [
           {
             value: SettingsTabValues.PERSONALIZATION,
@@ -245,12 +249,16 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <Tabs.Content value={SettingsTabValues.GENERAL} tabIndex={-1}>
                       <General />
                     </Tabs.Content>
+                    {startupConfig?.settingsChat && (
                     <Tabs.Content value={SettingsTabValues.CHAT} tabIndex={-1}>
                       <Chat />
                     </Tabs.Content>
-                    <Tabs.Content value={SettingsTabValues.COMMANDS} tabIndex={-1}>
-                      <Commands />
-                    </Tabs.Content>
+                    )}
+                    {startupConfig?.settingsCommands && (
+                      <Tabs.Content value={SettingsTabValues.COMMANDS} tabIndex={-1}>
+                        <Commands />
+                      </Tabs.Content>
+                    )}
                     <Tabs.Content value={SettingsTabValues.SPEECH} tabIndex={-1}>
                       <Speech />
                     </Tabs.Content>
@@ -262,9 +270,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                         />
                       </Tabs.Content>
                     )}
-                    <Tabs.Content value={SettingsTabValues.DATA} tabIndex={-1}>
-                      <Data />
-                    </Tabs.Content>
+                    {startupConfig?.settingsDataControls && (
+                      <Tabs.Content value={SettingsTabValues.DATA} tabIndex={-1}>
+                        <Data />
+                      </Tabs.Content>
+                    )}
                     {startupConfig?.balance?.enabled && (
                       <Tabs.Content value={SettingsTabValues.BALANCE} tabIndex={-1}>
                         <Balance />
@@ -273,9 +283,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <Tabs.Content value={SettingsTabValues.ACCOUNT} tabIndex={-1}>
                       <Account />
                     </Tabs.Content>
+                    {startupConfig?.stripeSubscriptionsEnabled && (
                     <Tabs.Content value={SettingsTabValues.SUBSCRIPTION} tabIndex={-1}>
                       <Subscription />
                     </Tabs.Content>
+                    )}
                   </div>
                 </Tabs.Root>
               </div>

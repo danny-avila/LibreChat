@@ -304,7 +304,7 @@ html {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-
+/* 
 @font-face {
   font-display: swap;
   font-family: Inter;
@@ -381,7 +381,7 @@ html {
   font-style: italic;
   font-weight: 400;
   src: url('$fonts/roboto-mono-latin-400-italic.woff2') format('woff2');
-}
+} */
 
 /*
 

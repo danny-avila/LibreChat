@@ -36,6 +36,7 @@ import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 import { useAuthContext } from '~/hooks';
+import  SubscriptionDialog from '~/components/Subscription/SubscriptionDialog'
 
 interface AttachFileMenuProps {
   agentId?: string | null;
@@ -284,7 +285,8 @@ const AttachFileMenu = ({
         downloadProgress={downloadProgress}
         maxSelectionCount={endpointFileConfig?.fileLimit}
       />
-      {showSubscriptionDialog && (
+      {showSubscriptionDialog && <SubscriptionDialog open={showSubscriptionDialog} onOpenChange={setShowSubscriptionDialog} />}
+      {/* {showSubscriptionDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
           <div className="bg-white dark:bg-surface-primary rounded-lg p-6 shadow-xl flex flex-col gap-4 min-w-[300px]">
             <div className="text-lg font-semibold">Subscription Required</div>
@@ -305,7 +307,7 @@ const AttachFileMenu = ({
             </div>
           </div>
         </div>
-      )}            
+      )}             */}
     </>
   );
 };

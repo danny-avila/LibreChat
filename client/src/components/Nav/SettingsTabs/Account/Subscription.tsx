@@ -5,7 +5,7 @@ import { PLANS } from './plans';
 import { useCreateStripeCheckoutSession } from './useCreateStripeCheckoutSession';
 import { useCancelSubscription } from './useCancelSubscription';
 
-function Subscription() {
+function Subscription({ open, onOpenChange }: TDialogProps) {
   const { subscriptionStatus, user, token } = useAuthContext();
   const plan = user?.subscriptionPlan || '';
   const { mutate: createCheckoutSession, isLoading: subscribing, variables: subscribingPlan } = useCreateStripeCheckoutSession();
@@ -35,7 +35,16 @@ function Subscription() {
   };
 
   const navigateToChat = () => {
-    navigate('/c/new');
+    open = false;
+    console.log('navigateToChat - open:', open);
+    console.log('navigateToChat - onOpenChange:', onOpenChange);
+
+    if (onOpenChange)  {
+      onOpenChange(open);
+      console.log('navigateToChat - onOpenChange Fired:');
+    }
+
+    //navigate('/c/new');
   }
 
   const handleCancel = () => {
@@ -145,8 +154,7 @@ function Subscription() {
       ) : (
         <div className="m-auto justify-center p-4 py-2 md:gap-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <h2 className="text-lg font-semibold mb-2 md:col-span-2">Available Plans</h2>
-            <p className="md:col-span-2">Choose a plan that is right for you, cancel any time.</p>
+            <p className="md:col-span-2">The feature you are trying to use requires a subscription, choose a plan that is right for you, cancel any time.</p>
             {PLANS.map((p) => (
               <div
                 key={p.id}
@@ -169,9 +177,8 @@ function Subscription() {
               </div>
             ))}
             <button
-              className="px-4 py-2 rounded bg-primary text-white font-medium hover:bg-primary-dark disabled:opacity-60 w-full"
+              className="md:col-span-2 px-4 py-2 rounded bg-primary text-white font-medium hover:bg-primary-dark disabled:opacity-60 w-full"
               onClick={() => navigateToChat()}
-              disabled={subscribing && subscribingPlan === p.id}
             >
               Chat for Free
             </button>            

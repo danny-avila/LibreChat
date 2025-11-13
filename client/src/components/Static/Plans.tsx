@@ -2,16 +2,37 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import '~/custom-theme.css';
 import StaticFooter from './StaticFooter'
+import { useCreateStripeCheckoutSession } from '../Nav/SettingsTabs/Account/useCreateStripeCheckoutSession';
+import { useCancelSubscription } from '../Nav/SettingsTabs/Account/useCancelSubscription';
 
 export default function Plans() {
   const navigate = useNavigate();
-  return (
-  <main className="plans" aria-labelledby="plans-heading">
+  const { mutate: createCheckoutSession, isLoading: subscribing, variables: subscribingPlan } = useCreateStripeCheckoutSession();
+  const { mutate: cancelSubscription, isLoading: canceling } = useCancelSubscription();
 
-    <header>
-      <h1>Choose a DeclaRAY plan</h1>
-      <p>Get answers, insights, and support for your HOA or condo—choose a plan to start making sense of your governing documents today.</p>
-    </header>
+  const handleSubscribe = (planId: string) => {
+    createCheckoutSession(planId, {
+      onSuccess: (data) => {
+        if (data?.url) {
+          window.location.href = data.url;
+        } else {
+          window.alert('Failed to get Stripe Checkout URL.');
+        }
+      },
+      onError: (err: any) => {
+        window.alert('Failed to subscribe: ' + (err?.response?.data?.error || err.message));
+      },
+    });
+  };
+  
+  return (
+    <>
+  <header>
+    <h1>Choose a DeclaRAY plan</h1>
+    <p>Get answers, insights, and support for your HOA or condo—choose a plan to start making sense of your governing documents today.</p>
+  </header>
+
+  <main className="plans" aria-labelledby="plans-heading">
         
     <section className="card" aria-label="Monthly plan">
       <div className="plan-header">
@@ -33,7 +54,13 @@ export default function Plans() {
       </div>
 
       <div className="cta" role="group" aria-label="Monthly plan actions">
-        <button className="btn-primary" aria-label="Start monthly plan — $9 per month">Start Monthly</button>
+        <button
+          className="btn-primary"
+          onClick={() => handleSubscribe('price_1SSByiAfBGiEYPSJvRgJN0wk')}
+          disabled={subscribing}
+          aria-label="Start monthly plan — $9 per month">
+          Start Monthly
+        </button>
         <div className="muted margin-left-auto">Billed monthly. No hidden fees.</div>
       </div>
     </section>
@@ -60,13 +87,20 @@ export default function Plans() {
       </div>
 
       <div className="cta" role="group" aria-label="Yearly plan actions">
-        <button className="btn-primary" aria-label="Start yearly plan — $86 per year">Start Yearly — Save 20%</button>
+        <button
+          className="btn-primary"
+          onClick={() => handleSubscribe('price_1SRvrfAfBGiEYPSJTiMCTAh4')}
+          disabled={subscribing}
+          aria-label="Start yearly plan — $86 per year">
+            Start Yearly — Save 20%
+        </button>
         <div className="muted margin-left-auto">Secure checkout • 30-day money-back guarantee</div>
       </div>
     </section>
-
-    <StaticFooter/>  
     
   </main>
+
+  <StaticFooter/>    
+  </>
   );
 }

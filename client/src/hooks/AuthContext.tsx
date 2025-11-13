@@ -24,6 +24,7 @@ import {
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
 import store from '~/store';
+import { processMessages } from '../../../api/server/services/Threads/manage';
 
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
@@ -153,7 +154,8 @@ const AuthContextProvider = ({
           if (authConfig?.test === true) {
             return;
           }
-          navigate('/login');
+          console.log('authConfig', authConfig);
+          navigate((authConfig?.homeRoute) ? authConfig.homeRoute : '/login');
         }
       },
       onError: (error) => {

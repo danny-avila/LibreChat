@@ -11,8 +11,8 @@ export default function  Landing() {
         <h1>Understand Your HOA Documents Instantly</h1>
         <p>DeclaRAY is your AI-powered assistant for interpreting condominium and HOA documents — helping you make sense of CC&Rs, bylaws, and board policies in plain English.</p>
         <div className="cta-buttons">
-          <button className="btn-primary">Try DeclaRAY Free</button>
-          <button className="btn-secondary">Choose a Plan</button>
+          <button className="btn-primary" onClick={() => navigate('/register')}>Try DeclaRAY Free</button>
+          <button className="btn-secondary" onClick={() => navigate('/plans')} >Choose a Plan</button>
         </div>
       </header>
 
@@ -45,6 +45,7 @@ export default function  Landing() {
           <div className="benefit"><span>✓</span> <div><strong>Instant Clarity</strong><br />AI explanations that translate legal language into everyday English.</div></div>
           <div className="benefit"><span>✓</span> <div><strong>Save Hours</strong><br />Skip the guesswork and endless scrolling through dense PDFs.</div></div>
           <div className="benefit"><span>✓</span> <div><strong>Built for Communities</strong><br />Designed specifically for condo and HOA governance structures.</div></div>
+          <div className="benefit"><span>✓</span> <div><strong>Accurate Citations</strong><br />Get precise references to relevant sections of your documents.</div></div> 
           <div className="benefit"><span>✓</span> <div><strong>Private & Secure</strong><br />Your documents are processed safely — data is never shared externally.</div></div>
           <div className="benefit"><span>✓</span> <div><strong>Always Improving</strong><br />DeclaRAY evolves with your documents and community feedback.</div></div>
         </div>
