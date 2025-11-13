@@ -1,3 +1,4 @@
+const cookies = require('cookie');
 const jwksRsa = require('jwks-rsa');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
@@ -85,9 +86,13 @@ const openIdJwtLogin = (openIdConfig) => {
 
           // Add federated tokens for OIDC placeholder processing
           // Use the raw JWT token as the access token
+          // Extract refresh token from HTTP-only cookie (not in JWT payload)
+          const cookieHeader = req.headers.cookie;
+          const refreshToken = cookieHeader ? cookies.parse(cookieHeader).refreshToken : null;
+
           user.federatedTokens = {
             access_token: rawToken,
-            refresh_token: payload.refresh_token,
+            refresh_token: refreshToken,
             expires_at: payload.exp,
           };
 
