@@ -6,8 +6,8 @@ import { useLocation } from 'react-router-dom';
 import type { Pluggable } from 'unified';
 import type { Artifact } from '~/common';
 import { useMessageContext, useArtifactContext } from '~/Providers';
-import { artifactsState } from '~/store/artifacts';
 import { logger, extractContent, isArtifactRoute } from '~/utils';
+import { artifactsState } from '~/store/artifacts';
 import ArtifactButton from './ArtifactButton';
 
 export const artifactPlugin: Pluggable = () => {
