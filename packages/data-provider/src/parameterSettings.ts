@@ -499,7 +499,7 @@ const bedrock: Record<string, SettingDefinition> = {
     type: 'boolean',
     description: 'com_endpoint_anthropic_prompt_cache',
     descriptionCode: true,
-    default: false,
+    default: true,
     component: 'switch',
     optionType: 'conversation',
     showDefault: false,
