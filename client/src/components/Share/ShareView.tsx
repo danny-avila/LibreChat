@@ -6,6 +6,7 @@ import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import { useLocalize, useDocumentTitle } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import { ShareContext } from '~/Providers';
+import { ShareMessagesProvider } from './ShareMessagesProvider';
 import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';
 
@@ -48,7 +49,9 @@ function SharedView() {
           </div>
         </div>
 
-        <MessagesView messagesTree={messagesTree} conversationId={data.conversationId} />
+        <ShareMessagesProvider messages={data.messages}>
+          <MessagesView messagesTree={messagesTree} conversationId="shared-conversation" />
+        </ShareMessagesProvider>
       </>
     );
   } else {
