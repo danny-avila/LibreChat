@@ -4,6 +4,7 @@ import { ListFilter, User, Share2 } from 'lucide-react';
 import { SystemCategories } from 'librechat-data-provider';
 import { Dropdown, AnimatedSearchInput } from '@librechat/client';
 import type { Option } from '~/common';
+import type { TranslationKeys } from '~/hooks';
 import { useLocalize, useCategories } from '~/hooks';
 import { usePromptGroupsContext } from '~/Providers';
 import { cn } from '~/utils';
@@ -11,11 +12,12 @@ import store from '~/store';
 
 export default function FilterPrompts({ className = '' }: { className?: string }) {
   const localize = useLocalize();
-  const { name, setName, hasAccess } = usePromptGroupsContext();
+  const { name, setName, hasAccess, promptGroups } = usePromptGroupsContext();
   const { categories } = useCategories({ className: 'h-4 w-4', hasAccess });
   const [displayName, setDisplayName] = useState(name || '');
   const [isSearching, setIsSearching] = useState(false);
   const [categoryFilter, setCategory] = useRecoilState(store.promptsCategory);
+  const [searchResultsAnnouncement, setSearchResultsAnnouncement] = useState('');
 
   const filterOptions = useMemo(() => {
     const baseOptions: Option[] = [
@@ -81,8 +83,34 @@ export default function FilterPrompts({ className = '' }: { className?: string }
     return () => clearTimeout(timeout);
   }, [displayName, setName]);
 
+  useEffect(() => {
+    if (!displayName.trim() || isSearching) {
+      setSearchResultsAnnouncement('');
+      return;
+    }
+
+    const resultCount = promptGroups?.length ?? 0;
+    const announcement =
+      resultCount === 1
+        ? localize('com_ui_result_found' as TranslationKeys, {
+            count: resultCount,
+          })
+        : localize('com_ui_results_found' as TranslationKeys, {
+            count: resultCount,
+          });
+
+    const timeout = setTimeout(() => {
+      setSearchResultsAnnouncement(announcement);
+    }, 300);
+
+    return () => clearTimeout(timeout);
+  }, [promptGroups?.length, displayName, isSearching, localize]);
+
   return (
     <div className={cn('flex w-full gap-2 text-text-primary', className)}>
+      <div aria-live="polite" className="sr-only">
+        {searchResultsAnnouncement}
+      </div>
       <Dropdown
         value={categoryFilter || SystemCategories.ALL}
         onChange={onSelect}
