@@ -90,6 +90,15 @@ const refreshController = async (req, res) => {
       }
       // Pass the original refresh token as fallback since Cognito doesn't return a new one
       const token = setOpenIDAuthTokens(tokenset, res, user._id.toString(), refreshToken);
+
+      // Set federatedTokens on user object for template variable resolution
+      user.federatedTokens = {
+        access_token: tokenset.access_token,
+        id_token: tokenset.id_token,
+        refresh_token: refreshToken, // Use the existing refresh token since Cognito doesn't return a new one
+        expires_at: claims.exp,
+      };
+
       return res.status(200).send({ token, user });
     } catch (error) {
       logger.error('[refreshController] OpenID token refresh error', error);
