@@ -152,7 +152,7 @@ export default function ArchivedChatsTable({
           return (
             <button
               type="button"
-              className="flex items-center gap-2 truncate"
+              className="flex items-center gap-2 truncate rounded-sm"
               onClick={() => window.open(`/c/${conversationId}`, '_blank')}
             >
               <MinimalIcon
