@@ -256,6 +256,7 @@ export default function Settings({
               min={0}
               step={0.01}
               className="flex h-4 w-full"
+              aria-labelledby="temp-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={conversation.endpoint ?? ''} type="temp" side={ESide.Left} />
@@ -296,6 +297,7 @@ export default function Settings({
               min={0}
               step={0.01}
               className="flex h-4 w-full"
+              aria-labelledby="top-p-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={conversation.endpoint ?? ''} type="topp" side={ESide.Left} />
@@ -337,6 +339,7 @@ export default function Settings({
               min={-2}
               step={0.01}
               className="flex h-4 w-full"
+              aria-labelledby="freq-penalty-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={conversation.endpoint ?? ''} type="freq" side={ESide.Left} />
@@ -378,6 +381,7 @@ export default function Settings({
               min={-2}
               step={0.01}
               className="flex h-4 w-full"
+              aria-labelledby="pres-penalty-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={conversation.endpoint ?? ''} type="pres" side={ESide.Left} />

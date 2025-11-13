@@ -1,24 +1,43 @@
+import { useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, Constants, dataService } from 'librechat-data-provider';
-import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
-import {
-  getDefaultEndpoint,
-  clearMessagesCache,
-  buildDefaultConvo,
-  getEndpointField,
-  logger,
-} from '~/utils';
+import { QueryKeys, Constants, dataService, getEndpointField } from 'librechat-data-provider';
+import type {
+  TEndpointsConfig,
+  TStartupConfig,
+  TModelsConfig,
+  TConversation,
+} from 'librechat-data-provider';
+import { getDefaultEndpoint, clearMessagesCache, buildDefaultConvo, logger } from '~/utils';
+import { useApplyModelSpecEffects } from '~/hooks/Agents';
 import store from '~/store';
 
 const useNavigateToConvo = (index = 0) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const clearAllConversations = store.useClearConvoState();
+  const applyModelSpecEffects = useApplyModelSpecEffects();
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
   const clearAllLatestMessages = store.useClearLatestMessages(`useNavigateToConvo ${index}`);
-  const { hasSetConversation, setConversation } = store.useCreateConversationAtom(index);
+  const { hasSetConversation, setConversation: setConvo } = store.useCreateConversationAtom(index);
+
+  const setConversation = useCallback(
+    (conversation: TConversation) => {
+      setConvo(conversation);
+      if (!conversation.spec) {
+        return;
+      }
+
+      const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+      applyModelSpecEffects({
+        startupConfig,
+        specName: conversation?.spec,
+        convoId: conversation.conversationId,
+      });
+    },
+    [setConvo, queryClient, applyModelSpecEffects],
+  );
 
   const fetchFreshData = async (conversation?: Partial<TConversation>) => {
     const conversationId = conversation?.conversationId;

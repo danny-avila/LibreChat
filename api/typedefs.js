@@ -167,12 +167,6 @@
  */
 
 /**
- * @exports ConversationSummaryBufferMemory
- * @typedef {import('langchain/memory').ConversationSummaryBufferMemory} ConversationSummaryBufferMemory
- * @memberof typedefs
- */
-
-/**
  * @exports UsageMetadata
  * @typedef {import('@langchain/core/messages').UsageMetadata} UsageMetadata
  * @memberof typedefs

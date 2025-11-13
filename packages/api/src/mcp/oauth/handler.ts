@@ -1,5 +1,7 @@
 import { randomBytes } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
+import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
   registerClient,
   startAuthorization,
@@ -7,7 +9,6 @@ import {
   discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
-import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { FlowStateManager } from '~/flow/manager';
 import type {
@@ -18,7 +19,6 @@ import type {
   OAuthMetadata,
 } from './types';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
-import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 
 /** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
@@ -439,9 +439,10 @@ export class MCPOAuthHandler {
         fetchFn: this.createOAuthFetch(oauthHeaders),
       });
 
-      logger.debug('[MCPOAuth] Raw tokens from exchange:', {
-        access_token: tokens.access_token ? '[REDACTED]' : undefined,
-        refresh_token: tokens.refresh_token ? '[REDACTED]' : undefined,
+      logger.debug('[MCPOAuth] Token exchange successful', {
+        flowId,
+        has_access_token: !!tokens.access_token,
+        has_refresh_token: !!tokens.refresh_token,
         expires_in: tokens.expires_in,
         token_type: tokens.token_type,
         scope: tokens.scope,

@@ -436,6 +436,41 @@ describe('useMCPSelect', () => {
       expect(result.current.mcpHook.mcpValues).toEqual(['initial-value']);
     });
 
+    it('should handle ephemeralAgent with clear mcp value', async () => {
+      // Create a shared wrapper
+      const wrapper = createWrapper(['server1', 'server2']);
+
+      // Create a component that uses both hooks
+      const TestComponent = () => {
+        const mcpHook = useMCPSelect({});
+        const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { mcpHook, setEphemeralAgent };
+      };
+
+      const { result } = renderHook(() => TestComponent(), { wrapper });
+
+      // Set initial values
+      act(() => {
+        result.current.mcpHook.setMCPValues(['server1', 'server2']);
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual(['server1', 'server2']);
+      });
+
+      // Set ephemeralAgent with clear value
+      act(() => {
+        result.current.setEphemeralAgent({
+          mcp: [Constants.mcp_clear as string],
+        });
+      });
+
+      // mcpValues should be cleared
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual([]);
+      });
+    });
+
     it('should properly sync non-empty arrays from ephemeralAgent', async () => {
       // Additional test to ensure non-empty arrays DO sync
       const wrapper = createWrapper(['value1', 'value2', 'value3', 'value4', 'value5']);

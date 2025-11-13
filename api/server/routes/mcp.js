@@ -6,6 +6,7 @@ const {
   MCPOAuthHandler,
   MCPTokenStorage,
   getUserMCPAuthMap,
+  mcpServersRegistry,
 } = require('@librechat/api');
 const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
@@ -61,11 +62,12 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid flow state' });
     }
 
+    const oauthHeaders = await getOAuthHeaders(serverName, userId);
     const { authorizationUrl, flowId: oauthFlowId } = await MCPOAuthHandler.initiateOAuthFlow(
       serverName,
       serverUrl,
       userId,
-      getOAuthHeaders(serverName),
+      oauthHeaders,
       oauthConfig,
     );
 
@@ -132,13 +134,19 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       hasCodeVerifier: !!flowState.codeVerifier,
     });
 
+    /** Check if this flow has already been completed (idempotency protection) */
+    const currentFlowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
+    if (currentFlowState?.status === 'COMPLETED') {
+      logger.warn('[MCP OAuth] Flow already completed, preventing duplicate token exchange', {
+        flowId,
+        serverName,
+      });
+      return res.redirect(`/oauth/success?serverName=${encodeURIComponent(serverName)}`);
+    }
+
     logger.debug('[MCP OAuth] Completing OAuth flow');
-    const tokens = await MCPOAuthHandler.completeOAuthFlow(
-      flowId,
-      code,
-      flowManager,
-      getOAuthHeaders(serverName),
-    );
+    const oauthHeaders = await getOAuthHeaders(serverName, flowState.userId);
+    const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager, oauthHeaders);
     logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 
     /** Persist tokens immediately so reconnection uses fresh credentials */
@@ -205,6 +213,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
         const tools = await userConnection.fetchTools();
         await updateMCPServerTools({
+          userId: flowState.userId,
           serverName,
           tools,
         });
@@ -355,7 +364,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     logger.info(`[MCP Reinitialize] Reinitializing server: ${serverName}`);
 
     const mcpManager = getMCPManager();
-    const serverConfig = mcpManager.getRawConfig(serverName);
+    const serverConfig = await mcpServersRegistry.getServerConfig(serverName, user.id);
     if (!serverConfig) {
       return res.status(404).json({
         error: `MCP server '${serverName}' not found in configuration`,
@@ -504,8 +513,7 @@ router.get('/:serverName/auth-values', requireJwtAuth, async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const mcpManager = getMCPManager();
-    const serverConfig = mcpManager.getRawConfig(serverName);
+    const serverConfig = await mcpServersRegistry.getServerConfig(serverName, user.id);
     if (!serverConfig) {
       return res.status(404).json({
         error: `MCP server '${serverName}' not found in configuration`,
@@ -544,9 +552,8 @@ router.get('/:serverName/auth-values', requireJwtAuth, async (req, res) => {
   }
 });
 
-function getOAuthHeaders(serverName) {
-  const mcpManager = getMCPManager();
-  const serverConfig = mcpManager.getRawConfig(serverName);
+async function getOAuthHeaders(serverName, userId) {
+  const serverConfig = await mcpServersRegistry.getServerConfig(serverName, userId);
   return serverConfig?.oauth_headers ?? {};
 }
 

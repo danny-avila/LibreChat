@@ -10,7 +10,7 @@ const {
   getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
-const { sleep, SplitStreamHandler: _Handler } = require('@librechat/agents');
+const { sleep, SplitStreamHandler: _Handler, addCacheControl } = require('@librechat/agents');
 const {
   Tokenizer,
   createFetch,
@@ -25,7 +25,6 @@ const {
 const {
   truncateText,
   formatMessage,
-  addCacheControl,
   titleFunctionPrompt,
   parseParamFromPrompt,
   createContextHandlers,
@@ -306,11 +305,9 @@ class AnthropicClient extends BaseClient {
   }
 
   async addImageURLs(message, attachments) {
-    const { files, image_urls } = await encodeAndFormat(
-      this.options.req,
-      attachments,
-      EModelEndpoint.anthropic,
-    );
+    const { files, image_urls } = await encodeAndFormat(this.options.req, attachments, {
+      endpoint: EModelEndpoint.anthropic,
+    });
     message.image_urls = image_urls.length ? image_urls : undefined;
     return files;
   }

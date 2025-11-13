@@ -1,8 +1,10 @@
 import {
+  Constants,
   EModelEndpoint,
   defaultEndpoints,
   modularEndpoints,
   LocalStorageKeys,
+  getEndpointField,
   isAgentsEndpoint,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
@@ -56,24 +58,6 @@ export const getAvailableEndpoints = (
 
   return availableEndpoints;
 };
-
-/** Get the specified field from the endpoint config */
-export function getEndpointField<K extends keyof t.TConfig>(
-  endpointsConfig: t.TEndpointsConfig | undefined | null,
-  endpoint: EModelEndpoint | string | null | undefined,
-  property: K,
-): t.TConfig[K] | undefined {
-  if (!endpointsConfig || endpoint === null || endpoint === undefined) {
-    return undefined;
-  }
-
-  const config = endpointsConfig[endpoint];
-  if (!config) {
-    return undefined;
-  }
-
-  return config[property];
-}
 
 export function mapEndpoints(endpointsConfig: t.TEndpointsConfig) {
   const filter = getEndpointsFilter(endpointsConfig);
@@ -174,6 +158,39 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
     newEndpointType,
     isNewModular,
   };
+}
+
+export function getModelSpec({
+  specName,
+  startupConfig,
+}: {
+  specName?: string | null;
+  startupConfig?: t.TStartupConfig;
+}): t.TModelSpec | undefined {
+  if (!startupConfig || !specName) {
+    return;
+  }
+  return startupConfig.modelSpecs?.list?.find((spec) => spec.name === specName);
+}
+
+export function applyModelSpecEphemeralAgent({
+  convoId,
+  modelSpec,
+  updateEphemeralAgent,
+}: {
+  convoId?: string | null;
+  modelSpec?: t.TModelSpec;
+  updateEphemeralAgent: ((convoId: string, agent: t.TEphemeralAgent | null) => void) | undefined;
+}) {
+  if (!modelSpec || !updateEphemeralAgent) {
+    return;
+  }
+  updateEphemeralAgent((convoId ?? Constants.NEW_CONVO) || Constants.NEW_CONVO, {
+    mcp: modelSpec.mcpServers ?? [Constants.mcp_clear as string],
+    web_search: modelSpec.webSearch ?? false,
+    file_search: modelSpec.fileSearch ?? false,
+    execute_code: modelSpec.executeCode ?? false,
+  });
 }
 
 /**

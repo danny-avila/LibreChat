@@ -40,7 +40,6 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('~/utils', () => ({
   isEnabled: jest.fn((value) => value === 'true'),
-  normalizeEndpointName: jest.fn((name) => name),
 }));
 
 describe('getTransactionsConfig', () => {

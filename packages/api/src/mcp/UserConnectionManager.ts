@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { MCPServersRegistry } from '~/mcp/MCPServersRegistry';
+import { mcpServersRegistry as serversRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPConnection } from './connection';
 import type * as t from './types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
@@ -14,7 +14,6 @@ import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
  * https://github.com/danny-avila/LibreChat/discussions/8790
  */
 export abstract class UserConnectionManager {
-  protected readonly serversRegistry: MCPServersRegistry;
   // Connections shared by all users.
   public appConnections: ConnectionsRepository | null = null;
   // Connections per userId -> serverName -> connection
@@ -22,15 +21,6 @@ export abstract class UserConnectionManager {
   /** Last activity timestamp for users (not per server) */
   protected userLastActivity: Map<string, number> = new Map();
   protected readonly USER_CONNECTION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes (TODO: make configurable)
-
-  constructor(serverConfigs: t.MCPServers) {
-    this.serversRegistry = new MCPServersRegistry(serverConfigs);
-  }
-
-  /** fetches am MCP Server config from the registry */
-  public getRawConfig(serverName: string): t.MCPOptions | undefined {
-    return this.serversRegistry.rawConfigs[serverName];
-  }
 
   /** Updates the last activity timestamp for a user */
   protected updateUserLastActivity(userId: string): void {
@@ -106,7 +96,7 @@ export abstract class UserConnectionManager {
       logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
     }
 
-    const config = this.serversRegistry.parsedConfigs[serverName];
+    const config = await serversRegistry.getServerConfig(serverName, userId);
     if (!config) {
       throw new McpError(
         ErrorCode.InvalidRequest,

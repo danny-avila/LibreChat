@@ -1,54 +1,21 @@
-import { atom } from 'jotai';
-import { atomWithStorage } from 'jotai/utils';
 import { applyFontSize } from '@librechat/client';
+import { createStorageAtomWithEffect, initializeFromStorage } from './jotai-utils';
 
 const DEFAULT_FONT_SIZE = 'text-base';
 
 /**
- * Base storage atom for font size
+ * This atom stores the user's font size preference
  */
-const fontSizeStorageAtom = atomWithStorage<string>('fontSize', DEFAULT_FONT_SIZE, undefined, {
-  getOnInit: true,
-});
-
-/**
- * Derived atom that applies font size changes to the DOM
- * Read: returns the current font size
- * Write: updates storage and applies the font size to the DOM
- */
-export const fontSizeAtom = atom(
-  (get) => get(fontSizeStorageAtom),
-  (get, set, newValue: string) => {
-    set(fontSizeStorageAtom, newValue);
-    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-      applyFontSize(newValue);
-    }
-  },
+export const fontSizeAtom = createStorageAtomWithEffect<string>(
+  'fontSize',
+  DEFAULT_FONT_SIZE,
+  applyFontSize,
 );
 
 /**
  * Initialize font size on app load
+ * This function applies the saved font size from localStorage to the DOM
  */
-export const initializeFontSize = () => {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return;
-  }
-
-  const savedValue = localStorage.getItem('fontSize');
-
-  if (savedValue !== null) {
-    try {
-      const parsedValue = JSON.parse(savedValue);
-      applyFontSize(parsedValue);
-    } catch (error) {
-      console.error(
-        'Error parsing localStorage key "fontSize", resetting to default. Error:',
-        error,
-      );
-      localStorage.setItem('fontSize', JSON.stringify(DEFAULT_FONT_SIZE));
-      applyFontSize(DEFAULT_FONT_SIZE);
-    }
-  } else {
-    applyFontSize(DEFAULT_FONT_SIZE);
-  }
+export const initializeFontSize = (): void => {
+  initializeFromStorage('fontSize', DEFAULT_FONT_SIZE, applyFontSize);
 };
