@@ -1,17 +1,28 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Spinner } from '@librechat/client';
+import {
+  Spinner,
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandleAlt,
+  useMediaQuery,
+} from '@librechat/client';
 import { useParams } from 'react-router-dom';
 import { buildTree } from 'librechat-data-provider';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import { useLocalize, useDocumentTitle } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
-import { ShareContext, SidePanelProvider, ArtifactsProvider, EditorProvider } from '~/Providers';
-import { SidePanelGroup } from '~/components/SidePanel';
+import { ShareContext, ArtifactsProvider, EditorProvider } from '~/Providers';
 import Artifacts from '~/components/Artifacts/Artifacts';
 import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';
 import store from '~/store';
+import { getLatestText } from '~/utils';
+import type { ArtifactsContextValue } from '~/Providers';
+
+const ARTIFACT_PANEL_WIDTH = 420;
+const DEFAULT_ARTIFACT_PANEL_SIZE = 32;
+const SHARE_ARTIFACT_PANEL_STORAGE_KEY = 'share:artifacts-panel-size';
 
 function SharedView() {
   const localize = useLocalize();
@@ -34,33 +45,54 @@ function SharedView() {
 
   useDocumentTitle(docTitle);
 
-  const defaultLayout = useMemo(() => {
-    const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
-    return typeof resizableLayout === 'string' ? JSON.parse(resizableLayout) : undefined;
-  }, []);
-
-  const defaultCollapsed = useMemo(() => {
-    const collapsedPanels = localStorage.getItem('react-resizable-panels:collapsed');
-    return typeof collapsedPanels === 'string' ? JSON.parse(collapsedPanels) : true;
-  }, []);
-
-  const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
-
-  /**
-   * Memoize artifacts JSX to prevent recreating it on every render
-   */
-  const artifactsElement = useMemo(() => {
-    if (artifactsVisibility === true && Object.keys(artifacts ?? {}).length > 0) {
-      return (
-        <ArtifactsProvider>
-          <EditorProvider>
-            <Artifacts />
-          </EditorProvider>
-        </ArtifactsProvider>
-      );
+  const artifactsContextValue = useMemo<ArtifactsContextValue | null>(() => {
+    if (!data) {
+      return null;
     }
-    return null;
-  }, [artifactsVisibility, artifacts]);
+
+    const latestMessage =
+      Array.isArray(data.messages) && data.messages.length > 0
+        ? data.messages[data.messages.length - 1]
+        : null;
+
+    return {
+      isSubmitting: false,
+      latestMessageId: latestMessage?.messageId ?? null,
+      latestMessageText: latestMessage ? getLatestText(latestMessage) : '',
+      conversationId: data.conversationId ?? null,
+    };
+  }, [data]);
+
+  const shouldRenderArtifacts =
+    artifactsVisibility === true &&
+    artifactsContextValue != null &&
+    Object.keys(artifacts ?? {}).length > 0;
+
+  const isSmallScreen = useMediaQuery('(max-width: 1023px)');
+  const [artifactPanelSize, setArtifactPanelSize] = useState(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_ARTIFACT_PANEL_SIZE;
+    }
+    const stored = window.localStorage.getItem(SHARE_ARTIFACT_PANEL_STORAGE_KEY);
+    const parsed = Number(stored);
+    return Number.isFinite(parsed) ? parsed : DEFAULT_ARTIFACT_PANEL_SIZE;
+  });
+
+  const normalizedArtifactSize = Math.min(60, Math.max(20, artifactPanelSize));
+
+  const handleLayoutChange = (sizes: number[]) => {
+    if (sizes.length < 2) {
+      return;
+    }
+    const newSize = sizes[1];
+    if (!Number.isFinite(newSize)) {
+      return;
+    }
+    setArtifactPanelSize(newSize);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(SHARE_ARTIFACT_PANEL_STORAGE_KEY, newSize.toString());
+    }
+  };
 
   let content: JSX.Element;
   if (isLoading) {
@@ -96,31 +128,94 @@ function SharedView() {
     );
   }
 
+  const footer = (
+    <div className="w-full border-t-0 pl-0 pt-2 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
+      <Footer className="relative mx-auto mt-4 flex max-w-[55rem] flex-wrap items-center justify-center gap-2 px-3 pb-4 pt-2 text-center text-xs text-text-secondary" />
+    </div>
+  );
+
+  const mainContent = (
+    <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden pt-0 dark:bg-surface-secondary">
+      <div className="flex h-full flex-col text-text-primary" role="presentation">
+        {content}
+        {footer}
+      </div>
+    </div>
+  );
+
+  const renderDesktopLayout = () => {
+    if (!shouldRenderArtifacts || !artifactsContextValue || isSmallScreen) {
+      return null;
+    }
+
+    return (
+      <ResizablePanelGroup
+        direction="horizontal"
+        className="flex h-full w-full"
+        onLayout={handleLayoutChange}
+      >
+        <ResizablePanel
+          defaultSize={100 - normalizedArtifactSize}
+          minSize={35}
+          order={1}
+          id="share-content"
+        >
+          {mainContent}
+        </ResizablePanel>
+        <ResizableHandleAlt withHandle className="bg-border-medium text-text-primary" />
+        <ResizablePanel
+          defaultSize={normalizedArtifactSize}
+          minSize={20}
+          maxSize={60}
+          order={2}
+          id="share-artifacts"
+        >
+          <ShareArtifactsPanel contextValue={artifactsContextValue} />
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    );
+  };
+
   return (
     <ShareContext.Provider value={{ isSharedConvo: true }}>
-      <SidePanelProvider>
-        <SidePanelGroup
-          defaultLayout={defaultLayout}
-          fullPanelCollapse={fullCollapse}
-          defaultCollapsed={defaultCollapsed}
-          artifacts={artifactsElement}
-        >
-          <main
-            className="relative flex w-full grow overflow-hidden dark:bg-surface-secondary"
-            style={{ paddingBottom: '50px' }}
-          >
-            <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden pt-0 dark:bg-surface-secondary">
-              <div className="flex h-full flex-col text-text-primary" role="presentation">
-                {content}
-                <div className="w-full border-t-0 pl-0 pt-2 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
-                  <Footer className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-2 bg-gradient-to-t from-surface-secondary to-transparent px-2 pb-2 pt-8 text-xs text-text-secondary md:px-[60px]" />
-                </div>
-              </div>
-            </div>
-          </main>
-        </SidePanelGroup>
-      </SidePanelProvider>
+      <div className="relative flex min-h-screen w-full dark:bg-surface-secondary">
+        <main className="relative flex w-full grow overflow-hidden dark:bg-surface-secondary">
+          {renderDesktopLayout() ?? mainContent}
+        </main>
+        {shouldRenderArtifacts && artifactsContextValue && isSmallScreen && (
+          <ShareArtifactsOverlay contextValue={artifactsContextValue} />
+        )}
+      </div>
     </ShareContext.Provider>
+  );
+}
+
+interface ShareArtifactsOverlayProps {
+  contextValue: ArtifactsContextValue;
+}
+
+function ShareArtifactsOverlay({ contextValue }: ShareArtifactsOverlayProps) {
+  return (
+    <div
+      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-full sm:max-w-[480px]"
+      role="complementary"
+      aria-label="Artifacts panel"
+      style={{ maxWidth: `${ARTIFACT_PANEL_WIDTH}px` }}
+    >
+      <ShareArtifactsPanel contextValue={contextValue} />
+    </div>
+  );
+}
+
+function ShareArtifactsPanel({ contextValue }: ShareArtifactsOverlayProps) {
+  return (
+    <ArtifactsProvider value={contextValue}>
+      <EditorProvider>
+        <div className="flex h-full w-full border-l border-border-light bg-surface-primary shadow-2xl">
+          <Artifacts />
+        </div>
+      </EditorProvider>
+    </ArtifactsProvider>
   );
 }
 
