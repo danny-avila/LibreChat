@@ -623,6 +623,8 @@
   "com_ui_active": "Active",
   "com_ui_add": "Add",
   "com_ui_add_api_key": "Add API Key",
+  "com_ui_add_code_interpreter_api_key": "Add Code Interpreter API Key",
+  "com_ui_add_web_search_api_keys": "Add Web Search API Keys",
   "com_ui_add_mcp": "Add MCP",
   "com_ui_add_mcp_server": "Add MCP Server",
   "com_ui_add_model_preset": "Add a model or preset for an additional response",
