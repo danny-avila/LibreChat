@@ -1,6 +1,10 @@
 import { memo, useMemo, useState, useCallback, useContext } from 'react';
 import Cookies from 'js-cookie';
+import { useParams } from 'react-router-dom';
+import { buildTree } from 'librechat-data-provider';
+import { CalendarDays, Settings } from 'lucide-react';
 import { useRecoilValue, useRecoilState } from 'recoil';
+import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import {
   Spinner,
   ResizablePanelGroup,
@@ -15,24 +19,40 @@ import {
   OGDialogHeader,
   OGDialogTitle,
 } from '@librechat/client';
-import { useParams } from 'react-router-dom';
 import type { PointerDownOutsideEvent, FocusOutsideEvent } from '@radix-ui/react-dialog';
-import { CalendarDays, Settings } from 'lucide-react';
-import { buildTree } from 'librechat-data-provider';
-import { useGetSharedMessages } from 'librechat-data-provider/react-query';
-import { useLocalize, useDocumentTitle } from '~/hooks';
-import { useGetStartupConfig } from '~/data-provider';
+import type { ArtifactsContextValue } from '~/Providers';
+import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/General';
 import { ShareContext, ArtifactsProvider, EditorProvider } from '~/Providers';
 import Artifacts from '~/components/Artifacts/Artifacts';
-import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/General';
+import { useLocalize, useDocumentTitle } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
+import { getLatestText, cn } from '~/utils';
 import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';
 import store from '~/store';
-import { getLatestText, cn } from '~/utils';
-import type { ArtifactsContextValue } from '~/Providers';
 
-const DEFAULT_ARTIFACT_PANEL_SIZE = 32;
+const DEFAULT_ARTIFACT_PANEL_SIZE = 40;
 const SHARE_ARTIFACT_PANEL_STORAGE_KEY = 'share:artifacts-panel-size';
+const SHARE_ARTIFACT_PANEL_DEFAULT_KEY = 'share:artifacts-panel-size-default';
+
+const getInitialArtifactPanelSize = () => {
+  if (typeof window === 'undefined') {
+    return DEFAULT_ARTIFACT_PANEL_SIZE;
+  }
+
+  const defaultSizeString = String(DEFAULT_ARTIFACT_PANEL_SIZE);
+  const storedDefault = window.localStorage.getItem(SHARE_ARTIFACT_PANEL_DEFAULT_KEY);
+
+  if (storedDefault !== defaultSizeString) {
+    window.localStorage.setItem(SHARE_ARTIFACT_PANEL_DEFAULT_KEY, defaultSizeString);
+    window.localStorage.removeItem(SHARE_ARTIFACT_PANEL_STORAGE_KEY);
+    return DEFAULT_ARTIFACT_PANEL_SIZE;
+  }
+
+  const stored = window.localStorage.getItem(SHARE_ARTIFACT_PANEL_STORAGE_KEY);
+  const parsed = Number(stored);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_ARTIFACT_PANEL_SIZE;
+};
 
 function SharedView() {
   const localize = useLocalize();
@@ -125,14 +145,7 @@ function SharedView() {
   );
 
   const isSmallScreen = useMediaQuery('(max-width: 1023px)');
-  const [artifactPanelSize, setArtifactPanelSize] = useState(() => {
-    if (typeof window === 'undefined') {
-      return DEFAULT_ARTIFACT_PANEL_SIZE;
-    }
-    const stored = window.localStorage.getItem(SHARE_ARTIFACT_PANEL_STORAGE_KEY);
-    const parsed = Number(stored);
-    return Number.isFinite(parsed) ? parsed : DEFAULT_ARTIFACT_PANEL_SIZE;
-  });
+  const [artifactPanelSize, setArtifactPanelSize] = useState(getInitialArtifactPanelSize);
 
   const normalizedArtifactSize = Math.min(60, Math.max(20, artifactPanelSize));
 
