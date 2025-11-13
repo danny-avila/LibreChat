@@ -92,9 +92,11 @@ export const ThinkingButton = memo(
             }
             className={cn(
               'rounded-lg p-1.5 text-text-secondary-alt transition-colors duration-200',
-              isExpanded ? 'opacity-0 group-hover/thinking-container:opacity-100' : 'opacity-0',
+              isExpanded
+                ? 'opacity-0 group-focus-within/thinking-container:opacity-100 group-hover/thinking-container:opacity-100'
+                : 'opacity-0',
               'hover:bg-surface-hover hover:text-text-primary',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
+              'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
             )}
           >
             {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}

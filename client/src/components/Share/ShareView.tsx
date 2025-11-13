@@ -298,7 +298,7 @@ function ShareHeader({
               </Button>
             </OGDialogTrigger>
             <OGDialogContent
-              className="w-11/12 max-w-lg border-border-light bg-surface-primary text-text-primary"
+              className="w-11/12 max-w-lg"
               showCloseButton={true}
               onPointerDownOutside={handleDialogOutside}
               onInteractOutside={handleDialogOutside}
