@@ -13,6 +13,7 @@ const {
   memoryInstructions,
   getTransactionsConfig,
   createMemoryProcessor,
+  filterMalformedContentParts,
 } = require('@librechat/api');
 const {
   Callback,
@@ -611,7 +612,7 @@ class AgentClient extends BaseClient {
       userMCPAuthMap: opts.userMCPAuthMap,
       abortController: opts.abortController,
     });
-    return this.contentParts;
+    return filterMalformedContentParts(this.contentParts);
   }
 
   /**
