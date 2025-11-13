@@ -1,58 +1,30 @@
-import { memo, useMemo, useState, useCallback, useContext } from 'react';
+import { memo, useState, useCallback, useContext } from 'react';
 import Cookies from 'js-cookie';
+import { useRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { buildTree } from 'librechat-data-provider';
 import { CalendarDays, Settings } from 'lucide-react';
-import { useRecoilValue, useRecoilState } from 'recoil';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import {
   Spinner,
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandleAlt,
-  useMediaQuery,
-  ThemeContext,
   Button,
   OGDialog,
+  ThemeContext,
+  OGDialogTitle,
+  useMediaQuery,
+  OGDialogHeader,
   OGDialogContent,
   OGDialogTrigger,
-  OGDialogHeader,
-  OGDialogTitle,
 } from '@librechat/client';
-import type { PointerDownOutsideEvent, FocusOutsideEvent } from '@radix-ui/react-dialog';
-import type { ArtifactsContextValue } from '~/Providers';
 import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/General';
-import { ShareContext, ArtifactsProvider, EditorProvider } from '~/Providers';
-import Artifacts from '~/components/Artifacts/Artifacts';
+import { ShareArtifactsContainer } from './ShareArtifacts';
 import { useLocalize, useDocumentTitle } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
-import { getLatestText, cn } from '~/utils';
+import { ShareContext } from '~/Providers';
 import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';
+import { cn } from '~/utils';
 import store from '~/store';
-
-const DEFAULT_ARTIFACT_PANEL_SIZE = 40;
-const SHARE_ARTIFACT_PANEL_STORAGE_KEY = 'share:artifacts-panel-size';
-const SHARE_ARTIFACT_PANEL_DEFAULT_KEY = 'share:artifacts-panel-size-default';
-
-const getInitialArtifactPanelSize = () => {
-  if (typeof window === 'undefined') {
-    return DEFAULT_ARTIFACT_PANEL_SIZE;
-  }
-
-  const defaultSizeString = String(DEFAULT_ARTIFACT_PANEL_SIZE);
-  const storedDefault = window.localStorage.getItem(SHARE_ARTIFACT_PANEL_DEFAULT_KEY);
-
-  if (storedDefault !== defaultSizeString) {
-    window.localStorage.setItem(SHARE_ARTIFACT_PANEL_DEFAULT_KEY, defaultSizeString);
-    window.localStorage.removeItem(SHARE_ARTIFACT_PANEL_STORAGE_KEY);
-    return DEFAULT_ARTIFACT_PANEL_SIZE;
-  }
-
-  const stored = window.localStorage.getItem(SHARE_ARTIFACT_PANEL_STORAGE_KEY);
-  const parsed = Number(stored);
-  return Number.isFinite(parsed) ? parsed : DEFAULT_ARTIFACT_PANEL_SIZE;
-};
 
 function SharedView() {
   const localize = useLocalize();
@@ -63,8 +35,6 @@ function SharedView() {
   const dataTree = data && buildTree({ messages: data.messages });
   const messagesTree = dataTree?.length === 0 ? null : (dataTree ?? null);
 
-  const artifacts = useRecoilValue(store.artifactsState);
-  const artifactsVisibility = useRecoilValue(store.artifactsVisibility);
   const [langcode, setLangcode] = useRecoilState(store.lang);
 
   // configure document title
@@ -76,31 +46,6 @@ function SharedView() {
   }
 
   useDocumentTitle(docTitle);
-
-  const artifactsContextValue = useMemo<ArtifactsContextValue | null>(() => {
-    if (!data) {
-      return null;
-    }
-
-    const latestMessage =
-      Array.isArray(data.messages) && data.messages.length > 0
-        ? data.messages[data.messages.length - 1]
-        : null;
-
-    const latestMessageText = latestMessage ? getLatestText(latestMessage) : '';
-
-    return {
-      isSubmitting: false,
-      latestMessageId: latestMessage?.messageId ?? null,
-      latestMessageText,
-      conversationId: data.conversationId ?? null,
-    };
-  }, [data]);
-
-  const shouldRenderArtifacts =
-    artifactsVisibility === true &&
-    artifactsContextValue != null &&
-    Object.keys(artifacts ?? {}).length > 0;
 
   const locale =
     langcode ||
@@ -143,25 +88,6 @@ function SharedView() {
     },
     [setLangcode],
   );
-
-  const isSmallScreen = useMediaQuery('(max-width: 1023px)');
-  const [artifactPanelSize, setArtifactPanelSize] = useState(getInitialArtifactPanelSize);
-
-  const normalizedArtifactSize = Math.min(60, Math.max(20, artifactPanelSize));
-
-  const handleLayoutChange = (sizes: number[]) => {
-    if (sizes.length < 2) {
-      return;
-    }
-    const newSize = sizes[1];
-    if (!Number.isFinite(newSize)) {
-      return;
-    }
-    setArtifactPanelSize(newSize);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(SHARE_ARTIFACT_PANEL_STORAGE_KEY, newSize.toString());
-    }
-  };
 
   let content: JSX.Element;
   if (isLoading) {
@@ -208,55 +134,26 @@ function SharedView() {
     </div>
   );
 
-  const renderDesktopLayout = () => {
-    if (!shouldRenderArtifacts || !artifactsContextValue || isSmallScreen) {
-      return null;
-    }
-
-    return (
-      <ResizablePanelGroup
-        direction="horizontal"
-        className="flex h-full w-full"
-        onLayout={handleLayoutChange}
-      >
-        <ResizablePanel
-          defaultSize={100 - normalizedArtifactSize}
-          minSize={35}
-          order={1}
-          id="share-content"
-        >
-          {mainContent}
-        </ResizablePanel>
-        <ResizableHandleAlt withHandle className="bg-border-medium text-text-primary" />
-        <ResizablePanel
-          defaultSize={normalizedArtifactSize}
-          minSize={20}
-          maxSize={60}
-          order={2}
-          id="share-artifacts"
-        >
-          <ShareArtifactsPanel contextValue={artifactsContextValue} />
-        </ResizablePanel>
-      </ResizablePanelGroup>
+  const artifactsContainer =
+    data && data.messages ? (
+      <ShareArtifactsContainer
+        messages={data.messages}
+        conversationId={data.conversationId}
+        mainContent={mainContent}
+      />
+    ) : (
+      mainContent
     );
-  };
 
   return (
     <ShareContext.Provider value={{ isSharedConvo: true }}>
       <div className="relative flex min-h-screen w-full dark:bg-surface-secondary">
         <main className="relative flex w-full grow overflow-hidden dark:bg-surface-secondary">
-          {renderDesktopLayout() ?? mainContent}
+          {artifactsContainer}
         </main>
-        {shouldRenderArtifacts && artifactsContextValue && isSmallScreen && (
-          <ShareArtifactsOverlay contextValue={artifactsContextValue} />
-        )}
       </div>
     </ShareContext.Provider>
   );
-}
-
-interface ShareArtifactsOverlayProps {
-  contextValue: ArtifactsContextValue;
 }
 
 interface ShareHeaderProps {
@@ -281,7 +178,7 @@ function ShareHeader({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const isMobile = useMediaQuery('(max-width: 767px)');
 
-  const handleDialogOutside = useCallback((event: PointerDownOutsideEvent | FocusOutsideEvent) => {
+  const handleDialogOutside = useCallback((event: Event) => {
     const target = event.target as HTMLElement | null;
     if (target?.closest('[data-dialog-ignore="true"]')) {
       event.preventDefault();
@@ -339,30 +236,6 @@ function ShareHeader({
         </div>
       </div>
     </section>
-  );
-}
-
-function ShareArtifactsOverlay({ contextValue }: ShareArtifactsOverlayProps) {
-  return (
-    <div
-      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-full sm:max-w-[420px]"
-      role="complementary"
-      aria-label="Artifacts panel"
-    >
-      <ShareArtifactsPanel contextValue={contextValue} />
-    </div>
-  );
-}
-
-function ShareArtifactsPanel({ contextValue }: ShareArtifactsOverlayProps) {
-  return (
-    <ArtifactsProvider value={contextValue}>
-      <EditorProvider>
-        <div className="flex h-full w-full border-l border-border-light bg-surface-primary shadow-2xl">
-          <Artifacts />
-        </div>
-      </EditorProvider>
-    </ArtifactsProvider>
   );
 }
 
