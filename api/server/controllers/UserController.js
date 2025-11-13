@@ -1,7 +1,6 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, webSearchKeys } = require('@librechat/data-schemas');
 const { Tools, CacheKeys, Constants, FileSources } = require('librechat-data-provider');
 const {
-  webSearchKeys,
   MCPOAuthHandler,
   MCPTokenStorage,
   normalizeHttpError,
@@ -29,6 +28,7 @@ const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getAppConfig } = require('~/server/services/Config');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const { getLogStores } = require('~/cache');
+const { mcpServersRegistry } = require('@librechat/api');
 
 const getUserController = async (req, res) => {
   const appConfig = await getAppConfig({ role: req.user?.role });
@@ -199,7 +199,7 @@ const updateUserPluginsController = async (req, res) => {
       // If auth was updated successfully, disconnect MCP sessions as they might use these credentials
       if (pluginKey.startsWith(Constants.mcp_prefix)) {
         try {
-          const mcpManager = getMCPManager(user.id);
+          const mcpManager = getMCPManager();
           if (mcpManager) {
             // Extract server name from pluginKey (format: "mcp_<serverName>")
             const serverName = pluginKey.replace(Constants.mcp_prefix, '');
@@ -296,10 +296,11 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   }
 
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
-  const mcpManager = getMCPManager(userId);
-  const serverConfig = mcpManager.getRawConfig(serverName) ?? appConfig?.mcpServers?.[serverName];
-
-  if (!mcpManager.getOAuthServers().has(serverName)) {
+  const serverConfig =
+    (await mcpServersRegistry.getServerConfig(serverName, userId)) ??
+    appConfig?.mcpServers?.[serverName];
+  const oauthServers = await mcpServersRegistry.getOAuthServers();
+  if (!oauthServers.has(serverName)) {
     // this server does not use OAuth, so nothing to do here as well
     return;
   }
@@ -328,16 +329,23 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   const revocationEndpointAuthMethodsSupported =
     serverConfig.oauth?.revocation_endpoint_auth_methods_supported ??
     clientMetadata.revocation_endpoint_auth_methods_supported;
+  const oauthHeaders = serverConfig.oauth_headers ?? {};
 
   if (tokens?.access_token) {
     try {
-      await MCPOAuthHandler.revokeOAuthToken(serverName, tokens.access_token, 'access', {
-        serverUrl: serverConfig.url,
-        clientId: clientInfo.client_id,
-        clientSecret: clientInfo.client_secret ?? '',
-        revocationEndpoint,
-        revocationEndpointAuthMethodsSupported,
-      });
+      await MCPOAuthHandler.revokeOAuthToken(
+        serverName,
+        tokens.access_token,
+        'access',
+        {
+          serverUrl: serverConfig.url,
+          clientId: clientInfo.client_id,
+          clientSecret: clientInfo.client_secret ?? '',
+          revocationEndpoint,
+          revocationEndpointAuthMethodsSupported,
+        },
+        oauthHeaders,
+      );
     } catch (error) {
       logger.error(`Error revoking OAuth access token for ${serverName}:`, error);
     }
@@ -345,13 +353,19 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
 
   if (tokens?.refresh_token) {
     try {
-      await MCPOAuthHandler.revokeOAuthToken(serverName, tokens.refresh_token, 'refresh', {
-        serverUrl: serverConfig.url,
-        clientId: clientInfo.client_id,
-        clientSecret: clientInfo.client_secret ?? '',
-        revocationEndpoint,
-        revocationEndpointAuthMethodsSupported,
-      });
+      await MCPOAuthHandler.revokeOAuthToken(
+        serverName,
+        tokens.refresh_token,
+        'refresh',
+        {
+          serverUrl: serverConfig.url,
+          clientId: clientInfo.client_id,
+          clientSecret: clientInfo.client_secret ?? '',
+          revocationEndpoint,
+          revocationEndpointAuthMethodsSupported,
+        },
+        oauthHeaders,
+      );
     } catch (error) {
       logger.error(`Error revoking OAuth refresh token for ${serverName}:`, error);
     }

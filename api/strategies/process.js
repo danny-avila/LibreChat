@@ -5,22 +5,25 @@ const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { updateUser, createUser, getUserById } = require('~/models');
 
 /**
- * Updates the avatar URL of an existing user. If the user's avatar URL does not include the query parameter
+ * Updates the avatar URL and email of an existing user. If the user's avatar URL does not include the query parameter
  * '?manual=true', it updates the user's avatar with the provided URL. For local file storage, it directly updates
  * the avatar URL, while for other storage types, it processes the avatar URL using the specified file strategy.
+ * Also updates the email if it has changed (e.g., when a Google Workspace email is updated).
  *
  * @param {IUser} oldUser - The existing user object that needs to be updated.
  * @param {string} avatarUrl - The new avatar URL to be set for the user.
  * @param {AppConfig} appConfig - The application configuration object.
+ * @param {string} [email] - Optional. The new email address to update if it has changed.
  *
  * @returns {Promise<void>}
- *          The function updates the user's avatar and saves the user object. It does not return any value.
+ *          The function updates the user's avatar and/or email and saves the user object. It does not return any value.
  *
  * @throws {Error} Throws an error if there's an issue saving the updated user object.
  */
-const handleExistingUser = async (oldUser, avatarUrl, appConfig) => {
+const handleExistingUser = async (oldUser, avatarUrl, appConfig, email) => {
   const fileStrategy = appConfig?.fileStrategy ?? process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;
+  const updates = {};
 
   let updatedAvatar = false;
   const hasManualFlag =
@@ -39,7 +42,16 @@ const handleExistingUser = async (oldUser, avatarUrl, appConfig) => {
   }
 
   if (updatedAvatar) {
-    await updateUser(oldUser._id, { avatar: updatedAvatar });
+    updates.avatar = updatedAvatar;
+  }
+
+  /** Update email if it has changed */
+  if (email && email.trim() !== oldUser.email) {
+    updates.email = email.trim();
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await updateUser(oldUser._id, updates);
   }
 };
 

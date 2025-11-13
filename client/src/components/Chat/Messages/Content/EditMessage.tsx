@@ -151,7 +151,7 @@ const EditMessage = ({
 
   return (
     <Container message={message}>
-      <div className="bg-token-main-surface-primary relative flex w-full flex-grow flex-col overflow-hidden rounded-2xl border border-border-medium text-text-primary [&:has(textarea:focus)]:border-border-heavy [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]">
+      <div className="bg-token-main-surface-primary relative mt-2 flex w-full flex-grow flex-col overflow-hidden rounded-2xl border border-border-medium text-text-primary [&:has(textarea:focus)]:border-border-heavy [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]">
         <TextareaAutosize
           {...registerProps}
           ref={(e) => {
@@ -168,6 +168,7 @@ const EditMessage = ({
             'max-h-[65vh] pr-3 md:max-h-[75vh] md:pr-4',
             removeFocusRings,
           )}
+          aria-label={localize('com_ui_message_input')}
           dir={isRTL ? 'rtl' : 'ltr'}
         />
       </div>

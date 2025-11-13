@@ -1,3 +1,4 @@
+const { maxTokensMap } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
 const {
   defaultRate,
@@ -113,6 +114,14 @@ describe('getValueKey', () => {
     expect(getValueKey('gpt-5-nano-2025-01-30-0130')).toBe('gpt-5-nano');
   });
 
+  it('should return "gpt-5-pro" for model type of "gpt-5-pro"', () => {
+    expect(getValueKey('gpt-5-pro-2025-01-30')).toBe('gpt-5-pro');
+    expect(getValueKey('openai/gpt-5-pro')).toBe('gpt-5-pro');
+    expect(getValueKey('gpt-5-pro-0130')).toBe('gpt-5-pro');
+    expect(getValueKey('gpt-5-pro-2025-01-30-0130')).toBe('gpt-5-pro');
+    expect(getValueKey('gpt-5-pro-preview')).toBe('gpt-5-pro');
+  });
+
   it('should return "gpt-4o" for model type of "gpt-4o"', () => {
     expect(getValueKey('gpt-4o-2024-08-06')).toBe('gpt-4o');
     expect(getValueKey('gpt-4o-2024-08-06-0718')).toBe('gpt-4o');
@@ -183,6 +192,16 @@ describe('getValueKey', () => {
     expect(getValueKey('anthropic/claude-3.5-haiku')).toBe('claude-3.5-haiku');
     expect(getValueKey('claude-3.5-haiku-turbo')).toBe('claude-3.5-haiku');
     expect(getValueKey('claude-3.5-haiku-0125')).toBe('claude-3.5-haiku');
+  });
+
+  it('should return expected value keys for "gpt-oss" models', () => {
+    expect(getValueKey('openai/gpt-oss-120b')).toBe('gpt-oss-120b');
+    expect(getValueKey('openai/gpt-oss:120b')).toBe('gpt-oss:120b');
+    expect(getValueKey('openai/gpt-oss-570b')).toBe('gpt-oss');
+    expect(getValueKey('gpt-oss-570b')).toBe('gpt-oss');
+    expect(getValueKey('groq/gpt-oss-1080b')).toBe('gpt-oss');
+    expect(getValueKey('gpt-oss-20b')).toBe('gpt-oss-20b');
+    expect(getValueKey('oai/gpt-oss:20b')).toBe('gpt-oss:20b');
   });
 });
 
@@ -275,6 +294,20 @@ describe('getMultiplier', () => {
     );
     expect(getMultiplier({ model: 'openai/gpt-5-nano', tokenType: 'completion' })).toBe(
       tokenValues['gpt-5-nano'].completion,
+    );
+  });
+
+  it('should return the correct multiplier for gpt-5-pro', () => {
+    const valueKey = getValueKey('gpt-5-pro-2025-01-30');
+    expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-5-pro'].prompt);
+    expect(getMultiplier({ valueKey, tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5-pro'].completion,
+    );
+    expect(getMultiplier({ model: 'gpt-5-pro-preview', tokenType: 'prompt' })).toBe(
+      tokenValues['gpt-5-pro'].prompt,
+    );
+    expect(getMultiplier({ model: 'openai/gpt-5-pro', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5-pro'].completion,
     );
   });
 
@@ -394,6 +427,18 @@ describe('getMultiplier', () => {
       expect(getMultiplier({ model: key, tokenType: 'completion' })).toBe(expectedCompletion);
     });
   });
+
+  it('should return correct multipliers for GLM models', () => {
+    const models = ['glm-4.6', 'glm-4.5v', 'glm-4.5-air', 'glm-4.5', 'glm-4-32b', 'glm-4', 'glm4'];
+    models.forEach((key) => {
+      const expectedPrompt = tokenValues[key].prompt;
+      const expectedCompletion = tokenValues[key].completion;
+      expect(getMultiplier({ valueKey: key, tokenType: 'prompt' })).toBe(expectedPrompt);
+      expect(getMultiplier({ valueKey: key, tokenType: 'completion' })).toBe(expectedCompletion);
+      expect(getMultiplier({ model: key, tokenType: 'prompt' })).toBe(expectedPrompt);
+      expect(getMultiplier({ model: key, tokenType: 'completion' })).toBe(expectedCompletion);
+    });
+  });
 });
 
 describe('AWS Bedrock Model Tests', () => {
@@ -449,6 +494,249 @@ describe('AWS Bedrock Model Tests', () => {
   });
 });
 
+describe('Amazon Model Tests', () => {
+  describe('Amazon Nova Models', () => {
+    it('should return correct pricing for nova-premier', () => {
+      expect(getMultiplier({ model: 'nova-premier', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-premier'].prompt,
+      );
+      expect(getMultiplier({ model: 'nova-premier', tokenType: 'completion' })).toBe(
+        tokenValues['nova-premier'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-premier-v1:0', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-premier'].prompt,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-premier-v1:0', tokenType: 'completion' })).toBe(
+        tokenValues['nova-premier'].completion,
+      );
+    });
+
+    it('should return correct pricing for nova-pro', () => {
+      expect(getMultiplier({ model: 'nova-pro', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-pro'].prompt,
+      );
+      expect(getMultiplier({ model: 'nova-pro', tokenType: 'completion' })).toBe(
+        tokenValues['nova-pro'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-pro-v1:0', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-pro'].prompt,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-pro-v1:0', tokenType: 'completion' })).toBe(
+        tokenValues['nova-pro'].completion,
+      );
+    });
+
+    it('should return correct pricing for nova-lite', () => {
+      expect(getMultiplier({ model: 'nova-lite', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-lite'].prompt,
+      );
+      expect(getMultiplier({ model: 'nova-lite', tokenType: 'completion' })).toBe(
+        tokenValues['nova-lite'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-lite-v1:0', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-lite'].prompt,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-lite-v1:0', tokenType: 'completion' })).toBe(
+        tokenValues['nova-lite'].completion,
+      );
+    });
+
+    it('should return correct pricing for nova-micro', () => {
+      expect(getMultiplier({ model: 'nova-micro', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-micro'].prompt,
+      );
+      expect(getMultiplier({ model: 'nova-micro', tokenType: 'completion' })).toBe(
+        tokenValues['nova-micro'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-micro-v1:0', tokenType: 'prompt' })).toBe(
+        tokenValues['nova-micro'].prompt,
+      );
+      expect(getMultiplier({ model: 'amazon.nova-micro-v1:0', tokenType: 'completion' })).toBe(
+        tokenValues['nova-micro'].completion,
+      );
+    });
+
+    it('should match both short and full model names to the same pricing', () => {
+      const models = ['nova-micro', 'nova-lite', 'nova-pro', 'nova-premier'];
+      const fullModels = [
+        'amazon.nova-micro-v1:0',
+        'amazon.nova-lite-v1:0',
+        'amazon.nova-pro-v1:0',
+        'amazon.nova-premier-v1:0',
+      ];
+
+      models.forEach((shortModel, i) => {
+        const fullModel = fullModels[i];
+        const shortPrompt = getMultiplier({ model: shortModel, tokenType: 'prompt' });
+        const fullPrompt = getMultiplier({ model: fullModel, tokenType: 'prompt' });
+        const shortCompletion = getMultiplier({ model: shortModel, tokenType: 'completion' });
+        const fullCompletion = getMultiplier({ model: fullModel, tokenType: 'completion' });
+
+        expect(shortPrompt).toBe(fullPrompt);
+        expect(shortCompletion).toBe(fullCompletion);
+        expect(shortPrompt).toBe(tokenValues[shortModel].prompt);
+        expect(shortCompletion).toBe(tokenValues[shortModel].completion);
+      });
+    });
+  });
+
+  describe('Amazon Titan Models', () => {
+    it('should return correct pricing for titan-text-premier', () => {
+      expect(getMultiplier({ model: 'titan-text-premier', tokenType: 'prompt' })).toBe(
+        tokenValues['titan-text-premier'].prompt,
+      );
+      expect(getMultiplier({ model: 'titan-text-premier', tokenType: 'completion' })).toBe(
+        tokenValues['titan-text-premier'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.titan-text-premier-v1:0', tokenType: 'prompt' })).toBe(
+        tokenValues['titan-text-premier'].prompt,
+      );
+      expect(
+        getMultiplier({ model: 'amazon.titan-text-premier-v1:0', tokenType: 'completion' }),
+      ).toBe(tokenValues['titan-text-premier'].completion);
+    });
+
+    it('should return correct pricing for titan-text-express', () => {
+      expect(getMultiplier({ model: 'titan-text-express', tokenType: 'prompt' })).toBe(
+        tokenValues['titan-text-express'].prompt,
+      );
+      expect(getMultiplier({ model: 'titan-text-express', tokenType: 'completion' })).toBe(
+        tokenValues['titan-text-express'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.titan-text-express-v1', tokenType: 'prompt' })).toBe(
+        tokenValues['titan-text-express'].prompt,
+      );
+      expect(
+        getMultiplier({ model: 'amazon.titan-text-express-v1', tokenType: 'completion' }),
+      ).toBe(tokenValues['titan-text-express'].completion);
+    });
+
+    it('should return correct pricing for titan-text-lite', () => {
+      expect(getMultiplier({ model: 'titan-text-lite', tokenType: 'prompt' })).toBe(
+        tokenValues['titan-text-lite'].prompt,
+      );
+      expect(getMultiplier({ model: 'titan-text-lite', tokenType: 'completion' })).toBe(
+        tokenValues['titan-text-lite'].completion,
+      );
+      expect(getMultiplier({ model: 'amazon.titan-text-lite-v1', tokenType: 'prompt' })).toBe(
+        tokenValues['titan-text-lite'].prompt,
+      );
+      expect(getMultiplier({ model: 'amazon.titan-text-lite-v1', tokenType: 'completion' })).toBe(
+        tokenValues['titan-text-lite'].completion,
+      );
+    });
+
+    it('should match both short and full model names to the same pricing', () => {
+      const models = ['titan-text-lite', 'titan-text-express', 'titan-text-premier'];
+      const fullModels = [
+        'amazon.titan-text-lite-v1',
+        'amazon.titan-text-express-v1',
+        'amazon.titan-text-premier-v1:0',
+      ];
+
+      models.forEach((shortModel, i) => {
+        const fullModel = fullModels[i];
+        const shortPrompt = getMultiplier({ model: shortModel, tokenType: 'prompt' });
+        const fullPrompt = getMultiplier({ model: fullModel, tokenType: 'prompt' });
+        const shortCompletion = getMultiplier({ model: shortModel, tokenType: 'completion' });
+        const fullCompletion = getMultiplier({ model: fullModel, tokenType: 'completion' });
+
+        expect(shortPrompt).toBe(fullPrompt);
+        expect(shortCompletion).toBe(fullCompletion);
+        expect(shortPrompt).toBe(tokenValues[shortModel].prompt);
+        expect(shortCompletion).toBe(tokenValues[shortModel].completion);
+      });
+    });
+  });
+});
+
+describe('AI21 Model Tests', () => {
+  describe('AI21 J2 Models', () => {
+    it('should return correct pricing for j2-mid', () => {
+      expect(getMultiplier({ model: 'j2-mid', tokenType: 'prompt' })).toBe(
+        tokenValues['j2-mid'].prompt,
+      );
+      expect(getMultiplier({ model: 'j2-mid', tokenType: 'completion' })).toBe(
+        tokenValues['j2-mid'].completion,
+      );
+      expect(getMultiplier({ model: 'ai21.j2-mid-v1', tokenType: 'prompt' })).toBe(
+        tokenValues['j2-mid'].prompt,
+      );
+      expect(getMultiplier({ model: 'ai21.j2-mid-v1', tokenType: 'completion' })).toBe(
+        tokenValues['j2-mid'].completion,
+      );
+    });
+
+    it('should return correct pricing for j2-ultra', () => {
+      expect(getMultiplier({ model: 'j2-ultra', tokenType: 'prompt' })).toBe(
+        tokenValues['j2-ultra'].prompt,
+      );
+      expect(getMultiplier({ model: 'j2-ultra', tokenType: 'completion' })).toBe(
+        tokenValues['j2-ultra'].completion,
+      );
+      expect(getMultiplier({ model: 'ai21.j2-ultra-v1', tokenType: 'prompt' })).toBe(
+        tokenValues['j2-ultra'].prompt,
+      );
+      expect(getMultiplier({ model: 'ai21.j2-ultra-v1', tokenType: 'completion' })).toBe(
+        tokenValues['j2-ultra'].completion,
+      );
+    });
+
+    it('should match both short and full model names to the same pricing', () => {
+      const models = ['j2-mid', 'j2-ultra'];
+      const fullModels = ['ai21.j2-mid-v1', 'ai21.j2-ultra-v1'];
+
+      models.forEach((shortModel, i) => {
+        const fullModel = fullModels[i];
+        const shortPrompt = getMultiplier({ model: shortModel, tokenType: 'prompt' });
+        const fullPrompt = getMultiplier({ model: fullModel, tokenType: 'prompt' });
+        const shortCompletion = getMultiplier({ model: shortModel, tokenType: 'completion' });
+        const fullCompletion = getMultiplier({ model: fullModel, tokenType: 'completion' });
+
+        expect(shortPrompt).toBe(fullPrompt);
+        expect(shortCompletion).toBe(fullCompletion);
+        expect(shortPrompt).toBe(tokenValues[shortModel].prompt);
+        expect(shortCompletion).toBe(tokenValues[shortModel].completion);
+      });
+    });
+  });
+
+  describe('AI21 Jamba Models', () => {
+    it('should return correct pricing for jamba-instruct', () => {
+      expect(getMultiplier({ model: 'jamba-instruct', tokenType: 'prompt' })).toBe(
+        tokenValues['jamba-instruct'].prompt,
+      );
+      expect(getMultiplier({ model: 'jamba-instruct', tokenType: 'completion' })).toBe(
+        tokenValues['jamba-instruct'].completion,
+      );
+      expect(getMultiplier({ model: 'ai21.jamba-instruct-v1:0', tokenType: 'prompt' })).toBe(
+        tokenValues['jamba-instruct'].prompt,
+      );
+      expect(getMultiplier({ model: 'ai21.jamba-instruct-v1:0', tokenType: 'completion' })).toBe(
+        tokenValues['jamba-instruct'].completion,
+      );
+    });
+
+    it('should match both short and full model names to the same pricing', () => {
+      const shortPrompt = getMultiplier({ model: 'jamba-instruct', tokenType: 'prompt' });
+      const fullPrompt = getMultiplier({
+        model: 'ai21.jamba-instruct-v1:0',
+        tokenType: 'prompt',
+      });
+      const shortCompletion = getMultiplier({ model: 'jamba-instruct', tokenType: 'completion' });
+      const fullCompletion = getMultiplier({
+        model: 'ai21.jamba-instruct-v1:0',
+        tokenType: 'completion',
+      });
+
+      expect(shortPrompt).toBe(fullPrompt);
+      expect(shortCompletion).toBe(fullCompletion);
+      expect(shortPrompt).toBe(tokenValues['jamba-instruct'].prompt);
+      expect(shortCompletion).toBe(tokenValues['jamba-instruct'].completion);
+    });
+  });
+});
+
 describe('Deepseek Model Tests', () => {
   const deepseekModels = ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner', 'deepseek.r1'];
 
@@ -477,6 +765,187 @@ describe('Deepseek Model Tests', () => {
     const multiplier = getMultiplier({ valueKey, tokenType: 'prompt' });
     const result = tokenValues[valueKey].prompt && multiplier === tokenValues[valueKey].prompt;
     expect(result).toBe(true);
+  });
+});
+
+describe('Qwen3 Model Tests', () => {
+  describe('Qwen3 Base Models', () => {
+    it('should return correct pricing for qwen3 base pattern', () => {
+      expect(getMultiplier({ model: 'qwen3', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-4b (falls back to qwen3)', () => {
+      expect(getMultiplier({ model: 'qwen3-4b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-4b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-8b', () => {
+      expect(getMultiplier({ model: 'qwen3-8b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-8b'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-8b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-8b'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-14b', () => {
+      expect(getMultiplier({ model: 'qwen3-14b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-14b'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-14b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-14b'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-235b-a22b', () => {
+      expect(getMultiplier({ model: 'qwen3-235b-a22b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-235b-a22b'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-235b-a22b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-235b-a22b'].completion,
+      );
+    });
+
+    it('should handle model name variations with provider prefixes', () => {
+      const models = [
+        { input: 'qwen3', expected: 'qwen3' },
+        { input: 'qwen3-4b', expected: 'qwen3' },
+        { input: 'qwen3-8b', expected: 'qwen3-8b' },
+        { input: 'qwen3-32b', expected: 'qwen3-32b' },
+      ];
+      models.forEach(({ input, expected }) => {
+        const withPrefix = `alibaba/${input}`;
+        expect(getMultiplier({ model: withPrefix, tokenType: 'prompt' })).toBe(
+          tokenValues[expected].prompt,
+        );
+        expect(getMultiplier({ model: withPrefix, tokenType: 'completion' })).toBe(
+          tokenValues[expected].completion,
+        );
+      });
+    });
+  });
+
+  describe('Qwen3 VL (Vision-Language) Models', () => {
+    it('should return correct pricing for qwen3-vl-8b-thinking', () => {
+      expect(getMultiplier({ model: 'qwen3-vl-8b-thinking', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-vl-8b-thinking'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-vl-8b-thinking', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-vl-8b-thinking'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-vl-8b-instruct', () => {
+      expect(getMultiplier({ model: 'qwen3-vl-8b-instruct', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-vl-8b-instruct'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-vl-8b-instruct', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-vl-8b-instruct'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-vl-30b-a3b', () => {
+      expect(getMultiplier({ model: 'qwen3-vl-30b-a3b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-vl-30b-a3b'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-vl-30b-a3b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-vl-30b-a3b'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-vl-235b-a22b', () => {
+      expect(getMultiplier({ model: 'qwen3-vl-235b-a22b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-vl-235b-a22b'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-vl-235b-a22b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-vl-235b-a22b'].completion,
+      );
+    });
+  });
+
+  describe('Qwen3 Specialized Models', () => {
+    it('should return correct pricing for qwen3-max', () => {
+      expect(getMultiplier({ model: 'qwen3-max', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-max'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-max', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-max'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-coder', () => {
+      expect(getMultiplier({ model: 'qwen3-coder', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-coder'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-coder', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-coder'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-coder-plus', () => {
+      expect(getMultiplier({ model: 'qwen3-coder-plus', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-coder-plus'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-coder-plus', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-coder-plus'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-coder-flash', () => {
+      expect(getMultiplier({ model: 'qwen3-coder-flash', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-coder-flash'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-coder-flash', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-coder-flash'].completion,
+      );
+    });
+
+    it('should return correct pricing for qwen3-next-80b-a3b', () => {
+      expect(getMultiplier({ model: 'qwen3-next-80b-a3b', tokenType: 'prompt' })).toBe(
+        tokenValues['qwen3-next-80b-a3b'].prompt,
+      );
+      expect(getMultiplier({ model: 'qwen3-next-80b-a3b', tokenType: 'completion' })).toBe(
+        tokenValues['qwen3-next-80b-a3b'].completion,
+      );
+    });
+  });
+
+  describe('Qwen3 Model Variations', () => {
+    it('should handle all qwen3 models with provider prefixes', () => {
+      const models = ['qwen3', 'qwen3-8b', 'qwen3-max', 'qwen3-coder', 'qwen3-vl-8b-instruct'];
+      const prefixes = ['alibaba', 'qwen', 'openrouter'];
+
+      models.forEach((model) => {
+        prefixes.forEach((prefix) => {
+          const fullModel = `${prefix}/${model}`;
+          expect(getMultiplier({ model: fullModel, tokenType: 'prompt' })).toBe(
+            tokenValues[model].prompt,
+          );
+          expect(getMultiplier({ model: fullModel, tokenType: 'completion' })).toBe(
+            tokenValues[model].completion,
+          );
+        });
+      });
+    });
+
+    it('should handle qwen3-4b falling back to qwen3 base pattern', () => {
+      const testCases = ['qwen3-4b', 'alibaba/qwen3-4b', 'qwen/qwen3-4b-preview'];
+      testCases.forEach((model) => {
+        expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(tokenValues['qwen3'].prompt);
+        expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+          tokenValues['qwen3'].completion,
+        );
+      });
+    });
   });
 });
 
@@ -772,6 +1241,110 @@ describe('Grok Model Tests - Pricing', () => {
   });
 });
 
+describe('GLM Model Tests', () => {
+  it('should return expected value keys for GLM models', () => {
+    expect(getValueKey('glm-4.6')).toBe('glm-4.6');
+    expect(getValueKey('glm-4.5')).toBe('glm-4.5');
+    expect(getValueKey('glm-4.5v')).toBe('glm-4.5v');
+    expect(getValueKey('glm-4.5-air')).toBe('glm-4.5-air');
+    expect(getValueKey('glm-4-32b')).toBe('glm-4-32b');
+    expect(getValueKey('glm-4')).toBe('glm-4');
+    expect(getValueKey('glm4')).toBe('glm4');
+  });
+
+  it('should match GLM model variations with provider prefixes', () => {
+    expect(getValueKey('z-ai/glm-4.6')).toBe('glm-4.6');
+    expect(getValueKey('z-ai/glm-4.5')).toBe('glm-4.5');
+    expect(getValueKey('z-ai/glm-4.5-air')).toBe('glm-4.5-air');
+    expect(getValueKey('z-ai/glm-4.5v')).toBe('glm-4.5v');
+    expect(getValueKey('z-ai/glm-4-32b')).toBe('glm-4-32b');
+
+    expect(getValueKey('zai/glm-4.6')).toBe('glm-4.6');
+    expect(getValueKey('zai/glm-4.5')).toBe('glm-4.5');
+    expect(getValueKey('zai/glm-4.5-air')).toBe('glm-4.5-air');
+    expect(getValueKey('zai/glm-4.5v')).toBe('glm-4.5v');
+
+    expect(getValueKey('zai-org/GLM-4.6')).toBe('glm-4.6');
+    expect(getValueKey('zai-org/GLM-4.5')).toBe('glm-4.5');
+    expect(getValueKey('zai-org/GLM-4.5-Air')).toBe('glm-4.5-air');
+    expect(getValueKey('zai-org/GLM-4.5V')).toBe('glm-4.5v');
+    expect(getValueKey('zai-org/GLM-4-32B-0414')).toBe('glm-4-32b');
+  });
+
+  it('should match GLM model variations with suffixes', () => {
+    expect(getValueKey('glm-4.6-fp8')).toBe('glm-4.6');
+    expect(getValueKey('zai-org/GLM-4.6-FP8')).toBe('glm-4.6');
+    expect(getValueKey('zai-org/GLM-4.5-Air-FP8')).toBe('glm-4.5-air');
+  });
+
+  it('should prioritize more specific GLM model patterns', () => {
+    expect(getValueKey('glm-4.5-air-something')).toBe('glm-4.5-air');
+    expect(getValueKey('glm-4.5-something')).toBe('glm-4.5');
+    expect(getValueKey('glm-4.5v-something')).toBe('glm-4.5v');
+  });
+
+  it('should return correct multipliers for all GLM models', () => {
+    expect(getMultiplier({ model: 'glm-4.6', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4.6'].prompt,
+    );
+    expect(getMultiplier({ model: 'glm-4.6', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4.6'].completion,
+    );
+
+    expect(getMultiplier({ model: 'glm-4.5v', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4.5v'].prompt,
+    );
+    expect(getMultiplier({ model: 'glm-4.5v', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4.5v'].completion,
+    );
+
+    expect(getMultiplier({ model: 'glm-4.5-air', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4.5-air'].prompt,
+    );
+    expect(getMultiplier({ model: 'glm-4.5-air', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4.5-air'].completion,
+    );
+
+    expect(getMultiplier({ model: 'glm-4.5', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4.5'].prompt,
+    );
+    expect(getMultiplier({ model: 'glm-4.5', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4.5'].completion,
+    );
+
+    expect(getMultiplier({ model: 'glm-4-32b', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4-32b'].prompt,
+    );
+    expect(getMultiplier({ model: 'glm-4-32b', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4-32b'].completion,
+    );
+
+    expect(getMultiplier({ model: 'glm-4', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4'].prompt,
+    );
+    expect(getMultiplier({ model: 'glm-4', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4'].completion,
+    );
+
+    expect(getMultiplier({ model: 'glm4', tokenType: 'prompt' })).toBe(tokenValues['glm4'].prompt);
+    expect(getMultiplier({ model: 'glm4', tokenType: 'completion' })).toBe(
+      tokenValues['glm4'].completion,
+    );
+  });
+
+  it('should return correct multipliers for GLM models with provider prefixes', () => {
+    expect(getMultiplier({ model: 'z-ai/glm-4.6', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4.6'].prompt,
+    );
+    expect(getMultiplier({ model: 'zai/glm-4.5-air', tokenType: 'completion' })).toBe(
+      tokenValues['glm-4.5-air'].completion,
+    );
+    expect(getMultiplier({ model: 'zai-org/GLM-4.5V', tokenType: 'prompt' })).toBe(
+      tokenValues['glm-4.5v'].prompt,
+    );
+  });
+});
+
 describe('Claude Model Tests', () => {
   it('should return correct prompt and completion rates for Claude 4 models', () => {
     expect(getMultiplier({ model: 'claude-sonnet-4', tokenType: 'prompt' })).toBe(
@@ -786,6 +1359,37 @@ describe('Claude Model Tests', () => {
     expect(getMultiplier({ model: 'claude-opus-4', tokenType: 'completion' })).toBe(
       tokenValues['claude-opus-4'].completion,
     );
+  });
+
+  it('should return correct prompt and completion rates for Claude Haiku 4.5', () => {
+    expect(getMultiplier({ model: 'claude-haiku-4-5', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-haiku-4-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-haiku-4-5', tokenType: 'completion' })).toBe(
+      tokenValues['claude-haiku-4-5'].completion,
+    );
+  });
+
+  it('should handle Claude Haiku 4.5 model name variations', () => {
+    const modelVariations = [
+      'claude-haiku-4-5',
+      'claude-haiku-4-5-20250420',
+      'claude-haiku-4-5-latest',
+      'anthropic/claude-haiku-4-5',
+      'claude-haiku-4-5/anthropic',
+      'claude-haiku-4-5-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-haiku-4-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-haiku-4-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-haiku-4-5'].completion,
+      );
+    });
   });
 
   it('should handle Claude 4 model name variations with different prefixes and suffixes', () => {
@@ -863,5 +1467,121 @@ describe('Claude Model Tests', () => {
         cacheTokenValues[expectedKey].read,
       );
     });
+  });
+});
+
+describe('tokens.ts and tx.js sync validation', () => {
+  it('should resolve all models in maxTokensMap to pricing via getValueKey', () => {
+    const tokensKeys = Object.keys(maxTokensMap[EModelEndpoint.openAI]);
+    const txKeys = Object.keys(tokenValues);
+
+    const unresolved = [];
+
+    tokensKeys.forEach((key) => {
+      // Skip legacy token size mappings (e.g., '4k', '8k', '16k', '32k')
+      if (/^\d+k$/.test(key)) return;
+
+      // Skip generic pattern keys (end with '-' or ':')
+      if (key.endsWith('-') || key.endsWith(':')) return;
+
+      // Try to resolve via getValueKey
+      const resolvedKey = getValueKey(key);
+
+      // If it resolves and the resolved key has pricing, success
+      if (resolvedKey && txKeys.includes(resolvedKey)) return;
+
+      // If it resolves to a legacy key (4k, 8k, etc), also OK
+      if (resolvedKey && /^\d+k$/.test(resolvedKey)) return;
+
+      // If we get here, this model can't get pricing - flag it
+      unresolved.push({
+        key,
+        resolvedKey: resolvedKey || 'undefined',
+        context: maxTokensMap[EModelEndpoint.openAI][key],
+      });
+    });
+
+    if (unresolved.length > 0) {
+      console.log('\nModels that cannot resolve to pricing via getValueKey:');
+      unresolved.forEach(({ key, resolvedKey, context }) => {
+        console.log(`  - '${key}' → '${resolvedKey}' (context: ${context})`);
+      });
+    }
+
+    expect(unresolved).toEqual([]);
+  });
+
+  it('should not have redundant dated variants with same pricing and context as base model', () => {
+    const txKeys = Object.keys(tokenValues);
+    const redundant = [];
+
+    txKeys.forEach((key) => {
+      // Check if this is a dated variant (ends with -YYYY-MM-DD)
+      if (key.match(/.*-\d{4}-\d{2}-\d{2}$/)) {
+        const baseKey = key.replace(/-\d{4}-\d{2}-\d{2}$/, '');
+
+        if (txKeys.includes(baseKey)) {
+          const variantPricing = tokenValues[key];
+          const basePricing = tokenValues[baseKey];
+          const variantContext = maxTokensMap[EModelEndpoint.openAI][key];
+          const baseContext = maxTokensMap[EModelEndpoint.openAI][baseKey];
+
+          const samePricing =
+            variantPricing.prompt === basePricing.prompt &&
+            variantPricing.completion === basePricing.completion;
+          const sameContext = variantContext === baseContext;
+
+          if (samePricing && sameContext) {
+            redundant.push({
+              key,
+              baseKey,
+              pricing: `${variantPricing.prompt}/${variantPricing.completion}`,
+              context: variantContext,
+            });
+          }
+        }
+      }
+    });
+
+    if (redundant.length > 0) {
+      console.log('\nRedundant dated variants found (same pricing and context as base):');
+      redundant.forEach(({ key, baseKey, pricing, context }) => {
+        console.log(`  - '${key}' → '${baseKey}' (pricing: ${pricing}, context: ${context})`);
+        console.log(`    Can be removed - pattern matching will handle it`);
+      });
+    }
+
+    expect(redundant).toEqual([]);
+  });
+
+  it('should have context windows in tokens.ts for all models with pricing in tx.js (openAI catch-all)', () => {
+    const txKeys = Object.keys(tokenValues);
+    const missingContext = [];
+
+    txKeys.forEach((key) => {
+      // Skip legacy token size mappings (4k, 8k, 16k, 32k)
+      if (/^\d+k$/.test(key)) return;
+
+      // Check if this model has a context window defined
+      const context = maxTokensMap[EModelEndpoint.openAI][key];
+
+      if (!context) {
+        const pricing = tokenValues[key];
+        missingContext.push({
+          key,
+          pricing: `${pricing.prompt}/${pricing.completion}`,
+        });
+      }
+    });
+
+    if (missingContext.length > 0) {
+      console.log('\nModels with pricing but missing context in tokens.ts:');
+      missingContext.forEach(({ key, pricing }) => {
+        console.log(`  - '${key}' (pricing: ${pricing})`);
+        console.log(`    Add to tokens.ts openAIModels/bedrockModels/etc.`);
+      });
+    }
+
+    expect(missingContext).toEqual([]);
   });
 });

@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react';
+// @ts-ignore
 import path from 'path';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vite';
@@ -7,19 +8,23 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { VitePWA } from 'vite-plugin-pwa';
 
 // https://vitejs.dev/config/
+const backendPort = process.env.BACKEND_PORT && Number(process.env.BACKEND_PORT) || 3080;
+const backendURL = process.env.HOST ? `http://${process.env.HOST}:${backendPort}` : `http://localhost:${backendPort}`;
+
 export default defineConfig(({ command }) => ({
   base: '',
   server: {
-    host: 'localhost',
-    port: 3090,
+    allowedHosts: process.env.VITE_ALLOWED_HOSTS && process.env.VITE_ALLOWED_HOSTS.split(',') || [],
+    host: process.env.HOST || 'localhost',
+    port: process.env.PORT && Number(process.env.PORT) || 3090,
     strictPort: false,
     proxy: {
       '/api': {
-        target: 'http://localhost:3080',
+        target: backendURL,
         changeOrigin: true,
       },
       '/oauth': {
-        target: 'http://localhost:3080',
+        target: backendURL,
         changeOrigin: true,
       },
     },
@@ -259,6 +264,7 @@ export default defineConfig(({ command }) => ({
 interface SourcemapExclude {
   excludeNodeModules?: boolean;
 }
+
 export function sourcemapExclude(opts?: SourcemapExclude): Plugin {
   return {
     name: 'sourcemap-exclude',

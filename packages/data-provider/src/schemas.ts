@@ -31,6 +31,60 @@ export enum EModelEndpoint {
   gptPlugins = 'gptPlugins',
 }
 
+/** Mirrors `@librechat/agents` providers */
+export enum Providers {
+  OPENAI = 'openAI',
+  ANTHROPIC = 'anthropic',
+  AZURE = 'azureOpenAI',
+  GOOGLE = 'google',
+  VERTEXAI = 'vertexai',
+  BEDROCK = 'bedrock',
+  MISTRALAI = 'mistralai',
+  MISTRAL = 'mistral',
+  OLLAMA = 'ollama',
+  DEEPSEEK = 'deepseek',
+  OPENROUTER = 'openrouter',
+  XAI = 'xai',
+}
+
+/**
+ * Endpoints that support direct PDF processing in the agent system
+ */
+export const documentSupportedProviders = new Set<string>([
+  EModelEndpoint.anthropic,
+  EModelEndpoint.openAI,
+  EModelEndpoint.custom,
+  EModelEndpoint.azureOpenAI,
+  EModelEndpoint.google,
+  Providers.VERTEXAI,
+  Providers.MISTRALAI,
+  Providers.MISTRAL,
+  Providers.OLLAMA,
+  Providers.DEEPSEEK,
+  Providers.OPENROUTER,
+  Providers.XAI,
+]);
+
+const openAILikeProviders = new Set<string>([
+  Providers.OPENAI,
+  Providers.AZURE,
+  EModelEndpoint.custom,
+  Providers.MISTRALAI,
+  Providers.MISTRAL,
+  Providers.OLLAMA,
+  Providers.DEEPSEEK,
+  Providers.OPENROUTER,
+  Providers.XAI,
+]);
+
+export const isOpenAILikeProvider = (provider?: string | null): boolean => {
+  return openAILikeProviders.has(provider ?? '');
+};
+
+export const isDocumentSupportedProvider = (provider?: string | null): boolean => {
+  return documentSupportedProviders.has(provider ?? '');
+};
+
 export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.agents,
   EModelEndpoint.openAI,
@@ -176,6 +230,7 @@ export const defaultAgentFormValues = {
   tools: [],
   provider: {},
   projectIds: [],
+  edges: [],
   artifacts: '',
   /** @deprecated Use ACL permissions instead */
   isCollaborative: false,
@@ -284,7 +339,7 @@ export const googleSettings = {
   },
   thinkingBudget: {
     min: -1 as const,
-    max: 32768 as const,
+    max: 32000 as const,
     step: 1 as const,
     /** `-1` = Dynamic Thinking, meaning the model will adjust
      * the budget based on the complexity of the request.
@@ -294,6 +349,8 @@ export const googleSettings = {
 };
 
 const ANTHROPIC_MAX_OUTPUT = 128000 as const;
+const CLAUDE_4_64K_MAX_OUTPUT = 64000 as const;
+const CLAUDE_32K_MAX_OUTPUT = 32000 as const;
 const DEFAULT_MAX_OUTPUT = 8192 as const;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096 as const;
 export const anthropicSettings = {
@@ -324,18 +381,27 @@ export const anthropicSettings = {
     step: 1 as const,
     default: DEFAULT_MAX_OUTPUT,
     reset: (modelName: string) => {
-      if (/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) {
-        return DEFAULT_MAX_OUTPUT;
+      if (/claude-(?:sonnet|haiku)[-.]?[4-9]/.test(modelName)) {
+        return CLAUDE_4_64K_MAX_OUTPUT;
       }
 
-      return 4096;
+      if (/claude-opus[-.]?[4-9]/.test(modelName)) {
+        return CLAUDE_32K_MAX_OUTPUT;
+      }
+
+      return DEFAULT_MAX_OUTPUT;
     },
     set: (value: number, modelName: string) => {
-      if (
-        !(/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) &&
-        value > LEGACY_ANTHROPIC_MAX_OUTPUT
-      ) {
-        return LEGACY_ANTHROPIC_MAX_OUTPUT;
+      if (/claude-(?:sonnet|haiku)[-.]?[4-9]/.test(modelName) && value > CLAUDE_4_64K_MAX_OUTPUT) {
+        return CLAUDE_4_64K_MAX_OUTPUT;
+      }
+
+      if (/claude-(?:opus|haiku)[-.]?[4-9]/.test(modelName) && value > CLAUDE_32K_MAX_OUTPUT) {
+        return CLAUDE_32K_MAX_OUTPUT;
+      }
+
+      if (value > ANTHROPIC_MAX_OUTPUT) {
+        return ANTHROPIC_MAX_OUTPUT;
       }
 
       return value;

@@ -40,8 +40,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
           e.stopPropagation();
           onRename();
         }}
-        role="button"
-        aria-label={isSmallScreen ? undefined : title || localize('com_ui_untitled')}
+        aria-label={title || localize('com_ui_untitled')}
       >
         {title || localize('com_ui_untitled')}
       </div>

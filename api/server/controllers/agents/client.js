@@ -3,22 +3,20 @@ const { logger } = require('@librechat/data-schemas');
 const { DynamicStructuredTool } = require('@langchain/core/tools');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const {
-  sendEvent,
   createRun,
   Tokenizer,
   checkAccess,
   logAxiosError,
+  sanitizeTitle,
   resolveHeaders,
   getBalanceConfig,
   memoryInstructions,
-  formatContentStrings,
   getTransactionsConfig,
   createMemoryProcessor,
 } = require('@librechat/api');
 const {
   Callback,
   Providers,
-  GraphEvents,
   TitleMethod,
   formatMessage,
   formatAgentMessages,
@@ -37,12 +35,12 @@ const {
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
+const { createContextHandlers } = require('~/app/clients/prompts');
 const { checkCapability } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
@@ -78,8 +76,6 @@ const payloadParser = ({ req, agent, endpoint }) => {
   }
   return req.body.endpointOption.model_parameters;
 };
-
-const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];
 
 function createTokenCounter(encoding) {
   return function (message) {
@@ -211,16 +207,16 @@ class AgentClient extends BaseClient {
    * @returns {Promise<Array<Partial<MongoFile>>>}
    */
   async addImageURLs(message, attachments) {
-    const { files, text, image_urls } = await encodeAndFormat(
+    const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
-      this.options.agent.provider,
+      {
+        provider: this.options.agent.provider,
+        endpoint: this.options.endpoint,
+      },
       VisionModes.agents,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;
-    if (text && text.length) {
-      message.ocr = text;
-    }
     return files;
   }
 
@@ -248,19 +244,18 @@ class AgentClient extends BaseClient {
 
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
+      const latestMessage = orderedMessages[orderedMessages.length - 1];
 
       if (this.message_file_map) {
-        this.message_file_map[orderedMessages[orderedMessages.length - 1].messageId] = attachments;
+        this.message_file_map[latestMessage.messageId] = attachments;
       } else {
         this.message_file_map = {
-          [orderedMessages[orderedMessages.length - 1].messageId]: attachments,
+          [latestMessage.messageId]: attachments,
         };
       }
 
-      const files = await this.addImageURLs(
-        orderedMessages[orderedMessages.length - 1],
-        attachments,
-      );
+      await this.addFileContextToMessage(latestMessage, attachments);
+      const files = await this.processAttachments(latestMessage, attachments);
 
       this.options.attachments = files;
     }
@@ -280,21 +275,21 @@ class AgentClient extends BaseClient {
         assistantName: this.options?.modelLabel,
       });
 
-      if (message.ocr && i !== orderedMessages.length - 1) {
+      if (message.fileContext && i !== orderedMessages.length - 1) {
         if (typeof formattedMessage.content === 'string') {
-          formattedMessage.content = message.ocr + '\n' + formattedMessage.content;
+          formattedMessage.content = message.fileContext + '\n' + formattedMessage.content;
         } else {
           const textPart = formattedMessage.content.find((part) => part.type === 'text');
           textPart
-            ? (textPart.text = message.ocr + '\n' + textPart.text)
-            : formattedMessage.content.unshift({ type: 'text', text: message.ocr });
+            ? (textPart.text = message.fileContext + '\n' + textPart.text)
+            : formattedMessage.content.unshift({ type: 'text', text: message.fileContext });
         }
-      } else if (message.ocr && i === orderedMessages.length - 1) {
-        systemContent = [systemContent, message.ocr].join('\n');
+      } else if (message.fileContext && i === orderedMessages.length - 1) {
+        systemContent = [systemContent, message.fileContext].join('\n');
       }
 
       const needsTokenCount =
-        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.ocr;
+        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.fileContext;
 
       /* If tokens were never counted, or, is a Vision request and the message has files, count again */
       if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
@@ -779,6 +774,7 @@ class AgentClient extends BaseClient {
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
       config = {
+        runName: 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
           last_agent_index: this.agentConfigs?.size ?? 0,
@@ -805,137 +801,81 @@ class AgentClient extends BaseClient {
       );
 
       /**
-       *
-       * @param {Agent} agent
        * @param {BaseMessage[]} messages
-       * @param {number} [i]
-       * @param {TMessageContentParts[]} [contentData]
-       * @param {Record<string, number>} [currentIndexCountMap]
        */
-      const runAgent = async (agent, _messages, i = 0, contentData = [], _currentIndexCountMap) => {
-        config.configurable.model = agent.model_parameters.model;
-        const currentIndexCountMap = _currentIndexCountMap ?? indexTokenCountMap;
-        if (i > 0) {
-          this.model = agent.model_parameters.model;
+      const runAgents = async (messages) => {
+        const agents = [this.options.agent];
+        if (
+          this.agentConfigs &&
+          this.agentConfigs.size > 0 &&
+          ((this.options.agent.edges?.length ?? 0) > 0 ||
+            (await checkCapability(this.options.req, AgentCapabilities.chain)))
+        ) {
+          agents.push(...this.agentConfigs.values());
         }
-        if (i > 0 && config.signal == null) {
-          config.signal = abortController.signal;
+
+        if (agents[0].recursion_limit && typeof agents[0].recursion_limit === 'number') {
+          config.recursionLimit = agents[0].recursion_limit;
         }
-        if (agent.recursion_limit && typeof agent.recursion_limit === 'number') {
-          config.recursionLimit = agent.recursion_limit;
-        }
+
         if (
           agentsEConfig?.maxRecursionLimit &&
           config.recursionLimit > agentsEConfig?.maxRecursionLimit
         ) {
           config.recursionLimit = agentsEConfig?.maxRecursionLimit;
         }
-        config.configurable.agent_id = agent.id;
-        config.configurable.name = agent.name;
-        config.configurable.agent_index = i;
-        const noSystemMessages = noSystemModelRegex.some((regex) =>
-          agent.model_parameters.model.match(regex),
-        );
 
-        const systemMessage = Object.values(agent.toolContextMap ?? {})
-          .join('\n')
-          .trim();
+        // TODO: needs to be added as part of AgentContext initialization
+        // const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];
+        // const noSystemMessages = noSystemModelRegex.some((regex) =>
+        //   agent.model_parameters.model.match(regex),
+        // );
+        // if (noSystemMessages === true && systemContent?.length) {
+        //   const latestMessageContent = _messages.pop().content;
+        //   if (typeof latestMessageContent !== 'string') {
+        //     latestMessageContent[0].text = [systemContent, latestMessageContent[0].text].join('\n');
+        //     _messages.push(new HumanMessage({ content: latestMessageContent }));
+        //   } else {
+        //     const text = [systemContent, latestMessageContent].join('\n');
+        //     _messages.push(new HumanMessage(text));
+        //   }
+        // }
+        // let messages = _messages;
+        // if (agent.useLegacyContent === true) {
+        //   messages = formatContentStrings(messages);
+        // }
+        // if (
+        //   agent.model_parameters?.clientOptions?.defaultHeaders?.['anthropic-beta']?.includes(
+        //     'prompt-caching',
+        //   )
+        // ) {
+        //   messages = addCacheControl(messages);
+        // }
 
-        let systemContent = [
-          systemMessage,
-          agent.instructions ?? '',
-          i !== 0 ? (agent.additional_instructions ?? '') : '',
-        ]
-          .join('\n')
-          .trim();
-
-        if (noSystemMessages === true) {
-          agent.instructions = undefined;
-          agent.additional_instructions = undefined;
-        } else {
-          agent.instructions = systemContent;
-          agent.additional_instructions = undefined;
-        }
-
-        if (noSystemMessages === true && systemContent?.length) {
-          const latestMessageContent = _messages.pop().content;
-          if (typeof latestMessageContent !== 'string') {
-            latestMessageContent[0].text = [systemContent, latestMessageContent[0].text].join('\n');
-            _messages.push(new HumanMessage({ content: latestMessageContent }));
-          } else {
-            const text = [systemContent, latestMessageContent].join('\n');
-            _messages.push(new HumanMessage(text));
-          }
-        }
-
-        let messages = _messages;
-        if (agent.useLegacyContent === true) {
-          messages = formatContentStrings(messages);
-        }
-        const defaultHeaders =
-          agent.model_parameters?.clientOptions?.defaultHeaders ??
-          agent.model_parameters?.configuration?.defaultHeaders;
-        if (defaultHeaders?.['anthropic-beta']?.includes('prompt-caching')) {
-          messages = addCacheControl(messages);
-        }
-
-        if (i === 0) {
-          memoryPromise = this.runMemory(messages);
-        }
-
-        /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
-         *  non-custom endpoints, needs consideration of varying provider header configs.
-         */
-        if (agent.model_parameters?.configuration?.defaultHeaders != null) {
-          agent.model_parameters.configuration.defaultHeaders = resolveHeaders({
-            headers: agent.model_parameters.configuration.defaultHeaders,
-            body: config.configurable.requestBody,
-          });
-        }
+        memoryPromise = this.runMemory(messages);
 
         run = await createRun({
-          agent,
-          req: this.options.req,
+          agents,
+          indexTokenCountMap,
           runId: this.responseMessageId,
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
+          requestBody: config.configurable.requestBody,
+          tokenCounter: createTokenCounter(this.getEncoding()),
         });
 
         if (!run) {
           throw new Error('Failed to create run');
         }
 
-        if (i === 0) {
-          this.run = run;
-        }
-
-        if (contentData.length) {
-          const agentUpdate = {
-            type: ContentTypes.AGENT_UPDATE,
-            [ContentTypes.AGENT_UPDATE]: {
-              index: contentData.length,
-              runId: this.responseMessageId,
-              agentId: agent.id,
-            },
-          };
-          const streamData = {
-            event: GraphEvents.ON_AGENT_UPDATE,
-            data: agentUpdate,
-          };
-          this.options.aggregateContent(streamData);
-          sendEvent(this.options.res, streamData);
-          contentData.push(agentUpdate);
-          run.Graph.contentData = contentData;
-        }
-
+        this.run = run;
         if (userMCPAuthMap != null) {
           config.configurable.userMCPAuthMap = userMCPAuthMap;
         }
+
+        /** @deprecated Agent Chain */
+        config.configurable.last_agent_id = agents[agents.length - 1].id;
         await run.processStream({ messages }, config, {
-          keepContent: i !== 0,
-          tokenCounter: createTokenCounter(this.getEncoding()),
-          indexTokenCountMap: currentIndexCountMap,
-          maxContextTokens: agent.maxContextTokens,
           callbacks: {
             [Callback.TOOL_ERROR]: logToolError,
           },
@@ -944,108 +884,21 @@ class AgentClient extends BaseClient {
         config.signal = null;
       };
 
-      await runAgent(this.options.agent, initialMessages);
-      let finalContentStart = 0;
-      if (
-        this.agentConfigs &&
-        this.agentConfigs.size > 0 &&
-        (await checkCapability(this.options.req, AgentCapabilities.chain))
-      ) {
-        const windowSize = 5;
-        let latestMessage = initialMessages.pop().content;
-        if (typeof latestMessage !== 'string') {
-          latestMessage = latestMessage[0].text;
-        }
-        let i = 1;
-        let runMessages = [];
-
-        const windowIndexCountMap = {};
-        const windowMessages = initialMessages.slice(-windowSize);
-        let currentIndex = 4;
-        for (let i = initialMessages.length - 1; i >= 0; i--) {
-          windowIndexCountMap[currentIndex] = indexTokenCountMap[i];
-          currentIndex--;
-          if (currentIndex < 0) {
-            break;
-          }
-        }
-        const encoding = this.getEncoding();
-        const tokenCounter = createTokenCounter(encoding);
-        for (const [agentId, agent] of this.agentConfigs) {
-          if (abortController.signal.aborted === true) {
-            break;
-          }
-          const currentRun = await run;
-
-          if (
-            i === this.agentConfigs.size &&
-            config.configurable.hide_sequential_outputs === true
-          ) {
-            const content = this.contentParts.filter(
-              (part) => part.type === ContentTypes.TOOL_CALL,
-            );
-
-            this.options.res.write(
-              `event: message\ndata: ${JSON.stringify({
-                event: 'on_content_update',
-                data: {
-                  runId: this.responseMessageId,
-                  content,
-                },
-              })}\n\n`,
-            );
-          }
-          const _runMessages = currentRun.Graph.getRunMessages();
-          finalContentStart = this.contentParts.length;
-          runMessages = runMessages.concat(_runMessages);
-          const contentData = currentRun.Graph.contentData.slice();
-          const bufferString = getBufferString([new HumanMessage(latestMessage), ...runMessages]);
-          if (i === this.agentConfigs.size) {
-            logger.debug(`SEQUENTIAL AGENTS: Last buffer string:\n${bufferString}`);
-          }
-          try {
-            const contextMessages = [];
-            const runIndexCountMap = {};
-            for (let i = 0; i < windowMessages.length; i++) {
-              const message = windowMessages[i];
-              const messageType = message._getType();
-              if (
-                (!agent.tools || agent.tools.length === 0) &&
-                (messageType === 'tool' || (message.tool_calls?.length ?? 0) > 0)
-              ) {
-                continue;
-              }
-              runIndexCountMap[contextMessages.length] = windowIndexCountMap[i];
-              contextMessages.push(message);
-            }
-            const bufferMessage = new HumanMessage(bufferString);
-            runIndexCountMap[contextMessages.length] = tokenCounter(bufferMessage);
-            const currentMessages = [...contextMessages, bufferMessage];
-            await runAgent(agent, currentMessages, i, contentData, runIndexCountMap);
-          } catch (err) {
-            logger.error(
-              `[api/server/controllers/agents/client.js #chatCompletion] Error running agent ${agentId} (${i})`,
-              err,
-            );
-          }
-          i++;
-        }
+      await runAgents(initialMessages);
+      /** @deprecated Agent Chain */
+      if (config.configurable.hide_sequential_outputs) {
+        this.contentParts = this.contentParts.filter((part, index) => {
+          // Include parts that are either:
+          // 1. At or after the finalContentStart index
+          // 2. Of type tool_call
+          // 3. Have tool_call_ids property
+          return (
+            index >= this.contentParts.length - 1 ||
+            part.type === ContentTypes.TOOL_CALL ||
+            part.tool_call_ids
+          );
+        });
       }
-
-      /** Note: not implemented */
-      if (config.configurable.hide_sequential_outputs !== true) {
-        finalContentStart = 0;
-      }
-
-      this.contentParts = this.contentParts.filter((part, index) => {
-        // Include parts that are either:
-        // 1. At or after the finalContentStart index
-        // 2. Of type tool_call
-        // 3. Have tool_call_ids property
-        return (
-          index >= finalContentStart || part.type === ContentTypes.TOOL_CALL || part.tool_call_ids
-        );
-      });
 
       try {
         const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
@@ -1116,8 +969,8 @@ class AgentClient extends BaseClient {
       appConfig.endpoints?.[endpoint] ??
       titleProviderConfig.customEndpointConfig;
     if (!endpointConfig) {
-      logger.warn(
-        '[api/server/controllers/agents/client.js #titleConvo] Error getting endpoint config',
+      logger.debug(
+        `[api/server/controllers/agents/client.js #titleConvo] No endpoint config for "${endpoint}"`,
       );
     }
 
@@ -1237,6 +1090,10 @@ class AgentClient extends BaseClient {
               handleLLMEnd,
             },
           ],
+          configurable: {
+            thread_id: this.conversationId,
+            user_id: this.user ?? this.options.req.user?.id,
+          },
         },
       });
 
@@ -1274,7 +1131,7 @@ class AgentClient extends BaseClient {
         );
       });
 
-      return titleResult.title;
+      return sanitizeTitle(titleResult.title);
     } catch (err) {
       logger.error('[api/server/controllers/agents/client.js #titleConvo] Error', err);
       return;
