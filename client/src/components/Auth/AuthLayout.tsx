@@ -80,7 +80,7 @@ function AuthLayout({
             <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
               {startupConfig?.appTitle.split('|')[0]}
             </h1>
-            <p className="text-center mb-4">{startupConfig?.interface?.customWelcome}</p>
+            <p className="mb-4 my-4 text-center text-sm font-light text-gray-700 dark:text-white">{startupConfig?.interface?.customWelcome}</p>
             <h2
               className="mb-4 text-center text-2xl font-semibold text-black dark:text-white"
               style={{ userSelect: 'none' }}

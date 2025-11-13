@@ -8,6 +8,7 @@ import {
   useCallback,
   createContext,
 } from 'react';
+import axios from 'axios';
 import { debounce } from 'lodash';
 import { useRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
@@ -26,6 +27,7 @@ import useTimeout from './useTimeout';
 import store from '~/store';
 import { processMessages } from '../../../api/server/services/Threads/manage';
 
+const AppConfigContext = createContext<any>(undefined);
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
 const AuthContextProvider = ({
@@ -35,6 +37,13 @@ const AuthContextProvider = ({
   authConfig?: TAuthConfig;
   children: ReactNode;
 }) => {
+  const [appConfig, setAppConfig] = useState<any>(null);
+  // Load appConfig from backend on mount
+  useEffect(() => {
+    axios.get('/api/config')
+      .then((res) => setAppConfig(res.data))
+      .catch(() => setAppConfig(null));
+  }, []);
   const [user, setUser] = useRecoilState(store.user);
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -154,8 +163,7 @@ const AuthContextProvider = ({
           if (authConfig?.test === true) {
             return;
           }
-          console.log('authConfig', authConfig);
-          navigate((authConfig?.homeRoute) ? authConfig.homeRoute : '/login');
+          navigate((appConfig?.homeRoute) ? appConfig.homeRoute : '/login');
         }
       },
       onError: (error) => {
@@ -231,8 +239,13 @@ const AuthContextProvider = ({
     [user, error, isAuthenticated, token, userRole, adminRole, subscriptionStatus],
   );
 
-  return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;
+  return (
+    <AppConfigContext.Provider value={appConfig}>
+      <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>
+    </AppConfigContext.Provider>
+  );
 };
+
 
 const useAuthContext = () => {
   const context = useContext(AuthContext);
@@ -242,4 +255,8 @@ const useAuthContext = () => {
   return context;
 };
 
-export { AuthContextProvider, useAuthContext, AuthContext };
+const useAppConfig = () => {
+  return useContext(AppConfigContext);
+};
+
+export { AuthContextProvider, useAuthContext, AuthContext, useAppConfig };

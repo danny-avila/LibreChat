@@ -34,7 +34,10 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   const localize = useLocalize();
   const [activeTab, setActiveTab] = useState(SettingsTabValues.GENERAL);
   const tabRefs = useRef({});
+  const { user, isAuthenticated, logout } = useAuthContext();
+  const hasSubscription = user?.subscriptionStatus === 'active'  
   let { hasAnyPersonalizationFeature, hasMemoryOptOut } = usePersonalizationAccess();
+
 
   if (startupConfig?.settingsPersonalization === false) {
     hasAnyPersonalizationFeature = false;
@@ -138,7 +141,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       icon: <UserIcon />,
       label: 'com_nav_setting_account',
     },
-    ...(startupConfig?.stripeSubscriptionsEnabled
+    ...(startupConfig?.stripeSubscriptionsEnabled && hasSubscription 
       ? [
           {
             value: SettingsTabValues.SUBSCRIPTION,
