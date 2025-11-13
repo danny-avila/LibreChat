@@ -817,6 +817,7 @@
   "com_ui_create_memory": "Create Memory",
   "com_ui_create_new_agent": "Create New Agent",
   "com_ui_create_prompt": "Create Prompt",
+  "com_ui_create_prompt_page": "New Prompt Configuration Page",
   "com_ui_creating_image": "Creating image. May take a moment",
   "com_ui_current": "Current",
   "com_ui_currently_production": "Currently in production",
