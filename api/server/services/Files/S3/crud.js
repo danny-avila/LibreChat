@@ -11,8 +11,10 @@ const {
   DeleteObjectCommand,
 } = require('@aws-sdk/client-s3');
 
+const endpoint = process.env.AWS_ENDPOINT_URL;
 const bucketName = process.env.AWS_BUCKET_NAME;
 const defaultBasePath = 'images';
+const forcePathStyle = ['1', 'true', 'yes'].includes(process.env.AWS_FORCE_PATH_STYLE?.toLowerCase());
 
 let s3UrlExpirySeconds = 2 * 60; // 2 minutes
 let s3RefreshExpiryMs = null;
@@ -252,12 +254,25 @@ function extractKeyFromS3Url(fileUrlOrKey) {
 
   try {
     const url = new URL(fileUrlOrKey);
+
+    if (endpoint?.trim() && forcePathStyle) {
+      const endpointUrl = new URL(endpoint)
+      const startPos = endpointUrl.pathname.length + (endpointUrl.pathname.endsWith('/') ? 2 : 1) + bucketName.length + 1;
+      return url.pathname.substring(startPos);
+    }
+
     return url.pathname.substring(1);
   } catch (error) {
     const parts = fileUrlOrKey.split('/');
 
     if (parts.length >= 3 && !fileUrlOrKey.startsWith('http') && !fileUrlOrKey.startsWith('/')) {
       return fileUrlOrKey;
+    }
+
+    if (endpoint?.trim() && forcePathStyle) {
+      const endpointUrl = new URL(endpoint)
+      const startPos = endpointUrl.pathname.length + (endpointUrl.pathname.endsWith('/') ? 2 : 1) + bucketName.length + 1;
+      return fileUrlOrKey.substring(startPos);
     }
 
     return fileUrlOrKey.startsWith('/') ? fileUrlOrKey.substring(1) : fileUrlOrKey;
