@@ -28,29 +28,20 @@ export function ArtifactsProvider({ children, value }: ArtifactsProviderProps) {
     } as TMessage);
   }, [latestMessage?.messageId, latestMessage?.text, latestMessage?.content]);
 
+  const defaultContextValue = useMemo<ArtifactsContextValue>(
+    () => ({
+      isSubmitting,
+      latestMessageText: chatLatestMessageText,
+      latestMessageId: latestMessage?.messageId ?? null,
+      conversationId: conversation?.conversationId ?? null,
+    }),
+    [isSubmitting, chatLatestMessageText, latestMessage?.messageId, conversation?.conversationId],
+  );
+
   /** Context value only created when relevant values change */
   const contextValue = useMemo<ArtifactsContextValue>(
-    () =>
-      value
-        ? {
-            isSubmitting: value.isSubmitting ?? false,
-            latestMessageText: value.latestMessageText ?? '',
-            latestMessageId: value.latestMessageId ?? null,
-            conversationId: value.conversationId ?? null,
-          }
-        : {
-            isSubmitting,
-            latestMessageText: chatLatestMessageText,
-            latestMessageId: latestMessage?.messageId ?? null,
-            conversationId: conversation?.conversationId ?? null,
-          },
-    [
-      value,
-      isSubmitting,
-      chatLatestMessageText,
-      latestMessage?.messageId,
-      conversation?.conversationId,
-    ],
+    () => (value ? { ...defaultContextValue, ...value } : defaultContextValue),
+    [defaultContextValue, value],
   );
 
   return <ArtifactsContext.Provider value={contextValue}>{children}</ArtifactsContext.Provider>;

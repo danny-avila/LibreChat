@@ -19,7 +19,6 @@ import { useParams } from 'react-router-dom';
 import type { PointerDownOutsideEvent, FocusOutsideEvent } from '@radix-ui/react-dialog';
 import { CalendarDays, Settings } from 'lucide-react';
 import { buildTree } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import { useLocalize, useDocumentTitle } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
@@ -32,7 +31,6 @@ import store from '~/store';
 import { getLatestText, cn } from '~/utils';
 import type { ArtifactsContextValue } from '~/Providers';
 
-const ARTIFACT_PANEL_WIDTH = 420;
 const DEFAULT_ARTIFACT_PANEL_SIZE = 32;
 const SHARE_ARTIFACT_PANEL_STORAGE_KEY = 'share:artifacts-panel-size';
 
@@ -69,13 +67,7 @@ function SharedView() {
         ? data.messages[data.messages.length - 1]
         : null;
 
-    const latestMessageText = latestMessage
-      ? getLatestText({
-          messageId: latestMessage?.messageId ?? null,
-          text: latestMessage?.text ?? null,
-          content: latestMessage?.content ?? null,
-        } as TMessage)
-      : '';
+    const latestMessageText = latestMessage ? getLatestText(latestMessage) : '';
 
     return {
       isSubmitting: false,
@@ -340,10 +332,9 @@ function ShareHeader({
 function ShareArtifactsOverlay({ contextValue }: ShareArtifactsOverlayProps) {
   return (
     <div
-      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-full sm:max-w-[480px]"
+      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-full sm:max-w-[420px]"
       role="complementary"
       aria-label="Artifacts panel"
-      style={{ maxWidth: `${ARTIFACT_PANEL_WIDTH}px` }}
     >
       <ShareArtifactsPanel contextValue={contextValue} />
     </div>
