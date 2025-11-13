@@ -7,33 +7,8 @@
   --radius:       12px;
   --shadow:       0 8px 24px rgba(30,95,164,0.08);
   --max-width:    1100px;
-
-  --blue-50:  #eff6ff;
-  --blue-100: #dbeafe;
-  --blue-200: #bfdbfe;
-  --blue-300: #93c5fd;
-  --blue-400: #60a5fa;
-  --blue-500: #3b82f6;
-  --blue-600: #2563eb;
-  --blue-700: #1d4ed8;
-  --blue-800: #1e40af;
-  --blue-900: #1e3a8a;
-  --blue-950: #172554;
-
-  --green-50: var(--blue-50);
-  --green-100: var(--blue-100);
-  --green-200: var(--blue-200);
-  --green-300: var(--blue-300);
-  --green-400: var(--blue-400);
-  --green-500: var(--blue-500);
-  --green-600: var(--blue-6000);
-  --green-700: var(--blue-700);
-  --green-800: var(--blue-800);
-  --green-900: var(--blue-900);
-  --green-950: var(--blue-950);
-
-  --surface-submit: var(--primary-blue);
-  --surface-submit-hover: var(--highlight);      
+  /* --surface-submit: var(--primary-blue);
+  --surface-submit-hover: var(--highlight);       */
 }
 
 *{box-sizing:border-box}
@@ -68,7 +43,7 @@ header p{
   gap: 16px;
   flex-wrap: wrap;
 }
-.btn-primary, .btn-secondary{
+.btn-cta-primary, .btn-cta-secondary{
   font-weight: 700;
   padding: 14px 24px;
   border-radius: var(--radius);
@@ -77,20 +52,20 @@ header p{
   font-size: 1rem;
   transition: all .25s ease;
 }
-.btn-primary{
+.btn-cta-primary{
   background: #fff;
   color: var(--primary-blue);
 }
-.btn-primary:hover{
+.btn-cta-primary:hover{
   background: var(--highlight);
   color: #111;
 }
-.btn-secondary{
+.btn-cta-secondary{
   background: transparent;
   color: #fff;
   border: 2px solid rgba(255,255,255,0.7);
 }
-.btn-secondary:hover{
+.btn-cta-secondary:hover{
   background: rgba(255,255,255,0.15);
 }
 section{
@@ -100,6 +75,7 @@ section{
 }
 section h2{
   font-size: 2rem;
+  font-weight: 700;
   color: var(--primary-blue);
   /* text-align: center; */
   margin-bottom: 12px;
@@ -129,6 +105,7 @@ section p{
 .step h3{
   color: var(--accent-teal);
   font-size: 1.2rem;
+  font-weight: 500;
   margin-top: 0;
 }
 .benefits{
@@ -309,7 +286,7 @@ footer{
   align-items:center;
 }
 
-.btn-primary{
+.btn-cta-primary{
   /* background:linear-gradient(180deg,var(--accent-teal), #36b9a6);
   color:white; */
   border:0;
@@ -321,7 +298,7 @@ footer{
   box-shadow: 0 8px 20px rgba(62,196,181,0.18);
 }
 
-.btn-ghost{
+.btn-cta-ghost{
   background:transparent;
   color:var(--primary-blue);
   border:1px solid rgba(30,95,164,0.12);

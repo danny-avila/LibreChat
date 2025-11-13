@@ -4,7 +4,6 @@ import './locales/i18n';
 import App from './App';
 import './style.css';
 import './mobile.css';
-//import './custom-theme.css';
 import { ApiErrorBoundaryProvider } from './hooks/ApiErrorBoundaryContext';
 import 'katex/dist/katex.min.css';
 import 'katex/dist/contrib/copy-tex.js';

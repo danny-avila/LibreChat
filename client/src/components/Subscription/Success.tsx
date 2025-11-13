@@ -4,10 +4,11 @@ import { useNavigate } from 'react-router-dom';
 export default function SubscriptionSuccess() {
   const navigate = useNavigate();
   return (
-    <div style={{ maxWidth: 480, margin: '2rem auto', textAlign: 'center' }}>
-      <h1>Subscription Successful!</h1>
+    <div className="max-w-md mx-auto text-center p-6">
+      <h1 className="text-lg font-medium leading-6 text-text-primary">Subscription Successful!</h1>
       <p>Your payment was successful and your subscription is now active.</p>
-      <button onClick={() => navigate('/c/new')}>Upload your HOA documents to Declaray now!</button>
+      <button className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl" 
+      onClick={() => navigate('/c/new')}>Upload your HOA documents to Declaray now!</button>
     </div>
   );
 }

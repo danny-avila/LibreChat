@@ -1,9 +1,9 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import '~/custom-theme.css';
 import StaticFooter from './StaticFooter'
 import { useCreateStripeCheckoutSession } from '../Nav/SettingsTabs/Account/useCreateStripeCheckoutSession';
 import { useCancelSubscription } from '../Nav/SettingsTabs/Account/useCancelSubscription';
+import '../../custom-theme.css';
 
 export default function Plans() {
   const navigate = useNavigate();
@@ -55,7 +55,7 @@ export default function Plans() {
 
       <div className="cta" role="group" aria-label="Monthly plan actions">
         <button
-          className="btn-primary"
+          className="btn-cta-primary"
           onClick={() => handleSubscribe('price_1SSByiAfBGiEYPSJvRgJN0wk')}
           disabled={subscribing}
           aria-label="Start monthly plan — $9 per month">
@@ -88,7 +88,7 @@ export default function Plans() {
 
       <div className="cta" role="group" aria-label="Yearly plan actions">
         <button
-          className="btn-primary"
+          className="btn-cta-primary"
           onClick={() => handleSubscribe('price_1SRvrfAfBGiEYPSJTiMCTAh4')}
           disabled={subscribing}
           aria-label="Start yearly plan — $86 per year">

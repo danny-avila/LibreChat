@@ -52,7 +52,7 @@ async function stripeWebhookController(req, res) {
   const sig = req.headers['stripe-signature'];
   let event;
 
-  logger.info('[Stripe Webhook] stripe-signature:', {
+  logger.debug('[Stripe Webhook] stripe-signature:', {
     sig: sig,
     requestBody: req.body,
     webhookKey: process.env.STRIPE_WEBHOOK_SECRET,
@@ -66,7 +66,7 @@ async function stripeWebhookController(req, res) {
   }
 
   // Detailed logging for Stripe webhook
-  logger.info('[Stripe Webhook] Event received:', {
+  console.error('[Stripe Webhook] Event received:', {
     id: event.id,
     type: event.type,
     created: event.created,
@@ -83,7 +83,7 @@ async function stripeWebhookController(req, res) {
         const customerId = subscription.customer;
         const status = subscription.status;
         const plan = subscription.items.data[0]?.price?.id || null;
-        logger.info(`[Stripe Webhook] Subscription event:`, {
+        console.error(`[Stripe Webhook] Subscription event:`, {
           event: event.type,
           customerId,
           subscriptionId: subscription.id,
@@ -103,7 +103,7 @@ async function stripeWebhookController(req, res) {
       case 'invoice.payment_failed': {
         const invoice = event.data.object;
         const customerId = invoice.customer;
-        logger.info(`[Stripe Webhook] Invoice payment failed:`, {
+        console.error(`[Stripe Webhook] Invoice payment failed:`, {
           event: event.type,
           customerId,
           invoiceId: invoice.id,
@@ -119,7 +119,7 @@ async function stripeWebhookController(req, res) {
         const subscription = event.data.object;
         const customerId = subscription.customer;
         const trial_end = subscription.trial_end;
-        logger.info(`[Stripe Webhook] Trial will end:`, {
+        console.error(`[Stripe Webhook] Trial will end:`, {
           event: event.type,
           customerId,
           subscriptionId: subscription.id,
@@ -131,7 +131,7 @@ async function stripeWebhookController(req, res) {
       case 'checkout.session.completed': {
         const session = event.data.object;
         const customerId = session.customer;
-        logger.info(`[Stripe Webhook] Checkout session completed:`, {
+        console.error(`[Stripe Webhook] Checkout session completed:`, {
           event: event.type,
           customerId,
           sessionId: session.id,
@@ -146,7 +146,7 @@ async function stripeWebhookController(req, res) {
       case 'checkout.session.expired': {
         const session = event.data.object;
         const customerId = session.customer;
-        logger.info(`[Stripe Webhook] Checkout session expired:`, {
+        console.error(`[Stripe Webhook] Checkout session expired:`, {
           event: event.type,
           customerId,
           sessionId: session.id,
@@ -158,7 +158,7 @@ async function stripeWebhookController(req, res) {
         break;
       }
       default:
-        logger.info(`[Stripe Webhook] Unhandled event type: ${event.type}`);
+        console.error(`[Stripe Webhook] Unhandled event type: ${event.type}`);
     }
     res.json({ received: true });
   } catch (err) {
