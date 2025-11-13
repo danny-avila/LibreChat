@@ -23,6 +23,12 @@ export const webSearchAuth = {
     serper: {
       serperApiKey: 1 as const,
     },
+    crawl4ai: {
+      /** Optional (0) - works without API key for public deployments */
+      crawl4aiApiKey: 0 as const,
+      /** Optional (0) */
+      crawl4aiApiUrl: 0 as const,
+    },
   },
   rerankers: {
     jina: {
@@ -69,6 +75,8 @@ export function loadWebSearchConfig(
   const firecrawlApiKey = config?.firecrawlApiKey ?? '${FIRECRAWL_API_KEY}';
   const firecrawlApiUrl = config?.firecrawlApiUrl ?? '${FIRECRAWL_API_URL}';
   const firecrawlVersion = config?.firecrawlVersion ?? '${FIRECRAWL_VERSION}';
+  const crawl4aiApiKey = config?.crawl4aiApiKey ?? '${CRAWL4AI_API_KEY}';
+  const crawl4aiApiUrl = config?.crawl4aiApiUrl ?? '${CRAWL4AI_API_URL}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
@@ -85,6 +93,8 @@ export function loadWebSearchConfig(
     firecrawlApiKey,
     firecrawlApiUrl,
     firecrawlVersion,
+    crawl4aiApiKey,
+    crawl4aiApiUrl,
     searxngInstanceUrl,
   };
 }
