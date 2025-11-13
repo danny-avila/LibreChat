@@ -92,21 +92,11 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
 
   // Resolve template variables in additionalModelRequestFields
   if (llmConfig.additionalModelRequestFields) {
-    const { logger } = require('@librechat/data-schemas');
-    logger.debug('[bedrock/options] Resolving additionalModelRequestFields:', {
-      hasUser: !!req.user,
-      userKeys: req.user ? Object.keys(req.user) : 'no user',
-      hasOpenidId: req.user?.openidId,
-      hasFederatedTokens: !!req.user?.federatedTokens,
-      fields: llmConfig.additionalModelRequestFields,
-    });
-    const resolved = resolveHeaders({
+    llmConfig.additionalModelRequestFields = resolveHeaders({
       headers: llmConfig.additionalModelRequestFields,
       user: req.user,
       body: req.body,
     });
-    logger.debug('[bedrock/options] Resolved additionalModelRequestFields:', resolved);
-    llmConfig.additionalModelRequestFields = resolved;
   }
 
   return {

@@ -71,12 +71,6 @@ const refreshController = async (req, res) => {
     try {
       const openIdConfig = getOpenIdConfig();
       const tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken);
-      logger.debug('[refreshController] Tokenset after refresh:', {
-        has_access_token: !!tokenset.access_token,
-        has_id_token: !!tokenset.id_token,
-        has_refresh_token: !!tokenset.refresh_token,
-        tokenset_keys: Object.keys(tokenset),
-      });
       const claims = tokenset.claims();
       const { user, error } = await findOpenIDUser({
         findUser,

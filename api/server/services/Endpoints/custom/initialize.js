@@ -14,15 +14,6 @@ const getLogStores = require('~/cache/getLogStores');
 const { PROXY } = process.env;
 
 const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrideEndpoint }) => {
-  const { logger } = require('@librechat/data-schemas');
-  logger.debug('[custom/initialize] Starting initialization:', {
-    hasReq: !!req,
-    hasUser: !!req?.user,
-    userKeys: req?.user ? Object.keys(req.user) : 'no user',
-    hasOpenidId: req?.user?.openidId,
-    hasFederatedTokens: !!req?.user?.federatedTokens,
-  });
-
   const appConfig = req.config;
   const { key: expiresAt } = req.body;
   const endpoint = overrideEndpoint ?? req.body.endpoint;

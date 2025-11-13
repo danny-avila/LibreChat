@@ -795,24 +795,11 @@ class OpenAIClient extends BaseClient {
       if (this.options.headers) {
         // Re-resolve headers to pick up fresh federatedTokens from current request
         const { resolveHeaders } = require('@librechat/api');
-        logger.debug('[OpenAIClient] Original headers:', this.options.headers);
-        logger.debug('[OpenAIClient] this.options.req exists:', !!this.options.req);
-        logger.debug('[OpenAIClient] this.options.req.user exists:', !!this.options.req?.user);
-        logger.debug(
-          '[OpenAIClient] User has federatedTokens:',
-          !!this.options.req?.user?.federatedTokens,
-        );
-        logger.debug('[OpenAIClient] User openidId:', this.options.req?.user?.openidId);
-        logger.debug(
-          '[OpenAIClient] User keys:',
-          this.options.req?.user ? Object.keys(this.options.req.user) : 'no user',
-        );
         const resolvedHeaders = resolveHeaders({
           headers: this.options.headers,
           user: this.options.req?.user,
           body: this.options.req?.body,
         });
-        logger.debug('[OpenAIClient] Resolved headers:', resolvedHeaders);
         opts.defaultHeaders = { ...opts.defaultHeaders, ...resolvedHeaders };
       }
 
