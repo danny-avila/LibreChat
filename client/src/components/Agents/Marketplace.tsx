@@ -4,7 +4,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
-import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
+import { PermissionTypes, Permissions, QueryKeys, LocalStorageKeys } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/hooks';
@@ -62,9 +62,10 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<t.Agent | null>(null);
 
-  // Set page title
-  useDocumentTitle(`${localize('com_agents_marketplace')} | LibreChat`);
-
+  // Set page title with app name
+  const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE) || 'LibreChat';
+  useDocumentTitle(`${localize('com_agents_marketplace')} | ${appTitle}`);
+  
   // Ensure right sidebar is always visible in marketplace
   useEffect(() => {
     setHideSidePanel(false);
