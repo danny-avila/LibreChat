@@ -1,6 +1,7 @@
 import type {
   TEndpoint,
   FileSources,
+  TFileConfig,
   TAzureConfig,
   TCustomConfig,
   TMemoryConfig,
@@ -82,7 +83,7 @@ export interface AppConfig {
   /** MCP server configuration */
   mcpConfig?: TCustomConfig['mcpServers'] | null;
   /** File configuration */
-  fileConfig?: TCustomConfig['fileConfig'];
+  fileConfig?: TFileConfig;
   /** Secure image links configuration */
   secureImageLinks?: TCustomConfig['secureImageLinks'];
   /** Processed model specifications */

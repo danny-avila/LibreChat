@@ -39,7 +39,6 @@ export enum Providers {
   GOOGLE = 'google',
   VERTEXAI = 'vertexai',
   BEDROCK = 'bedrock',
-  BEDROCK_LEGACY = 'bedrock_legacy',
   MISTRALAI = 'mistralai',
   MISTRAL = 'mistral',
   OLLAMA = 'ollama',
@@ -231,6 +230,7 @@ export const defaultAgentFormValues = {
   tools: [],
   provider: {},
   projectIds: [],
+  edges: [],
   artifacts: '',
   /** @deprecated Use ACL permissions instead */
   isCollaborative: false,

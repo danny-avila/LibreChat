@@ -1,11 +1,6 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
 import type { TEndpointsConfig, TConfig } from 'librechat-data-provider';
-import {
-  getEndpointField,
-  getAvailableEndpoints,
-  getEndpointsFilter,
-  mapEndpoints,
-} from './endpoints';
+import { getAvailableEndpoints, getEndpointsFilter, mapEndpoints } from './endpoints';
 
 const mockEndpointsConfig: TEndpointsConfig = {
   [EModelEndpoint.openAI]: { type: undefined, iconURL: 'openAI_icon.png', order: 0 },
