@@ -13,6 +13,7 @@ const {
   memoryInstructions,
   getTransactionsConfig,
   createMemoryProcessor,
+  filterMalformedContentParts,
 } = require('@librechat/api');
 const {
   Callback,
@@ -344,7 +345,7 @@ class AgentClient extends BaseClient {
 
     if (mcpServers.length > 0) {
       try {
-        const mcpInstructions = getMCPManager().formatInstructionsForContext(mcpServers);
+        const mcpInstructions = await getMCPManager().formatInstructionsForContext(mcpServers);
         if (mcpInstructions) {
           systemContent = [systemContent, mcpInstructions].filter(Boolean).join('\n\n');
           logger.debug('[AgentClient] Injected MCP instructions for servers:', mcpServers);
@@ -611,7 +612,7 @@ class AgentClient extends BaseClient {
       userMCPAuthMap: opts.userMCPAuthMap,
       abortController: opts.abortController,
     });
-    return this.contentParts;
+    return filterMalformedContentParts(this.contentParts);
   }
 
   /**
