@@ -42,21 +42,31 @@ const Description = ({
 
   return (
     <div className="rounded-xl border border-border-light shadow-md">
-      <h3 className="flex h-10 items-center gap-1 pl-4 text-sm text-text-secondary">
-        <Info className="icon-sm" aria-hidden="true" />
-        <Input
-          type="text"
-          tabIndex={tabIndex}
-          disabled={disabled}
-          placeholder={localize('com_ui_description_placeholder')}
-          value={description}
-          onChange={handleInputChange}
-          className="border-none"
-        />
+      <div className="relative flex h-10 items-center gap-1 pl-4 pr-2 text-sm text-text-secondary">
+        <Info className="icon-sm shrink-0" aria-hidden="true" />
+        <div className="relative min-w-0 flex-1">
+          <Input
+            type="text"
+            id="prompt-description"
+            tabIndex={tabIndex}
+            disabled={disabled}
+            placeholder=" "
+            value={description}
+            onChange={handleInputChange}
+            className="peer w-full border-none pr-14"
+            aria-label={localize('com_ui_description_placeholder')}
+          />
+          <label
+            htmlFor="prompt-description"
+            className="pointer-events-none absolute left-0 top-0.5 max-w-[calc(100%-3.5rem)] origin-[0] translate-y-2 scale-100 truncate rounded bg-white px-1 text-sm text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-2 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-4 peer-[:not(:placeholder-shown)]:scale-75 dark:bg-gray-850"
+          >
+            {localize('com_ui_description_placeholder')}
+          </label>
+        </div>
         {!disabled && (
-          <span className="mr-4 w-10 text-xs text-text-secondary md:text-sm">{`${charCount}/${MAX_LENGTH}`}</span>
+          <span className="absolute right-2 shrink-0 text-xs text-text-secondary md:text-sm">{`${charCount}/${MAX_LENGTH}`}</span>
         )}
-      </h3>
+      </div>
     </div>
   );
 };
