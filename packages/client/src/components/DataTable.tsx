@@ -14,8 +14,8 @@ import {
 } from '@tanstack/react-table';
 import type { Table as TTable } from '@tanstack/react-table';
 import { Table, TableRow, TableBody, TableCell, TableHead, TableHeader } from './Table';
+import { useMediaQuery, useLocalize, TranslationKeys } from '~/hooks';
 import AnimatedSearchInput from './AnimatedSearchInput';
-import { useMediaQuery, useLocalize } from '~/hooks';
 import { TrashIcon, Spinner } from '~/svgs';
 import { Skeleton } from './Skeleton';
 import { Checkbox } from './Checkbox';
@@ -234,6 +234,7 @@ export default function DataTable<TData, TValue>({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [searchTerm, setSearchTerm] = useState(filterValue ?? '');
   const [isSearching, setIsSearching] = useState(false);
+  const [searchResultsAnnouncement, setSearchResultsAnnouncement] = useState('');
 
   const tableColumns = useMemo(() => {
     if (!enableRowSelection || !showCheckboxes) {
@@ -331,6 +332,24 @@ export default function DataTable<TData, TValue>({
     return () => clearTimeout(timeout);
   }, [searchTerm, onFilterChange]);
 
+  useEffect(() => {
+    if (!searchTerm.trim() || isSearching) {
+      setSearchResultsAnnouncement('');
+      return;
+    }
+
+    const resultCount = rows.length;
+    const announcement =
+      resultCount === 1
+        ? localize('com_ui_result_found' as TranslationKeys, {
+            count: resultCount,
+          })
+        : localize('com_ui_results_found' as TranslationKeys, {
+            count: resultCount,
+          });
+    setSearchResultsAnnouncement(announcement);
+  }, [rows.length, searchTerm, isSearching, localize]);
+
   const handleDelete = useCallback(async () => {
     if (!onDelete) {
       return;
@@ -373,6 +392,10 @@ export default function DataTable<TData, TValue>({
 
   return (
     <div className={cn('flex h-full flex-col gap-4', className)}>
+      <div aria-live="polite" className="sr-only">
+        {searchResultsAnnouncement}
+      </div>
+
       {/* Table controls */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-4">
         {enableRowSelection && showCheckboxes && (
