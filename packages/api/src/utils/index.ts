@@ -7,6 +7,7 @@ export * from './events';
 export * from './files';
 export * from './generators';
 export * from './key';
+export * from './latex';
 export * from './llm';
 export * from './math';
 export * from './openid';
