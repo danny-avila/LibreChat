@@ -7,7 +7,7 @@ import type { Pluggable } from 'unified';
 import type { Artifact } from '~/common';
 import { useMessageContext, useArtifactContext } from '~/Providers';
 import { artifactsState } from '~/store/artifacts';
-import { logger, extractContent } from '~/utils';
+import { logger, extractContent, isArtifactRoute } from '~/utils';
 import ArtifactButton from './ArtifactButton';
 
 export const artifactPlugin: Pluggable = () => {
@@ -88,7 +88,7 @@ export function Artifact({
         lastUpdateTime: now,
       };
 
-      if (!location.pathname.includes('/c/') && !location.pathname.includes('/share/')) {
+      if (!isArtifactRoute(location.pathname)) {
         return setArtifact(currentArtifact);
       }
 
