@@ -1,4 +1,6 @@
 module.exports = {
+  maxWorkers: process.env.CI ? 1 : '50%',
+  workerIdleMemoryLimit: '512MB',
   collectCoverageFrom: ['src/**/*.{js,jsx,ts,tsx}', '!<rootDir>/node_modules/'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
   coverageReporters: ['text', 'cobertura'],

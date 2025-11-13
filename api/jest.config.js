@@ -1,5 +1,7 @@
 module.exports = {
   testEnvironment: 'node',
+  maxWorkers: process.env.CI ? 1 : '50%',
+  workerIdleMemoryLimit: '512MB',
   clearMocks: true,
   roots: ['<rootDir>'],
   coverageDirectory: 'coverage',
