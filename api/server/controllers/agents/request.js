@@ -1,6 +1,7 @@
 const { sendEvent } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
+const { getMCPManager } = require('~/config');
 const {
   handleAbortError,
   createAbortController,
@@ -148,6 +149,25 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       cleanupHandlers.pop();
     }
     client = result.client;
+
+    const mcpManager = getMCPManager();
+    const elicitationListener = (eventData) => {
+      if (eventData.userId === userId) {
+        // Get the full elicitation state from the manager
+        const elicitationState = mcpManager.getElicitationState(eventData.elicitationId);
+        if (elicitationState) {
+          sendEvent(res, {
+            type: 'elicitation_created',
+            elicitationData: elicitationState,
+            timestamp: Date.now(),
+          });
+        }
+      }
+    };
+    mcpManager.on('elicitationCreated', elicitationListener);
+    cleanupHandlers.push(() => {
+      mcpManager.removeListener('elicitationCreated', elicitationListener);
+    });
 
     // Register client with finalization registry if available
     if (clientRegistry) {
