@@ -347,7 +347,12 @@ export default function DataTable<TData, TValue>({
         : localize('com_ui_results_found' as TranslationKeys, {
             count: resultCount,
           });
-    setSearchResultsAnnouncement(announcement);
+
+    const timeout = setTimeout(() => {
+      setSearchResultsAnnouncement(announcement);
+    }, 300);
+
+    return () => clearTimeout(timeout);
   }, [rows.length, searchTerm, isSearching, localize]);
 
   const handleDelete = useCallback(async () => {
@@ -392,7 +397,7 @@ export default function DataTable<TData, TValue>({
 
   return (
     <div className={cn('flex h-full flex-col gap-4', className)}>
-      <div aria-live="polite" className="sr-only">
+      <div aria-live="assertive" aria-atomic="true" className="sr-only">
         {searchResultsAnnouncement}
       </div>
 
