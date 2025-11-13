@@ -85,13 +85,15 @@ const openIdJwtLogin = (openIdConfig) => {
           }
 
           // Add federated tokens for OIDC placeholder processing
-          // Use the raw JWT token as the access token
-          // Extract refresh token from HTTP-only cookie (not in JWT payload)
+          // Extract tokens from HTTP-only cookies
           const cookieHeader = req.headers.cookie;
-          const refreshToken = cookieHeader ? cookies.parse(cookieHeader).refreshToken : null;
+          const parsedCookies = cookieHeader ? cookies.parse(cookieHeader) : {};
+          const accessToken = parsedCookies.openid_access_token;
+          const refreshToken = parsedCookies.refreshToken;
 
           user.federatedTokens = {
-            access_token: rawToken,
+            access_token: accessToken || rawToken, // Fall back to ID token if access token not in cookie
+            id_token: rawToken, // The JWT from Authorization header is the ID token
             refresh_token: refreshToken,
             expires_at: payload.exp,
           };

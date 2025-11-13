@@ -8,6 +8,8 @@ const {
 } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 
+const { resolveHeaders } = require('@librechat/api');
+
 const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
@@ -86,6 +88,25 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
 
   if (BEDROCK_REVERSE_PROXY) {
     llmConfig.endpointHost = BEDROCK_REVERSE_PROXY;
+  }
+
+  // Resolve template variables in additionalModelRequestFields
+  if (llmConfig.additionalModelRequestFields) {
+    const { logger } = require('@librechat/data-schemas');
+    logger.debug('[bedrock/options] Resolving additionalModelRequestFields:', {
+      hasUser: !!req.user,
+      userKeys: req.user ? Object.keys(req.user) : 'no user',
+      hasOpenidId: req.user?.openidId,
+      hasFederatedTokens: !!req.user?.federatedTokens,
+      fields: llmConfig.additionalModelRequestFields,
+    });
+    const resolved = resolveHeaders({
+      headers: llmConfig.additionalModelRequestFields,
+      user: req.user,
+      body: req.body,
+    });
+    logger.debug('[bedrock/options] Resolved additionalModelRequestFields:', resolved);
+    llmConfig.additionalModelRequestFields = resolved;
   }
 
   return {

@@ -151,12 +151,35 @@ function processSingleValue({
   }
 
   // 2. Replace user field placeholders (e.g., {{LIBRECHAT_USER_EMAIL}}, {{LIBRECHAT_USER_ID}})
-  value = processUserPlaceholders(value, user);
+  const afterUserPlaceholders = processUserPlaceholders(value, user);
+  if (afterUserPlaceholders !== value) {
+    console.log('[processSingleValue] After user placeholders:', {
+      original: value,
+      processed: afterUserPlaceholders,
+    });
+  }
+  value = afterUserPlaceholders;
 
   // 3. Replace OpenID Connect federated provider token placeholders (e.g., {{LIBRECHAT_OPENID_TOKEN}}, {{LIBRECHAT_OPENID_ACCESS_TOKEN}})
   const openidTokenInfo = extractOpenIDTokenInfo(user);
+  console.log('[processSingleValue] OpenID token info:', {
+    hasTokenInfo: !!openidTokenInfo,
+    isValid: openidTokenInfo ? isOpenIDTokenValid(openidTokenInfo) : false,
+    hasAccessToken: openidTokenInfo?.accessToken ? 'YES' : 'NO',
+  });
   if (openidTokenInfo && isOpenIDTokenValid(openidTokenInfo)) {
-    value = processOpenIDPlaceholders(value, openidTokenInfo);
+    const afterOpenIDPlaceholders = processOpenIDPlaceholders(value, openidTokenInfo);
+    if (afterOpenIDPlaceholders !== value) {
+      console.log('[processSingleValue] After OpenID placeholders:', {
+        original: value,
+        processed: afterOpenIDPlaceholders,
+      });
+    }
+    value = afterOpenIDPlaceholders;
+  } else if (value.includes('{{LIBRECHAT_OPENID')) {
+    console.warn(
+      '[processSingleValue] Value contains LIBRECHAT_OPENID placeholder but no valid token info available',
+    );
   }
 
   // 4. Replace body field placeholders (e.g., {{LIBRECHAT_BODY_CONVERSATIONID}}, {{LIBRECHAT_BODY_PARENTMESSAGEID}})
@@ -261,16 +284,35 @@ export function resolveHeaders(options?: {
   const { headers, user, body, customUserVars } = options ?? {};
   const inputHeaders = headers ?? {};
 
+  console.log('[resolveHeaders] Called with:', {
+    headerKeys: Object.keys(inputHeaders),
+    hasUser: !!user,
+    userProvider: user?.provider,
+    userOpenidId: user?.openidId,
+    hasFederatedTokens: user ? 'federatedTokens' in user : false,
+    hasBody: !!body,
+    bodyKeys: body ? Object.keys(body) : [],
+    stack: new Error().stack?.split('\n').slice(1, 6).join('\n'),
+  });
+
   const resolvedHeaders: Record<string, string> = { ...inputHeaders };
 
   if (inputHeaders && typeof inputHeaders === 'object' && !Array.isArray(inputHeaders)) {
     Object.keys(inputHeaders).forEach((key) => {
-      resolvedHeaders[key] = processSingleValue({
+      const originalValue = inputHeaders[key];
+      const resolvedValue = processSingleValue({
         originalValue: inputHeaders[key],
         customUserVars,
         user: user as TUser,
         body,
       });
+      if (originalValue !== resolvedValue) {
+        console.log(`[resolveHeaders] Header "${key}":`, {
+          original: originalValue,
+          resolved: resolvedValue,
+        });
+      }
+      resolvedHeaders[key] = resolvedValue;
     });
   }
 

@@ -29,6 +29,26 @@ export interface OpenIDTokenInfo {
 }
 
 /**
+ * Interface for federated tokens stored in user object
+ */
+interface FederatedTokens {
+  access_token?: string;
+  id_token?: string;
+  refresh_token?: string;
+  expires_at?: number;
+}
+
+/**
+ * Type guard to check if an object has federated tokens structure
+ */
+function isFederatedTokens(obj: unknown): obj is FederatedTokens {
+  if (!obj || typeof obj !== 'object') {
+    return false;
+  }
+  return 'access_token' in obj || 'id_token' in obj || 'expires_at' in obj;
+}
+
+/**
  * List of OpenID Connect federated provider fields that can be used in template variables.
  * These fields are derived from tokens issued by federated providers (Cognito, Azure AD, etc.).
  */
@@ -41,21 +61,30 @@ const OPENID_TOKEN_FIELDS = [
   'EXPIRES_AT',
 ] as const;
 
-type OpenIDTokenField = (typeof OPENID_TOKEN_FIELDS)[number];
-
 /**
  * Extracts OpenID Connect federated provider token information from a user object
  * @param user - The user object containing federated provider session data
  * @returns OpenID token information or null if not available
  */
-export function extractOpenIDTokenInfo(user: IUser | TUser | null | undefined): OpenIDTokenInfo | null {
+export function extractOpenIDTokenInfo(
+  user: IUser | TUser | null | undefined,
+): OpenIDTokenInfo | null {
   if (!user) {
+    logger.debug('[extractOpenIDTokenInfo] No user provided');
     return null;
   }
 
   try {
+    logger.debug(
+      '[extractOpenIDTokenInfo] User provider:',
+      user.provider,
+      'openidId:',
+      user.openidId,
+    );
+
     // Check if user authenticated via OpenID Connect federated provider
     if (user.provider !== 'openid' && !user.openidId) {
+      logger.debug('[extractOpenIDTokenInfo] User not authenticated via OpenID');
       return null;
     }
 
@@ -64,18 +93,34 @@ export function extractOpenIDTokenInfo(user: IUser | TUser | null | undefined): 
     // Extract federated provider tokens from user session
     // These are the actual tokens issued by Cognito, Azure AD, Auth0, etc.
 
+    logger.debug(
+      '[extractOpenIDTokenInfo] Checking for federatedTokens in user object:',
+      'federatedTokens' in user,
+    );
+
     // Check for stored federated provider tokens in user object
-    if ('federatedTokens' in user && user.federatedTokens) {
-      const tokens = user.federatedTokens as any;
+    if ('federatedTokens' in user && isFederatedTokens(user.federatedTokens)) {
+      const tokens = user.federatedTokens;
+      logger.debug('[extractOpenIDTokenInfo] Found federatedTokens:', {
+        has_access_token: !!tokens.access_token,
+        has_id_token: !!tokens.id_token,
+        has_refresh_token: !!tokens.refresh_token,
+        expires_at: tokens.expires_at,
+      });
       tokenInfo.accessToken = tokens.access_token;
       tokenInfo.idToken = tokens.id_token;
       tokenInfo.expiresAt = tokens.expires_at;
-    } else if ('openidTokens' in user && user.openidTokens) {
+    } else if ('openidTokens' in user && isFederatedTokens(user.openidTokens)) {
       // Alternative storage location for federated tokens
-      const tokens = user.openidTokens as any;
+      const tokens = user.openidTokens;
+      logger.debug('[extractOpenIDTokenInfo] Found openidTokens (alternative storage)');
       tokenInfo.accessToken = tokens.access_token;
       tokenInfo.idToken = tokens.id_token;
       tokenInfo.expiresAt = tokens.expires_at;
+    } else {
+      logger.warn(
+        '[extractOpenIDTokenInfo] No federatedTokens or openidTokens found in user object',
+      );
     }
 
     // Extract user info from federated provider claims or user object
@@ -88,7 +133,9 @@ export function extractOpenIDTokenInfo(user: IUser | TUser | null | undefined): 
     if (tokenInfo.idToken) {
       try {
         // Parse JWT claims (without verification - for claim extraction only)
-        const payload = JSON.parse(Buffer.from(tokenInfo.idToken.split('.')[1], 'base64').toString());
+        const payload = JSON.parse(
+          Buffer.from(tokenInfo.idToken.split('.')[1], 'base64').toString(),
+        );
         tokenInfo.claims = payload;
 
         // Override with claims from ID token if available
@@ -136,7 +183,10 @@ export function isOpenIDTokenValid(tokenInfo: OpenIDTokenInfo | null): boolean {
  * @param tokenInfo - The OpenID token information from federated provider
  * @returns The processed string with OpenID placeholders replaced
  */
-export function processOpenIDPlaceholders(value: string, tokenInfo: OpenIDTokenInfo | null): string {
+export function processOpenIDPlaceholders(
+  value: string,
+  tokenInfo: OpenIDTokenInfo | null,
+): string {
   if (!tokenInfo || typeof value !== 'string') {
     return value;
   }

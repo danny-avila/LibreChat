@@ -861,6 +861,7 @@ class AgentClient extends BaseClient {
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
           requestBody: config.configurable.requestBody,
+          user: this.options.req?.user,
           tokenCounter: createTokenCounter(this.getEncoding()),
         });
 
@@ -1066,6 +1067,7 @@ class AgentClient extends BaseClient {
     if (clientOptions?.configuration?.defaultHeaders != null) {
       clientOptions.configuration.defaultHeaders = resolveHeaders({
         headers: clientOptions.configuration.defaultHeaders,
+        user: this.options.req?.user,
         body: {
           messageId: this.responseMessageId,
           conversationId: this.conversationId,

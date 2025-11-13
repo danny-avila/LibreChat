@@ -449,6 +449,13 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
       secure: isProduction,
       sameSite: 'strict',
     });
+    // Store access token for template variable replacement
+    res.cookie('openid_access_token', tokenset.access_token, {
+      expires: expirationDate,
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'strict',
+    });
     res.cookie('token_provider', 'openid', {
       expires: expirationDate,
       httpOnly: true,
