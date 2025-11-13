@@ -50,6 +50,10 @@ export default function Parameters() {
       .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
   }, [endpointType, endpointsConfig, model, provider]);
 
+  const overriddenParams = useMemo(() => {
+    return endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
+  }, [provider, endpointsConfig]);
+
   useEffect(() => {
     if (!parameters) {
       return;
@@ -98,11 +102,22 @@ export default function Parameters() {
         }
       });
 
+      // Apply default values for parameters that don't exist in the conversation yet
+      overriddenParams.forEach((overriddenValue) => {
+        const defaultValue = overriddenValue.default;
+        const key = overriddenValue.key;
+
+        if (key && paramKeys.has(key) && updatedConversation[key] == null && defaultValue != null) {
+          updatedKeys.push(key);
+          updatedConversation[key] = defaultValue;
+        }
+      });
+
       logger.log('parameters', 'parameters effect, updated keys:', updatedKeys);
 
       return updatedConversation;
     });
-  }, [parameters, setConversation]);
+  }, [parameters, setConversation, overriddenParams]);
 
   const resetParameters = useCallback(() => {
     setConversation((prev) => {
