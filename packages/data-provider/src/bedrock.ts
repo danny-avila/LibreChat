@@ -143,6 +143,15 @@ export const bedrockInputParser = s.tConversationSchema
       delete additionalFields.thinkingBudget;
     }
 
+    /** Default promptCache for claude and nova models, if not defined */
+    if (
+      typeof typedData.model === 'string' &&
+      (typedData.model.includes('claude') || typedData.model.includes('nova')) &&
+      typedData.promptCache === undefined
+    ) {
+      typedData.promptCache = true;
+    }
+
     if (Object.keys(additionalFields).length > 0) {
       typedData.additionalModelRequestFields = {
         ...((typedData.additionalModelRequestFields as Record<string, unknown> | undefined) || {}),
