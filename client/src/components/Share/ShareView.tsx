@@ -90,9 +90,15 @@ function SharedView() {
     artifactsContextValue != null &&
     Object.keys(artifacts ?? {}).length > 0;
 
+  const locale =
+    langcode ||
+    (typeof navigator !== 'undefined'
+      ? navigator.language || navigator.languages?.[0] || 'en-US'
+      : 'en-US');
+
   const formattedDate =
     data?.createdAt != null
-      ? new Date(data.createdAt).toLocaleDateString('en-US', {
+      ? new Date(data.createdAt).toLocaleDateString(locale, {
           month: 'long',
           day: 'numeric',
           year: 'numeric',
@@ -110,7 +116,10 @@ function SharedView() {
     (value: string) => {
       let userLang = value;
       if (value === 'auto') {
-        userLang = navigator.language || navigator.languages[0];
+        userLang =
+          (typeof navigator !== 'undefined'
+            ? navigator.language || navigator.languages?.[0]
+            : null) ?? 'en-US';
       }
 
       requestAnimationFrame(() => {
