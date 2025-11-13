@@ -111,14 +111,22 @@ const CreatePromptForm = ({
               control={control}
               rules={{ required: localize('com_ui_prompt_name_required') }}
               render={({ field }) => (
-                <div className="mb-1 flex items-center md:mb-0">
+                <div className="relative mb-1 flex flex-col md:mb-0">
                   <Input
                     {...field}
+                    id="prompt-name"
                     type="text"
-                    className="mr-2 w-full border border-border-medium p-2 text-2xl text-text-primary placeholder:text-text-tertiary dark:placeholder:text-text-secondary"
-                    placeholder={`${localize('com_ui_prompt_name')}*`}
+                    className="peer mr-2 w-full border border-border-medium p-2 text-2xl text-text-primary"
+                    placeholder=" "
                     tabIndex={0}
+                    aria-label={localize('com_ui_prompt_name')}
                   />
+                  <label
+                    htmlFor="prompt-name"
+                    className="pointer-events-none absolute -top-1 left-3 origin-[0] translate-y-3 scale-100 rounded bg-white px-1 text-base text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75 dark:bg-gray-850"
+                  >
+                    {localize('com_ui_prompt_name')}*
+                  </label>
                   <div
                     className={cn(
                       'mt-1 w-56 text-sm text-red-500',
