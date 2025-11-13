@@ -37,7 +37,7 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
       return;
     }
 
-    if (!location.pathname.includes('/c/')) {
+    if (!location.pathname.includes('/c/') && !location.pathname.includes('/share/')) {
       return;
     }
 
@@ -57,8 +57,6 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
     <div className="group relative my-4 rounded-xl text-sm text-text-primary">
       {(() => {
         const handleClick = () => {
-          if (!location.pathname.includes('/c/')) return;
-
           if (isSelected) {
             resetCurrentArtifactId();
             setVisible(false);
