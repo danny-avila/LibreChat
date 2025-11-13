@@ -19,6 +19,7 @@ import { useParams } from 'react-router-dom';
 import type { PointerDownOutsideEvent, FocusOutsideEvent } from '@radix-ui/react-dialog';
 import { CalendarDays, Settings } from 'lucide-react';
 import { buildTree } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import { useLocalize, useDocumentTitle } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
@@ -68,10 +69,18 @@ function SharedView() {
         ? data.messages[data.messages.length - 1]
         : null;
 
+    const latestMessageText = latestMessage
+      ? getLatestText({
+          messageId: latestMessage?.messageId ?? null,
+          text: latestMessage?.text ?? null,
+          content: latestMessage?.content ?? null,
+        } as TMessage)
+      : '';
+
     return {
       isSubmitting: false,
       latestMessageId: latestMessage?.messageId ?? null,
-      latestMessageText: latestMessage ? getLatestText(latestMessage) : '',
+      latestMessageText,
       conversationId: data.conversationId ?? null,
     };
   }, [data]);
