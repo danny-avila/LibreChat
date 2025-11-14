@@ -29,10 +29,11 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 1. Use Node.JS 20.x.
 2. Install typescript globally: `npm i -g typescript`.
 3. Run `npm ci` to install dependencies.
-4. Build the data provider: `npm run build:data-provider`.
-5. Build data schemas: `npm run build:data-schemas`.
-6. Build API methods: `npm run build:api`.
-7. Setup and run unit tests:
+4. **Initialize documentation submodule**: `git submodule update --init --recursive`.
+5. Build the data provider: `npm run build:data-provider`.
+6. Build data schemas: `npm run build:data-schemas`.
+7. Build API methods: `npm run build:api`.
+8. Setup and run unit tests:
     - Copy `.env.test`: `cp api/test/.env.test.example api/test/.env.test`.
     - Run backend unit tests: `npm run test:api`.
     - Run frontend unit tests: `npm run test:client`.
@@ -62,10 +63,12 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 We utilize a GitFlow workflow to manage changes to this project's codebase. Follow these general steps when contributing code:
 
 1. Fork the repository and create a new branch with a descriptive slash-based name (e.g., `new/feature/x`).
-2. Implement your changes and ensure that all tests pass.
-3. Commit your changes using conventional commit messages with GitFlow flags. Begin the commit message with a tag indicating the change type, such as "feat" (new feature), "fix" (bug fix), "docs" (documentation), or "refactor" (code refactoring), followed by a brief summary of the changes (e.g., `feat: Add new feature X to the project`).
-4. Submit a pull request with a clear and concise description of your changes and the reasons behind them.
-5. We will review your pull request, provide feedback as needed, and eventually merge the approved changes into the main branch.
+2. When cloning for the first time, initialize submodules: `git clone --recurse-submodules <repo-url>`.
+3. Implement your changes and ensure that all tests pass.
+4. **Update documentation if needed** (see [Documentation Guidelines](#9-documentation-guidelines) below).
+5. Commit your changes using conventional commit messages with GitFlow flags. Begin the commit message with a tag indicating the change type, such as "feat" (new feature), "fix" (bug fix), "docs" (documentation), or "refactor" (code refactoring), followed by a brief summary of the changes (e.g., `feat: Add new feature X to the project`).
+6. Submit a pull request with a clear and concise description of your changes and the reasons behind them.
+7. We will review your pull request, provide feedback as needed, and eventually merge the approved changes into the main branch.
 
 ## 4. Commit Message Format
 
@@ -158,6 +161,97 @@ Apply the following naming conventions to branches, labels, and other Git-relate
      - imports with alias `~` treated the same as relative import with respect to line length
 
 **Note:** ESLint will automatically enforce these import conventions when you run `npm run lint --fix` or through pre-commit hooks.
+
+---
+
+## 9. Documentation Guidelines
+
+Documentation for LibreChat is maintained in a separate repository and included as a git submodule in the `docs-site/` directory.
+
+### When to Update Documentation
+
+Update documentation when you:
+- Add a new feature or API endpoint
+- Change existing functionality or behavior
+- Modify configuration options or environment variables
+- Add new dependencies or change setup requirements
+- Fix bugs that affect user-facing behavior
+
+### Working with the Documentation Submodule
+
+📖 **For detailed workflows and troubleshooting, see the [Documentation Submodule Workflow Guide](../docs/SUBMODULE_WORKFLOW.md).**
+
+#### For Code + Documentation Changes:
+
+```bash
+# Navigate to the docs submodule
+cd docs-site
+
+# Create a new branch for your docs changes
+git checkout -b docs/your-feature-name
+
+# Make your documentation changes
+# Edit files in docs-site/...
+
+# Commit and push docs changes
+git add .
+git commit -m "docs: Document new feature X"
+git push origin docs/your-feature-name
+
+# Return to main repo
+cd ..
+
+# Update submodule reference to point to your new commit
+git add docs-site
+
+# Commit both code and docs reference together
+git commit -m "feat: Add feature X with documentation"
+git push
+```
+
+#### For Documentation-Only Changes:
+
+If you're only updating documentation without code changes, consider contributing directly to the documentation repository instead of through the submodule.
+
+#### Previewing Documentation Locally:
+
+```bash
+cd docs-site
+npm install
+npm run dev
+# Documentation site will be available at http://localhost:3000
+```
+
+#### Keeping Documentation in Sync:
+
+The project includes automatic checks that warn if the documentation submodule is behind the remote:
+
+```bash
+# Check docs status manually
+npm run check:docs
+
+# Update to latest docs
+git submodule update --remote docs-site
+git add docs-site
+git commit -m "docs: Update documentation submodule"
+```
+
+#### Best Practices:
+
+1. **Keep docs and code in sync**: When making code changes, update the docs in the same PR
+2. **Link to specific docs**: Reference documentation pages in your PR description
+3. **Test documentation locally**: Preview your docs changes before submitting
+4. **Clear and concise**: Write documentation that is easy to understand for users of all levels
+5. **Include examples**: Provide code samples and configuration examples where applicable
+
+### Documentation Structure:
+
+The documentation follows this general structure:
+- **Installation**: Setup and deployment guides
+- **Configuration**: Environment variables and config files
+- **Features**: User-facing features and how to use them
+- **Development**: Contributor and developer guides
+- **API Reference**: API endpoints and usage
 
 ---
 
