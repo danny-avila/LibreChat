@@ -571,6 +571,7 @@
   "com_nav_theme_dark": "Dark",
   "com_nav_theme_light": "Light",
   "com_nav_theme_system": "System",
+  "com_nav_toggle_sidebar": "Toggle sidebar",
   "com_nav_tool_dialog": "Assistant Tools",
   "com_nav_tool_dialog_agents": "Agent Tools",
   "com_nav_tool_dialog_description": "Assistant must be saved to persist tool selections.",
