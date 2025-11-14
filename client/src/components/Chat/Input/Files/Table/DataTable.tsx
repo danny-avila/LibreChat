@@ -114,12 +114,18 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           )}
           {!isSmallScreen && <span className="ml-2">{localize('com_ui_delete')}</span>}
         </Button>
-        <Input
-          placeholder={localize('com_files_filter')}
-          value={(table.getColumn('filename')?.getFilterValue() as string | undefined) ?? ''}
-          onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-          className="flex-1 text-sm"
-        />
+        <div className="relative flex-1">
+          <Input
+            placeholder=" "
+            value={(table.getColumn('filename')?.getFilterValue() as string | undefined) ?? ''}
+            onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
+            className="peer w-full text-sm"
+            aria-label={localize('com_files_filter_input')}
+          />
+          <label className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-text-primary transition-all duration-200 peer-focus:-top-2 peer-focus:text-xs peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-top-2 peer-[:not(:placeholder-shown)]:text-xs">
+            {localize('com_files_filter')}
+          </label>
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

@@ -47,11 +47,15 @@ const MemoNewChat = memo(NewChat);
 
 const Nav = memo(
   ({
-    navVisible,
+  navVisible,
     setNavVisible,
+    openSidebarRef,
+    closeSidebarRef,
   }: {
     navVisible: boolean;
     setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
+    openSidebarRef?: React.RefObject<HTMLButtonElement>;
+    closeSidebarRef?: React.RefObject<HTMLButtonElement>;
   }) => {
     const localize = useLocalize();
     const { isAuthenticated } = useAuthContext();
@@ -207,32 +211,36 @@ const Nav = memo(
                 className={`flex h-full flex-col transition-opacity duration-200 ease-in-out ${navVisible ? 'opacity-100' : 'opacity-0'}`}
               >
                 <div className="flex h-full flex-col">
-                  <nav
-                    id="chat-history-nav"
-                    aria-label={localize('com_ui_chat_history')}
-                    className="flex h-full flex-col px-2 pb-3.5 md:px-3"
-                  >
-                    <div className="flex flex-1 flex-col" ref={outerContainerRef}>
-                      <MemoNewChat
-                        subHeaders={subHeaders}
-                        toggleNav={toggleNavVisible}
-                        headerButtons={headerButtons}
-                        isSmallScreen={isSmallScreen}
-                      />
-                      <Conversations
-                        conversations={conversations}
-                        moveToTop={moveToTop}
-                        toggleNav={itemToggleNav}
-                        containerRef={listRef}
-                        loadMoreConversations={loadMoreConversations}
-                        isLoading={isFetchingNextPage || showLoading || isLoading}
-                        isSearchLoading={isSearchLoading}
-                      />
-                    </div>
-                    <Suspense fallback={null}>
-                      <AccountSettings />
-                    </Suspense>
-                  </nav>
+                  {navVisible && (
+                    <nav
+                      id="chat-history-nav"
+                      aria-label={localize('com_ui_chat_history')}
+                      className="flex h-full flex-col px-2 pb-3.5 md:px-3"
+                    >
+                      <div className="flex flex-1 flex-col" ref={outerContainerRef}>
+                        <MemoNewChat
+                          subHeaders={subHeaders}
+                          toggleNav={toggleNavVisible}
+                          headerButtons={headerButtons}
+                          isSmallScreen={isSmallScreen}
+                          openSidebarRef={openSidebarRef}
+                          closeSidebarRef={closeSidebarRef}
+                        />
+                        <Conversations
+                          conversations={conversations}
+                          moveToTop={moveToTop}
+                          toggleNav={itemToggleNav}
+                          containerRef={listRef}
+                          loadMoreConversations={loadMoreConversations}
+                          isLoading={isFetchingNextPage || showLoading || isLoading}
+                          isSearchLoading={isSearchLoading}
+                        />
+                      </div>
+                      <Suspense fallback={null}>
+                        <AccountSettings />
+                      </Suspense>
+                    </nav>
+                  )}
                 </div>
               </div>
             </div>
