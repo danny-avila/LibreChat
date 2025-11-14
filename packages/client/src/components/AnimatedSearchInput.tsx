@@ -1,5 +1,6 @@
 import React from 'react';
 import { Search } from 'lucide-react';
+import { TranslationKeys, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const AnimatedSearchInput = ({
@@ -15,6 +16,7 @@ const AnimatedSearchInput = ({
 }) => {
   const isSearching = searching === true;
   const hasValue = value != null && value.length > 0;
+  const localize = useLocalize();
 
   return (
     <div className="relative w-full">
@@ -36,6 +38,7 @@ const AnimatedSearchInput = ({
             value={value}
             onChange={onChange}
             placeholder={placeholder}
+            aria-label={localize('com_ui_search')}
             className={`peer relative z-20 w-full rounded-lg bg-surface-secondary py-2 pl-10 outline-none backdrop-blur-sm transition-all duration-500 ease-in-out placeholder:text-gray-500 focus:ring-ring`}
           />
 
