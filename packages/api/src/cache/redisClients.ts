@@ -122,6 +122,11 @@ if (cacheConfig.USE_REDIS) {
 }
 
 let keyvRedisClient: RedisClientType | RedisClusterType | null = null;
+let keyvRedisClientReady:
+  | Promise<void>
+  | Promise<RedisClientType<Record<string, never>, Record<string, never>, Record<string, never>>>
+  | null = null;
+
 if (cacheConfig.USE_REDIS) {
   /**
    * ** WARNING ** Keyv Redis client does not support Prefix like ioredis above.
@@ -201,10 +206,13 @@ if (cacheConfig.USE_REDIS) {
     logger.warn('@keyv/redis client disconnected');
   });
 
-  keyvRedisClient.connect().catch((err) => {
+  // Start connection immediately
+  keyvRedisClientReady = keyvRedisClient.connect();
+
+  keyvRedisClientReady.catch((err): void => {
     logger.error('@keyv/redis initial connection failed:', err);
     throw err;
   });
 }
 
-export { ioredisClient, keyvRedisClient };
+export { ioredisClient, keyvRedisClient, keyvRedisClientReady };
