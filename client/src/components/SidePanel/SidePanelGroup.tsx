@@ -2,14 +2,10 @@ import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
 import { getConfigDefaults } from 'librechat-data-provider';
-import {
-  ResizableHandleAlt,
-  ResizablePanel,
-  ResizablePanelGroup,
-  useMediaQuery,
-} from '@librechat/client';
+import { ResizablePanel, ResizablePanelGroup, useMediaQuery } from '@librechat/client';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { useGetStartupConfig } from '~/data-provider';
+import ArtifactsPanel from './ArtifactsPanel';
 import { normalizeLayout } from '~/utils';
 import SidePanel from './SidePanel';
 import store from '~/store';
@@ -46,6 +42,7 @@ const SidePanelGroup = memo(
     const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
     const [fullCollapse, setFullCollapse] = useState(fullPanelCollapse);
     const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
+    const [shouldRenderArtifacts, setShouldRenderArtifacts] = useState(artifacts != null);
 
     const isSmallScreen = useMediaQuery('(max-width: 767px)');
     const hideSidePanel = useRecoilValue(store.hideSidePanel);
@@ -109,7 +106,7 @@ const SidePanelGroup = memo(
         <ResizablePanelGroup
           direction="horizontal"
           onLayout={(sizes) => throttledSaveLayout(sizes)}
-          className="transition-width relative h-full w-full flex-1 overflow-auto bg-presentation"
+          className="relative h-full w-full flex-1 overflow-auto bg-presentation"
         >
           <ResizablePanel
             defaultSize={currentLayout[0]}
@@ -119,19 +116,17 @@ const SidePanelGroup = memo(
           >
             {children}
           </ResizablePanel>
-          {artifacts != null && (
-            <>
-              <ResizableHandleAlt withHandle className="ml-3 bg-border-medium text-text-primary" />
-              <ResizablePanel
-                defaultSize={currentLayout[1]}
-                minSize={minSizeMain}
-                order={2}
-                id="artifacts-panel"
-              >
-                {artifacts}
-              </ResizablePanel>
-            </>
+
+          {!isSmallScreen && (
+            <ArtifactsPanel
+              artifacts={artifacts}
+              currentLayout={currentLayout}
+              minSizeMain={minSizeMain}
+              shouldRender={shouldRenderArtifacts}
+              onRenderChange={setShouldRenderArtifacts}
+            />
           )}
+
           {!hideSidePanel && interfaceConfig.sidePanel === true && (
             <SidePanel
               panelRef={panelRef}
@@ -149,6 +144,9 @@ const SidePanelGroup = memo(
             />
           )}
         </ResizablePanelGroup>
+        {artifacts != null && isSmallScreen && (
+          <div className="fixed inset-0 z-[100]">{artifacts}</div>
+        )}
         <button
           aria-label="Close right side panel"
           className={`nav-mask ${!isCollapsed ? 'active' : ''}`}

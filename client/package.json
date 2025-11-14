@@ -93,7 +93,7 @@
     "react-i18next": "^15.4.0",
     "react-lazy-load-image-component": "^1.6.0",
     "react-markdown": "^9.0.1",
-    "react-resizable-panels": "^3.0.2",
+    "react-resizable-panels": "^3.0.6",
     "react-router-dom": "^6.11.2",
     "react-speech-recognition": "^3.10.0",
     "react-textarea-autosize": "^8.4.0",

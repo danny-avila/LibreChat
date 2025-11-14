@@ -14,6 +14,14 @@ jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
 }));
 
+// Mock getMCPManager
+const mockFormatInstructions = jest.fn();
+jest.mock('~/config', () => ({
+  getMCPManager: jest.fn(() => ({
+    formatInstructionsForContext: mockFormatInstructions,
+  })),
+}));
+
 describe('AgentClient - titleConvo', () => {
   let client;
   let mockRun;
@@ -1165,6 +1173,200 @@ describe('AgentClient - titleConvo', () => {
           expect(clientOptions.modelKwargs?.max_completion_tokens).toBe(0);
         }
       });
+    });
+  });
+
+  describe('buildMessages with MCP server instructions', () => {
+    let client;
+    let mockReq;
+    let mockRes;
+    let mockAgent;
+    let mockOptions;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      // Reset the mock to default behavior
+      mockFormatInstructions.mockResolvedValue(
+        '# MCP Server Instructions\n\nTest MCP instructions here',
+      );
+
+      const { DynamicStructuredTool } = require('@langchain/core/tools');
+
+      // Create mock MCP tools with the delimiter pattern
+      const mockMCPTool1 = new DynamicStructuredTool({
+        name: `tool1${Constants.mcp_delimiter}server1`,
+        description: 'Test MCP tool 1',
+        schema: {},
+        func: async () => 'result',
+      });
+
+      const mockMCPTool2 = new DynamicStructuredTool({
+        name: `tool2${Constants.mcp_delimiter}server2`,
+        description: 'Test MCP tool 2',
+        schema: {},
+        func: async () => 'result',
+      });
+
+      mockAgent = {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        instructions: 'Base agent instructions',
+        model_parameters: {
+          model: 'gpt-4',
+        },
+        tools: [mockMCPTool1, mockMCPTool2],
+      };
+
+      mockReq = {
+        user: {
+          id: 'user-123',
+        },
+        body: {
+          endpoint: EModelEndpoint.openAI,
+        },
+        config: {},
+      };
+
+      mockRes = {};
+
+      mockOptions = {
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+        endpoint: EModelEndpoint.agents,
+      };
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+      client.shouldSummarize = false;
+      client.maxContextTokens = 4096;
+    });
+
+    it('should await MCP instructions and not include [object Promise] in agent instructions', async () => {
+      // Set specific return value for this test
+      mockFormatInstructions.mockResolvedValue(
+        '# MCP Server Instructions\n\nUse these tools carefully',
+      );
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Hello',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, null, {
+        instructions: 'Base instructions',
+        additional_instructions: null,
+      });
+
+      // Verify formatInstructionsForContext was called with correct server names
+      expect(mockFormatInstructions).toHaveBeenCalledWith(['server1', 'server2']);
+
+      // Verify the instructions do NOT contain [object Promise]
+      expect(client.options.agent.instructions).not.toContain('[object Promise]');
+
+      // Verify the instructions DO contain the MCP instructions
+      expect(client.options.agent.instructions).toContain('# MCP Server Instructions');
+      expect(client.options.agent.instructions).toContain('Use these tools carefully');
+
+      // Verify the base instructions are also included
+      expect(client.options.agent.instructions).toContain('Base instructions');
+    });
+
+    it('should handle MCP instructions with ephemeral agent', async () => {
+      // Set specific return value for this test
+      mockFormatInstructions.mockResolvedValue(
+        '# Ephemeral MCP Instructions\n\nSpecial ephemeral instructions',
+      );
+
+      // Set up ephemeral agent with MCP servers
+      mockReq.body.ephemeralAgent = {
+        mcp: ['ephemeral-server1', 'ephemeral-server2'],
+      };
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Test ephemeral',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, null, {
+        instructions: 'Ephemeral instructions',
+        additional_instructions: null,
+      });
+
+      // Verify formatInstructionsForContext was called with ephemeral server names
+      expect(mockFormatInstructions).toHaveBeenCalledWith([
+        'ephemeral-server1',
+        'ephemeral-server2',
+      ]);
+
+      // Verify no [object Promise] in instructions
+      expect(client.options.agent.instructions).not.toContain('[object Promise]');
+
+      // Verify ephemeral MCP instructions are included
+      expect(client.options.agent.instructions).toContain('# Ephemeral MCP Instructions');
+      expect(client.options.agent.instructions).toContain('Special ephemeral instructions');
+    });
+
+    it('should handle empty MCP instructions gracefully', async () => {
+      // Set empty return value for this test
+      mockFormatInstructions.mockResolvedValue('');
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Hello',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, null, {
+        instructions: 'Base instructions only',
+        additional_instructions: null,
+      });
+
+      // Verify the instructions still work without MCP content
+      expect(client.options.agent.instructions).toBe('Base instructions only');
+      expect(client.options.agent.instructions).not.toContain('[object Promise]');
+    });
+
+    it('should handle MCP instructions error gracefully', async () => {
+      // Set error return for this test
+      mockFormatInstructions.mockRejectedValue(new Error('MCP error'));
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Hello',
+          isCreatedByUser: true,
+        },
+      ];
+
+      // Should not throw
+      await client.buildMessages(messages, null, {
+        instructions: 'Base instructions',
+        additional_instructions: null,
+      });
+
+      // Should still have base instructions without MCP content
+      expect(client.options.agent.instructions).toContain('Base instructions');
+      expect(client.options.agent.instructions).not.toContain('[object Promise]');
     });
   });
 

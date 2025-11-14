@@ -173,8 +173,8 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
         return null;
       }
 
-      // Filter messages based on targetMessageId if present (branch-specific sharing)
-      let messagesToShare = share.messages;
+      /** Filtered messages based on targetMessageId if present (branch-specific sharing) */
+      let messagesToShare: t.IMessage[] = share.messages;
       if (share.targetMessageId) {
         messagesToShare = getMessagesUpToTarget(share.messages, share.targetMessageId);
       }
@@ -307,6 +307,34 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
         user,
       });
       throw new ShareServiceError('Error deleting shared links', 'BULK_DELETE_ERROR');
+    }
+  }
+
+  /**
+   * Delete shared links by conversation ID
+   */
+  async function deleteConvoSharedLink(
+    user: string,
+    conversationId: string,
+  ): Promise<t.DeleteAllSharesResult> {
+    if (!user || !conversationId) {
+      throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
+    }
+
+    try {
+      const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
+      const result = await SharedLink.deleteMany({ user, conversationId });
+      return {
+        message: 'Shared links deleted successfully',
+        deletedCount: result.deletedCount,
+      };
+    } catch (error) {
+      logger.error('[deleteConvoSharedLink] Error deleting shared links', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        user,
+        conversationId,
+      });
+      throw new ShareServiceError('Error deleting shared links', 'SHARE_DELETE_ERROR');
     }
   }
 
@@ -528,6 +556,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
     deleteSharedLink,
     getSharedMessages,
     deleteAllSharedLinks,
+    deleteConvoSharedLink,
   };
 }
 

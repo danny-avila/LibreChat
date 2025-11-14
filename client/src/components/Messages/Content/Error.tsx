@@ -43,6 +43,7 @@ const errorMessages = {
   [ErrorTypes.NO_BASE_URL]: 'com_error_no_base_url',
   [ErrorTypes.INVALID_ACTION]: `com_error_${ErrorTypes.INVALID_ACTION}`,
   [ErrorTypes.INVALID_REQUEST]: `com_error_${ErrorTypes.INVALID_REQUEST}`,
+  [ErrorTypes.REFUSAL]: 'com_error_refusal',
   [ErrorTypes.MISSING_MODEL]: (json: TGenericError, localize: LocalizeFunction) => {
     const { info: endpoint } = json;
     const provider = (alternateName[endpoint ?? ''] as string | undefined) ?? endpoint ?? 'unknown';

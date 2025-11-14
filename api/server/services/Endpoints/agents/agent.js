@@ -3,12 +3,14 @@ const {
   primeResources,
   getModelMaxTokens,
   extractLibreChatParams,
+  filterFilesByEndpointConfig,
   optionalChainWithEmptyCheck,
 } = require('@librechat/api');
 const {
   ErrorTypes,
   EModelEndpoint,
   EToolResources,
+  paramEndpoints,
   isAgentsEndpoint,
   replaceSpecialVars,
   providerEndpointMap,
@@ -71,6 +73,9 @@ const initializeAgent = async ({
 
   const { resendFiles, maxContextTokens, modelOptions } = extractLibreChatParams(_modelOptions);
 
+  const provider = agent.provider;
+  agent.endpoint = provider;
+
   if (isInitialAgent && conversationId != null && resendFiles) {
     const fileIds = (await getConvoFiles(conversationId)) ?? [];
     /** @type {Set<EToolResources>} */
@@ -88,6 +93,19 @@ const initializeAgent = async ({
     currentFiles = await processFiles(requestFiles);
   }
 
+  if (currentFiles && currentFiles.length) {
+    let endpointType;
+    if (!paramEndpoints.has(agent.endpoint)) {
+      endpointType = EModelEndpoint.custom;
+    }
+
+    currentFiles = filterFilesByEndpointConfig(req, {
+      files: currentFiles,
+      endpoint: agent.endpoint,
+      endpointType,
+    });
+  }
+
   const { attachments, tool_resources } = await primeResources({
     req,
     getFiles,
@@ -98,7 +116,6 @@ const initializeAgent = async ({
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
   });
 
-  const provider = agent.provider;
   const {
     tools: structuredTools,
     toolContextMap,
@@ -113,7 +130,6 @@ const initializeAgent = async ({
     tool_resources,
   })) ?? {};
 
-  agent.endpoint = provider;
   const { getOptions, overrideProvider } = getProviderConfig({ provider, appConfig });
   if (overrideProvider !== agent.provider) {
     agent.provider = overrideProvider;
