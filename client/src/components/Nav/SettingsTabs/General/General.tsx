@@ -68,9 +68,11 @@ export const ThemeSelector = ({
 export const LangSelector = ({
   langcode,
   onChange,
+  portal = true,
 }: {
   langcode: string;
   onChange: (value: string) => void;
+  portal?: boolean;
 }) => {
   const localize = useLocalize();
 
@@ -124,10 +126,11 @@ export const LangSelector = ({
       <Dropdown
         value={langcode}
         onChange={onChange}
-        sizeClasses="[--anchor-max-height:256px]"
+        sizeClasses="[--anchor-max-height:256px] max-h-[60vh]"
         options={languageOptions}
         className="z-50"
         aria-labelledby={labelId}
+        portal={portal}
       />
     </div>
   );
