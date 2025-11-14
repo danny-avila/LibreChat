@@ -1,0 +1,406 @@
+# For more information, see the Configuration Guide:
+# https://www.librechat.ai/docs/configuration/librechat_yaml
+
+# Configuration version (required)
+version: 1.3.1
+
+# Cache settings: Set to true to enable caching
+cache: true
+
+# File storage configuration
+# Single strategy for all file types (legacy format, still supported)
+fileStrategy: "azure_blob"
+
+# Granular file storage strategies (new format - recommended)
+# Allows different storage strategies for different file types
+# fileStrategy:
+#   avatar: "s3"        # Storage for user/agent avatar images
+#   image: "firebase"   # Storage for uploaded images in chats
+#   document: "local"   # Storage for document uploads (PDFs, text files, etc.)
+
+# Available strategies: "local", "s3", "firebase"
+# If not specified, defaults to "local" for all file types
+# You can mix and match strategies based on your needs:
+# - Use S3 for avatars for fast global access
+# - Use Firebase for images with automatic optimization
+# - Use local storage for documents for privacy/compliance
+
+# Custom interface configuration
+interface:
+  customWelcome: "HitStayWin | Play smarter. Win more."
+  # Enable/disable file search as a chatarea selection (default: true)
+  # Note: This setting does not disable the Agents File Search Capability.
+  # To disable the Agents Capability, see the Agents Endpoint configuration instead.
+  fileSearch: false
+  # Privacy policy settings
+  privacyPolicy:
+    externalUrl: '/privacy'
+    openNewTab: true
+
+  # Terms of service
+  termsOfService:
+    externalUrl: '/terms'
+    openNewTab: true
+    modalAcceptance: true
+    modalTitle: 'Terms of Service for HitStayWin'
+    modalContent: |
+      # Terms and Conditions for HitStayWin
+
+      *Effective Date: November 7, 2025*
+
+      Welcome to HitStayWin, the informational website for the open-source AI chat platform, available at https://hitstaywin.com. These Terms of Service ("Terms") govern your use of our website and the services we offer. By accessing or using the Website, you agree to be bound by these Terms and our Privacy Policy, accessible at https://hitstaywin.ai//privacy.
+
+      ## 1. Ownership
+
+      Upon purchasing a package from HitStayWin, you are granted the right to download and use the code for accessing an admin panel for HitStayWin. While you own the downloaded code, you are expressly prohibited from reselling, redistributing, or otherwise transferring the code to third parties without explicit permission from HitStayWin.
+
+      ## 2. User Data
+
+      We collect personal data, such as your name, email address, and payment information, as described in our Privacy Policy. This information is collected to provide and improve our services, process transactions, and communicate with you.
+
+      ## 3. Non-Personal Data Collection
+
+      The Website uses cookies to enhance user experience, analyze site usage, and facilitate certain functionalities. By using the Website, you consent to the use of cookies in accordance with our Privacy Policy.
+
+      ## 4. Use of the Website
+
+      You agree to use the Website only for lawful purposes and in a manner that does not infringe the rights of, restrict, or inhibit anyone else's use and enjoyment of the Website. Prohibited behavior includes harassing or causing distress or inconvenience to any person, transmitting obscene or offensive content, or disrupting the normal flow of dialogue within the Website.
+
+      ## 5. Governing Law
+
+      These Terms shall be governed by and construed in accordance with the laws of the United States, without giving effect to any principles of conflicts of law.
+
+      ## 6. Changes to the Terms
+
+      We reserve the right to modify these Terms at any time. We will notify users of any changes by email. Your continued use of the Website after such changes have been notified will constitute your consent to such changes.
+
+      ## 7. Contact Information
+
+      If you have any questions about these Terms, please contact us at info@hitstaywin.com.
+
+      By using the Website, you acknowledge that you have read these Terms of Service and agree to be bound by them.
+
+  endpointsMenu: false
+  modelSelect: false
+  parameters: false
+  sidePanel: false
+  presets: false
+  prompts: false
+  bookmarks: true
+  multiConvo: false
+  agents: false
+  peoplePicker:
+    users: true
+    groups: true
+    roles: true
+  marketplace:
+      use: false
+  fileCitations: false
+  titleConvo: true
+  # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
+  # temporaryChatRetention: 1
+
+# Example Cloudflare turnstile (optional)
+#turnstile:
+#  siteKey: "your-site-key-here"
+#  options:
+#    language: "auto"    # "auto" or an ISO 639-1 language code (e.g. en)
+#    size: "normal"      # Options: "normal", "compact", "flexible", or "invisible"
+
+# Example Registration Object Structure (optional)
+registration:
+  socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
+  # allowedDomains:
+  # - "gmail.com"
+
+# Balance settings
+balance:
+  enabled: true                # Enable token credit balances for users
+  startBalance: 20000          # Initial tokens credited upon registration
+  autoRefillEnabled: false     # Enable automatic token refills
+  refillIntervalValue: 30      # Numerical value for refill interval
+  refillIntervalUnit: "days"   # Time unit for refill interval (days, hours, etc.)
+  refillAmount: 10000          # Tokens added during each refill
+
+# Example Transactions settings
+# Controls whether to save transaction records to the database
+# Default is true (enabled)
+transactions:
+ enabled: false
+# Note: If balance.enabled is true, transactions will always be enabled
+# regardless of this setting to ensure balance tracking works correctly
+
+# speech:
+#   tts:
+#     openai:
+#       url: ''
+#       apiKey: '${TTS_API_KEY}'
+#       model: ''
+#       voices: ['']
+
+#
+#   stt:
+#     openai:
+#       url: ''
+#       apiKey: '${STT_API_KEY}'
+#       model: ''
+
+rateLimits:
+  fileUploads:
+    ipMax: 20
+    ipWindowInMinutes: 120  # Rate limit window for file uploads per IP
+    userMax: 20
+    userWindowInMinutes: 120  # Rate limit window for file uploads per user
+  conversationsImport:
+    ipMax: 5
+    ipWindowInMinutes: 60  # Rate limit window for conversation imports per IP
+    userMax: 5
+    userWindowInMinutes: 60  # Rate limit window for conversation imports per user
+
+# Example Actions Object Structure
+actions:
+  allowedDomains:
+    - 'swapi.dev'
+    - 'librechat.ai'
+    - 'google.com'
+
+# Example MCP Servers Object Structure
+# mcpServers:
+#   everything:
+#     # type: sse # type can optionally be omitted
+#     url: http://localhost:3001/sse
+#     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+#   puppeteer:
+#     type: stdio
+#     command: npx
+#     args:
+#       - -y
+#       - "@modelcontextprotocol/server-puppeteer"
+#     timeout: 300000  # 5 minutes timeout for this server
+#   filesystem:
+#     # type: stdio
+#     command: npx
+#     args:
+#       - -y
+#       - "@modelcontextprotocol/server-filesystem"
+#       - /home/user/LibreChat/
+#     iconPath: /home/user/LibreChat/client/public/assets/logo.svg
+#   mcp-obsidian:
+#     command: npx
+#     args:
+#       - -y
+#       - "mcp-obsidian"
+#       - /path/to/obsidian/vault
+
+# Definition of custom endpoints
+endpoints:
+  assistants:
+    disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
+    pollIntervalMs: 3000  # Polling interval for checking assistant updates
+    timeoutMs: 180000  # Timeout for assistant operations
+    # Should only be one or the other, either `supportedIds` or `excludedIds`
+    supportedIds: ["asst_1BQjNArbIrUCtlCtOKAbkN7k", "asst_uUCjoJkXFj39OI0HWT6EDT1s"]
+    # excludedIds: ["asst_excludedAssistantId"]
+    # Only show assistants that the user created or that were created externally (e.g. in Assistants playground).
+    # privateAssistants: false # Does not work with `supportedIds` or `excludedIds`
+    # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
+    retrievalModels: ["gpt-4-turbo-preview"]
+    # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+    capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
+
+  agents:
+    # (optional) Default recursion depth for agents, defaults to 25
+    recursionLimit: 50
+    # (optional) Max recursion depth for agents, defaults to 25
+    maxRecursionLimit: 100
+    # (optional) Disable the builder interface for agents
+    disableBuilder: false
+    # (optional) Maximum total citations to include in agent responses, defaults to 30
+    maxCitations: 30
+    # (optional) Maximum citations per file to include in agent responses, defaults to 7
+    maxCitationsPerFile: 7
+    # (optional) Minimum relevance score for sources to be included in responses, defaults to 0.45 (45% relevance threshold)
+    # Set to 0.0 to show all sources (no filtering), or higher like 0.7 for stricter filtering
+    minRelevanceScore: 0.45
+    # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+    capabilities: ["execute_code", "file_search", "actions", "tools"]
+    titleConvo: true
+
+modelSpecs:
+  prioritize: true
+  list:
+
+    - name: "hit-stay-win"
+      label: "HitStayWin | Play smarter. Win more."
+      default: true
+      description: "Data-driven decisions for Blackjack every hand."
+      iconURL: "https://cribmetrics-api.whitedesert-92c5b70c.eastus.azurecontainerapps.io/assets/apple-touch-icon-180x180.png"
+      preset:
+        endpoint: "openAI"
+        model: "gpt-4o-mini"
+        maxContextTokens: 128000 # Maximum context tokens
+        max_tokens: 4096 # Maximum output tokens
+        temperature: 0.2
+        modelLabel: "HitStayWin | Play smarter. Win more."
+        capabilities: []
+        titleConvo: true
+        greeting: |
+          Data-driven decisions for Blackjack every hand.
+        promptPrefix: |
+          ## 🎯 **System Prompt: Blackjack Training & Strategy Assistant**
+
+          **Role:**
+          You are an **AI Blackjack Strategy Assistant** built to **assist users** in blackjack gameplay, decision-making, and card counting through real qworld hands. 
+
+          ---
+
+          ### 🧠 **Core Capabilities**
+
+          1. **Interpret Game States:**
+            Understand the user’s description of the current blackjack hand, dealer upcard, cards played, and optional game conditions (e.g., decks in shoe, dealer rules, doubling/splitting permissions, etc.).
+
+          2. **Provide Strategy Advice:**
+            Give clear, rule-based recommendations for the optimal move — *Hit, Stand, Double, Split, or Surrender* — and explain *why* that move is optimal under the current conditions.
+
+          <!-- 3. **Teach Concepts:**
+
+            * Explain **basic strategy logic** and underlying probabilities.
+            * Demonstrate **card counting systems** (like Hi-Lo) step-by-step.
+            * Include **expected value (EV)** comparisons when relevant.
+            * Reinforce **responsible gaming** — this is only for simulated play and learning. -->
+
+          ---
+
+          ### ⚙️ **Modes of Operation**
+
+          Your assistant can operate in the following modes. The user can switch modes anytime by saying, e.g.,
+
+          > “Switch to Card Counting Mode.”
+
+          ---
+
+          #### 🎯 **1. Basic Strategy Mode (Default)**
+
+          * Purpose: Teach and apply **standard blackjack strategy** based on the user’s table rules.
+          * Inputs: Player hand, dealer upcard, game rules.
+          * Output:
+
+            * Recommended action (Hit, Stand, Double, Split, Surrender).
+            * Short explanation of logic.
+            * Optional expected value (EV) reasoning.
+          * Example:
+
+            ```
+            Dealer shows: 10  
+            Player hand: A,7  
+            → Recommended: Stand (Soft 18 vs 10 – hitting lowers EV slightly)
+            ```
+
+          ---
+
+          #### 🧮 **2. Card Counting Mode**
+
+          * Purpose: Train users on **card counting** and **count-based decision making**.
+          * Tracking: Maintain and update a **Running Count** and **True Count** after each card is revealed.
+          * Default system: **Hi-Lo counting** (2-6 = +1, 7-9 = 0, 10-A = −1).
+          * Optional: User can request different systems (KO, Omega II, etc.).
+          * Output:
+
+            * Updated running/true count.
+            * Explanation of how the count influences expected advantage and potential bet adjustments.
+            * Reminders that all advice is for *training only*, not real betting.
+          * Example:
+
+            ```
+            Cards shown: 10, 6, 5, 9  
+            Running Count: +1  
+            True Count: +0.25 (4 decks remaining)  
+            → Interpretation: Slightly favorable shoe — in simulation, this would slightly increase betting size.
+            ```
+
+          ---
+
+          ### 📘 **Tone & Behavior Rules**
+
+          * Always maintain an **neutral**, and **responsible** tone.
+          <!-- * If the user implies real gambling activity, remind them this system is for **training and simulation only**. -->
+          * Clarify rules or assumptions if they’re missing.
+          * Be concise by default but capable of in-depth explanation when asked (e.g., “Explain why”).
+          <!-- * Never predict or simulate real-world casino outcomes. -->
+
+fileConfig:
+  endpoints:
+    assistants:
+      fileLimit: 5
+      fileSizeLimit: 10  # Maximum size for an individual file in MB
+      totalSizeLimit: 50  # Maximum total size for all files in a single request in MB
+      supportedMimeTypes:
+        - "image/.*"
+        - "application/pdf"
+    openAI:
+      fileLimit: 5
+      fileSizeLimit: 10  # Maximum size for an individual file in MB
+      totalSizeLimit: 50  # Maximum total size for all files in a single request in MB
+      supportedMimeTypes:
+        - "image/.*"
+        - "application/pdf"
+        - "text/.*"
+    default:
+      totalSizeLimit: 20
+    YourCustomEndpointName:
+      fileLimit: 2
+      fileSizeLimit: 5
+  serverFileSizeLimit: 100  # Global server file size limit in MB
+  avatarSizeLimit: 2  # Limit for user avatar image size in MB
+  imageGeneration: # Image Gen settings, either percentage or px
+    percentage: 100
+    px: 1024
+  # Client-side image resizing to prevent upload errors
+  clientImageResize:
+    enabled: true  # Enable/disable client-side image resizing (default: false)
+    maxWidth: 1900  # Maximum width for resized images (default: 1900)
+    maxHeight: 1900  # Maximum height for resized images (default: 1900)
+    quality: 0.92  # JPEG quality for compression (0.0-1.0, default: 0.92)
+
+# See the Custom Configuration Guide for more information on Assistants Config:
+# https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
+
+# Web Search Configuration (optional)
+# webSearch:
+#   # Jina Reranking Configuration
+#   jinaApiKey: '${JINA_API_KEY}'  # Your Jina API key
+#   jinaApiUrl: '${JINA_API_URL}'  # Custom Jina API URL (optional, defaults to https://api.jina.ai/v1/rerank)
+#   
+#   # Other rerankers
+#   cohereApiKey: '${COHERE_API_KEY}'
+#   
+#   # Search providers
+#   serperApiKey: '${SERPER_API_KEY}'
+#   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
+#   searxngApiKey: '${SEARXNG_API_KEY}'
+#   
+#   # Content scrapers
+#   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
+#   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+
+# Memory configuration for user memories
+# memory:
+#   # (optional) Disable memory functionality
+#   disabled: false
+#   # (optional) Restrict memory keys to specific values to limit memory storage and improve consistency
+#   validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
+#   # (optional) Maximum token limit for memory storage (not yet implemented for token counting)
+#   tokenLimit: 10000
+#   # (optional) Enable personalization features (defaults to true if memory is configured)
+#   # When false, users will not see the Personalization tab in settings
+#   personalize: true
+#   # Memory agent configuration - either use an existing agent by ID or define inline
+#   agent:
+#     # Option 1: Use existing agent by ID
+#     id: "your-memory-agent-id"
+#     # Option 2: Define agent inline
+#     # provider: "openai"
+#     # model: "gpt-4o-mini"
+#     # instructions: "You are a memory management assistant. Store and manage user information accurately."
+#     # model_parameters:
+#     #   temperature: 0.1

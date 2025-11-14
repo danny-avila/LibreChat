@@ -11,7 +11,7 @@ export default function  Landing() {
         <h1>Understand Your HOA Documents Instantly</h1>
         <p>DeclaRAY is your AI-powered assistant for interpreting condominium and HOA documents — helping you make sense of CC&Rs, bylaws, and board policies in plain English.</p>
         <div className="cta-buttons">
-          <button className="btn-cta-primary" onClick={() => navigate('/register')}>Try DeclaRAY Free</button>
+          <button className="btn-cta-primary" onClick={() => navigate('/c/new')}>Try DeclaRAY Free</button>
           <button className="btn-cta-secondary" onClick={() => navigate('/plans')} >Choose a Plan</button>
         </div>
       </header>
@@ -64,7 +64,7 @@ export default function  Landing() {
         <h2 className="text-center">Smarter Communities Start with Clarity</h2>
         <p>Whether you’re a first-time condo owner or a seasoned board member, DeclaRAY helps you make confident, informed decisions — without needing a law degree.</p>
         <div className="cta-buttons">
-          <button className="btn-cta-primary" onClick={() => navigate('/register')}>Get Started with DeclaRAY</button>
+          <button className="btn-cta-primary" onClick={() => navigate('/c/new')}>Get Started with DeclaRAY</button>
         </div>
       </section>
 

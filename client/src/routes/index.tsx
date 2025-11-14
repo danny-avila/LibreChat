@@ -25,6 +25,9 @@ import { HelpAndFAQ, PrivacyPolicy, TermsAndServices, Plans, Landing } from '~/c
 import SubscriptionSuccess from '~/components/Subscription/Success';
 import SubscriptionCancel from '~/components/Subscription/Cancel';
 import Subscription from '~/components/Nav/SettingsTabs/Account/Subscription';
+import Product from '~/components/Nav/SettingsTabs/Account/Product';
+import ProductSuccess from '~/components/Product/Success'
+import ProducCancel from '~/components/Product/Cancel'
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -176,6 +179,18 @@ export const router = createBrowserRouter(
               path: 'plans',
               element: <Plans />,
             },
+            {
+              path: 'product',
+              element: <Product />,
+            },            
+            {
+              path: 'account/product/success',
+              element: <ProductSuccess />,
+            },
+            {
+              path: 'account/product/canceled',
+              element: <ProducCancel />,
+            },            
             {
               path: 'account/subscription',
               element: <Subscription />,

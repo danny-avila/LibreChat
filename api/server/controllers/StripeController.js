@@ -4,7 +4,9 @@ const Stripe = require('stripe');
 const { User } = require('~/db/models');
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const { logger } = require('@librechat/data-schemas');
-
+const { getAppConfig } = require('~/server/services/Config/app');
+const { createTransaction } = require('~/models/Transaction');
+const { getBalanceConfig } = require('@librechat/api');
 /**
  * Security Best Practices for Stripe Integration:
  * - Always validate req.user and JWT for all subscription endpoints.
@@ -47,6 +49,80 @@ async function subscriptionStatusController(req, res) {
   }
 }
 
+
+// POST /api/stripe/billing-portal
+async function billingPortalController(req, res) {
+  try {
+    console.log('[billingPortalController] req.user:', req.user);
+    console.log('[billingPortalController] req.headers.cookie:', req.headers.cookie);
+    console.log('[billingPortalController] req.headers.authorization:', req.headers.authorization);
+    if (!req.user || !req.user._id) {
+      console.log('[billingPortalController] No user or user._id found');
+      return res.status(401).json({ error: 'Unauthorized: User not found' });
+    }
+    const user = req.user;
+    console.log('[billingPortalController] user.stripeCustomerId:', user.stripeCustomerId);
+    if (!user.stripeCustomerId) {
+      console.log('[billingPortalController] No Stripe customer ID found for user');
+      return res.status(400).json({ error: 'No Stripe customer ID found for user' });
+    }
+    const returnUrl = process.env.DOMAIN_CLIENT || 'http://localhost:3080';
+    const session = await stripe.billingPortal.sessions.create({
+      customer: user.stripeCustomerId,
+      return_url: returnUrl,
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('Stripe billing portal error:', err);
+    res.status(500).json({ error: err.message });
+  }
+}
+
+
+// POST /api/stripe/purchase
+// Body: { priceId: string, quantity?: number, successUrl?: string, cancelUrl?: string }
+async function productPurchaseController(req, res) {
+  try {
+    const { priceId, quantity = 1, successUrl, cancelUrl, metadata  } = req.body;
+    if (!priceId) {
+      return res.status(400).json({ error: 'Missing priceId' });
+    }
+    
+    const user = req.user;
+
+    // Create Stripe customer if needed
+    let customerId = user.stripeCustomerId;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: user.email,
+        metadata: { userId: user._id.toString() },
+      });
+      customerId = customer.id;
+      await User.findByIdAndUpdate(user._id, { stripeCustomerId: customerId });
+    }
+    
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'payment',
+      line_items: [
+        {
+          price: priceId,
+          quantity,
+        },
+      ],
+      metadata: metadata,
+      customer: customerId,
+      allow_promotion_codes: true,
+      success_url: successUrl || (process.env.DOMAIN_CLIENT || 'http://localhost:3080') + '/account/purchase/success?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: cancelUrl || (process.env.DOMAIN_CLIENT || 'http://localhost:3080') + '/account/purchase/canceled',
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('Stripe product purchase error:', err);
+    res.status(500).json({ error: err.message });
+  }
+}
+
 // Stripe webhook controller
 async function stripeWebhookController(req, res) {
   const sig = req.headers['stripe-signature'];
@@ -74,8 +150,27 @@ async function stripeWebhookController(req, res) {
     request: event.request,
   });
 
+  const user = await User.findOneAndUpdate(
+    { stripeCustomerId: customerId },
+    null
+  );
+
   try {
     switch (event.type) {
+      case 'payment_intent.succeeded':    
+        // Populate appConfig from service
+        const appConfig = await getAppConfig();
+        const balanceConfig = getBalanceConfig(appConfig);
+        const product = event.data.object;
+        const customerId = product.customer;        
+        await createTransaction({
+          user: user._id, // MongoDB ObjectId or string
+          tokenType: 'credits',
+          context: 'admin', 
+          rawAmount: product.metadata?.tokenAmount, 
+          balance: balanceConfig,
+        });
+                  
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
@@ -170,37 +265,10 @@ async function stripeWebhookController(req, res) {
   }
 }
 
-// POST /api/stripe/billing-portal
-async function billingPortalController(req, res) {
-  try {
-    console.log('[billingPortalController] req.user:', req.user);
-    console.log('[billingPortalController] req.headers.cookie:', req.headers.cookie);
-    console.log('[billingPortalController] req.headers.authorization:', req.headers.authorization);
-    if (!req.user || !req.user._id) {
-      console.log('[billingPortalController] No user or user._id found');
-      return res.status(401).json({ error: 'Unauthorized: User not found' });
-    }
-    const user = req.user;
-    console.log('[billingPortalController] user.stripeCustomerId:', user.stripeCustomerId);
-    if (!user.stripeCustomerId) {
-      console.log('[billingPortalController] No Stripe customer ID found for user');
-      return res.status(400).json({ error: 'No Stripe customer ID found for user' });
-    }
-    const returnUrl = process.env.DOMAIN_CLIENT || 'http://localhost:3080';
-    const session = await stripe.billingPortal.sessions.create({
-      customer: user.stripeCustomerId,
-      return_url: returnUrl,
-    });
-    res.json({ url: session.url });
-  } catch (err) {
-    console.error('Stripe billing portal error:', err);
-    res.status(500).json({ error: err.message });
-  }
-}
-
 module.exports = {
   subscribeController,
   subscriptionStatusController,
   stripeWebhookController,
   billingPortalController,
+  productPurchaseController,
 };

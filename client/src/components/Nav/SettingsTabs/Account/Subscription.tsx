@@ -36,15 +36,10 @@ function Subscription({ open, onOpenChange }: TDialogProps) {
 
   const navigateToChat = () => {
     open = false;
-    console.log('navigateToChat - open:', open);
-    console.log('navigateToChat - onOpenChange:', onOpenChange);
 
     if (onOpenChange)  {
       onOpenChange(open);
-      console.log('navigateToChat - onOpenChange Fired:');
     }
-
-    //navigate('/c/new');
   }
 
   const handleCancel = () => {
