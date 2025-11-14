@@ -59,6 +59,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      packages: read        # Required to pull from GHCR
 
     steps:
       - name: Configure AWS credentials (OIDC)
