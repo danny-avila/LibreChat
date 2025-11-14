@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import * as Popover from '@radix-ui/react-popover';
 import { useToastContext } from '@librechat/client';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { mergeFileConfig, fileConfig as defaultFileConfig } from 'librechat-data-provider';
@@ -13,7 +12,6 @@ import { formatBytes } from '~/utils';
 function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const [menuOpen, setMenuOpen] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(1);
   const { control, setValue } = useFormContext<AgentForm>();
   const avatarPreview = useWatch({ control, name: 'avatar_preview' }) ?? '';
@@ -45,7 +43,6 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
       const sizeLimit = fileConfig.avatarSizeLimit ?? 0;
 
       if (!file) {
-        setMenuOpen(false);
         return;
       }
 
@@ -55,7 +52,6 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
           message: localize('com_ui_upload_invalid_var', { 0: megabytes + '' }),
           status: 'error',
         });
-        setMenuOpen(false);
         return;
       }
 
@@ -67,7 +63,6 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
         setUploadProgress(1);
       };
       reader.readAsDataURL(file);
-      setMenuOpen(false);
     },
     [fileConfig.avatarSizeLimit, localize, setValue, showToast],
   );
@@ -77,7 +72,6 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
     setValue('avatar_file', null, { shouldDirty: true });
     setValue('avatar_action', hasRemoteAvatar ? 'reset' : null, { shouldDirty: true });
     setUploadProgress(1);
-    setMenuOpen(false);
   }, [hasRemoteAvatar, setValue]);
 
   const hasIcon = Boolean(avatarPreview) || hasRemoteAvatar;
@@ -85,12 +79,12 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
 
   return (
     <>
-      <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
-        <div className="flex w-full items-center justify-center gap-4">
-          <Popover.Trigger asChild>
+      <div className="flex w-full items-center justify-center gap-4">
+        <AvatarMenu
+          trigger={
             <button
               type="button"
-              className="f h-20 w-20 focus:rounded-full focus:ring-2 focus:ring-ring"
+              className="f h-20 w-20 outline-none ring-offset-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={localize('com_ui_upload_agent_avatar_label')}
             >
               {avatarPreview ? (
@@ -99,10 +93,12 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
                 <NoImage />
               )}
             </button>
-          </Popover.Trigger>
-        </div>
-        <AvatarMenu handleFileChange={handleFileChange} onReset={handleReset} canReset={canReset} />
-      </Popover.Root>
+          }
+          handleFileChange={handleFileChange}
+          onReset={handleReset}
+          canReset={canReset}
+        />
+      </div>
     </>
   );
 }
