@@ -66,11 +66,9 @@ COPY --from=builder --chown=node:node /app/client/dist ./client/dist
 COPY --from=builder --chown=node:node /app/client/public ./client/public
 COPY --from=builder --chown=node:node /app/packages ./packages
 COPY --from=builder --chown=node:node /app/package.json ./package.json
+COPY --from=builder --chown=node:node /app/librechat.yaml ./librechat.yaml
 
-# Copy only necessary config files
-COPY --chown=node:node librechat.yaml ./
-
-# Ensure utils directory exists and copy affiliates.json if available
+# Ensure utils directory exists
 RUN mkdir -p ./api/server/utils
 
 # Create required directories
