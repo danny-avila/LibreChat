@@ -90,23 +90,24 @@ jobs:
         id: send
         run: |
           IID="${{ steps.ec2.outputs.instance_id }}"
-          OWNER="hirethebest-llc"
+          REPO_OWNER="${{ github.repository_owner }}"
+          GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
 
           CMD_ID=$(aws ssm send-command \
             --instance-ids "$IID" \
             --document-name "AWS-RunShellScript" \
             --comment "LibreChat CI deploy" \
-            --parameters 'commands=[
-              "set -e",
-              "cd /opt/LibreChat",
-              "GHCR_PAT=$(grep '^GHCR_PAT=' .env | head -n1 | cut -d\"=\" -f2-)",
-              "[ -z \"$GHCR_PAT\" ] && echo \"GHCR_PAT missing or empty in .env\" && exit 1",
-              "echo \"$GHCR_PAT\" | docker login ghcr.io -u '"$OWNER"' --password-stdin",
-              "docker compose -f deploy-compose.yml pull",
-              "docker compose -f deploy-compose.yml up -d --force-recreate",
-              "docker logout ghcr.io",
-              "docker image prune -af"
-            ]' \
+            --parameters "{
+              \"commands\": [
+                \"set -e\",
+                \"cd /opt/LibreChat\",
+                \"echo '${GH_TOKEN}' | docker login ghcr.io -u '${REPO_OWNER}' --password-stdin\",
+                \"docker compose -f deploy-compose.yml pull\",
+                \"docker compose -f deploy-compose.yml up -d --force-recreate\",
+                \"docker logout ghcr.io\",
+                \"docker image prune -af\"
+              ]
+            }" \
             --query "Command.CommandId" \
             --output text)
 
