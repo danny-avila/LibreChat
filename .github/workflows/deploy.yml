@@ -1,5 +1,11 @@
-name: Build & Deploy LibreChat to EC2 via OIDC+SSM
+name: Build & Deploy LibreChat to EC2 via OIDC + SSM
 
+# ----------------------------------------------------------
+# Triggers
+# ----------------------------------------------------------
+# - Build automatically on pushes to main
+# - Can be manually run from GitHub UI
+# ----------------------------------------------------------
 on:
   push:
     branches: [ main ]
@@ -8,41 +14,60 @@ on:
 env:
   AWS_REGION: us-east-1
 
+# ----------------------------------------------------------
+# Required GitHub permissions
+# ----------------------------------------------------------
+# id-token: write   → required for AWS OIDC authentication
+# contents: read    → needed for repo checkout
+# packages: write   → needed to PUSH Docker images to GHCR
+# ----------------------------------------------------------
 permissions:
-  id-token: write        # OIDC for AWS
+  id-token: write
   contents: read
-  packages: write        # Push to GHCR
+  packages: write
 
 jobs:
+
+# ==========================================================
+#  JOB 1: Build and Push Docker Images to GHCR
+# ==========================================================
   build-and-push:
     runs-on: ubuntu-latest
+
     steps:
+
+      # Checkout repository source code
       - name: Checkout source
         uses: actions/checkout@v4
 
-      # Make owner lowercase for ghcr namespace
-      - name: Set lowercase repository owner
-        run: echo "REPO_OWNER_LC=${OWNER,,}" >> "${GITHUB_ENV}"
-        env:
-          OWNER: '${{ github.repository_owner }}'
+      # Ensure GHCR namespace is lowercase (required by GHCR)
+      - name: Normalize repository owner to lowercase
+        run: echo "REPO_OWNER_LC=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
 
-      - name: Set image name
-        run: echo "IMAGE_API=ghcr.io/${REPO_OWNER_LC}/librechat-api" >> "${GITHUB_ENV}"
+      # Construct the GHCR image name
+      - name: Set API image name
+        run: echo "IMAGE_API=ghcr.io/${REPO_OWNER_LC}/librechat-api" >> "$GITHUB_ENV"
 
+      # Enable multi-architecture builds
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
+      # Enable Docker Buildx (advanced builder)
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
+      # Login to GitHub Container Registry for pushing images
+      - name: Log into GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & Push LibreChat API (Dockerfile.multi → api-build)
+      # Build and push Docker image to GHCR
+      # - Uses multi-stage Dockerfile
+      # - Pushes :latest and :commit-sha tags
+      - name: Build & Push LibreChat API Container
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -53,88 +78,131 @@ jobs:
             ${{ env.IMAGE_API }}:latest
             ${{ env.IMAGE_API }}:${{ github.sha }}
 
+# ==========================================================
+#  JOB 2: Deploy to EC2 via AWS SSM
+# ==========================================================
   deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
+
     permissions:
       id-token: write
       contents: read
-      packages: read        # Required to pull from GHCR
+
+      # REQUIRED for the deploy job because EC2 uses the GitHub token
+      # to pull images from GHCR.
+      packages: read
 
     steps:
+
+      # ------------------------------------------------------
+      # Authenticate to AWS using OIDC (no static secrets)
+      # ------------------------------------------------------
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::395567831871:role/github-actions
           aws-region: ${{ env.AWS_REGION }}
 
-      # Use a repo variable so you don't hardcode the ID in YAML: Settings → Secrets and variables → Variables → EC2_INSTANCE_ID
-      - name: Resolve instance id
+      # Resolve EC2 instance ID (hard-coded, but can be a variable)
+      - name: Resolve EC2 Instance ID
         id: ec2
         run: |
           INSTANCE_ID="i-060babef69922d8b4"
           echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Verify instance is SSM-managed
+      # ------------------------------------------------------
+      # Ensure EC2 instance is SSM-Managed before deployment
+      # ------------------------------------------------------
+      - name: Ensure EC2 Instance is SSM Managed
         run: |
           IID="${{ steps.ec2.outputs.instance_id }}"
+
+          # Query if instance is registered with SSM
           MATCH=$(aws ssm describe-instance-information \
-            --query "InstanceInformationList[?InstanceId=='${IID}'].InstanceId" \
+            --query "InstanceInformationList[?InstanceId=='$IID'].InstanceId" \
             --output text)
+
           if [ "$MATCH" != "$IID" ]; then
-            echo "❌ Instance $IID is not registered with SSM. Ensure the instance role has AmazonSSMManagedInstanceCore and the SSM agent is running."
+            echo "❌ Instance $IID is NOT SSM-managed. Fix IAM role or SSM agent."
             exit 1
           fi
-          echo "✅ SSM reports instance $IID as managed."
 
-      - name: Deploy LibreChat via SSM (login to GHCR, pull, restart)
+          echo "✅ Instance $IID is SSM-managed."
+
+      # ------------------------------------------------------
+      # Execute deployment commands inside EC2 via AWS SSM
+      # ------------------------------------------------------
+      - name: Execute Remote Deployment on EC2 via SSM
         id: send
         run: |
           IID="${{ steps.ec2.outputs.instance_id }}"
-          REPO_OWNER="${{ github.repository_owner }}"
-          GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          OWNER="${{ github.repository_owner }}"
+          TOKEN="${{ secrets.GITHUB_TOKEN }}"
 
           CMD_ID=$(aws ssm send-command \
             --instance-ids "$IID" \
             --document-name "AWS-RunShellScript" \
-            --comment "LibreChat CI deploy" \
-            --parameters "{
-              \"commands\": [
-                \"set -e\",
-                \"cd /opt/LibreChat\",
-                \"echo '${GH_TOKEN}' | docker login ghcr.io -u '${REPO_OWNER}' --password-stdin\",
-                \"docker compose -f deploy-compose.yml pull\",
-                \"docker compose -f deploy-compose.yml up -d --force-recreate\",
-                \"docker logout ghcr.io\",
-                \"docker image prune -af\"
-              ]
-            }" \
+            --comment "LibreChat CI Deployment" \
+            --parameters "commands=[
+              \"set -e\",
+              \"cd /opt/LibreChat\",
+
+              \"echo '🔐 Logging into GHCR...'\",
+              \"echo '$TOKEN' | docker login ghcr.io -u '$OWNER' --password-stdin || { echo '❌ GHCR login failed'; exit 1; }\",
+
+              \"echo '📦 Pulling updated Docker images...'\",
+              \"docker compose -f deploy-compose.yml pull || { echo '❌ Docker pull failed'; docker logout ghcr.io; exit 1; }\",
+
+              \"echo '🚀 Recreating containers...'\",
+              \"docker compose -f deploy-compose.yml up -d --force-recreate || { echo '❌ Docker compose up failed'; docker logout ghcr.io; exit 1; }\",
+
+              \"docker logout ghcr.io\",
+              \"docker image prune -af\"
+            ]" \
             --query "Command.CommandId" \
             --output text)
 
           echo "command_id=$CMD_ID" >> "$GITHUB_OUTPUT"
-          echo "Triggered SSM command: $CMD_ID"
+          echo "🟢 Triggered SSM command ID: $CMD_ID"
 
-      - name: Wait for command completion & print output
+      # ------------------------------------------------------
+      # Install jq (needed for parsing JSON from SSM)
+      # ------------------------------------------------------
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      # ------------------------------------------------------
+      # Wait for SSM to finish and retrieve logs
+      # ------------------------------------------------------
+      - name: Wait for EC2 Deployment Completion and Fetch Logs
+        timeout-minutes: 5   # Stop stuck deployments
         run: |
           IID="${{ steps.ec2.outputs.instance_id }}"
           CID="${{ steps.send.outputs.command_id }}"
 
-          # poll status
-          for i in {1..30}; do
-            STATUS=$(aws ssm list-command-invocations \
-              --command-id "$CID" \
-              --details --query "CommandInvocations[0].Status" \
-              --output text)
-            echo "SSM status: $STATUS"
-            case "$STATUS" in
-              Success|Failed|Cancelled|TimedOut) break ;;
-            esac
-            sleep 5
-          done
+          echo "⏳ Waiting for SSM command to complete (max 5 minutes)..."
 
-          aws ssm get-command-invocation \
+          # This waits until the EC2 command completes OR fails
+          aws ssm wait command-executed \
+            --command-id "$CID" \
+            --instance-id "$IID" \
+            || echo "⚠️ Warning: Command may have failed or timed out"
+
+          echo "📜 Fetching remote EC2 logs..."
+          RESULT=$(aws ssm get-command-invocation \
             --command-id "$CID" \
             --instance-id "$IID" \
             --query '{Status:Status, StdOut:StandardOutputContent, StdErr:StandardErrorContent}' \
-            --output json
+            --output json)
+
+          echo "$RESULT"
+
+          STATUS=$(echo "$RESULT" | jq -r '.Status')
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "❌ Deployment failed with status: $STATUS"
+            exit 1
+          fi
+
+          echo "✅ Deployment completed successfully!"
