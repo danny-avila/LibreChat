@@ -3,6 +3,7 @@ import type { Redis, Cluster } from 'ioredis';
 import { logger } from '@librechat/data-schemas';
 import { createClient, createCluster } from '@keyv/redis';
 import type { RedisClientType, RedisClusterType } from '@redis/client';
+import type { ScanCommandOptions } from '@redis/client/dist/lib/commands/SCAN';
 import { cacheConfig } from './cacheConfig';
 
 const urls = cacheConfig.REDIS_URI?.split(',').map((uri) => new URL(uri)) || [];
@@ -161,6 +162,22 @@ if (cacheConfig.USE_REDIS) {
           rootNodes: urls.map((url) => ({ url: url.href })),
           defaults: redisOptions,
         });
+
+  // Add scanIterator method to cluster client for API consistency with standalone client
+  if (!('scanIterator' in keyvRedisClient)) {
+    const clusterClient = keyvRedisClient as RedisClusterType;
+    (keyvRedisClient as unknown as RedisClientType).scanIterator = async function* (
+      options?: ScanCommandOptions,
+    ) {
+      const masters = clusterClient.masters;
+      for (const master of masters) {
+        const nodeClient = await clusterClient.nodeClient(master);
+        for await (const key of nodeClient.scanIterator(options)) {
+          yield key;
+        }
+      }
+    };
+  }
 
   keyvRedisClient.setMaxListeners(cacheConfig.REDIS_MAX_LISTENERS);
 
