@@ -2,7 +2,14 @@ import { useCallback, useState, useMemo, useEffect } from 'react';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
 import { Link } from 'react-router-dom';
-import { TrashIcon, MessageSquare, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import {
+  TrashIcon,
+  MessageSquare,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  ExternalLink,
+} from 'lucide-react';
 import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
 import {
   OGDialog,
@@ -190,10 +197,14 @@ export default function SharedLinks() {
                 to={`/share/${shareId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block truncate rounded-sm text-blue-500 hover:underline"
+                className="group flex items-center gap-1 truncate rounded-sm text-blue-500 underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-ring"
                 title={title}
               >
-                {title}
+                <span className="truncate">{title}</span>
+                <ExternalLink
+                  className="size-3 flex-shrink-0 opacity-70 group-hover:opacity-100"
+                  aria-hidden="true"
+                />
               </Link>
             </div>
           );
