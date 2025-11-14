@@ -183,18 +183,26 @@ export default function AgentPanel() {
       previousVersionRef.current = agentQuery.data?.version;
     },
     onSuccess: async (data) => {
-      // Check if agent version is the same (no changes were made)
-      if (previousVersionRef.current !== undefined && data.version === previousVersionRef.current) {
-        showToast({
-          message: localize('com_ui_no_changes'),
-          status: 'info',
-        });
-      } else {
-        showToast({
-          message: `${localize('com_assistants_update_success')} ${
-            data.name ?? localize('com_ui_agent')
-          }`,
-        });
+      const avatarActionState = getValues('avatar_action');
+      const noVersionChange =
+        previousVersionRef.current !== undefined && data.version === previousVersionRef.current;
+      const onlyAvatarUpload = noVersionChange && avatarActionState === 'upload';
+
+      // Suppress misleading "no changes" toast when an avatar upload is pending.
+      // If only the avatar is being uploaded (no other changes), let the upload toast handle success.
+      if (!onlyAvatarUpload) {
+        if (noVersionChange) {
+          showToast({
+            message: localize('com_ui_no_changes'),
+            status: 'info',
+          });
+        } else {
+          showToast({
+            message: `${localize('com_assistants_update_success')} ${
+              data.name ?? localize('com_ui_agent')
+            }`,
+          });
+        }
       }
 
       const agentOption = getValues('agent');
@@ -202,7 +210,6 @@ export default function AgentPanel() {
         setValue('agent', { ...agentOption, ...data }, { shouldDirty: false });
       }
 
-      const avatarActionState = getValues('avatar_action');
       await persistAvatarChanges(data.id ?? agent_id);
 
       if (avatarActionState === 'reset') {
