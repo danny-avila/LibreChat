@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useMediaQuery } from '@librechat/client';
+import { Skeleton, useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
@@ -158,13 +158,12 @@ const Nav = memo(
     const headerButtons = useMemo(
       () => (
         <>
-          <Suspense fallback={null}>
+          <Suspense fallback={<Skeleton className="h-10 w-10 rounded-xl" />}>
             <AgentMarketplaceButton isSmallScreen={isSmallScreen} toggleNav={toggleNavVisible} />
           </Suspense>
           {hasAccessToBookmarks && (
             <>
-              <div className="mt-1.5" />
-              <Suspense fallback={null}>
+              <Suspense fallback={<Skeleton className="h-10 w-10 rounded-xl" />}>
                 <BookmarkNav tags={tags} setTags={setTags} isSmallScreen={isSmallScreen} />
               </Suspense>
             </>
@@ -229,7 +228,7 @@ const Nav = memo(
                         isSearchLoading={isSearchLoading}
                       />
                     </div>
-                    <Suspense fallback={null}>
+                    <Suspense fallback={<Skeleton className="mt-1 h-12 w-full rounded-xl" />}>
                       <AccountSettings />
                     </Suspense>
                   </nav>

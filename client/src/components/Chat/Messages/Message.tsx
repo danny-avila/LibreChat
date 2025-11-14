@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { useMessageProcess } from '~/hooks';
 import type { TMessageProps } from '~/common';
 import MessageRender from './ui/MessageRender';
-// eslint-disable-next-line import/no-cycle
+
 import MultiMessage from './MultiMessage';
 import { cn } from '~/utils';
 import store from '~/store';
