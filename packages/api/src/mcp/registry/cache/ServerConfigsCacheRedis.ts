@@ -30,7 +30,7 @@ export class ServerConfigsCacheRedis extends BaseRegistryCache {
       throw new Error(
         `Server "${serverName}" already exists in cache. Use update() to modify existing configs.`,
       );
-    const success = await this.cache.set(serverName, config);
+    const success = await this.cache.set(serverName, { ...config, cachedAt: Date.now() });
     this.successCheck(`add ${this.owner} server "${serverName}"`, success);
   }
 
@@ -41,7 +41,7 @@ export class ServerConfigsCacheRedis extends BaseRegistryCache {
       throw new Error(
         `Server "${serverName}" does not exist in cache. Use add() to create new configs.`,
       );
-    const success = await this.cache.set(serverName, config);
+    const success = await this.cache.set(serverName, { ...config, cachedAt: Date.now() });
     this.successCheck(`update ${this.owner} server "${serverName}"`, success);
   }
 
@@ -68,9 +68,9 @@ export class ServerConfigsCacheRedis extends BaseRegistryCache {
         // Full key format: "prefix::namespace:keyName"
         const lastColonIndex = key.lastIndexOf(':');
         const keyName = key.substring(lastColonIndex + 1);
-        const value = await this.cache.get(keyName);
-        if (value) {
-          entries.push([keyName, value as ParsedServerConfig]);
+        const config = (await this.cache.get(keyName)) as ParsedServerConfig | undefined;
+        if (config) {
+          entries.push([keyName, config]);
         }
       }
     }

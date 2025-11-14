@@ -7,6 +7,8 @@ import { ParsedServerConfig } from '~/mcp/types';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 import type * as t from '~/mcp/types';
 import { mcpServersRegistry as registry } from './MCPServersRegistry';
+import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
+import { TUser } from 'librechat-data-provider';
 
 const MCP_INIT_TIMEOUT_MS =
   process.env.MCP_INIT_TIMEOUT_MS != null ? parseInt(process.env.MCP_INIT_TIMEOUT_MS) : 30_000;
@@ -56,7 +58,62 @@ export class MCPServersInitializer {
       await this.initialize(rawConfigs);
     }
   }
-
+  public static async reInitializeServer(args: {
+    serverName: string;
+    config: t.MCPOptions;
+    user?: TUser;
+    isPrivateServer?: boolean;
+  }): Promise<void> {
+    const { serverName, config, user, isPrivateServer } = args;
+    await registry.resetServer(serverName, user?.id);
+    if (isPrivateServer) {
+      if (!user || !user.id) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          'User must be provided for private server updates',
+        );
+      }
+      await registry.addPrivateUserServer(user.id, serverName, config);
+    } else {
+      await this.initializeServer(serverName, config);
+    }
+  }
+  public static async initPrivateServers(rawConfigs: t.MCPServers, userId: string): Promise<void> {
+    const serverNames = Object.keys(rawConfigs);
+    await Promise.allSettled(
+      serverNames.map((serverName) =>
+        withTimeout(
+          MCPServersInitializer.ensurePrivateServerInitialized(
+            serverName,
+            rawConfigs[serverName],
+            userId,
+          ),
+          MCP_INIT_TIMEOUT_MS,
+          `${MCPServersInitializer.prefix(serverName)} Server initialization timed out`,
+          logger.error,
+        ),
+      ),
+    );
+  }
+  private static async ensurePrivateServerInitialized(
+    serverName: string,
+    rawConfig: t.MCPOptions,
+    userId: string,
+  ): Promise<void> {
+    try {
+      const existing = await registry.getServerConfig(serverName, userId);
+      if (existing) {
+        logger.debug(`${this.prefix(serverName)} - ${userId} Using cached config`);
+        return;
+      }
+      await registry.addPrivateUserServer(userId, serverName, rawConfig);
+    } catch (error) {
+      logger.error(
+        `${MCPServersInitializer.prefix(serverName)} - user ${userId} - Failed to initialize:`,
+        error,
+      );
+    }
+  }
   /** Initializes a single server with all its metadata and adds it to appropriate collections */
   private static async initializeServer(
     serverName: string,
@@ -65,11 +122,7 @@ export class MCPServersInitializer {
     try {
       const config = await MCPServerInspector.inspect(serverName, rawConfig);
 
-      if (config.startup === false || config.requiresOAuth) {
-        await registry.sharedUserServers.add(serverName, config);
-      } else {
-        await registry.sharedAppServers.add(serverName, config);
-      }
+      await registry.addSharedServer(serverName, config);
       MCPServersInitializer.logParsedConfig(serverName, config);
     } catch (error) {
       logger.error(`${MCPServersInitializer.prefix(serverName)} Failed to initialize:`, error);

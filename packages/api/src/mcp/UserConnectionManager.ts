@@ -5,6 +5,7 @@ import { mcpServersRegistry as serversRegistry } from '~/mcp/registry/MCPServers
 import { MCPConnection } from './connection';
 import type * as t from './types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
+import { MCPToolBox } from './MCPToolBox';
 
 /**
  * Abstract base class for managing user-specific MCP connections with lifecycle management.
@@ -21,6 +22,10 @@ export abstract class UserConnectionManager {
   /** Last activity timestamp for users (not per server) */
   protected userLastActivity: Map<string, number> = new Map();
   protected readonly USER_CONNECTION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes (TODO: make configurable)
+
+  // ToolBox management - parallel to connections
+  protected appToolBox: MCPToolBox | null = null;
+  protected userToolBoxes: Map<string, MCPToolBox> = new Map();
 
   /** Updates the last activity timestamp for a user */
   protected updateUserLastActivity(userId: string): void {
@@ -54,12 +59,14 @@ export abstract class UserConnectionManager {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
     }
 
-    if (this.appConnections!.has(serverName)) {
+    if (await this.appConnections!.has(serverName)) {
       throw new McpError(
         ErrorCode.InvalidRequest,
         `[MCP][User: ${userId}] Trying to create user-specific connection for app-level server "${serverName}"`,
       );
     }
+
+    const config = await serversRegistry.getServerConfig(serverName, userId);
 
     const userServerMap = this.userConnections.get(userId);
     let connection = forceNew ? undefined : userServerMap?.get(serverName);
@@ -77,7 +84,15 @@ export abstract class UserConnectionManager {
       }
       connection = undefined; // Force creation of a new connection
     } else if (connection) {
-      if (await connection.isConnected()) {
+      if (!config || (config.cachedAt && connection.isStale(config.cachedAt))) {
+        if (config) {
+          logger.info(
+            `[MCP][User: ${userId}][${serverName}] Config was updated, disconnecting stale connection`,
+          );
+        }
+        await this.disconnectUserConnection(userId, serverName);
+        connection = undefined;
+      } else if (await connection.isConnected()) {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
         this.updateUserLastActivity(userId);
         return connection;
@@ -91,17 +106,17 @@ export abstract class UserConnectionManager {
       }
     }
 
-    // If no valid connection exists, create a new one
-    if (!connection) {
-      logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
-    }
-
-    const config = await serversRegistry.getServerConfig(serverName, userId);
+    // Now check if config exists for new connection creation
     if (!config) {
       throw new McpError(
         ErrorCode.InvalidRequest,
         `[MCP][User: ${userId}] Configuration for server "${serverName}" not found.`,
       );
+    }
+
+    // If no valid connection exists, create a new one
+    if (!connection) {
+      logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
     }
 
     try {
@@ -158,6 +173,14 @@ export abstract class UserConnectionManager {
     return this.userConnections.get(userId);
   }
 
+  /** Gets or creates a toolbox for a specific user */
+  protected getOrCreateUserToolBox(userId: string): MCPToolBox {
+    if (!this.userToolBoxes.has(userId)) {
+      this.userToolBoxes.set(userId, new MCPToolBox(userId));
+    }
+    return this.userToolBoxes.get(userId)!;
+  }
+
   /** Removes a specific user connection entry */
   protected removeUserConnection(userId: string, serverName: string): void {
     const userMap = this.userConnections.get(userId);
@@ -208,7 +231,21 @@ export abstract class UserConnectionManager {
     }
   }
 
-  /** Check for and disconnect idle connections */
+  /** Removes user toolbox and clears cached tools */
+  protected async cleanupUserToolBox(userId: string): Promise<void> {
+    const toolBox = this.userToolBoxes.get(userId);
+    if (toolBox) {
+      try {
+        await toolBox.reset();
+        this.userToolBoxes.delete(userId);
+        logger.info(`[MCP][User: ${userId}] Toolbox cleaned up.`);
+      } catch (error) {
+        logger.error(`[MCP][User: ${userId}] Error cleaning up toolbox:`, error);
+      }
+    }
+  }
+
+  /** Check for and disconnect idle connections and clean up toolboxes */
   protected checkIdleConnections(currentUserId?: string): void {
     const now = Date.now();
 
@@ -219,12 +256,13 @@ export abstract class UserConnectionManager {
       }
       if (now - lastActivity > this.USER_CONNECTION_IDLE_TIMEOUT) {
         logger.info(
-          `[MCP][User: ${userId}] User idle for too long. Disconnecting all connections...`,
+          `[MCP][User: ${userId}] User idle for too long. Disconnecting all connections and cleaning up toolbox...`,
         );
-        // Disconnect all user connections asynchronously (fire and forget)
-        this.disconnectUserConnections(userId).catch((err) =>
-          logger.error(`[MCP][User: ${userId}] Error disconnecting idle connections:`, err),
-        );
+        // Disconnect all user connections and cleanup toolbox asynchronously (fire and forget)
+        Promise.all([
+          this.disconnectUserConnections(userId),
+          this.cleanupUserToolBox(userId),
+        ]).catch((err) => logger.error(`[MCP][User: ${userId}] Error during idle cleanup:`, err));
       }
     }
   }
