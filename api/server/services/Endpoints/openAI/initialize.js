@@ -5,6 +5,7 @@ const {
   isUserProvided,
   getOpenAIConfig,
   getAzureCredentials,
+  getEntraIdAccessToken,
   shouldUseEntraId,
 } = require('@librechat/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
