@@ -7,12 +7,14 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { logger } = require('@librechat/data-schemas');
 
 const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
     BEDROCK_AWS_SESSION_TOKEN,
+    BEDROCK_AWS_PROFILE,
     BEDROCK_REVERSE_PROXY,
     BEDROCK_AWS_DEFAULT_REGION,
     PROXY,
@@ -20,28 +22,38 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const expiresAt = req.body.key;
   const isUserProvided = BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED;
 
-  let credentials = isUserProvided
-    ? await getUserKey({ userId: req.user.id, name: EModelEndpoint.bedrock })
-    : {
-        accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
-        secretAccessKey: BEDROCK_AWS_SECRET_ACCESS_KEY,
-        ...(BEDROCK_AWS_SESSION_TOKEN && { sessionToken: BEDROCK_AWS_SESSION_TOKEN }),
-      };
+  let credentials;
 
-  if (!credentials) {
-    throw new Error('Bedrock credentials not provided. Please provide them again.');
-  }
+  if (isUserProvided) {
+    // User-provided credentials from database
+    credentials = await getUserKey({ userId: req.user.id, name: EModelEndpoint.bedrock });
 
-  if (
-    !isUserProvided &&
-    (credentials.accessKeyId === undefined || credentials.accessKeyId === '') &&
-    (credentials.secretAccessKey === undefined || credentials.secretAccessKey === '')
-  ) {
+    if (!credentials) {
+      throw new Error('Bedrock credentials not provided. Please provide them again.');
+    }
+
+    if (expiresAt) {
+      checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
+    }
+  } else if (BEDROCK_AWS_ACCESS_KEY_ID && BEDROCK_AWS_SECRET_ACCESS_KEY) {
+    // Explicit credentials from environment variables
+    credentials = {
+      accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
+      secretAccessKey: BEDROCK_AWS_SECRET_ACCESS_KEY,
+      ...(BEDROCK_AWS_SESSION_TOKEN && { sessionToken: BEDROCK_AWS_SESSION_TOKEN }),
+    };
+    logger.info('[Bedrock] Using explicit credentials from environment variables');
+  } else {
+    // Use AWS SDK default credential provider chain
+    // This supports: AWS profiles, IAM roles, EC2/ECS metadata, SSO, etc.
     credentials = undefined;
-  }
-
-  if (expiresAt && isUserProvided) {
-    checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
+    if (BEDROCK_AWS_PROFILE) {
+      logger.info(
+        `[Bedrock] Using AWS credential provider chain with profile: ${BEDROCK_AWS_PROFILE}`,
+      );
+    } else {
+      logger.info('[Bedrock] Using AWS credential provider chain with default profile');
+    }
   }
 
   /*
@@ -82,6 +94,11 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
 
   if (credentials) {
     llmConfig.credentials = credentials;
+  }
+
+  // Pass AWS profile to the SDK if specified and no explicit credentials
+  if (!credentials && BEDROCK_AWS_PROFILE) {
+    llmConfig.profile = BEDROCK_AWS_PROFILE;
   }
 
   if (BEDROCK_REVERSE_PROXY) {
