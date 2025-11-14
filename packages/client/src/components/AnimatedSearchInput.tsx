@@ -36,7 +36,7 @@ const AnimatedSearchInput = ({
             value={value}
             onChange={onChange}
             placeholder={placeholder}
-            className={`peer relative z-20 w-full rounded-lg bg-surface-secondary px-10 py-2 outline-none backdrop-blur-sm transition-all duration-500 ease-in-out placeholder:text-gray-400 focus:ring-ring`}
+            className={`peer relative z-20 w-full rounded-lg bg-surface-secondary py-2 pl-10 outline-none backdrop-blur-sm transition-all duration-500 ease-in-out placeholder:text-gray-400 focus:ring-ring`}
           />
 
           {/* Gradient overlay */}
