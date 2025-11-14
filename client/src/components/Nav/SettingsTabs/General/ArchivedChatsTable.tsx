@@ -190,6 +190,7 @@ export default function ArchivedChatsTable({
               onClick={() =>
                 handleSort('createdAt', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
               }
+              aria-label={localize('com_nav_archive_created_at_sort')}
             >
               {localize('com_nav_archive_created_at')}
               {isSorted && sortDirection === 'asc' && (
