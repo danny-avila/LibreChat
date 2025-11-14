@@ -16,14 +16,14 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
     command: 'node',
     args: ['server1.js'],
     env: { TEST: 'value1' },
-    cachedAt: FIXED_TIME,
+    lastUpdatedAt: FIXED_TIME,
   };
 
   const mockConfig2: ParsedServerConfig = {
     command: 'python',
     args: ['server2.py'],
     env: { TEST: 'value2' },
-    cachedAt: FIXED_TIME,
+    lastUpdatedAt: FIXED_TIME,
   };
 
   const mockConfig3: ParsedServerConfig = {
@@ -31,7 +31,7 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
     args: ['server3.js'],
     url: 'http://localhost:3000',
     requiresOAuth: true,
-    cachedAt: FIXED_TIME,
+    lastUpdatedAt: FIXED_TIME,
   };
 
   beforeAll(async () => {

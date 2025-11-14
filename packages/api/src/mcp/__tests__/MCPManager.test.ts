@@ -31,8 +31,6 @@ jest.mock('~/mcp/registry/MCPServersRegistry', () => ({
 jest.mock('~/mcp/registry/MCPServersInitializer', () => ({
   MCPServersInitializer: {
     initialize: jest.fn(),
-    reInitializeServer: jest.fn(),
-    initPrivateServers: jest.fn(),
   },
 }));
 

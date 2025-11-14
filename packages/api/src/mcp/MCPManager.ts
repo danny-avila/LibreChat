@@ -43,20 +43,6 @@ export class MCPManager extends UserConnectionManager {
     await MCPServersInitializer.initialize(configs);
     this.appConnections = new ConnectionsRepository(undefined);
   }
-  /** update  config of an mcp server with possibility to change Server Tier based on whether it is private and or its configuration*/
-  public async updateConfig(args: {
-    serverName: string;
-    config: t.MCPOptions;
-    user?: TUser;
-    isPrivateServer?: boolean;
-  }): Promise<void> {
-    await MCPServersInitializer.reInitializeServer(args);
-  }
-
-  /** ensure the registry is updated with private servers */
-  public async initPrivateServers(userId: string, configs: t.MCPServers) {
-    await MCPServersInitializer.initPrivateServers(configs, userId);
-  }
 
   /** Retrieves an app-level or user-specific connection based on provided arguments */
   public async getConnection(

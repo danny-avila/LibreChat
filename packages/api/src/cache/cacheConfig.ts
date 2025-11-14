@@ -85,6 +85,9 @@ const cacheConfig = {
   DEBUG_MEMORY_CACHE: isEnabled(process.env.DEBUG_MEMORY_CACHE),
 
   BAN_DURATION: math(process.env.BAN_DURATION, 7200000), // 2 hours
+  REDIS_DELETE_CHUNK_SIZE: math(process.env.REDIS_DELETE_CHUNK_SIZE, 1000),
+  REDIS_UPDATE_CHUNK_SIZE: math(process.env.REDIS_UPDATE_CHUNK_SIZE, 1000),
+  REDIS_SCAN_COUNT: math(process.env.REDIS_UPDATE_COUNT, 1000),
 };
 
 export { cacheConfig };

@@ -3,45 +3,36 @@ import {
   ServerConfigsCacheFactory,
   type ServerConfigsCache,
 } from './cache/ServerConfigsCacheFactory';
+import {
+  PrivateServerConfigsCache,
+  PrivateServerConfigsCacheFactory,
+} from './cache/PrivateServerConfigs/PrivateServerConfigsCacheFactory';
 
 /**
  * Central registry for managing MCP server configurations across different scopes and users.
- * Maintains three categories of server configurations:
+ * Authoritative source of truth for all MCP servers provided by LibreChat.
+ *
+ * Maintains three-tier cache structure:
  * - Shared App Servers: Auto-started servers available to all users (initialized at startup)
  * - Shared User Servers: User-scope servers that require OAuth or on-demand startup
- * - Private User Servers: Per-user configurations dynamically added during runtime
+ * - Private Servers: Per-user configurations dynamically added during runtime
  *
- * Provides a unified interface for retrieving server configs with proper fallback hierarchy:
+ * Provides a unified query interface with proper fallback hierarchy:
  * checks shared app servers first, then shared user servers, then private user servers.
- * Handles server lifecycle operations including adding, removing, and querying configurations.
  */
 class MCPServersRegistry {
-  public readonly sharedAppServers = ServerConfigsCacheFactory.create('App', false); // changing to false to allow runtime updates when user shares an app with everyone. => initlizer takes care of race condition,
-  public readonly sharedUserServers = ServerConfigsCacheFactory.create('User', false);
-  private readonly privateUserServers: Map<string | undefined, ServerConfigsCache> = new Map();
+  public readonly sharedAppServers: ServerConfigsCache = ServerConfigsCacheFactory.create(
+    'App',
+    false,
+  );
 
-  public async addPrivateUserServer(
-    userId: string,
-    serverName: string,
-    config: t.ParsedServerConfig,
-  ): Promise<void> {
-    const userCache = this.getOrCreatePrivateUserCache(userId);
-    await userCache.add(serverName, config);
-  }
+  public readonly sharedUserServers: ServerConfigsCache = ServerConfigsCacheFactory.create(
+    'User',
+    false,
+  );
 
-  public async updatePrivateUserServer(
-    userId: string,
-    serverName: string,
-    config: t.ParsedServerConfig,
-  ): Promise<void> {
-    const userCache = this.getOrCreatePrivateUserCache(userId);
-    await userCache.update(serverName, config);
-  }
-
-  public async removePrivateUserServer(userId: string, serverName: string): Promise<void> {
-    const userCache = this.getOrCreatePrivateUserCache(userId);
-    await userCache.remove(serverName);
-  }
+  public readonly privateServersCache: PrivateServerConfigsCache =
+    PrivateServerConfigsCacheFactory.create();
 
   public async getServerConfig(
     serverName: string,
@@ -54,27 +45,15 @@ class MCPServersRegistry {
     if (sharedUserServer) return sharedUserServer;
 
     if (userId) {
-      const privateUserCache = this.getOrCreatePrivateUserCache(userId);
-      const privateUserServer = await privateUserCache.get(serverName);
+      const privateUserServer = await this.privateServersCache.get(userId, serverName);
       if (privateUserServer) return privateUserServer;
     }
 
     return undefined;
   }
 
-  public async getPrivateServerConfig(
-    serverName: string,
-    userId: string,
-  ): Promise<t.ParsedServerConfig | undefined> {
-    if (!userId) {
-      throw new Error('userId is required for getPrivateServerConfig');
-    }
-    const userCache = this.getOrCreatePrivateUserCache(userId);
-    return await userCache.get(serverName);
-  }
-
   public async getAllServerConfigs(userId?: string): Promise<Record<string, t.ParsedServerConfig>> {
-    const privateConfigs = userId ? await this.getOrCreatePrivateUserCache(userId).getAll() : {};
+    const privateConfigs = userId ? await this.privateServersCache.getAll(userId) : {};
 
     return {
       ...(await this.sharedAppServers.getAll()),
@@ -111,50 +90,37 @@ class MCPServersRegistry {
   public async reset(): Promise<void> {
     await this.sharedAppServers.reset();
     await this.sharedUserServers.reset();
-    for (const cache of this.privateUserServers.values()) {
-      await cache.reset();
-    }
-    this.privateUserServers.clear();
+    await this.privateServersCache.resetAll();
   }
 
-  public async resetServer(serverName: string, userId?: string): Promise<void> {
-    const cacheLocation = await this.getCurrentServerCacheLocation(serverName, userId);
-    await cacheLocation.remove(serverName);
-  }
-
-  private async getCurrentServerCacheLocation(
-    serverName: string,
-    userId?: string,
-  ): Promise<ServerConfigsCache> {
+  public async removeServer(serverName: string, userId?: string): Promise<void> {
     const appServer = await this.sharedAppServers.get(serverName);
     if (appServer) {
-      return this.sharedAppServers;
+      await this.sharedAppServers.remove(serverName);
+      return;
     }
+
     const userServer = await this.sharedUserServers.get(serverName);
     if (userServer) {
-      return this.sharedUserServers;
+      await this.sharedUserServers.remove(serverName);
+      return;
     }
+
     if (userId) {
-      const privateServerCache = this.getOrCreatePrivateUserCache(userId);
-      if (await privateServerCache.get(serverName)) {
-        return privateServerCache;
+      const privateServer = await this.privateServersCache.get(userId, serverName);
+      if (privateServer) {
+        await this.privateServersCache.remove(userId, serverName);
+        return;
+      }
+    } else {
+      const affectedUsers = await this.privateServersCache.findUsersWithServer(serverName);
+      if (affectedUsers.length > 0) {
+        await this.privateServersCache.removeServerConfigIfCacheExists(affectedUsers, serverName);
+        return;
       }
     }
-    throw new Error(`Server ${serverName} not found`);
-  }
 
-  /**
-   * Lazy-loads private user cache instance.
-   * In distributed environments, the cache instance may not exist in the local Map
-   * even though data exists in Redis. This method ensures the cache instance is created
-   * and connected to the correct Redis namespace.
-   */
-  private getOrCreatePrivateUserCache(userId: string): ServerConfigsCache {
-    if (!this.privateUserServers.has(userId)) {
-      const cache = ServerConfigsCacheFactory.create(`User(${userId})`, false);
-      this.privateUserServers.set(userId, cache);
-    }
-    return this.privateUserServers.get(userId)!;
+    throw new Error(`Server ${serverName} not found`);
   }
 }
 
