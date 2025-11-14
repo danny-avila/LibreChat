@@ -28,9 +28,9 @@ export default function MinimalHoverButtons({ message, searchResults }: THoverBu
         }
       >
         {isCopied ? (
-          <CheckMark className="h-[18px] w-[18px]" />
+          <CheckMark className="h-[19px] w-[19px]" />
         ) : (
-          <Clipboard className="h-[18px] w-[18px]" />
+          <Clipboard className="h-[19px] w-[19px]" />
         )}
       </button>
     </div>
