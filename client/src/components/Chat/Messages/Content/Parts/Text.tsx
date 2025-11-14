@@ -5,7 +5,7 @@ import Markdown from '~/components/Chat/Messages/Content/Markdown';
 import { useMessageContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
-import useManualCopyWithCleanup from '~/hooks/Messages/useManualCopyToClipboard';
+import useManualCopyToClipboard from '~/hooks/Messages/useManualCopyToClipboard';
 
 type TextPartProps = {
   text: string;
@@ -24,7 +24,7 @@ const TextPart = memo(({ text, isCreatedByUser, showCursor }: TextPartProps) => 
   const showCursorState = useMemo(() => showCursor && isSubmitting, [showCursor, isSubmitting]);
 
   const contentRef = useRef<HTMLDivElement>(null);
-  useManualCopyWithCleanup(contentRef, { text });
+  useManualCopyToClipboard(contentRef, { text });
 
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {

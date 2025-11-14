@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { CLEANUP_REGEX, INVALID_CITATION_REGEX } from '~/utils/citations';
 import type { TMessage, SearchResultData } from 'librechat-data-provider';
 
-export default function useManualCopyWithCleanup(
+export default function useManualCopyToClipboard(
   containerRef: React.RefObject<HTMLElement>,
   messageData: Partial<Pick<TMessage, 'text' | 'content'>> & {
     searchResults?: { [key: string]: SearchResultData };
