@@ -100,9 +100,7 @@ const BookmarkForm = ({
           <Input
             type="text"
             id="bookmark-tag"
-            aria-label={
-              bookmark ? localize('com_ui_bookmarks_edit') : localize('com_ui_bookmarks_new')
-            }
+            aria-label={localize('com_ui_bookmarks_title')}
             {...register('tag', {
               required: localize('com_ui_field_required'),
               maxLength: {
