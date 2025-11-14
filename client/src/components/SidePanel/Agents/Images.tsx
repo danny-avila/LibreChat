@@ -85,8 +85,12 @@ export const AgentAvatarRender = ({
 
 export function AvatarMenu({
   handleFileChange,
+  onReset,
+  canReset,
 }: {
   handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onReset: () => void;
+  canReset: boolean;
 }) {
   const localize = useLocalize();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,6 +101,8 @@ export function AvatarMenu({
     }
     fileInputRef.current?.click();
   };
+
+  const uploadLabel = localize('com_ui_upload_image');
 
   return (
     <Popover.Portal>
@@ -112,8 +118,20 @@ export function AvatarMenu({
           data-orientation="vertical"
           onClick={onItemClick}
         >
-          {localize('com_ui_upload_image')}
+          {uploadLabel}
         </button>
+        {canReset && (
+          <button
+            type="button"
+            role="menuitem"
+            className="group m-1.5 flex cursor-pointer gap-2 rounded-lg p-2.5 text-sm hover:bg-gray-100 focus:ring-0 dark:hover:bg-gray-800 dark:hover:bg-white/5"
+            tabIndex={0}
+            data-orientation="vertical"
+            onClick={onReset}
+          >
+            {localize('com_ui_reset_var', { 0: 'Avatar' })}
+          </button>
+        )}
         {/* <Popover.Close
           role="menuitem"
           className="group m-1.5 flex cursor-pointer gap-2 rounded p-2.5 text-sm hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"

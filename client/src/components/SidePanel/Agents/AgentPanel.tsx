@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react';
 import React, { useMemo, useCallback, useRef } from 'react';
 import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
+import { useQueryClient } from '@tanstack/react-query';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
@@ -10,13 +11,18 @@ import {
   EModelEndpoint,
   PermissionBits,
   isAssistantsEndpoint,
+  QueryKeys,
 } from 'librechat-data-provider';
 import type { AgentForm, StringOption } from '~/common';
+import type { Agent, AgentListResponse } from 'librechat-data-provider';
 import {
   useCreateAgentMutation,
   useUpdateAgentMutation,
   useGetAgentByIdQuery,
   useGetExpandedAgentByIdQuery,
+  useUploadAgentAvatarMutation,
+  allAgentViewAndEditQueryKeys,
+  invalidateAgentMarketplaceQueries,
 } from '~/data-provider';
 import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
@@ -67,7 +73,86 @@ export default function AgentPanel() {
     mode: 'onChange',
   });
 
-  const { control, handleSubmit, reset } = methods;
+  const queryClient = useQueryClient();
+
+  const { control, handleSubmit, reset, getValues, setValue } = methods;
+  const uploadAvatarMutation = useUploadAgentAvatarMutation({
+    onSuccess: (updatedAgent, variables) => {
+      showToast({ message: localize('com_ui_upload_agent_avatar') });
+
+      ((keys) => {
+        keys.forEach((key) => {
+          const listRes = queryClient.getQueryData<AgentListResponse>([QueryKeys.agents, key]);
+
+          if (!listRes?.data) {
+            return;
+          }
+
+          const agents = listRes.data.map((agent) => {
+            if (agent.id === variables.agent_id) {
+              return updatedAgent;
+            }
+            return agent;
+          });
+
+          queryClient.setQueryData<AgentListResponse>([QueryKeys.agents, key], {
+            ...listRes,
+            data: agents,
+          });
+        });
+      })(allAgentViewAndEditQueryKeys);
+
+      queryClient.setQueryData<Agent>([QueryKeys.agent, variables.agent_id], updatedAgent);
+      queryClient.setQueryData<Agent>(
+        [QueryKeys.agent, variables.agent_id, 'expanded'],
+        updatedAgent,
+      );
+      invalidateAgentMarketplaceQueries(queryClient);
+
+      setValue('avatar_preview', updatedAgent.avatar?.filepath ?? '', { shouldDirty: false });
+      setValue('avatar_file', null, { shouldDirty: false });
+      setValue('avatar_action', null, { shouldDirty: false });
+
+      const agentOption = getValues('agent');
+      if (agentOption && typeof agentOption !== 'string') {
+        setValue('agent', { ...agentOption, ...updatedAgent }, { shouldDirty: false });
+      }
+    },
+    onError: () => {
+      showToast({ message: localize('com_ui_upload_error'), status: 'error' });
+    },
+  });
+
+  const persistAvatarChanges = useCallback(
+    async (agentId?: string | null) => {
+      if (!agentId || isEphemeralAgent(agentId)) {
+        return;
+      }
+
+      const avatarActionState = getValues('avatar_action');
+      if (avatarActionState !== 'upload') {
+        return;
+      }
+
+      const avatarFile = getValues('avatar_file');
+      if (!avatarFile) {
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', avatarFile, avatarFile.name);
+
+      try {
+        await uploadAvatarMutation.mutateAsync({
+          agent_id: agentId,
+          formData,
+        });
+      } catch (_error) {
+        // Upload errors are surfaced via mutation callbacks.
+      }
+    },
+    [getValues, uploadAvatarMutation],
+  );
   const agent_id = useWatch({ control, name: 'id' });
   const previousVersionRef = useRef<number | undefined>();
 
@@ -97,7 +182,7 @@ export default function AgentPanel() {
       // Store the current version before mutation
       previousVersionRef.current = agentQuery.data?.version;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       // Check if agent version is the same (no changes were made)
       if (previousVersionRef.current !== undefined && data.version === previousVersionRef.current) {
         showToast({
@@ -111,6 +196,21 @@ export default function AgentPanel() {
           }`,
         });
       }
+
+      const agentOption = getValues('agent');
+      if (agentOption && typeof agentOption !== 'string') {
+        setValue('agent', { ...agentOption, ...data }, { shouldDirty: false });
+      }
+
+      const avatarActionState = getValues('avatar_action');
+      await persistAvatarChanges(data.id ?? agent_id);
+
+      if (avatarActionState === 'reset') {
+        setValue('avatar_action', null, { shouldDirty: false });
+        setValue('avatar_file', null, { shouldDirty: false });
+        setValue('avatar_preview', '', { shouldDirty: false });
+      }
+
       // Clear the ref after use
       previousVersionRef.current = undefined;
     },
@@ -126,13 +226,15 @@ export default function AgentPanel() {
   });
 
   const create = useCreateAgentMutation({
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setCurrentAgentId(data.id);
       showToast({
         message: `${localize('com_assistants_create_success')} ${
           data.name ?? localize('com_ui_agent')
         }`,
       });
+
+      await persistAvatarChanges(data.id);
     },
     onError: (err) => {
       const error = err as Error;
@@ -174,7 +276,10 @@ export default function AgentPanel() {
         recursion_limit,
         category,
         support_contact,
+        avatar_action: avatarActionState,
       } = data;
+
+      const shouldResetAvatar = avatarActionState === 'reset' && Boolean(agent_id);
 
       const model = _model ?? '';
       const provider =
@@ -199,6 +304,7 @@ export default function AgentPanel() {
             recursion_limit,
             category,
             support_contact,
+            ...(shouldResetAvatar ? { avatar: null } : {}),
           },
         });
         return;
@@ -330,7 +436,7 @@ export default function AgentPanel() {
           <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
-          <AgentConfig createMutation={create} />
+          <AgentConfig />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (
           <AdvancedPanel />

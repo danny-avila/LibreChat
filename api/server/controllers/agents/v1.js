@@ -209,7 +209,12 @@ const updateAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
     const validatedData = agentUpdateSchema.parse(req.body);
-    const { _id, ...updateData } = removeNullishValues(validatedData);
+    // Preserve explicit null for avatar to allow resetting the avatar
+    const { avatar: avatarField, _id, ...rest } = validatedData;
+    const updateData = removeNullishValues(rest);
+    if (Object.prototype.hasOwnProperty.call(validatedData, 'avatar')) {
+      updateData.avatar = avatarField;
+    }
 
     // Convert OCR to context in incoming updateData
     convertOcrToContextInPlace(updateData);
