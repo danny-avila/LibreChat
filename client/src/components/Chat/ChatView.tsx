@@ -33,7 +33,7 @@ function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
-  const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
+  const centerFormOnLanding = false; // NJ: force this to be `false` to put our landing page text up
 
   const fileMap = useFileMapContext();
 
