@@ -21,6 +21,7 @@ const toggleSwitchConfigs = [
     hoverCardText: undefined,
     key: 'maximizeChatSpace',
   },
+  /* NJ: force this to be `false` to put our landing page text up
   {
     stateAtom: store.centerFormOnLanding,
     localizationKey: 'com_nav_center_chat_input',
@@ -28,6 +29,7 @@ const toggleSwitchConfigs = [
     hoverCardText: undefined,
     key: 'centerFormOnLanding',
   },
+  */
   {
     stateAtom: showThinkingAtom,
     localizationKey: 'com_nav_show_thinking',
