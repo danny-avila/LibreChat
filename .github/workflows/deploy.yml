@@ -99,9 +99,8 @@ jobs:
             --parameters 'commands=[
               "set -e",
               "cd /opt/LibreChat",
-              "set -a",
-              ". ./.env",
-              "set +a",
+              "GHCR_PAT=$(grep '^GHCR_PAT=' .env | head -n1 | cut -d\"=\" -f2-)",
+              "[ -z \"$GHCR_PAT\" ] && echo \"GHCR_PAT missing or empty in .env\" && exit 1",
               "echo \"$GHCR_PAT\" | docker login ghcr.io -u '"$OWNER"' --password-stdin",
               "docker compose -f deploy-compose.yml pull",
               "docker compose -f deploy-compose.yml up -d --force-recreate",
@@ -113,7 +112,6 @@ jobs:
 
           echo "command_id=$CMD_ID" >> "$GITHUB_OUTPUT"
           echo "Triggered SSM command: $CMD_ID"
-
 
       - name: Wait for command completion & print output
         run: |
