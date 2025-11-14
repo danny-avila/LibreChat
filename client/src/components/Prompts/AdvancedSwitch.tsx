@@ -30,9 +30,9 @@ const AdvancedSwitch = () => {
             setAlwaysMakeProd(true);
             setMode(PromptsEditorMode.SIMPLE);
           }}
-          className={`relative z-10 flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300 md:px-6 ${
+          className={`relative z-10 flex-1 rounded-xl px-3 py-2 text-sm transition-all duration-300 md:px-6 ${
             mode === PromptsEditorMode.SIMPLE
-              ? 'text-text-primary'
+              ? 'font-bold text-text-primary'
               : 'text-text-secondary hover:text-text-primary'
           }`}
         >
@@ -43,9 +43,9 @@ const AdvancedSwitch = () => {
         <button
           type="button"
           onClick={() => setMode(PromptsEditorMode.ADVANCED)}
-          className={`relative z-10 flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300 md:px-6 ${
+          className={`relative z-10 flex-1 rounded-xl px-3 py-2 text-sm transition-all duration-300 md:px-6 ${
             mode === PromptsEditorMode.ADVANCED
-              ? 'text-text-primary'
+              ? 'font-bold text-text-primary'
               : 'text-text-secondary hover:text-text-primary'
           }`}
         >
