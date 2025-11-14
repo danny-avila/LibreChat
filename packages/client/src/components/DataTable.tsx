@@ -428,7 +428,7 @@ export default function DataTable<TData, TValue>({
       <div
         ref={tableContainerRef}
         className={cn(
-          'relative h-[calc(100vh-20rem)] max-w-full overflow-x-auto overflow-y-auto rounded-md border border-black/10 dark:border-white/10',
+          'relative min-h-0 max-w-full flex-1 overflow-x-auto overflow-y-auto rounded-md border border-black/10 dark:border-white/10',
           'transition-all duration-300 ease-out',
           isSearching && 'bg-surface-secondary/50',
           className,
