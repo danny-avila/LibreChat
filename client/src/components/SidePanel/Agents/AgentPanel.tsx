@@ -36,6 +36,70 @@ import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
 import ModelPanel from './ModelPanel';
 
+/* Helpers */
+function getUpdateToastMessage(
+  noVersionChange: boolean,
+  avatarActionState: AgentForm['avatar_action'],
+  name: string | undefined,
+  localize: (key: string, vars?: Record<string, unknown> | Array<string | number>) => string,
+): string | null {
+  // If only avatar upload is pending (separate endpoint), suppress the no-changes toast.
+  if (noVersionChange && avatarActionState === 'upload') {
+    return null;
+  }
+  if (noVersionChange) {
+    return localize('com_ui_no_changes');
+  }
+  return `${localize('com_assistants_update_success')} ${name ?? localize('com_ui_agent')}`;
+}
+
+function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | null) {
+  const {
+    name,
+    artifacts,
+    description,
+    instructions,
+    model: _model,
+    model_parameters,
+    provider: _provider,
+    agent_ids,
+    edges,
+    end_after_tools,
+    hide_sequential_outputs,
+    recursion_limit,
+    category,
+    support_contact,
+    avatar_action: avatarActionState,
+  } = data;
+
+  const shouldResetAvatar = avatarActionState === 'reset' && Boolean(agent_id);
+  const model = _model ?? '';
+  const provider =
+    (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
+
+  return {
+    payload: {
+      name,
+      artifacts,
+      description,
+      instructions,
+      model,
+      provider,
+      model_parameters,
+      agent_ids,
+      edges,
+      end_after_tools,
+      hide_sequential_outputs,
+      recursion_limit,
+      category,
+      support_contact,
+      ...(shouldResetAvatar ? { avatar: null } : {}),
+    },
+    provider,
+    model,
+  } as const;
+}
+
 export default function AgentPanel() {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -186,23 +250,14 @@ export default function AgentPanel() {
       const avatarActionState = getValues('avatar_action');
       const noVersionChange =
         previousVersionRef.current !== undefined && data.version === previousVersionRef.current;
-      const onlyAvatarUpload = noVersionChange && avatarActionState === 'upload';
-
-      // Suppress misleading "no changes" toast when an avatar upload is pending.
-      // If only the avatar is being uploaded (no other changes), let the upload toast handle success.
-      if (!onlyAvatarUpload) {
-        if (noVersionChange) {
-          showToast({
-            message: localize('com_ui_no_changes'),
-            status: 'info',
-          });
-        } else {
-          showToast({
-            message: `${localize('com_assistants_update_success')} ${
-              data.name ?? localize('com_ui_agent')
-            }`,
-          });
-        }
+      const toastMessage = getUpdateToastMessage(
+        noVersionChange,
+        avatarActionState,
+        data.name,
+        localize,
+      );
+      if (toastMessage) {
+        showToast({ message: toastMessage, status: noVersionChange ? 'info' : undefined });
       }
 
       const agentOption = getValues('agent');
@@ -268,52 +323,10 @@ export default function AgentPanel() {
         tools.push(Tools.web_search);
       }
 
-      const {
-        name,
-        artifacts,
-        description,
-        instructions,
-        model: _model,
-        model_parameters,
-        provider: _provider,
-        agent_ids,
-        edges,
-        end_after_tools,
-        hide_sequential_outputs,
-        recursion_limit,
-        category,
-        support_contact,
-        avatar_action: avatarActionState,
-      } = data;
-
-      const shouldResetAvatar = avatarActionState === 'reset' && Boolean(agent_id);
-
-      const model = _model ?? '';
-      const provider =
-        (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
+      const { payload: basePayload, provider, model } = composeAgentUpdatePayload(data, agent_id);
 
       if (agent_id) {
-        update.mutate({
-          agent_id,
-          data: {
-            name,
-            artifacts,
-            description,
-            instructions,
-            model,
-            tools,
-            provider,
-            model_parameters,
-            agent_ids,
-            edges,
-            end_after_tools,
-            hide_sequential_outputs,
-            recursion_limit,
-            category,
-            support_contact,
-            ...(shouldResetAvatar ? { avatar: null } : {}),
-          },
-        });
+        update.mutate({ agent_id, data: { ...basePayload, tools } });
         return;
       }
 
@@ -323,30 +336,14 @@ export default function AgentPanel() {
           status: 'error',
         });
       }
-      if (!name) {
+      if (!data.name) {
         return showToast({
           message: localize('com_agents_missing_name'),
           status: 'error',
         });
       }
 
-      create.mutate({
-        name,
-        artifacts,
-        description,
-        instructions,
-        model,
-        tools,
-        provider,
-        model_parameters,
-        agent_ids,
-        edges,
-        end_after_tools,
-        hide_sequential_outputs,
-        recursion_limit,
-        category,
-        support_contact,
-      });
+      create.mutate({ ...basePayload, model, tools, provider });
     },
     [agent_id, create, update, showToast, localize],
   );
