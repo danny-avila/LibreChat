@@ -169,6 +169,7 @@ export default function SharedLinks() {
               onClick={() =>
                 handleSort('title', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
               }
+              aria-label={localize('com_ui_name_sort')}
             >
               {localize('com_ui_name')}
               {isSorted && sortDirection === 'asc' && (
@@ -214,6 +215,7 @@ export default function SharedLinks() {
               onClick={() =>
                 handleSort('createdAt', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
               }
+              aria-label={localize('com_ui_creation_date_sort')}
             >
               {localize('com_ui_date')}
               {isSorted && sortDirection === 'asc' && (
