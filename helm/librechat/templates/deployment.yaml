@@ -91,6 +91,9 @@ spec:
               name: {{ .Values.global.librechat.existingSecretName }}
               optional: true
           {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
           {{- with .Values.global.librechat.env }}
           env:
           {{- toYaml . | nindent 12 }}
