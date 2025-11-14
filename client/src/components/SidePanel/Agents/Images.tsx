@@ -1,5 +1,7 @@
-import { useRef } from 'react';
-import * as Popover from '@radix-ui/react-popover';
+import { useRef, useState } from 'react';
+import * as Ariakit from '@ariakit/react';
+import { DropdownPopup } from '@librechat/client';
+import type { MenuItemProps } from '~/common/menus';
 import { useLocalize } from '~/hooks';
 
 export function NoImage() {
@@ -84,16 +86,19 @@ export const AgentAvatarRender = ({
 };
 
 export function AvatarMenu({
+  trigger,
   handleFileChange,
   onReset,
   canReset,
 }: {
+  trigger: React.ReactNode;
   handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onReset: () => void;
   canReset: boolean;
 }) {
   const localize = useLocalize();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
 
   const onItemClick = () => {
     if (fileInputRef.current) {
@@ -104,52 +109,46 @@ export function AvatarMenu({
 
   const uploadLabel = localize('com_ui_upload_image');
 
+  const items: MenuItemProps[] = [
+    {
+      id: 'upload-avatar',
+      label: uploadLabel,
+      onClick: () => onItemClick(),
+    },
+    ...(canReset
+      ? ([
+          { separate: true } as unknown as MenuItemProps,
+          {
+            id: 'reset-avatar',
+            label: localize('com_ui_reset_var', { 0: 'Avatar' }),
+            onClick: () => onReset(),
+          } as MenuItemProps,
+        ] as MenuItemProps[])
+      : ([] as MenuItemProps[])),
+  ];
+
   return (
-    <Popover.Portal>
-      <Popover.Content
-        className="flex min-w-[100px] max-w-xs flex-col rounded-xl border border-gray-400 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-850 dark:text-white"
-        sideOffset={5}
-      >
-        <button
-          type="button"
-          role="menuitem"
-          className="group m-1.5 flex cursor-pointer gap-2 rounded-lg p-2.5 text-sm hover:bg-gray-100 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:bg-white/5"
-          tabIndex={0}
-          data-orientation="vertical"
-          onClick={onItemClick}
-        >
-          {uploadLabel}
-        </button>
-        {canReset && (
-          <button
-            type="button"
-            role="menuitem"
-            className="group m-1.5 flex cursor-pointer gap-2 rounded-lg p-2.5 text-sm hover:bg-gray-100 focus:ring-0 dark:hover:bg-gray-800 dark:hover:bg-white/5"
-            tabIndex={0}
-            data-orientation="vertical"
-            onClick={onReset}
-          >
-            {localize('com_ui_reset_var', { 0: 'Avatar' })}
-          </button>
-        )}
-        {/* <Popover.Close
-          role="menuitem"
-          className="group m-1.5 flex cursor-pointer gap-2 rounded p-2.5 text-sm hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
-          tabIndex={-1}
-          data-orientation="vertical"
-        >
-          Use DALL·E
-        </Popover.Close> */}
-        <input
-          accept="image/png,.png,image/jpeg,.jpg,.jpeg,image/gif,.gif,image/webp,.webp"
-          multiple={false}
-          type="file"
-          style={{ display: 'none' }}
-          onChange={handleFileChange}
-          ref={fileInputRef}
-          tabIndex={-1}
-        />
-      </Popover.Content>
-    </Popover.Portal>
+    <>
+      <DropdownPopup
+        trigger={<Ariakit.MenuButton render={trigger as any} />}
+        items={items}
+        isOpen={isOpen}
+        setIsOpen={setIsOpen}
+        menuId="agent-avatar-menu"
+        placement="bottom"
+        gutter={8}
+        portal
+        mountByState
+      />
+      <input
+        accept="image/png,.png,image/jpeg,.jpg,.jpeg,image/gif,.gif,image/webp,.webp"
+        multiple={false}
+        type="file"
+        style={{ display: 'none' }}
+        onChange={handleFileChange}
+        ref={fileInputRef}
+        tabIndex={-1}
+      />
+    </>
   );
 }
