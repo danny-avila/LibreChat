@@ -149,6 +149,10 @@ export const resetPassword = () => `${BASE_URL}/api/auth/resetPassword`;
 
 export const verifyEmail = () => `${BASE_URL}/api/user/verify`;
 
+// Auth page URLs (for client-side navigation and redirects)
+export const loginPage = () => `${BASE_URL}/login`;
+export const registerPage = () => `${BASE_URL}/register`;
+
 export const resendVerificationEmail = () => `${BASE_URL}/api/user/verify/resend`;
 
 export const plugins = () => `${BASE_URL}/api/plugins`;
