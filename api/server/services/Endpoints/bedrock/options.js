@@ -8,6 +8,8 @@ const {
 } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 
+const { resolveHeaders } = require('@librechat/api');
+
 const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
@@ -86,6 +88,15 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
 
   if (BEDROCK_REVERSE_PROXY) {
     llmConfig.endpointHost = BEDROCK_REVERSE_PROXY;
+  }
+
+  // Resolve template variables in additionalModelRequestFields
+  if (llmConfig.additionalModelRequestFields) {
+    llmConfig.additionalModelRequestFields = resolveHeaders({
+      headers: llmConfig.additionalModelRequestFields,
+      user: req.user,
+      body: req.body,
+    });
   }
 
   return {

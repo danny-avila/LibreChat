@@ -66,6 +66,7 @@ export async function createRun({
   signal,
   agents,
   requestBody,
+  user,
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
@@ -78,6 +79,7 @@ export async function createRun({
   streaming?: boolean;
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
+  user?: t.TUser;
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
@@ -118,6 +120,7 @@ export async function createRun({
     if (llmConfig?.configuration?.defaultHeaders != null) {
       llmConfig.configuration.defaultHeaders = resolveHeaders({
         headers: llmConfig.configuration.defaultHeaders as Record<string, string>,
+        user: user,
         body: requestBody,
       });
     }
