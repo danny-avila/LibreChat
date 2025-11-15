@@ -8,8 +8,8 @@ services:
       - "${PORT}:${PORT}"
     depends_on:
       #- mongodb
-      - rag_api
-    image: acrcribmetrics.azurecr.io/declaray:0.1.1.0009
+      #- rag_api
+    image: acrcribmetrics.azurecr.io/declaray:0.1.1.0017
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:

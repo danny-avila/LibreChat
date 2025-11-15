@@ -28,6 +28,7 @@ const {
   Permissions,
   VisionModes,
   ContentTypes,
+  CohereConstants,
   EModelEndpoint,
   PermissionTypes,
   isAgentsEndpoint,
@@ -35,6 +36,8 @@ const {
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
+
+const { titleInstruction } = require('~/app/clients/prompts/titlePrompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
@@ -790,11 +793,19 @@ class AgentClient extends BaseClient {
         version: 'v2',
       };
 
+      logger.error('[api/server/controllers/agents/client.js #chatCompletion] config:',
+        config
+      );
+
       const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
       let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
         payload,
         this.indexTokenCountMap,
         toolSet,
+      );
+
+      logger.error('[api/server/controllers/agents/client.js #chatCompletion] toolSet:',
+        toolSet
       );
 
       /**
@@ -903,6 +914,10 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
+        logger.error('[api/server/controllers/agents/client.js #chatCompletion] attachments:',
+          attachments
+        );
+
         const balanceConfig = getBalanceConfig(appConfig);
         const transactionsConfig = getTransactionsConfig(appConfig);
         await this.recordCollectedUsage({
@@ -910,6 +925,10 @@ class AgentClient extends BaseClient {
           balance: balanceConfig,
           transactions: transactionsConfig,
         });
+
+        logger.error('[api/server/controllers/agents/client.js #chatCompletion] balanceConfig:',
+          balanceConfig
+        );        
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
@@ -922,14 +941,19 @@ class AgentClient extends BaseClient {
         this.artifactPromises.push(...attachments);
       }
       logger.error(
-        '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
+        '[api/server/controllers/agents/client.js #chatCompletion] Operation aborted',
         err,
       );
       if (!abortController.signal.aborted) {
         logger.error(
-          '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
+          '[api/server/controllers/agents/client.js #chatCompletion] Unhandled error type',
           err,
         );
+
+        logger.error('[api/server/controllers/agents/client.js #chatCompletion] Error details:', 
+          `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`          
+        );
+
         this.contentParts.push({
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
@@ -1047,7 +1071,11 @@ ${convo}
 
         title = (
           await this.sendPayload(instructionsPayload, { modelOptions, useChatCompletion })
-        ).replaceAll('"', '');
+        )
+
+        logger.error('[api/server/controllers/agents/client.js #titleConvo] title response:', title)
+
+        title = title.replaceAll('"', '');
 
         const completionTokens = this.getTokenCount(title);
 

@@ -148,12 +148,8 @@ async function stripeWebhookController(req, res) {
     created: event.created,
     livemode: event.livemode,
     request: event.request,
+    request: event.data,
   });
-
-  const user = await User.findOneAndUpdate(
-    { stripeCustomerId: customerId },
-    null
-  );
 
   try {
     switch (event.type) {
@@ -163,6 +159,11 @@ async function stripeWebhookController(req, res) {
         const balanceConfig = getBalanceConfig(appConfig);
         const product = event.data.object;
         const customerId = product.customer;        
+        const user = await User.findOneAndUpdate(
+          { stripeCustomerId: customerId },
+          null
+        );
+
         await createTransaction({
           user: user._id, // MongoDB ObjectId or string
           tokenType: 'credits',
@@ -170,6 +171,12 @@ async function stripeWebhookController(req, res) {
           rawAmount: product.metadata?.tokenAmount, 
           balance: balanceConfig,
         });
+        console.error(`[Stripe Webhook] PaymentIntent event:`, {
+          event: event.type,
+          customerId,
+          rawAmount: product.metadata?.tokenAmount,
+          balance: balanceConfig,
+        });        
                   
       case 'customer.subscription.created':
       case 'customer.subscription.updated':

@@ -5,7 +5,7 @@ import { FileText, LogOut } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
-import { useAuthContext } from '~/hooks/AuthContext';
+import { useAuthContext } from '~/hooks';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import  SubscriptionDialog from '~/components/Subscription/SubscriptionDialog'
