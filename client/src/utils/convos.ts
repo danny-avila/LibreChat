@@ -1,3 +1,5 @@
+import { QueryClient } from '@tanstack/react-query';
+import { LocalStorageKeys, QueryKeys } from 'librechat-data-provider';
 import {
   format,
   isToday,
@@ -8,8 +10,6 @@ import {
   startOfYear,
   isWithinInterval,
 } from 'date-fns';
-import { QueryClient } from '@tanstack/react-query';
-import { EModelEndpoint, LocalStorageKeys, QueryKeys } from 'librechat-data-provider';
 import type { TConversation, GroupedConversations } from 'librechat-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
 
@@ -306,15 +306,12 @@ export function storeEndpointSettings(conversation: TConversation | null) {
   if (!conversation) {
     return;
   }
-  const { endpoint, model, agentOptions } = conversation;
+  const { endpoint, model } = conversation;
   if (!endpoint) {
     return;
   }
   const lastModel = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) ?? '{}');
   lastModel[endpoint] = model;
-  if (endpoint === EModelEndpoint.gptPlugins) {
-    lastModel.secondaryModel = agentOptions?.model ?? model ?? '';
-  }
   localStorage.setItem(LocalStorageKeys.LAST_MODEL, JSON.stringify(lastModel));
 }
 

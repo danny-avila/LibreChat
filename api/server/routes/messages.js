@@ -12,7 +12,6 @@ const {
 } = require('~/models');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
-const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
 const { getConvosQueried } = require('~/models/Conversation');
 const { countTokens } = require('~/server/utils');
 const { Message } = require('~/db/models');
@@ -69,9 +68,6 @@ router.get('/', async (req, res) => {
       const cleanedMessages = [];
       for (let i = 0; i < messages.length; i++) {
         let message = messages[i];
-        if (message.conversationId.includes('--')) {
-          message.conversationId = cleanUpPrimaryKeyValue(message.conversationId);
-        }
         if (result.convoMap[message.conversationId]) {
           messageIds.push(message.messageId);
           cleanedMessages.push(message);

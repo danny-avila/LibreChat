@@ -6,7 +6,7 @@ import { Constants, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TError, AgentToolType } from 'librechat-data-provider';
-import type { AgentForm, TPluginStoreDialogProps } from '~/common';
+import type { AgentForm, ToolDialogProps } from '~/common';
 import {
   usePluginDialogHelpers,
   useMCPServerManager,
@@ -24,7 +24,7 @@ function MCPToolSelectDialog({
   agentId,
   setIsOpen,
   mcpServerNames,
-}: TPluginStoreDialogProps & {
+}: ToolDialogProps & {
   agentId: string;
   mcpServerNames?: string[];
   endpoint: EModelEndpoint.agents;

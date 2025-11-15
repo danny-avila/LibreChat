@@ -8,7 +8,6 @@ import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { fontSizeAtom } from '~/store/fontSize';
 import { MessageContext } from '~/Providers';
@@ -178,7 +177,6 @@ const MessageRender = memo(
                   isLatestMessage,
                 }}
               >
-                {msg.plugin && <Plugin plugin={msg.plugin} />}
                 <MessageContent
                   ask={ask}
                   edit={edit}
