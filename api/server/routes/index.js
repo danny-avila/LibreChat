@@ -9,7 +9,6 @@ const memories = require('./memories');
 const presets = require('./presets');
 const prompts = require('./prompts');
 const balance = require('./balance');
-const plugins = require('./plugins');
 const actions = require('./actions');
 const banner = require('./banner');
 const search = require('./search');
@@ -46,7 +45,6 @@ module.exports = {
   config,
   models,
   prompts,
-  plugins,
   actions,
   presets,
   balance,

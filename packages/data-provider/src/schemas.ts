@@ -25,10 +25,6 @@ export enum EModelEndpoint {
   agents = 'agents',
   custom = 'custom',
   bedrock = 'bedrock',
-  /** @deprecated */
-  chatGPTBrowser = 'chatGPTBrowser',
-  /** @deprecated */
-  gptPlugins = 'gptPlugins',
 }
 
 /** Mirrors `@librechat/agents` providers */
@@ -662,8 +658,6 @@ export type TAttachment =
 
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
-  plugin?: TResPlugin | null;
-  plugins?: TResPlugin[];
   content?: TMessageContentParts[];
   files?: Partial<TFile>[];
   depth?: number;
@@ -778,8 +772,6 @@ export const tConversationSchema = z.object({
   fileTokenLimit: coerceNumber.optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
-  /** @deprecated */
-  agentOptions: tAgentOptionsSchema.nullable().optional(),
   /** @deprecated Prefer `modelLabel` over `chatGptLabel` */
   chatGptLabel: z.string().nullable().optional(),
 });
@@ -985,75 +977,6 @@ export const googleGenConfigSchema = z
   .strip()
   .optional();
 
-const gptPluginsBaseSchema = tConversationSchema.pick({
-  model: true,
-  modelLabel: true,
-  chatGptLabel: true,
-  promptPrefix: true,
-  temperature: true,
-  artifacts: true,
-  top_p: true,
-  presence_penalty: true,
-  frequency_penalty: true,
-  tools: true,
-  agentOptions: true,
-  iconURL: true,
-  greeting: true,
-  spec: true,
-  maxContextTokens: true,
-});
-
-export const gptPluginsSchema = gptPluginsBaseSchema
-  .transform((obj) => {
-    const result = {
-      ...obj,
-      model: obj.model ?? 'gpt-3.5-turbo',
-      chatGptLabel: obj.chatGptLabel ?? obj.modelLabel ?? null,
-      promptPrefix: obj.promptPrefix ?? null,
-      temperature: obj.temperature ?? 0.8,
-      top_p: obj.top_p ?? 1,
-      presence_penalty: obj.presence_penalty ?? 0,
-      frequency_penalty: obj.frequency_penalty ?? 0,
-      tools: obj.tools ?? [],
-      agentOptions: obj.agentOptions ?? {
-        agent: EAgent.functions,
-        skipCompletion: true,
-        model: 'gpt-3.5-turbo',
-        temperature: 0,
-      },
-      iconURL: obj.iconURL ?? undefined,
-      greeting: obj.greeting ?? undefined,
-      spec: obj.spec ?? undefined,
-      maxContextTokens: obj.maxContextTokens ?? undefined,
-    };
-
-    if (obj.modelLabel != null && obj.modelLabel !== '') {
-      result.modelLabel = null;
-    }
-
-    return result;
-  })
-  .catch(() => ({
-    model: 'gpt-3.5-turbo',
-    chatGptLabel: null,
-    promptPrefix: null,
-    temperature: 0.8,
-    top_p: 1,
-    presence_penalty: 0,
-    frequency_penalty: 0,
-    tools: [],
-    agentOptions: {
-      agent: EAgent.functions,
-      skipCompletion: true,
-      model: 'gpt-3.5-turbo',
-      temperature: 0,
-    },
-    iconURL: undefined,
-    greeting: undefined,
-    spec: undefined,
-    maxContextTokens: undefined,
-  }));
-
 export function removeNullishValues<T extends Record<string, unknown>>(
   obj: T,
   removeEmptyStrings?: boolean,
@@ -1252,48 +1175,6 @@ export const anthropicBaseSchema = tConversationSchema.pick({
 
 export const anthropicSchema = anthropicBaseSchema
   .transform((obj) => removeNullishValues(obj))
-  .catch(() => ({}));
-
-export const compactPluginsSchema = gptPluginsBaseSchema
-  .transform((obj) => {
-    const newObj: Partial<TConversation> = { ...obj };
-    if (newObj.modelLabel === null) {
-      delete newObj.modelLabel;
-    }
-    if (newObj.chatGptLabel === null) {
-      delete newObj.chatGptLabel;
-    }
-    if (newObj.promptPrefix === null) {
-      delete newObj.promptPrefix;
-    }
-    if (newObj.temperature === 0.8) {
-      delete newObj.temperature;
-    }
-    if (newObj.top_p === 1) {
-      delete newObj.top_p;
-    }
-    if (newObj.presence_penalty === 0) {
-      delete newObj.presence_penalty;
-    }
-    if (newObj.frequency_penalty === 0) {
-      delete newObj.frequency_penalty;
-    }
-    if (newObj.tools?.length === 0) {
-      delete newObj.tools;
-    }
-
-    if (
-      newObj.agentOptions &&
-      newObj.agentOptions.agent === EAgent.functions &&
-      newObj.agentOptions.skipCompletion === true &&
-      newObj.agentOptions.model === 'gpt-3.5-turbo' &&
-      newObj.agentOptions.temperature === 0
-    ) {
-      delete newObj.agentOptions;
-    }
-
-    return removeNullishValues(newObj);
-  })
   .catch(() => ({}));
 
 export const tBannerSchema = z.object({

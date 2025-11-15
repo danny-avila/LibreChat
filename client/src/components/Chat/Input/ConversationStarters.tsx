@@ -13,13 +13,7 @@ const ConversationStarters = () => {
 
   const endpointType = useMemo(() => {
     let ep = conversation?.endpoint ?? '';
-    if (
-      [
-        EModelEndpoint.chatGPTBrowser,
-        EModelEndpoint.azureOpenAI,
-        EModelEndpoint.gptPlugins,
-      ].includes(ep as EModelEndpoint)
-    ) {
+    if ([EModelEndpoint.azureOpenAI].includes(ep as EModelEndpoint)) {
       ep = EModelEndpoint.openAI;
     }
     return getIconEndpoint({
