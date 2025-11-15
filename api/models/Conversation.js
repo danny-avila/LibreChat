@@ -1,3 +1,5 @@
+import { RetentionMode } from 'librechat-data-provider';
+
 const { logger } = require('@librechat/data-schemas');
 const { createTempChatExpirationDate } = require('@librechat/api');
 const { getMessages, deleteMessages } = require('./Message');
@@ -99,7 +101,10 @@ module.exports = {
         update.conversationId = newConversationId;
       }
 
-      if (req?.body?.isTemporary) {
+      if (
+        req?.body?.isTemporary ||
+        req?.config?.interfaceConfig.retentionMode === RetentionMode.ALL
+      ) {
         try {
           const appConfig = req.config;
           update.expiredAt = createTempChatExpirationDate(appConfig?.interfaceConfig);

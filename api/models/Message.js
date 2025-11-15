@@ -1,3 +1,5 @@
+import { RetentionMode } from 'librechat-data-provider';
+
 const { z } = require('zod');
 const { logger } = require('@librechat/data-schemas');
 const { createTempChatExpirationDate } = require('@librechat/api');
@@ -54,7 +56,10 @@ async function saveMessage(req, params, metadata) {
       messageId: params.newMessageId || params.messageId,
     };
 
-    if (req?.body?.isTemporary) {
+    if (
+      req?.body?.isTemporary ||
+      req?.config?.interfaceConfig.retentionMode === RetentionMode.ALL
+    ) {
       try {
         const appConfig = req.config;
         update.expiredAt = createTempChatExpirationDate(appConfig?.interfaceConfig);
