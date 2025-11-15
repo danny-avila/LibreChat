@@ -154,7 +154,6 @@ export default function useSSE(
         contentHandler({ data, submission: submission as EventSubmission });
       } else {
         const text = data.text ?? data.response;
-        const { plugin, plugins } = data;
 
         const initialResponse = {
           ...(submission.initialResponse as TMessage),
@@ -163,7 +162,7 @@ export default function useSSE(
         };
 
         if (data.message != null) {
-          messageHandler(text, { ...submission, plugin, plugins, userMessage, initialResponse });
+          messageHandler(text, { ...submission, userMessage, initialResponse });
         }
       }
     });
