@@ -25,6 +25,10 @@ const convoSchema: Schema<IConversation> = new Schema(
     agentOptions: {
       type: Schema.Types.Mixed,
     },
+    isTemporary: {
+      type: Boolean,
+      default: false,
+    },
     ...conversationPreset,
     agent_id: {
       type: String,
