@@ -6,8 +6,9 @@ import { useCreateStripeCheckoutSession } from './useCreateStripeCheckoutSession
 import { useCancelSubscription } from './useCancelSubscription';
 
 function Subscription({ open, onOpenChange }: TDialogProps) {
-  const { subscriptionStatus, user, token } = useAuthContext();
+  const { user, token } = useAuthContext();
   const plan = user?.subscriptionPlan || '';
+  const subscriptionStatus = user?.subscriptionStatus || 'none';
   const { mutate: createCheckoutSession, isLoading: subscribing, variables: subscribingPlan } = useCreateStripeCheckoutSession();
   const { mutate: cancelSubscription, isLoading: canceling } = useCancelSubscription();
   const [showConfirm, setShowConfirm] = useState(false);
@@ -89,6 +90,9 @@ function Subscription({ open, onOpenChange }: TDialogProps) {
 
   const hasPlan = !!plan && plan !== 'None' && subscriptionStatus === 'active';
 
+  console.log(`hasPlan: ${hasPlan}, plan: ${plan}, subscriptionStatus: ${subscriptionStatus}`);
+  console.log(user)
+  
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">      
       {hasPlan ? (

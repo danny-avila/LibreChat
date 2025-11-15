@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // scripts/migrate-add-stripe-fields.js
 const mongoose = require('mongoose');
 const { createUserModel } = require('../packages/data-schemas/src/models/user');
@@ -13,8 +14,9 @@ async function migrate() {
       $set: {
         stripeCustomerId: null,
         stripeSubscriptionId: null,
-        subscriptionStatus: 'none',
-        subscriptionPlan: null,
+          subscriptionStatus: 'none',
+          subscriptionPlan: null,
+          stripeProductId: null,
       },
     }
   );

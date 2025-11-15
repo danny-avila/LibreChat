@@ -31,12 +31,14 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
 ) {
 
   const parent = Ariakit.useMenuContext();
-  const searchable = searchValue != null || !!onSearch || !!combobox;
+  let searchable = searchValue != null || !!onSearch || !!combobox;
   const { data: appConfig, isLoading: appConfigLoading, error: appConfigError } = useGetStartupConfig();
 
   // Turn search off if disabled in the config
-  if (appConfig?.searchModelsEnabled) {
-    searchable = false;
+  if (searchable) {
+    if (!appConfig?.searchModelsEnabled) {
+      searchable = false;
+    }
   }
 
   const menuStore = Ariakit.useMenuStore({
