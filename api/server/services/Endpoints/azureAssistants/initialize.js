@@ -7,7 +7,6 @@ const {
   getUserKeyValues,
   getUserKeyExpiry,
 } = require('~/server/services/UserService');
-const OAIClient = require('~/app/clients/OpenAIClient');
 
 class Files {
   constructor(client) {
@@ -182,15 +181,6 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
 
   if (azureOptions) {
     openai.locals = { ...(openai.locals ?? {}), azureOptions };
-  }
-
-  if (endpointOption && initAppClient) {
-    const client = new OAIClient(apiKey, clientOptions);
-    return {
-      client,
-      openai,
-      openAIApiKey: apiKey,
-    };
   }
 
   return {
