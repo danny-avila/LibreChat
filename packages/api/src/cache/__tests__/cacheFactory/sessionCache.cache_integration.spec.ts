@@ -33,17 +33,13 @@ describe('sessionCache', () => {
   beforeEach(() => {
     originalEnv = { ...process.env };
 
-    // Clear cache-related env vars
-    delete process.env.USE_REDIS;
-    delete process.env.REDIS_URI;
-    delete process.env.USE_REDIS_CLUSTER;
-    delete process.env.REDIS_PING_INTERVAL;
-    delete process.env.REDIS_KEY_PREFIX;
-
-    // Set test configuration
+    // Set test configuration with fallback defaults for local testing
     process.env.REDIS_PING_INTERVAL = '0';
     process.env.REDIS_KEY_PREFIX = 'Cache-Integration-Test';
     process.env.REDIS_RETRY_MAX_ATTEMPTS = '5';
+    process.env.USE_REDIS = process.env.USE_REDIS || 'true';
+    process.env.USE_REDIS_CLUSTER = process.env.USE_REDIS_CLUSTER || 'false';
+    process.env.REDIS_URI = process.env.REDIS_URI || 'redis://127.0.0.1:6379';
 
     // Clear require cache to reload modules
     jest.resetModules();
@@ -55,10 +51,6 @@ describe('sessionCache', () => {
   });
 
   test('should return ConnectRedis store when USE_REDIS is true', async () => {
-    process.env.USE_REDIS = 'true';
-    process.env.USE_REDIS_CLUSTER = 'false';
-    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
     const cacheFactory = await import('../../cacheFactory');
     const redisClients = await import('../../redisClients');
     const { ioredisClient } = redisClients;
@@ -138,10 +130,6 @@ describe('sessionCache', () => {
   });
 
   test('should handle namespace with and without trailing colon', async () => {
-    process.env.USE_REDIS = 'true';
-    process.env.USE_REDIS_CLUSTER = 'false';
-    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
     const cacheFactory = await import('../../cacheFactory');
 
     const store1 = cacheFactory.sessionCache('namespace1');
@@ -152,10 +140,6 @@ describe('sessionCache', () => {
   });
 
   test('should register error handler for Redis connection', async () => {
-    process.env.USE_REDIS = 'true';
-    process.env.USE_REDIS_CLUSTER = 'false';
-    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
     const cacheFactory = await import('../../cacheFactory');
     const redisClients = await import('../../redisClients');
     const { ioredisClient } = redisClients;
@@ -173,10 +157,6 @@ describe('sessionCache', () => {
   });
 
   test('should handle session expiration with TTL', async () => {
-    process.env.USE_REDIS = 'true';
-    process.env.USE_REDIS_CLUSTER = 'false';
-    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
     const cacheFactory = await import('../../cacheFactory');
     const redisClients = await import('../../redisClients');
     const { ioredisClient } = redisClients;

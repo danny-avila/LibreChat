@@ -73,6 +73,8 @@ export class ServerConfigsCacheRedis extends BaseRegistryCache {
           entries.push([keyName, value as ParsedServerConfig]);
         }
       }
+    } else {
+      throw new Error('Redis client with scanIterator not available.');
     }
 
     return fromPairs(entries);
