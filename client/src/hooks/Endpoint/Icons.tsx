@@ -5,7 +5,6 @@ import {
   Sparkles,
   BedrockIcon,
   AssistantIcon,
-  LightningIcon,
   AnthropicIcon,
   AzureMinimalIcon,
   GoogleMinimalIcon,
