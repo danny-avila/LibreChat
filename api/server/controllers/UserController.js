@@ -29,6 +29,7 @@ const { getAppConfig } = require('~/server/services/Config');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const { getLogStores } = require('~/cache');
 const { mcpServersRegistry } = require('@librechat/api');
+const { manifestToolMap } = require('~/app/clients/tools');
 
 const getUserController = async (req, res) => {
   const appConfig = await getAppConfig({ role: req.user?.role });
@@ -150,8 +151,32 @@ const updateUserPluginsController = async (req, res) => {
     }
 
     if (action === 'install') {
+      // Get tool config to check for sensitive fields
+      const tool = manifestToolMap[pluginKey];
+      const sensitiveFields = new Set();
+      if (tool?.authConfig) {
+        tool.authConfig.forEach((config) => {
+          if (config.sensitive) {
+            // Handle alternate fields (e.g., "FIELD1||FIELD2")
+            const fields = config.authField.split('||');
+            fields.forEach((field) => sensitiveFields.add(field));
+          }
+        });
+      }
+
       for (let i = 0; i < keys.length; i++) {
-        authService = await updateUserPluginAuth(user.id, keys[i], pluginKey, values[i]);
+        const key = keys[i];
+        const value = values[i];
+
+        // For sensitive fields, only update if a new value is provided (not empty/null)
+        if (sensitiveFields.has(key)) {
+          if (!value || value.trim() === '') {
+            // Skip updating sensitive fields with empty values
+            continue;
+          }
+        }
+
+        authService = await updateUserPluginAuth(user.id, key, pluginKey, value);
         if (authService instanceof Error) {
           logger.error('[authService]', authService);
           ({ status, message } = normalizeHttpError(authService));
