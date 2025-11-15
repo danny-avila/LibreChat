@@ -1,0 +1,322 @@
+{{- /*
+Copyright Broadcom, Inc. All Rights Reserved.
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+
+{{- if eq .Values.architecture "replicaset" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-scripts" (include "mongodb.fullname" .) }}
+  namespace: {{ include "mongodb.namespace" . | quote }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .Values.commonLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/component: mongodb
+  {{- if .Values.commonAnnotations }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
+  {{- end }}
+data:
+  {{- $fullname := include "mongodb.fullname" . }}
+  {{- $releaseNamespace := include "mongodb.namespace" . }}
+  {{- if and .Values.externalAccess.autoDiscovery.enabled (eq .Values.externalAccess.service.type "LoadBalancer") }}
+  auto-discovery.sh: |-
+    #!/bin/bash
+
+    SVC_NAME="${MY_POD_NAME}-external"
+
+    # Auxiliary functions
+    retry_while() {
+        local -r cmd="${1:?cmd is missing}"
+        local -r retries="${2:-12}"
+        local -r sleep_time="${3:-5}"
+        local return_value=1
+
+        read -r -a command <<< "$cmd"
+        for ((i = 1 ; i <= retries ; i+=1 )); do
+            "${command[@]}" && return_value=0 && break
+            sleep "$sleep_time"
+        done
+        return $return_value
+    }
+    k8s_svc_lb_ip() {
+        local namespace=${1:?namespace is missing}
+        local service=${2:?service is missing}
+        local service_ip=$(kubectl get svc "$service" -n "$namespace" -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+        local service_hostname=$(kubectl get svc "$service" -n "$namespace" -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+
+        if [[ -n ${service_ip} ]]; then
+            echo "${service_ip}"
+        else
+            echo "${service_hostname}"
+        fi
+    }
+    k8s_svc_lb_ip_ready() {
+        local namespace=${1:?namespace is missing}
+        local service=${2:?service is missing}
+        [[ -n "$(k8s_svc_lb_ip "$namespace" "$service")" ]]
+    }
+    # Wait until LoadBalancer IP is ready
+    retry_while "k8s_svc_lb_ip_ready {{ $releaseNamespace }} $SVC_NAME" || exit 1
+    # Obtain LoadBalancer external IP
+    k8s_svc_lb_ip "{{ $releaseNamespace }}" "$SVC_NAME" | tee "$SHARED_FILE"
+  {{- end }}
+  setup.sh: |-
+    #!/bin/bash
+
+    . /opt/bitnami/scripts/mongodb-env.sh
+    . /opt/bitnami/scripts/libfs.sh
+    . /opt/bitnami/scripts/liblog.sh
+    . /opt/bitnami/scripts/libvalidations.sh
+
+    {{- if .Values.externalAccess.enabled }}
+    {{- if eq .Values.externalAccess.service.type "LoadBalancer" }}
+    {{- if .Values.externalAccess.autoDiscovery.enabled }}
+    export MONGODB_ADVERTISED_HOSTNAME="$(<${SHARED_FILE})"
+    {{- else }}
+    ID="${MY_POD_NAME#"{{ $fullname }}-"}"
+    export MONGODB_ADVERTISED_HOSTNAME=$(echo '{{ coalesce .Values.externalAccess.service.publicNames .Values.externalAccess.service.loadBalancerIPs }}' | tr -d '[]' | cut -d ' ' -f "$(($ID + 1))")
+    {{- end }}
+    {{- else if eq .Values.externalAccess.service.type "NodePort" }}
+    ID="${MY_POD_NAME#"{{ $fullname }}-"}"
+    if is_empty_value "$MONGODB_ADVERTISED_PORT_NUMBER"; then
+      export MONGODB_ADVERTISED_PORT_NUMBER=$(echo '{{ .Values.externalAccess.service.nodePorts }}' | tr -d '[]' | cut -d ' ' -f "$(($ID + 1))")
+    fi
+    {{- if .Values.externalAccess.service.domain }}
+    export MONGODB_ADVERTISED_HOSTNAME={{ .Values.externalAccess.service.domain }}
+    {{- else }}
+    export MONGODB_ADVERTISED_HOSTNAME=$MY_POD_HOST_IP
+    {{- end }}
+    {{- end }}
+    {{- end }}
+
+    {{- if .Values.replicaSetConfigurationSettings.enabled }}
+    # placed here before root password env is overwritten
+    # makes no assumption about starting state
+    # ensures that any stepDown or non-default starting state is handled
+    /scripts/replicaSetConfigurationSettings.sh &
+    {{- end }}
+
+    if is_empty_value "$MONGODB_ADVERTISED_PORT_NUMBER"; then
+      export MONGODB_ADVERTISED_PORT_NUMBER="$MONGODB_PORT_NUMBER"
+    fi
+
+    info "Advertised Hostname: $MONGODB_ADVERTISED_HOSTNAME"
+    info "Advertised Port: $MONGODB_ADVERTISED_PORT_NUMBER"
+
+    # Check for existing replica set in case there is no data in the PVC
+    # This is for cases where the PVC is lost or for MongoDB caches without
+    # persistence
+    current_primary=""
+    if is_dir_empty "${MONGODB_DATA_DIR}/db"; then
+      info "Data dir empty, checking if the replica set already exists"
+      {{- $replicaCount := int .Values.replicaCount }}
+      {{- $portNumber := int .Values.service.ports.mongodb }}
+      {{- $fullname := include "mongodb.fullname" . }}
+      {{- $serviceName := include "mongodb.service.nameOverride" . }}
+      {{- $releaseNamespace := include "mongodb.namespace" . }}
+      {{- $clusterDomain := .Values.clusterDomain }}
+      {{- $mongoList := list }}
+      {{- range $e, $i := until $replicaCount }}
+      {{- $mongoList = append $mongoList (printf "%s-%d.%s.%s.svc.%s:%d" $fullname $i $serviceName $releaseNamespace $clusterDomain $portNumber) }}
+      {{- end }}
+
+      {{- if .Values.externalAccess.externalMaster.enabled }}
+        current_primary={{ printf "%s:%d" (.Values.externalAccess.externalMaster.host) ( int .Values.externalAccess.externalMaster.port) }}
+      {{- else }}
+        current_primary=$(mongosh admin --host "{{ join "," $mongoList }}" {{- if .Values.auth.enabled }} --authenticationDatabase admin -u $MONGODB_ROOT_USER -p $MONGODB_ROOT_PASSWORD{{- end }}{{- if .Values.tls.enabled}} --tls {{ if .Values.tls.mTLS.enabled }}--tlsCertificateKeyFile=/certs/mongodb.pem {{ end }}--tlsCAFile=/certs/mongodb-ca-cert{{- end }} --eval 'db.runCommand("ismaster")' | awk -F\' '/primary:/ {print $2}')
+      {{- end }}
+      if ! is_empty_value "$current_primary"; then
+        info "Detected existing primary: ${current_primary}"
+      fi
+    fi
+
+    if ! is_empty_value "$current_primary" && [[ "$MONGODB_ADVERTISED_HOSTNAME:$MONGODB_ADVERTISED_PORT_NUMBER" == "$current_primary" ]]; then
+        info "Advertised name matches current primary, configuring node as a primary"
+        export MONGODB_REPLICA_SET_MODE="primary"
+    elif ! is_empty_value "$current_primary" && [[ "$MONGODB_ADVERTISED_HOSTNAME:$MONGODB_ADVERTISED_PORT_NUMBER" != "$current_primary" ]]; then
+        info "Current primary is different from this node. Configuring the node as replica of ${current_primary}"
+        export MONGODB_REPLICA_SET_MODE="secondary"
+        export MONGODB_INITIAL_PRIMARY_HOST="${current_primary%:*}"
+        export MONGODB_INITIAL_PRIMARY_PORT_NUMBER="${current_primary#*:}"
+        export MONGODB_SET_SECONDARY_OK="yes"
+    elif [[ "$MY_POD_NAME" = "{{ $fullname }}-0" ]]; then
+        info "Pod name matches initial primary pod name, configuring node as a primary"
+        export MONGODB_REPLICA_SET_MODE="primary"
+    else
+        info "Pod name doesn't match initial primary pod name, configuring node as a secondary"
+        export MONGODB_REPLICA_SET_MODE="secondary"
+        export MONGODB_INITIAL_PRIMARY_PORT_NUMBER="$MONGODB_PORT_NUMBER"
+    fi
+
+    if [[ "$MONGODB_REPLICA_SET_MODE" == "secondary" ]]; then
+        export MONGODB_INITIAL_PRIMARY_ROOT_USER="$MONGODB_ROOT_USER"
+        export MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD="$MONGODB_ROOT_PASSWORD"
+        export MONGODB_ROOT_PASSWORD=""
+        export MONGODB_EXTRA_USERNAMES=""
+        export MONGODB_EXTRA_DATABASES=""
+        export MONGODB_EXTRA_PASSWORDS=""
+        export MONGODB_ROOT_PASSWORD_FILE=""
+        export MONGODB_EXTRA_USERNAMES_FILE=""
+        export MONGODB_EXTRA_DATABASES_FILE=""
+        export MONGODB_EXTRA_PASSWORDS_FILE=""
+    fi
+    exec /opt/bitnami/scripts/mongodb/entrypoint.sh /opt/bitnami/scripts/mongodb/run.sh
+  setup-hidden.sh: |-
+    #!/bin/bash
+
+    . /opt/bitnami/scripts/mongodb-env.sh
+
+    {{- if .Values.externalAccess.hidden.enabled }}
+    {{- if eq .Values.externalAccess.hidden.service.type "LoadBalancer" }}
+    {{- if .Values.externalAccess.autoDiscovery.enabled }}
+    export MONGODB_ADVERTISED_HOSTNAME="$(<${SHARED_FILE})"
+    {{- else }}
+    ID="${MY_POD_NAME#"{{ $fullname }}-hidden-"}"
+    export MONGODB_ADVERTISED_HOSTNAME=$(echo '{{ .Values.externalAccess.hidden.service.loadBalancerIPs }}' | tr -d '[]' | cut -d ' ' -f "$(($ID + 1))")
+    {{- end }}
+    {{- else if eq .Values.externalAccess.hidden.service.type "NodePort" }}
+    ID="${MY_POD_NAME#"{{ $fullname }}-hidden-"}"
+    if is_empty_value "$MONGODB_ADVERTISED_PORT_NUMBER"; then
+      export MONGODB_ADVERTISED_PORT_NUMBER=$(echo '{{ .Values.externalAccess.service.nodePorts }}' | tr -d '[]' | cut -d ' ' -f "$(($ID + 1))")
+    fi
+    {{- if .Values.externalAccess.hidden.service.domain }}
+    export MONGODB_ADVERTISED_HOSTNAME={{ .Values.externalAccess.hidden.service.domain }}
+    {{- else }}
+    export MONGODB_ADVERTISED_HOSTNAME=$MY_POD_HOST_IP
+    {{- end }}
+    {{- end }}
+    {{- end }}
+
+    {{- if .Values.replicaSetConfigurationSettings.enabled }}
+    # placed here before root password env is overwritten
+    # makes no assumption about starting state
+    # ensures that any stepDown or non-default starting state is handled
+    /scripts/replicaSetConfigurationSettings.sh &
+    {{- end }}
+
+    echo "Advertised Hostname: $MONGODB_ADVERTISED_HOSTNAME"
+    echo "Advertised Port: $MONGODB_ADVERTISED_PORT_NUMBER"
+    echo "Configuring node as a hidden node"
+    export MONGODB_REPLICA_SET_MODE="hidden"
+    export MONGODB_INITIAL_PRIMARY_ROOT_USER="$MONGODB_ROOT_USER"
+    export MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD="$MONGODB_ROOT_PASSWORD"
+    export MONGODB_INITIAL_PRIMARY_PORT_NUMBER="$MONGODB_PORT_NUMBER"
+    export MONGODB_ROOT_PASSWORD=""
+    export MONGODB_EXTRA_USERNAMES=""
+    export MONGODB_EXTRA_DATABASES=""
+    export MONGODB_EXTRA_PASSWORDS=""
+    export MONGODB_ROOT_PASSWORD_FILE=""
+    export MONGODB_EXTRA_USERNAMES_FILE=""
+    export MONGODB_EXTRA_DATABASES_FILE=""
+    export MONGODB_EXTRA_PASSWORDS_FILE=""
+    exec /opt/bitnami/scripts/mongodb/entrypoint.sh /opt/bitnami/scripts/mongodb/run.sh
+  {{- if .Values.replicaSetConfigurationSettings.enabled }}
+  replicaSetConfigurationSettings.sh: |-
+    #!/bin/bash
+    # This script to be called when pod starts.
+    # This script sets rs settings which can not be applied via conf file
+
+    function logger ()
+    #$1 is the line to be logged
+    {
+      echo "replicaSetConfigurationSettings.sh -- ${1}" >&1
+    }
+
+    SLEEP_PERIOD=10
+
+    {{- if and .Values.auth.enabled (or .Values.auth.rootPassword .Values.auth.existingSecret)}}
+    usernameAndPassword="{{- if .Values.tls.enabled}} --tls {{ if .Values.tls.mTLS.enabled }}--tlsCertificateKeyFile=/certs/mongodb.pem {{ end }}--tlsCAFile=/certs/mongodb-ca-cert{{- end }} -u ${MONGODB_ROOT_USER} -p ${MONGODB_ROOT_PASSWORD}"
+    {{- else }}
+    usernameAndPassword=""
+    {{- end }}
+
+    # load Values.replicaSetConfigurationSettings.configuration into associtive array which makes iterating and string manipulation easy
+    declare -A desiredRsConf
+    {{ range $setting, $value := .Values.replicaSetConfigurationSettings.configuration -}}
+    {{ printf "desiredRsConf[%s]='%v'" $setting $value }}
+    {{ end }}
+
+    rsConfWriteAttempts=0
+    rs_conf_configured_ok=unknown
+
+    while [[ "${rs_conf_configured_ok}" != "true" ]]; do
+
+      # give the rs setup a chance to succeed before attempting to read or configure
+      sleep ${SLEEP_PERIOD}
+
+      counter=0
+      while ! mongosh ${usernameAndPassword} --eval 'rs.conf()'; do
+        counter=$((${counter} +1))
+        logger "not yet able to read rs.conf settings from the currently running rs (after ${counter} attempts)"
+        sleep ${SLEEP_PERIOD}
+      done
+      counter=$((${counter} +1))
+      logger "rs.conf settings have been read from the currently running rs (after ${counter} attempts)"
+
+      # read rs.conf again and store it. settings format is '"<key>" : <value>,'
+      currentRsConf=$(mongosh ${usernameAndPassword} --eval 'rs.conf()')
+
+      desiredEqualsActual=unknown
+      settingsToConfigure=""
+      for key in ${!desiredRsConf[@]}; do
+        value=${desiredRsConf[$key]}
+        if [[ $key =~ ^members\[[0-9]+\]\..+ ]]; then
+          # Replica set member specific setting
+          if [[ "$(mongosh --eval "cfg=${currentRsConf}; cfg.${key}" 2>/dev/null)" != "${value}" ]]; then
+            desiredEqualsActual=false
+            logger "rs conf: ${key} needs to be updated to desired value: ${value}"
+            settingsToConfigure="${settingsToConfigure}cfg.${key} = ${value}; "
+          else
+            logger "rs conf: ${key} is already at desired value: ${value}"
+          fi
+        else
+          # General rs setting
+          if [[ "$(mongosh --eval "cfg=${currentRsConf}; cfg.settings.${key}" 2>/dev/null)" != "${value}" ]]; then
+            desiredEqualsActual=false
+            logger "rs conf: ${key} needs to be updated to desired value: ${value}"
+            settingsToConfigure="${settingsToConfigure}cfg.settings.${key} = ${value}; "
+          else
+            logger "rs conf: ${key} is already at desired value: ${value}"
+          fi
+        fi
+      done
+
+      if [[ "${desiredEqualsActual}" != "false" ]]; then
+        logger "replicaSetConfigurationSettings match the settings of the currently running rs"
+        desiredEqualsActual=true
+        rs_conf_configured_ok=true
+        logger "Current settings match desired settings (There have been ${rsConfWriteAttempts} attempts to write to mongoDB rs configuration)"
+        exit
+      fi
+
+      # apply the settings only if this member is currently the mongo replicaset PRIMARY
+      # it might take a little time before any pod is PRIMARY
+      isMaster=unknown
+      if ! mongosh ${usernameAndPassword} --eval 'rs.isMaster()' | grep -q "ismaster: true"; then
+        isMaster=false
+        logger "This node is not yet PRIMARY - replicaSetConfigurationSettings will only be set on the member that is currently PRIMARY"
+      else
+        isMaster=true
+        logger "This node is PRIMARY"
+      fi
+
+      if [[ "${isMaster}" == "true" ]]; then
+        logger "This node is currently PRIMARY - will apply rs.conf settings"
+
+        # avoiding tricky string substitution with single quotes by making the eval string a set of vars
+        rsconf="cfg = rs.conf();"
+        rsreconf="rs.reconfig(cfg);"
+        rsCommand="${rsconf} ${settingsToConfigure} ${rsreconf}"
+
+        mongosh ${usernameAndPassword} --eval "${rsCommand}"
+        if [ $? -ne 0 ]; then
+          logger "Failed to apply mongodb cfg.settings configuration"
+        else
+          logger "mongodb replicaset cfg.settings configuration applied"
+          logger "Will check rs conf"
+          # don't exit just yet - the settings will be checked in the next loop
+        fi
+        rsConfWriteAttempts=$((${rsConfWriteAttempts} + 1 ))
+      fi
+    done
+  {{- end }}
+{{- end }}

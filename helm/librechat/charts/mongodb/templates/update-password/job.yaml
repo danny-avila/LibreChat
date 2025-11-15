@@ -1,0 +1,245 @@
+{{- /*
+Copyright Broadcom, Inc. All Rights Reserved.
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+
+{{- if .Values.passwordUpdateJob.enabled }}
+{{- $customUsers := include "mongodb.customUsers" . }}
+{{- $customDatabases := include "mongodb.customDatabases" . }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-password-update" (include "common.names.fullname" .) | trunc 63 | trimSuffix "-" }}
+  namespace: {{ include "common.names.namespace" . | quote }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .Values.commonLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/part-of: mongodb
+    app.kubernetes.io/component: update-job
+  {{- $defaultAnnotations := dict "helm.sh/hook" "pre-upgrade" "helm.sh/hook-delete-policy" "hook-succeeded" }}
+  {{- $annotations := include "common.tplvalues.merge" ( dict "values" ( list .Values.commonAnnotations $defaultAnnotations .Values.passwordUpdateJob.annotations ) "context" . ) }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" $annotations "context" $ ) | nindent 4 }}
+spec:
+  backoffLimit: {{ .Values.passwordUpdateJob.backoffLimit }}
+  template:
+    metadata:
+      {{- $podLabels := include "common.tplvalues.merge" ( dict "values" ( list .Values.passwordUpdateJob.podLabels .Values.commonLabels ) "context" . ) }}
+      labels: {{- include "common.labels.standard" ( dict "customLabels" $podLabels "context" $ ) | nindent 8 }}
+        app.kubernetes.io/part-of: mongodb
+        app.kubernetes.io/component: update-job
+      {{- if .Values.passwordUpdateJob.podAnnotations }}
+      annotations: {{- include "common.tplvalues.render" (dict "value" .Values.passwordUpdateJob.podAnnotations "context" $) | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "mongodb.imagePullSecrets" . | nindent 6 }}
+      restartPolicy: OnFailure
+      {{- if .Values.passwordUpdateJob.podSecurityContext.enabled }}
+      securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.passwordUpdateJob.podSecurityContext "context" $) | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: {{ .Values.passwordUpdateJob.automountServiceAccountToken }}
+      {{- if .Values.passwordUpdateJob.hostAliases }}
+      hostAliases: {{- include "common.tplvalues.render" (dict "value" .Values.passwordUpdateJob.hostAliases "context" $) | nindent 8 }}
+      {{- end }}
+      initContainers:
+        {{- if .Values.passwordUpdateJob.initContainers }}
+        {{- include "common.tplvalues.render" (dict "value" .Values.passwordUpdateJob.initContainers "context" $) | nindent 8 }}
+        {{- end }}
+      containers:
+        - name: update-credentials
+          image: {{ template "mongodb.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.passwordUpdateJob.command }}
+          command: {{- include "common.tplvalues.render" (dict "value" .Values.passwordUpdateJob.command "context" $) | nindent 12 }}
+          {{- else }}
+          command:
+            - /bin/bash
+            - -ec
+          {{- end }}
+          {{- if .Values.passwordUpdateJob.args }}
+          args: {{- include "common.tplvalues.render" (dict "value" .Values.passwordUpdateJob.args "context" $) | nindent 12 }}
+          {{- else }}
+          args:
+            - |
+              {{- if .Values.usePasswordFiles }}
+              # We need to load all the secret env vars to the system
+              for file in $(find /bitnami/mongodb/secrets -type f); do
+                  env_var_name="$(basename $file)"
+                  echo "Exporting $env_var_name"
+                  export $env_var_name="$(< $file)"
+              done
+              {{- end }}
+
+              . /opt/bitnami/scripts/mongodb-env.sh
+              . /opt/bitnami/scripts/libmongodb.sh
+              . /opt/bitnami/scripts/liblog.sh
+
+              protocol=mongodb
+              {{- if eq .Values.architecture "replicaset" }}
+              replicaset={{- range $i, $_ := until (int .Values.replicaCount) }}{{- if ne $i 0 }},{{- end }}{{ include "common.names.fullname" $ }}-{{ $i }}.{{ include "mongodb.service.nameOverride" $ }}:{{ $.Values.containerPorts.mongodb }}{{- end }}
+              {{- else }}
+              replicaset={{ include "common.names.fullname" . }}:{{ .Values.service.ports.mongodb }}
+              {{- end }}
+
+              info "Starting password update job"
+              if [[ -f /job-status/root-password-changed ]]; then
+                  info "Root password already updated. Skipping"
+              else
+                  info "Updating root password"
+                  mongosh "${protocol}://$MONGODB_ROOT_USER:$MONGODB_PREVIOUS_ROOT_PASSWORD@$replicaset/admin" --eval "db.changeUserPassword('$MONGODB_ROOT_USER', '$MONGODB_NEW_ROOT_PASSWORD')"
+                  touch /job-status/root-password-changed
+                  info "Root password successfully updated"
+              fi
+              {{- if and (not (empty $customUsers)) (not (empty $customDatabases)) }}
+
+              databases_extra=()
+              usernames_extra=()
+              IFS="$(mongodb_field_separator "$MONGODB_EXTRA_DATABASES")" read -r -a databases_extra <<<"$MONGODB_EXTRA_DATABASES"
+              IFS="$(mongodb_field_separator "$MONGODB_EXTRA_USERNAMES")" read -r -a usernames_extra <<<"$MONGODB_EXTRA_USERNAMES"
+              new_passwords_extra=()
+              IFS="$(mongodb_field_separator "$MONGODB_NEW_EXTRA_PASSWORDS")" read -r -a new_passwords_extra <<<"$MONGODB_NEW_EXTRA_PASSWORDS"
+
+              for ((i = 0; i < ${#usernames_extra[@]}; i++)); do
+                  if [[ -f /job-status/password-${usernames_extra[i]}-changed ]]; then
+                      info "User ${usernames_extra[i]} password already updated. Skipping"
+                  else
+                      info "Updating user ${usernames_extra[i]} password"
+                      mongosh "${protocol}://$MONGODB_ROOT_USER:$MONGODB_NEW_ROOT_PASSWORD@$replicaset/${databases_extra[i]}?authSource=admin" --eval "db.changeUserPassword('${usernames_extra[i]}', '${new_passwords_extra[i]}');"
+                      touch /job-status/password-${usernames_extra[i]}-changed
+                      info "User ${usernames_extra[i]} password successfully updated"
+                  fi
+              done
+
+              {{- end }}
+
+              {{- if .Values.metrics.username }}
+              if [[ -f /job-status/metrics-password-changed ]]; then
+                  info "Metrics password already updated. Skipping"
+              else
+                  info "Updating metrics password"
+                  mongosh "${protocol}://$MONGODB_ROOT_USER:$MONGODB_NEW_ROOT_PASSWORD@$replicaset/admin" --eval "db.changeUserPassword('$MONGODB_METRICS_USER', '$MONGODB_NEW_METRICS_PASSWORD')"
+                  touch /job-status/root-password-changed
+                  info "Metrics password successfully updated"
+              fi
+              {{- end }}
+
+              {{- if .Values.passwordUpdateJob.extraCommands }}
+              info "Running extra commmands"
+              {{- include "common.tplvalues.render" (dict "value" .Values.passwordUpdateJob.extraCommands "context" $) | nindent 14 }}
+              {{- end }}
+              info "Password update job finished successfully"
+          {{- end }}
+          env:
+            - name: BITNAMI_DEBUG
+              value: {{ ternary "true" "false" .Values.image.debug | quote }}
+            {{- if not .Values.usePasswordFiles }}
+            - name: MONGODB_PREVIOUS_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ template "mongodb.update-job.previousSecretName" . }}
+                  key: mongodb-root-password
+            - name: MONGODB_NEW_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ template "mongodb.update-job.newSecretName" . }}
+                  key: mongodb-root-password
+            {{- end }}
+            {{- if and (not (empty $customUsers)) (not (empty $customDatabases)) }}
+            - name: MONGODB_EXTRA_USERNAMES
+              value: {{ $customUsers | quote }}
+            - name: MONGODB_EXTRA_DATABASES
+              value: {{ $customDatabases | quote }}
+            {{- if not .Values.usePasswordFiles }}
+            - name: MONGODB_NEW_EXTRA_PASSWORDS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ template "mongodb.update-job.newSecretName" . }}
+                  key: mongodb-passwords
+            {{- end }}
+            {{- end }}
+            {{- if .Values.metrics.username }}
+            - name: MONGODB_METRICS_USER
+              value: {{ .Values.metrics.username | quote }}
+            {{- if not .Values.usePasswordFiles }}
+            - name: MONGODB_PREVIOUS_METRICS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ template "mongodb.update-job.previousSecretName" . }}
+                  key: mongodb-metrics-password
+            - name: MONGODB_NEW_METRICS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ template "mongodb.update-job.newSecretName" . }}
+                  key: mongodb-metrics-password
+            {{- end }}
+            {{- end }}
+            {{- if .Values.passwordUpdateJob.extraEnvVars }}
+            {{- include "common.tplvalues.render" (dict "value" .Values.passwordUpdateJob.extraEnvVars "context" $) | nindent 12 }}
+            {{- end }}
+          {{- if or .Values.passwordUpdateJob.extraEnvVarsCM .Values.passwordUpdateJob.extraEnvVarsSecret }}
+          envFrom:
+            {{- if .Values.passwordUpdateJob.extraEnvVarsCM }}
+            - configMapRef:
+                name: {{ .Values.passwordUpdateJob.extraEnvVarsCM }}
+            {{- end }}
+            {{- if .Values.passwordUpdateJob.extraEnvVarsSecret }}
+            - secretRef:
+                name: {{ .Values.passwordUpdateJob.extraEnvVarsSecret }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.passwordUpdateJob.containerSecurityContext.enabled }}
+          securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.passwordUpdateJob.containerSecurityContext "context" $) | nindent 12 }}
+          {{- end }}
+          {{- if .Values.passwordUpdateJob.customLivenessProbe }}
+          livenessProbe: {{- include "common.tplvalues.render" (dict "value" .Values.passwordUpdateJob.customLivenessProbe "context" $) | nindent 12 }}
+          {{- end }}
+          {{- if .Values.passwordUpdateJob.customReadinessProbe }}
+          readinessProbe: {{- include "common.tplvalues.render" (dict "value" .Values.passwordUpdateJob.customReadinessProbe "context" $) | nindent 12 }}
+          {{- end }}
+          {{- if .Values.passwordUpdateJob.customStartupProbe }}
+          startupProbe: {{- include "common.tplvalues.render" (dict "value" .Values.passwordUpdateJob.customStartupProbe "context" $) | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: empty-dir
+              mountPath: /job-status
+              subPath: job-dir
+            {{- if .Values.usePasswordFiles }}
+            - name: mongodb-previous-credentials
+              mountPath: /bitnami/mongodb/secrets/previous
+            - name: mongodb-new-credentials
+              mountPath: /bitnami/mongodb/secrets/new
+            {{- end }}
+          {{- if .Values.passwordUpdateJob.extraVolumeMounts }}
+            {{- include "common.tplvalues.render" (dict "value" .Values.passwordUpdateJob.extraVolumeMounts "context" $) | nindent 12 }}
+          {{- end }}
+          {{- if .Values.passwordUpdateJob.resources }}
+          resources: {{- toYaml .Values.passwordUpdateJob.resources | nindent 12 }}
+          {{- else if ne .Values.passwordUpdateJob.resourcesPreset "none" }}
+          resources: {{- include "common.resources.preset" (dict "type" .Values.passwordUpdateJob.resourcesPreset) | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: empty-dir
+          emptyDir: {}
+        {{- if and .Values.usePasswordFiles }}
+        - name: mongodb-previous-credentials
+          secret:
+            secretName: {{ template "mongodb.update-job.previousSecretName" . }}
+            items:
+              - key: mongodb-root-password
+                path: MONGODB_PREVIOUS_ROOT_PASSWORD
+        - name: mongodb-new-credentials
+          secret:
+            secretName: {{ template "mongodb.update-job.newSecretName" . }}
+            items:
+              - key: mongodb-root-password
+                path: MONGODB_NEW_ROOT_PASSWORD
+              {{- if and (not (empty $customUsers)) (not (empty $customDatabases)) }}
+              - key: mongodb-passwords
+                path: MONGODB_NEW_EXTRA_PASSWORDS
+              {{- end }}
+              {{- if .Values.metrics.username }}
+              - key: mongodb-metrics-password
+                path: MONGODB_NEW_METRICS_PASSWORD
+              {{- end }}
+        {{- end }}
+      {{- if .Values.passwordUpdateJob.extraVolumes }}
+      {{- include "common.tplvalues.render" (dict "value" .Values.passwordUpdateJob.extraVolumes "context" $) | nindent 8 }}
+      {{- end }}
+{{- end }}

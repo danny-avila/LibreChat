@@ -1,0 +1,63 @@
+{{- /*
+Copyright Broadcom, Inc. All Rights Reserved.
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+
+{{- if not (eq .Values.architecture "replicaset") }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mongodb.service.nameOverride" . }}
+  namespace: {{ include "mongodb.namespace" . | quote }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .Values.commonLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/component: mongodb
+  {{- if or .Values.service.annotations .Values.commonAnnotations }}
+  {{- $annotations := include "common.tplvalues.merge" ( dict "values" ( list .Values.service.annotations .Values.commonAnnotations ) "context" . ) }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" $annotations "context" $) | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- if and (eq .Values.service.type "ClusterIP") .Values.service.clusterIP }}
+  clusterIP: {{ .Values.service.clusterIP }}
+  {{- end }}
+  {{- if and (eq .Values.service.type "LoadBalancer") .Values.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.service.loadBalancerIP }}
+  {{- end }}
+  {{- if and (eq .Values.service.type "LoadBalancer") .Values.service.loadBalancerClass }}
+  loadBalancerClass: {{ .Values.service.loadBalancerClass }}
+  {{- end }}
+  {{- if .Values.service.externalIPs }}
+  externalIPs: {{ toYaml .Values.service.externalIPs | nindent 4 }}
+  {{- end }}
+  {{- if .Values.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges: {{- toYaml .Values.service.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  {{- if (eq .Values.service.type "LoadBalancer") }}
+  allocateLoadBalancerNodePorts: {{ .Values.service.allocateLoadBalancerNodePorts }}
+  {{- end }}
+  {{- if .Values.service.sessionAffinity }}
+  sessionAffinity: {{ .Values.service.sessionAffinity }}
+  {{- end }}
+  {{- if .Values.service.sessionAffinityConfig }}
+  sessionAffinityConfig: {{- include "common.tplvalues.render" (dict "value" .Values.service.sessionAffinityConfig "context" $) | nindent 4 }}
+  {{- end }}
+  {{- if (or (eq .Values.service.type "LoadBalancer") (eq .Values.service.type "NodePort")) }}
+  externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy | quote }}
+  {{- end }}
+  publishNotReadyAddresses: {{ .Values.service.publishNotReadyAddresses }}
+  ports:
+    - name: {{ .Values.service.portName | quote }}
+      port: {{ .Values.service.ports.mongodb }}
+      targetPort: mongodb
+      {{- if and (or (eq .Values.service.type "LoadBalancer") (eq .Values.service.type "NodePort")) .Values.service.nodePorts.mongodb }}
+      nodePort: {{ .Values.service.nodePorts.mongodb }}
+      {{- else if eq .Values.service.type "ClusterIP" }}
+      nodePort: null
+      {{- end }}
+    {{- if .Values.service.extraPorts }}
+    {{- include "common.tplvalues.render" (dict "value" .Values.service.extraPorts "context" $) | nindent 4 }}
+    {{- end }}
+  {{- $podLabels := include "common.tplvalues.merge" ( dict "values" ( list .Values.podLabels .Values.commonLabels ) "context" . ) }}
+  selector: {{- include "common.labels.matchLabels" ( dict "customLabels" $podLabels "context" $ ) | nindent 4 }}
+    app.kubernetes.io/component: mongodb
+{{- end }}
