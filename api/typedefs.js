@@ -1265,12 +1265,6 @@
  */
 
 /**
- * @exports OpenAISpecClient
- * @typedef {import('./app/clients/OpenAIClient')} OpenAISpecClient
- * @memberof typedefs
- */
-
-/**
  * @exports TAgentClient
  * @typedef {import('./server/controllers/agents/client')} TAgentClient
  * @memberof typedefs

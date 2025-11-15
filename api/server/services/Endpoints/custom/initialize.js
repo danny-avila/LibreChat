@@ -8,7 +8,6 @@ const {
 } = require('librechat-data-provider');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { fetchModels } = require('~/server/services/ModelService');
-const OpenAIClient = require('~/app/clients/OpenAIClient');
 const getLogStores = require('~/cache/getLogStores');
 
 const { PROXY } = process.env;
@@ -126,32 +125,23 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     ...endpointOption,
   };
 
-  if (optionsOnly) {
-    const modelOptions = endpointOption?.model_parameters ?? {};
-    clientOptions = Object.assign(
-      {
-        modelOptions,
-      },
-      clientOptions,
-    );
-    clientOptions.modelOptions.user = req.user.id;
-    const options = getOpenAIConfig(apiKey, clientOptions, endpoint);
-    if (options != null) {
-      options.useLegacyContent = true;
-      options.endpointTokenConfig = endpointTokenConfig;
-    }
-    if (!clientOptions.streamRate) {
-      return options;
-    }
-    options.llmConfig._lc_stream_delay = clientOptions.streamRate;
-    return options;
+  const modelOptions = endpointOption?.model_parameters ?? {};
+  clientOptions = Object.assign(
+    {
+      modelOptions,
+    },
+    clientOptions,
+  );
+  clientOptions.modelOptions.user = req.user.id;
+  const options = getOpenAIConfig(apiKey, clientOptions, endpoint);
+  if (options != null) {
+    options.useLegacyContent = true;
+    options.endpointTokenConfig = endpointTokenConfig;
   }
-
-  const client = new OpenAIClient(apiKey, clientOptions);
-  return {
-    client,
-    openAIApiKey: apiKey,
-  };
+  if (clientOptions.streamRate) {
+    options.llmConfig._lc_stream_delay = clientOptions.streamRate;
+  }
+  return options;
 };
 
 module.exports = initializeClient;
