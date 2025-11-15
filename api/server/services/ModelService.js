@@ -2,10 +2,10 @@ const axios = require('axios');
 const { Providers } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { logAxiosError, inputSchema, processModelData } = require('@librechat/api');
+const { logAxiosError, inputSchema, processModelData, isUserProvided } = require('@librechat/api');
 const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-provider');
 const { OllamaClient } = require('~/app/clients/OllamaClient');
-const { isUserProvided } = require('~/server/utils');
+const { config } = require('./Config/EndpointService');
 const getLogStores = require('~/cache/getLogStores');
 const { extractBaseURL } = require('~/utils');
 
@@ -23,8 +23,6 @@ const splitAndTrim = (input) => {
     .map((item) => item.trim())
     .filter(Boolean);
 };
-
-const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService').config;
 
 /**
  * Fetches OpenAI models from the specified base API path or Azure, based on the provided configuration.
@@ -140,6 +138,7 @@ const fetchModels = async ({
  */
 const fetchOpenAIModels = async (opts, _models = []) => {
   let models = _models.slice() ?? [];
+  const { openAIApiKey } = config;
   let apiKey = openAIApiKey;
   const openaiBaseURL = 'https://api.openai.com/v1';
   let baseURL = openaiBaseURL;
@@ -240,20 +239,11 @@ const getOpenAIModels = async (opts) => {
     return models;
   }
 
-  if (userProvidedOpenAI) {
+  if (config.userProvidedOpenAI) {
     return models;
   }
 
   return await fetchOpenAIModels(opts, models);
-};
-
-const getChatGPTBrowserModels = () => {
-  let models = ['text-davinci-002-render-sha', 'gpt-4'];
-  if (process.env.CHATGPT_MODELS) {
-    models = splitAndTrim(process.env.CHATGPT_MODELS);
-  }
-
-  return models;
 };
 
 /**
@@ -345,8 +335,7 @@ module.exports = {
   fetchModels,
   splitAndTrim,
   getOpenAIModels,
-  getBedrockModels,
-  getChatGPTBrowserModels,
-  getAnthropicModels,
   getGoogleModels,
+  getBedrockModels,
+  getAnthropicModels,
 };

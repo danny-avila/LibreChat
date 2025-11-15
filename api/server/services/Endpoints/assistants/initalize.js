@@ -1,12 +1,12 @@
 const OpenAI = require('openai');
 const { ProxyAgent } = require('undici');
+const { isUserProvided } = require('@librechat/api');
 const { ErrorTypes, EModelEndpoint } = require('librechat-data-provider');
 const {
   getUserKeyValues,
   getUserKeyExpiry,
   checkUserKeyExpiry,
 } = require('~/server/services/UserService');
-const { isUserProvided } = require('~/server/utils');
 
 const initializeClient = async ({ req, res, version }) => {
   const { PROXY, OPENAI_ORGANIZATION, ASSISTANTS_API_KEY, ASSISTANTS_BASE_URL } = process.env;
