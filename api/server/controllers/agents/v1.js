@@ -591,7 +591,10 @@ const uploadAgentAvatarHandler = async (req, res) => {
     res.status(201).json(updatedAgent);
   } catch (error) {
     const message = 'An error occurred while updating the Agent Avatar';
-    logger.error(message, error);
+    logger.error(
+      `[/:agent_id/avatar] ${message} (${req.params?.agent_id ?? 'unknown agent'})`,
+      error,
+    );
     res.status(500).json({ message });
   } finally {
     try {

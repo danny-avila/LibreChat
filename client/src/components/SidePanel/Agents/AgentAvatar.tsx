@@ -37,15 +37,10 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
 
   const handleFileChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
-      const input = event.target;
-      const file = input.files?.[0];
+      const file = event.target.files?.[0];
       const sizeLimit = fileConfig.avatarSizeLimit ?? 0;
-      const resetInput = () => {
-        input.value = '';
-      };
 
       if (!file) {
-        resetInput();
         return;
       }
 
@@ -58,7 +53,6 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
           message: localize('com_ui_upload_invalid_var', { 0: displayLimit }),
           status: 'error',
         });
-        resetInput();
         return;
       }
 
@@ -67,7 +61,6 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
         setValue('avatar_file', file, { shouldDirty: true });
         setValue('avatar_preview', (reader.result as string) ?? '', { shouldDirty: true });
         setValue('avatar_action', 'upload', { shouldDirty: true });
-        resetInput();
       };
       reader.readAsDataURL(file);
     },
