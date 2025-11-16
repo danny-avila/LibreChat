@@ -558,7 +558,7 @@ const getListAgentsHandler = async (req, res) => {
         }
       } catch (e) {
         // Silently ignore mapping errors
-      }
+        void e;
       }
       return agent;
     });
