@@ -105,7 +105,7 @@
     "caniuse-lite": "^1.0.30001741",
     "cross-env": "^7.0.3",
     "elliptic": "^6.6.1",
-    "eslint": "^9.20.1",
+    "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.0.1",
     "eslint-import-resolver-typescript": "^3.7.0",
     "eslint-plugin-i18next": "^6.1.1",
