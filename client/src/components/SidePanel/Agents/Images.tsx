@@ -26,22 +26,7 @@ export function NoImage() {
   );
 }
 
-export const AgentAvatarRender = ({
-  url,
-  progress = 1,
-}: {
-  url?: string;
-  progress: number; // between 0 and 1
-}) => {
-  const radius = 55; // Radius of the SVG circle
-  const circumference = 2 * Math.PI * radius;
-
-  // Calculate the offset based on the loading progress
-  const offset = circumference - progress * circumference;
-  const circleCSSProperties = {
-    transition: 'stroke-dashoffset 0.3s linear',
-  };
-
+export const AgentAvatarRender = ({ url }: { url?: string }) => {
   return (
     <div>
       <div className="relative h-20 w-20 overflow-hidden rounded-full">
@@ -51,35 +36,8 @@ export const AgentAvatarRender = ({
           alt="GPT"
           width="80"
           height="80"
-          style={{ opacity: progress < 1 ? 0.4 : 1 }}
           key={url || 'default-key'}
         />
-        {progress < 1 && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/5 text-white">
-            <svg width="120" height="120" viewBox="0 0 120 120" className="h-6 w-6">
-              <circle
-                className="origin-[50%_50%] -rotate-90 stroke-gray-400"
-                strokeWidth="10"
-                fill="transparent"
-                r="55"
-                cx="60"
-                cy="60"
-              />
-              <circle
-                className="origin-[50%_50%] -rotate-90 transition-[stroke-dashoffset]"
-                stroke="currentColor"
-                strokeWidth="10"
-                strokeDasharray={`${circumference} ${circumference}`}
-                strokeDashoffset={offset}
-                fill="transparent"
-                r="55"
-                cx="60"
-                cy="60"
-                style={circleCSSProperties}
-              />
-            </svg>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -121,7 +79,12 @@ export function AvatarMenu({
           {
             id: 'reset-avatar',
             label: localize('com_ui_reset_var', { 0: 'Avatar' }),
-            onClick: () => onReset(),
+            onClick: () => {
+              if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+              }
+              onReset();
+            },
           } as MenuItemProps,
         ] as MenuItemProps[])
       : ([] as MenuItemProps[])),
@@ -145,7 +108,14 @@ export function AvatarMenu({
         multiple={false}
         type="file"
         style={{ display: 'none' }}
-        onChange={handleFileChange}
+        onChange={(event) => {
+          handleFileChange(event);
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          } else {
+            event.currentTarget.value = '';
+          }
+        }}
         ref={fileInputRef}
         tabIndex={-1}
       />

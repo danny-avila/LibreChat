@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { mergeFileConfig, fileConfig as defaultFileConfig } from 'librechat-data-provider';
@@ -7,12 +7,10 @@ import type { AgentForm } from '~/common';
 import { AgentAvatarRender, NoImage, AvatarMenu } from './Images';
 import { useGetFileConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
-import { formatBytes } from '~/utils';
 
 function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const [uploadProgress, setUploadProgress] = useState(1);
   const { control, setValue } = useFormContext<AgentForm>();
   const avatarPreview = useWatch({ control, name: 'avatar_preview' }) ?? '';
   const avatarAction = useWatch({ control, name: 'avatar_action' });
@@ -39,19 +37,28 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
 
   const handleFileChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
+      const input = event.target;
+      const file = input.files?.[0];
       const sizeLimit = fileConfig.avatarSizeLimit ?? 0;
+      const resetInput = () => {
+        input.value = '';
+      };
 
       if (!file) {
+        resetInput();
         return;
       }
 
       if (sizeLimit && file.size > sizeLimit) {
-        const megabytes = formatBytes(sizeLimit);
+        const limitInMb = sizeLimit / (1024 * 1024);
+        const displayLimit = Number.isInteger(limitInMb)
+          ? limitInMb
+          : parseFloat(limitInMb.toFixed(1));
         showToast({
-          message: localize('com_ui_upload_invalid_var', { 0: megabytes + '' }),
+          message: localize('com_ui_upload_invalid_var', { 0: displayLimit }),
           status: 'error',
         });
+        resetInput();
         return;
       }
 
@@ -60,7 +67,7 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
         setValue('avatar_file', file, { shouldDirty: true });
         setValue('avatar_preview', (reader.result as string) ?? '', { shouldDirty: true });
         setValue('avatar_action', 'upload', { shouldDirty: true });
-        setUploadProgress(1);
+        resetInput();
       };
       reader.readAsDataURL(file);
     },
@@ -71,7 +78,6 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
     setValue('avatar_preview', '', { shouldDirty: true });
     setValue('avatar_file', null, { shouldDirty: true });
     setValue('avatar_action', hasRemoteAvatar ? 'reset' : null, { shouldDirty: true });
-    setUploadProgress(1);
   }, [hasRemoteAvatar, setValue]);
 
   const hasIcon = Boolean(avatarPreview) || hasRemoteAvatar;
@@ -87,11 +93,7 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
               className="f h-20 w-20 outline-none ring-offset-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={localize('com_ui_upload_agent_avatar_label')}
             >
-              {avatarPreview ? (
-                <AgentAvatarRender url={avatarPreview} progress={uploadProgress} />
-              ) : (
-                <NoImage />
-              )}
+              {avatarPreview ? <AgentAvatarRender url={avatarPreview} /> : <NoImage />}
             </button>
           }
           handleFileChange={handleFileChange}

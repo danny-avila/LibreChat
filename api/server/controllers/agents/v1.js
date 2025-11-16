@@ -35,6 +35,7 @@ const {
   findAccessibleResources,
   hasPublicPermission,
   grantPermission,
+  checkPermission,
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
@@ -212,7 +213,7 @@ const updateAgentHandler = async (req, res) => {
     // Preserve explicit null for avatar to allow resetting the avatar
     const { avatar: avatarField, _id, ...rest } = validatedData;
     const updateData = removeNullishValues(rest);
-    if (Object.prototype.hasOwnProperty.call(validatedData, 'avatar')) {
+    if (avatarField === null) {
       updateData.avatar = avatarField;
     }
 
@@ -528,19 +529,22 @@ const uploadAgentAvatarHandler = async (req, res) => {
       return res.status(400).json({ message: 'Agent ID is required' });
     }
 
-    const isAdmin = req.user.role === SystemRoles.ADMIN;
     const existingAgent = await getAgent({ id: agent_id });
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const isAuthor = existingAgent.author.toString() === req.user.id.toString();
-    const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
-
+    const hasEditPermission = await checkPermission({
+      userId: req.user.id,
+      role: req.user.role,
+      resourceType: ResourceType.AGENT,
+      resourceId: existingAgent._id,
+      requiredPermission: PermissionBits.EDIT,
+    });
     if (!hasEditPermission) {
       return res.status(403).json({
-        error: 'You do not have permission to modify this non-collaborative agent',
+        error: 'You do not have permission to modify this agent',
       });
     }
 
@@ -576,8 +580,6 @@ const uploadAgentAvatarHandler = async (req, res) => {
       }
     }
 
-    const promises = [];
-
     const data = {
       avatar: {
         filepath: image.filepath,
@@ -585,14 +587,10 @@ const uploadAgentAvatarHandler = async (req, res) => {
       },
     };
 
-    promises.push(
-      await updateAgent({ id: agent_id }, data, {
-        updatingUserId: req.user.id,
-      }),
-    );
-
-    const resolved = await Promise.all(promises);
-    res.status(201).json(resolved[0]);
+    const updatedAgent = await updateAgent({ id: agent_id }, data, {
+      updatingUserId: req.user.id,
+    });
+    res.status(201).json(updatedAgent);
   } catch (error) {
     const message = 'An error occurred while updating the Agent Avatar';
     logger.error(message, error);
