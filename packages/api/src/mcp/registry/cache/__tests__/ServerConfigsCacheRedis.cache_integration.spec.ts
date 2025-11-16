@@ -31,7 +31,10 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
   beforeAll(async () => {
     // Set up environment variables for Redis (only if not already set)
     process.env.USE_REDIS = process.env.USE_REDIS ?? 'true';
-    process.env.REDIS_URI = process.env.REDIS_URI ?? 'redis://127.0.0.1:6379';
+    process.env.USE_REDIS_CLUSTER = process.env.USE_REDIS_CLUSTER ?? 'true';
+    process.env.REDIS_URI =
+      process.env.REDIS_URI ??
+      'redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003';
     process.env.REDIS_KEY_PREFIX =
       process.env.REDIS_KEY_PREFIX ?? 'ServerConfigsCacheRedis-IntegrationTest';
 
@@ -49,8 +52,8 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
     // Ensure Redis is connected
     if (!keyvRedisClient) throw new Error('Redis client is not initialized');
 
-    // Wait for Redis to be ready
-    if (!keyvRedisClient.isOpen) await keyvRedisClient.connect();
+    // Wait for connection and topology discovery to complete
+    await redisClients.keyvRedisClientReady;
 
     // Clear any existing leader key to ensure clean state
     await keyvRedisClient.del(LeaderElection.LEADER_KEY);
