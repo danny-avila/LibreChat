@@ -35,7 +35,6 @@ const {
   findAccessibleResources,
   hasPublicPermission,
   grantPermission,
-  checkPermission,
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
@@ -533,19 +532,6 @@ const uploadAgentAvatarHandler = async (req, res) => {
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
-    }
-
-    const hasEditPermission = await checkPermission({
-      userId: req.user.id,
-      role: req.user.role,
-      resourceType: ResourceType.AGENT,
-      resourceId: existingAgent._id,
-      requiredPermission: PermissionBits.EDIT,
-    });
-    if (!hasEditPermission) {
-      return res.status(403).json({
-        error: 'You do not have permission to modify this agent',
-      });
     }
 
     const buffer = await fs.readFile(req.file.path);
