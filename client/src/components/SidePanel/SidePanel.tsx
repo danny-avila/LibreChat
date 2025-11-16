@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, memo } from 'react';
+import { useState, useCallback, useMemo, useEffect, memo } from 'react';
 import { getEndpointField } from 'librechat-data-provider';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import { ResizableHandleAlt, ResizablePanel, useMediaQuery } from '@librechat/client';
@@ -57,6 +57,16 @@ const SidePanel = ({
     const activePanel = localStorage.getItem('side:active-panel');
     return typeof activePanel === 'string' ? activePanel : undefined;
   }, []);
+
+  /**
+   * Ensure panel stays collapsed when hasArtifacts changes
+   * Prevents side panel from opening when artifacts close
+   */
+  useEffect(() => {
+    if (isCollapsed && panelRef.current && !panelRef.current.isCollapsed()) {
+      panelRef.current.collapse();
+    }
+  }, [hasArtifacts, isCollapsed, panelRef]);
 
   const endpointType = useMemo(
     () => getEndpointField(endpointsConfig, endpoint, 'type'),
