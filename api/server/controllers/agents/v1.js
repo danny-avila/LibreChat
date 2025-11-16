@@ -19,6 +19,8 @@ const {
   PermissionBits,
   actionDelimiter,
   removeNullishValues,
+  CacheKeys,
+  Time,
 } = require('librechat-data-provider');
 const {
   getListAgentsByAccess,
@@ -44,11 +46,49 @@ const { updateAction, getActions } = require('~/models/Action');
 const { getCachedTools } = require('~/server/services/Config');
 const { deleteFileByFilter } = require('~/models/File');
 const { getCategoriesWithCounts } = require('~/models');
+const { getLogStores } = require('~/cache');
 
 const systemTools = {
   [Tools.execute_code]: true,
   [Tools.file_search]: true,
   [Tools.web_search]: true,
+};
+
+/**
+ * Refreshes S3-backed avatars for agent list responses with caching.
+ * @param {Array} agents
+ * @param {string} userId
+ */
+const refreshListAvatars = async (agents, userId) => {
+  if (!agents?.length) {
+    return;
+  }
+
+  const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
+  const refreshKey = `${userId}:agents_list`;
+  const alreadyChecked = await cache.get(refreshKey);
+  if (alreadyChecked) {
+    return;
+  }
+
+  await Promise.all(
+    agents.map(async (agent) => {
+      if (agent?.avatar?.source !== FileSources.s3 || !agent?.avatar?.filepath) {
+        return;
+      }
+
+      try {
+        const newPath = await refreshS3Url(agent.avatar);
+        if (newPath && newPath !== agent.avatar.filepath) {
+          agent.avatar = { ...agent.avatar, filepath: newPath };
+        }
+      } catch (err) {
+        logger.debug('[/Agents] Avatar refresh error for list item', err);
+      }
+    }),
+  );
+
+  await cache.set(refreshKey, true, Time.THIRTY_MINUTES);
 };
 
 /**
@@ -478,6 +518,7 @@ const getListAgentsHandler = async (req, res) => {
       const regex = new RegExp(safeSearch, 'i');
       filter.$or = [{ name: { $regex: regex } }, { description: { $regex: regex } }];
     }
+
     // Get agent IDs the user has VIEW access to via ACL
     const accessibleIds = await findAccessibleResources({
       userId,
@@ -485,10 +526,12 @@ const getListAgentsHandler = async (req, res) => {
       resourceType: ResourceType.AGENT,
       requiredPermissions: requiredPermission,
     });
+
     const publiclyAccessibleIds = await findPubliclyAccessibleResources({
       resourceType: ResourceType.AGENT,
       requiredPermissions: PermissionBits.VIEW,
     });
+
     // Use the new ACL-aware function
     const data = await getListAgentsByAccess({
       accessibleIds,
@@ -496,19 +539,31 @@ const getListAgentsHandler = async (req, res) => {
       limit,
       after: cursor,
     });
-    if (data?.data?.length) {
-      const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
-      data.data = data.data.map((agent) => {
-        try {
-          if (agent?._id && publicSet.has(agent._id.toString())) {
-            agent.isPublic = true;
-          }
-        } catch (e) {
-          // ignore mapping errors
-          void e;
+
+    const agents = data?.data ?? [];
+    if (!agents.length) {
+      return res.json(data);
+    }
+
+    const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
+
+    data.data = agents.map((agent) => {
+      try {
+        if (agent?._id && publicSet.has(agent._id.toString())) {
+          agent.isPublic = true;
         }
-        return agent;
-      });
+      } catch (e) {
+        // ignore mapping errors
+        void e;
+      }
+      return agent;
+    });
+
+    // Opportunistically refresh S3 avatar URLs for list results with caching
+    try {
+      await refreshListAvatars(data.data, req.user.id);
+    } catch (err) {
+      logger.debug('[/Agents] Skipping avatar refresh for list', err);
     }
     return res.json(data);
   } catch (error) {
