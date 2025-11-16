@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import React, { useMemo, useCallback, useRef } from 'react';
+import React, { useMemo, useCallback, useRef, useState } from 'react';
 import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider, type FieldNamesMarkedBoolean } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -210,6 +210,7 @@ export default function AgentPanel() {
     setValue,
     formState: { dirtyFields },
   } = methods;
+  const [isAvatarUploadInFlight, setIsAvatarUploadInFlight] = useState(false);
   const uploadAvatarMutation = useUploadAgentAvatarMutation({
     onSuccess: (updatedAgent) => {
       showToast({ message: localize('com_ui_upload_agent_avatar') });
@@ -230,15 +231,25 @@ export default function AgentPanel() {
 
   const handleAvatarUpload = useCallback(
     async (agentId?: string | null) => {
+      const avatarActionState = getValues('avatar_action');
+      const avatarFile = getValues('avatar_file');
+      if (!agentId || isEphemeralAgent(agentId) || avatarActionState !== 'upload' || !avatarFile) {
+        return false;
+      }
+
+      setIsAvatarUploadInFlight(true);
       try {
-        await persistAvatarChanges({
+        return await persistAvatarChanges({
           agentId,
-          avatarActionState: getValues('avatar_action'),
-          avatarFile: getValues('avatar_file'),
+          avatarActionState,
+          avatarFile,
           uploadAvatar: uploadAvatarMutation.mutateAsync,
         });
       } catch (error) {
         console.error('[AgentPanel] Avatar upload failed', error);
+        return false;
+      } finally {
+        setIsAvatarUploadInFlight(false);
       }
     },
     [getValues, uploadAvatarMutation],
@@ -479,6 +490,7 @@ export default function AgentPanel() {
           <AgentFooter
             createMutation={create}
             updateMutation={update}
+            isAvatarUploading={isAvatarUploadInFlight || uploadAvatarMutation.isPending}
             activePanel={activePanel}
             setActivePanel={setActivePanel}
             setCurrentAgentId={setCurrentAgentId}

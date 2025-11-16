@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { DropdownPopup } from '@librechat/client';
+import { DropdownPopup, Skeleton } from '@librechat/client';
 import type { MenuItemProps } from '~/common/menus';
 import { useLocalize } from '~/hooks';
 
@@ -27,17 +27,30 @@ export function NoImage() {
 }
 
 export const AgentAvatarRender = ({ url }: { url?: string }) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+  useEffect(() => {
+    setIsLoaded(false);
+  }, [url]);
+
   return (
     <div>
       <div className="relative h-20 w-20 overflow-hidden rounded-full">
         <img
           src={url}
           className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
-          alt="GPT"
+          alt="Agent avatar"
           width="80"
           height="80"
+          loading="lazy"
           key={url || 'default-key'}
+          onLoad={() => setIsLoaded(true)}
+          onError={() => setIsLoaded(false)}
+          style={{
+            opacity: isLoaded ? 1 : 0,
+            transition: 'opacity 0.2s ease-in-out',
+          }}
         />
+        {!isLoaded && <Skeleton className="absolute inset-0 rounded-full" aria-hidden="true" />}
       </div>
     </div>
   );
