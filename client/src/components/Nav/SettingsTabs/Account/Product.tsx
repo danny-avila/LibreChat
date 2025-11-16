@@ -80,7 +80,6 @@ function Product({ open, onOpenChange }: TDialogProps) {
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">  
       <div className="mt-2">
-        <p className="text-sm md:col-span-2">Your have no more credits left, purchase more to continue chatting.</p>
         {PRODUCTS.map((p) => (
           <div
             key={p.id}
