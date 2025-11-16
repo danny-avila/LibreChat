@@ -1,8 +1,7 @@
 import { Plus } from 'lucide-react';
 import React, { useMemo, useCallback, useRef } from 'react';
 import { Button, useToastContext } from '@librechat/client';
-import { useWatch, useForm, FormProvider } from 'react-hook-form';
-import { useQueryClient } from '@tanstack/react-query';
+import { useWatch, useForm, FormProvider, type FieldNamesMarkedBoolean } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
@@ -11,18 +10,15 @@ import {
   EModelEndpoint,
   PermissionBits,
   isAssistantsEndpoint,
-  QueryKeys,
 } from 'librechat-data-provider';
 import type { AgentForm, StringOption } from '~/common';
-import type { Agent, AgentListResponse } from 'librechat-data-provider';
+import type { Agent } from 'librechat-data-provider';
 import {
   useCreateAgentMutation,
   useUpdateAgentMutation,
   useGetAgentByIdQuery,
   useGetExpandedAgentByIdQuery,
   useUploadAgentAvatarMutation,
-  allAgentViewAndEditQueryKeys,
-  invalidateAgentMarketplaceQueries,
 } from '~/data-provider';
 import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
@@ -53,7 +49,7 @@ function getUpdateToastMessage(
   return `${localize('com_assistants_update_success')} ${name ?? localize('com_ui_agent')}`;
 }
 
-function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | null) {
+export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | null) {
   const {
     name,
     artifacts,
@@ -72,7 +68,8 @@ function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | null) {
     avatar_action: avatarActionState,
   } = data;
 
-  const shouldResetAvatar = avatarActionState === 'reset' && Boolean(agent_id);
+  const shouldResetAvatar =
+    avatarActionState === 'reset' && Boolean(agent_id) && !isEphemeralAgent(agent_id);
   const model = _model ?? '';
   const provider =
     (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
@@ -99,6 +96,74 @@ function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | null) {
     model,
   } as const;
 }
+
+type UploadAvatarFn = (variables: { agent_id: string; formData: FormData }) => Promise<Agent>;
+
+export interface PersistAvatarChangesParams {
+  agentId?: string | null;
+  avatarActionState: AgentForm['avatar_action'];
+  avatarFile?: File | null;
+  uploadAvatar: UploadAvatarFn;
+}
+
+export async function persistAvatarChanges({
+  agentId,
+  avatarActionState,
+  avatarFile,
+  uploadAvatar,
+}: PersistAvatarChangesParams): Promise<boolean> {
+  if (!agentId || isEphemeralAgent(agentId)) {
+    return false;
+  }
+
+  if (avatarActionState !== 'upload' || !avatarFile) {
+    return false;
+  }
+
+  const formData = new FormData();
+  formData.append('file', avatarFile, avatarFile.name);
+
+  await uploadAvatar({
+    agent_id: agentId,
+    formData,
+  });
+
+  return true;
+}
+
+const AVATAR_ONLY_DIRTY_FIELDS = new Set(['avatar_action', 'avatar_file', 'avatar_preview']);
+const IGNORED_DIRTY_FIELDS = new Set(['agent']);
+
+export const isAvatarUploadOnlyDirty = (
+  dirtyFields?: FieldNamesMarkedBoolean<AgentForm>,
+): boolean => {
+  if (!dirtyFields) {
+    return false;
+  }
+
+  let sawDirty = false;
+  for (const [key, value] of Object.entries(dirtyFields) as Array<
+    [string, FieldNamesMarkedBoolean<AgentForm>[keyof AgentForm]]
+  >) {
+    if (!value) {
+      continue;
+    }
+
+    sawDirty = true;
+
+    if (IGNORED_DIRTY_FIELDS.has(key)) {
+      continue;
+    }
+
+    if (AVATAR_ONLY_DIRTY_FIELDS.has(key)) {
+      continue;
+    }
+
+    return false;
+  }
+
+  return sawDirty;
+};
 
 export default function AgentPanel() {
   const localize = useLocalize();
@@ -137,41 +202,17 @@ export default function AgentPanel() {
     mode: 'onChange',
   });
 
-  const queryClient = useQueryClient();
-
-  const { control, handleSubmit, reset, getValues, setValue } = methods;
+  const {
+    control,
+    handleSubmit,
+    reset,
+    getValues,
+    setValue,
+    formState: { dirtyFields },
+  } = methods;
   const uploadAvatarMutation = useUploadAgentAvatarMutation({
-    onSuccess: (updatedAgent, variables) => {
+    onSuccess: (updatedAgent) => {
       showToast({ message: localize('com_ui_upload_agent_avatar') });
-
-      ((keys) => {
-        keys.forEach((key) => {
-          const listRes = queryClient.getQueryData<AgentListResponse>([QueryKeys.agents, key]);
-
-          if (!listRes?.data) {
-            return;
-          }
-
-          const agents = listRes.data.map((agent) => {
-            if (agent.id === variables.agent_id) {
-              return updatedAgent;
-            }
-            return agent;
-          });
-
-          queryClient.setQueryData<AgentListResponse>([QueryKeys.agents, key], {
-            ...listRes,
-            data: agents,
-          });
-        });
-      })(allAgentViewAndEditQueryKeys);
-
-      queryClient.setQueryData<Agent>([QueryKeys.agent, variables.agent_id], updatedAgent);
-      queryClient.setQueryData<Agent>(
-        [QueryKeys.agent, variables.agent_id, 'expanded'],
-        updatedAgent,
-      );
-      invalidateAgentMarketplaceQueries(queryClient);
 
       setValue('avatar_preview', updatedAgent.avatar?.filepath ?? '', { shouldDirty: false });
       setValue('avatar_file', null, { shouldDirty: false });
@@ -187,32 +228,17 @@ export default function AgentPanel() {
     },
   });
 
-  const persistAvatarChanges = useCallback(
+  const handleAvatarUpload = useCallback(
     async (agentId?: string | null) => {
-      if (!agentId || isEphemeralAgent(agentId)) {
-        return;
-      }
-
-      const avatarActionState = getValues('avatar_action');
-      if (avatarActionState !== 'upload') {
-        return;
-      }
-
-      const avatarFile = getValues('avatar_file');
-      if (!avatarFile) {
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append('file', avatarFile, avatarFile.name);
-
       try {
-        await uploadAvatarMutation.mutateAsync({
-          agent_id: agentId,
-          formData,
+        await persistAvatarChanges({
+          agentId,
+          avatarActionState: getValues('avatar_action'),
+          avatarFile: getValues('avatar_file'),
+          uploadAvatar: uploadAvatarMutation.mutateAsync,
         });
-      } catch (_error) {
-        // Upload errors are surfaced via mutation callbacks.
+      } catch (error) {
+        console.error('[AgentPanel] Avatar upload failed', error);
       }
     },
     [getValues, uploadAvatarMutation],
@@ -265,7 +291,7 @@ export default function AgentPanel() {
         setValue('agent', { ...agentOption, ...data }, { shouldDirty: false });
       }
 
-      await persistAvatarChanges(data.id ?? agent_id);
+      await handleAvatarUpload(data.id ?? agent_id);
 
       if (avatarActionState === 'reset') {
         setValue('avatar_action', null, { shouldDirty: false });
@@ -296,7 +322,7 @@ export default function AgentPanel() {
         }`,
       });
 
-      await persistAvatarChanges(data.id);
+      await handleAvatarUpload(data.id);
     },
     onError: (err) => {
       const error = err as Error;
@@ -310,7 +336,7 @@ export default function AgentPanel() {
   });
 
   const onSubmit = useCallback(
-    (data: AgentForm) => {
+    async (data: AgentForm) => {
       const tools = data.tools ?? [];
 
       if (data.execute_code === true) {
@@ -326,6 +352,10 @@ export default function AgentPanel() {
       const { payload: basePayload, provider, model } = composeAgentUpdatePayload(data, agent_id);
 
       if (agent_id) {
+        if (data.avatar_action === 'upload' && isAvatarUploadOnlyDirty(dirtyFields)) {
+          await handleAvatarUpload(agent_id);
+          return;
+        }
         update.mutate({ agent_id, data: { ...basePayload, tools } });
         return;
       }
@@ -345,7 +375,7 @@ export default function AgentPanel() {
 
       create.mutate({ ...basePayload, model, tools, provider });
     },
-    [agent_id, create, update, showToast, localize],
+    [agent_id, create, dirtyFields, handleAvatarUpload, update, showToast, localize],
   );
 
   const handleSelectAgent = useCallback(() => {
