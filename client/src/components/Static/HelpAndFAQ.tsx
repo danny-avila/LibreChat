@@ -29,7 +29,7 @@ const HelpAndFAQ = memo(
       <>
        
         <header>
-            <h1>Help & FAQ</h1>
+            <h1>HELP & FAQ</h1>
             <p>Find answers to common questions and get help with using our platform</p>
         </header>
 
@@ -51,10 +51,10 @@ const HelpAndFAQ = memo(
 
                     <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
                         <h3 className="font-medium text-gray-900 dark:text-white mb-2">
-                            Can I switch between different AI models?
+                            How often is your AI model updated?
                         </h3>
                         <p className="text-gray-600 dark:text-gray-400 text-sm">
-                            Yes, you can select different models from the dropdown menu before starting a conversation.
+                            Our real estate market data is refreshed every month to ensure you have access to the latest industry information.
                         </p>
                     </div>
                 </div>
@@ -70,6 +70,43 @@ const HelpAndFAQ = memo(
                         </h3>
                         <p className="text-gray-600 dark:text-gray-400 text-sm">
                             Access your settings by clicking on your profile icon in the top navigation bar.
+                        </p>
+                    </div>
+
+
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
+                        <h3 className="font-medium text-gray-900 dark:text-white mb-2">
+                            Do my credits expire?
+                        </h3>
+                        <p className="text-gray-600 dark:text-gray-400 text-sm">
+                            No, your purchased credits do not expire. You can use them at any time, and they will remain available in your account until spent.
+                        </p>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
+                        <h3 className="font-medium text-gray-900 dark:text-white mb-2">
+                            Do my credits expire?
+                        </h3>
+                        <p className="text-gray-600 dark:text-gray-400 text-sm">
+                            No, your purchased credits do not expire. You can use them at any time, and they will remain available in your account until spent.
+                        </p>
+                    </div>
+                    
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
+                        <h3 className="font-medium text-gray-900 dark:text-white mb-2">
+                            How do I cancel my subscription?
+                        </h3>
+                        <p className="text-gray-600 dark:text-gray-400 text-sm">
+                            You can cancel your subscription at any time by going to the <b>Account</b> menu, selecting <b>Settings</b>, and navigating to the <b>Subscription</b> tab. There, you’ll find an option to manage or cancel your active subscription.
+                        </p>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
+                        <h3 className="font-medium text-gray-900 dark:text-white mb-2">
+                            How do I purchase more credits?
+                        </h3>
+                        <p className="text-gray-600 dark:text-gray-400 text-sm">
+                            To purchase additional credits, go to the <b>Account</b> menu, select <b>Settings</b>, and open the <b>Balance</b> tab. There you can choose a credit package and complete your purchase securely.
                         </p>
                     </div>
 

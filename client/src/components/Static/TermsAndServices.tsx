@@ -29,7 +29,7 @@ const TermsAndServices = memo(
       <>
 
         <header>
-            <h1>Terms of Service</h1>
+            <h1>TERMS OF SERVICE</h1>
         </header>
 
         <section>

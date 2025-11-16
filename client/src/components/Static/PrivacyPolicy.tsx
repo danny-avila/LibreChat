@@ -28,7 +28,7 @@ const PrivacyPolicy = memo(
     return (
       <>
         <header>
-            <h1>Privacy Policy</h1>
+            <h1>PRIVACY POLICY</h1>
             <p>Last updated: 11/11/2025</p>
         </header>
 
@@ -95,7 +95,7 @@ const PrivacyPolicy = memo(
                         Contact Us
                     </h2>
                     <p className="text-gray-700 dark:text-gray-300">
-                        If you have any questions about this Privacy Policy, please contact us at 
+                        If you have any questions about this Privacy Policy, please contact us at: &nbsp;
                         {process.env.EMAIL_FROM || interfaceConfig.emailFrom || 'info@cribmetrics.com'}
                     </p>
                 </section>
