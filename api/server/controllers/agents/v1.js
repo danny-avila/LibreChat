@@ -553,8 +553,8 @@ const getListAgentsHandler = async (req, res) => {
           agent.isPublic = true;
         }
       } catch (e) {
-        // ignore mapping errors
-        void e;
+        // Silently ignore mapping errors
+      }
       }
       return agent;
     });
