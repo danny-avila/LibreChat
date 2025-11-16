@@ -25,7 +25,6 @@ router.post('/abort', handleAbort());
 router.post(
   '/',
   (req, res, next) => {
-    logger.error(`[ChatV2 Route] Method: ${req.method}, URL: ${req.url}, Body preview: ${JSON.stringify(req.body).substring(0, 100)}`);
     next();
   },
   validateModel,

@@ -7,6 +7,8 @@ const { logger } = require('@librechat/data-schemas');
 const { getAppConfig } = require('~/server/services/Config/app');
 const { createTransaction } = require('~/models/Transaction');
 const { getBalanceConfig } = require('@librechat/api');
+const { Balance } = require('~/db/models');
+
 /**
  * Security Best Practices for Stripe Integration:
  * - Always validate req.user and JWT for all subscription endpoints.
@@ -113,8 +115,8 @@ async function productPurchaseController(req, res) {
       metadata: metadata,
       customer: customerId,
       allow_promotion_codes: true,
-      success_url: successUrl || (process.env.DOMAIN_CLIENT || 'http://localhost:3080') + '/account/purchase/success?session_id={CHECKOUT_SESSION_ID}',
-      cancel_url: cancelUrl || (process.env.DOMAIN_CLIENT || 'http://localhost:3080') + '/account/purchase/canceled',
+      success_url: successUrl ||  'http://localhost:3080' + '/purchase/success?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: cancelUrl || 'http://localhost:3080' + '/purchase/canceled',
     });
     res.json({ url: session.url });
   } catch (err) {
@@ -142,7 +144,7 @@ async function stripeWebhookController(req, res) {
   }
 
   // Detailed logging for Stripe webhook
-  console.error('[Stripe Webhook] Event received:', {
+  console.debug('[Stripe Webhook] Event received:', {
     id: event.id,
     type: event.type,
     created: event.created,
@@ -153,33 +155,6 @@ async function stripeWebhookController(req, res) {
 
   try {
     switch (event.type) {
-      case 'payment_intent.succeeded':    
-        // Populate appConfig from service
-        const appConfig = await getAppConfig();
-        const balanceConfig = getBalanceConfig(appConfig);
-        const product = event.data.object;
-        if (product.metadata?.tokenAmount) {
-          const customerId = product.customer;        
-          const user = await User.findOneAndUpdate(
-            { stripeCustomerId: customerId },
-            { stripeProductId: product.id }
-          );
-
-          await createTransaction({
-            user: user._id, // MongoDB ObjectId or string
-            tokenType: 'credits',
-            context: 'admin', 
-            rawAmount: product.metadata?.tokenAmount, 
-            balance: balanceConfig,
-          });
-          console.error(`[Stripe Webhook] PaymentIntent event:`, {
-            event: event.type,
-            customerId,
-            rawAmount: product.metadata?.tokenAmount,
-            balance: balanceConfig,
-          });        
-          break;
-        }                  
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
@@ -233,18 +208,49 @@ async function stripeWebhookController(req, res) {
         break;
       }
       case 'checkout.session.completed': {
-        const session = event.data.object;
-        const customerId = session.customer;
-        console.error(`[Stripe Webhook] Checkout session completed:`, {
-          event: event.type,
-          customerId,
-          sessionId: session.id,
-          amount_total: session.amount_total,
-        });
-        await User.findOneAndUpdate(
-          { stripeCustomerId: customerId },
-          { subscriptionStatus: 'active' }
-        );
+        const appConfig = await getAppConfig();
+        const balanceConfig = getBalanceConfig(appConfig);
+        const product = event.data.object;
+        if (product?.metadata?.tokenAmount) {
+          const customerId = product.customer;        
+          const user = await User.findOneAndUpdate(
+            { stripeCustomerId: customerId },
+            { stripeProductId: product.id }
+          );
+
+          // Assuming you have the user object or user._id
+          const balanceRecord = await Balance.findOne({ user: user._id }, 'tokenCredits').lean();
+          const currentBalance = balanceRecord ? (balanceRecord.tokenCredits + product.metadata?.amount) : product.metadata?.amount;
+
+          await createTransaction({
+            user: user._id, // MongoDB ObjectId or string
+            tokenType: 'credits',
+            context: 'admin', 
+            rawAmount: product.metadata?.tokenAmount, 
+            balance: balanceConfig,
+          });
+          console.error(`[Stripe Webhook] PaymentIntent event:`, {
+            event: event.type,
+            customerId,
+            rawAmount: product.metadata?.tokenAmount,
+            balance: balanceConfig,
+          });        
+          break;
+        } else {
+          const session = event.data.object;
+          const customerId = session.customer;
+          console.error(`[Stripe Webhook] Checkout session completed:`, {
+            event: event.type,
+            customerId,
+            sessionId: session.id,
+            amount_total: session.amount_total,
+          });
+          await User.findOneAndUpdate(
+            { stripeCustomerId: customerId },
+            { subscriptionStatus: 'active' }
+          );
+        }
+
         break;
       }
       case 'checkout.session.expired': {

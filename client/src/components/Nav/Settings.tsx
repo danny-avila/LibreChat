@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
+import { useUI } from '~/context/UIContext';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
 import { MessageSquare, Command, DollarSign } from 'lucide-react';
@@ -29,16 +30,19 @@ import { useGetStartupConfig } from '~/data-provider';
 import { cn } from '~/utils';
 import { useAuthContext } from '~/hooks';
 
-export default function Settings({ open, onOpenChange }: TDialogProps) {
+export default function Settings() {
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const { data: startupConfig } = useGetStartupConfig();
   const localize = useLocalize();
-  const [activeTab, setActiveTab] = useState(SettingsTabValues.GENERAL);
   const tabRefs = useRef({});
   const { user, isAuthenticated, logout } = useAuthContext();
-  const hasSubscription = user?.subscriptionStatus === 'active'  
+  const hasSubscription = user?.subscriptionStatus === 'active';
   let { hasAnyPersonalizationFeature, hasMemoryOptOut } = usePersonalizationAccess();
-
+  const { settingsOpen, setSettingsOpen, activeSettingsTab, setActiveSettingsTab } = useUI();
+  const open = settingsOpen;
+  const onOpenChange = setSettingsOpen;
+  const activeTab = activeSettingsTab || SettingsTabValues.GENERAL;
+  const setActiveTab = setActiveSettingsTab;
 
   if (startupConfig?.settingsPersonalization === false) {
     hasAnyPersonalizationFeature = false;
@@ -156,6 +160,10 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   const handleTabChange = (value: string) => {
     setActiveTab(value as SettingsTabValues);
   };
+
+  useEffect(() => {
+    setActiveTab(activeTab); // ensures the tab state is synced on mount
+  }, [setActiveTab, activeTab]);
 
   return (
     <Transition appear show={open}>

@@ -651,8 +651,6 @@ class OpenAIClient extends BaseClient {
         return result.trim();
       }
 
-      logger.debug('[OpenAIClient] sendCompletion: result', result);
-
       if (this.isChatCompletion) {
         reply = result.choices[0].message.content;
       } else {
@@ -664,6 +662,9 @@ class OpenAIClient extends BaseClient {
       const { finish_reason } = streamResult.choices[0];
       this.metadata = { finish_reason };
     }
+
+    logger.debug('[OpenAIClient] sendCompletion: reply', reply);
+
     return (reply ?? '').trim();
   }
 

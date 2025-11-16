@@ -21,6 +21,7 @@ const spendTokens = async (txData, tokenUsage) => {
     {
       promptTokens,
       completionTokens,
+      txData
     },
   );
   let prompt, completion;

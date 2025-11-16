@@ -3,6 +3,7 @@ import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext, useLocalize } from '~/hooks';
 import TokenCreditsItem from './TokenCreditsItem';
 import AutoRefillSettings from './AutoRefillSettings';
+import Product from '../Account/Product'
 
 function Balance() {
   const localize = useLocalize();
@@ -37,7 +38,7 @@ function Balance() {
       <TokenCreditsItem tokenCredits={tokenCredits} />
 
       {/* Auto-refill display */}
-      {autoRefillEnabled ? (
+      {/* {autoRefillEnabled ? (
         hasValidRefillSettings ? (
           <AutoRefillSettings
             lastRefill={lastRefill}
@@ -54,7 +55,10 @@ function Balance() {
         <div className="text-sm text-gray-600">
           {localize('com_nav_balance_auto_refill_disabled')}
         </div>
-      )}
+      )} */}
+
+      <Product />
+
     </div>
   );
 }

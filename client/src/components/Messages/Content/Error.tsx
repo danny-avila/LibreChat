@@ -3,6 +3,7 @@ import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provid
 import type { LocalizeFunction } from '~/common';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import { useLocalize } from '~/hooks';
+import { useUI } from '~/context/UIContext';
 import CodeBlock from './CodeBlock';
 
 const localizedErrorPrefix = 'com_error';
@@ -97,12 +98,16 @@ const errorMessages = {
       windowInMinutes > 1 ? `${windowInMinutes} minutes` : 'minute'
     }.`;
   },
-  token_balance: (json: TTokenBalance) => {
+  token_balance: (json: TTokenBalance, _localize: LocalizeFunction, openBalance: () => void) => {
     const { balance, tokenCost, promptTokens, generations } = json;
-    const message = `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`;
+    //const message = `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}.  Cost: ${tokenCost}.`;
+        const message = `Insufficient Funds! You have ${balance} credits left, but need ${tokenCost}.`;
     return (
       <>
         {message}
+        <div className="text-center">
+          <button className="btn-secondary mt-6" onClick={openBalance}>Buy More</button>
+        </div>
         {generations && (
           <>
             <br />
@@ -123,6 +128,7 @@ const errorMessages = {
 
 const Error = ({ text }: { text: string }) => {
   const localize = useLocalize();
+  const { openBalance } = useUI();
   const jsonString = extractJson(text);
   const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
   const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
@@ -135,7 +141,9 @@ const Error = ({ text }: { text: string }) => {
   const errorKey = json.code || json.type;
   const keyExists = errorKey && errorMessages[errorKey];
 
-  if (keyExists && typeof errorMessages[errorKey] === 'function') {
+  if (keyExists && errorKey === 'token_balance' && typeof errorMessages[errorKey] === 'function') {
+    return errorMessages[errorKey](json, localize, openBalance);
+  } else if (keyExists && typeof errorMessages[errorKey] === 'function') {
     return errorMessages[errorKey](json, localize);
   } else if (keyExists && keyExists.startsWith(localizedErrorPrefix)) {
     return localize(errorMessages[errorKey]);

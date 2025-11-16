@@ -184,11 +184,11 @@ export const router = createBrowserRouter(
               element: <Product />,
             },            
             {
-              path: 'account/product/success',
+              path: 'purchase/success',
               element: <ProductSuccess />,
             },
             {
-              path: 'account/product/canceled',
+              path: 'purchase/canceled',
               element: <ProducCancel />,
             },            
             {

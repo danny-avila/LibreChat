@@ -29,7 +29,7 @@ const PrivacyPolicy = memo(
       <>
         <header>
             <h1>Privacy Policy</h1>
-            <p>Last updated: {new Date().toLocaleDateString()}</p>
+            <p>Last updated: 11/11/2025</p>
         </header>
 
         <div className="flex flex-col space-y-6 p-6 max-w-4xl mx-auto">
@@ -96,7 +96,7 @@ const PrivacyPolicy = memo(
                     </h2>
                     <p className="text-gray-700 dark:text-gray-300">
                         If you have any questions about this Privacy Policy, please contact us at 
-                        info@declaray.com
+                        {process.env.EMAIL_FROM || interfaceConfig.emailFrom || 'info@cribmetrics.com'}
                     </p>
                 </section>
             </div>

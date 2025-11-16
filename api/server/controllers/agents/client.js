@@ -605,6 +605,9 @@ class AgentClient extends BaseClient {
 
   /** @type {sendCompletion} */
   async sendCompletion(payload, opts = {}) {
+    logger.debug('[api/server/controllers/agents/client.js #sendCompletion] Sending agent completion', {
+      payload: payload
+    });
     await this.chatCompletion({
       payload,
       onProgress: opts.onProgress,
@@ -914,12 +917,17 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
-        logger.error('[api/server/controllers/agents/client.js #chatCompletion] attachments:',
+          logger.error('[api/server/controllers/agents/client.js #chatCompletion] attachments:',
           attachments
         );
 
         const balanceConfig = getBalanceConfig(appConfig);
         const transactionsConfig = getTransactionsConfig(appConfig);
+
+        logger.error('[api/server/controllers/agents/client.js #chatCompletion] : appConfig', appConfig)        
+        logger.error('[api/server/controllers/agents/client.js #chatCompletion] : balanceConfig', balanceConfig)
+        logger.error('[api/server/controllers/agents/client.js #chatCompletion] : transactionsConfig', transactionsConfig)
+
         await this.recordCollectedUsage({
           context: 'message',
           balance: balanceConfig,

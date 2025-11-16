@@ -11,8 +11,10 @@ import Settings from './Settings';
 import  SubscriptionDialog from '~/components/Subscription/SubscriptionDialog'
 import store from '~/store';
 import { useGetFileConfig } from '~/data-provider/Files/queries';
+import { useUI } from '~/context/UIContext';
 
 function AccountSettings() {
+  const { openSettings } = useUI();
   const localize = useLocalize();
   const { user, isAuthenticated, logout } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
@@ -34,6 +36,13 @@ function AccountSettings() {
 
     setShowFiles(true); 
   };
+
+  function formatAbbreviated(num) {
+    if (num >= 1e9) return (num / 1e9).toFixed(1).replace(/\\.0$/, '') + 'B';
+    if (num >= 1e6) return (num / 1e6).toFixed(1).replace(/\\.0$/, '') + 'M';
+    if (num >= 1e3) return (num / 1e3).toFixed(1).replace(/\\.0$/, '') + 'K';
+    return num.toString();
+  }
 
   return (
     <Select.SelectProvider>
@@ -70,7 +79,7 @@ function AccountSettings() {
           <>
             <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
               {localize('com_nav_balance')}:{' '}
-              {new Intl.NumberFormat().format(Math.round(balanceQuery.data.tokenCredits))}
+              {formatAbbreviated(new Intl.NumberFormat().format(Math.round(balanceQuery.data.tokenCredits)))}
             </div>
             <DropdownMenuSeparator />
           </>
@@ -97,7 +106,7 @@ function AccountSettings() {
         )}
         <Select.SelectItem
           value=""
-          onClick={() => setShowSettings(true)}
+          onClick={() => openSettings()}
           className="select-item text-sm"
         >
           <GearIcon className="icon-md" aria-hidden="true" />
@@ -113,31 +122,9 @@ function AccountSettings() {
           <LogOut className="icon-md" />
           {localize('com_nav_log_out')}
         </Select.SelectItem>
-      </Select.SelectPopover>
-      {/* {showSubscriptionDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-          <div className="bg-white dark:bg-surface-primary rounded-lg p-6 shadow-xl flex flex-col gap-4 min-w-[300px]">
-            <div className="text-lg font-semibold">Subscription Required</div>
-            <div>You need an active subscription to upload files. Please subscribe to unlock this feature.</div>
-            <div className="flex gap-4 justify-end mt-2">
-              <button
-                className="px-4 py-2 rounded bg-primary text-white font-medium hover:bg-primary-dark"
-                onClick={() => setShowSubscriptionDialog(false)}
-              >
-                Close
-              </button>
-              <a
-                href="/account/subscription"
-                className="px-4 py-2 rounded bg-surface-secondary text-text-primary font-medium hover:bg-surface-tertiary border border-primary"
-              >
-                View Plans
-              </a>
-            </div>
-          </div>
-        </div>
-      )}       */}
+      </Select.SelectPopover>     
       {showFiles && <FilesView open={showFiles} onOpenChange={setShowFiles} />}
-      {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
+      {<Settings open={showSettings} onOpenChange={setShowSettings} />}
       {showSubscriptionDialog && <SubscriptionDialog open={showSubscriptionDialog} onOpenChange={setShowSubscriptionDialog} />}
     </Select.SelectProvider>
   );

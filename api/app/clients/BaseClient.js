@@ -672,10 +672,16 @@ class BaseClient {
     }
 
     const balanceConfig = getBalanceConfig(appConfig);
+
+    logger.error('[BaseClient] balanceConfig', balanceConfig)
+    logger.error('[BaseClient] this.options.endpointType ', this.options.endpointType )
+    logger.error('[BaseClient] this.options.endpoint', this.options.endpoint)
+
     if (
       balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
     ) {
+      logger.error('[BaseClient] checkBaance')
       await checkBalance({
         req: this.options.req,
         res: this.options.res,

@@ -28,18 +28,18 @@
   --green-700: #047857;
   --green-800: #065f46;
   --green-900: #064e3b;
-  --green-950: #022c22; */
-  --green-50: #1E5FA4;
-  --green-100: #2776AD;
-  --green-200: #3190B6;
-  --green-300: #3BA9BF;
-  --green-400: #44BFC7;
-  --green-500: #4DCFCF;
-  --green-600: #56D9C9;
-  --green-700: #5FE3C3;
-  --green-800: #68EDBD;
-  --green-900: #71F7B7;
-  --green-950: #3EC4B5;  
+  --green-950: #022c22;  */
+  --green-50:  #eff6ff;
+  --green-100: #dbeafe;
+  --green-200: #bfdbfe;
+  --green-300: #93c5fd;
+  --green-400: #60a5fa;
+  --green-500: #3b82f6;
+  --green-600: #2563eb;
+  --green-700: #1d4ed8;
+  --green-800: #1e40af;
+  --green-900: #1e3a8a;
+  --green-950: #172554;  
   --red-50: #fef2f2;
   --red-100: #fee2e2;
   --red-200: #fecaca;
@@ -1369,12 +1369,12 @@ button {
 .btn-primary {
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
-  background-color: rgba(16, 163, 127, var(--tw-bg-opacity));
+  background-color: rgba(147, 197, 253, var(--tw-bg-opacity)); /* #93c5fd */
   color: rgba(255, 255, 255, var(--tw-text-opacity));
 }
 .btn-primary:hover {
   --tw-bg-opacity: 1;
-  background-color: rgba(26, 127, 100, var(--tw-bg-opacity));
+  background-color: rgba(30, 58, 138, var(--tw-bg-opacity)); /* #1e3a8a */
 }
 .btn-primary:focus {
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width)
