@@ -11,7 +11,6 @@ const {
 const {
   Tools,
   Constants,
-  SystemRoles,
   FileSources,
   ResourceType,
   AccessRoleIds,
@@ -142,10 +141,13 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
     agent.version = agent.versions ? agent.versions.length : 0;
 
     if (agent.avatar && agent.avatar?.source === FileSources.s3) {
-      const originalUrl = agent.avatar.filepath;
-      agent.avatar.filepath = await refreshS3Url(agent.avatar);
-      if (originalUrl !== agent.avatar.filepath) {
-        await updateAgent({ id }, { avatar: agent.avatar }, { updatingUserId: req.user.id });
+      try {
+        agent.avatar = {
+          ...agent.avatar,
+          filepath: await refreshS3Url(agent.avatar),
+        };
+      } catch (e) {
+        logger.warn('[/Agents/:id] Failed to refresh S3 URL', e);
       }
     }
 
@@ -347,21 +349,21 @@ const duplicateAgentHandler = async (req, res) => {
       const [domain] = action.action_id.split(actionDelimiter);
       const fullActionId = `${domain}${actionDelimiter}${newActionId}`;
 
+      // Sanitize sensitive metadata before persisting
+      const filteredMetadata = { ...(action.metadata || {}) };
+      for (const field of sensitiveFields) {
+        delete filteredMetadata[field];
+      }
+
       const newAction = await updateAction(
         { action_id: newActionId },
         {
-          metadata: action.metadata,
+          metadata: filteredMetadata,
           agent_id: newAgentId,
           user: userId,
         },
       );
 
-      const filteredMetadata = { ...newAction.metadata };
-      for (const field of sensitiveFields) {
-        delete filteredMetadata[field];
-      }
-
-      newAction.metadata = filteredMetadata;
       newActionsList.push(newAction);
       return fullActionId;
     };
@@ -468,12 +470,13 @@ const getListAgentsHandler = async (req, res) => {
       filter.is_promoted = { $ne: true };
     }
 
-    // Handle search filter
+    // Handle search filter (escape regex and cap length)
     if (search && search.trim() !== '') {
-      filter.$or = [
-        { name: { $regex: search.trim(), $options: 'i' } },
-        { description: { $regex: search.trim(), $options: 'i' } },
-      ];
+      const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const MAX_SEARCH_LEN = 100;
+      const safeSearch = escapeRegex(search.trim().slice(0, MAX_SEARCH_LEN));
+      const regex = new RegExp(safeSearch, 'i');
+      filter.$or = [{ name: { $regex: regex } }, { description: { $regex: regex } }];
     }
     // Get agent IDs the user has VIEW access to via ACL
     const accessibleIds = await findAccessibleResources({
@@ -494,9 +497,15 @@ const getListAgentsHandler = async (req, res) => {
       after: cursor,
     });
     if (data?.data?.length) {
+      const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
       data.data = data.data.map((agent) => {
-        if (publiclyAccessibleIds.some((id) => id.equals(agent._id))) {
-          agent.isPublic = true;
+        try {
+          if (agent?._id && publicSet.has(agent._id.toString())) {
+            agent.isPublic = true;
+          }
+        } catch (e) {
+          // ignore mapping errors
+          void e;
         }
         return agent;
       });
@@ -522,6 +531,9 @@ const getListAgentsHandler = async (req, res) => {
 const uploadAgentAvatarHandler = async (req, res) => {
   try {
     const appConfig = req.config;
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
     filterFile({ req, file: req.file, image: true, isAvatar: true });
     const { agent_id } = req.params;
     if (!agent_id) {
@@ -618,21 +630,13 @@ const revertAgentVersionHandler = async (req, res) => {
       return res.status(400).json({ error: 'version_index is required' });
     }
 
-    const isAdmin = req.user.role === SystemRoles.ADMIN;
     const existingAgent = await getAgent({ id });
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const isAuthor = existingAgent.author.toString() === req.user.id.toString();
-    const hasEditPermission = existingAgent.isCollaborative || isAdmin || isAuthor;
-
-    if (!hasEditPermission) {
-      return res.status(403).json({
-        error: 'You do not have permission to modify this non-collaborative agent',
-      });
-    }
+    // Permissions are enforced via route middleware (ACL EDIT)
 
     const updatedAgent = await revertAgentVersion({ id }, version_index);
 
