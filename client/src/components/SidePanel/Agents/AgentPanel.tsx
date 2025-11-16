@@ -49,6 +49,13 @@ function getUpdateToastMessage(
   return `${localize('com_assistants_update_success')} ${name ?? localize('com_ui_agent')}`;
 }
 
+/**
+ * Normalizes the payload sent to the agent update/create endpoints.
+ * Handles avatar reset requests for persistent agents independently of avatar uploads.
+ * @param {AgentForm} data - Form data from the agent configuration form.
+ * @param {string | null} [agent_id] - Agent identifier, if the agent already exists.
+ * @returns {{ payload: Partial<AgentForm>; provider: string; model: string }} Payload metadata.
+ */
 export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | null) {
   const {
     name,
@@ -106,6 +113,12 @@ export interface PersistAvatarChangesParams {
   uploadAvatar: UploadAvatarFn;
 }
 
+/**
+ * Uploads a new avatar when the form indicates an avatar upload is pending.
+ * The helper ensures we only attempt uploads for persisted agents and when
+ * the avatar action is explicitly set to "upload".
+ * @returns {Promise<boolean>} Resolves true if an upload occurred, false otherwise.
+ */
 export async function persistAvatarChanges({
   agentId,
   avatarActionState,
@@ -134,6 +147,50 @@ export async function persistAvatarChanges({
 const AVATAR_ONLY_DIRTY_FIELDS = new Set(['avatar_action', 'avatar_file', 'avatar_preview']);
 const IGNORED_DIRTY_FIELDS = new Set(['agent']);
 
+const isNestedDirtyField = (
+  value: FieldNamesMarkedBoolean<AgentForm>[keyof AgentForm],
+): value is FieldNamesMarkedBoolean<AgentForm> => typeof value === 'object' && value !== null;
+
+const evaluateDirtyFields = (
+  fields: FieldNamesMarkedBoolean<AgentForm>,
+): { sawDirty: boolean; onlyAvatarDirty: boolean } => {
+  let sawDirty = false;
+
+  for (const [key, value] of Object.entries(fields)) {
+    if (!value) {
+      continue;
+    }
+
+    if (IGNORED_DIRTY_FIELDS.has(key)) {
+      continue;
+    }
+
+    if (isNestedDirtyField(value)) {
+      const nested = evaluateDirtyFields(value);
+      if (!nested.onlyAvatarDirty) {
+        return { sawDirty: true, onlyAvatarDirty: false };
+      }
+      sawDirty = sawDirty || nested.sawDirty;
+      continue;
+    }
+
+    sawDirty = true;
+
+    if (AVATAR_ONLY_DIRTY_FIELDS.has(key)) {
+      continue;
+    }
+
+    return { sawDirty: true, onlyAvatarDirty: false };
+  }
+
+  return { sawDirty, onlyAvatarDirty: true };
+};
+
+/**
+ * Determines whether the dirty form state only contains avatar uploads/resets.
+ * This enables short-circuiting the general agent update flow when only the avatar
+ * needs to be uploaded.
+ */
 export const isAvatarUploadOnlyDirty = (
   dirtyFields?: FieldNamesMarkedBoolean<AgentForm>,
 ): boolean => {
@@ -141,28 +198,8 @@ export const isAvatarUploadOnlyDirty = (
     return false;
   }
 
-  let sawDirty = false;
-  for (const [key, value] of Object.entries(dirtyFields) as Array<
-    [string, FieldNamesMarkedBoolean<AgentForm>[keyof AgentForm]]
-  >) {
-    if (!value) {
-      continue;
-    }
-
-    sawDirty = true;
-
-    if (IGNORED_DIRTY_FIELDS.has(key)) {
-      continue;
-    }
-
-    if (AVATAR_ONLY_DIRTY_FIELDS.has(key)) {
-      continue;
-    }
-
-    return false;
-  }
-
-  return sawDirty;
+  const result = evaluateDirtyFields(dirtyFields);
+  return result.sawDirty && result.onlyAvatarDirty;
 };
 
 export default function AgentPanel() {
@@ -247,7 +284,7 @@ export default function AgentPanel() {
         });
       } catch (error) {
         console.error('[AgentPanel] Avatar upload failed', error);
-        return false;
+        throw error;
       } finally {
         setIsAvatarUploadInFlight(false);
       }
@@ -302,7 +339,15 @@ export default function AgentPanel() {
         setValue('agent', { ...agentOption, ...data }, { shouldDirty: false });
       }
 
-      await handleAvatarUpload(data.id ?? agent_id);
+      try {
+        await handleAvatarUpload(data.id ?? agent_id);
+      } catch (error) {
+        console.error('[AgentPanel] Avatar upload failed after update', error);
+        showToast({
+          message: localize('com_agents_avatar_upload_error'),
+          status: 'error',
+        });
+      }
 
       if (avatarActionState === 'reset') {
         setValue('avatar_action', null, { shouldDirty: false });
@@ -333,7 +378,15 @@ export default function AgentPanel() {
         }`,
       });
 
-      await handleAvatarUpload(data.id);
+      try {
+        await handleAvatarUpload(data.id);
+      } catch (error) {
+        console.error('[AgentPanel] Avatar upload failed after create', error);
+        showToast({
+          message: localize('com_agents_avatar_upload_error'),
+          status: 'error',
+        });
+      }
     },
     onError: (err) => {
       const error = err as Error;
@@ -364,7 +417,21 @@ export default function AgentPanel() {
 
       if (agent_id) {
         if (data.avatar_action === 'upload' && isAvatarUploadOnlyDirty(dirtyFields)) {
-          await handleAvatarUpload(agent_id);
+          try {
+            const uploaded = await handleAvatarUpload(agent_id);
+            if (!uploaded) {
+              showToast({
+                message: localize('com_agents_avatar_upload_error'),
+                status: 'error',
+              });
+            }
+          } catch (error) {
+            console.error('[AgentPanel] Avatar upload failed for avatar-only submission', error);
+            showToast({
+              message: localize('com_agents_avatar_upload_error'),
+              status: 'error',
+            });
+          }
           return;
         }
         update.mutate({ agent_id, data: { ...basePayload, tools } });

@@ -54,10 +54,16 @@ const systemTools = {
   [Tools.web_search]: true,
 };
 
+const MAX_SEARCH_LEN = 100;
+const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /**
- * Refreshes S3-backed avatars for agent list responses with caching.
- * @param {Array} agents
- * @param {string} userId
+ * Opportunistically refreshes S3-backed avatars for agent list responses.
+ * Only list responses are refreshed because they're the highest-traffic surface and
+ * the avatar URLs have a short-lived TTL. The refresh is cached per-user for 30 minutes
+ * via {@link CacheKeys.S3_EXPIRY_INTERVAL} so we refresh once per interval at most.
+ * @param {Array} agents - Agents being enriched with S3-backed avatars
+ * @param {string} userId - User identifier used for the cache refresh key
  */
 const refreshListAvatars = async (agents, userId) => {
   if (!agents?.length) {
@@ -512,11 +518,9 @@ const getListAgentsHandler = async (req, res) => {
 
     // Handle search filter (escape regex and cap length)
     if (search && search.trim() !== '') {
-      const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const MAX_SEARCH_LEN = 100;
       const safeSearch = escapeRegex(search.trim().slice(0, MAX_SEARCH_LEN));
       const regex = new RegExp(safeSearch, 'i');
-      filter.$or = [{ name: { $regex: regex } }, { description: { $regex: regex } }];
+      filter.$or = [{ name: regex }, { description: regex }];
     }
 
     // Get agent IDs the user has VIEW access to via ACL

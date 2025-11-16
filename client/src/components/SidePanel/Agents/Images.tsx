@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, type ReactElement } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { DropdownPopup, Skeleton } from '@librechat/client';
 import type { MenuItemProps } from '~/common/menus';
@@ -62,7 +62,7 @@ export function AvatarMenu({
   onReset,
   canReset,
 }: {
-  trigger: React.ReactNode;
+  trigger: ReactElement;
   handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onReset: () => void;
   canReset: boolean;
@@ -86,27 +86,28 @@ export function AvatarMenu({
       label: uploadLabel,
       onClick: () => onItemClick(),
     },
-    ...(canReset
-      ? ([
-          { separate: true } as unknown as MenuItemProps,
-          {
-            id: 'reset-avatar',
-            label: localize('com_ui_reset_var', { 0: 'Avatar' }),
-            onClick: () => {
-              if (fileInputRef.current) {
-                fileInputRef.current.value = '';
-              }
-              onReset();
-            },
-          } as MenuItemProps,
-        ] as MenuItemProps[])
-      : ([] as MenuItemProps[])),
   ];
+
+  if (canReset) {
+    items.push(
+      { separate: true },
+      {
+        id: 'reset-avatar',
+        label: localize('com_ui_reset_var', { 0: 'Avatar' }),
+        onClick: () => {
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+          onReset();
+        },
+      },
+    );
+  }
 
   return (
     <>
       <DropdownPopup
-        trigger={<Ariakit.MenuButton render={trigger as any} />}
+        trigger={<Ariakit.MenuButton render={trigger} />}
         items={items}
         isOpen={isOpen}
         setIsOpen={setIsOpen}

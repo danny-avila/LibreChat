@@ -68,10 +68,11 @@ function Avatar({ avatar }: { avatar: AgentAvatar | null }) {
   );
 
   const handleReset = useCallback(() => {
+    const remoteAvatarExists = Boolean(avatar?.filepath);
     setValue('avatar_preview', '', { shouldDirty: true });
     setValue('avatar_file', null, { shouldDirty: true });
-    setValue('avatar_action', hasRemoteAvatar ? 'reset' : null, { shouldDirty: true });
-  }, [hasRemoteAvatar, setValue]);
+    setValue('avatar_action', remoteAvatarExists ? 'reset' : null, { shouldDirty: true });
+  }, [avatar?.filepath, setValue]);
 
   const hasIcon = Boolean(avatarPreview) || hasRemoteAvatar;
   const canReset = hasIcon;
