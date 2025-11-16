@@ -50,8 +50,6 @@ jest.mock('librechat-data-provider', () => {
     },
     EModelEndpoint: actualModule.EModelEndpoint || {
       agents: 'agents',
-      chatGPTBrowser: 'chatGPTBrowser',
-      gptPlugins: 'gptPlugins',
     },
     ResourceType: actualModule.ResourceType || {
       AGENT: 'agent',

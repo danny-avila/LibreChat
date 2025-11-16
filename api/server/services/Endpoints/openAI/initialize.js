@@ -7,7 +7,6 @@ const {
   getAzureCredentials,
 } = require('@librechat/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
-const OpenAIClient = require('~/app/clients/OpenAIClient');
 
 const initializeClient = async ({
   req,
@@ -137,28 +136,19 @@ const initializeClient = async ({
     throw new Error(`${endpoint} API Key not provided.`);
   }
 
-  if (optionsOnly) {
-    const modelOptions = endpointOption?.model_parameters ?? {};
-    modelOptions.model = modelName;
-    clientOptions = Object.assign({ modelOptions }, clientOptions);
-    clientOptions.modelOptions.user = req.user.id;
-    const options = getOpenAIConfig(apiKey, clientOptions, endpoint);
-    if (options != null && serverless === true) {
-      options.useLegacyContent = true;
-    }
-    const streamRate = clientOptions.streamRate;
-    if (!streamRate) {
-      return options;
-    }
-    options.llmConfig._lc_stream_delay = streamRate;
-    return options;
+  const modelOptions = endpointOption?.model_parameters ?? {};
+  modelOptions.model = modelName;
+  clientOptions = Object.assign({ modelOptions }, clientOptions);
+  clientOptions.modelOptions.user = req.user.id;
+  const options = getOpenAIConfig(apiKey, clientOptions, endpoint);
+  if (options != null && serverless === true) {
+    options.useLegacyContent = true;
   }
-
-  const client = new OpenAIClient(apiKey, Object.assign({ req, res }, clientOptions));
-  return {
-    client,
-    openAIApiKey: apiKey,
-  };
+  const streamRate = clientOptions.streamRate;
+  if (streamRate) {
+    options.llmConfig._lc_stream_delay = streamRate;
+  }
+  return options;
 };
 
 module.exports = initializeClient;

@@ -31,23 +31,13 @@ const buildDefaultConvo = ({
 
   const availableModels = models;
   const model = lastConversationSetup?.model ?? lastSelectedModel?.[endpoint] ?? '';
-  const secondaryModel: string | null =
-    endpoint === EModelEndpoint.gptPlugins
-      ? (lastConversationSetup?.agentOptions?.model ?? lastSelectedModel?.secondaryModel ?? null)
-      : null;
 
-  let possibleModels: string[], secondaryModels: string[];
+  let possibleModels: string[];
 
   if (availableModels.includes(model)) {
     possibleModels = [model, ...availableModels];
   } else {
     possibleModels = [...availableModels];
-  }
-
-  if (secondaryModel != null && secondaryModel !== '' && availableModels.includes(secondaryModel)) {
-    secondaryModels = [secondaryModel, ...availableModels];
-  } else {
-    secondaryModels = [...availableModels];
   }
 
   const convo = parseConvo({
@@ -56,7 +46,6 @@ const buildDefaultConvo = ({
     conversation: lastConversationSetup,
     possibleValues: {
       models: possibleModels,
-      secondaryModels,
     },
   });
 

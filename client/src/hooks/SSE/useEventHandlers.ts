@@ -199,14 +199,7 @@ export default function useEventHandlers({
 
   const messageHandler = useCallback(
     (data: string | undefined, submission: EventSubmission) => {
-      const {
-        messages,
-        userMessage,
-        plugin,
-        plugins,
-        initialResponse,
-        isRegenerate = false,
-      } = submission;
+      const { messages, userMessage, initialResponse, isRegenerate = false } = submission;
       const text = data ?? '';
       setIsSubmitting(true);
 
@@ -222,8 +215,6 @@ export default function useEventHandlers({
           {
             ...initialResponse,
             text,
-            plugin: plugin ?? null,
-            plugins: plugins ?? [],
           },
         ]);
       } else {
@@ -233,8 +224,6 @@ export default function useEventHandlers({
           {
             ...initialResponse,
             text,
-            plugin: plugin ?? null,
-            plugins: plugins ?? [],
           },
         ]);
       }

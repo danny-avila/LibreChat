@@ -43,13 +43,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
 
   const endpointType = useMemo(() => {
     let ep = conversation?.endpoint ?? '';
-    if (
-      [
-        EModelEndpoint.chatGPTBrowser,
-        EModelEndpoint.azureOpenAI,
-        EModelEndpoint.gptPlugins,
-      ].includes(ep as EModelEndpoint)
-    ) {
+    if (ep === EModelEndpoint.azureOpenAI) {
       ep = EModelEndpoint.openAI;
     }
     return getIconEndpoint({

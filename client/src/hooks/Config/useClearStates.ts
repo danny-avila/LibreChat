@@ -28,7 +28,6 @@ export default function useClearStates() {
           reset(store.abortScrollFamily(key));
           reset(store.isSubmittingFamily(key));
           reset(store.optionSettingsFamily(key));
-          reset(store.showAgentSettingsFamily(key));
           reset(store.showPopoverFamily(key));
           reset(store.showMentionPopoverFamily(key));
           reset(store.showPlusPopoverFamily(key));
