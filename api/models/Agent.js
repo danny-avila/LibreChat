@@ -540,6 +540,27 @@ const deleteAgent = async (searchParameter) => {
 };
 
 /**
+ * Deletes all agents created by a specific user.
+ * @param {string} userId - The ID of the user whose agents should be deleted.
+ * @returns {Promise<void>} A promise that resolves when all user agents have been deleted.
+ */
+const deleteUserAgents = async (userId) => {
+  try {
+    const userAgents = await getAgents({ author: userId });
+    const promises = userAgents.map(async (agent) => {
+      try {
+        await deleteAgent({ id: agent.id, author: userId });
+      } catch (error) {
+        logger.error(`[deleteUserAgents] Failed to delete agent ${agent.id}:`, error);
+      }
+    });
+    await Promise.allSettled(promises);
+  } catch (error) {
+    logger.error('[deleteUserAgents] General error:', error);
+  }
+};
+
+/**
  * Get agents by accessible IDs with optional cursor-based pagination.
  * @param {Object} params - The parameters for getting accessible agents.
  * @param {Array} [params.accessibleIds] - Array of agent ObjectIds the user has ACL access to.
@@ -856,6 +877,7 @@ module.exports = {
   createAgent,
   updateAgent,
   deleteAgent,
+  deleteUserAgents,
   getListAgents,
   revertAgentVersion,
   updateAgentProjects,

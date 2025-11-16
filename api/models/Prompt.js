@@ -592,6 +592,27 @@ module.exports = {
     }
   },
   /**
+   * Delete all prompts and prompt groups created by a specific user.
+   * @param {ServerRequest} req - The server request object.
+   * @param {string} userId - The ID of the user whose prompts and prompt groups are to be deleted.
+   */
+  deleteUserPrompts: async (req, userId) => {
+    try {
+      const promptGroups = await getAllPromptGroups(req, { author: new ObjectId(userId) });
+      const promises = promptGroups.map(async (group) => {
+        try {
+          await deletePromptGroup({ _id: group._id });
+        } catch (error) {
+          logger.error(`[deleteUserPrompts] Failed to delete prompt group ${group._id}:`, error);
+          // Continue deleting other groups
+        }
+      });
+      await Promise.allSettled(promises);
+    } catch (error) {
+      logger.error('[deleteUserPrompts] General error:', error);
+    }
+  },
+  /**
    * Update prompt group
    * @param {Partial<MongoPromptGroup>} filter - Filter to find prompt group
    * @param {Partial<MongoPromptGroup>} data - Data to update
