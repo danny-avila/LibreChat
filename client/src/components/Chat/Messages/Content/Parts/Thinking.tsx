@@ -148,7 +148,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
 
   return (
     <div className="group/thinking-container">
-      <div className="sticky top-0 z-10 mb-4 bg-surface-primary pb-2 pt-2">
+      <div className="sticky top-0 z-10 mb-4 bg-presentation pb-2 pt-2">
         <ThinkingButton
           isExpanded={isExpanded}
           onClick={handleClick}

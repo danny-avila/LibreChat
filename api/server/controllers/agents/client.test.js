@@ -989,7 +989,7 @@ describe('AgentClient - titleConvo', () => {
       };
 
       // Simulate the getOptions logic that handles GPT-5+ models
-      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+      if (/\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
         clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
         clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
         delete clientOptions.maxTokens;
@@ -1009,7 +1009,7 @@ describe('AgentClient - titleConvo', () => {
         useResponsesApi: true,
       };
 
-      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+      if (/\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
         clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
         const paramName =
           clientOptions.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
@@ -1034,7 +1034,7 @@ describe('AgentClient - titleConvo', () => {
       };
 
       // Simulate the getOptions logic
-      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+      if (/\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
         clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
         clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
         delete clientOptions.maxTokens;
@@ -1055,7 +1055,7 @@ describe('AgentClient - titleConvo', () => {
       };
 
       // Simulate the getOptions logic
-      if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+      if (/\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
         clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
         clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
         delete clientOptions.maxTokens;
@@ -1068,6 +1068,9 @@ describe('AgentClient - titleConvo', () => {
 
     it('should handle various GPT-5+ model formats', () => {
       const testCases = [
+        { model: 'gpt-5.1', shouldTransform: true },
+        { model: 'gpt-5.1-chat-latest', shouldTransform: true },
+        { model: 'gpt-5.1-codex', shouldTransform: true },
         { model: 'gpt-5', shouldTransform: true },
         { model: 'gpt-5-turbo', shouldTransform: true },
         { model: 'gpt-6', shouldTransform: true },
@@ -1087,7 +1090,10 @@ describe('AgentClient - titleConvo', () => {
         };
 
         // Simulate the getOptions logic
-        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        if (
+          /\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) &&
+          clientOptions.maxTokens != null
+        ) {
           clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
           clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
           delete clientOptions.maxTokens;
@@ -1105,6 +1111,9 @@ describe('AgentClient - titleConvo', () => {
 
     it('should not swap max token param for older models when using useResponsesApi', () => {
       const testCases = [
+        { model: 'gpt-5.1', shouldTransform: true },
+        { model: 'gpt-5.1-chat-latest', shouldTransform: true },
+        { model: 'gpt-5.1-codex', shouldTransform: true },
         { model: 'gpt-5', shouldTransform: true },
         { model: 'gpt-5-turbo', shouldTransform: true },
         { model: 'gpt-6', shouldTransform: true },
@@ -1124,7 +1133,10 @@ describe('AgentClient - titleConvo', () => {
           useResponsesApi: true,
         };
 
-        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        if (
+          /\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) &&
+          clientOptions.maxTokens != null
+        ) {
           clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
           const paramName =
             clientOptions.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
@@ -1157,7 +1169,10 @@ describe('AgentClient - titleConvo', () => {
         };
 
         // Simulate the getOptions logic
-        if (/\bgpt-[5-9]\b/i.test(clientOptions.model) && clientOptions.maxTokens != null) {
+        if (
+          /\bgpt-[5-9](?:\.\d+)?\b/i.test(clientOptions.model) &&
+          clientOptions.maxTokens != null
+        ) {
           clientOptions.modelKwargs = clientOptions.modelKwargs ?? {};
           clientOptions.modelKwargs.max_completion_tokens = clientOptions.maxTokens;
           delete clientOptions.maxTokens;
