@@ -39,10 +39,11 @@ function SharedView() {
 
   // configure document title
   let docTitle = '';
-  if (config?.appTitle != null && data?.title != null) {
-    docTitle = `${data.title} | ${config.appTitle}`;
+  const appTitle = config?.appTitle === 'LibreChat' ? 'HyperAI' : (config?.appTitle ?? 'HyperAI');
+  if (appTitle != null && data?.title != null) {
+    docTitle = `${data.title} | ${appTitle}`;
   } else {
-    docTitle = data?.title ?? config?.appTitle ?? document.title;
+    docTitle = data?.title ?? appTitle ?? 'HyperAI';
   }
 
   useDocumentTitle(docTitle);

@@ -47,12 +47,11 @@ export default function useAppStartup({
 
   /** Set the app title */
   useEffect(() => {
-    const appTitle = startupConfig?.appTitle ?? '';
-    if (!appTitle) {
-      return;
-    }
-    document.title = appTitle;
-    localStorage.setItem(LocalStorageKeys.APP_TITLE, appTitle);
+    const appTitle = startupConfig?.appTitle ?? 'HyperAI';
+    // Never allow "LibreChat" as the title
+    const finalTitle = appTitle === 'LibreChat' ? 'HyperAI' : appTitle;
+    document.title = finalTitle;
+    localStorage.setItem(LocalStorageKeys.APP_TITLE, finalTitle);
   }, [startupConfig]);
 
   /** Set the default spec's preset as default */

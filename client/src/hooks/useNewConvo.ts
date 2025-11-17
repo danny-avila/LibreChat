@@ -192,10 +192,10 @@ const useNewConvo = (index = 0) => {
         const getParams = () => (searchParamsString ? `?${searchParamsString}` : '');
 
         if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
-          const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE) ?? '';
-          if (appTitle) {
-            document.title = appTitle;
-          }
+          const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE) ?? 'HyperAI';
+          // Never allow "LibreChat" as the title
+          const finalTitle = appTitle === 'LibreChat' ? 'HyperAI' : appTitle;
+          document.title = finalTitle;
           const path = `/c/${Constants.NEW_CONVO}${getParams()}`;
           navigate(path, { state: { focusChat: true } });
           return;
