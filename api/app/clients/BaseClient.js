@@ -81,6 +81,7 @@ class BaseClient {
     throw new Error("Method 'getCompletion' must be implemented.");
   }
 
+  /** @type {sendCompletion} */
   async sendCompletion() {
     throw new Error("Method 'sendCompletion' must be implemented.");
   }
@@ -689,8 +690,7 @@ class BaseClient {
       });
     }
 
-    /** @type {string|string[]|undefined} */
-    const completion = await this.sendCompletion(payload, opts);
+    const { completion, metadata } = await this.sendCompletion(payload, opts);
     if (this.abortController) {
       this.abortController.requestCompleted = true;
     }
@@ -708,6 +708,7 @@ class BaseClient {
       iconURL: this.options.iconURL,
       endpoint: this.options.endpoint,
       ...(this.metadata ?? {}),
+      metadata,
     };
 
     if (typeof completion === 'string') {
