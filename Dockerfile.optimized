@@ -22,7 +22,7 @@ COPY client/package.json ./client/package.json
 COPY packages/data-provider/package.json ./packages/data-provider/package.json
 COPY packages/data-schemas/package.json ./packages/data-schemas/package.json
 COPY packages/api/package.json ./packages/api/package.json
-COPY librechat.yaml /app/librechat.yaml
+COPY librechat.yaml ./librechat.yaml
 
 # Install ALL dependencies (including dev)
 RUN npm ci --no-audit --no-fund --silent
@@ -69,10 +69,7 @@ COPY --from=builder --chown=node:node /app/packages ./packages
 COPY --from=builder --chown=node:node /app/package.json ./package.json
 COPY --from=builder --chown=node:node /app/librechat.yaml ./librechat.yaml
 
-# Copy only necessary config files
-# COPY --chown=node:node librechat.yaml ./
-
-# Ensure utils directory exists 
+# Ensure utils directory exists
 RUN mkdir -p ./api/server/utils
 
 # Create required directories
