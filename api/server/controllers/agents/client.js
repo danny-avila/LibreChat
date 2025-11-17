@@ -971,11 +971,11 @@ class AgentClient extends BaseClient {
         });
       }
 
-      /** Capture agent ID map if we have edges or multiple agents */
-      const shouldStoreAgentMap =
-        (this.options.agent.edges?.length ?? 0) > 0 || (this.agentConfigs?.size ?? 0) > 0;
-      if (shouldStoreAgentMap && run?.Graph) {
-        try {
+      try {
+        /** Capture agent ID map if we have edges or multiple agents */
+        const shouldStoreAgentMap =
+          (this.options.agent.edges?.length ?? 0) > 0 || (this.agentConfigs?.size ?? 0) > 0;
+        if (shouldStoreAgentMap && run?.Graph) {
           const contentPartAgentMap = run.Graph.getContentPartAgentMap();
           if (contentPartAgentMap && contentPartAgentMap.size > 0) {
             this.agentIdMap = Object.fromEntries(contentPartAgentMap);
@@ -984,9 +984,9 @@ class AgentClient extends BaseClient {
               mappedParts: Object.keys(this.agentIdMap).length,
             });
           }
-        } catch (error) {
-          logger.error('[AgentClient] Error capturing agent ID map:', error);
         }
+      } catch (error) {
+        logger.error('[AgentClient] Error capturing agent ID map:', error);
       }
     } catch (err) {
       logger.error(
