@@ -1,6 +1,8 @@
 import * as t from '~/mcp/types';
 import { mcpServersRegistry as registry } from '~/mcp/registry/MCPServersRegistry';
-
+const FIXED_TIME = 1699564800000;
+const originalDateNow = Date.now;
+Date.now = jest.fn(() => FIXED_TIME);
 /**
  * Unit tests for MCPServersRegistry using in-memory cache.
  * For integration tests using Redis-backed cache, see MCPServersRegistry.cache_integration.spec.ts
@@ -24,8 +26,15 @@ describe('MCPServersRegistry', () => {
         },
       },
     },
+    lastUpdatedAt: FIXED_TIME,
   };
-
+  beforeAll(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(FIXED_TIME));
+  });
+  afterAll(() => {
+    Date.now = originalDateNow;
+  });
   beforeEach(async () => {
     await registry.reset();
   });
@@ -36,14 +45,14 @@ describe('MCPServersRegistry', () => {
       const serverName = 'private_server';
 
       // Add private user server
-      await registry.addPrivateUserServer(userId, serverName, testParsedConfig);
+      await registry.privateServersCache.add(userId, serverName, testParsedConfig);
 
       // Verify server was added
       const retrievedConfig = await registry.getServerConfig(serverName, userId);
       expect(retrievedConfig).toEqual(testParsedConfig);
 
       // Remove private user server
-      await registry.removePrivateUserServer(userId, serverName);
+      await registry.privateServersCache.remove(userId, serverName);
 
       // Verify server was removed
       const configAfterRemoval = await registry.getServerConfig(serverName, userId);
@@ -54,9 +63,9 @@ describe('MCPServersRegistry', () => {
       const userId = 'user123';
       const serverName = 'private_server';
 
-      await registry.addPrivateUserServer(userId, serverName, testParsedConfig);
+      await registry.privateServersCache.add(userId, serverName, testParsedConfig);
       await expect(
-        registry.addPrivateUserServer(userId, serverName, testParsedConfig),
+        registry.privateServersCache.add(userId, serverName, testParsedConfig),
       ).rejects.toThrow(
         'Server "private_server" already exists in cache. Use update() to modify existing configs.',
       );
@@ -70,13 +79,14 @@ describe('MCPServersRegistry', () => {
         command: 'python',
         args: ['updated.py'],
         requiresOAuth: true,
+        lastUpdatedAt: FIXED_TIME,
       };
 
       // Add private user server
-      await registry.addPrivateUserServer(userId, serverName, testParsedConfig);
+      await registry.privateServersCache.add(userId, serverName, testParsedConfig);
 
       // Update the server config
-      await registry.updatePrivateUserServer(userId, serverName, updatedConfig);
+      await registry.privateServersCache.update(userId, serverName, updatedConfig);
 
       // Verify server was updated
       const retrievedConfig = await registry.getServerConfig(serverName, userId);
@@ -88,22 +98,106 @@ describe('MCPServersRegistry', () => {
       const serverName = 'private_server';
 
       // Add a user cache first
-      await registry.addPrivateUserServer(userId, 'other_server', testParsedConfig);
+      await registry.privateServersCache.add(userId, 'other_server', testParsedConfig);
 
       await expect(
-        registry.updatePrivateUserServer(userId, serverName, testParsedConfig),
+        registry.privateServersCache.update(userId, serverName, testParsedConfig),
       ).rejects.toThrow(
         'Server "private_server" does not exist in cache. Use add() to create new configs.',
       );
     });
 
-    it('should throw error when updating server for non-existent user', async () => {
+    it('should throw error when updating non-existent server (lazy-loads cache)', async () => {
       const userId = 'nonexistent_user';
       const serverName = 'private_server';
 
+      // With lazy-loading, cache is created but server doesn't exist in it
       await expect(
-        registry.updatePrivateUserServer(userId, serverName, testParsedConfig),
-      ).rejects.toThrow('No private servers found for user "nonexistent_user".');
+        registry.privateServersCache.update(userId, serverName, testParsedConfig),
+      ).rejects.toThrow(
+        'Server "private_server" does not exist in cache. Use add() to create new configs.',
+      );
+    });
+  });
+
+  describe('getPrivateServerConfig', () => {
+    it('should retrieve private server config for a specific user', async () => {
+      const userId = 'user123';
+      const serverName = 'private_server';
+
+      await registry.privateServersCache.add(userId, serverName, testParsedConfig);
+
+      const retrievedConfig = await registry.privateServersCache.get(userId, serverName);
+      expect(retrievedConfig).toEqual(testParsedConfig);
+    });
+
+    it('should return undefined if server does not exist in user private cache', async () => {
+      const userId = 'user123';
+
+      // Create a cache for this user with a different server
+      await registry.privateServersCache.add(userId, 'other_server', testParsedConfig);
+
+      // Try to get a server that doesn't exist
+      const retrievedConfig = await registry.privateServersCache.get(userId, 'nonexistent_server');
+      expect(retrievedConfig).toBeUndefined();
+    });
+
+    it('should return undefined when user has no private servers (lazy-loads cache)', async () => {
+      const userId = 'user_with_no_cache';
+
+      // With lazy-loading, cache is created but is empty
+      const config = await registry.privateServersCache.get(userId, 'server_name');
+      expect(config).toBeUndefined();
+    });
+
+    it('should isolate private servers between different users', async () => {
+      const user1 = 'user1';
+      const user2 = 'user2';
+      const serverName = 'shared_name_server';
+
+      const config1: t.ParsedServerConfig = {
+        ...testParsedConfig,
+        args: ['user1.js'],
+      };
+      const config2: t.ParsedServerConfig = {
+        ...testParsedConfig,
+        args: ['user2.js'],
+      };
+
+      await registry.privateServersCache.add(user1, serverName, config1);
+      await registry.privateServersCache.add(user2, serverName, config2);
+
+      const user1Config = await registry.privateServersCache.get(user1, serverName);
+      const user2Config = await registry.privateServersCache.get(user2, serverName);
+
+      // Verify each user gets their own config
+      expect(user1Config).toBeDefined();
+      expect(user2Config).toBeDefined();
+      if (user1Config && 'args' in user1Config) {
+        expect(user1Config.args).toEqual(['user1.js']);
+      }
+      if (user2Config && 'args' in user2Config) {
+        expect(user2Config.args).toEqual(['user2.js']);
+      }
+    });
+
+    it('should not retrieve shared servers through privateServersCache.get', async () => {
+      const userId = 'user123';
+
+      // Add servers to shared caches
+      await registry.sharedAppServers.add('app_server', testParsedConfig);
+      await registry.sharedUserServers.add('user_server', testParsedConfig);
+
+      // Create a private cache for the user (but don't add these servers to it)
+      await registry.privateServersCache.add(userId, 'private_server', testParsedConfig);
+
+      // Try to get shared servers using privateServersCache.get - should return undefined
+      // because privateServersCache.get only looks at private cache, not shared caches
+      const appServerConfig = await registry.privateServersCache.get(userId, 'app_server');
+      const userServerConfig = await registry.privateServersCache.get(userId, 'user_server');
+
+      expect(appServerConfig).toBeUndefined();
+      expect(userServerConfig).toBeUndefined();
     });
   });
 
@@ -112,8 +206,8 @@ describe('MCPServersRegistry', () => {
       // Add servers to all three caches
       await registry.sharedAppServers.add('app_server', testParsedConfig);
       await registry.sharedUserServers.add('user_server', testParsedConfig);
-      await registry.addPrivateUserServer('abc', 'abc_private_server', testParsedConfig);
-      await registry.addPrivateUserServer('xyz', 'xyz_private_server', testParsedConfig);
+      await registry.privateServersCache.add('abc', 'abc_private_server', testParsedConfig);
+      await registry.privateServersCache.add('xyz', 'xyz_private_server', testParsedConfig);
 
       // Without userId: should return only shared app + shared user servers
       const configsNoUser = await registry.getAllServerConfigs();
@@ -144,11 +238,11 @@ describe('MCPServersRegistry', () => {
       // Add servers to all three caches
       await registry.sharedAppServers.add('app_server', testParsedConfig);
       await registry.sharedUserServers.add('user_server', testParsedConfig);
-      await registry.addPrivateUserServer(userId, 'private_server', testParsedConfig);
+      await registry.privateServersCache.add(userId, 'private_server', testParsedConfig);
 
       // Verify all servers are accessible before reset
       const appConfigBefore = await registry.getServerConfig('app_server');
-      const userConfigBefore = await registry.getServerConfig('user_server');
+      const userConfigBefore = await registry.getServerConfig('user_server', userId);
       const privateConfigBefore = await registry.getServerConfig('private_server', userId);
       const allConfigsBefore = await registry.getAllServerConfigs(userId);
 
