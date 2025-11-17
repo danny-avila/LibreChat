@@ -1,6 +1,7 @@
 import debounce from 'lodash/debounce';
 import { useEffect, useRef, useCallback } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
+import { SystemRoles } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import {
@@ -17,7 +18,7 @@ import useFileHandling from '~/hooks/Files/useFileHandling';
 import { useInteractionHealthCheck } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
 import { globalAudioId } from '~/common';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useAuthContext } from '~/hooks';
 import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
@@ -34,6 +35,8 @@ export default function useTextarea({
   disabled?: boolean;
 }) {
   const localize = useLocalize();
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
   const getSender = useGetSender();
   const isComposing = useRef(false);
   const agentsMap = useAgentsMapContext();
@@ -101,8 +104,14 @@ export default function useTextarea({
           ? getEntityName({ name: entityName, isAgent, localize })
           : getSender(conversation as TEndpointOption);
 
+      // For regular users, replace model name with "Hyper Intelligence"
+      // Admins and agents/assistants still see the actual names
+      const displaySender = !isAdmin && !isAssistant && !isAgent 
+        ? 'Hyper Intelligence' 
+        : (sender ? sender : localize('com_endpoint_ai'));
+
       return `${localize('com_endpoint_message_new', {
-        0: sender ? sender : localize('com_endpoint_ai'),
+        0: displaySender,
       })}`;
     };
 
@@ -138,6 +147,7 @@ export default function useTextarea({
     conversation,
     latestMessage,
     isNotAppendable,
+    isAdmin,
   ]);
 
   const handleKeyDown = useCallback(

@@ -1,9 +1,11 @@
 import React, { useMemo } from 'react';
-import { getEndpointField } from 'librechat-data-provider';
+import { getEndpointField, SystemRoles, EModelEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import { getIconKey, getEntity, getIconEndpoint } from '~/utils';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { icons } from '~/hooks/Endpoint/Icons';
+import { useAuthContext } from '~/hooks';
+import { getHyperAILogo } from '~/utils/getModelIcon';
 
 export default function ConvoIcon({
   conversation,
@@ -45,9 +47,19 @@ export default function ConvoIcon({
     ? (entity as t.Agent | undefined)?.avatar?.filepath
     : ((entity as t.Assistant | undefined)?.metadata?.avatar as string);
 
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
   const iconKey = getIconKey({ endpoint, endpointsConfig, endpointIconURL });
   const Icon = icons[iconKey] ?? null;
+
+  // For regular users, replace model provider icons with HyperAI logo
+  // Exclude assistants and agents as they have custom avatars
+  const shouldUseHyperAILogo = !isAdmin && 
+    endpoint !== EModelEndpoint.assistants && 
+    endpoint !== EModelEndpoint.azureAssistants && 
+    endpoint !== EModelEndpoint.agents &&
+    !iconURL.includes('http');
 
   return (
     <>
@@ -65,16 +77,22 @@ export default function ConvoIcon({
       ) : (
         <div className={containerClassName}>
           {endpoint && Icon != null && (
-            <Icon
-              size={size}
-              context={context}
-              endpoint={endpoint}
-              className={className}
-              iconURL={endpointIconURL}
-              assistantName={name}
-              agentName={name}
-              avatar={avatar}
-            />
+            shouldUseHyperAILogo ? (
+              <div style={{ width: size, height: size, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {getHyperAILogo(size ?? 41)}
+              </div>
+            ) : (
+              <Icon
+                size={size}
+                context={context}
+                endpoint={endpoint}
+                className={className}
+                iconURL={endpointIconURL}
+                assistantName={name}
+                agentName={name}
+                avatar={avatar}
+              />
+            )
           )}
         </div>
       )}

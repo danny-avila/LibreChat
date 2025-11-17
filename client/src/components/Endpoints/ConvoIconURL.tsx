@@ -1,7 +1,10 @@
 import { memo, useMemo } from 'react';
+import { SystemRoles, EModelEndpoint } from 'librechat-data-provider';
 import type { IconMapProps } from '~/common';
 import { URLIcon } from '~/components/Endpoints/URLIcon';
 import { icons } from '~/hooks/Endpoint/Icons';
+import { useAuthContext } from '~/hooks';
+import { getHyperAILogo } from '~/utils/getModelIcon';
 
 interface ConvoIconURLProps {
   iconURL?: string;
@@ -39,12 +42,33 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
   agentName,
   context,
 }) => {
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
   const Icon = useMemo(() => icons[iconURL] ?? icons.unknown, [iconURL]);
   const isURL = useMemo(
     () => !!(iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'))),
     [iconURL],
   );
+  
+  // Determine if we should use HyperAI logo for regular users
+  // Check if this is a known endpoint that should be rebranded
+  const endpoint = iconURL || endpointIconURL || '';
+  const shouldUseHyperAILogo = !isAdmin && 
+    endpoint !== EModelEndpoint.assistants && 
+    endpoint !== EModelEndpoint.azureAssistants && 
+    endpoint !== EModelEndpoint.agents &&
+    !assistantName &&
+    !agentName;
+  
   if (isURL) {
+    // For regular users, replace known endpoint icons with HyperAI logo
+    if (shouldUseHyperAILogo) {
+      return (
+        <div className={classMap[context ?? 'default'] ?? classMap.default} style={styleMap[context ?? 'default'] ?? styleMap.default}>
+          {getHyperAILogo(41)}
+        </div>
+      );
+    }
     return (
       <URLIcon
         iconURL={iconURL}
@@ -58,7 +82,9 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
 
   return (
     <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
-      {Icon && (
+      {shouldUseHyperAILogo ? (
+        getHyperAILogo(41)
+      ) : Icon && (
         <Icon
           size={41}
           context={context}
