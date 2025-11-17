@@ -195,7 +195,7 @@ export function applyModelSpecEphemeralAgent({
 
 /**
  * Gets default model spec from config and user preferences.
- * Priority: admin default → last selected → first spec (when prioritize=true or modelSelect disabled).
+ * Priority: admin default → last selected → Claude Sonnet 4.5 → first spec (when prioritize=true or modelSelect disabled).
  * Otherwise: admin default or last conversation spec.
  */
 export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
@@ -210,10 +210,17 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
     return;
   }
   const defaultSpec = list?.find((spec) => spec.default);
+  
+  // Prefer Claude Sonnet 4.5 if no default is set
+  const claudeSonnet45Spec = list?.find(
+    (spec) => spec.preset?.endpoint === EModelEndpoint.anthropic && 
+              (spec.preset?.model === 'claude-sonnet-4-5' || spec.preset?.model === 'claude-sonnet-4-5-20250929')
+  );
+  
   if (prioritize === true || !interfaceConfig?.modelSelect) {
     const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
     const lastSelectedSpec = list?.find((spec) => spec.name === lastSelectedSpecName);
-    return { default: defaultSpec || lastSelectedSpec || list?.[0] };
+    return { default: defaultSpec || lastSelectedSpec || claudeSonnet45Spec || list?.[0] };
   } else if (defaultSpec) {
     return { default: defaultSpec };
   }
@@ -221,6 +228,10 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
     localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0') ?? '{}',
   );
   if (!lastConversationSetup.spec) {
+    // If no last conversation, prefer Claude Sonnet 4.5
+    if (claudeSonnet45Spec) {
+      return { default: claudeSonnet45Spec };
+    }
     return;
   }
   return { last: list?.find((spec) => spec.name === lastConversationSetup.spec) };

@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import type { ModelSelectorProps } from '~/common';
+import { SystemRoles } from 'librechat-data-provider';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
 import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
 import {
@@ -11,7 +12,7 @@ import {
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useAuthContext } from '~/hooks';
 
 function ModelSelectorContent() {
   const localize = useLocalize();
@@ -46,17 +47,23 @@ function ModelSelectorContent() {
       }),
     [mappedEndpoints, selectedValues, modelSpecs, endpointsConfig],
   );
-  const selectedDisplayValue = useMemo(
-    () =>
-      getDisplayValue({
-        localize,
-        agentsMap,
-        modelSpecs,
-        selectedValues,
-        mappedEndpoints,
-      }),
-    [localize, agentsMap, modelSpecs, selectedValues, mappedEndpoints],
-  );
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
+
+  const selectedDisplayValue = useMemo(() => {
+    const value = getDisplayValue({
+      localize,
+      agentsMap,
+      modelSpecs,
+      selectedValues,
+      mappedEndpoints,
+    });
+    // For regular users, show "HyperAI" instead of model name
+    if (!isAdmin && value !== localize('com_ui_select_model')) {
+      return 'HyperAI';
+    }
+    return value;
+  }, [localize, agentsMap, modelSpecs, selectedValues, mappedEndpoints, isAdmin]);
 
   const trigger = (
     <button
@@ -114,6 +121,14 @@ function ModelSelectorContent() {
 }
 
 export default function ModelSelector({ startupConfig }: ModelSelectorProps) {
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
+
+  // Hide model selector for regular users, show for admins
+  if (!isAdmin) {
+    return null;
+  }
+
   return (
     <ModelSelectorChatProvider>
       <ModelSelectorProvider startupConfig={startupConfig}>

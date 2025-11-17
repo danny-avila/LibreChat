@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Feather } from 'lucide-react';
-import { EModelEndpoint, isAssistantsEndpoint, alternateName } from 'librechat-data-provider';
+import { EModelEndpoint, isAssistantsEndpoint, alternateName, SystemRoles } from 'librechat-data-provider';
 import {
   Plugin,
   GPTIcon,
@@ -16,6 +16,8 @@ import {
 import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
+import { useAuthContext } from '~/hooks';
+import { getHyperAILogo } from '~/utils/getModelIcon';
 
 type EndpointIcon = {
   icon: React.ReactNode | React.JSX.Element;
@@ -67,6 +69,8 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     assistantName,
     agentName,
   } = props;
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
 
   const assistantsIcon = {
     icon: iconURL ? (
@@ -190,6 +194,14 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
 
   if (iconURL && endpointIcons[iconURL]) {
     ({ icon, bg, name } = endpointIcons[iconURL]);
+  }
+
+  // For regular users, replace all model provider icons with HyperAI logo
+  // Exclude assistants and agents as they have custom avatars
+  if (!isAdmin && endpoint !== EModelEndpoint.assistants && endpoint !== EModelEndpoint.azureAssistants && endpoint !== EModelEndpoint.agents) {
+    icon = getHyperAILogo(size);
+    bg = 'transparent';
+    name = 'HyperAI';
   }
 
   if (isAssistantsEndpoint(endpoint)) {

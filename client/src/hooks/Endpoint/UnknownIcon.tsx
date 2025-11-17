@@ -1,8 +1,10 @@
 import { memo } from 'react';
 import { CustomMinimalIcon, XAIcon } from '@librechat/client';
-import { EModelEndpoint, KnownEndpoints } from 'librechat-data-provider';
+import { EModelEndpoint, KnownEndpoints, SystemRoles } from 'librechat-data-provider';
 import { IconContext } from '~/common';
 import { cn } from '~/utils';
+import { useAuthContext } from '~/hooks';
+import { getHyperAILogo } from '~/utils/getModelIcon';
 
 const knownEndpointAssets = {
   [KnownEndpoints.anyscale]: 'assets/anyscale.png',
@@ -65,7 +67,10 @@ function UnknownIcon({
   endpoint?: EModelEndpoint | string | null;
   context?: 'landing' | 'menu-item' | 'nav' | 'message';
 }) {
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
   const endpoint = _endpoint ?? '';
+  
   if (!endpoint) {
     return <CustomMinimalIcon className={className} />;
   }
@@ -85,6 +90,10 @@ function UnknownIcon({
   }
 
   if (iconURL) {
+    // For regular users, replace known endpoint icons with HyperAI logo
+    if (!isAdmin && knownEndpointAssets[currentEndpoint]) {
+      return getHyperAILogo(30);
+    }
     return <img className={className} src={iconURL} alt={`${endpoint} Icon`} />;
   }
 
@@ -92,6 +101,11 @@ function UnknownIcon({
 
   if (!assetPath) {
     return <CustomMinimalIcon className={className} />;
+  }
+
+  // For regular users, replace known endpoint icons with HyperAI logo
+  if (!isAdmin) {
+    return getHyperAILogo(30);
   }
 
   return (

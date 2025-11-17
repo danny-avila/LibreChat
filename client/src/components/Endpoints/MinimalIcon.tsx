@@ -1,5 +1,5 @@
 import { Feather } from 'lucide-react';
-import { EModelEndpoint, alternateName } from 'librechat-data-provider';
+import { EModelEndpoint, alternateName, SystemRoles } from 'librechat-data-provider';
 import {
   AzureMinimalIcon,
   OpenAIMinimalIcon,
@@ -14,9 +14,13 @@ import {
 import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
+import { useAuthContext } from '~/hooks';
+import { getHyperAILogo } from '~/utils/getModelIcon';
 
 const MinimalIcon: React.FC<IconProps> = (props) => {
   const { size = 30, iconURL = '', iconClassName, error } = props;
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
 
   let endpoint = 'default'; // Default value for endpoint
 
@@ -63,6 +67,13 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
   let { icon, name } = endpointIcons[endpoint] ?? endpointIcons.default;
   if (iconURL && endpointIcons[iconURL] != null) {
     ({ icon, name } = endpointIcons[iconURL]);
+  }
+
+  // For regular users, replace all model provider icons with HyperAI logo
+  // Exclude assistants and agents as they have custom avatars
+  if (!isAdmin && endpoint !== EModelEndpoint.assistants && endpoint !== EModelEndpoint.azureAssistants && endpoint !== EModelEndpoint.agents) {
+    icon = getHyperAILogo(size);
+    name = 'HyperAI';
   }
 
   return (

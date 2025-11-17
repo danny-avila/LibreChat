@@ -1,6 +1,6 @@
 import React from 'react';
 import { Bot } from 'lucide-react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint, SystemRoles } from 'librechat-data-provider';
 import type {
   TModelSpec,
   TAgentsMap,
@@ -10,6 +10,7 @@ import type {
 import type { useLocalize } from '~/hooks';
 import SpecIcon from '~/components/Chat/Menus/Endpoints/components/SpecIcon';
 import { Endpoint, SelectedValues } from '~/common';
+import { useAuthContext } from '~/hooks';
 
 export function filterItems<
   T extends {
@@ -175,6 +176,10 @@ export const getDisplayValue = ({
   modelSpecs: TModelSpec[];
   agentsMap?: TAgentsMap;
 }) => {
+  // This function is called from ModelSelectorContent which has access to auth context
+  // We'll handle the admin check in the component that calls this
+  // For now, return the original value - we'll modify the component to hide it for regular users
+  
   if (selectedValues.modelSpec) {
     const spec = modelSpecs.find((s) => s.name === selectedValues.modelSpec);
     return spec?.label || spec?.name || localize('com_ui_select_model');
