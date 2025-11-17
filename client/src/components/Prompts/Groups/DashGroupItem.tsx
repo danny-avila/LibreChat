@@ -109,7 +109,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
           )}
         </div>
       </button>
-      
+
       <div className="absolute right-0 top-0 mr-1 mt-2.5 flex items-start gap-1 pl-2">
         {canEdit && (
           <OGDialog>

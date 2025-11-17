@@ -47,7 +47,7 @@ const MemoNewChat = memo(NewChat);
 
 const Nav = memo(
   ({
-  navVisible,
+    navVisible,
     setNavVisible,
     openSidebarRef,
     closeSidebarRef,
