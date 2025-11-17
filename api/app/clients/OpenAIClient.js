@@ -793,14 +793,7 @@ class OpenAIClient extends BaseClient {
       }
 
       if (this.options.headers) {
-        // Re-resolve headers to pick up fresh federatedTokens from current request
-        const { resolveHeaders } = require('@librechat/api');
-        const resolvedHeaders = resolveHeaders({
-          headers: this.options.headers,
-          user: this.options.req?.user,
-          body: this.options.req?.body,
-        });
-        opts.defaultHeaders = { ...opts.defaultHeaders, ...resolvedHeaders };
+        opts.defaultHeaders = { ...opts.defaultHeaders, ...this.options.headers };
       }
 
       if (this.options.defaultQuery) {
@@ -828,11 +821,7 @@ class OpenAIClient extends BaseClient {
           modelGroupMap,
           groupMap,
         });
-        opts.defaultHeaders = resolveHeaders({
-          headers,
-          user: this.options.req?.user,
-          body: this.options.req?.body,
-        });
+        opts.defaultHeaders = resolveHeaders({ headers });
         this.langchainProxy = extractBaseURL(baseURL);
         this.apiKey = azureOptions.azureOpenAIApiKey;
 

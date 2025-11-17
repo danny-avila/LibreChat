@@ -432,14 +432,10 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
       return;
     }
 
-    // Use refresh token from tokenset, or fall back to existing one
-    // This is necessary because OAuth refresh token grants typically don't return a new refresh token
     const refreshToken = tokenset.refresh_token || existingRefreshToken;
 
     if (!refreshToken) {
-      logger.error(
-        '[setOpenIDAuthTokens] No refresh token available (neither in tokenset nor provided as existing)',
-      );
+      logger.error('[setOpenIDAuthTokens] No refresh token available');
       return;
     }
 
@@ -449,7 +445,6 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
       secure: isProduction,
       sameSite: 'strict',
     });
-    // Store access token for template variable replacement
     res.cookie('openid_access_token', tokenset.access_token, {
       expires: expirationDate,
       httpOnly: true,
