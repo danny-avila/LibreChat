@@ -23,7 +23,7 @@ export default function RetrievalCall({
       <ProgressText
         progress={progress}
         onClick={() => ({})}
-        inProgressText={'Searching my knowledge'}
+        inProgressText={'Analysing...'}
         finishedText={'Used Retrieval'}
         hasInput={false}
         popover={false}

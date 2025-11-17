@@ -34,91 +34,82 @@ const HelpAndFAQ = memo(
         </header>
 
         <div className="flex flex-col h-full max-w-4xl mx-auto p-6 space-y-8">
-            <div className="grid gap-6 md:grid-cols-2">
-                <div className="space-y-4">
-                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                        Getting Started
-                    </h2>
-                    
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
-                        <h3 className="font-medium text-gray-900 dark:text-white mb-2">
-                            How do I start a conversation?
-                        </h3>
-                        <p className="text-gray-600 dark:text-gray-400 text-sm">
-                            Simply type your message in the chat input at the bottom of the screen and press Enter or click the send button.
-                        </p>
-                    </div>
 
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
-                        <h3 className="font-medium text-gray-900 dark:text-white mb-2">
-                            How often is your AI model updated?
-                        </h3>
-                        <p className="text-gray-600 dark:text-gray-400 text-sm">
-                            Our real estate market data is refreshed every month to ensure you have access to the latest industry information.
-                        </p>
-                    </div>
+            <div className="space-y-4">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    Getting Started
+                </h2>
+                
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
+                    <h3 className="font-medium text-gray-900 dark:text-white mb-2">
+                        How do I start a conversation?
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm">
+                        Simply type your message in the chat input at the bottom of the screen and press Enter or click the send button.
+                    </p>
                 </div>
 
-                <div className="space-y-4">
-                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                        Account & Settings
-                    </h2>
-                    
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
-                        <h3 className="font-medium text-gray-900 dark:text-white mb-2">
-                            How do I change my preferences?
-                        </h3>
-                        <p className="text-gray-600 dark:text-gray-400 text-sm">
-                            Access your settings by clicking on your profile icon in the top navigation bar.
-                        </p>
-                    </div>
-
-
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
-                        <h3 className="font-medium text-gray-900 dark:text-white mb-2">
-                            Do my credits expire?
-                        </h3>
-                        <p className="text-gray-600 dark:text-gray-400 text-sm">
-                            No, your purchased credits do not expire. You can use them at any time, and they will remain available in your account until spent.
-                        </p>
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
-                        <h3 className="font-medium text-gray-900 dark:text-white mb-2">
-                            Do my credits expire?
-                        </h3>
-                        <p className="text-gray-600 dark:text-gray-400 text-sm">
-                            No, your purchased credits do not expire. You can use them at any time, and they will remain available in your account until spent.
-                        </p>
-                    </div>
-                    
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
-                        <h3 className="font-medium text-gray-900 dark:text-white mb-2">
-                            How do I cancel my subscription?
-                        </h3>
-                        <p className="text-gray-600 dark:text-gray-400 text-sm">
-                            You can cancel your subscription at any time by going to the <b>Account</b> menu, selecting <b>Settings</b>, and navigating to the <b>Subscription</b> tab. There, you’ll find an option to manage or cancel your active subscription.
-                        </p>
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
-                        <h3 className="font-medium text-gray-900 dark:text-white mb-2">
-                            How do I purchase more credits?
-                        </h3>
-                        <p className="text-gray-600 dark:text-gray-400 text-sm">
-                            To purchase additional credits, go to the <b>Account</b> menu, select <b>Settings</b>, and open the <b>Balance</b> tab. There you can choose a credit package and complete your purchase securely.
-                        </p>
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
-                        <h3 className="font-medium text-gray-900 dark:text-white mb-2">
-                            Is my conversation data private?
-                        </h3>
-                        <p className="text-gray-600 dark:text-gray-400 text-sm">
-                            Yes, we take privacy seriously. Your conversations are encrypted and stored securely.
-                        </p>
-                    </div>
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
+                    <h3 className="font-medium text-gray-900 dark:text-white mb-2">
+                        How often is your AI model updated?
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm">
+                        Our real estate market data is refreshed every month to ensure you have access to the latest industry information.
+                    </p>
                 </div>
+
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
+                    <h3 className="font-medium text-gray-900 dark:text-white mb-2">
+                        Is my conversation data private?
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm">
+                        Yes, we take privacy seriously. Your conversations are encrypted and stored securely.
+                    </p>
+                </div>                
+            </div>
+
+            <div className="space-y-4">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    Account & Settings
+                </h2>
+                
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
+                    <h3 className="font-medium text-gray-900 dark:text-white mb-2">
+                        How do I change my preferences?
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm">
+                        Access your settings by clicking on your profile icon in the top navigation bar.
+                    </p>
+                </div>
+
+
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
+                    <h3 className="font-medium text-gray-900 dark:text-white mb-2">
+                        Do my credits expire?
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm">
+                        No, your purchased credits do not expire. You can use them at any time, and they will remain available in your account until spent.
+                    </p>
+                </div>
+                
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
+                    <h3 className="font-medium text-gray-900 dark:text-white mb-2">
+                        How do I purchase more credits?
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm">
+                        To purchase additional credits, go to the <b>Account</b> menu, select <b>Settings</b>, and open the <b>Balance</b> tab. There you can choose a credit package and complete your purchase securely.
+                    </p>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
+                    <h3 className="font-medium text-gray-900 dark:text-white mb-2">
+                        How do I cancel my subscription?
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm">
+                        You can cancel your subscription at any time by going to the <b>Account</b> menu, selecting <b>Settings</b>, and navigating to the <b>Subscription</b> tab. There, you’ll find an option to manage or cancel your active subscription.
+                    </p>
+                </div>
+
             </div>
 
             <div className="space-y-4">
