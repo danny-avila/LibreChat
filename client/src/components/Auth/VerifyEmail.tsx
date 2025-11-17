@@ -107,7 +107,7 @@ function RequestPasswordReset() {
         {localize('com_auth_email_verification_in_progress')}
       </h1>
       <div className="mt-4 flex justify-center">
-        <Spinner className="h-8 w-8 text-green-500" />
+        <Spinner className="h-8 w-8 text-blue-500" />
       </div>
     </div>
   );
