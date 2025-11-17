@@ -1021,6 +1021,9 @@ class AgentClient extends BaseClient {
           err,
         );
       }
+      run = null;
+      config = null;
+      memoryPromise = null;
     }
   }
 
