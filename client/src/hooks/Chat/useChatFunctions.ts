@@ -319,6 +319,8 @@ export default function useChatFunctions({
       editedContent,
     };
 
+    console.log('Submission prepared:', submission);
+
     if (isRegenerate) {
       setMessages([...submission.messages, initialResponse]);
     } else {
