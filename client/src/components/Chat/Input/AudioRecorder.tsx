@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { Mic, MicOff } from 'lucide-react';
+import { MicOff } from 'lucide-react';
 import { useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@librechat/client';
 import { useLocalize, useSpeechToText, useGetAudioSettings } from '~/hooks';
 import { useChatFormContext } from '~/Providers';
