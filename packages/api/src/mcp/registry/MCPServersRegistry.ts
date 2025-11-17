@@ -3,18 +3,22 @@ import {
   ServerConfigsCacheFactory,
   type ServerConfigsCache,
 } from './cache/ServerConfigsCacheFactory';
+import {
+  PrivateServerConfigsCache,
+  PrivateServerConfigsCacheFactory,
+} from './cache/PrivateServerConfigs/PrivateServerConfigsCacheFactory';
 
 /**
  * Central registry for managing MCP server configurations across different scopes and users.
- * Maintains three categories of server configurations:
+ * Authoritative source of truth for all MCP servers provided by LibreChat.
+ *
+ * Maintains three-tier cache structure:
  * - Shared App Servers: Auto-started servers available to all users (initialized at startup)
  * - Shared User Servers: User-scope servers that require OAuth or on-demand startup
- * - Private User Servers: Per-user configurations dynamically added during runtime
+ * - Private Servers: Per-user configurations dynamically added during runtime
  *
- * Provides a unified interface for retrieving server configs with proper fallback hierarchy:
+ * Provides a unified query interface with proper fallback hierarchy:
  * checks shared app servers first, then shared user servers, then private user servers.
- * Falls back to raw config when servers haven't been initialized yet or failed to initialize.
- * Handles server lifecycle operations including adding, removing, and querying configurations.
  */
 class MCPServersRegistry {
   public readonly sharedAppServers = ServerConfigsCacheFactory.create('App', false);
@@ -30,31 +34,13 @@ class MCPServersRegistry {
     this.rawConfigs = configs;
   }
 
-  public async addPrivateUserServer(
-    userId: string,
-    serverName: string,
-    config: t.ParsedServerConfig,
-  ): Promise<void> {
-    if (!this.privateUserServers.has(userId)) {
-      const cache = ServerConfigsCacheFactory.create(`User(${userId})`, false);
-      this.privateUserServers.set(userId, cache);
-    }
-    await this.privateUserServers.get(userId)!.add(serverName, config);
-  }
+  public readonly sharedUserServers: ServerConfigsCache = ServerConfigsCacheFactory.create(
+    'User',
+    false,
+  );
 
-  public async updatePrivateUserServer(
-    userId: string,
-    serverName: string,
-    config: t.ParsedServerConfig,
-  ): Promise<void> {
-    const userCache = this.privateUserServers.get(userId);
-    if (!userCache) throw new Error(`No private servers found for user "${userId}".`);
-    await userCache.update(serverName, config);
-  }
-
-  public async removePrivateUserServer(userId: string, serverName: string): Promise<void> {
-    await this.privateUserServers.get(userId)?.remove(serverName);
-  }
+  public readonly privateServersCache: PrivateServerConfigsCache =
+    PrivateServerConfigsCacheFactory.create();
 
   public async getServerConfig(
     serverName: string,
@@ -63,9 +49,14 @@ class MCPServersRegistry {
     const sharedAppServer = await this.sharedAppServers.get(serverName);
     if (sharedAppServer) return sharedAppServer;
 
-    const sharedUserServer = await this.sharedUserServers.get(serverName);
-    if (sharedUserServer) return sharedUserServer;
+    if (userId) {
+      //we require user id to also access sharedServers to ensure that getServerConfig(serverName, undefined) returns only app level configs.
+      const sharedUserServer = await this.sharedUserServers.get(serverName);
+      if (sharedUserServer) return sharedUserServer;
 
+      const privateUserServer = await this.privateServersCache.get(userId, serverName);
+      if (privateUserServer) return privateUserServer;
+    }
     const privateUserServer = await this.privateUserServers.get(userId)?.get(serverName);
     if (privateUserServer) return privateUserServer;
 
@@ -82,7 +73,6 @@ class MCPServersRegistry {
       ...(await this.sharedUserServers.getAll()),
       ...((await this.privateUserServers.get(userId)?.getAll()) ?? {}),
     };
-
     /** Include all raw configs, but registry configs take precedence (they have inspection data) */
     const allConfigs: Record<string, t.ParsedServerConfig> = {};
     for (const serverName in this.rawConfigs) {
@@ -105,13 +95,57 @@ class MCPServersRegistry {
     return new Set(oauthServers.map(([name]) => name));
   }
 
+  /**
+   * Add a shared server configuration.
+   * Automatically routes to appropriate cache (app vs user) based on config properties.
+   * - Servers requiring OAuth or with startup=false → sharedUserServers
+   * - All other servers → sharedAppServers
+   *
+   * @param serverName - Name of the MCP server
+   * @param config - Parsed server configuration
+   */
+  public async addSharedServer(serverName: string, config: t.ParsedServerConfig): Promise<void> {
+    if (config.requiresOAuth || config.startup === false) {
+      await this.sharedUserServers.add(serverName, config);
+    } else {
+      await this.sharedAppServers.add(serverName, config);
+    }
+  }
+
   public async reset(): Promise<void> {
     await this.sharedAppServers.reset();
     await this.sharedUserServers.reset();
-    for (const cache of this.privateUserServers.values()) {
-      await cache.reset();
+    await this.privateServersCache.resetAll();
+  }
+
+  public async removeServer(serverName: string, userId?: string): Promise<void> {
+    const appServer = await this.sharedAppServers.get(serverName);
+    if (appServer) {
+      await this.sharedAppServers.remove(serverName);
+      return;
     }
-    this.privateUserServers.clear();
+
+    const userServer = await this.sharedUserServers.get(serverName);
+    if (userServer) {
+      await this.sharedUserServers.remove(serverName);
+      return;
+    }
+
+    if (userId) {
+      const privateServer = await this.privateServersCache.get(userId, serverName);
+      if (privateServer) {
+        await this.privateServersCache.remove(userId, serverName);
+        return;
+      }
+    } else {
+      const affectedUsers = await this.privateServersCache.findUsersWithServer(serverName);
+      if (affectedUsers.length > 0) {
+        await this.privateServersCache.removeServerConfigIfCacheExists(affectedUsers, serverName);
+        return;
+      }
+    }
+
+    throw new Error(`Server ${serverName} not found`);
   }
 }
 
