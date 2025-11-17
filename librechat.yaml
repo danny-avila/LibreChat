@@ -6,7 +6,7 @@ interface:
 
 endpoints:
   custom:
-    - name: "Vicktoria · Gemma-3"
+    - name: "Vicktoria"
       type: "custom"
       baseURL: ${RUNPOD_URI}
       apiKey: ${RUNPOD_API_KEY}
