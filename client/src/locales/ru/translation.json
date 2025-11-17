@@ -1077,6 +1077,7 @@
   "com_ui_quality": "Качество",
   "com_ui_read_aloud": "Прочитать вслух",
   "com_ui_redirecting_to_provider": "Перенаправление на {{0}}, пожалуйста, подождите...",
+  "com_nav_setting_subscription": "Подписка",
   "com_ui_reference_saved_memories": "Ссылка на сохраненную память",
   "com_ui_reference_saved_memories_description": "Разрешить помощнику ссылаться на сохраненную память и использовать её при ответе",
   "com_ui_refresh": "Обновить",

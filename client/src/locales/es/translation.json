@@ -682,6 +682,7 @@
   "com_ui_logo": "Logotipo de {{0}}",
   "com_ui_manage": "Administrar",
   "com_ui_max_tags": "El número máximo permitido es {{0}}, utilizando los valores más recientes.",
+  "com_nav_setting_subscription": "Suscripción",
   "com_ui_mention": "Menciona un punto de conexión, asistente o preconfiguración para cambiar rápidamente a él.",
   "com_ui_min_tags": "No se pueden eliminar más valores, se requiere un mínimo de {{0}}.",
   "com_ui_model": "Modelo",

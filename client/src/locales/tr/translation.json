@@ -597,6 +597,7 @@
   "com_ui_logo": "{{0}} Logosu",
   "com_ui_manage": "Yönet",
   "com_ui_max_tags": "İzin verilen maksimum sayı {{0}}, en son değerler kullanılıyor.",
+  "com_nav_setting_subscription": "Abonelik",
   "com_ui_mention": "Bir uç nokta, asistan veya hazır ayar anın, hızlıca ona geçmek için",
   "com_ui_min_tags": "Daha fazla değer kaldırılamaz, en az {{0}} gereklidir.",
   "com_ui_model": "Model",

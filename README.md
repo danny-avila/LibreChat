@@ -215,3 +215,43 @@ We thank [Locize](https://locize.com) for their translation management tools tha
     <img src="https://github.com/user-attachments/assets/d6b70894-6064-475e-bb65-92a9e23e0077" alt="Locize Logo" height="50">
   </a>
 </p>
+
+---
+
+## 💳 Stripe Subscription Integration
+
+LibreChat supports paid subscriptions using [Stripe](https://stripe.com/). To enable and configure Stripe-based subscription management, you must set the following environment variables in your `.env` file (see `.env.example` for details):
+
+| Variable                  | Description                                      |
+|---------------------------|--------------------------------------------------|
+| STRIPE_SECRET_KEY         | Your Stripe secret API key                       |
+| STRIPE_WEBHOOK_SECRET     | Webhook signing secret from Stripe dashboard      |
+| STRIPE_SUCCESS_URL        | URL to redirect after successful payment         |
+| STRIPE_CANCEL_URL         | URL to redirect after payment cancellation       |
+| STRIPE_PRICE_ID_BASIC     | Stripe Price ID for Basic plan                   |
+| STRIPE_PRICE_ID_PRO       | Stripe Price ID for Pro plan                     |
+| STRIPE_PRICE_ID_PREMIUM   | Stripe Price ID for Premium plan                 |
+| STRIPE_BILLING_PORTAL_URL | (Optional) Stripe Billing Portal session URL     |
+
+**How to get these values:**
+- Create a [Stripe account](https://dashboard.stripe.com/register) if you don't have one.
+- Get your API keys from the [Stripe Dashboard](https://dashboard.stripe.com/apikeys).
+- Set up [webhooks](https://dashboard.stripe.com/webhooks) and copy the signing secret.
+- Create your products and pricing in Stripe, then use the Price IDs for each plan.
+- Set the success and cancel URLs to your deployed frontend (e.g., `https://yourdomain.com/account/subscription?success=true`).
+
+**Example .env configuration:**
+```
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_SUCCESS_URL=https://yourdomain.com/account/subscription?success=true
+STRIPE_CANCEL_URL=https://yourdomain.com/account/subscription?canceled=true
+STRIPE_PRICE_ID_BASIC=price_1...
+STRIPE_PRICE_ID_PRO=price_1...
+STRIPE_PRICE_ID_PREMIUM=price_1...
+STRIPE_BILLING_PORTAL_URL=https://billing.stripe.com/p/session/...
+```
+
+**Note:**
+- The backend will not enable subscription features unless all required Stripe variables are set.
+- For more information, see the [Stripe docs](https://stripe.com/docs/) and [LibreChat documentation](https://www.librechat.ai/docs/).

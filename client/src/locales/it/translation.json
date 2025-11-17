@@ -781,6 +781,7 @@
   "com_ui_provider": "Fornitore",
   "com_ui_read_aloud": "Leggi ad alta voce",
   "com_ui_redirecting_to_provider": "Reindirizzamento a {{0}}, attendere prego...",
+  "com_nav_setting_subscription": "Abbonamento",
   "com_ui_refresh_link": "Aggiorna link",
   "com_ui_regenerate": "Rigenera",
   "com_ui_regenerate_backup": "Rigenera i codici di backup",

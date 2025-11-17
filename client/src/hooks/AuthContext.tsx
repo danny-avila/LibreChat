@@ -23,6 +23,7 @@ import {
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
 import store from '~/store';
+import { processMessages } from '../../../api/server/services/Threads/manage';
 
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
@@ -146,6 +147,14 @@ const AuthContextProvider = ({
           if (authConfig?.test === true) {
             return;
           }
+
+          // If the request url is '/' navigate to '/landing'
+          if (window.location.pathname === '/') {
+            navigate('/landing');
+            return;
+          }
+
+          // Otherwise navigate to '/login'
           navigate('/login');
         }
       },

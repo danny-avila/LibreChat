@@ -146,6 +146,25 @@ const userSchema = new Schema<IUser>(
       type: String,
       sparse: true,
     },
+    stripeCustomerId: {
+      type: String,
+      required: false,
+      index: true,
+    },
+    stripeSubscriptionId: {
+      type: String,
+      required: false,
+      index: true,
+    },
+    subscriptionStatus: {
+      type: String,
+      required: false,
+      default: 'none', // e.g., active, trialing, canceled, past_due, etc.
+    },
+    subscriptionPlan: {
+      type: String,
+      required: false,
+    },
   },
   { timestamps: true },
 );

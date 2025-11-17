@@ -421,16 +421,12 @@ const chatV2 = async (req, res) => {
     completedRun = response.run;
 
     // Process citations and affiliate links
-    let processedText = response.text;
-    logger.error('=== STARTING AFFILIATE PROCESSING - STREAM COMPLETE ===');
+    let processedText = response.text;    
     try {
-      logger.error('[ChatV2] Starting Affiliate processing');
-
       // Process affiliate links
       const affiliateConfig = await getAffiliateConfig();
       logger.info('[ChatV2] Affiliate config:', affiliateConfig);
       if (affiliateConfig.enableAffiliateLinks) {
-        logger.info('[ChatV2] Processing affiliates for response text:', processedText?.substring(0, 100) + '...');
         const affiliateText =  injectAffiliateLinks(processedText);
         processedText = affiliateText;
         logger.info('[ChatV2] Affiliate processing completed');

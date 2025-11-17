@@ -1078,6 +1078,7 @@
   "com_ui_quality": "Qualität",
   "com_ui_read_aloud": "Vorlesen",
   "com_ui_redirecting_to_provider": "Weiterleitung zu {{0}}, einen Moment bitte...",
+  "com_nav_setting_subscription": "Abonnement",
   "com_ui_reference_saved_memories": "Gespeicherte Erinnerungen verwenden",
   "com_ui_reference_saved_memories_description": "Erlaube der KI bei den Antworten auf deine gespeicherten Erinnerungen zuzugreifen und sie zu verwenden.",
   "com_ui_refresh": "Aktualisieren",

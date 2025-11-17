@@ -1110,6 +1110,7 @@
   "com_ui_value": "Valeur",
   "com_ui_variables": "Variables",
   "com_ui_variables_info": "Utilisez des doubles accolades dans votre texte pour créer des variables, par exemple {{exemple de variable}}, à remplir ultérieurement lors de l'utilisation du prompt.",
+  "com_nav_setting_subscription": "Abonnement",
   "com_ui_verify": "Vérifier",
   "com_ui_version_var": "Version {{0}}",
   "com_ui_versions": "Versions",

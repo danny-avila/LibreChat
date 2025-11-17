@@ -67,7 +67,7 @@ router.get('/', async function (req, res) {
 
     /** @type {TStartupConfig} */
     const payload = {
-      appTitle: process.env.APP_TITLE || 'LibreChat',
+      appTitle: process.env.APP_TITLE || '',
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
       facebookLoginEnabled:
@@ -100,9 +100,18 @@ router.get('/', async function (req, res) {
         isBirthday() ||
         isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||
         process.env.SHOW_BIRTHDAY_ICON === '',
-      helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
+      helpAndFaqURL: process.env.HELP_AND_FAQ_URL || '/faq',
+      fileAttachRequiresSubscription: isEnabled(process.env.FILE_ATTACH_REQUIRES_SUBSCRIPTION),
       hideUserFiles: isEnabled(process.env.HIDE_USER_FILES),
       affiliatesEnabled: isEnabled(process.env.AFFILIATES_ENABLED),
+      stripeSubscriptionsEnabled: isEnabled(process.env.STRIPE_SUBSCRIPTIONS_ENABLED),
+      stripeMetersEnabled: isEnabled(process.env.STRIPE_METERS_ENABLED),
+      searchModelsEnabled: isEnabled(process.env.SEARCH_MODELS_ENABLED),
+      settingsDataControls: isEnabled(process.env.SETTINGS_DATA_CONTROLS),
+      settingsPersonalization: isEnabled(process.env.SETTINGS_PERSONALIZATION),
+      settingsCommands: isEnabled(process.env.SETTINGS_COMMANDS),
+      settingsChat: isEnabled(process.env.SETTINGS_CHAT),
+      homeRoute: process.env.HOME_ROUTE || '/login',
       interface: appConfig?.interfaceConfig,
       turnstile: appConfig?.turnstileConfig,
       modelSpecs: appConfig?.modelSpecs,

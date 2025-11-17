@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useGetStartupConfig } from '~/data-provider';
 import * as Ariakit from '@ariakit/react';
 import { cn } from '~/utils';
 
@@ -28,8 +29,17 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
   },
   ref,
 ) {
+
   const parent = Ariakit.useMenuContext();
-  const searchable = searchValue != null || !!onSearch || !!combobox;
+  let searchable = searchValue != null || !!onSearch || !!combobox;
+  const { data: appConfig, isLoading: appConfigLoading, error: appConfigError } = useGetStartupConfig();
+
+  // Turn search off if disabled in the config
+  if (searchable) {
+    if (!appConfig?.searchModelsEnabled) {
+      searchable = false;
+    }
+  }
 
   const menuStore = Ariakit.useMenuStore({
     showTimeout: 100,

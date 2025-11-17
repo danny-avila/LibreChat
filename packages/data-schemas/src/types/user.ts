@@ -38,6 +38,10 @@ export interface IUser extends Document {
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string;
+    subscriptionStatus?: string; // e.g., active, trialing, canceled, past_due, etc.
+    subscriptionPlan?: string;
 }
 
 export interface BalanceConfig {

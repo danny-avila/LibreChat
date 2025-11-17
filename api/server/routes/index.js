@@ -1,4 +1,7 @@
 const accessPermissions = require('./accessPermissions');
+const stripe = require('./stripe');
+const stripeWebhook = require('./stripeWebhook');
+const stripeCancel = require('./stripeCancel');
 const assistants = require('./assistants');
 const categories = require('./categories');
 const tokenizer = require('./tokenizer');
@@ -27,8 +30,14 @@ const edit = require('./edit');
 const keys = require('./keys');
 const user = require('./user');
 const mcp = require('./mcp');
+const stripeCheckout = require('./stripeCheckout');
+const proxyOpenAIFile = require('./proxyOpenAIFile');
 
 module.exports = {
+  stripe,
+  stripeWebhook,
+  stripeCheckout,
+  stripeCancel,
   mcp,
   edit,
   auth,
@@ -58,4 +67,5 @@ module.exports = {
   categories,
   staticRoute,
   accessPermissions,
+  proxyOpenAIFile,
 };

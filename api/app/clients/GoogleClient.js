@@ -909,6 +909,8 @@ class GoogleClient extends BaseClient {
 ||>Response:
 "${JSON.stringify(truncateText(responseText))}"`;
 
+logger.debug(`[AnthropicClient] titleConvo: ${text}`);
+
     let { prompt: payload } = await this.buildMessages([
       {
         text: `Please generate ${titleInstruction}

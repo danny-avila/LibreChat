@@ -6,10 +6,10 @@ services:
     container_name: LibreChat
     ports:
       - "${PORT}:${PORT}"
-    depends_on:
+    #depends_on:
       #- mongodb
-      - rag_api
-    image: acrcribmetrics.azurecr.io/cribmetrics:0.0.0.1153
+      #- rag_api
+    image: acrcribmetrics.azurecr.io/cribmetrics:47da1a1
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:

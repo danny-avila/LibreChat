@@ -41,7 +41,16 @@ export async function loadDefaultInterface({
     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
     mcpServers: interfaceConfig?.mcpServers ?? defaults.mcpServers,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
+    tagLine: interfaceConfig?.tagLine ?? defaults.tagLine,
 
+    stripeSubscriptionsEnabled: interfaceConfig?.stripeSubscriptionsEnabled ?? defaults.stripeSubscriptionsEnabled,
+    stripeMetersEnabled: interfaceConfig?.stripeMetersEnabled ?? defaults.stripeMetersEnabled,
+    searchModelsEnabled: interfaceConfig?.searchModelsEnabled ?? defaults.searchModelsEnabled,
+    settingsDataControls: interfaceConfig?.settingsDataControls ?? defaults.settingsDataControls,
+    settingsPersonalization: interfaceConfig?.settingsPersonalization ?? defaults.settingsPersonalization,
+    settingsCommands: interfaceConfig?.settingsCommands ?? defaults.settingsCommands,
+    settingsChat: interfaceConfig?.settingsChat ?? defaults.settingsChat,
+    
     // Permissions - only include if explicitly configured
     bookmarks: interfaceConfig?.bookmarks,
     memories: shouldDisableMemories ? false : interfaceConfig?.memories,

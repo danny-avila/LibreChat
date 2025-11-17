@@ -28,6 +28,7 @@ const {
   Permissions,
   VisionModes,
   ContentTypes,
+  CohereConstants,
   EModelEndpoint,
   PermissionTypes,
   isAgentsEndpoint,
@@ -35,12 +36,14 @@ const {
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
+
+const { titleInstruction } = require('~/app/clients/prompts/titlePrompts');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
-const { createContextHandlers } = require('~/app/clients/prompts');
+const { truncateText, createContextHandlers } = require('~/app/clients/prompts');
 const { checkCapability } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
@@ -602,6 +605,9 @@ class AgentClient extends BaseClient {
 
   /** @type {sendCompletion} */
   async sendCompletion(payload, opts = {}) {
+    logger.debug('[api/server/controllers/agents/client.js #sendCompletion] Sending agent completion', {
+      payload: payload
+    });
     await this.chatCompletion({
       payload,
       onProgress: opts.onProgress,
@@ -790,11 +796,19 @@ class AgentClient extends BaseClient {
         version: 'v2',
       };
 
+      logger.error('[api/server/controllers/agents/client.js #chatCompletion] config:',
+        config
+      );
+
       const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
       let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
         payload,
         this.indexTokenCountMap,
         toolSet,
+      );
+
+      logger.error('[api/server/controllers/agents/client.js #chatCompletion] toolSet:',
+        toolSet
       );
 
       /**
@@ -903,13 +917,26 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
+          logger.error('[api/server/controllers/agents/client.js #chatCompletion] attachments:',
+          attachments
+        );
+
         const balanceConfig = getBalanceConfig(appConfig);
         const transactionsConfig = getTransactionsConfig(appConfig);
+
+        logger.error('[api/server/controllers/agents/client.js #chatCompletion] : appConfig', appConfig)        
+        logger.error('[api/server/controllers/agents/client.js #chatCompletion] : balanceConfig', balanceConfig)
+        logger.error('[api/server/controllers/agents/client.js #chatCompletion] : transactionsConfig', transactionsConfig)
+
         await this.recordCollectedUsage({
           context: 'message',
           balance: balanceConfig,
           transactions: transactionsConfig,
         });
+
+        logger.error('[api/server/controllers/agents/client.js #chatCompletion] balanceConfig:',
+          balanceConfig
+        );        
       } catch (err) {
         logger.error(
           '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
@@ -922,14 +949,19 @@ class AgentClient extends BaseClient {
         this.artifactPromises.push(...attachments);
       }
       logger.error(
-        '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
+        '[api/server/controllers/agents/client.js #chatCompletion] Operation aborted',
         err,
       );
       if (!abortController.signal.aborted) {
         logger.error(
-          '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
+          '[api/server/controllers/agents/client.js #chatCompletion] Unhandled error type',
           err,
         );
+
+        logger.error('[api/server/controllers/agents/client.js #chatCompletion] Error details:', 
+          `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`          
+        );
+
         this.contentParts.push({
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
@@ -938,17 +970,175 @@ class AgentClient extends BaseClient {
     }
   }
 
+
   /**
+   * Generates a concise title for a conversation based on the user's input text and response.
+   * Uses either specified method or starts with the OpenAI `functions` method (using LangChain).
+   * If the `functions` method fails, it falls back to the `completion` method,
+   * which involves sending a chat completion request with specific instructions for title generation.
    *
-   * @param {Object} params
-   * @param {string} params.text
-   * @param {string} params.conversationId
+   * @param {Object} params - The parameters for the conversation title generation.
+   * @param {string} params.text - The user's input.
+   * @param {string} [params.conversationId] - The current conversationId, if not already defined on client initialization.
+   * @param {string} [params.responseText=''] - The AI's immediate response to the user.
+   *
+   * @returns {Promise<string | 'New Chat'>} A promise that resolves to the generated conversation title.
+   *                            In case of failure, it will return the default title, "New Chat".
    */
-  async titleConvo({ text, abortController }) {
-    if (!this.run) {
-      throw new Error('[api/server/controllers/agents/client.js #titleConvo] Run not initialized');
+  async titleConvo({ text, conversationId, responseText = '' }) {
+    this.conversationId = conversationId;
+
+    if (this.options.attachments) {
+      delete this.options.attachments;
     }
+
+    logger.debug(`[LibreChat/api/server/controllers/agents/client.js #titleConvo] titleConvo ${text}`);
+
+    let title = 'New Chat';
+    const convo = `||>User:
+"${truncateText(text)}"
+||>Response:
+"${JSON.stringify(truncateText(responseText))}"`;
+
+    const { OPENAI_TITLE_MODEL } = process.env ?? {};
+
+    let model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+    if (model === Constants.CURRENT_MODEL) {
+      model = this.modelOptions.model;
+    }
+
+    const modelOptions = {
+      // TODO: remove the gpt fallback and make it specific to endpoint
+      model,
+      temperature: 0.2,
+      presence_penalty: 0,
+      frequency_penalty: 0,
+      max_tokens: 16,
+    };
+
+    /** @type {TAzureConfig | undefined} */
+    const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
+
+    const resetTitleOptions = !!(
+      (this.azure && azureConfig) ||
+      (azureConfig && this.options.endpoint === EModelEndpoint.azureOpenAI)
+    );
+
+    if (resetTitleOptions) {
+      const { modelGroupMap, groupMap } = azureConfig;
+      const {
+        azureOptions,
+        baseURL,
+        headers = {},
+        serverless,
+      } = mapModelToAzureConfig({
+        modelName: modelOptions.model,
+        modelGroupMap,
+        groupMap,
+      });
+
+      this.options.headers = resolveHeaders(headers);
+      this.options.reverseProxyUrl = baseURL ?? null;
+      this.langchainProxy = extractBaseURL(this.options.reverseProxyUrl);
+      this.apiKey = azureOptions.azureOpenAIApiKey;
+
+      const groupName = modelGroupMap[modelOptions.model].group;
+      this.options.addParams = azureConfig.groupMap[groupName].addParams;
+      this.options.dropParams = azureConfig.groupMap[groupName].dropParams;
+      this.options.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
+      this.azure = !serverless && azureOptions;
+    }
+
+    const titleChatCompletion = async () => {
+      modelOptions.model = model;
+
+      if (this.azure) {
+        modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL ?? modelOptions.model;
+        this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
+      }
+
+      const instructionsPayload = [
+        {
+          role: 'system',
+          content: `Please generate ${titleInstruction}
+
+${convo}
+
+||>Title:`,
+        },
+      ];
+
+      const promptTokens = this.getTokenCountForMessage(instructionsPayload[0]);
+
+      try {
+        let useChatCompletion = true;
+
+        if (this.options.reverseProxyUrl === CohereConstants.API_URL) {
+          useChatCompletion = false;
+        }
+
+        title = (
+          await this.sendPayload(instructionsPayload, { modelOptions, useChatCompletion })
+        )
+
+        logger.error('[api/server/controllers/agents/client.js #titleConvo] title response:', title)
+
+        title = title.replaceAll('"', '');
+
+        const completionTokens = this.getTokenCount(title);
+
+        this.recordTokenUsage({ promptTokens, completionTokens, context: 'title' });
+      } catch (e) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #titleConvo] There was an issue generating the title with the completion method',
+          e,
+        );
+      }
+    };
+
+    if (this.options.titleMethod === 'completion') {
+      await titleChatCompletion();
+      logger.debug('[api/server/controllers/agents/client.js #titleConvo] Convo Title: ' + title);
+      return title;
+    }
+
+    try {
+      logger.info(
+        '[api/server/controllers/agents/client.js #titleConvo] before this.initializeLLM',
+        e,
+      );
+
+      this.abortController = new AbortController();
+      const llm = this.initializeLLM({
+        ...modelOptions,
+        conversationId,
+        context: 'title',
+        tokenBuffer: 150,
+      });
+
+      logger.info(
+        '[api/server/controllers/agents/client.js #titleConvo] after this.initializeLLM',
+        e,
+      );
+
+      title = await runTitleChain({ llm, text, convo, signal: this.abortController.signal });
+    } catch (e) {
+      if (e?.message?.toLowerCase()?.includes('abort')) {
+        logger.debug('[api/server/controllers/agents/client.js #titleConvo] Aborted title generation');
+        return;
+      }
+      logger.error(
+        '[api/server/controllers/agents/client.js #titleConvo] There was an issue generating title with LangChain, trying completion method...',
+        e,
+      );
+
+      await titleChatCompletion();
+    }
+
+    logger.debug('[api/server/controllers/agents/client.js #titleConvo] Convo Title: ' + title);
+    return title;
   }
+
 
   /**
    * @param {object} params

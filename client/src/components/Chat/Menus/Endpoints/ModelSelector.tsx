@@ -12,9 +12,11 @@ import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
 import { useLocalize } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 
 function ModelSelectorContent() {
   const localize = useLocalize();
+  const { data: appConfig, isLoading, error } = useGetStartupConfig();
 
   const {
     // LibreChat

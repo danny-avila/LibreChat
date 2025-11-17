@@ -29,11 +29,44 @@ const { getAppConfig } = require('~/server/services/Config');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const { getLogStores } = require('~/cache');
 const { mcpServersRegistry } = require('@librechat/api');
+const { syncUserSubscription } = require('~/server/services/StripeService');
+
+// Returns the current user's subscription status
+const getSubscriptionStatusController = async (req, res) => {
+  try {
+    // Ensure the user is up-to-date with Stripe
+    await syncUserSubscription(req.user);
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ status: 'none', message: 'User not found' });
+    }
+    return res.status(200).json({ status: user.subscriptionStatus || 'none' });
+  } catch (err) {
+    logger.error('Error fetching subscription status:', err);
+    return res.status(500).json({ status: 'none', message: 'Internal server error' });
+  }
+};
+
+
+const { cancelSubscriptionController } = require('~/server/controllers/StripeCancelController');
 
 const getUserController = async (req, res) => {
   const appConfig = await getAppConfig({ role: req.user?.role });
   /** @type {IUser} */
   const userData = req.user.toObject != null ? req.user.toObject() : { ...req.user };
+  // Sync Stripe subscription status on login
+  try {
+    await syncUserSubscription(req.user);
+    // Refresh userData with latest subscription info
+    const refreshedUser = await User.findById(req.user._id);
+    if (refreshedUser) {
+      userData.subscriptionStatus = refreshedUser.subscriptionStatus;
+      userData.subscriptionPlan = refreshedUser.subscriptionPlan;
+      userData.stripeSubscriptionId = refreshedUser.stripeSubscriptionId;
+    }
+  } catch (err) {
+    logger.error('Error syncing Stripe subscription:', err);
+  }
   /**
    * These fields should not exist due to secure field selection, but deletion
    * is done in case of alternate database incompatibility with Mongo API
@@ -231,6 +264,14 @@ const deleteUserController = async (req, res) => {
   const { user } = req;
 
   try {
+    // Cancel Stripe subscription if present
+    if (user.stripeSubscriptionId) {
+      try {
+        await cancelSubscriptionController({ ...req, user }, { json: () => {}, status: () => ({ json: () => {} }) });
+      } catch (err) {
+        logger.error('[deleteUserController] Error canceling Stripe subscription', err);
+      }
+    }
     await deleteMessages({ user: user.id }); // delete user messages
     await deleteAllUserSessions({ userId: user.id }); // delete user sessions
     await Transaction.deleteMany({ user: user.id }); // delete user transactions
@@ -389,6 +430,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
 };
 
 module.exports = {
+  getSubscriptionStatusController,
   getUserController,
   getTermsStatusController,
   acceptTermsController,
