@@ -82,7 +82,10 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
   });
 
   TestClient.sendCompletion = jest.fn(async () => {
-    return 'Mock response text';
+    return {
+      completion: 'Mock response text',
+      metadata: undefined,
+    };
   });
 
   TestClient.getCompletion = jest.fn().mockImplementation(async (..._args) => {
