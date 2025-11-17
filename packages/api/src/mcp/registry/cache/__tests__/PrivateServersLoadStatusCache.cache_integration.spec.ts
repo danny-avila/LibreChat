@@ -26,8 +26,8 @@ describe('PrivateServersLoadStatusCache Integration Tests', () => {
     // Ensure Redis is connected
     if (!keyvRedisClient) throw new Error('Redis client is not initialized');
 
-    // Wait for Redis to be ready
-    if (!keyvRedisClient.isOpen) await keyvRedisClient.connect();
+    // Wait for Redis connection and topology discovery to complete
+    await redisClients.keyvRedisClientReady;
 
     // Become leader so we can perform write operations
     leaderInstance = new LeaderElection();
