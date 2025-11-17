@@ -33,7 +33,6 @@ type SafeUser = Pick<IUser, AllowedUserField>;
 
 /**
  * Creates a safe user object containing only allowed fields.
- * Optimized for performance while maintaining type safety.
  * Preserves federatedTokens for OpenID token template variable resolution.
  *
  * @param user - The user object to extract safe fields from
@@ -147,31 +146,25 @@ function processSingleValue({
 }): string {
   let value = originalValue;
 
-  // 1. Replace custom user variables
   if (customUserVars) {
     for (const [varName, varVal] of Object.entries(customUserVars)) {
-      /** Escaped varName for use in regex to avoid issues with special characters */
       const escapedVarName = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const placeholderRegex = new RegExp(`\\{\\{${escapedVarName}\\}\\}`, 'g');
       value = value.replace(placeholderRegex, varVal);
     }
   }
 
-  // 2. Replace user field placeholders (e.g., {{LIBRECHAT_USER_EMAIL}}, {{LIBRECHAT_USER_ID}})
   value = processUserPlaceholders(value, user);
 
-  // 3. Replace OpenID Connect federated provider token placeholders (e.g., {{LIBRECHAT_OPENID_TOKEN}}, {{LIBRECHAT_OPENID_ACCESS_TOKEN}})
   const openidTokenInfo = extractOpenIDTokenInfo(user);
   if (openidTokenInfo && isOpenIDTokenValid(openidTokenInfo)) {
     value = processOpenIDPlaceholders(value, openidTokenInfo);
   }
 
-  // 4. Replace body field placeholders (e.g., {{LIBRECHAT_BODY_CONVERSATIONID}}, {{LIBRECHAT_BODY_PARENTMESSAGEID}})
   if (body) {
     value = processBodyPlaceholders(value, body);
   }
 
-  // 5. Replace system environment variables
   value = extractEnvVariable(value);
 
   return value;
