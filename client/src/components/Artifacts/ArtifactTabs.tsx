@@ -15,10 +15,12 @@ export default function ArtifactTabs({
   artifact,
   editorRef,
   previewRef,
+  isSharedConvo,
 }: {
   artifact: Artifact;
   editorRef: React.MutableRefObject<CodeEditorRef>;
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
+  isSharedConvo?: boolean;
 }) {
   const { isSubmitting } = useArtifactsContext();
   const { currentCode, setCurrentCode } = useCodeState();
@@ -54,6 +56,7 @@ export default function ArtifactTabs({
           artifact={artifact}
           editorRef={editorRef}
           sharedProps={sharedProps}
+          readOnly={isSharedConvo}
         />
       </Tabs.Content>
 
