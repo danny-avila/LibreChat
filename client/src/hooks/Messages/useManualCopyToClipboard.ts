@@ -8,7 +8,6 @@ export default function useManualCopyToClipboard(
     searchResults?: { [key: string]: SearchResultData };
   },
 ) {
-
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -81,7 +80,7 @@ export default function useManualCopyToClipboard(
       if (clipboardData) {
         // Primary format: Clean HTML (for pasting into rich text editors)
         clipboardData.setData('text/html', cleanHtml);
-        
+
         // Secondary format: Clean plain text (for pasting into plain text editors)
         clipboardData.setData('text/plain', cleanedText);
       }
@@ -92,5 +91,5 @@ export default function useManualCopyToClipboard(
     return () => {
       container.removeEventListener('copy', handleManualCopy);
     };
-  }, [messageData.text, messageData.content, messageData.searchResults]);
+  }, [containerRef, messageData.text, messageData.content, messageData.searchResults]);
 }
