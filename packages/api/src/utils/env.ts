@@ -34,20 +34,27 @@ type SafeUser = Pick<IUser, AllowedUserField>;
 /**
  * Creates a safe user object containing only allowed fields.
  * Optimized for performance while maintaining type safety.
+ * Preserves federatedTokens for OpenID token template variable resolution.
  *
  * @param user - The user object to extract safe fields from
- * @returns A new object containing only allowed fields
+ * @returns A new object containing only allowed fields plus federatedTokens if present
  */
-export function createSafeUser(user: IUser | null | undefined): Partial<SafeUser> {
+export function createSafeUser(
+  user: IUser | null | undefined,
+): Partial<SafeUser> & { federatedTokens?: unknown } {
   if (!user) {
     return {};
   }
 
-  const safeUser: Partial<SafeUser> = {};
+  const safeUser: Partial<SafeUser> & { federatedTokens?: unknown } = {};
   for (const field of ALLOWED_USER_FIELDS) {
     if (field in user) {
       safeUser[field] = user[field];
     }
+  }
+
+  if ('federatedTokens' in user) {
+    safeUser.federatedTokens = user.federatedTokens;
   }
 
   return safeUser;
