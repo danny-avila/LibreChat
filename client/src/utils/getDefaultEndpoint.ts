@@ -1,9 +1,9 @@
 import type {
   TPreset,
   TConversation,
-  EModelEndpoint,
   TEndpointsConfig,
 } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { getLocalStorageItems } from './localStorage';
 import { mapEndpoints } from './endpoints';
 
@@ -48,6 +48,13 @@ const getEndpointFromLocalStorage = (endpointsConfig: TEndpointsConfig) => {
 
 const getDefinedEndpoint = (endpointsConfig: TEndpointsConfig) => {
   const endpoints = mapEndpoints(endpointsConfig);
+  // Prioritize Anthropic endpoint if available
+  const anthropicEndpoint = endpoints.find(
+    (e) => Object.hasOwn(endpointsConfig ?? {}, e) && e === EModelEndpoint.anthropic,
+  );
+  if (anthropicEndpoint) {
+    return anthropicEndpoint;
+  }
   return endpoints.find((e) => Object.hasOwn(endpointsConfig ?? {}, e));
 };
 

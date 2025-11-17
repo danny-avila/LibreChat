@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { SystemRoles } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
-import { useMessageHelpers, useLocalize, useAttachments } from '~/hooks';
+import { useMessageHelpers, useLocalize, useAttachments, useAuthContext } from '~/hooks';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
 import { fontSizeAtom } from '~/store/fontSize';
@@ -16,6 +17,8 @@ import store from '~/store';
 
 export default function Message(props: TMessageProps) {
   const localize = useLocalize();
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
     props;
   const { attachments, searchResults } = useAttachments({
@@ -50,10 +53,18 @@ export default function Message(props: TMessageProps) {
       result = assistant.name ?? localize('com_ui_assistant');
     } else if (agent) {
       result = agent.name ?? localize('com_ui_agent');
+    } else {
+      // For regular users, replace model names with "Hyper Intelligence"
+      const sender = message?.sender ?? '';
+      if (!isAdmin && sender) {
+        result = 'Hyper Intelligence';
+      } else {
+        result = sender;
+      }
     }
 
     return result;
-  }, [assistant, agent, isCreatedByUser, localize]);
+  }, [assistant, agent, isCreatedByUser, localize, message?.sender, isAdmin]);
 
   const iconData: TMessageIcon = useMemo(
     () => ({

@@ -9,6 +9,7 @@ import {
   TFeedback,
   toMinimalFeedback,
   SearchResultData,
+  SystemRoles,
 } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import {
@@ -33,6 +34,7 @@ export type TMessageActions = Pick<
 export default function useMessageActions(props: TMessageActions) {
   const localize = useLocalize();
   const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
   const { message, currentEditId, setCurrentEditId, isMultiMessage, searchResults } = props;
 
@@ -129,9 +131,14 @@ export default function useMessageActions(props: TMessageActions) {
     } else if (assistant) {
       return assistant.name ?? 'Assistant';
     } else {
-      return message?.sender;
+      // For regular users, replace model names with "Hyper Intelligence"
+      const sender = message?.sender ?? '';
+      if (!isAdmin && sender) {
+        return 'Hyper Intelligence';
+      }
+      return sender;
     }
-  }, [message, agent, assistant, UsernameDisplay, user, localize]);
+  }, [message, agent, assistant, UsernameDisplay, user, localize, isAdmin]);
 
   const feedbackMutation = useUpdateFeedbackMutation(
     conversation?.conversationId || '',

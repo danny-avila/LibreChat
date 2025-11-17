@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { SystemRoles } from 'librechat-data-provider';
 import { useAuthContext, useLocalize } from '~/hooks';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
@@ -51,13 +52,19 @@ export default function SearchMessage({ message }: Pick<TMessageProps, 'message'
     [message?.endpoint, message?.model, message?.iconURL, message?.isCreatedByUser],
   );
 
+  const isAdmin = user?.role === SystemRoles.ADMIN;
   const messageLabel = useMemo(() => {
     if (message?.isCreatedByUser) {
       return UsernameDisplay
         ? (user?.name ?? '') || (user?.username ?? '')
         : localize('com_user_message');
     }
-    return message?.sender ?? '';
+    // For regular users, replace model names with "Hyper Intelligence"
+    const sender = message?.sender ?? '';
+    if (!isAdmin && sender) {
+      return 'Hyper Intelligence';
+    }
+    return sender;
   }, [
     message?.isCreatedByUser,
     message?.sender,
@@ -65,6 +72,7 @@ export default function SearchMessage({ message }: Pick<TMessageProps, 'message'
     user?.name,
     user?.username,
     localize,
+    isAdmin,
   ]);
 
   if (!message) {
