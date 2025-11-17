@@ -1,6 +1,8 @@
-import { expect } from '@playwright/test';
 import type * as t from '~/mcp/types';
 import type { MCPConnection } from '~/mcp/connection';
+const FIXED_TIME = 1699564800000;
+const originalDateNow = Date.now;
+Date.now = jest.fn(() => FIXED_TIME);
 
 // Mock isLeader to always return true to avoid lock contention during parallel operations
 jest.mock('~/cluster', () => ({
@@ -27,7 +29,7 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
     },
     oauth_server: {
       type: 'streamable-http',
-      url: 'https://api.example.com/mcp',
+      url: 'https://api.example.com/mcp-oauth',
     },
     file_tools_server: {
       type: 'stdio',
@@ -51,7 +53,7 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
     },
     oauth_server: {
       type: 'streamable-http',
-      url: 'https://api.example.com/mcp',
+      url: 'https://api.example.com/mcp-oauth',
       requiresOAuth: true,
     },
     file_tools_server: {
@@ -92,14 +94,30 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
         },
       },
     },
+    remote_no_oauth_server: {
+      type: 'streamable-http',
+      url: 'https://api.example.com/mcp-no-auth',
+      requiresOAuth: false,
+    },
+  };
+
+  // Helper to determine requiresOAuth based on URL pattern
+  // URLs ending with '-oauth' require OAuth, others don't
+  const determineRequiresOAuth = (config: t.MCPOptions): boolean => {
+    if ('url' in config && config.url) {
+      return config.url.endsWith('-oauth');
+    }
+    return false;
   };
 
   beforeAll(async () => {
     // Set up environment variables for Redis (only if not already set)
     process.env.USE_REDIS = process.env.USE_REDIS ?? 'true';
     process.env.REDIS_URI = process.env.REDIS_URI ?? 'redis://127.0.0.1:6379';
+    // Use a unique prefix for each test run to avoid conflicts with parallel test executions
     process.env.REDIS_KEY_PREFIX =
-      process.env.REDIS_KEY_PREFIX ?? 'MCPServersInitializer-IntegrationTest';
+      process.env.REDIS_KEY_PREFIX ??
+      `MCPServersInitializer-IntegrationTest-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
     // Import modules after setting env vars
     const initializerModule = await import('../MCPServersInitializer');
@@ -127,6 +145,7 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
     // Become leader so we can perform write operations
     leaderInstance = new LeaderElection();
     const isLeader = await leaderInstance.isLeader();
+    // eslint-disable-next-line jest/no-standalone-expect
     expect(isLeader).toBe(true);
   });
 
@@ -137,13 +156,24 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
       throw new Error('Lost leader status before test');
     }
 
+    // Reset caches first to ensure clean state
+    await registryStatusCache.reset();
+    await registry.reset();
+
     // Mock MCPServerInspector.inspect to return parsed config
-    jest.spyOn(MCPServerInspector, 'inspect').mockImplementation(async (serverName: string) => {
-      return {
-        ...testParsedConfigs[serverName],
-        _processedByInspector: true,
-      } as unknown as t.ParsedServerConfig;
-    });
+    // This mock inspects the actual rawConfig to determine requiresOAuth dynamically
+    jest
+      .spyOn(MCPServerInspector, 'inspect')
+      .mockImplementation(async (serverName: string, rawConfig: t.MCPOptions) => {
+        const baseConfig = testParsedConfigs[serverName] || {};
+        return {
+          ...baseConfig,
+          ...rawConfig,
+          // Override requiresOAuth based on the actual config being inspected
+          requiresOAuth: determineRequiresOAuth(rawConfig),
+          _processedByInspector: true,
+        } as unknown as t.ParsedServerConfig;
+      });
 
     // Mock MCPConnection
     const mockConnection = {
@@ -152,10 +182,6 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
 
     // Mock MCPConnectionFactory
     jest.spyOn(MCPConnectionFactory, 'create').mockResolvedValue(mockConnection);
-
-    // Reset caches before each test
-    await registryStatusCache.reset();
-    await registry.reset();
   });
 
   afterEach(async () => {
@@ -173,6 +199,8 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
   });
 
   afterAll(async () => {
+    Date.now = originalDateNow;
+
     // Resign as leader
     if (leaderInstance) await leaderInstance.resign();
 

@@ -30,7 +30,7 @@ export class ServerConfigsCacheRedis extends BaseRegistryCache {
       throw new Error(
         `Server "${serverName}" already exists in cache. Use update() to modify existing configs.`,
       );
-    const success = await this.cache.set(serverName, config);
+    const success = await this.cache.set(serverName, { ...config, lastUpdatedAt: Date.now() });
     this.successCheck(`add ${this.owner} server "${serverName}"`, success);
   }
 
@@ -41,8 +41,19 @@ export class ServerConfigsCacheRedis extends BaseRegistryCache {
       throw new Error(
         `Server "${serverName}" does not exist in cache. Use add() to create new configs.`,
       );
-    const success = await this.cache.set(serverName, config);
+    const success = await this.cache.set(serverName, { ...config, lastUpdatedAt: Date.now() });
     this.successCheck(`update ${this.owner} server "${serverName}"`, success);
+  }
+
+  /**
+   * Sets a server config without checking if it exists (upsert operation).
+   * Use this for bulk operations where you want to add or update without error handling.
+   * Note: Respects leaderOnly flag if set.
+   */
+  public async set(serverName: string, config: ParsedServerConfig): Promise<void> {
+    if (this.leaderOnly) await this.leaderCheck(`set ${this.owner} MCP servers`);
+    const success = await this.cache.set(serverName, { ...config, lastUpdatedAt: Date.now() });
+    this.successCheck(`set ${this.owner} server "${serverName}"`, success);
   }
 
   public async remove(serverName: string): Promise<void> {
@@ -68,9 +79,9 @@ export class ServerConfigsCacheRedis extends BaseRegistryCache {
         // Full key format: "prefix::namespace:keyName"
         const lastColonIndex = key.lastIndexOf(':');
         const keyName = key.substring(lastColonIndex + 1);
-        const value = await this.cache.get(keyName);
-        if (value) {
-          entries.push([keyName, value as ParsedServerConfig]);
+        const config = (await this.cache.get(keyName)) as ParsedServerConfig | undefined;
+        if (config) {
+          entries.push([keyName, config]);
         }
       }
     } else {
@@ -78,5 +89,13 @@ export class ServerConfigsCacheRedis extends BaseRegistryCache {
     }
 
     return fromPairs(entries);
+  }
+
+  /**
+   * Returns the Redis namespace for this cache instance.
+   * Used for constructing full Redis keys when needed for batch operations.
+   */
+  public getNamespace(): string {
+    return this.cache.namespace ?? '';
   }
 }
