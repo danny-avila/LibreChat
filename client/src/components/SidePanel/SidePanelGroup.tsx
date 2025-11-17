@@ -138,9 +138,9 @@ const SidePanelGroup = memo(
               setCollapsedSize={setCollapsedSize}
               fullCollapse={fullCollapse}
               setFullCollapse={setFullCollapse}
-              defaultSize={currentLayout[currentLayout.length - 1]}
-              hasArtifacts={artifacts != null}
               interfaceConfig={interfaceConfig}
+              hasArtifacts={shouldRenderArtifacts}
+              defaultSize={currentLayout[currentLayout.length - 1]}
             />
           )}
         </ResizablePanelGroup>
