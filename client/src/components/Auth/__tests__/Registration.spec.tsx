@@ -83,7 +83,7 @@ const setup = ({
   const mockUseOutletContext = jest.spyOn(reactRouter, 'useOutletContext').mockReturnValue({
     startupConfig: useGetStartupConfigReturnValue.data,
   });
-  const mockUseGetBannerQuery = jest
+  const _mockUseGetBannerQuery = jest
     .spyOn(miscDataProvider, 'useGetBannerQuery')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetBannerQueryReturnValue);
@@ -156,7 +156,6 @@ test('renders registration form', () => {
   );
 });
 
-// eslint-disable-next-line jest/no-commented-out-tests
 // test('calls registerUser.mutate on registration', async () => {
 //   const mutate = jest.fn();
 //   const { getByTestId, getByRole, history } = setup({

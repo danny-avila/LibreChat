@@ -9,6 +9,7 @@ interface OGDialogProps extends DialogPrimitive.DialogProps {
 }
 
 const Dialog = React.forwardRef<HTMLDivElement, OGDialogProps>(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   ({ children, triggerRef, triggerRefs, onOpenChange, ...props }, _ref) => {
     const handleOpenChange = (open: boolean) => {
       if (!open && triggerRef?.current) {
@@ -81,7 +82,7 @@ const DialogContent = React.forwardRef<
       {showCloseButton && (
         <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-ring-primary ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
           <X className="h-4 w-4" />
-          {/* eslint-disable-next-line i18next/no-literal-string */}
+          {}
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>
       )}

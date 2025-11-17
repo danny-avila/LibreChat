@@ -17,6 +17,16 @@ import {
 import { TranslationKeys, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
+const renderAuthComponent = (type: string) => {
+  if (type === 'none') {
+    return null;
+  }
+  if (type === 'service_http') {
+    return <ApiKey />;
+  }
+  return <OAuth />;
+};
+
 export default function ActionsAuth({ disableOAuth }: { disableOAuth?: boolean }) {
   const localize = useLocalize();
   const [openAuthDialog, setOpenAuthDialog] = useState(false);
@@ -33,9 +43,7 @@ export default function ActionsAuth({ disableOAuth }: { disableOAuth?: boolean }
             </label>
           </div>
           <div className="border-token-border-medium flex rounded-lg border text-sm hover:cursor-pointer">
-            <div className="h-9 grow px-3 py-2">
-              {localize(getAuthLocalizationKey(type))}
-            </div>
+            <div className="h-9 grow px-3 py-2">{localize(getAuthLocalizationKey(type))}</div>
             <div className="bg-token-border-medium w-px"></div>
             <button type="button" color="neutral" className="flex items-center gap-2 px-3">
               <svg
@@ -138,7 +146,7 @@ export default function ActionsAuth({ disableOAuth }: { disableOAuth?: boolean }
               </div>
             </RadioGroup.Root>
           </div>
-          {type === 'none' ? null : type === 'service_http' ? <ApiKey /> : <OAuth />}
+          {renderAuthComponent(type)}
           {/* Cancel/Save */}
           <div className="mt-5 flex flex-col gap-3 sm:mt-4 sm:flex-row-reverse">
             <button
