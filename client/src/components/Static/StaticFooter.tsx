@@ -25,7 +25,7 @@ const StaticFooter = memo(
 
     return (
     <footer>
-      © 2025 {startupConfig?.appTitle.split('|')[0] || 'CribMetrics'}. All rights reserved. | {process.env.CUSTOM_TAG_LINE || startupConfig?.tagLine || 'Real Estate Market Insights Made Simple'}
+      © 2025 {startupConfig?.appTitle.split('|')[0] || 'CribMetrics'} | {process.env.CUSTOM_TAG_LINE || startupConfig?.tagLine || 'Real Estate Market Insights Made Simple'}
       <Footer startupConfig={startupConfig} />
     </footer>          
     );
