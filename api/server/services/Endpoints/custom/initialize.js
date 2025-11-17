@@ -95,7 +95,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   }
 
   const customOptions = {
-    headers: endpointConfig.headers, // Store original template headers for re-resolution in OpenAIClient
+    headers: endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
     customParams: endpointConfig.customParams,

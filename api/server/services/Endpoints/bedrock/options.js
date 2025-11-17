@@ -90,7 +90,6 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
     llmConfig.endpointHost = BEDROCK_REVERSE_PROXY;
   }
 
-  // Resolve template variables in additionalModelRequestFields
   if (llmConfig.additionalModelRequestFields) {
     llmConfig.additionalModelRequestFields = resolveHeaders({
       headers: llmConfig.additionalModelRequestFields,
