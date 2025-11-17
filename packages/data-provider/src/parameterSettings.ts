@@ -230,9 +230,10 @@ const openAIParams: Record<string, SettingDefinition> = {
     description: 'com_endpoint_openai_reasoning_effort',
     descriptionCode: true,
     type: 'enum',
-    default: ReasoningEffort.none,
+    default: ReasoningEffort.unset,
     component: 'slider',
     options: [
+      ReasoningEffort.unset,
       ReasoningEffort.none,
       ReasoningEffort.minimal,
       ReasoningEffort.low,
@@ -240,6 +241,7 @@ const openAIParams: Record<string, SettingDefinition> = {
       ReasoningEffort.high,
     ],
     enumMappings: {
+      [ReasoningEffort.unset]: 'com_ui_auto',
       [ReasoningEffort.none]: 'com_ui_none',
       [ReasoningEffort.minimal]: 'com_ui_minimal',
       [ReasoningEffort.low]: 'com_ui_low',
@@ -291,7 +293,7 @@ const openAIParams: Record<string, SettingDefinition> = {
       ReasoningSummary.detailed,
     ],
     enumMappings: {
-      [ReasoningSummary.none]: 'com_ui_none',
+      [ReasoningSummary.none]: 'com_ui_unset',
       [ReasoningSummary.auto]: 'com_ui_auto',
       [ReasoningSummary.concise]: 'com_ui_concise',
       [ReasoningSummary.detailed]: 'com_ui_detailed',

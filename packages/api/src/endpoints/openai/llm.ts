@@ -300,7 +300,11 @@ export function getOpenAILLMConfig({
     delete modelKwargs.verbosity;
   }
 
-  if (llmConfig.model && /\bgpt-[5-9]\b/i.test(llmConfig.model) && llmConfig.maxTokens != null) {
+  if (
+    llmConfig.model &&
+    /\bgpt-[5-9](?:\.\d+)?\b/i.test(llmConfig.model) &&
+    llmConfig.maxTokens != null
+  ) {
     const paramName =
       llmConfig.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
     modelKwargs[paramName] = llmConfig.maxTokens;
