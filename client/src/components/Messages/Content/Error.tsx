@@ -101,7 +101,7 @@ const errorMessages = {
   token_balance: (json: TTokenBalance, _localize: LocalizeFunction, openBalance: () => void) => {
     const { balance, tokenCost, promptTokens, generations } = json;
     //const message = `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}.  Cost: ${tokenCost}.`;
-        const message = `Insufficient Funds! You have ${balance} credits left, but need ${tokenCost}.`;
+        const message = `Insufficient Funds! You have ${new Intl.NumberFormat().format(balance)} credits left, but need ${new Intl.NumberFormat().format(tokenCost)}`;
     return (
       <>
         {message}

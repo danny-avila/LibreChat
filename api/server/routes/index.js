@@ -31,6 +31,7 @@ const keys = require('./keys');
 const user = require('./user');
 const mcp = require('./mcp');
 const stripeCheckout = require('./stripeCheckout');
+const proxyOpenAIFile = require('./proxyOpenAIFile');
 
 module.exports = {
   stripe,
@@ -66,4 +67,5 @@ module.exports = {
   categories,
   staticRoute,
   accessPermissions,
+  proxyOpenAIFile,
 };
