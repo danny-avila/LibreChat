@@ -5,6 +5,14 @@ import { logger } from '@librechat/data-schemas';
 import { cacheConfig } from '~/cache/cacheConfig';
 
 export class PrivateServerConfigsCacheRedis extends PrivateServerConfigsCacheBase {
+  /**
+   * Detect if Redis is running in cluster mode.
+   * In cluster mode, we need to avoid CROSSSLOT errors by using pipelines instead of multi() transactions.
+   */
+  private isClusterMode(): boolean {
+    return cacheConfig.USE_REDIS_CLUSTER;
+  }
+
   public async has(userId: string): Promise<boolean> {
     if (!userId || !keyvRedisClient || !('scanIterator' in keyvRedisClient)) {
       return false;
@@ -49,15 +57,26 @@ export class PrivateServerConfigsCacheRedis extends PrivateServerConfigsCacheBas
         const keyvFormat = { value: updatedConfig, expires: null };
         const serializedConfig = JSON.stringify(keyvFormat);
 
-        // Batch update using pipeline with XX flag (only update if key still exists)
         const chunkSize = cacheConfig.REDIS_UPDATE_CHUNK_SIZE;
-        for (let i = 0; i < keysToUpdate.length; i += chunkSize) {
-          const chunk = keysToUpdate.slice(i, i + chunkSize);
-          const multi = keyvRedisClient.multi();
-          for (const key of chunk) {
-            multi.set(key, serializedConfig, { XX: true });
+
+        if (this.isClusterMode()) {
+          // Cluster mode: Use individual commands in parallel (no atomicity, but works across slots)
+          for (let i = 0; i < keysToUpdate.length; i += chunkSize) {
+            const chunk = keysToUpdate.slice(i, i + chunkSize);
+            await Promise.all(
+              chunk.map((key) => keyvRedisClient!.set(key, serializedConfig, { XX: true })),
+            );
           }
-          await multi.exec();
+        } else {
+          // Single-node mode: Use multi() for atomic transactions
+          for (let i = 0; i < keysToUpdate.length; i += chunkSize) {
+            const chunk = keysToUpdate.slice(i, i + chunkSize);
+            const multi = keyvRedisClient.multi();
+            for (const key of chunk) {
+              multi.set(key, serializedConfig, { XX: true });
+            }
+            await multi.exec();
+          }
         }
 
         logger.info(
@@ -101,17 +120,35 @@ export class PrivateServerConfigsCacheRedis extends PrivateServerConfigsCacheBas
     const separator = cacheConfig.GLOBAL_PREFIX_SEPARATOR;
 
     const chunkSize = cacheConfig.REDIS_UPDATE_CHUNK_SIZE;
-    for (let i = 0; i < eligibleUserIds.length; i += chunkSize) {
-      const chunk = eligibleUserIds.slice(i, i + chunkSize);
-      const multi = keyvRedisClient.multi();
-      for (const userId of chunk) {
-        const namespace = `${this.PREFIX}::${userId}`;
-        const fullKey = globalPrefix
-          ? `${globalPrefix}${separator}${namespace}:${serverName}`
-          : `${namespace}:${serverName}`;
-        multi.set(fullKey, serializedConfig, { NX: true });
+
+    if (this.isClusterMode()) {
+      // Cluster mode: Use individual commands in parallel (no atomicity, but works across slots)
+      for (let i = 0; i < eligibleUserIds.length; i += chunkSize) {
+        const chunk = eligibleUserIds.slice(i, i + chunkSize);
+        await Promise.all(
+          chunk.map((userId) => {
+            const namespace = `${this.PREFIX}::${userId}`;
+            const fullKey = globalPrefix
+              ? `${globalPrefix}${separator}${namespace}:${serverName}`
+              : `${namespace}:${serverName}`;
+            return keyvRedisClient!.set(fullKey, serializedConfig, { NX: true });
+          }),
+        );
       }
-      await multi.exec();
+    } else {
+      // Single-node mode: Use multi() for atomic transactions
+      for (let i = 0; i < eligibleUserIds.length; i += chunkSize) {
+        const chunk = eligibleUserIds.slice(i, i + chunkSize);
+        const multi = keyvRedisClient.multi();
+        for (const userId of chunk) {
+          const namespace = `${this.PREFIX}::${userId}`;
+          const fullKey = globalPrefix
+            ? `${globalPrefix}${separator}${namespace}:${serverName}`
+            : `${namespace}:${serverName}`;
+          multi.set(fullKey, serializedConfig, { NX: true });
+        }
+        await multi.exec();
+      }
     }
 
     logger.info(
@@ -140,15 +177,23 @@ export class PrivateServerConfigsCacheRedis extends PrivateServerConfigsCacheBas
       keysToDelete.push(fullKey);
     }
 
-    // Batch delete using DEL (Redis ignores non-existent keys)
     if (keysToDelete.length > 0) {
       const chunkSize = cacheConfig.REDIS_DELETE_CHUNK_SIZE || 100;
       let removedCount = 0;
 
-      for (let i = 0; i < keysToDelete.length; i += chunkSize) {
-        const chunk = keysToDelete.slice(i, i + chunkSize);
-        const deleted = await keyvRedisClient.del(chunk);
-        removedCount += deleted;
+      if (this.isClusterMode()) {
+        // Cluster mode: Use individual DEL calls to avoid CROSSSLOT errors
+        for (const key of keysToDelete) {
+          const deleted = await keyvRedisClient.del(key);
+          removedCount += deleted;
+        }
+      } else {
+        // Single-node mode: Batch delete using DEL with array (more efficient)
+        for (let i = 0; i < keysToDelete.length; i += chunkSize) {
+          const chunk = keysToDelete.slice(i, i + chunkSize);
+          const deleted = await keyvRedisClient.del(chunk);
+          removedCount += deleted;
+        }
       }
 
       logger.info(
@@ -254,10 +299,18 @@ export class PrivateServerConfigsCacheRedis extends PrivateServerConfigsCacheBas
     }
 
     if (keysToDelete.length > 0) {
-      const chunkSize = cacheConfig.REDIS_DELETE_CHUNK_SIZE;
-      for (let i = 0; i < keysToDelete.length; i += chunkSize) {
-        const chunk = keysToDelete.slice(i, i + chunkSize);
-        await keyvRedisClient.del(chunk);
+      if (this.isClusterMode()) {
+        // Cluster mode: Use individual DEL calls to avoid CROSSSLOT errors
+        for (const key of keysToDelete) {
+          await keyvRedisClient.del(key);
+        }
+      } else {
+        // Single-node mode: Batch delete using DEL with array (more efficient)
+        const chunkSize = cacheConfig.REDIS_DELETE_CHUNK_SIZE;
+        for (let i = 0; i < keysToDelete.length; i += chunkSize) {
+          const chunk = keysToDelete.slice(i, i + chunkSize);
+          await keyvRedisClient.del(chunk);
+        }
       }
     }
     logger.info(`[MCP][Cache][Redis] Cleared all user caches: ${keysToDelete.length} entries`);

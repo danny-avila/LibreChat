@@ -66,7 +66,7 @@ const cacheConfig = {
   REDIS_CA: getRedisCA(),
   REDIS_KEY_PREFIX: process.env[REDIS_KEY_PREFIX_VAR ?? ''] || REDIS_KEY_PREFIX || '',
   GLOBAL_PREFIX_SEPARATOR: '::',
-  REDIS_MAX_LISTENERS: math(process.env.REDIS_MAX_LISTENERS, 40),
+  REDIS_MAX_LISTENERS: math(process.env.REDIS_MAX_LISTENERS, 100),
   REDIS_PING_INTERVAL: math(process.env.REDIS_PING_INTERVAL, 0),
   /** Max delay between reconnection attempts in ms */
   REDIS_RETRY_MAX_DELAY: math(process.env.REDIS_RETRY_MAX_DELAY, 3000),

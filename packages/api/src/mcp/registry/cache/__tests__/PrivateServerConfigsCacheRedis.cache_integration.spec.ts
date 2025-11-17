@@ -50,9 +50,11 @@ describe('PrivateServerConfigsCacheRedis Integration Tests', () => {
 
     // Ensure Redis is connected
     if (!keyvRedisClient) throw new Error('Redis client is not initialized');
+    // Ensure Redis is connected
+    if (!keyvRedisClient) throw new Error('Redis client is not initialized');
 
-    // Wait for Redis to be ready
-    if (!keyvRedisClient.isOpen) await keyvRedisClient.connect();
+    // Wait for connection and topology discovery to complete
+    await redisClients.keyvRedisClientReady;
   });
 
   beforeEach(() => {
