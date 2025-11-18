@@ -39,9 +39,9 @@ class ModelEndHandler {
    * @param {ModelEndData | undefined} data
    * @param {Record<string, unknown> | undefined} metadata
    * @param {StandardGraph} graph
-   * @returns
+   * @returns {Promise<void>}
    */
-  handle(event, data, metadata, graph) {
+  async handle(event, data, metadata, graph) {
     if (!graph || !metadata) {
       console.warn(`Graph or metadata not found in ${event} event`);
       return;
@@ -79,7 +79,7 @@ class ModelEndHandler {
         }
       }
       if (isGoogle || streamingDisabled || hasUnprocessedToolCalls) {
-        handleToolCalls(toolCalls, metadata, graph);
+        await handleToolCalls(toolCalls, metadata, graph);
       }
 
       const usage = data?.output?.usage_metadata;
@@ -101,7 +101,7 @@ class ModelEndHandler {
       const stepKey = graph.getStepKey(metadata);
       const message_id = getMessageId(stepKey, graph) ?? '';
       if (message_id) {
-        graph.dispatchRunStep(stepKey, {
+        await graph.dispatchRunStep(stepKey, {
           type: StepTypes.MESSAGE_CREATION,
           message_creation: {
             message_id,
@@ -111,7 +111,7 @@ class ModelEndHandler {
       const stepId = graph.getStepIdByKey(stepKey);
       const content = data.output.content;
       if (typeof content === 'string') {
-        graph.dispatchMessageDelta(stepId, {
+        await graph.dispatchMessageDelta(stepId, {
           content: [
             {
               type: 'text',
@@ -120,7 +120,7 @@ class ModelEndHandler {
           ],
         });
       } else if (content.every((c) => c.type?.startsWith('text'))) {
-        graph.dispatchMessageDelta(stepId, {
+        await graph.dispatchMessageDelta(stepId, {
           content,
         });
       }
@@ -162,7 +162,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
   }
   const handlers = {
     [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage),
-    [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback),
+    [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.CHAT_MODEL_STREAM]: new ChatModelStreamHandler(),
     [GraphEvents.ON_RUN_STEP]: {
       /**
