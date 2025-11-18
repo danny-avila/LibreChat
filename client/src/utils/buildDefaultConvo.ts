@@ -7,6 +7,38 @@ import {
 import type { TConversation, EndpointSchemaKey } from 'librechat-data-provider';
 import { getLocalStorageItems } from './localStorage';
 
+/**
+ * Upgrades Claude models to the latest Sonnet 4.5 for Anthropic endpoint
+ */
+function upgradeClaudeModel(model: string | undefined, endpoint: EModelEndpoint | null): string | undefined {
+  if (!model || endpoint !== EModelEndpoint.anthropic) {
+    return model;
+  }
+  
+  // Upgrade old Claude 3.5 models
+  if (
+    model === 'claude-3-5-sonnet-latest' ||
+    model === 'claude-3-5-sonnet-20241022' ||
+    model === 'claude-3-5-sonnet-20240620' ||
+    model.startsWith('claude-3-5-sonnet')
+  ) {
+    return 'claude-sonnet-4-5-20250929';
+  }
+  
+  // Upgrade Haiku models to Sonnet
+  if (
+    model === 'claude-haiku-4-5' ||
+    model === 'claude-haiku-4-5-20251001' ||
+    model.startsWith('claude-haiku-4-5') ||
+    model.startsWith('claude-3-5-haiku') ||
+    model.startsWith('claude-haiku-3')
+  ) {
+    return 'claude-sonnet-4-5-20250929';
+  }
+  
+  return model;
+}
+
 const buildDefaultConvo = ({
   models,
   conversation,
@@ -30,7 +62,11 @@ const buildDefaultConvo = ({
   }
 
   const availableModels = models;
-  const model = lastConversationSetup?.model ?? lastSelectedModel?.[endpoint] ?? '';
+  let model = lastConversationSetup?.model ?? lastSelectedModel?.[endpoint] ?? '';
+  
+  // Upgrade Claude models to Sonnet 4.5
+  model = upgradeClaudeModel(model, endpoint) ?? '';
+  
   const secondaryModel: string | null =
     endpoint === EModelEndpoint.gptPlugins
       ? (lastConversationSetup?.agentOptions?.model ?? lastSelectedModel?.secondaryModel ?? null)
@@ -66,6 +102,16 @@ const buildDefaultConvo = ({
     endpointType,
     endpoint,
   };
+
+  // Upgrade Claude model in the final conversation object
+  if (endpoint === EModelEndpoint.anthropic) {
+    if (defaultConvo.model) {
+      defaultConvo.model = upgradeClaudeModel(defaultConvo.model, endpoint) ?? defaultConvo.model;
+    } else {
+      // If no model is set, use the default Claude Sonnet 4.5
+      defaultConvo.model = 'claude-sonnet-4-5-20250929';
+    }
+  }
 
   // Ensures assistant_id is always defined
   const assistantId = convo?.assistant_id ?? conversation?.assistant_id ?? '';
