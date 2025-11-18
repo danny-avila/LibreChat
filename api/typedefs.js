@@ -1828,7 +1828,7 @@
  * @param {onTokenProgress} opts.onProgress - Callback function to handle token progress
  * @param {AbortController} opts.abortController - AbortController instance
  * @param {Record<string, Record<string, string>>} [opts.userMCPAuthMap]
- * @returns {Promise<string>}
+ * @returns {Promise<{ content: Promise<MessageContentComplex[]>; metadata: Record<string, unknown>; }>}
  * @memberof typedefs
  */
 
