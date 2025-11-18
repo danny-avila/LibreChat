@@ -241,8 +241,26 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
   if (!modelSpec) {
     return;
   }
+  const preset = { ...modelSpec.preset };
+  
+  // Automatically upgrade old Claude 3.5 models to Claude Sonnet 4.5 for Anthropic endpoint
+  if (preset.endpoint === EModelEndpoint.anthropic) {
+    if (
+      preset.model &&
+      (preset.model === 'claude-3-5-sonnet-latest' ||
+       preset.model === 'claude-3-5-sonnet-20241022' ||
+       preset.model === 'claude-3-5-sonnet-20240620' ||
+       preset.model.startsWith('claude-3-5-sonnet'))
+    ) {
+      preset.model = 'claude-sonnet-4-5-20250929';
+    } else if (!preset.model) {
+      // If no model is specified, use the default Claude Sonnet 4.5
+      preset.model = 'claude-sonnet-4-5-20250929';
+    }
+  }
+  
   return {
-    ...modelSpec.preset,
+    ...preset,
     spec: modelSpec.name,
     iconURL: getModelSpecIconURL(modelSpec),
   };

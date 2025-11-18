@@ -11,12 +11,14 @@ import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
 import { useHasAccess } from '~/hooks';
+import { useChatContext } from '~/Providers';
 
 const defaultInterface = getConfigDefaults().interface;
 
 export default function Header() {
   const { data: startupConfig } = useGetStartupConfig();
   const { navVisible, setNavVisible } = useOutletContext<ContextType>();
+  const { conversation } = useChatContext();
 
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
@@ -34,6 +36,9 @@ export default function Header() {
   });
 
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  
+  // Debug: Show current model (inconspicuous)
+  const currentModel = conversation?.model ?? 'N/A';
 
   return (
     <div className="sticky top-0 z-10 flex h-14 w-full items-center justify-between bg-white p-2 font-semibold text-text-primary dark:bg-gray-800">
@@ -66,6 +71,10 @@ export default function Header() {
                   isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
                 />
                 <TemporaryChat />
+                {/* Debug: Inconspicuous model display */}
+                <span className="text-[10px] text-text-secondary opacity-50 font-normal">
+                  {currentModel}
+                </span>
               </>
             )}
           </div>
@@ -76,6 +85,10 @@ export default function Header() {
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
             />
             <TemporaryChat />
+            {/* Debug: Inconspicuous model display */}
+            <span className="text-[10px] text-text-secondary opacity-50 font-normal">
+              {currentModel}
+            </span>
           </div>
         )}
       </div>
