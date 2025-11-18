@@ -356,7 +356,7 @@ const DEFAULT_MAX_OUTPUT = 8192 as const;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096 as const;
 export const anthropicSettings = {
   model: {
-    default: 'claude-3-5-sonnet-latest' as const,
+    default: 'claude-sonnet-4-5-20250929' as const,
   },
   temperature: {
     min: 0 as const,
