@@ -16,6 +16,12 @@ router.post('/', async (req, res) => {
   const appConfig = req.config;
 
   try {
+    // Log image upload with file name
+    if (req.file) {
+      logger.info(`[IMAGE UPLOAD] Image uploaded: ${req.file.originalname} (${req.file.size} bytes, type: ${req.file.mimetype}) by user ${req.user?.id || 'unknown'}`);
+      console.log(`[IMAGE UPLOAD] File: ${req.file.originalname} | Size: ${req.file.size} bytes | Type: ${req.file.mimetype} | User: ${req.user?.id || 'unknown'}`);
+    }
+
     filterFile({ req, image: true });
 
     metadata.temp_file_id = metadata.file_id;

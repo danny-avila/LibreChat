@@ -371,6 +371,12 @@ router.post('/', async (req, res) => {
   let cleanup = true;
 
   try {
+    // Log file upload with file name
+    if (req.file) {
+      logger.info(`[FILE UPLOAD] File uploaded: ${req.file.originalname} (${req.file.size} bytes, type: ${req.file.mimetype}) by user ${req.user?.id || 'unknown'}`);
+      console.log(`[FILE UPLOAD] File: ${req.file.originalname} | Size: ${req.file.size} bytes | Type: ${req.file.mimetype} | User: ${req.user?.id || 'unknown'}`);
+    }
+
     filterFile({ req });
 
     metadata.temp_file_id = metadata.file_id;

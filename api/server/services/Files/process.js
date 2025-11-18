@@ -36,6 +36,7 @@ const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
+const { anonymizeFile } = require('./Anonymization');
 
 /**
  * Creates a modular file upload wrapper that ensures filename sanitization
@@ -324,6 +325,24 @@ const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath, c
 const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
   const { file } = req;
   const appConfig = req.config;
+  
+  // ANONYMIZATION: Extract text and remove PII from image file BEFORE processing
+  // Note: For images, this will attempt OCR-based text extraction if supported
+  try {
+    logger.info(`[Anonymization] Processing image file for anonymization: ${file.originalname}`);
+    await anonymizeFile(file.path, {
+      extractText: true,
+      removePII: true,
+    });
+    logger.info(`[Anonymization] Image file anonymized successfully: ${file.originalname}`);
+  } catch (error) {
+    // Log error but don't fail the upload - allow image to proceed without anonymization
+    // Images without extractable text will fail here, which is expected
+    logger.warn(
+      `[Anonymization] Failed to anonymize image file ${file.originalname}, proceeding without anonymization: ${error.message}`,
+    );
+  }
+  
   const source = getFileStrategy(appConfig, { isImage: true });
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
@@ -432,6 +451,21 @@ const processFileUpload = async ({ req, res, metadata }) => {
   }
 
   const { file } = req;
+
+  // ANONYMIZATION: Extract text and remove PII from file BEFORE uploading to OpenAI/storage
+  try {
+    logger.info(`[Anonymization] Processing file for anonymization: ${file.originalname}`);
+    await anonymizeFile(file.path, {
+      extractText: true,
+      removePII: true,
+    });
+    logger.info(`[Anonymization] File anonymized successfully: ${file.originalname}`);
+  } catch (error) {
+    // Log error but don't fail the upload - allow file to proceed without anonymization
+    logger.warn(
+      `[Anonymization] Failed to anonymize file ${file.originalname}, proceeding without anonymization: ${error.message}`,
+    );
+  }
   const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
   const {
     id,
@@ -509,6 +543,21 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
+
+  // ANONYMIZATION: Extract text and remove PII from file BEFORE processing
+  try {
+    logger.info(`[Anonymization] Processing agent file for anonymization: ${file.originalname}`);
+    await anonymizeFile(file.path, {
+      extractText: true,
+      removePII: true,
+    });
+    logger.info(`[Anonymization] Agent file anonymized successfully: ${file.originalname}`);
+  } catch (error) {
+    // Log error but don't fail the upload - allow file to proceed without anonymization
+    logger.warn(
+      `[Anonymization] Failed to anonymize agent file ${file.originalname}, proceeding without anonymization: ${error.message}`,
+    );
+  }
 
   let messageAttachment = !!metadata.message_file;
 

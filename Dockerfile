@@ -6,6 +6,31 @@ FROM node:20-alpine AS node
 # Install jemalloc
 RUN apk add --no-cache jemalloc
 RUN apk add --no-cache python3 py3-pip uv
+ENV PIP_NO_BUILD_ISOLATION=1
+RUN apk add --no-cache \
+    poppler-utils \
+    tesseract-ocr \
+    antiword \
+    unrtf \
+    build-base \
+    pkgconf \
+    python3-dev \
+    py3-numpy \
+    py3-scipy \
+    cython \
+    meson \
+    ninja \
+ && pip3 install --no-cache-dir --break-system-packages "pip<24.1" \
+ && pip3 install --no-cache-dir --break-system-packages \
+    scikit-learn==1.6.1\
+    textract-py3>=2.0.0 \
+    scrubadub>=2.0.0 \
+    PyPDF2>=3.0.0 \
+    pdfplumber>=0.10.0\
+ && apk del build-base python3-dev pkgconf cython meson ninja
+
+
+
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
