@@ -243,18 +243,24 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
   }
   const preset = { ...modelSpec.preset };
   
-  // Automatically upgrade old Claude 3.5 models to Claude Sonnet 4.5 for Anthropic endpoint
+  // Automatically upgrade to Claude Sonnet 4.5 for Anthropic endpoint
   if (preset.endpoint === EModelEndpoint.anthropic) {
-    if (
-      preset.model &&
-      (preset.model === 'claude-3-5-sonnet-latest' ||
-       preset.model === 'claude-3-5-sonnet-20241022' ||
-       preset.model === 'claude-3-5-sonnet-20240620' ||
-       preset.model.startsWith('claude-3-5-sonnet'))
-    ) {
-      preset.model = 'claude-sonnet-4-5-20250929';
-    } else if (!preset.model) {
+    if (!preset.model) {
       // If no model is specified, use the default Claude Sonnet 4.5
+      preset.model = 'claude-sonnet-4-5-20250929';
+    } else if (
+      // Upgrade old Claude 3.5 models
+      preset.model === 'claude-3-5-sonnet-latest' ||
+      preset.model === 'claude-3-5-sonnet-20241022' ||
+      preset.model === 'claude-3-5-sonnet-20240620' ||
+      preset.model.startsWith('claude-3-5-sonnet') ||
+      // Upgrade Haiku models to Sonnet
+      preset.model === 'claude-haiku-4-5' ||
+      preset.model === 'claude-haiku-4-5-20251001' ||
+      preset.model.startsWith('claude-haiku-4-5') ||
+      preset.model.startsWith('claude-3-5-haiku') ||
+      preset.model.startsWith('claude-haiku-3')
+    ) {
       preset.model = 'claude-sonnet-4-5-20250929';
     }
   }
