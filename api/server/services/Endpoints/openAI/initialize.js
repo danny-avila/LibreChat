@@ -101,7 +101,16 @@ const initializeClient = async ({
     clientOptions.dropParams = azureConfig.groupMap[groupName].dropParams;
     clientOptions.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
 
-    apiKey = azureOptions.azureOpenAIApiKey;
+    if (shouldUseEntraId()) {
+      apiKey = 'entra-id-placeholder';
+      clientOptions.headers = {
+        ...clientOptions.headers,
+        Authorization: `Bearer ${await getEntraIdAccessToken()}`,
+      };
+    } else {
+      apiKey = azureOptions.azureOpenAIApiKey;
+    }
+
     clientOptions.azure = !serverless && azureOptions;
     if (serverless === true) {
       clientOptions.defaultQuery = azureOptions.azureOpenAIApiVersion

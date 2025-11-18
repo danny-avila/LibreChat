@@ -98,7 +98,7 @@ export const initializeOpenAI = async ({
       clientOptions.dropParams = groupMap[groupName]?.dropParams;
     }
 
-    apiKey = azureOptions.azureOpenAIApiKey;
+    apiKey = shouldUseEntraId() ? 'entra-id-placeholder' : azureOptions.azureOpenAIApiKey;
     clientOptions.azure = !serverless ? azureOptions : undefined;
 
     if (serverless === true) {
