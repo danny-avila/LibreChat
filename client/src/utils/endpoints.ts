@@ -263,6 +263,11 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
     ) {
       preset.model = 'claude-sonnet-4-5-20250929';
     }
+    
+    // Enable web search by default if not explicitly set
+    if (preset.web_search === undefined || preset.web_search === null) {
+      preset.web_search = true;
+    }
   }
   
   return {

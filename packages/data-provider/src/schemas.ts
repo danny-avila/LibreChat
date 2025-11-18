@@ -435,7 +435,7 @@ export const anthropicSettings = {
     },
   },
   web_search: {
-    default: false as const,
+    default: true as const,
   },
 };
 

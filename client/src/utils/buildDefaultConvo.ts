@@ -111,6 +111,11 @@ const buildDefaultConvo = ({
       // If no model is set, use the default Claude Sonnet 4.5
       defaultConvo.model = 'claude-sonnet-4-5-20250929';
     }
+    
+    // Enable web search by default if not explicitly set
+    if (defaultConvo.web_search === undefined || defaultConvo.web_search === null) {
+      defaultConvo.web_search = true;
+    }
   }
 
   // Ensures assistant_id is always defined
