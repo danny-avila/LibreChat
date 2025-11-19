@@ -114,7 +114,10 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
         isSmallScreen === true ? 'mb-2 h-14 rounded-xl' : '',
       )}
     >
-      <Search className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary" />
+      <Search
+        aria-hidden="true"
+        className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary"
+      />
       <input
         type="text"
         ref={inputRef}
