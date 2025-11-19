@@ -4,12 +4,13 @@
 services:
   api:
     container_name: LibreChat
-    image: ${API_IMAGE:-librechatneo-api}
+    image: ${API_IMAGE:-ghcr.io/neomint-research/librechatneo:latest}
     ports:
       - "${PORT:-3080}:${PORT:-3080}"
     depends_on:
       - mongodb
       - rag_api
+      - searxng
       - ws-local
     build:
       context: .
@@ -18,6 +19,8 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
     environment:
       - HOST=0.0.0.0
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
@@ -25,6 +28,8 @@ services:
       - RAG_PORT=${RAG_PORT:-8000}
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
       - WS_LOCAL_BASE_URL=http://ws-local:7001
+      - SEARCH_PROXY_URL=${SEARCH_PROXY_URL:-http://ws-local:7001}
+      - SEARXNG_BASE_URL=${SEARXNG_BASE_URL:-http://searxng:8080}
       - WEB_SEARCH_PROVIDER=${WEB_SEARCH_PROVIDER:-local}
       - WEB_SCRAPER=${WEB_SCRAPER:-local}
       - WEB_RERANK=${WEB_RERANK:-none}
@@ -40,6 +45,9 @@ services:
       - app_uploads:/app/uploads
       # Use a named volume for logs to avoid host permission issues
       - app_logs:/app/api/logs
+    networks:
+      - default
+      - mintapp-librechat
 
   client:
     image: nginx:1.27.0-alpine
@@ -52,6 +60,9 @@ services:
     restart: always
     volumes:
       - ./client/nginx.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - default
+      - mintapp-librechat
 
   mongodb:
     container_name: chat-mongodb
@@ -61,6 +72,9 @@ services:
       # Use a named volume to avoid host permission issues
       - mongo_data:/data/db
     command: mongod --noauth
+    networks:
+      - default
+      - mintapp-librechat
 
   meilisearch:
     container_name: chat-meilisearch
@@ -73,6 +87,9 @@ services:
     volumes:
       # Use a named volume to avoid host permission issues
       - meili_data_v1_12:/meili_data
+    networks:
+      - default
+      - mintapp-librechat
 
   vectordb:
     container_name: vectordb
@@ -84,6 +101,9 @@ services:
     restart: always
     volumes:
       - pgdata2:/var/lib/postgresql/data
+    networks:
+      - default
+      - mintapp-librechat
 
   rag_api:
     container_name: rag_api
@@ -98,6 +118,9 @@ services:
     restart: always
     depends_on:
       - vectordb
+    networks:
+      - default
+      - mintapp-librechat
 
   ollama:
     container_name: ollama
@@ -114,27 +137,35 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    networks:
+      - default
+      - mintapp-librechat
 
   searxng:
     container_name: searxng
-    image: ${SEARXNG_IMAGE:-librechatneo-searxng}
-    build:
-      context: ./docker/searxng
+    image: ${SEARXNG_IMAGE:-ghcr.io/neomint-research/librechatneo-searxng:latest}
     restart: always
+    env_file:
+      - .env
     environment:
       - SEARXNG_BASE_URL=${SEARXNG_BASE_URL:-http://searxng:8080}
       - INSTANCE_NAME=${SEARXNG_INSTANCE_NAME:-LibreChat SearxNG}
       - BIND_ADDRESS=0.0.0.0
       - SEARXNG_SECRET=${SEARXNG_SECRET:-local_websearch_secret}
+    volumes:
+      - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    networks:
+      - default
+      - mintapp-librechat
 
   ws-local:
-    image: ${WS_LOCAL_IMAGE:-librechatneo-ws-local}
-    build:
-      context: ./ws-local
+    image: ${WS_LOCAL_IMAGE:-ghcr.io/neomint-research/librechatneo-ws-local:latest}
     container_name: ws-local
     restart: always
     depends_on:
       - searxng
+    env_file:
+      - .env
     environment:
       - PORT=7001
       - SEARXNG_URL=${SEARXNG_BASE_URL:-http://searxng:8080}
@@ -143,6 +174,11 @@ services:
       - CACHE_TTL_MS=600000
       - PLAYWRIGHT_NAV_TIMEOUT=8000
       - TOTAL_TIMEOUT_MS=30000
+    expose:
+      - "7001"
+    networks:
+      - default
+      - mintapp-librechat
 
 volumes:
   pgdata2:
@@ -152,3 +188,8 @@ volumes:
   meili_data_v1_12:
   app_images:
   app_uploads:
+
+networks:
+  mintapp-librechat:
+    driver: bridge
+    name: mintapp-librechat-network

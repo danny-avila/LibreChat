@@ -13,6 +13,18 @@ jobs:
   build_and_publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image_name: librechatneo
+            context: .
+            file: Dockerfile
+          - image_name: librechatneo-ws-local
+            context: ./ws-local
+            file: ws-local/Dockerfile
+          - image_name: librechatneo-searxng
+            context: ./docker/searxng
+            file: docker/searxng/Dockerfile
     env:
       REGISTRY: ghcr.io
       NAMESPACE: neomint-research
@@ -31,30 +43,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & push LibreChat API image
+      - name: Build and push ${{ matrix.image_name }}
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           push: true
+          # Single-arch (runner default, linux/amd64); no QEMU required
           tags: |
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/librechatneo:latest
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/librechatneo:${{ env.SHA_TAG }}
-
-      - name: Build & push ws-local image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./ws-local
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/librechatneo-ws-local:latest
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/librechatneo-ws-local:${{ env.SHA_TAG }}
-
-      - name: Build & push searxng image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./docker/searxng
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/librechatneo-searxng:latest
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/librechatneo-searxng:${{ env.SHA_TAG }}
+            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ matrix.image_name }}:latest
+            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ matrix.image_name }}:${{ env.SHA_TAG }}

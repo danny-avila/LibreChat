@@ -7,7 +7,7 @@ LibreChat bundles two helper containers to power the “Local (no keys)” brows
 ## SearxNG (`searxng` service)
 
 - **Role**: provides meta-search over multiple public engines and returns normalized JSON that ws-local can post-process.
-- **Image & Port**: runs `searxng/searxng:latest`, listening on `http://searxng:8080` within the compose network.
+- **Image & Port**: runs `${SEARXNG_IMAGE:-ghcr.io/neomint-research/librechatneo-searxng:latest}`, listening on `http://searxng:8080` within the compose network. Override `SEARXNG_IMAGE` to pin a different fork or fall back to upstream `searxng/searxng`.
 - **Configuration**:
   - Mounts `docker/searxng/settings.yml` (read-only) for engine selection, result categories, and throttling. Edit this file to customize sources.
   - Key environment variables (set in `docker-compose.yml`):
@@ -30,6 +30,7 @@ LibreChat bundles two helper containers to power the “Local (no keys)” brows
 
 - **Role**: the single entry point LibreChat calls. It orchestrates search, scraping, optional reranking, and enforces safety limits (blocked protocols, private IPs, size caps, per-host concurrency).
 - **Build & Runtime**: constructed from `./ws-local` atop `mcr.microsoft.com/playwright:v1.56.1-jammy`. Node runs `src/index.js`; Playwright powers headless Chromium fetches.
+- **Image availability**: the `neo-publish-ghcr` workflow pushes a ready-to-run build to `${WS_LOCAL_IMAGE:-ghcr.io/neomint-research/librechatneo-ws-local:latest}`, so remote stacks can simply `docker pull` instead of compiling ws-local locally.
 - **HTTP API**:
   - `GET /health` → `{ ok: true }` readiness check used by backend status chips.
   - `GET /search` → wraps SearxNG (`q`, `max`, `safe` params). Responds with `{ query, safe, results[] }`.
@@ -74,9 +75,9 @@ Since both containers live on the compose network, keep them alongside the API s
 
 | Service  | Source / Image                              | Internal URL          | Config Highlights                                    | Responsibilities                                     |
 |----------|---------------------------------------------|-----------------------|------------------------------------------------------|------------------------------------------------------|
-| searxng  | `${SEARXNG_IMAGE:-searxng/searxng:latest}`   | `http://searxng:8080` | Configure via env (`SEARXNG_BASE_URL`, etc.)         | Aggregate meta-search results                         |
-| ws-local | `ws-local/Dockerfile` → `${WS_LOCAL_IMAGE:-librechatneo-ws-local}` | `http://ws-local:7001` | Env limits in `docker-compose.yml`, `WS_LOCAL_BASE_URL` in API | Orchestrate search, scraping, rerank, safety filtering |
+| searxng  | GHCR `${SEARXNG_IMAGE:-ghcr.io/neomint-research/librechatneo-searxng:latest}` (built from `docker/searxng`) | `http://searxng:8080` | Configure via env (`SEARXNG_BASE_URL`, etc.) and optional bind-mounted `settings.yml` | Aggregate meta-search results                         |
+| ws-local | GHCR `${WS_LOCAL_IMAGE:-ghcr.io/neomint-research/librechatneo-ws-local:latest}` (built from `ws-local/Dockerfile`) | `http://ws-local:7001` | Env limits in `docker-compose.yml`, `WS_LOCAL_BASE_URL` in API | Orchestrate search, scraping, rerank, safety filtering |
 
 ### Pre-built Images & CI
 
-`docker-compose.yml` tags the services with overridable image names (e.g., `API_IMAGE`, `WS_LOCAL_IMAGE`, `SEARXNG_IMAGE`). Build/push the API and ws-local images in CI so deploy targets can `docker compose pull && docker compose up -d`. SearxNG defaults to the upstream image, so no custom build is necessary unless you want to pin a fork. Use this document whenever you customize browsing, upgrade Playwright/SearxNG, or debug web-search behavior in LibreChat.
+`docker-compose.yml` tags the services with overridable image names (e.g., `API_IMAGE`, `WS_LOCAL_IMAGE`, `SEARXNG_IMAGE`). The `neo-publish-ghcr` workflow builds the API, ws-local, and SearxNG images from this repo and publishes them to GHCR under those defaults, so deploy targets can simply run `docker compose pull && docker compose up -d`. Override the env vars if you need a fork or a locally-built variant. Use this document whenever you customize browsing, upgrade Playwright/SearxNG, or debug web-search behavior in LibreChat.
