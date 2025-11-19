@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import _axios from 'axios';
 import { URL } from 'url';
+import _axios from 'axios';
+import * as net from 'net';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
 import type { ActionMetadata, ActionMetadataRuntime } from './types/agents';
@@ -614,31 +615,44 @@ export function validateActionDomain(
     /** Spec hostname only */
     const specHostname = specUrl.hostname;
 
-    /** Normalized client domain */
-    let normalizedClientDomain: string;
-    if (clientProvidedDomain.startsWith('http')) {
-      normalizedClientDomain = extractDomainFromUrl(clientProvidedDomain);
-    } else {
-      /** IPv4/IPv6 pattern match */
-      const isIPAddress = /^(\d{1,3}\.){3}\d{1,3}$|^\[?[a-fA-F0-9:]+\]?$/.test(
-        clientProvidedDomain,
-      );
+    /** Extract hostname from client domain if it's a full URL */
+    let clientHostname = clientProvidedDomain;
+    let clientHasProtocol = false;
 
-      if (isIPAddress) {
-        normalizedClientDomain = `${specUrl.protocol}//${clientProvidedDomain}`;
-      } else {
-        normalizedClientDomain = `https://${clientProvidedDomain}`;
+    if (clientProvidedDomain.startsWith('http://') || clientProvidedDomain.startsWith('https://')) {
+      try {
+        const clientUrl = new URL(clientProvidedDomain);
+        clientHostname = clientUrl.hostname;
+        clientHasProtocol = true;
+      } catch {
+        // If parsing fails, treat as hostname
+        clientHasProtocol = false;
       }
     }
 
-    /** Check if client domain is IP */
-    const isIPAddress = /^(\d{1,3}\.){3}\d{1,3}$|^\[?[a-fA-F0-9:]+\]?$/.test(clientProvidedDomain);
+    /** Normalize IPv6 addresses by removing brackets for comparison */
+    const normalizedClientHostname = clientHostname.replace(/^\[(.+)\]$/, '$1');
+    const normalizedSpecHostname = specHostname.replace(/^\[(.+)\]$/, '$1');
+
+    /** Check if hostname is valid IP using Node.js built-in net module */
+    const isIPAddress = net.isIP(normalizedClientHostname) !== 0;
+
+    /** Normalized client domain */
+    let normalizedClientDomain: string;
+    if (clientHasProtocol) {
+      normalizedClientDomain = extractDomainFromUrl(clientProvidedDomain);
+    } else {
+      // IP addresses inherit protocol from spec, domains default to https
+      if (isIPAddress) {
+        normalizedClientDomain = `${specUrl.protocol}//${clientHostname}`;
+      } else {
+        normalizedClientDomain = `https://${clientHostname}`;
+      }
+    }
 
     if (
       normalizedSpecDomain === normalizedClientDomain ||
-      (isIPAddress &&
-        clientProvidedDomain === specHostname &&
-        !clientProvidedDomain.includes('://'))
+      (!clientHasProtocol && isIPAddress && normalizedClientHostname === normalizedSpecHostname)
     ) {
       return {
         isValid: true,
