@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import _axios from 'axios';
 import { URL } from 'url';
+import _axios from 'axios';
+import * as net from 'net';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
 import type { ActionMetadata, ActionMetadataRuntime } from './types/agents';
@@ -567,16 +568,18 @@ export type ValidationResult = {
 };
 
 /**
- * Extracts the domain from a URL string.
- * @param {string} url - The URL to extract the domain from.
- * @returns {string} The extracted domain (hostname with protocol).
+ * Extracts domain from URL (protocol + hostname).
+ * @param url - URL to extract from
+ * @returns Protocol and hostname (e.g., "https://example.com")
  */
 export function extractDomainFromUrl(url: string): string {
   try {
+    /** Parsed URL object */
     const parsedUrl = new URL(url);
-    // Return protocol + hostname (e.g., "https://example.com")
-    // This preserves the protocol which is important for SSRF prevention
-    return `${parsedUrl.protocol}//${parsedUrl.hostname}`;
+    // Preserve brackets for IPv6 addresses using net.isIP
+    const ipVersion = net.isIP(parsedUrl.hostname);
+    const hostname = ipVersion === 6 ? `[${parsedUrl.hostname}]` : parsedUrl.hostname;
+    return `${parsedUrl.protocol}//${hostname}`;
   } catch {
     throw new Error(`Invalid URL format: ${url}`);
   }
@@ -590,45 +593,100 @@ export type DomainValidationResult = {
 };
 
 /**
- * Validates that a client-provided domain matches the domain from an OpenAPI spec server URL.
- * This is critical for preventing SSRF attacks where an attacker provides a whitelisted domain
- * but uses a different (potentially internal) URL in the raw OpenAPI spec.
- *
- * @param {string} clientProvidedDomain - The domain provided by the client (may or may not include protocol)
- * @param {string} specServerUrl - The server URL from the OpenAPI spec
- * @returns {DomainValidationResult} Validation result with normalized domains
+ * Validates client domain matches OpenAPI spec server URL domain (SSRF prevention).
+ * @param clientProvidedDomain - Domain from client (with/without protocol)
+ * @param specServerUrl - Server URL from OpenAPI spec
+ * @returns Validation result with normalized domains
  */
 export function validateActionDomain(
   clientProvidedDomain: string,
   specServerUrl: string,
 ): DomainValidationResult {
   try {
-    // Extract domain from the spec's server URL
-    const specDomain = extractDomainFromUrl(specServerUrl);
-    const normalizedSpecDomain = extractDomainFromUrl(specDomain);
+    /** Parsed spec URL */
+    const specUrl = new URL(specServerUrl);
 
-    // Normalize client-provided domain (add https:// if no protocol)
-    const normalizedClientDomain = clientProvidedDomain.startsWith('http')
-      ? clientProvidedDomain
-      : `https://${clientProvidedDomain}`;
-
-    // Compare normalized domains
-    // We check both the normalized client domain and the raw client domain
-    // to handle cases where the client might provide "example.com" vs "https://example.com"
-    if (
-      normalizedSpecDomain !== normalizedClientDomain &&
-      normalizedSpecDomain !== clientProvidedDomain
-    ) {
+    if (specUrl.protocol !== 'http:' && specUrl.protocol !== 'https:') {
       return {
         isValid: false,
-        message: `Domain mismatch: Client provided '${clientProvidedDomain}', but spec uses '${normalizedSpecDomain}'`,
+        message: `Invalid protocol: Only HTTP and HTTPS are allowed, got ${specUrl.protocol}`,
+      };
+    }
+
+    /** Spec hostname only */
+    const specHostname = specUrl.hostname;
+    /** Spec domain with protocol (handle IPv6 brackets) */
+    const specIpVersion = net.isIP(specHostname);
+    const normalizedSpecDomain =
+      specIpVersion === 6
+        ? `${specUrl.protocol}//[${specHostname}]`
+        : `${specUrl.protocol}//${specHostname}`;
+
+    /** Extract hostname from client domain if it's a full URL */
+    let clientHostname = clientProvidedDomain;
+    let clientHasProtocol = false;
+
+    // Check for any protocol in the client domain
+    if (clientProvidedDomain.includes('://')) {
+      if (
+        !clientProvidedDomain.startsWith('http://') &&
+        !clientProvidedDomain.startsWith('https://')
+      ) {
+        return {
+          isValid: false,
+          message: `Invalid protocol: Only HTTP and HTTPS are allowed in client domain`,
+        };
+      }
+      try {
+        const clientUrl = new URL(clientProvidedDomain);
+        clientHostname = clientUrl.hostname;
+        clientHasProtocol = true;
+      } catch {
+        // If parsing fails, treat as hostname
+        clientHasProtocol = false;
+      }
+    }
+
+    /** Normalize IPv6 addresses by removing brackets for comparison */
+    const normalizedClientHostname = clientHostname.replace(/^\[(.+)\]$/, '$1');
+    const normalizedSpecHostname = specHostname.replace(/^\[(.+)\]$/, '$1');
+
+    /** Check if hostname is valid IP using Node.js built-in net module */
+    const isIPAddress = net.isIP(normalizedClientHostname) !== 0;
+
+    /** Normalized client domain */
+    let normalizedClientDomain: string;
+    if (clientHasProtocol) {
+      normalizedClientDomain = extractDomainFromUrl(clientProvidedDomain);
+    } else {
+      // IP addresses inherit protocol from spec, domains default to https
+      if (isIPAddress) {
+        // IPv6 addresses need brackets in URLs
+        const ipVersion = net.isIP(normalizedClientHostname);
+        const hostname =
+          ipVersion === 6 && !clientHostname.startsWith('[')
+            ? `[${normalizedClientHostname}]`
+            : clientHostname;
+        normalizedClientDomain = `${specUrl.protocol}//${hostname}`;
+      } else {
+        normalizedClientDomain = `https://${clientHostname}`;
+      }
+    }
+
+    if (
+      normalizedSpecDomain === normalizedClientDomain ||
+      (!clientHasProtocol && isIPAddress && normalizedClientHostname === normalizedSpecHostname)
+    ) {
+      return {
+        isValid: true,
         normalizedSpecDomain,
         normalizedClientDomain,
       };
     }
 
     return {
-      isValid: true,
+      isValid: false,
+      message: `Domain mismatch: Client provided '${clientProvidedDomain}', but spec uses '${specHostname}'`,
       normalizedSpecDomain,
       normalizedClientDomain,
     };
