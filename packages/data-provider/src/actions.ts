@@ -567,15 +567,14 @@ export type ValidationResult = {
 };
 
 /**
- * Extracts the domain from a URL string.
- * @param {string} url - The URL to extract the domain from.
- * @returns {string} The extracted domain (hostname with protocol).
+ * Extracts domain from URL (protocol + hostname).
+ * @param url - URL to extract from
+ * @returns Protocol and hostname (e.g., "https://example.com")
  */
 export function extractDomainFromUrl(url: string): string {
   try {
+    /** Parsed URL object */
     const parsedUrl = new URL(url);
-    // Return protocol + hostname (e.g., "https://example.com")
-    // This preserves the protocol which is important for SSRF prevention
     return `${parsedUrl.protocol}//${parsedUrl.hostname}`;
   } catch {
     throw new Error(`Invalid URL format: ${url}`);
@@ -590,23 +589,19 @@ export type DomainValidationResult = {
 };
 
 /**
- * Validates that a client-provided domain matches the domain from an OpenAPI spec server URL.
- * This is critical for preventing SSRF attacks where an attacker provides a whitelisted domain
- * but uses a different (potentially internal) URL in the raw OpenAPI spec.
- *
- * @param {string} clientProvidedDomain - The domain provided by the client (may or may not include protocol)
- * @param {string} specServerUrl - The server URL from the OpenAPI spec
- * @returns {DomainValidationResult} Validation result with normalized domains
+ * Validates client domain matches OpenAPI spec server URL domain (SSRF prevention).
+ * @param clientProvidedDomain - Domain from client (with/without protocol)
+ * @param specServerUrl - Server URL from OpenAPI spec
+ * @returns Validation result with normalized domains
  */
 export function validateActionDomain(
   clientProvidedDomain: string,
   specServerUrl: string,
 ): DomainValidationResult {
   try {
-    // Parse the spec URL to validate and extract components
+    /** Parsed spec URL */
     const specUrl = new URL(specServerUrl);
 
-    // SECURITY: Only allow HTTP and HTTPS protocols for OpenAPI specs
     if (specUrl.protocol !== 'http:' && specUrl.protocol !== 'https:') {
       return {
         isValid: false,
@@ -614,36 +609,29 @@ export function validateActionDomain(
       };
     }
 
-    // Extract domain from the spec's server URL (returns protocol + hostname)
+    /** Spec domain with protocol */
     const normalizedSpecDomain = extractDomainFromUrl(specServerUrl);
+    /** Spec hostname only */
     const specHostname = specUrl.hostname;
 
-    // Normalize client-provided domain
+    /** Normalized client domain */
     let normalizedClientDomain: string;
     if (clientProvidedDomain.startsWith('http')) {
-      // Client provided a full URL, extract domain (protocol + hostname)
       normalizedClientDomain = extractDomainFromUrl(clientProvidedDomain);
     } else {
-      // Client provided just a hostname/domain
-      // Default to https:// for security, unless the spec is http:// and it's an IP address
-      // IP addresses are often used internally with http, so we allow matching the spec's protocol for IPs
+      /** IPv4/IPv6 pattern match */
       const isIPAddress = /^(\d{1,3}\.){3}\d{1,3}$|^\[?[a-fA-F0-9:]+\]?$/.test(
         clientProvidedDomain,
       );
 
       if (isIPAddress) {
-        // For IP addresses, use the same protocol as the spec
         normalizedClientDomain = `${specUrl.protocol}//${clientProvidedDomain}`;
       } else {
-        // For domain names, default to https:// for security
         normalizedClientDomain = `https://${clientProvidedDomain}`;
       }
     }
 
-    // Compare domains
-    // We check if either:
-    // 1. The normalized domains match (both with protocol)
-    // 2. The client provided just a hostname that matches the spec's hostname (only for IPs)
+    /** Check if client domain is IP */
     const isIPAddress = /^(\d{1,3}\.){3}\d{1,3}$|^\[?[a-fA-F0-9:]+\]?$/.test(clientProvidedDomain);
 
     if (
