@@ -44,7 +44,13 @@ const getMCPTools = async (req, res) => {
         continue;
       }
 
-      const serverTools = await mcpManager.getServerToolFunctions(userId, serverName);
+      let serverTools;
+      try {
+        serverTools = await mcpManager.getServerToolFunctions(userId, serverName);
+      } catch (error) {
+        logger.error(`[getMCPTools] Error fetching tools for server ${serverName}:`, error);
+        continue;
+      }
       if (!serverTools) {
         logger.debug(`[getMCPTools] No tools found for server ${serverName}`);
         continue;

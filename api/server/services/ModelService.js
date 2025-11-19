@@ -80,7 +80,9 @@ const fetchModels = async ({
 
   try {
     const options = {
-      headers: {},
+      headers: {
+        ...(headers ?? {}),
+      },
       timeout: 5000,
     };
 
