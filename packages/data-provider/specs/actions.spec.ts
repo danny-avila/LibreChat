@@ -2186,6 +2186,42 @@ describe('SSRF Protection', () => {
       expect(result.message).toContain('data:');
     });
 
+    // Tests for Copilot second review catches
+    it('rejects unsupported protocol in client domain', () => {
+      const result = validateActionDomain('ftp://evil.com', 'https://trusted.com/api');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Invalid protocol');
+      expect(result.message).toContain('client domain');
+    });
+
+    it('rejects WebSocket protocol in client domain', () => {
+      const result = validateActionDomain('ws://evil.com', 'https://trusted.com/api');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Invalid protocol');
+      expect(result.message).toContain('client domain');
+    });
+
+    it('rejects file protocol in client domain', () => {
+      const result = validateActionDomain('file:///etc/passwd', 'https://trusted.com/api');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Invalid protocol');
+      expect(result.message).toContain('client domain');
+    });
+
+    it('handles IPv6 address without brackets from client', () => {
+      const result = validateActionDomain('2001:db8::1', 'http://[2001:db8::1]/api');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedClientDomain).toBe('http://[2001:db8::1]');
+      expect(result.normalizedSpecDomain).toBe('http://[2001:db8::1]');
+    });
+
+    it('handles IPv6 address with brackets from client', () => {
+      const result = validateActionDomain('[2001:db8::1]', 'http://[2001:db8::1]/api');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedClientDomain).toBe('http://[2001:db8::1]');
+      expect(result.normalizedSpecDomain).toBe('http://[2001:db8::1]');
+    });
+
     // Ensure legitimate internal use cases still work
     it('allows legitimate internal API with matching IP', () => {
       const result = validateActionDomain('10.0.0.5', 'http://10.0.0.5:8080/api');

@@ -576,7 +576,10 @@ export function extractDomainFromUrl(url: string): string {
   try {
     /** Parsed URL object */
     const parsedUrl = new URL(url);
-    return `${parsedUrl.protocol}//${parsedUrl.hostname}`;
+    // Preserve brackets for IPv6 addresses using net.isIP
+    const ipVersion = net.isIP(parsedUrl.hostname);
+    const hostname = ipVersion === 6 ? `[${parsedUrl.hostname}]` : parsedUrl.hostname;
+    return `${parsedUrl.protocol}//${hostname}`;
   } catch {
     throw new Error(`Invalid URL format: ${url}`);
   }
@@ -610,16 +613,30 @@ export function validateActionDomain(
       };
     }
 
-    /** Spec domain with protocol */
-    const normalizedSpecDomain = extractDomainFromUrl(specServerUrl);
     /** Spec hostname only */
     const specHostname = specUrl.hostname;
+    /** Spec domain with protocol (handle IPv6 brackets) */
+    const specIpVersion = net.isIP(specHostname);
+    const normalizedSpecDomain =
+      specIpVersion === 6
+        ? `${specUrl.protocol}//[${specHostname}]`
+        : `${specUrl.protocol}//${specHostname}`;
 
     /** Extract hostname from client domain if it's a full URL */
     let clientHostname = clientProvidedDomain;
     let clientHasProtocol = false;
 
-    if (clientProvidedDomain.startsWith('http://') || clientProvidedDomain.startsWith('https://')) {
+    // Check for any protocol in the client domain
+    if (clientProvidedDomain.includes('://')) {
+      if (
+        !clientProvidedDomain.startsWith('http://') &&
+        !clientProvidedDomain.startsWith('https://')
+      ) {
+        return {
+          isValid: false,
+          message: `Invalid protocol: Only HTTP and HTTPS are allowed in client domain`,
+        };
+      }
       try {
         const clientUrl = new URL(clientProvidedDomain);
         clientHostname = clientUrl.hostname;
@@ -644,7 +661,13 @@ export function validateActionDomain(
     } else {
       // IP addresses inherit protocol from spec, domains default to https
       if (isIPAddress) {
-        normalizedClientDomain = `${specUrl.protocol}//${clientHostname}`;
+        // IPv6 addresses need brackets in URLs
+        const ipVersion = net.isIP(normalizedClientHostname);
+        const hostname =
+          ipVersion === 6 && !clientHostname.startsWith('[')
+            ? `[${normalizedClientHostname}]`
+            : clientHostname;
+        normalizedClientDomain = `${specUrl.protocol}//${hostname}`;
       } else {
         normalizedClientDomain = `https://${clientHostname}`;
       }
