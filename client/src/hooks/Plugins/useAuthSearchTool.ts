@@ -17,6 +17,7 @@ export type SearchApiKeyFormData = {
   jinaApiKey: string;
   jinaApiUrl: string;
   cohereApiKey: string;
+  simpleRerankerInstanceUrl: string;
 };
 
 const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
@@ -57,6 +58,7 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
         jinaApiKey: data.jinaApiKey,
         jinaApiUrl: data.jinaApiUrl,
         cohereApiKey: data.cohereApiKey,
+        simpleRerankerInstanceUrl: data.simpleRerankerInstanceUrl,
       }).reduce(
         (acc, [key, value]) => {
           if (value) {
