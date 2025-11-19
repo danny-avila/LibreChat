@@ -11,7 +11,7 @@ export enum DATE_RANGE {
 }
 
 export type SearchProvider = 'serper' | 'searxng';
-export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'none';
+export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'simple' | 'none';
 
 export interface Highlight {
   score: number;

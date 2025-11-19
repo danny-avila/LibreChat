@@ -31,6 +31,7 @@ export const webSearchAuth = {
       jinaApiUrl: 0 as const,
     },
     cohere: { cohereApiKey: 1 as const },
+    simple: { },
   },
 };
 
