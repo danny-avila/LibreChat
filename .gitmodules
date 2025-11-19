@@ -1,0 +1,4 @@
+[submodule "docs-site"]
+	path = docs-site
+	url = https://github.com/LibreChat-AI/librechat.ai.git
+	branch = main

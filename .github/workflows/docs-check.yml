@@ -1,0 +1,138 @@
+# Documentation Check Workflow
+#
+# Purpose:
+#   Reminds contributors to update documentation when making code changes
+#   that typically require documentation updates (features, APIs, configs).
+#
+# When it runs:
+#   - Automatically on PRs that modify:
+#     * API code (api/**)
+#     * Frontend code (client/src/**)
+#     * Packages (packages/**)
+#     * Configuration files (librechat.example.yaml, .env.example)
+#
+# What it does:
+#   1. Checks if the docs-site submodule was updated in the PR
+#   2. Checks how long since documentation was last updated
+#   3. Posts a helpful comment on PRs reminding about documentation
+#   4. Provides instructions on how to update docs
+#
+# When it comments:
+#   - PR modifies feature/config files AND docs weren't updated
+#   - OR documentation hasn't been updated in 30+ days
+#
+# Note: This is a reminder only - it does NOT block PR merging
+#
+name: Documentation Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'api/**'
+      - 'client/src/**'
+      - 'packages/**'
+      - 'librechat.example.yaml'
+      - '.env.example'
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  check-docs:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+      
+      - name: Check if docs were updated
+        id: check
+        run: |
+          # Check if docs-site submodule was modified in this PR
+          DOCS_MODIFIED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -c '^docs-site' || echo "0")
+          echo "docs_modified=$DOCS_MODIFIED" >> $GITHUB_OUTPUT
+          
+          # Check how long since docs were last updated
+          cd docs-site
+          DAYS_SINCE_UPDATE=$(( ($(date +%s) - $(git log -1 --format=%ct)) / 86400 ))
+          echo "days_since_update=$DAYS_SINCE_UPDATE" >> $GITHUB_OUTPUT
+          cd ..
+          
+          # Check for specific file types that typically need docs
+          FEATURE_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '(routes|endpoints|config|yaml|\.env)' | wc -l)
+          echo "feature_files=$FEATURE_FILES" >> $GITHUB_OUTPUT
+          
+          # Determine if we should comment
+          SHOULD_COMMENT="false"
+          if [ "$DOCS_MODIFIED" = "0" ]; then
+            if [ "$FEATURE_FILES" -gt "0" ] || [ "$DAYS_SINCE_UPDATE" -gt "30" ]; then
+              SHOULD_COMMENT="true"
+            fi
+          fi
+          echo "should_comment=$SHOULD_COMMENT" >> $GITHUB_OUTPUT
+      
+      - name: Prepare documentation reminder message
+        if: steps.check.outputs.should_comment == 'true'
+        id: message
+        run: |
+          DAYS_OLD=${{ steps.check.outputs.days_since_update }}
+          FEATURE_FILES=${{ steps.check.outputs.feature_files }}
+          
+          # Build message body
+          MESSAGE="## 📚 Documentation Check"$'\n\n'
+          
+          if [ "$FEATURE_FILES" -gt "0" ]; then
+            MESSAGE+="⚠️ This PR modifies files that typically require documentation updates:"$'\n'
+            MESSAGE+="- Configuration files"$'\n'
+            MESSAGE+="- API routes/endpoints"$'\n'
+            MESSAGE+="- Environment variables"$'\n\n'
+          fi
+          
+          if [ "$DAYS_OLD" -gt "30" ]; then
+            MESSAGE+="ℹ️ The documentation submodule hasn't been updated in ${DAYS_OLD} days."$'\n\n'
+          fi
+          
+          MESSAGE+="**Please consider:**"$'\n'
+          MESSAGE+="- Does this change require documentation updates?"$'\n'
+          MESSAGE+="- Should the \`docs-site\` submodule be updated?"$'\n'
+          MESSAGE+="- Are there new features, config options, or API changes?"$'\n\n'
+          MESSAGE+="**To update documentation:**"$'\n'
+          MESSAGE+="\`\`\`bash"$'\n'
+          MESSAGE+="cd docs-site"$'\n'
+          MESSAGE+="git checkout -b docs/your-feature"$'\n'
+          MESSAGE+="# Make your changes"$'\n'
+          MESSAGE+="git commit -m \"docs: Document feature X\""$'\n'
+          MESSAGE+="git push origin docs/your-feature"$'\n'
+          MESSAGE+="cd .."$'\n'
+          MESSAGE+="git add docs-site"$'\n'
+          MESSAGE+="\`\`\`"$'\n\n'
+          MESSAGE+="See [Documentation Guidelines](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md#9-documentation-guidelines) for more details."$'\n\n'
+          MESSAGE+="_This is an automated reminder. If documentation is not needed, you can safely ignore this message._"
+          
+          # Save to output (handle multiline with EOF delimiter)
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$MESSAGE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Find existing documentation comment
+        if: steps.check.outputs.should_comment == 'true'
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '📚 Documentation Check'
+      
+      - name: Create or update documentation reminder comment
+        if: steps.check.outputs.should_comment == 'true'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ steps.message.outputs.body }}
+          edit-mode: replace
