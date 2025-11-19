@@ -603,32 +603,65 @@ export function validateActionDomain(
   specServerUrl: string,
 ): DomainValidationResult {
   try {
-    // Extract domain from the spec's server URL
-    const specDomain = extractDomainFromUrl(specServerUrl);
-    const normalizedSpecDomain = extractDomainFromUrl(specDomain);
+    // Parse the spec URL to validate and extract components
+    const specUrl = new URL(specServerUrl);
 
-    // Normalize client-provided domain (add https:// if no protocol)
-    const normalizedClientDomain = clientProvidedDomain.startsWith('http')
-      ? clientProvidedDomain
-      : `https://${clientProvidedDomain}`;
-
-    // Compare normalized domains
-    // We check both the normalized client domain and the raw client domain
-    // to handle cases where the client might provide "example.com" vs "https://example.com"
-    if (
-      normalizedSpecDomain !== normalizedClientDomain &&
-      normalizedSpecDomain !== clientProvidedDomain
-    ) {
+    // SECURITY: Only allow HTTP and HTTPS protocols for OpenAPI specs
+    if (specUrl.protocol !== 'http:' && specUrl.protocol !== 'https:') {
       return {
         isValid: false,
-        message: `Domain mismatch: Client provided '${clientProvidedDomain}', but spec uses '${normalizedSpecDomain}'`,
+        message: `Invalid protocol: Only HTTP and HTTPS are allowed, got ${specUrl.protocol}`,
+      };
+    }
+
+    // Extract domain from the spec's server URL (returns protocol + hostname)
+    const normalizedSpecDomain = extractDomainFromUrl(specServerUrl);
+    const specHostname = specUrl.hostname;
+
+    // Normalize client-provided domain
+    let normalizedClientDomain: string;
+    if (clientProvidedDomain.startsWith('http')) {
+      // Client provided a full URL, extract domain (protocol + hostname)
+      normalizedClientDomain = extractDomainFromUrl(clientProvidedDomain);
+    } else {
+      // Client provided just a hostname/domain
+      // Default to https:// for security, unless the spec is http:// and it's an IP address
+      // IP addresses are often used internally with http, so we allow matching the spec's protocol for IPs
+      const isIPAddress = /^(\d{1,3}\.){3}\d{1,3}$|^\[?[a-fA-F0-9:]+\]?$/.test(
+        clientProvidedDomain,
+      );
+
+      if (isIPAddress) {
+        // For IP addresses, use the same protocol as the spec
+        normalizedClientDomain = `${specUrl.protocol}//${clientProvidedDomain}`;
+      } else {
+        // For domain names, default to https:// for security
+        normalizedClientDomain = `https://${clientProvidedDomain}`;
+      }
+    }
+
+    // Compare domains
+    // We check if either:
+    // 1. The normalized domains match (both with protocol)
+    // 2. The client provided just a hostname that matches the spec's hostname (only for IPs)
+    const isIPAddress = /^(\d{1,3}\.){3}\d{1,3}$|^\[?[a-fA-F0-9:]+\]?$/.test(clientProvidedDomain);
+
+    if (
+      normalizedSpecDomain === normalizedClientDomain ||
+      (isIPAddress &&
+        clientProvidedDomain === specHostname &&
+        !clientProvidedDomain.includes('://'))
+    ) {
+      return {
+        isValid: true,
         normalizedSpecDomain,
         normalizedClientDomain,
       };
     }
 
     return {
-      isValid: true,
+      isValid: false,
+      message: `Domain mismatch: Client provided '${clientProvidedDomain}', but spec uses '${specHostname}'`,
       normalizedSpecDomain,
       normalizedClientDomain,
     };

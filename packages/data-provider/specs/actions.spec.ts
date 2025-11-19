@@ -1738,7 +1738,7 @@ describe('SSRF Protection', () => {
       expect(result.isValid).toBe(false);
       expect(result.message).toContain('Domain mismatch');
       expect(result.message).toContain('example.com');
-      expect(result.message).toContain('https://malicious.com');
+      expect(result.message).toContain('malicious.com');
     });
 
     it('detects SSRF attempt with internal IP', () => {
@@ -1836,6 +1836,376 @@ describe('SSRF Protection', () => {
       );
       expect(result.isValid).toBe(true);
       expect(result.normalizedSpecDomain).toBe('https://api.openai.com');
+    });
+
+    // Tests for IP address validation (fix for the reported issue)
+    it('validates matching IP addresses when client provides just IP (no protocol)', () => {
+      const result = validateActionDomain('10.225.26.25', 'http://10.225.26.25:7894/api');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('http://10.225.26.25');
+      expect(result.normalizedClientDomain).toBe('http://10.225.26.25');
+    });
+
+    it('validates matching localhost IP when client provides just IP', () => {
+      const result = validateActionDomain('127.0.0.1', 'http://127.0.0.1:8080/api');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('http://127.0.0.1');
+      expect(result.normalizedClientDomain).toBe('http://127.0.0.1');
+    });
+
+    it('validates matching private network IP when client provides just IP', () => {
+      const result = validateActionDomain('192.168.1.100', 'https://192.168.1.100:443/api');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('https://192.168.1.100');
+      expect(result.normalizedClientDomain).toBe('https://192.168.1.100');
+    });
+
+    it('validates matching IP when client provides full URL with IP', () => {
+      const result = validateActionDomain('http://10.225.26.25', 'http://10.225.26.25:7894');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('http://10.225.26.25');
+      expect(result.normalizedClientDomain).toBe('http://10.225.26.25');
+    });
+
+    it('rejects mismatched IP addresses', () => {
+      const result = validateActionDomain('10.225.26.25', 'http://10.225.26.26:7894/api');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.message).toContain('10.225.26.25');
+      expect(result.message).toContain('10.225.26.26');
+    });
+
+    it('rejects IP when domain expected', () => {
+      const result = validateActionDomain('example.com', 'http://192.168.1.1/api');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.normalizedSpecDomain).toBe('http://192.168.1.1');
+    });
+
+    it('rejects domain when IP expected', () => {
+      const result = validateActionDomain('192.168.1.1', 'http://malicious.com/api');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.message).toContain('192.168.1.1');
+      expect(result.message).toContain('malicious.com');
+    });
+
+    it('handles IPv6 addresses when client provides just IP', () => {
+      const result = validateActionDomain('[::1]', 'http://[::1]:8080/api');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('http://[::1]');
+      expect(result.normalizedClientDomain).toBe('http://[::1]');
+    });
+
+    // Additional IP-based SSRF tests for comprehensive security coverage
+    it('prevents using whitelisted IP to access different IP', () => {
+      const result = validateActionDomain('192.168.1.100', 'http://192.168.1.101/api');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.message).toContain('192.168.1.100');
+      expect(result.message).toContain('192.168.1.101');
+    });
+
+    it('prevents using external IP to access localhost', () => {
+      const result = validateActionDomain('8.8.8.8', 'http://127.0.0.1/admin');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents using localhost to access private network', () => {
+      const result = validateActionDomain('127.0.0.1', 'http://192.168.1.1/admin');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('detects SSRF with 0.0.0.0 binding address', () => {
+      const result = validateActionDomain('example.com', 'http://0.0.0.0:8080');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.normalizedSpecDomain).toBe('http://0.0.0.0');
+    });
+
+    it('validates matching 0.0.0.0 when legitimately used', () => {
+      const result = validateActionDomain('0.0.0.0', 'http://0.0.0.0:8080');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('http://0.0.0.0');
+    });
+
+    it('prevents link-local address SSRF (169.254.x.x)', () => {
+      const result = validateActionDomain('api.example.com', 'http://169.254.10.10/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.normalizedSpecDomain).toBe('http://169.254.10.10');
+    });
+
+    it('validates matching link-local when explicitly allowed', () => {
+      const result = validateActionDomain('169.254.10.10', 'http://169.254.10.10/api');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('http://169.254.10.10');
+    });
+
+    it('prevents Docker internal network access via SSRF', () => {
+      const result = validateActionDomain('public-api.com', 'http://172.17.0.1/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.normalizedSpecDomain).toBe('http://172.17.0.1');
+    });
+
+    it('prevents Kubernetes service network SSRF', () => {
+      const result = validateActionDomain('api.company.com', 'http://10.96.0.1/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('detects protocol mismatch for IP addresses', () => {
+      const result = validateActionDomain('https://192.168.1.1', 'http://192.168.1.1/api');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.normalizedSpecDomain).toBe('http://192.168.1.1');
+      expect(result.normalizedClientDomain).toBe('https://192.168.1.1');
+    });
+
+    it('prevents IPv6 localhost bypass attempts', () => {
+      const result = validateActionDomain('example.com', 'http://[::1]/admin');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+      expect(result.normalizedSpecDomain).toBe('http://[::1]');
+    });
+
+    it('prevents IPv6 link-local SSRF (fe80::)', () => {
+      const result = validateActionDomain('api.example.com', 'http://[fe80::1]/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('validates matching IPv6 link-local when explicitly allowed', () => {
+      const result = validateActionDomain('[fe80::1]', 'http://[fe80::1]/api');
+      expect(result.isValid).toBe(true);
+      expect(result.normalizedSpecDomain).toBe('http://[fe80::1]');
+    });
+
+    it('prevents multicast address SSRF', () => {
+      const result = validateActionDomain('api.example.com', 'http://224.0.0.1/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents broadcast address SSRF', () => {
+      const result = validateActionDomain('api.example.com', 'http://255.255.255.255/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    // Cloud Provider Metadata Service Tests
+    it('prevents AWS IMDSv1 metadata access', () => {
+      const result = validateActionDomain(
+        'trusted-api.com',
+        'http://169.254.169.254/latest/meta-data/',
+      );
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents AWS IMDSv2 token endpoint access', () => {
+      const result = validateActionDomain(
+        'api.example.com',
+        'http://169.254.169.254/latest/api/token',
+      );
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents GCP metadata access via metadata.google.internal', () => {
+      const result = validateActionDomain(
+        'api.example.com',
+        'http://metadata.google.internal/computeMetadata/v1/',
+      );
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents Azure IMDS access', () => {
+      const result = validateActionDomain(
+        'api.example.com',
+        'http://169.254.169.254/metadata/instance?api-version=2021-02-01',
+      );
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents DigitalOcean metadata access', () => {
+      const result = validateActionDomain('api.example.com', 'http://169.254.169.254/metadata/v1/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents Oracle Cloud metadata access', () => {
+      const result = validateActionDomain(
+        'api.example.com',
+        'http://169.254.169.254/opc/v1/instance/',
+      );
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents Alibaba Cloud metadata access', () => {
+      const result = validateActionDomain(
+        'api.example.com',
+        'http://100.100.100.200/latest/meta-data/',
+      );
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    // Container & Orchestration Internal Services
+    it('prevents Kubernetes API server access', () => {
+      const result = validateActionDomain(
+        'api.example.com',
+        'https://kubernetes.default.svc.cluster.local/',
+      );
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents Docker host access from container', () => {
+      const result = validateActionDomain('api.example.com', 'http://host.docker.internal/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents Rancher metadata service access', () => {
+      const result = validateActionDomain('api.example.com', 'http://rancher-metadata/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    // Common Internal Service Ports
+    it('prevents Redis default port access', () => {
+      const result = validateActionDomain('api.example.com', 'http://10.0.0.5:6379/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents Elasticsearch default port access', () => {
+      const result = validateActionDomain('api.example.com', 'http://10.0.0.5:9200/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents MongoDB default port access', () => {
+      const result = validateActionDomain('api.example.com', 'http://10.0.0.5:27017/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents PostgreSQL default port access', () => {
+      const result = validateActionDomain('api.example.com', 'http://10.0.0.5:5432/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents MySQL default port access', () => {
+      const result = validateActionDomain('api.example.com', 'http://10.0.0.5:3306/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    // Alternative localhost representations
+    it('prevents localhost.localdomain SSRF', () => {
+      const result = validateActionDomain('api.example.com', 'http://localhost.localdomain/admin');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('validates matching localhost.localdomain when explicitly allowed', () => {
+      const result = validateActionDomain(
+        'localhost.localdomain',
+        'https://localhost.localdomain/api',
+      );
+      expect(result.isValid).toBe(true);
+    });
+
+    // Edge cases with special IPs
+    it('prevents class E reserved IP range access', () => {
+      const result = validateActionDomain('api.example.com', 'http://240.0.0.1/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('prevents TEST-NET-1 range access when not matching', () => {
+      const result = validateActionDomain('api.example.com', 'http://192.0.2.1/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Domain mismatch');
+    });
+
+    it('validates TEST-NET-1 when explicitly matching', () => {
+      const result = validateActionDomain('192.0.2.1', 'http://192.0.2.1/api');
+      expect(result.isValid).toBe(true);
+    });
+
+    // Mixed protocol and IP scenarios (unsupported protocols)
+    it('rejects unsupported WebSocket protocol', () => {
+      const result = validateActionDomain('api.example.com', 'ws://api.example.com:8080/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Invalid protocol');
+      expect(result.message).toContain('ws:');
+    });
+
+    it('rejects unsupported FTP protocol', () => {
+      const result = validateActionDomain('ftp.example.com', 'ftp://ftp.example.com/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Invalid protocol');
+      expect(result.message).toContain('ftp:');
+    });
+
+    it('rejects WSS (secure WebSocket) protocol', () => {
+      const result = validateActionDomain('api.example.com', 'wss://api.example.com:8080/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Invalid protocol');
+      expect(result.message).toContain('wss:');
+    });
+
+    it('rejects file:// protocol for local file access', () => {
+      const result = validateActionDomain('localhost', 'file:///etc/passwd');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Invalid protocol');
+      expect(result.message).toContain('file:');
+    });
+
+    it('rejects gopher:// protocol', () => {
+      const result = validateActionDomain('example.com', 'gopher://example.com/');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Invalid protocol');
+      expect(result.message).toContain('gopher:');
+    });
+
+    it('rejects data: URL protocol', () => {
+      const result = validateActionDomain('example.com', 'data:text/plain,Hello');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Invalid protocol');
+      expect(result.message).toContain('data:');
+    });
+
+    // Ensure legitimate internal use cases still work
+    it('allows legitimate internal API with matching IP', () => {
+      const result = validateActionDomain('10.0.0.5', 'http://10.0.0.5:8080/api');
+      expect(result.isValid).toBe(true);
+    });
+
+    it('allows legitimate Docker internal when explicitly specified', () => {
+      const result = validateActionDomain(
+        'host.docker.internal',
+        'https://host.docker.internal:3000/api',
+      );
+      expect(result.isValid).toBe(true);
+    });
+
+    it('allows legitimate Kubernetes service when explicitly specified', () => {
+      const result = validateActionDomain(
+        'myservice.default.svc.cluster.local',
+        'https://myservice.default.svc.cluster.local/api',
+      );
+      expect(result.isValid).toBe(true);
     });
   });
 });
