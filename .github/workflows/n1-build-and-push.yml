@@ -14,11 +14,11 @@ on:
             required: true
             default: true
             type: boolean
-          tag:
-            description: 'Version to build (must have payx suffix)'
+          branch:
+            description: 'Branch to build'
             required: true
             default: ''
-            type: string 
+            type: string
 
 jobs:
     build_and_push:
@@ -26,24 +26,12 @@ jobs:
         steps:
             - uses: actions/checkout@v3
               with:
-                fetch-depth: 0 # fetch all tags
+                fetch-depth: 0 # fetch all branches and tags
+                ref: ${{ inputs.branch }}
 
-            - name: Ensure tag ends with payx
-              run: |
-                if [[ ! "${{ inputs.tag }}" =~ payx$ ]]; then
-                  echo "Tag must end with 'payx'."
-                  exit 1
-                fi
-
-            - name: Checkout tag
-              if: ${{ inputs.tag != '' }}
-              run: |
-                git fetch --tags
-                git checkout tags/${{ inputs.tag }}
-
-            - name: Get tag commit SHA
-              id: tag_sha
-              run: echo "TAG_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
+            - name: Get commit SHA
+              id: commit_sha
+              run: echo "COMMIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
             - name: Create Config File
               run: |
@@ -63,8 +51,8 @@ jobs:
 
             - name: build and push docker container
               run: |
-                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n1.${{ env.TAG_SHA }}
-                docker push ${{ env.ACR_HOST }}/paychex/librechat:n1.${{ env.TAG_SHA }}
+                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n1.${{ env.COMMIT_SHA }}
+                docker push ${{ env.ACR_HOST }}/paychex/librechat:n1.${{ env.COMMIT_SHA }}
 
                 docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n1.latest
                 docker push ${{ env.ACR_HOST }}/paychex/librechat:n1.latest
@@ -81,7 +69,7 @@ jobs:
             - name: Update librechat image in YAML
               uses: mikefarah/yq@master
               with:
-                cmd: yq -i '.properties.template.containers[] |= select(.name == "conpaichat").image = "${{ env.ACR_HOST }}/paychex/librechat:n1.${{ env.TAG_SHA }}"' az_container_app_definitions/n1_container_app_definition.yml
+                cmd: yq -i '.properties.template.containers[] |= select(.name == "conpaichat").image = "${{ env.ACR_HOST }}/paychex/librechat:n1.${{ env.COMMIT_SHA }}"' az_container_app_definitions/n1_container_app_definition.yml
 
             - name: Azure CLI script
               uses: azure/cli@v2
