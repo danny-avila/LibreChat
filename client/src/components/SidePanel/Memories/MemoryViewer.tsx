@@ -236,13 +236,21 @@ export default function MemoryViewer() {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
       <div role="region" aria-label={localize('com_ui_memories')} className="mt-2 space-y-2">
-        <div className="flex items-center gap-4">
+        <div className="relative">
           <Input
-            placeholder={localize('com_ui_memories_filter')}
+            id="memory-search"
+            placeholder=" "
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             aria-label={localize('com_ui_memories_filter')}
+            className="peer"
           />
+          <Label
+            htmlFor="memory-search"
+            className="pointer-events-none absolute -top-1 left-3 w-auto origin-[0] translate-y-3 scale-100 rounded bg-background px-1 text-base text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75"
+          >
+            {localize('com_ui_memories_filter')}
+          </Label>
         </div>
         {/* Memory Usage and Toggle Display */}
         {(memData?.tokenLimit || hasOptOutAccess) && (
