@@ -16,8 +16,8 @@ import {
  * Handles server lifecycle operations including adding, removing, and querying configurations.
  */
 class MCPServersRegistry {
-  public readonly sharedAppServers = ServerConfigsCacheFactory.create('App', true);
-  public readonly sharedUserServers = ServerConfigsCacheFactory.create('User', true);
+  public readonly sharedAppServers = ServerConfigsCacheFactory.create('App', false);
+  public readonly sharedUserServers = ServerConfigsCacheFactory.create('User', false);
   private readonly privateUserServers: Map<string | undefined, ServerConfigsCache> = new Map();
 
   public async addPrivateUserServer(
