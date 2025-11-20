@@ -46,7 +46,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Run Helm OCI Charts Releaser
@@ -55,11 +55,11 @@ jobs:
         uses: appany/helm-oci-chart-releaser@v0.4.2
         with:
           name: librechat
-          repository: ${{ github.actor }}/librechat-chart
+          repository: ${{ github.repository_owner }}/librechat-chart
           tag: ${{ steps.chart-version.outputs.CHART_VERSION }}
           path: helm/librechat
           registry: ghcr.io
-          registry_username: ${{ github.actor }}
+          registry_username: ${{ github.repository_owner }}
           registry_password: ${{ secrets.GITHUB_TOKEN }}
       
       # this is for the librechat-rag-api chart
@@ -67,9 +67,9 @@ jobs:
         uses: appany/helm-oci-chart-releaser@v0.4.2
         with:
           name: librechat-rag-api
-          repository: ${{ github.actor }}/librechat-chart
+          repository: ${{ github.repository_owner }}/librechat-chart
           tag: ${{ steps.chart-version.outputs.CHART_VERSION }}
           path: helm/librechat-rag-api
           registry: ghcr.io
-          registry_username: ${{ github.actor }}
+          registry_username: ${{ github.repository_owner }}
           registry_password: ${{ secrets.GITHUB_TOKEN }}
