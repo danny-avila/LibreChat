@@ -51,7 +51,7 @@ const VersionTags = ({ tags }: { tags: string[] }) => {
               className={cn(
                 'w-24 justify-center border border-transparent',
                 tag === 'production'
-                  ? 'bg-green-100 text-green-500 dark:border-green-500 dark:bg-transparent dark:text-green-500'
+                  ? 'bg-green-100 text-green-700 dark:border-green-400 dark:bg-transparent dark:text-green-400'
                   : 'bg-blue-100 text-blue-500 dark:border-blue-500 dark:bg-transparent dark:text-blue-500',
               )}
               labelClassName="flex items-center m-0 justify-center gap-1"
