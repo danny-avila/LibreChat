@@ -7,6 +7,7 @@ export interface IConversation extends Document {
   user?: string;
   messages?: Types.ObjectId[];
   agentOptions?: unknown;
+  isTemporary?: boolean;
   // Fields provided by conversationPreset (adjust types as needed)
   endpoint?: string;
   endpointType?: string;

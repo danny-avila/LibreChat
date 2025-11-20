@@ -1,0 +1,41 @@
+{{- /*
+Copyright Broadcom, Inc. All Rights Reserved.
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+
+{{- if and .Values.backup.enabled (not .Values.backup.cronjob.storage.existingClaim) -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mongodb.fullname" . }}-mongodump
+  namespace: {{ include "mongodb.namespace" . | quote }}
+  labels: {{- include "common.labels.standard" . | nindent 4 }}
+    app.kubernetes.io/component: mongodump
+    {{- if .Values.backup.cronjob.labels }}
+    {{- include "common.tplvalues.render" (dict "value" .Values.backup.cronjob.labels "context" $) | nindent 4 }}
+    {{- end }}
+    {{- if .Values.commonLabels }}
+    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
+    {{- end }}
+  {{- if or .Values.backup.cronjob.annotations .Values.commonAnnotations .Values.backup.cronjob.storage.resourcePolicy}}
+  annotations:
+    {{- if .Values.backup.cronjob.annotations }}
+    {{- include "common.tplvalues.render" ( dict "value" .Values.backup.cronjob.annotations "context" $) | nindent 4 }}
+    {{- end }}
+    {{- if .Values.commonAnnotations }}
+    {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
+    {{- end }}
+    {{- if .Values.backup.cronjob.storage.resourcePolicy }}
+    helm.sh/resource-policy: {{ .Values.backup.cronjob.storage.resourcePolicy | quote }}
+    {{- end }}
+  {{- end }}
+spec:
+  accessModes:
+  {{- range .Values.backup.cronjob.storage.accessModes }}
+    - {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backup.cronjob.storage.size | quote }}
+  {{ include "common.storage.class" (dict "persistence" .Values.backup.cronjob.storage "global" .Values.global) | nindent 2 }}
+{{- end }}
