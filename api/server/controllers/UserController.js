@@ -8,7 +8,6 @@ const {
 } = require('@librechat/api');
 const {
   getFiles,
-  findToken,
   updateUser,
   deleteFiles,
   deleteConvos,
@@ -18,6 +17,7 @@ const {
   deleteAllSharedLinks,
   deleteAllUserSessions,
 } = require('~/models');
+const { getTokenStoreMethods } = require('~/server/services/TokenStore');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
@@ -305,11 +305,13 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
     return;
   }
 
+  const tokenMethods = getTokenStoreMethods();
+
   // 1. get client info used for revocation (client id, secret)
   const clientTokenData = await MCPTokenStorage.getClientInfoAndMetadata({
     userId,
     serverName,
-    findToken,
+    findToken: tokenMethods.findToken,
   });
   if (clientTokenData == null) {
     return;
@@ -320,7 +322,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   const tokens = await MCPTokenStorage.getTokens({
     userId,
     serverName,
-    findToken,
+    findToken: tokenMethods.findToken,
   });
 
   // 3. revoke OAuth tokens at the provider
