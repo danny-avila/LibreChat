@@ -1,0 +1,13 @@
+services:
+  mongodb:
+    container_name: librechat-mongodb-local
+    image: mongo:8.2.1
+    ports:
+      - "27017:27017"
+    volumes:
+      - librechat-db-data:/data/db
+    command: mongod --noauth
+
+volumes:
+  librechat-db-data:
+    name: librechat-db-data

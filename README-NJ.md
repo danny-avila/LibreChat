@@ -2,6 +2,57 @@
 
 A LibreChat fork with customizations for the state of New Jersey.
 
+## Local Development
+
+There are developer instructions in `.github/CONTRIBUTING.md`, however we've found better methods for local dev.
+
+### Initial Setup
+
+You *should* only need to do the following once:
+
+1. Install [Docker CLI](https://github.com/docker/cli), [Colima](https://github.com/abiosoft/colima), and 
+   [Docker Compose](https://github.com/docker/compose) (note: Docker Desktop NOT allowed at NJ). The following
+   terminal commands will install all three (make sure [homebrew](https://brew.sh/) is installed)
+   ```
+   $ brew install colima docker docker-compose
+   $ mkdir ~/.docker
+   $ cat >~/.docker/config.json <<EOF
+       "cliPluginsExtraDirs": [
+         "/opt/homebrew/lib/docker/cli-plugins"
+       ]
+     EOF
+   $ brew services start colima
+   ```
+2. Install `nvm` ([instructions](https://github.com/nvm-sh/nvm?tab=readme-ov-file#installing-and-updating)).
+3. Setup Node v20
+   - `$ nvm install 20` (first time only) 
+   - `$ nvm use 20`
+4. Install TypeScript globally
+   - `$ npm i -g typescript`
+5. Use docker to run services (e.g. Mongo)
+   - `$ docker compose -f nj/dev-docker-compose.yml up -d`
+6. Create a local copy of `.env` and `librechat.yaml`
+   - `$ cp .env.example .env`
+   - `$ cp librechat.example.yaml librechat.yaml`
+7. Configure `.env` and `librechat.yaml` to connect to our AIs
+   - *TODO: Set up a good system for sharing these settings, for now just ask over Slack.* 
+
+### Building & Running LibreChat
+
+Repeatable steps for getting LibreChat going:
+
+1. Build everything
+   - `$ npm run reinstall`
+2. Start the backend (w/ live rebuilds)
+   - `$ npm run backend:dev`
+3. Start the frontend (w/ live rebuilds)
+   - `$ npm run frontend:dev`
+4. Visit LibreChat @ http://localhost:3090
+
+NOTE: `reinstall` builds all the code in `/packages/`, but does not do live rebuilds.  If you want live coding for 
+`/packages`, you'll need to run `build:watch` in their respective directories:
+`$ npm run build:watch --prefix packages/[directory]`
+
 ## How to Work in This Repo
 
 ### Minimize Upstream Conflicts
