@@ -158,12 +158,22 @@ async function flushRedisCache(dryRun = false, verbose = false) {
     if (dryRun) {
       console.log('🔍 [DRY RUN] Would flush Redis cache');
       try {
-        const keys = await redis.keys('*');
-        console.log(`   Would delete ${keys.length} keys`);
-        if (verbose && keys.length > 0) {
+        let allKeys = [];
+        if (useCluster) {
+          const nodes = redis.nodes('master');
+          console.log(`   Cluster detected: ${nodes.length} master nodes`);
+          for (const node of nodes) {
+            const keys = await node.keys('*');
+            allKeys = allKeys.concat(keys);
+          }
+        } else {
+          allKeys = await redis.keys('*');
+        }
+        console.log(`   Would delete ${allKeys.length} keys`);
+        if (verbose && allKeys.length > 0) {
           console.log(
             '   Sample keys:',
-            keys.slice(0, 10).join(', ') + (keys.length > 10 ? '...' : ''),
+            allKeys.slice(0, 10).join(', ') + (allKeys.length > 10 ? '...' : ''),
           );
         }
       } catch (error) {
@@ -176,15 +186,29 @@ async function flushRedisCache(dryRun = false, verbose = false) {
     // Get key count before flushing
     let keyCount = 0;
     try {
-      const keys = await redis.keys('*');
-      keyCount = keys.length;
+      if (useCluster) {
+        const nodes = redis.nodes('master');
+        for (const node of nodes) {
+          const keys = await node.keys('*');
+          keyCount += keys.length;
+        }
+      } else {
+        const keys = await redis.keys('*');
+        keyCount = keys.length;
+      }
     } catch (_error) {
       // Continue with flush even if we can't count keys
     }
 
     // Flush the Redis cache
-    await redis.flushdb();
-    console.log('✅ Redis cache flushed successfully');
+    if (useCluster) {
+      const nodes = redis.nodes('master');
+      await Promise.all(nodes.map((node) => node.flushdb()));
+      console.log(`✅ Redis cluster cache flushed successfully (${nodes.length} master nodes)`);
+    } else {
+      await redis.flushdb();
+      console.log('✅ Redis cache flushed successfully');
+    }
 
     if (keyCount > 0) {
       console.log(`   Deleted ${keyCount} keys`);
