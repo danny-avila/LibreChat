@@ -796,6 +796,7 @@
   "com_ui_context": "Context",
   "com_ui_continue": "Continue",
   "com_ui_continue_oauth": "Continue with OAuth",
+  "com_ui_control_bar": "Control bar",
   "com_ui_controls": "Controls",
   "com_ui_convo_delete_error": "Failed to delete conversation",
   "com_ui_copied": "Copied!",
