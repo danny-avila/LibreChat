@@ -31,11 +31,7 @@ You *should* only need to do the following once:
    - `$ npm i -g typescript`
 5. Use docker to run services (e.g. Mongo)
    - `$ docker compose -f nj/dev-docker-compose.yml up -d`
-6. Create a local copy of `.env` and `librechat.yaml`
-   - `$ cp .env.example .env`
-   - `$ cp librechat.example.yaml librechat.yaml`
-7. Configure `.env` and `librechat.yaml` to connect to our AIs
-   - *TODO: Set up a good system for sharing these settings, for now just ask over Slack.* 
+6. Create a `.env` file in the root directory & fill it with our `.env` from Bitwarden.
 
 ### Building & Running LibreChat
 

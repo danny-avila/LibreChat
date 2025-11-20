@@ -1,0 +1,71 @@
+###############################################################################
+# New Jersey LibreChat Config File
+#
+# Used in conjunction w/ the .env file from BitWarden (because part of
+# LibreChat's config still lives in .env, as well as secret API keys).
+###############################################################################
+
+# Configuration version (required)
+version: 1.3.1
+
+# Cache settings: Set to true to enable caching
+cache: true
+
+# Custom interface configuration
+interface:
+  customWelcome: 'NJ AI Assistant'
+
+  # Make sure temporary chats are available (but only retained the minimum amount of time, which is 1 hour)
+  temporaryChat: true
+  temporaryChatRetention: 1
+
+  # Since we only have limited endpoints, we disable the more elaborate model selector
+  # (Instead, we define the model selection using `modelSpecs` below)
+  modelSelect: false
+
+  # We're purposefully disabling most LibreChat features (for now)
+  agents: false
+  bookmarks: false
+  endpointsMenu: false
+  fileCitations: false
+  fileSearch: false
+  marketplace:
+    use: false
+  memories: false
+  multiConvo: false
+  parameters: false
+  peoplePicker:
+    users: false
+    groups: false
+    roles: false
+  presets: false
+  prompts: false
+  runCode: false
+  sidePanel: false
+  webSearch: false
+
+endpoints:
+  azureOpenAI:
+    groups:
+      - group: "nj-ai"
+        apiKey: ${NJ_AZURE_API_KEY}
+        instanceName: ${NJ_AZURE_INSTANCE_NAME}
+        deploymentName: "openai/deployments/gpt-4o-dev"
+        version: "2024-05-01-preview"
+        baseURL: https://${INSTANCE_NAME}.openai.azure.com
+        models:
+          gpt-4o-dev: true
+
+  # Workaround: we have to explicitly disable all agent capabilities (otherwise the agents UI won't go away)
+  agents:
+    capabilities: []
+
+# We explicitly spec our models (since we only have a few models and this makes the selector simpler)
+modelSpecs:
+  list:
+    - name: "gpt-4o"
+      label: "ChatGPT"
+      default: true
+      preset:
+        endpoint: "azureOpenAI"
+        model: "gpt-4o-dev"
