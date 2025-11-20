@@ -30,7 +30,7 @@ You *should* only need to do the following once:
 4. Install TypeScript globally
    - `$ npm i -g typescript`
 5. Use docker to run services (e.g. Mongo)
-   - `$ docker compose -f nj/dev-docker-compose.yml up -d`
+   - `$ docker compose -f nj-dev-docker-compose.yml up -d`
 6. Create a `.env` file in the root directory & fill it with our `.env` from Bitwarden.
 
 ### Building & Running LibreChat

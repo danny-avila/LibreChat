@@ -1,0 +1,28 @@
+services:
+  mongodb:
+    container_name: librechat-mongodb-local
+    image: mongo:8.2.2
+    ports:
+      - "27017:27017"
+    volumes:
+      - librechat-db-data:/data/db
+    command: mongod --noauth
+
+  meilisearch:
+    container_name: librechat-meilisearch
+    image: getmeili/meilisearch:v1.26.0
+    ports:
+      - "7700:7700"
+    environment:
+      - MEILI_HOST=${MEILI_HOST}
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - librechat-meilisearch-data:/meili_data
+
+volumes:
+  librechat-db-data:
+    name: librechat-db-data
+
+  librechat-meilisearch-data:
+    name: librechat-meilisearch-data
