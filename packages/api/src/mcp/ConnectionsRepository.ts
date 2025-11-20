@@ -1,37 +1,69 @@
 import { logger } from '@librechat/data-schemas';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from './connection';
+import { mcpServersRegistry as registry } from '~/mcp/registry/MCPServersRegistry';
 import type * as t from './types';
 
 /**
  * Manages MCP connections with lazy loading and reconnection.
  * Maintains a pool of connections and handles connection lifecycle management.
+ * Queries server configurations dynamically from the MCPServersRegistry (single source of truth).
+ *
+ * Scope-aware: Each repository is tied to a specific owner scope:
+ * - ownerId = undefined → manages app-level servers only
+ * - ownerId = userId → manages user-level and private servers for that user
  */
 export class ConnectionsRepository {
-  protected readonly serverConfigs: Record<string, t.MCPOptions>;
   protected connections: Map<string, MCPConnection> = new Map();
   protected oauthOpts: t.OAuthConnectionOptions | undefined;
+  private readonly ownerId: string | undefined;
 
-  constructor(serverConfigs: t.MCPServers, oauthOpts?: t.OAuthConnectionOptions) {
-    this.serverConfigs = serverConfigs;
+  constructor(ownerId?: string, oauthOpts?: t.OAuthConnectionOptions) {
+    this.ownerId = ownerId;
     this.oauthOpts = oauthOpts;
   }
 
   /** Checks whether this repository can connect to a specific server */
-  has(serverName: string): boolean {
-    return !!this.serverConfigs[serverName];
+  async has(serverName: string): Promise<boolean> {
+    const config = await registry.getServerConfig(serverName, this.ownerId);
+    if (!config) {
+      //if the config does not exist, clean up any potential orphaned connections (caused by server tier migration)
+      await this.disconnect(serverName);
+    }
+    return !!config;
   }
 
   /** Gets or creates a connection for the specified server with lazy loading */
   async get(serverName: string): Promise<MCPConnection> {
+    const serverConfig = await this.getServerConfig(serverName);
     const existingConnection = this.connections.get(serverName);
-    if (existingConnection && (await existingConnection.isConnected())) return existingConnection;
-    else await this.disconnect(serverName);
+
+    if (existingConnection) {
+      // Check if config was cached/updated since connection was created
+      if (serverConfig.lastUpdatedAt && existingConnection.isStale(serverConfig.lastUpdatedAt)) {
+        logger.info(
+          `${this.prefix(serverName)} Existing connection for ${serverName} is outdated. Recreating a new connection.`,
+          {
+            connectionCreated: new Date(existingConnection.createdAt).toISOString(),
+            configCachedAt: new Date(serverConfig.lastUpdatedAt).toISOString(),
+          },
+        );
+
+        // Disconnect stale connection
+        await existingConnection.disconnect();
+        this.connections.delete(serverName);
+        // Fall through to create new connection
+      } else if (await existingConnection.isConnected()) {
+        return existingConnection;
+      } else {
+        await this.disconnect(serverName);
+      }
+    }
 
     const connection = await MCPConnectionFactory.create(
       {
         serverName,
-        serverConfig: this.getServerConfig(serverName),
+        serverConfig,
       },
       this.oauthOpts,
     );
@@ -52,9 +84,10 @@ export class ConnectionsRepository {
     return this.getMany(Array.from(this.connections.keys()));
   }
 
-  /** Gets or creates connections for all configured servers */
+  /** Gets or creates connections for all configured servers in this repository's scope */
   async getAll(): Promise<Map<string, MCPConnection>> {
-    return this.getMany(Object.keys(this.serverConfigs));
+    const allConfigs = await registry.getAllServerConfigs(this.ownerId);
+    return this.getMany(Object.keys(allConfigs));
   }
 
   /** Disconnects and removes a specific server connection from the pool */
@@ -74,8 +107,8 @@ export class ConnectionsRepository {
   }
 
   // Retrieves server configuration by name or throws if not found
-  protected getServerConfig(serverName: string): t.MCPOptions {
-    const serverConfig = this.serverConfigs[serverName];
+  protected async getServerConfig(serverName: string): Promise<t.ParsedServerConfig> {
+    const serverConfig = await registry.getServerConfig(serverName, this.ownerId);
     if (serverConfig) return serverConfig;
     throw new Error(`${this.prefix(serverName)} Server not found in configuration`);
   }
