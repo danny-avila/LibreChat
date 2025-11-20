@@ -54,8 +54,8 @@ jobs:
       - name: Release Helm OCI Charts for librechat
         uses: appany/helm-oci-chart-releaser@v0.4.2
         with:
-          name: librechat
-          repository: ${{ github.repository_owner }}/librechat
+          name: librechat-chart
+          repository: ${{ github.repository_owner }}/LibreChat
           tag: ${{ steps.chart-version.outputs.CHART_VERSION }}
           path: helm/librechat
           registry: ghcr.io
@@ -66,8 +66,8 @@ jobs:
       - name: Release Helm OCI Charts for librechat-rag-api
         uses: appany/helm-oci-chart-releaser@v0.4.2
         with:
-          name: librechat-rag-api
-          repository: ${{ github.repository_owner }}/librechat
+          name: librechat-rag-api-chart
+          repository: ${{ github.repository_owner }}/LibreChat
           tag: ${{ steps.chart-version.outputs.CHART_VERSION }}
           path: helm/librechat-rag-api
           registry: ghcr.io
