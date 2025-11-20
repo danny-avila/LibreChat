@@ -78,11 +78,11 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
   return tool(
     async ({ query }) => {
       if (files.length === 0) {
-        return 'No files to search. Instruct the user to add files for the search.';
+        return ['No files to search. Instruct the user to add files for the search.', undefined];
       }
       const jwtToken = generateShortLivedToken(userId);
       if (!jwtToken) {
-        return 'There was an error authenticating the file search request.';
+        return ['There was an error authenticating the file search request.', undefined];
       }
 
       /**
@@ -122,7 +122,7 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
       const validResults = results.filter((result) => result !== null);
 
       if (validResults.length === 0) {
-        return 'No results found or errors occurred while searching the files.';
+        return ['No results found or errors occurred while searching the files.', undefined];
       }
 
       const formattedResults = validResults
