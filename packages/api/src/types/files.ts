@@ -61,7 +61,7 @@ export interface AnthropicDocumentBlock {
 
 /** Google document block format */
 export interface GoogleDocumentBlock {
-  type: 'document';
+  type: 'media';
   mimeType: string;
   data: string;
 }

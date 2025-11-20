@@ -112,7 +112,7 @@ export async function encodeAndFormatDocuments(
         });
       } else if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
         result.documents.push({
-          type: 'document',
+          type: 'media',
           mimeType: 'application/pdf',
           data: content,
         });

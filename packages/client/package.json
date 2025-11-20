@@ -1,6 +1,6 @@
 {
   "name": "@librechat/client",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "React components for LibreChat",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
@@ -64,7 +64,7 @@
     "react-dom": "^18.2.0 || ^19.1.0",
     "react-hook-form": "^7.56.4",
     "react-i18next": "^15.4.0 || ^15.6.0",
-    "react-resizable-panels": "^3.0.2",
+    "react-resizable-panels": "^3.0.6",
     "react-textarea-autosize": "^8.4.0",
     "tailwind-merge": "^1.9.1"
   },

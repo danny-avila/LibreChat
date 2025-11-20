@@ -166,7 +166,8 @@ export enum ImageDetail {
 }
 
 export enum ReasoningEffort {
-  none = '',
+  unset = '',
+  none = 'none',
   minimal = 'minimal',
   low = 'low',
   medium = 'medium',
@@ -609,6 +610,8 @@ export const tMessageSchema = z.object({
   /* frontend components */
   iconURL: z.string().nullable().optional(),
   feedback: feedbackSchema.optional(),
+  /** metadata */
+  metadata: z.record(z.unknown()).optional(),
 });
 
 export type MemoryArtifact = {

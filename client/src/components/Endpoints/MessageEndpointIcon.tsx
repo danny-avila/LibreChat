@@ -25,7 +25,7 @@ type EndpointIcon = {
 
 function getOpenAIColor(_model: string | null | undefined) {
   const model = _model?.toLowerCase() ?? '';
-  if (model && (/\b(o\d)\b/i.test(model) || /\bgpt-[5-9]\b/i.test(model))) {
+  if (model && (/\b(o\d)\b/i.test(model) || /\bgpt-[5-9](?:\.\d+)?\b/i.test(model))) {
     return '#000000';
   }
   return model.includes('gpt-4') ? '#AB68FF' : '#19C37D';

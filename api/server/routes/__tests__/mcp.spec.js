@@ -290,6 +290,7 @@ describe('MCP Routes', () => {
     it('should handle OAuth callback successfully', async () => {
       const { mcpServersRegistry } = require('@librechat/api');
       const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING' }),
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
@@ -382,6 +383,7 @@ describe('MCP Routes', () => {
     it('should handle system-level OAuth completion', async () => {
       const { mcpServersRegistry } = require('@librechat/api');
       const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING' }),
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
@@ -417,6 +419,7 @@ describe('MCP Routes', () => {
     it('should handle reconnection failure after OAuth', async () => {
       const { mcpServersRegistry } = require('@librechat/api');
       const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING' }),
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
@@ -499,43 +502,37 @@ describe('MCP Routes', () => {
       expect(mockMcpManager.getUserConnection).not.toHaveBeenCalled();
     });
 
-    it('should re-fetch flow state after completeOAuthFlow to capture DCR updates', async () => {
+    it('should use original flow state credentials when storing tokens', async () => {
       const { mcpServersRegistry } = require('@librechat/api');
       const mockFlowManager = {
+        getFlowState: jest.fn(),
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
-      const initialClientInfo = {
-        client_id: 'initial123',
-        client_secret: 'initial_secret',
+      const clientInfo = {
+        client_id: 'client123',
+        client_secret: 'client_secret',
       };
-      const updatedClientInfo = {
-        client_id: 'updated456',
-        client_secret: 'updated_secret',
-      };
-      const initialFlowState = {
+      const flowState = {
         serverName: 'test-server',
         userId: 'test-user-id',
         metadata: { toolFlowId: 'tool-flow-123', serverUrl: 'http://example.com' },
-        clientInfo: initialClientInfo,
+        clientInfo: clientInfo,
         codeVerifier: 'test-verifier',
-      };
-      const updatedFlowState = {
-        serverName: 'test-server',
-        userId: 'test-user-id',
-        metadata: { toolFlowId: 'tool-flow-123', serverUrl: 'http://example.com' },
-        clientInfo: updatedClientInfo, // DCR re-registration changed credentials
-        codeVerifier: 'test-verifier',
+        status: 'PENDING',
       };
       const mockTokens = {
         access_token: 'test-access-token',
         refresh_token: 'test-refresh-token',
       };
 
-      // First call returns initial state, second call returns updated state
-      MCPOAuthHandler.getFlowState
-        .mockResolvedValueOnce(initialFlowState)
-        .mockResolvedValueOnce(updatedFlowState);
+      // First call checks idempotency (status PENDING = not completed)
+      // Second call retrieves flow state for processing
+      mockFlowManager.getFlowState
+        .mockResolvedValueOnce({ status: 'PENDING' })
+        .mockResolvedValueOnce(flowState);
+
+      MCPOAuthHandler.getFlowState.mockResolvedValue(flowState);
       MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
       mcpServersRegistry.getServerConfig.mockResolvedValue({});
@@ -561,29 +558,50 @@ describe('MCP Routes', () => {
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe('/oauth/success?serverName=test-server');
 
-      // Verify MCPOAuthHandler.getFlowState was called TWICE (before and after completion)
-      expect(MCPOAuthHandler.getFlowState).toHaveBeenCalledTimes(2);
-      expect(MCPOAuthHandler.getFlowState).toHaveBeenNthCalledWith(
-        1,
-        'test-flow-id',
-        mockFlowManager,
-      );
-      expect(MCPOAuthHandler.getFlowState).toHaveBeenNthCalledWith(
-        2,
-        'test-flow-id',
-        mockFlowManager,
-      );
-
-      // Verify storeTokens was called with UPDATED credentials, not initial ones
+      // Verify storeTokens was called with ORIGINAL flow state credentials
       expect(MCPTokenStorage.storeTokens).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: 'test-user-id',
           serverName: 'test-server',
           tokens: mockTokens,
-          clientInfo: updatedClientInfo, // Should use updated, not initial
-          metadata: updatedFlowState.metadata, // Should use updated metadata
+          clientInfo: clientInfo, // Uses original flow state, not any "updated" credentials
+          metadata: flowState.metadata,
         }),
       );
+    });
+
+    it('should prevent duplicate token exchange with idempotency check', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn(),
+      };
+
+      // Flow is already completed
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'COMPLETED',
+        serverName: 'test-server',
+        userId: 'test-user-id',
+      });
+
+      MCPOAuthHandler.getFlowState.mockResolvedValue({
+        status: 'COMPLETED',
+        serverName: 'test-server',
+        userId: 'test-user-id',
+      });
+
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
+        code: 'test-auth-code',
+        state: 'test-flow-id',
+      });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe('/oauth/success?serverName=test-server');
+
+      // Verify completeOAuthFlow was NOT called (prevented duplicate)
+      expect(MCPOAuthHandler.completeOAuthFlow).not.toHaveBeenCalled();
+      expect(MCPTokenStorage.storeTokens).not.toHaveBeenCalled();
     });
   });
 
@@ -1329,7 +1347,9 @@ describe('MCP Routes', () => {
       mcpServersRegistry.getServerConfig.mockResolvedValue({});
 
       const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING' }),
         completeFlow: jest.fn(),
+        deleteFlow: jest.fn().mockResolvedValue(true),
       };
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
