@@ -217,6 +217,17 @@ function getLLMConfig(
       type: 'web_search_20250305',
       name: 'web_search',
     });
+
+    if (isAnthropicVertexCredentials(creds)) {
+      if (!requestOptions.clientOptions) {
+        requestOptions.clientOptions = {};
+      }
+
+      requestOptions.clientOptions.defaultHeaders = {
+        ...requestOptions.clientOptions.defaultHeaders,
+        'anthropic-beta': 'web-search-2025-03-05',
+      };
+    }
   }
 
   return {
