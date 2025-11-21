@@ -12,8 +12,8 @@ const {
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { getMCPServerTools } = require('~/server/services/Config');
+const { Agent, AclEntry } = require('~/db/models');
 const { getActions } = require('./Action');
-const { Agent } = require('~/db/models');
 
 /**
  * Create an agent with the provided data.
@@ -547,14 +547,24 @@ const deleteAgent = async (searchParameter) => {
 const deleteUserAgents = async (userId) => {
   try {
     const userAgents = await getAgents({ author: userId });
-    const promises = userAgents.map(async (agent) => {
-      try {
-        await deleteAgent({ id: agent.id, author: userId });
-      } catch (error) {
-        logger.error(`[deleteUserAgents] Failed to delete agent ${agent.id}:`, error);
-      }
+
+    if (userAgents.length === 0) {
+      return;
+    }
+
+    const agentIds = userAgents.map((agent) => agent.id);
+    const agentObjectIds = userAgents.map((agent) => agent._id);
+
+    for (const agentId of agentIds) {
+      await removeAgentFromAllProjects(agentId);
+    }
+
+    await AclEntry.deleteMany({
+      resourceType: ResourceType.AGENT,
+      resourceId: { $in: agentObjectIds },
     });
-    await Promise.allSettled(promises);
+
+    await Agent.deleteMany({ author: userId });
   } catch (error) {
     logger.error('[deleteUserAgents] General error:', error);
   }

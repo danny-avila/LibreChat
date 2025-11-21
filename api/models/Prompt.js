@@ -13,7 +13,7 @@ const {
   getProjectByName,
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
-const { PromptGroup, Prompt } = require('~/db/models');
+const { PromptGroup, Prompt, AclEntry } = require('~/db/models');
 const { escapeRegExp } = require('~/server/utils');
 
 /**
@@ -599,15 +599,24 @@ module.exports = {
   deleteUserPrompts: async (req, userId) => {
     try {
       const promptGroups = await getAllPromptGroups(req, { author: new ObjectId(userId) });
-      const promises = promptGroups.map(async (group) => {
-        try {
-          await deletePromptGroup({ _id: group._id });
-        } catch (error) {
-          logger.error(`[deleteUserPrompts] Failed to delete prompt group ${group._id}:`, error);
-          // Continue deleting other groups
-        }
+
+      if (promptGroups.length === 0) {
+        return;
+      }
+
+      const groupIds = promptGroups.map((group) => group._id);
+
+      for (const groupId of groupIds) {
+        await removeGroupFromAllProjects(groupId);
+      }
+
+      await AclEntry.deleteMany({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: { $in: groupIds },
       });
-      await Promise.allSettled(promises);
+
+      await PromptGroup.deleteMany({ author: new ObjectId(userId) });
+      await Prompt.deleteMany({ author: new ObjectId(userId) });
     } catch (error) {
       logger.error('[deleteUserPrompts] General error:', error);
     }
