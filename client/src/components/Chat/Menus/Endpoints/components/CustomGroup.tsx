@@ -1,6 +1,9 @@
 import React from 'react';
+import { getEndpointField } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
+import { getIconKey } from '~/utils';
+import { icons } from '~/hooks/Endpoint/Icons';
 import { CustomMenu as Menu } from '../CustomMenu';
 import { ModelSpecItem } from './ModelSpecItem';
 import { useModelSelectorContext } from '../ModelSelectorContext';
@@ -12,19 +15,44 @@ interface CustomGroupProps {
 }
 
 export function CustomGroup({ groupName, specs, endpoints }: CustomGroupProps) {
-  const { selectedValues } = useModelSelectorContext();
+  const { selectedValues, endpointsConfig } = useModelSelectorContext();
   const { modelSpec: selectedSpec } = selectedValues;
 
   if (!specs || specs.length === 0) {
     return null;
   }
 
-  const icon = endpoints.find((e) => {
+  let icon = endpoints.find((e) => {
     const normalizedGroup = groupName.toLowerCase().replace(/[^a-z0-9]/g, '');
     const normalizedValue = e.value?.toLowerCase().replace(/[^a-z0-9]/g, '');
     const normalizedLabel = e.label?.toLowerCase().replace(/[^a-z0-9]/g, '');
     return normalizedGroup === normalizedValue || normalizedGroup === normalizedLabel;
   })?.icon;
+
+  if (!icon && endpointsConfig) {
+    const normalizedGroup = groupName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const matchKey = Object.keys(endpointsConfig).find(
+      (k) => k.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedGroup,
+    );
+
+    if (matchKey) {
+      const endpointType = getEndpointField(endpointsConfig, matchKey, 'type');
+      const iconKey = getIconKey({ endpoint: matchKey, endpointsConfig, endpointType });
+      const Icon = icons[iconKey];
+      const endpointIconURL = getEndpointField(endpointsConfig, matchKey, 'iconURL');
+
+      if (Icon) {
+        icon = (
+          <Icon
+            size={20}
+            className="text-text-primary shrink-0 icon-md"
+            iconURL={endpointIconURL}
+            endpoint={matchKey}
+          />
+        );
+      }
+    }
+  }
 
   return (
     <Menu
