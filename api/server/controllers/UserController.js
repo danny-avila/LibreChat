@@ -24,6 +24,7 @@ const {
   Transaction,
   MemoryEntry,
   Assistant,
+  AclEntry,
   Balance,
   Action,
   Group,
@@ -266,11 +267,13 @@ const deleteUserController = async (req, res) => {
     await MemoryEntry.deleteMany({ userId: user.id }); // delete user memory entries
     await deleteUserPrompts(req, user.id); // delete user prompts
     await Action.deleteMany({ user: user.id }); // delete user actions
+    await Token.deleteMany({ userId: user.id }); // delete user OAuth tokens
     await Group.updateMany(
       // remove user from all groups
       { memberIds: user.id },
       { $pull: { memberIds: user.id } },
     );
+    await AclEntry.deleteMany({ principalId: user._id }); // delete user ACL entries
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
