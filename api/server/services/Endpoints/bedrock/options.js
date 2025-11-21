@@ -1,4 +1,3 @@
-const { resolveHeaders } = require('@librechat/api');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { NodeHttpHandler } = require('@aws-sdk/node-http-handler');
 const { BedrockRuntimeClient } = require('@aws-sdk/client-bedrock-runtime');
