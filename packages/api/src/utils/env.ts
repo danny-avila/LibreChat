@@ -78,7 +78,8 @@ function processUserPlaceholders(value: string, user?: IUser): string {
 
   for (const field of ALLOWED_USER_FIELDS) {
     const placeholder = `{{LIBRECHAT_USER_${field.toUpperCase()}}}`;
-    if (!value.includes(placeholder)) {
+
+    if (typeof value !== 'string' || !value.includes(placeholder)) {
       continue;
     }
 
@@ -111,6 +112,11 @@ function processUserPlaceholders(value: string, user?: IUser): string {
  * @returns The processed string with placeholders replaced
  */
 function processBodyPlaceholders(value: string, body: RequestBody): string {
+  // Type guard: ensure value is a string
+  if (typeof value !== 'string') {
+    return value;
+  }
+
   for (const field of ALLOWED_BODY_FIELDS) {
     const placeholder = `{{LIBRECHAT_BODY_${field.toUpperCase()}}}`;
     if (!value.includes(placeholder)) {
@@ -144,6 +150,11 @@ function processSingleValue({
   user?: IUser;
   body?: RequestBody;
 }): string {
+  // Type guard: ensure we're working with a string
+  if (typeof originalValue !== 'string') {
+    return String(originalValue);
+  }
+
   let value = originalValue;
 
   if (customUserVars) {
