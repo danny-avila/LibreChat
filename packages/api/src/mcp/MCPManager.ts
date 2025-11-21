@@ -53,8 +53,10 @@ export class MCPManager extends UserConnectionManager {
       flowManager?: FlowStateManager<MCPOAuthTokens | null>;
     } & Omit<t.OAuthConnectionOptions, 'useOAuth' | 'user' | 'flowManager'>,
   ): Promise<MCPConnection> {
-    if (await this.appConnections!.has(args.serverName)) {
-      return this.appConnections!.get(args.serverName);
+    //the get method checks if the config is still valid as app level
+    const exsitingAppConnection = await this.appConnections!.get(args.serverName);
+    if (exsitingAppConnection) {
+      return exsitingAppConnection;
     } else if (args.user?.id) {
       return this.getUserConnection(args as Parameters<typeof this.getUserConnection>[0]);
     } else {
@@ -83,11 +85,10 @@ export class MCPManager extends UserConnectionManager {
     serverName: string,
   ): Promise<t.LCAvailableTools | null> {
     try {
-      if (this.appConnections && (await this.appConnections.has(serverName))) {
-        return MCPServerInspector.getToolFunctions(
-          serverName,
-          await this.appConnections.get(serverName),
-        );
+      //try get the appConnection (if the config is not in the app level anymore any existing connection will disconnect and get will return null)
+      const exsitingAppConnection = await this.appConnections?.get(serverName);
+      if (exsitingAppConnection) {
+        return MCPServerInspector.getToolFunctions(serverName, exsitingAppConnection);
       }
 
       const userConnections = this.getUserConnections(userId);

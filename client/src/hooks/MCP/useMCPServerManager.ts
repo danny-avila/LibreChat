@@ -1,7 +1,7 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { Constants, QueryKeys } from 'librechat-data-provider';
+import { Constants, QueryKeys, MCPOptions } from 'librechat-data-provider';
 import {
   useCancelMCPOAuthMutation,
   useUpdateUserPluginsMutation,
@@ -11,6 +11,15 @@ import type { TUpdateUserPlugins, TPlugin, MCPServersResponse } from 'librechat-
 import type { ConfigFieldDetail } from '~/common';
 import { useLocalize, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
+import { useMcpServersQuery } from '~/data-provider/McpServers/queries';
+
+export interface MCPServerDefinition {
+  serverName: string;
+  config: MCPOptions;
+  mcp_id?: string;
+  _id?: string; // MongoDB ObjectId for database servers (used for permissions)
+  effectivePermissions: number; // Permission bits (VIEW=1, EDIT=2, DELETE=4, SHARE=8)
+}
 
 interface ServerState {
   isInitializing: boolean;
@@ -24,25 +33,46 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
-  const { data: startupConfig } = useGetStartupConfig();
-  const { mcpValues, setMCPValues, isPinned, setIsPinned } = useMCPSelect({ conversationId });
+  const { data: startupConfig } = useGetStartupConfig(); // Keep for UI config only
+
+  const { data: loadedServers, isLoading } = useMcpServersQuery();
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const configuredServers = useMemo(() => {
+    if (!loadedServers) return [];
+    return Object.keys(loadedServers).filter((name) => loadedServers[name]?.chatMenu !== false);
+  }, [loadedServers]);
+
+  const availableMCPServers: MCPServerDefinition[] = useMemo<MCPServerDefinition[]>(() => {
+    const definitions: MCPServerDefinition[] = [];
+    if (loadedServers) {
+      for (const [serverName, metadata] of Object.entries(loadedServers)) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { _id, mcp_id, effectivePermissions, author, updatedAt, createdAt, ...config } =
+          metadata;
+        definitions.push({
+          serverName,
+          mcp_id,
+          effectivePermissions: effectivePermissions || 1,
+          config,
+        });
+      }
+    }
+    return definitions;
+  }, [loadedServers]);
+
+  const { mcpValues, setMCPValues, isPinned, setIsPinned } = useMCPSelect({
+    conversationId,
+    servers: availableMCPServers,
+  });
   const mcpValuesRef = useRef(mcpValues);
 
   // fixes the issue where OAuth flows would deselect all the servers except the one that is being authenticated on success
   useEffect(() => {
     mcpValuesRef.current = mcpValues;
   }, [mcpValues]);
-
-  const configuredServers = useMemo(() => {
-    if (!startupConfig?.mcpServers) return [];
-    return Object.entries(startupConfig.mcpServers)
-      .filter(([, config]) => config.chatMenu !== false)
-      .map(([serverName]) => serverName);
-  }, [startupConfig?.mcpServers]);
 
   const reinitializeMutation = useReinitializeMCPServerMutation();
   const cancelOAuthMutation = useCancelMCPOAuthMutation();
@@ -52,6 +82,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
 
       await Promise.all([
+        queryClient.invalidateQueries([QueryKeys.mcpServers]),
         queryClient.invalidateQueries([QueryKeys.mcpTools]),
         queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
         queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
@@ -81,7 +112,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   });
 
   const { connectionStatus } = useMCPConnectionStatus({
-    enabled: !!startupConfig?.mcpServers && Object.keys(startupConfig.mcpServers).length > 0,
+    enabled: !isLoading && configuredServers.length > 0,
   });
 
   const updateServerState = useCallback((serverName: string, updates: Partial<ServerState>) => {
@@ -289,7 +320,12 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
           startServerPolling(serverName);
         } else {
-          await queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
+          await Promise.all([
+            queryClient.invalidateQueries([QueryKeys.mcpServers]),
+            queryClient.invalidateQueries([QueryKeys.mcpTools]),
+            queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
+            queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
+          ]);
 
           showToast({
             message: localize('com_ui_mcp_initialized_success', { 0: serverName }),
@@ -494,7 +530,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       ]);
       const serverData = mcpData?.servers?.[serverName];
       const serverStatus = connectionStatus?.[serverName];
-      const serverConfig = startupConfig?.mcpServers?.[serverName];
+      const serverConfig = loadedServers?.[serverName];
 
       const handleConfigClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -548,14 +584,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
         hasCustomUserVars,
       };
     },
-    [
-      queryClient,
-      isCancellable,
-      isInitializing,
-      cancelOAuthFlow,
-      connectionStatus,
-      startupConfig?.mcpServers,
-    ],
+    [queryClient, isCancellable, isInitializing, cancelOAuthFlow, connectionStatus, loadedServers],
   );
 
   const getConfigDialogProps = useCallback(() => {
@@ -600,7 +629,10 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   ]);
 
   return {
-    configuredServers,
+    availableMCPServers,
+    availableMCPServersMap: loadedServers,
+    isLoading,
+    connectionStatus,
     initializeServer,
     cancelOAuthFlow,
     isInitializing,

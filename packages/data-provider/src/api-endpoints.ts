@@ -224,6 +224,7 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
 
 export const mcp = {
   tools: `${BASE_URL}/api/mcp/tools`,
+  servers: `${BASE_URL}/api/mcp/servers`,
 };
 
 export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;

@@ -12,10 +12,10 @@ function MCPSelectContent() {
     mcpValues,
     isInitializing,
     placeholderText,
-    configuredServers,
     batchToggleServers,
     getConfigDialogProps,
     getServerStatusIconProps,
+    availableMCPServers,
   } = mcpServerManager;
 
   const renderSelectedValues = useCallback(
@@ -78,7 +78,7 @@ function MCPSelectContent() {
   return (
     <>
       <MultiSelect
-        items={configuredServers}
+        items={availableMCPServers?.map((s) => s.serverName)}
         selectedValues={mcpValues ?? []}
         setSelectedValues={batchToggleServers}
         renderSelectedValues={renderSelectedValues}
@@ -99,9 +99,9 @@ function MCPSelectContent() {
 
 function MCPSelect() {
   const { mcpServerManager } = useBadgeRowContext();
-  const { configuredServers } = mcpServerManager;
+  const { availableMCPServers } = mcpServerManager;
 
-  if (!configuredServers || configuredServers.length === 0) {
+  if (!availableMCPServers || availableMCPServers.length === 0) {
     return null;
   }
 
