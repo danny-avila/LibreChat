@@ -147,6 +147,14 @@ properties:
             value: TRUE
           - name: TAVILY_API_KEY
             secretRef: tavily-api-key
+          - name: NODE_OPTIONS
+            value: --max-old-space-size=4096
+          - name: BAN_VIOLATIONS
+            value: FALSE
+          - name: LOGIN_MAX
+            value: 5000
+          - name: LIMIT_MESSAGE_IP
+            value: FALSE
         resources:
           cpu: 2
           memory: 4Gi
