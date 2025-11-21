@@ -1,5 +1,4 @@
 import { logger } from '@librechat/data-schemas';
-import type { TUser } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 
 export interface OpenIDTokenInfo {
@@ -35,9 +34,7 @@ const OPENID_TOKEN_FIELDS = [
   'EXPIRES_AT',
 ] as const;
 
-export function extractOpenIDTokenInfo(
-  user: IUser | TUser | null | undefined,
-): OpenIDTokenInfo | null {
+export function extractOpenIDTokenInfo(user: IUser | null | undefined): OpenIDTokenInfo | null {
   if (!user) {
     logger.debug('[extractOpenIDTokenInfo] No user provided');
     return null;
