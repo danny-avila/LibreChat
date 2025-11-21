@@ -8,11 +8,11 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toast, ThemeProvider, ToastProvider } from '@librechat/client';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
 import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
+import WakeLockManager from '~/components/System/WakeLockManager';
 import { getThemeFromEnv } from './utils/getThemeFromEnv';
 import { initializeFontSize } from '~/store/fontSize';
 import { LiveAnnouncer } from '~/a11y';
 import { router } from './routes';
-import WakeLockManager from '~/components/System/WakeLockManager';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
