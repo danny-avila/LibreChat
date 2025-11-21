@@ -78,7 +78,8 @@ function processUserPlaceholders(value: string, user?: IUser): string {
 
   for (const field of ALLOWED_USER_FIELDS) {
     const placeholder = `{{LIBRECHAT_USER_${field.toUpperCase()}}}`;
-    if (!value.includes(placeholder)) {
+
+    if (typeof value !== 'string' || !value.includes(placeholder)) {
       continue;
     }
 
@@ -111,6 +112,11 @@ function processUserPlaceholders(value: string, user?: IUser): string {
  * @returns The processed string with placeholders replaced
  */
 function processBodyPlaceholders(value: string, body: RequestBody): string {
+  // Type guard: ensure value is a string
+  if (typeof value !== 'string') {
+    return value;
+  }
+
   for (const field of ALLOWED_BODY_FIELDS) {
     const placeholder = `{{LIBRECHAT_BODY_${field.toUpperCase()}}}`;
     if (!value.includes(placeholder)) {
@@ -144,6 +150,11 @@ function processSingleValue({
   user?: IUser;
   body?: RequestBody;
 }): string {
+  // Type guard: ensure we're working with a string
+  if (typeof originalValue !== 'string') {
+    return String(originalValue);
+  }
+
   let value = originalValue;
 
   if (customUserVars) {
@@ -241,6 +252,74 @@ export function processMCPEnv(params: {
   }
 
   return newObj;
+}
+
+/**
+ * Recursively processes a value, replacing placeholders in strings while preserving structure
+ * @param value - The value to process (can be string, number, boolean, array, object, etc.)
+ * @param options - Processing options
+ * @returns The processed value with the same structure
+ */
+function processValue(
+  value: unknown,
+  options: {
+    customUserVars?: Record<string, string>;
+    user?: IUser;
+    body?: RequestBody;
+  },
+): unknown {
+  if (typeof value === 'string') {
+    return processSingleValue({
+      originalValue: value,
+      customUserVars: options.customUserVars,
+      user: options.user,
+      body: options.body,
+    });
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => processValue(item, options));
+  }
+
+  if (value !== null && typeof value === 'object') {
+    const processed: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value)) {
+      processed[key] = processValue(val, options);
+    }
+    return processed;
+  }
+
+  return value;
+}
+
+/**
+ * Recursively resolves placeholders in a nested object structure while preserving types.
+ * Only processes string values - leaves numbers, booleans, arrays, and nested objects intact.
+ *
+ * @param options - Configuration object
+ * @param options.obj - The object to process
+ * @param options.user - Optional user object for replacing user field placeholders
+ * @param options.body - Optional request body object for replacing body field placeholders
+ * @param options.customUserVars - Optional custom user variables to replace placeholders
+ * @returns The processed object with placeholders replaced in string values
+ */
+export function resolveNestedObject<T = unknown>(options?: {
+  obj: T | undefined;
+  user?: Partial<IUser> | { id: string };
+  body?: RequestBody;
+  customUserVars?: Record<string, string>;
+}): T {
+  const { obj, user, body, customUserVars } = options ?? {};
+
+  if (!obj) {
+    return obj as T;
+  }
+
+  return processValue(obj, {
+    customUserVars,
+    user: user as IUser,
+    body,
+  }) as T;
 }
 
 /**

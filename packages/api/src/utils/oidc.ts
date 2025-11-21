@@ -77,10 +77,6 @@ export function extractOpenIDTokenInfo(user: IUser | null | undefined): OpenIDTo
       tokenInfo.accessToken = tokens.access_token;
       tokenInfo.idToken = tokens.id_token;
       tokenInfo.expiresAt = tokens.expires_at;
-    } else {
-      logger.warn(
-        '[extractOpenIDTokenInfo] No federatedTokens or openidTokens found in user object',
-      );
     }
 
     tokenInfo.userId = user.openidId || user.id;
