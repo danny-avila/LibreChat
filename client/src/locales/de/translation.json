@@ -976,7 +976,7 @@
   "com_ui_mcp_configure_server": "Konfiguriere {{0}}",
   "com_ui_mcp_configure_server_description": "Konfiguriere benutzerdefinierte Variablen für {{0}}",
   "com_ui_mcp_enter_var": "Geben Sie einen Wert für {{0}} ein",
-  "com_ui_mcp_init_failed": "Initialisierung des MCP-Servers fehlgeschlagen.",
+  "com_ui_mcp_init_failed": "MCP-Server konnte nicht starten. Aktiviere den mintapp-gateway unter MCP → Gateway und versuche es erneut.",
   "com_ui_mcp_initialize": "Initialisieren",
   "com_ui_mcp_initialized_success": "MCP-Server „{{0}}“ erfolgreich initialisiert.",
   "com_ui_mcp_oauth_cancelled": "OAuth-Anmeldung für {{0}} abgebrochen.",

@@ -249,6 +249,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
             showToast({
               message: localize('com_ui_mcp_init_failed'),
               status: 'error',
+              duration: 5000,
             });
             if (timeoutId) {
               clearTimeout(timeoutId);
@@ -303,6 +304,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
           showToast({
             message: localize('com_ui_mcp_init_failed', { 0: serverName }),
             status: 'error',
+            duration: 5000,
           });
           cleanupServerState(serverName);
           return response;
@@ -342,6 +344,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
         showToast({
           message: localize('com_ui_mcp_init_failed', { 0: serverName }),
           status: 'error',
+          duration: 5000,
         });
         cleanupServerState(serverName);
       }
@@ -376,6 +379,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
           showToast({
             message: localize('com_ui_mcp_init_failed', { 0: serverName }),
             status: 'error',
+            duration: 5000,
           });
         },
       });
