@@ -1,10 +1,13 @@
 const jwt = require('jsonwebtoken');
-const { isEnabled } = require('@librechat/api');
 const createValidateImageRequest = require('~/server/middleware/validateImageRequest');
 
+// Mock only isEnabled, keep getBasePath real so it reads process.env.DOMAIN_CLIENT
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   isEnabled: jest.fn(),
 }));
+
+const { isEnabled } = require('@librechat/api');
 
 describe('validateImageRequest middleware', () => {
   let req, res, next, validateImageRequest;
@@ -23,6 +26,7 @@ describe('validateImageRequest middleware', () => {
     next = jest.fn();
     process.env.JWT_REFRESH_SECRET = 'test-secret';
     process.env.OPENID_REUSE_TOKENS = 'false';
+    delete process.env.DOMAIN_CLIENT; // Clear for tests without basePath
 
     // Default: OpenID token reuse disabled
     isEnabled.mockReturnValue(false);
