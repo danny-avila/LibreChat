@@ -1,5 +1,6 @@
 import React from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
+import type { Endpoint } from '~/common';
 import { CustomMenu as Menu } from '../CustomMenu';
 import { ModelSpecItem } from './ModelSpecItem';
 import { useModelSelectorContext } from '../ModelSelectorContext';
@@ -7,15 +8,20 @@ import { useModelSelectorContext } from '../ModelSelectorContext';
 interface CustomGroupProps {
   groupName: string;
   specs: TModelSpec[];
+  endpoints: Endpoint[];
 }
 
-export function CustomGroup({ groupName, specs }: CustomGroupProps) {
+export function CustomGroup({ groupName, specs, endpoints }: CustomGroupProps) {
   const { selectedValues } = useModelSelectorContext();
   const { modelSpec: selectedSpec } = selectedValues;
 
   if (!specs || specs.length === 0) {
     return null;
   }
+
+  const icon = endpoints.find(
+    (e) => e.value?.toLowerCase() === groupName.toLowerCase().replace(/[^a-z0-9]/g, ''),
+  )?.icon;
 
   return (
     <Menu
@@ -25,6 +31,11 @@ export function CustomGroup({ groupName, specs }: CustomGroupProps) {
       label={
         <div className="group flex w-full flex-shrink cursor-pointer items-center justify-between rounded-xl px-1 py-1 text-sm">
           <div className="flex items-center gap-2">
+            {icon && (
+              <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
+                {icon}
+              </div>
+            )}
             <span className="truncate text-left">{groupName}</span>
           </div>
         </div>
@@ -37,10 +48,7 @@ export function CustomGroup({ groupName, specs }: CustomGroupProps) {
   );
 }
 
-export function renderCustomGroups(
-  modelSpecs: TModelSpec[],
-  mappedEndpoints: Array<{ value: string }>,
-) {
+export function renderCustomGroups(modelSpecs: TModelSpec[], mappedEndpoints: Endpoint[]) {
   // Get all endpoint values to exclude them from custom groups
   const endpointValues = new Set(mappedEndpoints.map((ep) => ep.value));
 
@@ -61,6 +69,11 @@ export function renderCustomGroups(
 
   // Render each custom group
   return Object.entries(customGroups).map(([groupName, specs]) => (
-    <CustomGroup key={groupName} groupName={groupName} specs={specs} />
+    <CustomGroup
+      key={groupName}
+      groupName={groupName}
+      specs={specs}
+      endpoints={mappedEndpoints}
+    />
   ));
 }
