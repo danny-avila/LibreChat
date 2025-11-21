@@ -19,9 +19,12 @@ export function CustomGroup({ groupName, specs, endpoints }: CustomGroupProps) {
     return null;
   }
 
-  const icon = endpoints.find(
-    (e) => e.value?.toLowerCase() === groupName.toLowerCase().replace(/[^a-z0-9]/g, ''),
-  )?.icon;
+  const icon = endpoints.find((e) => {
+    const normalizedGroup = groupName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normalizedValue = e.value?.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normalizedLabel = e.label?.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return normalizedGroup === normalizedValue || normalizedGroup === normalizedLabel;
+  })?.icon;
 
   return (
     <Menu
