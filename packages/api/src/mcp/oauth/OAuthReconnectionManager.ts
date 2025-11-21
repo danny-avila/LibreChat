@@ -1,6 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import type { TokenMethods } from '@librechat/data-schemas';
-import type { TUser } from 'librechat-data-provider';
+import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { MCPOAuthTokens } from './types';
 import { OAuthReconnectionTracker } from './OAuthReconnectionTracker';
 import { FlowStateManager } from '~/flow/manager';
@@ -117,7 +116,7 @@ export class OAuthReconnectionManager {
       // attempt to get connection (this will use existing tokens and refresh if needed)
       const connection = await this.mcpManager.getUserConnection({
         serverName,
-        user: { id: userId } as TUser,
+        user: { id: userId } as IUser,
         flowManager: this.flowManager,
         tokenMethods: this.tokenMethods,
         // don't force new connection, let it reuse existing or create new as needed
