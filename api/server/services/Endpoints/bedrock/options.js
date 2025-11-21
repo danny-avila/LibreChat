@@ -1,3 +1,4 @@
+const { resolveHeaders } = require('@librechat/api');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
   AuthType,
@@ -86,6 +87,14 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
 
   if (BEDROCK_REVERSE_PROXY) {
     llmConfig.endpointHost = BEDROCK_REVERSE_PROXY;
+  }
+
+  if (llmConfig.additionalModelRequestFields) {
+    llmConfig.additionalModelRequestFields = resolveHeaders({
+      headers: llmConfig.additionalModelRequestFields,
+      user: req.user,
+      body: req.body,
+    });
   }
 
   return {

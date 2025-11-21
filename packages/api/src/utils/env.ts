@@ -2,6 +2,7 @@ import { extractEnvVariable } from 'librechat-data-provider';
 import type { TUser, MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody } from '~/types';
+import { extractOpenIDTokenInfo, processOpenIDPlaceholders, isOpenIDTokenValid } from './oidc';
 
 /**
  * List of allowed user fields that can be used in MCP environment variables.
@@ -32,21 +33,27 @@ type SafeUser = Pick<IUser, AllowedUserField>;
 
 /**
  * Creates a safe user object containing only allowed fields.
- * Optimized for performance while maintaining type safety.
+ * Preserves federatedTokens for OpenID token template variable resolution.
  *
  * @param user - The user object to extract safe fields from
- * @returns A new object containing only allowed fields
+ * @returns A new object containing only allowed fields plus federatedTokens if present
  */
-export function createSafeUser(user: IUser | null | undefined): Partial<SafeUser> {
+export function createSafeUser(
+  user: IUser | null | undefined,
+): Partial<SafeUser> & { federatedTokens?: unknown } {
   if (!user) {
     return {};
   }
 
-  const safeUser: Partial<SafeUser> = {};
+  const safeUser: Partial<SafeUser> & { federatedTokens?: unknown } = {};
   for (const field of ALLOWED_USER_FIELDS) {
     if (field in user) {
       safeUser[field] = user[field];
     }
+  }
+
+  if ('federatedTokens' in user) {
+    safeUser.federatedTokens = user.federatedTokens;
   }
 
   return safeUser;
@@ -139,7 +146,6 @@ function processSingleValue({
 }): string {
   let value = originalValue;
 
-  // 1. Replace custom user variables
   if (customUserVars) {
     for (const [varName, varVal] of Object.entries(customUserVars)) {
       /** Escaped varName for use in regex to avoid issues with special characters */
@@ -149,15 +155,17 @@ function processSingleValue({
     }
   }
 
-  // 2. Replace user field placeholders (e.g., {{LIBRECHAT_USER_EMAIL}}, {{LIBRECHAT_USER_ID}})
   value = processUserPlaceholders(value, user);
 
-  // 3. Replace body field placeholders (e.g., {{LIBRECHAT_BODY_CONVERSATIONID}}, {{LIBRECHAT_BODY_PARENTMESSAGEID}})
+  const openidTokenInfo = extractOpenIDTokenInfo(user);
+  if (openidTokenInfo && isOpenIDTokenValid(openidTokenInfo)) {
+    value = processOpenIDPlaceholders(value, openidTokenInfo);
+  }
+
   if (body) {
     value = processBodyPlaceholders(value, body);
   }
 
-  // 4. Replace system environment variables
   value = extractEnvVariable(value);
 
   return value;
