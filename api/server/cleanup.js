@@ -29,8 +29,59 @@ const clientRegistry = FinalizationRegistry
     })
   : null;
 
+const graphPropsToClean = [
+  'handlerRegistry',
+  'runId',
+  'tools',
+  'signal',
+  'config',
+  'agentContexts',
+  'messages',
+  'contentData',
+  'stepKeyIds',
+  'contentIndexMap',
+  'toolCallStepIds',
+  'messageIdsByStepKey',
+  'messageStepHasToolCalls',
+  'prelimMessageIdsByStepKey',
+  'startIndex',
+  'defaultAgentId',
+  'dispatchReasoningDelta',
+  'compileOptions',
+  'invokedToolIds',
+  'overrideModel',
+];
+
+const graphRunnablePropsToClean = [
+  'lc_serializable',
+  'lc_kwargs',
+  'lc_runnable',
+  'name',
+  'lc_namespace',
+  'lg_is_pregel',
+  'nodes',
+  'channels',
+  'inputChannels',
+  'outputChannels',
+  'autoValidate',
+  'streamMode',
+  'streamChannels',
+  'interruptAfter',
+  'interruptBefore',
+  'stepTimeout',
+  'debug',
+  'checkpointer',
+  'retryPolicy',
+  'config',
+  'store',
+  'triggerToNodes',
+  'cache',
+  'description',
+  'metaRegistry',
+];
+
 /**
- * Cleans up the client object by removing references to its properties.
+ * Cleans up the client object by removing potential circular references to its properties.
  * This is useful for preventing memory leaks and ensuring that the client
  * and its properties can be garbage collected when it is no longer needed.
  */
@@ -223,68 +274,54 @@ function disposeClient(client) {
     if (client.processMemory) {
       client.processMemory = null;
     }
+
     if (client.run) {
-      // Break circular references in run
       if (client.run.Graph) {
         client.run.Graph.resetValues();
-        client.run.Graph.handlerRegistry = null;
-        client.run.Graph.runId = null;
-        client.run.Graph.tools = null;
-        client.run.Graph.signal = null;
-        client.run.Graph.config = null;
-        client.run.Graph.toolEnd = null;
-        client.run.Graph.toolMap = null;
-        client.run.Graph.provider = null;
-        client.run.Graph.streamBuffer = null;
-        client.run.Graph.clientOptions = null;
-        client.run.Graph.graphState = null;
-        if (client.run.Graph.boundModel?.client) {
-          client.run.Graph.boundModel.client = null;
-        }
-        client.run.Graph.boundModel = null;
-        client.run.Graph.systemMessage = null;
-        client.run.Graph.reasoningKey = null;
-        client.run.Graph.messages = null;
-        client.run.Graph.contentData = null;
-        client.run.Graph.stepKeyIds = null;
-        client.run.Graph.contentIndexMap = null;
-        client.run.Graph.toolCallStepIds = null;
-        client.run.Graph.messageIdsByStepKey = null;
-        client.run.Graph.messageStepHasToolCalls = null;
-        client.run.Graph.prelimMessageIdsByStepKey = null;
-        client.run.Graph.currentTokenType = null;
-        client.run.Graph.lastToken = null;
-        client.run.Graph.tokenTypeSwitch = null;
-        client.run.Graph.indexTokenCountMap = null;
-        client.run.Graph.currentUsage = null;
-        client.run.Graph.tokenCounter = null;
-        client.run.Graph.maxContextTokens = null;
-        client.run.Graph.pruneMessages = null;
-        client.run.Graph.lastStreamCall = null;
-        client.run.Graph.startIndex = null;
+
+        graphPropsToClean.forEach((prop) => {
+          if (client.run.Graph[prop] !== undefined) {
+            client.run.Graph[prop] = null;
+          }
+        });
+
         client.run.Graph = null;
       }
-      if (client.run.handlerRegistry) {
-        client.run.handlerRegistry = null;
-      }
+
       if (client.run.graphRunnable) {
-        if (client.run.graphRunnable.channels) {
-          client.run.graphRunnable.channels = null;
-        }
-        if (client.run.graphRunnable.nodes) {
-          client.run.graphRunnable.nodes = null;
-        }
-        if (client.run.graphRunnable.lc_kwargs) {
-          client.run.graphRunnable.lc_kwargs = null;
-        }
-        if (client.run.graphRunnable.builder?.nodes) {
-          client.run.graphRunnable.builder.nodes = null;
+        graphRunnablePropsToClean.forEach((prop) => {
+          if (client.run.graphRunnable[prop] !== undefined) {
+            client.run.graphRunnable[prop] = null;
+          }
+        });
+
+        if (client.run.graphRunnable.builder) {
+          if (client.run.graphRunnable.builder.nodes !== undefined) {
+            client.run.graphRunnable.builder.nodes = null;
+          }
           client.run.graphRunnable.builder = null;
         }
+
         client.run.graphRunnable = null;
       }
+
+      const runPropsToClean = [
+        'handlerRegistry',
+        'id',
+        'indexTokenCountMap',
+        'returnContent',
+        'tokenCounter',
+      ];
+
+      runPropsToClean.forEach((prop) => {
+        if (client.run[prop] !== undefined) {
+          client.run[prop] = null;
+        }
+      });
+
       client.run = null;
     }
+
     if (client.sendMessage) {
       client.sendMessage = null;
     }
@@ -313,6 +350,9 @@ function disposeClient(client) {
     if (client.agentConfigs) {
       client.agentConfigs = null;
     }
+    if (client.agentIdMap) {
+      client.agentIdMap = null;
+    }
     if (client.artifactPromises) {
       client.artifactPromises = null;
     }
@@ -339,6 +379,8 @@ function disposeClient(client) {
     client.options = null;
   } catch {
     // Ignore errors during disposal
+  } finally {
+    logger.debug('[disposeClient] Client disposed');
   }
 }
 

@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { logger } = require('@librechat/data-schemas');
+const { logAxiosError, resolveHeaders } = require('@librechat/api');
 const { EModelEndpoint, defaultModels } = require('librechat-data-provider');
 
 const {
@@ -11,13 +11,15 @@ const {
   getAnthropicModels,
 } = require('./ModelService');
 
-jest.mock('~/utils', () => {
-  const originalUtils = jest.requireActual('~/utils');
+jest.mock('@librechat/api', () => {
+  const originalUtils = jest.requireActual('@librechat/api');
   return {
     ...originalUtils,
     processModelData: jest.fn((...args) => {
       return originalUtils.processModelData(...args);
     }),
+    logAxiosError: jest.fn(),
+    resolveHeaders: jest.fn((options) => options?.headers || {}),
   };
 });
 
@@ -79,6 +81,70 @@ describe('fetchModels', () => {
     );
   });
 
+  it('should pass custom headers to the API request', async () => {
+    const customHeaders = {
+      'X-Custom-Header': 'custom-value',
+      'X-API-Version': 'v2',
+    };
+
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: customHeaders,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.test.com/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'X-Custom-Header': 'custom-value',
+          'X-API-Version': 'v2',
+          Authorization: 'Bearer testApiKey',
+        }),
+      }),
+    );
+  });
+
+  it('should handle null headers gracefully', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: null,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.test.com/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer testApiKey',
+        }),
+      }),
+    );
+  });
+
+  it('should handle undefined headers gracefully', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: undefined,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.test.com/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer testApiKey',
+        }),
+      }),
+    );
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -108,7 +174,7 @@ describe('fetchModels with createTokenConfig true', () => {
 
   beforeEach(() => {
     // Clears the mock's history before each test
-    const _utils = require('~/utils');
+    const _utils = require('@librechat/api');
     axios.get.mockResolvedValue({ data });
   });
 
@@ -120,7 +186,7 @@ describe('fetchModels with createTokenConfig true', () => {
       createTokenConfig: true,
     });
 
-    const { processModelData } = require('~/utils');
+    const { processModelData } = require('@librechat/api');
     expect(processModelData).toHaveBeenCalled();
     expect(processModelData).toHaveBeenCalledWith(data);
   });
@@ -277,12 +343,51 @@ describe('fetchModels with Ollama specific logic', () => {
 
     expect(models).toEqual(['Ollama-Base', 'Ollama-Advanced']);
     expect(axios.get).toHaveBeenCalledWith('https://api.ollama.test.com/api/tags', {
+      headers: {},
       timeout: 5000,
     });
   });
 
-  it('should handle errors gracefully when fetching Ollama models fails', async () => {
-    axios.get.mockRejectedValue(new Error('Network error'));
+  it('should pass headers and user object to Ollama fetchModels', async () => {
+    const customHeaders = {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer custom-token',
+    };
+    const userObject = {
+      id: 'user789',
+      email: 'test@example.com',
+    };
+
+    resolveHeaders.mockReturnValueOnce(customHeaders);
+
+    const models = await fetchModels({
+      user: 'user789',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.ollama.test.com',
+      name: 'ollama',
+      headers: customHeaders,
+      userObject,
+    });
+
+    expect(models).toEqual(['Ollama-Base', 'Ollama-Advanced']);
+    expect(resolveHeaders).toHaveBeenCalledWith({
+      headers: customHeaders,
+      user: userObject,
+    });
+    expect(axios.get).toHaveBeenCalledWith('https://api.ollama.test.com/api/tags', {
+      headers: customHeaders,
+      timeout: 5000,
+    });
+  });
+
+  it('should handle errors gracefully when fetching Ollama models fails and fallback to OpenAI-compatible fetch', async () => {
+    axios.get.mockRejectedValueOnce(new Error('Ollama API error'));
+    axios.get.mockResolvedValueOnce({
+      data: {
+        data: [{ id: 'fallback-model-1' }, { id: 'fallback-model-2' }],
+      },
+    });
+
     const models = await fetchModels({
       user: 'user789',
       apiKey: 'testApiKey',
@@ -290,8 +395,13 @@ describe('fetchModels with Ollama specific logic', () => {
       name: 'OllamaAPI',
     });
 
-    expect(models).toEqual([]);
-    expect(logger.error).toHaveBeenCalled();
+    expect(models).toEqual(['fallback-model-1', 'fallback-model-2']);
+    expect(logAxiosError).toHaveBeenCalledWith({
+      message:
+        'Failed to fetch models from Ollama API. Attempting to fetch via OpenAI-compatible endpoint.',
+      error: expect.any(Error),
+    });
+    expect(axios.get).toHaveBeenCalledTimes(2);
   });
 
   it('should return an empty array if no baseURL is provided', async () => {
@@ -363,6 +473,64 @@ describe('getAnthropicModels', () => {
     process.env.ANTHROPIC_MODELS = 'claude-1, claude-2 ';
     const models = await getAnthropicModels();
     expect(models).toEqual(['claude-1', 'claude-2']);
+  });
+
+  it('should use Anthropic-specific headers when fetching models', async () => {
+    delete process.env.ANTHROPIC_MODELS;
+    process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+
+    axios.get.mockResolvedValue({
+      data: {
+        data: [{ id: 'claude-3' }, { id: 'claude-4' }],
+      },
+    });
+
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'test-anthropic-key',
+      baseURL: 'https://api.anthropic.com/v1',
+      name: EModelEndpoint.anthropic,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: {
+          'x-api-key': 'test-anthropic-key',
+          'anthropic-version': expect.any(String),
+        },
+      }),
+    );
+  });
+
+  it('should pass custom headers for Anthropic endpoint', async () => {
+    const customHeaders = {
+      'X-Custom-Header': 'custom-value',
+    };
+
+    axios.get.mockResolvedValue({
+      data: {
+        data: [{ id: 'claude-3' }],
+      },
+    });
+
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'test-anthropic-key',
+      baseURL: 'https://api.anthropic.com/v1',
+      name: EModelEndpoint.anthropic,
+      headers: customHeaders,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: {
+          'x-api-key': 'test-anthropic-key',
+          'anthropic-version': expect.any(String),
+        },
+      }),
+    );
   });
 });
 

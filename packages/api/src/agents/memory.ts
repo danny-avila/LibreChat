@@ -15,7 +15,7 @@ import type {
 } from '@librechat/agents';
 import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { ObjectId, MemoryMethods } from '@librechat/data-schemas';
-import type { BaseMessage } from '@langchain/core/messages';
+import type { BaseMessage, ToolMessage } from '@langchain/core/messages';
 import type { Response as ServerResponse } from 'express';
 import { Tokenizer } from '~/utils';
 
@@ -345,7 +345,7 @@ ${memory ?? 'No existing memories'}`;
     };
 
     // Handle GPT-5+ models
-    if ('model' in finalLLMConfig && /\bgpt-[5-9]\b/i.test(finalLLMConfig.model ?? '')) {
+    if ('model' in finalLLMConfig && /\bgpt-[5-9](?:\.\d+)?\b/i.test(finalLLMConfig.model ?? '')) {
       // Remove temperature for GPT-5+ models
       delete finalLLMConfig.temperature;
 
@@ -383,9 +383,11 @@ ${memory ?? 'No existing memories'}`;
     });
 
     const config = {
+      runName: 'MemoryRun',
       configurable: {
+        user_id: userId,
+        thread_id: conversationId,
         provider: llmConfig?.provider,
-        thread_id: `memory-run-${conversationId}`,
       },
       streamMode: 'values',
       recursionLimit: 3,
@@ -464,7 +466,7 @@ async function handleMemoryArtifact({
   data: ToolEndData;
   metadata?: ToolEndMetadata;
 }) {
-  const output = data?.output;
+  const output = data?.output as ToolMessage | undefined;
   if (!output) {
     return null;
   }
@@ -507,7 +509,7 @@ export function createMemoryCallback({
   artifactPromises: Promise<Partial<TAttachment> | null>[];
 }): ToolEndCallback {
   return async (data: ToolEndData, metadata?: Record<string, unknown>) => {
-    const output = data?.output;
+    const output = data?.output as ToolMessage | undefined;
     const memoryArtifact = output?.artifact?.[Tools.memory] as MemoryArtifact;
     if (memoryArtifact == null) {
       return;

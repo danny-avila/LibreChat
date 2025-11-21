@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { throttle } from 'lodash';
 
 interface UseInfiniteScrollOptions {
   hasNextPage?: boolean;
-  isFetchingNextPage?: boolean;
+  isLoading?: boolean;
   fetchNextPage: () => void;
   threshold?: number; // Percentage of scroll position to trigger fetch (0-1)
   throttleMs?: number; // Throttle delay in milliseconds
@@ -15,77 +15,95 @@ interface UseInfiniteScrollOptions {
  */
 export const useInfiniteScroll = ({
   hasNextPage = false,
-  isFetchingNextPage = false,
+  isLoading = false,
   fetchNextPage,
   threshold = 0.8, // Trigger when 80% scrolled
   throttleMs = 200,
 }: UseInfiniteScrollOptions) => {
-  const scrollElementRef = useRef<HTMLElement | null>(null);
+  // Monitor resizing of the scroll container
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const [scrollElement, setScrollElementState] = useState<HTMLElement | null>(null);
 
-  // Throttled scroll handler to prevent excessive API calls
-  const handleScroll = useCallback(
-    throttle(() => {
-      const element = scrollElementRef.current;
-      if (!element) return;
+  // Handler to check if we need to fetch more data
+  const handleNeedToFetch = useCallback(() => {
+    if (!scrollElement) return;
 
-      const { scrollTop, scrollHeight, clientHeight } = element;
+    const { scrollTop, scrollHeight, clientHeight } = scrollElement;
 
-      // Calculate scroll position as percentage
-      const scrollPosition = (scrollTop + clientHeight) / scrollHeight;
+    // Calculate scroll position as percentage
+    const scrollPosition = (scrollTop + clientHeight) / scrollHeight;
 
-      // Check if we've scrolled past the threshold and conditions are met
-      const shouldFetch = scrollPosition >= threshold && hasNextPage && !isFetchingNextPage;
+    // Check if we've scrolled past the threshold and conditions are met
+    const shouldFetch = scrollPosition >= threshold && hasNextPage && !isLoading;
 
-      if (shouldFetch) {
-        fetchNextPage();
-      }
-    }, throttleMs),
-    [hasNextPage, isFetchingNextPage, fetchNextPage, threshold, throttleMs],
+    if (shouldFetch) {
+      fetchNextPage();
+    }
+  }, [scrollElement, hasNextPage, isLoading, fetchNextPage, threshold]);
+
+  // Create a throttled version - using useMemo to ensure it's created synchronously
+  const throttledHandleNeedToFetch = useMemo(
+    () => throttle(handleNeedToFetch, throttleMs),
+    [handleNeedToFetch, throttleMs],
   );
 
-  // Set up scroll listener
+  // Clean up throttled function on unmount
   useEffect(() => {
-    const element = scrollElementRef.current;
+    return () => {
+      throttledHandleNeedToFetch.cancel?.();
+    };
+  }, [throttledHandleNeedToFetch]);
+
+  // Check if we need to fetch more data when loading state changes (useful to fill content on first load)
+  useEffect(() => {
+    if (isLoading === false && scrollElement) {
+      // Use requestAnimationFrame to ensure DOM is ready after loading completes
+      const rafId = requestAnimationFrame(() => {
+        throttledHandleNeedToFetch();
+      });
+      return () => cancelAnimationFrame(rafId);
+    }
+  }, [isLoading, scrollElement, throttledHandleNeedToFetch]);
+
+  // Set up scroll listener and ResizeObserver
+  useEffect(() => {
+    const element = scrollElement;
     if (!element) return;
 
-    // Remove any existing listener first
-    element.removeEventListener('scroll', handleScroll);
+    // Add the scroll listener
+    element.addEventListener('scroll', throttledHandleNeedToFetch, { passive: true });
 
-    // Add the new listener
-    element.addEventListener('scroll', handleScroll, { passive: true });
+    // Set up ResizeObserver to detect size changes
+    if (resizeObserverRef.current) {
+      resizeObserverRef.current.disconnect();
+    }
+
+    resizeObserverRef.current = new ResizeObserver(() => {
+      // Check if we need to fetch more data when container resizes
+      throttledHandleNeedToFetch();
+    });
+
+    resizeObserverRef.current.observe(element);
+
+    // Check immediately when element changes
+    throttledHandleNeedToFetch();
 
     return () => {
-      element.removeEventListener('scroll', handleScroll);
-      // Clean up throttled function
-      handleScroll.cancel?.();
+      element.removeEventListener('scroll', throttledHandleNeedToFetch);
+      // Clean up ResizeObserver
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
+      }
     };
-  }, [handleScroll]);
-
-  // Additional effect to re-setup listeners when scroll element changes
-  useEffect(() => {
-    const element = scrollElementRef.current;
-    if (!element) return;
-    // Remove any existing listener first
-    element.removeEventListener('scroll', handleScroll);
-
-    // Add the new listener
-    element.addEventListener('scroll', handleScroll, { passive: true });
-    return () => {
-      element.removeEventListener('scroll', handleScroll);
-      // Clean up throttled function
-      handleScroll.cancel?.();
-    };
-  }, [scrollElementRef.current, handleScroll]);
+  }, [scrollElement, throttledHandleNeedToFetch]);
 
   // Function to manually set the scroll container
   const setScrollElement = useCallback((element: HTMLElement | null) => {
-    scrollElementRef.current = element;
+    setScrollElementState(element);
   }, []);
 
   return {
     setScrollElement,
-    scrollElementRef,
   };
 };
-
-export default useInfiniteScroll;

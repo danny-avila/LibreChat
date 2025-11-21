@@ -192,6 +192,7 @@ export default function MemoryEditDialog({
               type="button"
               variant="submit"
               onClick={handleSave}
+              aria-label={localize('com_ui_save')}
               disabled={isLoading || !key.trim() || !value.trim()}
               className="text-white"
             >

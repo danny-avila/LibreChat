@@ -370,7 +370,11 @@ export default function GenericGrantAccessDialog({
             <div className="flex gap-2">
               <PeoplePickerAdminSettings />
               <OGDialogClose asChild>
-                <Button variant="outline" onClick={handleCancel}>
+                <Button
+                  variant="outline"
+                  onClick={handleCancel}
+                  aria-label={localize('com_ui_cancel')}
+                >
                   {localize('com_ui_cancel')}
                 </Button>
               </OGDialogClose>
@@ -382,6 +386,7 @@ export default function GenericGrantAccessDialog({
                   (hasChanges && !hasAtLeastOneOwner)
                 }
                 className="min-w-[120px]"
+                aria-label={localize('com_ui_save_changes')}
               >
                 {updatePermissionsMutation.isLoading ? (
                   <div className="flex items-center gap-2">

@@ -60,11 +60,13 @@ export default function Retrieval({
                 onCheckedChange={field.onChange}
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
+                aria-labelledby={Capabilities.retrieval}
               />
             )}
           />
           <div className="flex items-center space-x-2">
             <label
+              id={Capabilities.retrieval}
               className={cn(
                 'form-check-label text-token-text-primary w-full select-none',
                 isDisabled ? 'cursor-no-drop opacity-50' : 'cursor-pointer',

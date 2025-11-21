@@ -56,6 +56,9 @@ describe('MCPConnectionFactory', () => {
       isConnected: jest.fn(),
       setOAuthTokens: jest.fn(),
       on: jest.fn().mockReturnValue(mockConnectionInstance),
+      once: jest.fn().mockReturnValue(mockConnectionInstance),
+      off: jest.fn().mockReturnValue(mockConnectionInstance),
+      removeListener: jest.fn().mockReturnValue(mockConnectionInstance),
       emit: jest.fn(),
     } as unknown as jest.Mocked<MCPConnection>;
 
@@ -252,6 +255,7 @@ describe('MCPConnectionFactory', () => {
         'test-server',
         'https://api.example.com',
         'user123',
+        {},
         undefined,
       );
       expect(oauthOptions.oauthStart).toHaveBeenCalledWith('https://auth.example.com');

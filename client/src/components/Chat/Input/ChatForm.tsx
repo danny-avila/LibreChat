@@ -12,6 +12,7 @@ import {
 import {
   useTextarea,
   useAutoSave,
+  useLocalize,
   useRequiresKey,
   useHandleKeyUp,
   useQueryParams,
@@ -38,6 +39,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   useFocusChatEffect(textAreaRef);
+  const localize = useLocalize();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [, setIsScrollable] = useState(false);
@@ -220,6 +222,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         <div className={cn('flex w-full items-center', isRTL && 'flex-row-reverse')}>
           {showPlusPopover && !isAssistantsEndpoint(endpoint) && (
             <Mention
+              conversation={conversation}
               setShowMentionPopover={setShowPlusPopover}
               newConversation={generateConversation}
               textAreaRef={textAreaRef}
@@ -230,6 +233,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
           )}
           {showMentionPopover && (
             <Mention
+              conversation={conversation}
               setShowMentionPopover={setShowMentionPopover}
               newConversation={newConversation}
               textAreaRef={textAreaRef}
@@ -277,6 +281,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                     setIsTextAreaFocused(true);
                   }}
                   onBlur={setIsTextAreaFocused.bind(null, false)}
+                  aria-label={localize('com_ui_message_input')}
                   onClick={handleFocusOrClick}
                   style={{ height: 44, overflowY: 'auto' }}
                   className={cn(
@@ -296,7 +301,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             )}
             <div
               className={cn(
-                'items-between flex gap-2 pb-2',
+                '@container items-between flex gap-2 pb-2',
                 isRTL ? 'flex-row-reverse' : 'flex-row',
               )}
             >

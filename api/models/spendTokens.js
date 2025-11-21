@@ -1,4 +1,4 @@
-const { logger } = require('~/config');
+const { logger } = require('@librechat/data-schemas');
 const { createTransaction, createStructuredTransaction } = require('./Transaction');
 /**
  * Creates up to two transactions to record the spending of tokens.

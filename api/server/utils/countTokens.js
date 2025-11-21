@@ -1,7 +1,7 @@
 const { Tiktoken } = require('tiktoken/lite');
+const { logger } = require('@librechat/data-schemas');
 const p50k_base = require('tiktoken/encoders/p50k_base.json');
 const cl100k_base = require('tiktoken/encoders/cl100k_base.json');
-const logger = require('~/config/winston');
 
 /**
  * Counts the number of tokens in a given text using a specified encoding model.

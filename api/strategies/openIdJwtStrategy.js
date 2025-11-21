@@ -1,3 +1,4 @@
+const cookies = require('cookie');
 const jwksRsa = require('jwks-rsa');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
@@ -40,14 +41,24 @@ const openIdJwtLogin = (openIdConfig) => {
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKeyProvider: jwksRsa.passportJwtSecret(jwksRsaOptions),
+      passReqToCallback: true,
     },
-    async (payload, done) => {
+    /**
+     * @param {import('@librechat/api').ServerRequest} req
+     * @param {import('openid-client').IDToken} payload
+     * @param {import('passport-jwt').VerifyCallback} done
+     */
+    async (req, payload, done) => {
       try {
+        const authHeader = req.headers.authorization;
+        const rawToken = authHeader?.replace('Bearer ', '');
+
         const { user, error, migration } = await findOpenIDUser({
-          openidId: payload?.sub,
-          email: payload?.email,
-          strategyName: 'openIdJwtLogin',
           findUser,
+          email: payload?.email,
+          openidId: payload?.sub,
+          idOnTheSource: payload?.oid,
+          strategyName: 'openIdJwtLogin',
         });
 
         if (error) {
@@ -71,6 +82,18 @@ const openIdJwtLogin = (openIdConfig) => {
           if (Object.keys(updateData).length > 0) {
             await updateUser(user.id, updateData);
           }
+
+          const cookieHeader = req.headers.cookie;
+          const parsedCookies = cookieHeader ? cookies.parse(cookieHeader) : {};
+          const accessToken = parsedCookies.openid_access_token;
+          const refreshToken = parsedCookies.refreshToken;
+
+          user.federatedTokens = {
+            access_token: accessToken || rawToken,
+            id_token: rawToken,
+            refresh_token: refreshToken,
+            expires_at: payload.exp,
+          };
 
           done(null, user);
         } else {

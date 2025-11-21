@@ -14,6 +14,7 @@ import { logger, getDefaultAgentFormValues } from '~/utils';
 import { useLocalize, useSetIndexOptions } from '~/hooks';
 import { useDeleteAgentMutation } from '~/data-provider';
 import { useChatContext } from '~/Providers';
+import { isEphemeralAgent } from '~/common';
 
 export default function DeleteButton({
   agent_id,
@@ -76,7 +77,7 @@ export default function DeleteButton({
     },
   });
 
-  if (!agent_id) {
+  if (isEphemeralAgent(agent_id)) {
     return null;
   }
 

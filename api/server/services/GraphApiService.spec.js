@@ -73,6 +73,7 @@ describe('GraphApiService', () => {
       header: jest.fn().mockReturnThis(),
       top: jest.fn().mockReturnThis(),
       get: jest.fn(),
+      post: jest.fn(),
     };
 
     Client.init.mockReturnValue(mockGraphClient);
@@ -514,31 +515,33 @@ describe('GraphApiService', () => {
   });
 
   describe('getUserEntraGroups', () => {
-    it('should fetch user groups from memberOf endpoint', async () => {
+    it('should fetch user groups using getMemberGroups endpoint', async () => {
       const mockGroupsResponse = {
-        value: [
-          {
-            id: 'group-1',
-          },
-          {
-            id: 'group-2',
-          },
-        ],
+        value: ['group-1', 'group-2'],
       };
 
-      mockGraphClient.get.mockResolvedValue(mockGroupsResponse);
+      mockGraphClient.post.mockResolvedValue(mockGroupsResponse);
 
       const result = await GraphApiService.getUserEntraGroups('token', 'user');
 
-      expect(mockGraphClient.api).toHaveBeenCalledWith('/me/memberOf');
-      expect(mockGraphClient.select).toHaveBeenCalledWith('id');
+      expect(mockGraphClient.api).toHaveBeenCalledWith('/me/getMemberGroups');
+      expect(mockGraphClient.post).toHaveBeenCalledWith({ securityEnabledOnly: false });
 
-      expect(result).toHaveLength(2);
+      expect(result).toEqual(['group-1', 'group-2']);
+    });
+
+    it('should deduplicate returned group ids', async () => {
+      mockGraphClient.post.mockResolvedValue({
+        value: ['group-1', 'group-2', 'group-1'],
+      });
+
+      const result = await GraphApiService.getUserEntraGroups('token', 'user');
+
       expect(result).toEqual(['group-1', 'group-2']);
     });
 
     it('should return empty array on error', async () => {
-      mockGraphClient.get.mockRejectedValue(new Error('API error'));
+      mockGraphClient.post.mockRejectedValue(new Error('API error'));
 
       const result = await GraphApiService.getUserEntraGroups('token', 'user');
 
@@ -550,7 +553,7 @@ describe('GraphApiService', () => {
         value: [],
       };
 
-      mockGraphClient.get.mockResolvedValue(mockGroupsResponse);
+      mockGraphClient.post.mockResolvedValue(mockGroupsResponse);
 
       const result = await GraphApiService.getUserEntraGroups('token', 'user');
 
@@ -558,9 +561,92 @@ describe('GraphApiService', () => {
     });
 
     it('should handle missing value property', async () => {
-      mockGraphClient.get.mockResolvedValue({});
+      mockGraphClient.post.mockResolvedValue({});
 
       const result = await GraphApiService.getUserEntraGroups('token', 'user');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getUserOwnedEntraGroups', () => {
+    it('should fetch owned groups with pagination support', async () => {
+      const firstPage = {
+        value: [
+          {
+            id: 'owned-group-1',
+          },
+        ],
+        '@odata.nextLink':
+          'https://graph.microsoft.com/v1.0/me/ownedObjects/microsoft.graph.group?$skiptoken=xyz',
+      };
+
+      const secondPage = {
+        value: [
+          {
+            id: 'owned-group-2',
+          },
+        ],
+      };
+
+      mockGraphClient.get.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(secondPage);
+
+      const result = await GraphApiService.getUserOwnedEntraGroups('token', 'user');
+
+      expect(mockGraphClient.api).toHaveBeenNthCalledWith(
+        1,
+        '/me/ownedObjects/microsoft.graph.group',
+      );
+      expect(mockGraphClient.api).toHaveBeenNthCalledWith(
+        2,
+        '/me/ownedObjects/microsoft.graph.group?$skiptoken=xyz',
+      );
+      expect(mockGraphClient.top).toHaveBeenCalledWith(999);
+      expect(mockGraphClient.get).toHaveBeenCalledTimes(2);
+
+      expect(result).toEqual(['owned-group-1', 'owned-group-2']);
+    });
+
+    it('should return empty array on error', async () => {
+      mockGraphClient.get.mockRejectedValue(new Error('API error'));
+
+      const result = await GraphApiService.getUserOwnedEntraGroups('token', 'user');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getGroupMembers', () => {
+    it('should fetch transitive members and include only users', async () => {
+      const firstPage = {
+        value: [
+          { id: 'user-1', '@odata.type': '#microsoft.graph.user' },
+          { id: 'child-group', '@odata.type': '#microsoft.graph.group' },
+        ],
+        '@odata.nextLink':
+          'https://graph.microsoft.com/v1.0/groups/group-id/transitiveMembers?$skiptoken=abc',
+      };
+      const secondPage = {
+        value: [{ id: 'user-2', '@odata.type': '#microsoft.graph.user' }],
+      };
+
+      mockGraphClient.get.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(secondPage);
+
+      const result = await GraphApiService.getGroupMembers('token', 'user', 'group-id');
+
+      expect(mockGraphClient.api).toHaveBeenNthCalledWith(1, '/groups/group-id/transitiveMembers');
+      expect(mockGraphClient.api).toHaveBeenNthCalledWith(
+        2,
+        '/groups/group-id/transitiveMembers?$skiptoken=abc',
+      );
+      expect(mockGraphClient.top).toHaveBeenCalledWith(999);
+      expect(result).toEqual(['user-1', 'user-2']);
+    });
+
+    it('should return empty array on error', async () => {
+      mockGraphClient.get.mockRejectedValue(new Error('API error'));
+
+      const result = await GraphApiService.getGroupMembers('token', 'user', 'group-id');
 
       expect(result).toEqual([]);
     });

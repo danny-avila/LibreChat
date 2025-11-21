@@ -48,16 +48,11 @@ const axios = require('axios');
 const { loadYaml } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const loadCustomConfig = require('./loadCustomConfig');
-const getLogStores = require('~/cache/getLogStores');
 
 describe('loadCustomConfig', () => {
-  const mockSet = jest.fn();
-  const mockCache = { set: mockSet };
-
   beforeEach(() => {
     jest.resetAllMocks();
     delete process.env.CONFIG_PATH;
-    getLogStores.mockReturnValue(mockCache);
   });
 
   it('should return null and log error if remote config fetch fails', async () => {
@@ -94,7 +89,6 @@ describe('loadCustomConfig', () => {
     const result = await loadCustomConfig();
 
     expect(result).toEqual(mockConfig);
-    expect(mockSet).toHaveBeenCalledWith(expect.anything(), mockConfig);
   });
 
   it('should return null and log if config schema validation fails', async () => {
@@ -134,7 +128,6 @@ describe('loadCustomConfig', () => {
     axios.get.mockResolvedValue({ data: mockConfig });
     const result = await loadCustomConfig();
     expect(result).toEqual(mockConfig);
-    expect(mockSet).toHaveBeenCalledWith(expect.anything(), mockConfig);
   });
 
   it('should return null if the remote config file is not found', async () => {
@@ -168,7 +161,6 @@ describe('loadCustomConfig', () => {
     process.env.CONFIG_PATH = 'validConfig.yaml';
     loadYaml.mockReturnValueOnce(mockConfig);
     await loadCustomConfig();
-    expect(mockSet).not.toHaveBeenCalled();
   });
 
   it('should log the loaded custom config', async () => {

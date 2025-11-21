@@ -1,11 +1,13 @@
 import { logger } from '@librechat/data-schemas';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods } from '@librechat/data-schemas';
-import type { MCPOAuthTokens, MCPOAuthFlowMetadata } from '~/mcp/oauth';
+import type { MCPOAuthTokens, MCPOAuthFlowMetadata, OAuthMetadata } from '~/mcp/oauth';
 import type { FlowStateManager } from '~/flow/manager';
 import type { FlowMetadata } from '~/flow/types';
 import type * as t from './types';
 import { MCPTokenStorage, MCPOAuthHandler } from '~/mcp/oauth';
+import { sanitizeUrlForLogging } from './utils';
+import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
 
@@ -74,9 +76,23 @@ export class MCPConnectionFactory {
       oauthTokens,
     });
 
-    if (this.useOAuth) this.handleOAuthEvents(connection);
-    await this.attemptToConnect(connection);
-    return connection;
+    let cleanupOAuthHandlers: (() => void) | null = null;
+    if (this.useOAuth) {
+      cleanupOAuthHandlers = this.handleOAuthEvents(connection);
+    }
+
+    try {
+      await this.attemptToConnect(connection);
+      if (cleanupOAuthHandlers) {
+        cleanupOAuthHandlers();
+      }
+      return connection;
+    } catch (error) {
+      if (cleanupOAuthHandlers) {
+        cleanupOAuthHandlers();
+      }
+      throw error;
+    }
   }
 
   /** Retrieves existing OAuth tokens from storage or returns null */
@@ -127,14 +143,15 @@ export class MCPConnectionFactory {
           serverName: metadata.serverName,
           clientInfo: metadata.clientInfo,
         },
+        this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
       );
     };
   }
 
   /** Sets up OAuth event handlers for the connection */
-  protected handleOAuthEvents(connection: MCPConnection): void {
-    connection.on('oauthRequired', async (data) => {
+  protected handleOAuthEvents(connection: MCPConnection): () => void {
+    const oauthHandler = async (data: { serverUrl?: string }) => {
       logger.info(`${this.logPrefix} oauthRequired event received`);
 
       // If we just want to initiate OAuth and return, handle it differently
@@ -146,6 +163,7 @@ export class MCPConnectionFactory {
               this.serverName,
               data.serverUrl || '',
               this.userId!,
+              config?.oauth_headers ?? {},
               config?.oauth,
             );
 
@@ -186,6 +204,7 @@ export class MCPConnectionFactory {
             updateToken: this.tokenMethods.updateToken,
             findToken: this.tokenMethods.findToken,
             clientInfo: result.clientInfo,
+            metadata: result.metadata,
           });
           logger.info(`${this.logPrefix} OAuth tokens saved to storage`);
         } catch (error) {
@@ -201,20 +220,23 @@ export class MCPConnectionFactory {
         logger.warn(`${this.logPrefix} OAuth failed, emitting oauthFailed event`);
         connection.emit('oauthFailed', new Error('OAuth authentication failed'));
       }
-    });
+    };
+
+    connection.on('oauthRequired', oauthHandler);
+
+    return () => {
+      connection.removeListener('oauthRequired', oauthHandler);
+    };
   }
 
   /** Attempts to establish connection with timeout handling */
   protected async attemptToConnect(connection: MCPConnection): Promise<void> {
     const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
-    const connectionTimeout = new Promise<void>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`Connection timeout after ${connectTimeout}ms`)),
-        connectTimeout,
-      ),
+    await withTimeout(
+      this.connectTo(connection),
+      connectTimeout,
+      `Connection timeout after ${connectTimeout}ms`,
     );
-    const connectionAttempt = this.connectTo(connection);
-    await Promise.race([connectionAttempt, connectionTimeout]);
 
     if (await connection.isConnected()) return;
     logger.error(`${this.logPrefix} Failed to establish connection.`);
@@ -284,9 +306,12 @@ export class MCPConnectionFactory {
   protected async handleOAuthRequired(): Promise<{
     tokens: MCPOAuthTokens | null;
     clientInfo?: OAuthClientInformation;
+    metadata?: OAuthMetadata;
   } | null> {
     const serverUrl = (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url;
-    logger.debug(`${this.logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl}`);
+    logger.debug(
+      `${this.logPrefix} \`handleOAuthRequired\` called with serverUrl: ${serverUrl ? sanitizeUrlForLogging(serverUrl) : 'undefined'}`,
+    );
 
     if (!this.flowManager || !serverUrl) {
       logger.error(
@@ -304,6 +329,7 @@ export class MCPConnectionFactory {
 
       /** Check if there's already an ongoing OAuth flow for this flowId */
       const existingFlow = await this.flowManager.getFlowState(flowId, 'mcp_oauth');
+
       if (existingFlow && existingFlow.status === 'PENDING') {
         logger.debug(
           `${this.logPrefix} OAuth flow already exists for ${flowId}, waiting for completion`,
@@ -324,6 +350,38 @@ export class MCPConnectionFactory {
         return { tokens, clientInfo };
       }
 
+      // Clean up old completed/failed flows, but only if they're actually stale
+      // This prevents race conditions where we delete a flow that's still being processed
+      if (existingFlow && existingFlow.status !== 'PENDING') {
+        const STALE_FLOW_THRESHOLD = 2 * 60 * 1000; // 2 minutes
+        const { isStale, age, status } = await this.flowManager.isFlowStale(
+          flowId,
+          'mcp_oauth',
+          STALE_FLOW_THRESHOLD,
+        );
+
+        if (isStale) {
+          try {
+            await this.flowManager.deleteFlow(flowId, 'mcp_oauth');
+            logger.debug(
+              `${this.logPrefix} Cleared stale ${status} OAuth flow (age: ${Math.round(age / 1000)}s)`,
+            );
+          } catch (error) {
+            logger.warn(`${this.logPrefix} Failed to clear stale OAuth flow`, error);
+          }
+        } else {
+          logger.debug(
+            `${this.logPrefix} Skipping cleanup of recent ${status} flow (age: ${Math.round(age / 1000)}s, threshold: ${STALE_FLOW_THRESHOLD / 1000}s)`,
+          );
+          // If flow is recent but not pending, something might be wrong
+          if (status === 'FAILED') {
+            logger.warn(
+              `${this.logPrefix} Recent OAuth flow failed, will retry after ${Math.round((STALE_FLOW_THRESHOLD - age) / 1000)}s`,
+            );
+          }
+        }
+      }
+
       logger.debug(`${this.logPrefix} Initiating new OAuth flow for ${this.serverName}...`);
       const {
         authorizationUrl,
@@ -333,6 +391,7 @@ export class MCPConnectionFactory {
         this.serverName,
         serverUrl,
         this.userId!,
+        this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
       );
 
@@ -359,8 +418,13 @@ export class MCPConnectionFactory {
 
       /** Client information from the flow metadata */
       const clientInfo = flowMetadata?.clientInfo;
+      const metadata = flowMetadata?.metadata;
 
-      return { tokens, clientInfo };
+      return {
+        tokens,
+        clientInfo,
+        metadata,
+      };
     } catch (error) {
       logger.error(`${this.logPrefix} Failed to complete OAuth flow for ${this.serverName}`, error);
       return null;

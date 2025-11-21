@@ -1,6 +1,6 @@
-import { UIResourceRenderer } from '@mcp-ui/client';
-import type { UIResource } from '~/common';
 import React, { useState } from 'react';
+import { UIResourceRenderer } from '@mcp-ui/client';
+import type { UIResource } from 'librechat-data-provider';
 
 interface UIResourceCarouselProps {
   uiResources: UIResource[];

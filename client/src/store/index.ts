@@ -13,6 +13,7 @@ import settings from './settings';
 import misc from './misc';
 import isTemporary from './temporary';
 export * from './agents';
+export * from './mcp';
 
 export default {
   ...artifacts,

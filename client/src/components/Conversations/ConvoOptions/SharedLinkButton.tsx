@@ -21,6 +21,7 @@ import { useLocalize } from '~/hooks';
 export default function SharedLinkButton({
   share,
   conversationId,
+  targetMessageId,
   setShareDialogOpen,
   showQR,
   setShowQR,
@@ -28,6 +29,7 @@ export default function SharedLinkButton({
 }: {
   share: TSharedLinkGetResponse | undefined;
   conversationId: string;
+  targetMessageId?: string;
   setShareDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
   showQR: boolean;
   setShowQR: (showQR: boolean) => void;
@@ -86,7 +88,7 @@ export default function SharedLinkButton({
   };
 
   const createShareLink = async () => {
-    const share = await mutate({ conversationId });
+    const share = await mutate({ conversationId, targetMessageId });
     const newLink = generateShareLink(share.shareId);
     setSharedLink(newLink);
   };
@@ -111,6 +113,8 @@ export default function SharedLinkButton({
     }
   };
 
+  const qrCodeLabel = showQR ? localize('com_ui_hide_qr') : localize('com_ui_show_qr');
+
   return (
     <>
       <div className="flex gap-2">
@@ -128,6 +132,7 @@ export default function SharedLinkButton({
                 <Button
                   {...props}
                   onClick={() => updateSharedLink()}
+                  aria-label={localize('com_ui_refresh_link')}
                   variant="outline"
                   disabled={isUpdateLoading}
                 >
@@ -141,9 +146,14 @@ export default function SharedLinkButton({
             />
 
             <TooltipAnchor
-              description={showQR ? localize('com_ui_hide_qr') : localize('com_ui_show_qr')}
+              description={qrCodeLabel}
               render={(props) => (
-                <Button {...props} onClick={() => setShowQR(!showQR)} variant="outline">
+                <Button
+                  {...props}
+                  onClick={() => setShowQR(!showQR)}
+                  variant="outline"
+                  aria-label={qrCodeLabel}
+                >
                   <QrCode className="size-4" />
                 </Button>
               )}
@@ -152,7 +162,12 @@ export default function SharedLinkButton({
             <TooltipAnchor
               description={localize('com_ui_delete')}
               render={(props) => (
-                <Button {...props} onClick={() => setShowDeleteDialog(true)} variant="destructive">
+                <Button
+                  {...props}
+                  onClick={() => setShowDeleteDialog(true)}
+                  variant="destructive"
+                  aria-label={localize('com_ui_delete')}
+                >
                   <Trash2 className="size-4" />
                 </Button>
               )}

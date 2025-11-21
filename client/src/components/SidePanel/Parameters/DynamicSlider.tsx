@@ -179,6 +179,7 @@ function DynamicSlider({
                 min={range ? range.min : 0}
                 step={range ? (range.step ?? 1) : 1}
                 controls={false}
+                aria-label={localize(label as TranslationKeys)}
                 className={cn(
                   defaultTextProps,
                   cn(
@@ -192,6 +193,7 @@ function DynamicSlider({
                 id={`${settingKey}-dynamic-setting-input`}
                 disabled={readonly}
                 value={getDisplayValue(selectedValue)}
+                aria-label={localize(label as TranslationKeys)}
                 onChange={() => ({})}
                 className={cn(
                   defaultTextProps,
@@ -214,6 +216,7 @@ function DynamicSlider({
             onValueChange={(value) => handleValueChange(value[0])}
             onDoubleClick={() => setInputValue(defaultValue as string | number)}
             max={max}
+            aria-label={localize(label as TranslationKeys)}
             min={range ? range.min : 0}
             step={range ? (range.step ?? 1) : 1}
             className="flex h-4 w-full"

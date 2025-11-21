@@ -11,9 +11,9 @@ import {
   AgentListResponse,
 } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
+import { renderAgentAvatar, clearMessagesCache } from '~/utils';
+import { useLocalize, useDefaultConvo } from '~/hooks';
 import { useChatContext } from '~/Providers';
-import { renderAgentAvatar } from '~/utils';
-import { useLocalize } from '~/hooks';
 
 interface SupportContact {
   name?: string;
@@ -34,11 +34,11 @@ interface AgentDetailProps {
  */
 const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => {
   const localize = useLocalize();
-  // const navigate = useNavigate();
-  const { conversation, newConversation } = useChatContext();
+  const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const dialogRef = useRef<HTMLDivElement>(null);
-  const queryClient = useQueryClient();
+  const getDefaultConversation = useDefaultConvo();
+  const { conversation, newConversation } = useChatContext();
 
   /**
    * Navigate to chat with the selected agent
@@ -56,19 +56,25 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
 
       localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}0`, agent.id);
 
-      queryClient.setQueryData<t.TMessage[]>(
-        [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
-        [],
-      );
+      clearMessagesCache(queryClient, conversation?.conversationId);
       queryClient.invalidateQueries([QueryKeys.messages]);
 
+      /** Template with agent configuration */
+      const template = {
+        conversationId: Constants.NEW_CONVO as string,
+        endpoint: EModelEndpoint.agents,
+        agent_id: agent.id,
+        title: localize('com_agents_chat_with', { name: agent.name || localize('com_ui_agent') }),
+      };
+
+      const currentConvo = getDefaultConversation({
+        conversation: { ...(conversation ?? {}), ...template },
+        preset: template,
+      });
+
       newConversation({
-        template: {
-          conversationId: Constants.NEW_CONVO as string,
-          endpoint: EModelEndpoint.agents,
-          agent_id: agent.id,
-          title: `Chat with ${agent.name || 'Agent'}`,
-        },
+        template: currentConvo,
+        preset: template,
       });
     }
   };

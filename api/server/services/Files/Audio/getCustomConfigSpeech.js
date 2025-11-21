@@ -42,18 +42,26 @@ async function getCustomConfigSpeech(req, res) {
       settings.advancedMode = speechTab.advancedMode;
     }
 
-    if (speechTab.speechToText) {
-      for (const key in speechTab.speechToText) {
-        if (speechTab.speechToText[key] !== undefined) {
-          settings[key] = speechTab.speechToText[key];
+    if (speechTab.speechToText !== undefined) {
+      if (typeof speechTab.speechToText === 'boolean') {
+        settings.speechToText = speechTab.speechToText;
+      } else {
+        for (const key in speechTab.speechToText) {
+          if (speechTab.speechToText[key] !== undefined) {
+            settings[key] = speechTab.speechToText[key];
+          }
         }
       }
     }
 
-    if (speechTab.textToSpeech) {
-      for (const key in speechTab.textToSpeech) {
-        if (speechTab.textToSpeech[key] !== undefined) {
-          settings[key] = speechTab.textToSpeech[key];
+    if (speechTab.textToSpeech !== undefined) {
+      if (typeof speechTab.textToSpeech === 'boolean') {
+        settings.textToSpeech = speechTab.textToSpeech;
+      } else {
+        for (const key in speechTab.textToSpeech) {
+          if (speechTab.textToSpeech[key] !== undefined) {
+            settings[key] = speechTab.textToSpeech[key];
+          }
         }
       }
     }

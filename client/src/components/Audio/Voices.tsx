@@ -19,9 +19,11 @@ export function BrowserVoiceDropdown() {
     }
   };
 
+  const labelId = 'browser-voice-dropdown-label';
+
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_voice_select')}</div>
+      <div id={labelId}>{localize('com_nav_voice_select')}</div>
       <Dropdown
         key={`browser-voice-dropdown-${voices.length}`}
         value={voice ?? ''}
@@ -30,6 +32,7 @@ export function BrowserVoiceDropdown() {
         sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
         testId="BrowserVoiceDropdown"
         className="z-50"
+        aria-labelledby={labelId}
       />
     </div>
   );
@@ -48,9 +51,11 @@ export function ExternalVoiceDropdown() {
     }
   };
 
+  const labelId = 'external-voice-dropdown-label';
+
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_voice_select')}</div>
+      <div id={labelId}>{localize('com_nav_voice_select')}</div>
       <Dropdown
         key={`external-voice-dropdown-${voices.length}`}
         value={voice ?? ''}
@@ -59,6 +64,7 @@ export function ExternalVoiceDropdown() {
         sizeClasses="min-w-[200px] !max-w-[400px] [--anchor-max-width:400px]"
         testId="ExternalVoiceDropdown"
         className="z-50"
+        aria-labelledby={labelId}
       />
     </div>
   );

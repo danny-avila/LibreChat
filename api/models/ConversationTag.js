@@ -239,10 +239,46 @@ const updateTagsForConversation = async (user, conversationId, tags) => {
   }
 };
 
+/**
+ * Increments tag counts for existing tags only.
+ * @param {string} user - The user ID.
+ * @param {string[]} tags - Array of tag names to increment
+ * @returns {Promise<void>}
+ */
+const bulkIncrementTagCounts = async (user, tags) => {
+  if (!tags || tags.length === 0) {
+    return;
+  }
+
+  try {
+    const uniqueTags = [...new Set(tags.filter(Boolean))];
+    if (uniqueTags.length === 0) {
+      return;
+    }
+
+    const bulkOps = uniqueTags.map((tag) => ({
+      updateOne: {
+        filter: { user, tag },
+        update: { $inc: { count: 1 } },
+      },
+    }));
+
+    const result = await ConversationTag.bulkWrite(bulkOps);
+    if (result && result.modifiedCount > 0) {
+      logger.debug(
+        `user: ${user} | Incremented tag counts - modified ${result.modifiedCount} tags`,
+      );
+    }
+  } catch (error) {
+    logger.error('[bulkIncrementTagCounts] Error incrementing tag counts', error);
+  }
+};
+
 module.exports = {
   getConversationTags,
   createConversationTag,
   updateConversationTag,
   deleteConversationTag,
+  bulkIncrementTagCounts,
   updateTagsForConversation,
 };

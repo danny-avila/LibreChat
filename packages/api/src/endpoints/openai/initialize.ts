@@ -1,15 +1,14 @@
 import { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } from 'librechat-data-provider';
 import type {
   InitializeOpenAIOptionsParams,
-  OpenAIOptionsResult,
   OpenAIConfigOptions,
+  LLMConfigResult,
   UserKeyValues,
 } from '~/types';
-import { createHandleLLMNewToken } from '~/utils/generators';
 import { getAzureCredentials } from '~/utils/azure';
 import { isUserProvided } from '~/utils/common';
 import { resolveHeaders } from '~/utils/env';
-import { getOpenAIConfig } from './llm';
+import { getOpenAIConfig } from './config';
 
 /**
  * Initializes OpenAI options for agent usage. This function always returns configuration
@@ -27,7 +26,7 @@ export const initializeOpenAI = async ({
   overrideEndpoint,
   getUserKeyValues,
   checkUserKeyExpiry,
-}: InitializeOpenAIOptionsParams): Promise<OpenAIOptionsResult> => {
+}: InitializeOpenAIOptionsParams): Promise<LLMConfigResult> => {
   const { PROXY, OPENAI_API_KEY, AZURE_API_KEY, OPENAI_REVERSE_PROXY, AZURE_OPENAI_BASEURL } =
     process.env;
 
@@ -115,7 +114,7 @@ export const initializeOpenAI = async ({
   } else if (isAzureOpenAI) {
     clientOptions.azure =
       userProvidesKey && userValues?.apiKey ? JSON.parse(userValues.apiKey) : getAzureCredentials();
-    apiKey = clientOptions.azure?.azureOpenAIApiKey;
+    apiKey = clientOptions.azure ? clientOptions.azure.azureOpenAIApiKey : undefined;
   }
 
   if (userProvidesKey && !apiKey) {
@@ -160,17 +159,8 @@ export const initializeOpenAI = async ({
   }
 
   if (streamRate) {
-    options.llmConfig.callbacks = [
-      {
-        handleLLMNewToken: createHandleLLMNewToken(streamRate),
-      },
-    ];
+    options.llmConfig._lc_stream_delay = streamRate;
   }
 
-  const result: OpenAIOptionsResult = {
-    ...options,
-    streamRate,
-  };
-
-  return result;
+  return options;
 };

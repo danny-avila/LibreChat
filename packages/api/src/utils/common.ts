@@ -1,4 +1,3 @@
-import { Providers } from '@librechat/agents';
 import { AuthType } from 'librechat-data-provider';
 
 /**
@@ -48,12 +47,4 @@ export function optionalChainWithEmptyCheck(
     }
   }
   return values[values.length - 1];
-}
-
-/**
- * Normalize the endpoint name to system-expected value.
- * @param name
- */
-export function normalizeEndpointName(name = ''): string {
-  return name.toLowerCase() === Providers.OLLAMA ? Providers.OLLAMA : name;
 }

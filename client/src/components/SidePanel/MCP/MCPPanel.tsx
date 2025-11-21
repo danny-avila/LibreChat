@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, useToastContext } from '@librechat/client';
 import { Constants, QueryKeys } from 'librechat-data-provider';
@@ -31,9 +31,9 @@ function MCPPanelContent() {
       showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
 
       await Promise.all([
-        queryClient.refetchQueries([QueryKeys.tools]),
-        queryClient.refetchQueries([QueryKeys.mcpAuthValues]),
-        queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]),
+        queryClient.invalidateQueries([QueryKeys.mcpTools]),
+        queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
+        queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
       ]);
     },
     onError: (error: unknown) => {
@@ -123,10 +123,16 @@ function MCPPanelContent() {
     }
 
     const serverStatus = connectionStatus?.[selectedServerNameForEditing];
+    const isConnected = serverStatus?.connectionState === 'connected';
 
     return (
       <div className="h-auto max-w-full space-y-4 overflow-x-hidden py-2">
-        <Button variant="outline" onClick={handleGoBackToList} size="sm">
+        <Button
+          variant="outline"
+          onClick={handleGoBackToList}
+          size="sm"
+          aria-label={localize('com_ui_back')}
+        >
           <ChevronLeft className="mr-1 h-4 w-4" />
           {localize('com_ui_back')}
         </Button>
@@ -159,6 +165,18 @@ function MCPPanelContent() {
             Object.keys(serverBeingEdited.config.customUserVars).length > 0
           }
         />
+        {serverStatus?.requiresOAuth && isConnected && (
+          <Button
+            className="w-full"
+            size="sm"
+            variant="destructive"
+            onClick={() => handleConfigRevoke(selectedServerNameForEditing)}
+            aria-label={localize('com_ui_oauth_revoke')}
+          >
+            <Trash2 className="h-4 w-4" />
+            {localize('com_ui_oauth_revoke')}
+          </Button>
+        )}
       </div>
     );
   } else {
@@ -176,6 +194,7 @@ function MCPPanelContent() {
                   variant="outline"
                   className="flex-1 justify-start dark:hover:bg-gray-700"
                   onClick={() => handleServerClickToEdit(server.serverName)}
+                  aria-label={localize('com_ui_edit') + ' ' + server.serverName}
                 >
                   <div className="flex items-center gap-2">
                     <span>{server.serverName}</span>

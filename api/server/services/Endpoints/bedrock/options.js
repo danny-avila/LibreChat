@@ -1,11 +1,10 @@
+const { resolveHeaders } = require('@librechat/api');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { NodeHttpHandler } = require('@aws-sdk/node-http-handler');
 const { BedrockRuntimeClient } = require('@aws-sdk/client-bedrock-runtime');
 
-const { createHandleLLMNewToken } = require('@librechat/api');
 const {
   AuthType,
-  Constants,
   EModelEndpoint,
   bedrockInputParser,
   bedrockOutputParser,
@@ -14,7 +13,6 @@ const {
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 
 const getOptions = async ({ req, overrideModel, endpointOption }) => {
-  const appConfig = req.config;
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
@@ -50,10 +48,12 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
     checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
   }
 
-  /** @type {number} */
+  /*
+  Callback for stream rate no longer awaits and may end the stream prematurely
+  /** @type {number}
   let streamRate = Constants.DEFAULT_STREAM_RATE;
 
-  /** @type {undefined | TBaseEndpoint} */
+  /** @type {undefined | TBaseEndpoint}
   const bedrockConfig = appConfig.endpoints?.[EModelEndpoint.bedrock];
 
   if (bedrockConfig && bedrockConfig.streamRate) {
@@ -64,6 +64,7 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
   if (allConfig && allConfig.streamRate) {
     streamRate = allConfig.streamRate;
   }
+  */
 
   /** @type {BedrockClientOptions} */
   const requestOptions = {
@@ -87,11 +88,13 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
     llmConfig.endpointHost = BEDROCK_REVERSE_PROXY;
   }
 
-  llmConfig.callbacks = [
-    {
-      handleLLMNewToken: createHandleLLMNewToken(streamRate),
-    },
-  ];
+  if (llmConfig.additionalModelRequestFields) {
+    llmConfig.additionalModelRequestFields = resolveHeaders({
+      headers: llmConfig.additionalModelRequestFields,
+      user: req.user,
+      body: req.body,
+    });
+  }
 
   if (PROXY) {
     const proxyAgent = new HttpsProxyAgent(PROXY);

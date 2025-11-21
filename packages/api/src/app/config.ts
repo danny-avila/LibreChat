@@ -1,7 +1,12 @@
-import { EModelEndpoint, removeNullishValues } from 'librechat-data-provider';
-import type { TCustomConfig, TEndpoint } from 'librechat-data-provider';
-import type { AppConfig } from '~/types';
-import { isEnabled, normalizeEndpointName } from '~/utils';
+import { logger } from '@librechat/data-schemas';
+import {
+  EModelEndpoint,
+  removeNullishValues,
+  normalizeEndpointName,
+} from 'librechat-data-provider';
+import type { TCustomConfig, TEndpoint, TTransactionsConfig } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
+import { isEnabled } from '~/utils';
 
 /**
  * Retrieves the balance configuration object
@@ -18,6 +23,32 @@ export function getBalanceConfig(appConfig?: AppConfig): Partial<TCustomConfig['
     return config;
   }
   return { ...config, ...(appConfig?.['balance'] ?? {}) };
+}
+
+/**
+ * Retrieves the transactions configuration object
+ * */
+export function getTransactionsConfig(appConfig?: AppConfig): Partial<TTransactionsConfig> {
+  const defaultConfig: TTransactionsConfig = { enabled: true };
+
+  if (!appConfig) {
+    return defaultConfig;
+  }
+
+  const transactionsConfig = appConfig?.['transactions'] ?? defaultConfig;
+  const balanceConfig = getBalanceConfig(appConfig);
+
+  // If balance is enabled but transactions are disabled, force transactions to be enabled
+  // and log a warning
+  if (balanceConfig?.enabled && !transactionsConfig.enabled) {
+    logger.warn(
+      'Configuration warning: transactions.enabled=false is incompatible with balance.enabled=true. ' +
+        'Transactions will be enabled to ensure balance tracking works correctly.',
+    );
+    return { ...transactionsConfig, enabled: true };
+  }
+
+  return transactionsConfig;
 }
 
 export const getCustomEndpointConfig = ({
@@ -39,5 +70,5 @@ export const getCustomEndpointConfig = ({
 
 export function hasCustomUserVars(appConfig?: AppConfig): boolean {
   const mcpServers = appConfig?.mcpConfig;
-  return Object.values(mcpServers ?? {}).some((server) => server.customUserVars);
+  return Object.values(mcpServers ?? {}).some((server) => server?.customUserVars);
 }

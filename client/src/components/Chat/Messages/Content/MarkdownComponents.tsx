@@ -1,7 +1,7 @@
 import React, { memo, useMemo, useRef, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
-import { PermissionTypes, Permissions, dataService } from 'librechat-data-provider';
+import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provider';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
@@ -135,7 +135,7 @@ export const a: React.ElementType = memo(({ href, children }: TAnchorProps) => {
   props.onClick = handleDownload;
   props.target = '_blank';
 
-  const domainServerBaseUrl = dataService.getDomainServerBaseUrl();
+  const domainServerBaseUrl = `${apiBaseUrl()}/api`;
 
   return (
     <a
@@ -157,4 +157,32 @@ type TParagraphProps = {
 
 export const p: React.ElementType = memo(({ children }: TParagraphProps) => {
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
+});
+
+type TImageProps = {
+  src?: string;
+  alt?: string;
+  title?: string;
+  className?: string;
+  style?: React.CSSProperties;
+};
+
+export const img: React.ElementType = memo(({ src, alt, title, className, style }: TImageProps) => {
+  // Get the base URL from the API endpoints
+  const baseURL = apiBaseUrl();
+
+  // If src starts with /images/, prepend the base URL
+  const fixedSrc = useMemo(() => {
+    if (!src) return src;
+
+    // If it's already an absolute URL or doesn't start with /images/, return as is
+    if (src.startsWith('http') || src.startsWith('data:') || !src.startsWith('/images/')) {
+      return src;
+    }
+
+    // Prepend base URL to the image path
+    return `${baseURL}${src}`;
+  }, [src, baseURL]);
+
+  return <img src={fixedSrc} alt={alt} title={title} className={className} style={style} />;
 });

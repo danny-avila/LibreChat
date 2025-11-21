@@ -125,13 +125,8 @@ export default function useQueryParams({
   const queryClient = useQueryClient();
   const { conversation, newConversation } = useChatContext();
 
-  // Extract agent_id from URL for proactive fetching
   const urlAgentId = searchParams.get('agent_id') || '';
-
-  // Use the existing query hook to fetch agent if present in URL
-  const { data: urlAgent } = useGetAgentByIdQuery(urlAgentId, {
-    enabled: !!urlAgentId, // Only fetch if agent_id exists in URL
-  });
+  const { data: urlAgent } = useGetAgentByIdQuery(urlAgentId);
 
   /**
    * Applies settings from URL query parameters to create a new conversation.

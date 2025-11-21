@@ -20,6 +20,7 @@ jest.mock('react-router-dom', () => ({
 jest.mock('~/hooks', () => ({
   useMediaQuery: jest.fn(() => false), // Mock as desktop by default
   useLocalize: jest.fn(),
+  useDefaultConvo: jest.fn(),
 }));
 
 jest.mock('@librechat/client', () => ({
@@ -47,7 +48,12 @@ const mockWriteText = jest.fn();
 
 const mockNavigate = jest.fn();
 const mockShowToast = jest.fn();
-const mockLocalize = jest.fn((key: string) => key);
+const mockLocalize = jest.fn((key: string, values?: Record<string, any>) => {
+  if (key === 'com_agents_chat_with' && values?.name) {
+    return `Chat with ${values.name}`;
+  }
+  return key;
+});
 
 const mockAgent: t.Agent = {
   id: 'test-agent-id',
@@ -106,8 +112,12 @@ describe('AgentDetail', () => {
     (useNavigate as jest.Mock).mockReturnValue(mockNavigate);
     const { useToastContext } = require('@librechat/client');
     (useToastContext as jest.Mock).mockReturnValue({ showToast: mockShowToast });
-    const { useLocalize } = require('~/hooks');
+    const { useLocalize, useDefaultConvo } = require('~/hooks');
     (useLocalize as jest.Mock).mockReturnValue(mockLocalize);
+    (useDefaultConvo as jest.Mock).mockReturnValue(() => ({
+      conversationId: Constants.NEW_CONVO,
+      endpoint: EModelEndpoint.agents,
+    }));
 
     // Mock useChatContext
     const { useChatContext } = require('~/Providers');
@@ -225,6 +235,10 @@ describe('AgentDetail', () => {
 
       expect(mockNewConversation).toHaveBeenCalledWith({
         template: {
+          conversationId: Constants.NEW_CONVO,
+          endpoint: EModelEndpoint.agents,
+        },
+        preset: {
           conversationId: Constants.NEW_CONVO,
           endpoint: EModelEndpoint.agents,
           agent_id: 'test-agent-id',

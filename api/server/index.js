@@ -10,9 +10,15 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
-const { isEnabled, ErrorController } = require('@librechat/api');
+const {
+  isEnabled,
+  ErrorController,
+  performStartupChecks,
+  initializeFileStorage,
+} = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
-const validateImageRequest = require('./middleware/validateImageRequest');
+const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
+const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions } = require('~/models/interface');
 const { checkMigrations } = require('./services/start/migration');
@@ -48,9 +54,11 @@ const startServer = async () => {
   app.set('trust proxy', trusted_proxy);
 
   await seedDatabase();
-
   const appConfig = await getAppConfig();
+  initializeFileStorage(appConfig);
+  await performStartupChecks(appConfig);
   await updateInterfacePermissions(appConfig);
+
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
 
@@ -126,7 +134,7 @@ const startServer = async () => {
   app.use('/api/config', routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
-  app.use('/images/', validateImageRequest, routes.staticRoute);
+  app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
   app.use('/api/share', routes.share);
   app.use('/api/roles', routes.roles);
   app.use('/api/agents', routes.agents);
@@ -154,7 +162,7 @@ const startServer = async () => {
     res.send(updatedIndexHtml);
   });
 
-  app.listen(port, host, () => {
+  app.listen(port, host, async () => {
     if (host === '0.0.0.0') {
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
@@ -163,7 +171,9 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    initializeMCPs().then(() => checkMigrations());
+    await initializeMCPs();
+    await initializeOAuthReconnectManager();
+    await checkMigrations();
   });
 };
 
@@ -175,8 +185,8 @@ process.on('uncaughtException', (err) => {
     logger.error('There was an uncaught error:', err);
   }
 
-  if (err.message.includes('abort')) {
-    logger.warn('There was an uncatchable AbortController error.');
+  if (err.message && err.message?.toLowerCase()?.includes('abort')) {
+    logger.warn('There was an uncatchable abort error.');
     return;
   }
 
@@ -199,6 +209,17 @@ process.on('uncaughtException', (err) => {
   if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
     logger.error(
       '\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.',
+    );
+    return;
+  }
+
+  if (err.stack && err.stack.includes('@librechat/agents')) {
+    logger.error(
+      '\n\nAn error occurred in the agents system. The error has been logged and the app will continue running.',
+      {
+        message: err.message,
+        stack: err.stack,
+      },
     );
     return;
   }

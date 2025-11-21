@@ -189,8 +189,12 @@ async function createAutoRefillTransaction(txData) {
  * @param {txData} _txData - Transaction data.
  */
 async function createTransaction(_txData) {
-  const { balance, ...txData } = _txData;
+  const { balance, transactions, ...txData } = _txData;
   if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
+    return;
+  }
+
+  if (transactions?.enabled === false) {
     return;
   }
 
@@ -222,7 +226,11 @@ async function createTransaction(_txData) {
  * @param {txData} _txData - Transaction data.
  */
 async function createStructuredTransaction(_txData) {
-  const { balance, ...txData } = _txData;
+  const { balance, transactions, ...txData } = _txData;
+  if (transactions?.enabled === false) {
+    return;
+  }
+
   const transaction = new Transaction({
     ...txData,
     endpointTokenConfig: txData.endpointTokenConfig,

@@ -1,4 +1,5 @@
 const Anthropic = require('@anthropic-ai/sdk');
+const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
   Constants,
@@ -9,27 +10,28 @@ const {
   getResponseSender,
   validateVisionModel,
 } = require('librechat-data-provider');
-const { SplitStreamHandler: _Handler } = require('@librechat/agents');
-const { Tokenizer, createFetch, createStreamEventHandlers } = require('@librechat/api');
+const { sleep, SplitStreamHandler: _Handler, addCacheControl } = require('@librechat/agents');
+const {
+  Tokenizer,
+  createFetch,
+  matchModelName,
+  getClaudeHeaders,
+  getModelMaxTokens,
+  configureReasoning,
+  checkPromptCacheSupport,
+  getModelMaxOutputTokens,
+  createStreamEventHandlers,
+} = require('@librechat/api');
 const {
   truncateText,
   formatMessage,
-  addCacheControl,
   titleFunctionPrompt,
   parseParamFromPrompt,
   createContextHandlers,
 } = require('./prompts');
-const {
-  getClaudeHeaders,
-  configureReasoning,
-  checkPromptCacheSupport,
-} = require('~/server/services/Endpoints/anthropic/helpers');
-const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('~/utils');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { sleep } = require('~/server/utils');
 const BaseClient = require('./BaseClient');
-const { logger } = require('~/config');
 
 const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
@@ -303,11 +305,9 @@ class AnthropicClient extends BaseClient {
   }
 
   async addImageURLs(message, attachments) {
-    const { files, image_urls } = await encodeAndFormat(
-      this.options.req,
-      attachments,
-      EModelEndpoint.anthropic,
-    );
+    const { files, image_urls } = await encodeAndFormat(this.options.req, attachments, {
+      endpoint: EModelEndpoint.anthropic,
+    });
     message.image_urls = image_urls.length ? image_urls : undefined;
     return files;
   }

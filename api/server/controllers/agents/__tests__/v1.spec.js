@@ -158,7 +158,7 @@ describe('duplicateAgent', () => {
     });
   });
 
-  it('should handle tool_resources.ocr correctly', async () => {
+  it('should convert `tool_resources.ocr` to `tool_resources.context`', async () => {
     const mockAgent = {
       id: 'agent_123',
       name: 'Test Agent',
@@ -178,7 +178,7 @@ describe('duplicateAgent', () => {
     expect(createAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         tool_resources: {
-          ocr: { enabled: true, config: 'test' },
+          context: { enabled: true, config: 'test' },
         },
       }),
     );

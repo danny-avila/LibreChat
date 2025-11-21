@@ -45,26 +45,28 @@ export function useParseArgs(args?: string): ParsedArgs | null {
 }
 
 export default function ExecuteCode({
+  isSubmitting,
   initialProgress = 0.1,
   args,
   output = '',
   attachments,
 }: {
   initialProgress: number;
+  isSubmitting: boolean;
   args?: string;
   output?: string;
   attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
-  const showAnalysisCode = useRecoilValue(store.showCode);
-  const [showCode, setShowCode] = useState(showAnalysisCode);
-  const codeContentRef = useRef<HTMLDivElement>(null);
-  const [contentHeight, setContentHeight] = useState<number | undefined>(0);
-  const [isAnimating, setIsAnimating] = useState(false);
   const hasOutput = output.length > 0;
   const outputRef = useRef<string>(output);
-  const prevShowCodeRef = useRef<boolean>(showCode);
+  const codeContentRef = useRef<HTMLDivElement>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const showAnalysisCode = useRecoilValue(store.showCode);
+  const [showCode, setShowCode] = useState(showAnalysisCode);
+  const [contentHeight, setContentHeight] = useState<number | undefined>(0);
 
+  const prevShowCodeRef = useRef<boolean>(showCode);
   const { lang, code } = useParseArgs(args) ?? ({} as ParsedArgs);
   const progress = useProgress(initialProgress);
 
@@ -136,6 +138,8 @@ export default function ExecuteCode({
     };
   }, [showCode, isAnimating]);
 
+  const cancelled = !isSubmitting && progress < 1;
+
   return (
     <>
       <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
@@ -143,9 +147,12 @@ export default function ExecuteCode({
           progress={progress}
           onClick={() => setShowCode((prev) => !prev)}
           inProgressText={localize('com_ui_analyzing')}
-          finishedText={localize('com_ui_analyzing_finished')}
+          finishedText={
+            cancelled ? localize('com_ui_cancelled') : localize('com_ui_analyzing_finished')
+          }
           hasInput={!!code?.length}
           isExpanded={showCode}
+          error={cancelled}
         />
       </div>
       <div

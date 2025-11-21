@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  Tools,
   SSEOptionsSchema,
   MCPOptionsSchema,
   MCPServersSchema,
@@ -7,11 +8,10 @@ import {
   WebSocketOptionsSchema,
   StreamableHTTPOptionsSchema,
 } from 'librechat-data-provider';
-import type { TPlugin, TUser } from 'librechat-data-provider';
+import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
+import type { TokenMethods, JsonSchemaType, IUser } from '@librechat/data-schemas';
 import type * as t from '@modelcontextprotocol/sdk/types.js';
-import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
-import type { JsonSchemaType } from '~/types/zod';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
 
@@ -86,7 +86,7 @@ export type FormattedContent =
       metadata?: {
         type: string;
         data: UIResource[];
-      }
+      };
       text?: string;
     }
   | {
@@ -111,24 +111,39 @@ export type FormattedContent =
       };
     };
 
-export type FormattedContentResult = [
-  string | FormattedContent[],
-  undefined | { content: FormattedContent[] },
-];
-
-export type UIResource = {
-  uri: string;
-  mimeType: string;
-  text: string;
+export type FileSearchSource = {
+  fileId: string;
+  relevance: number;
+  fileName?: string;
+  metadata?: {
+    storageType?: string;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 };
 
+export type Artifacts =
+  | {
+      content?: FormattedContent[];
+      [Tools.ui_resources]?: {
+        data: UIResource[];
+      };
+      [Tools.file_search]?: {
+        sources: FileSearchSource[];
+        fileCitations?: boolean;
+      };
+      [Tools.web_search]?: SearchResultData;
+      files?: Array<{ id: string; name: string }>;
+      session_id?: string;
+      file_ids?: string[];
+    }
+  | undefined;
+
+export type FormattedContentResult = [string | FormattedContent[], undefined | Artifacts];
+
 export type ImageFormatter = (item: ImageContent) => FormattedContent;
 
-export type FormattedToolResponse = [
-  string | FormattedContent[],
-  { content: FormattedContent[] } | undefined,
-];
+export type FormattedToolResponse = FormattedContentResult;
 
 export type ParsedServerConfig = MCPOptions & {
   url?: string;
@@ -136,6 +151,8 @@ export type ParsedServerConfig = MCPOptions & {
   oauthMetadata?: Record<string, unknown> | null;
   capabilities?: string;
   tools?: string;
+  toolFunctions?: LCAvailableTools;
+  initDuration?: number;
 };
 
 export interface BasicConnectionOptions {
@@ -144,7 +161,7 @@ export interface BasicConnectionOptions {
 }
 
 export interface OAuthConnectionOptions {
-  user: TUser;
+  user: IUser;
   useOAuth: true;
   requestBody?: RequestBody;
   customUserVars?: Record<string, string>;

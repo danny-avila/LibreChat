@@ -8,6 +8,7 @@ import {
   TwoFactorScreen,
   RequestPasswordReset,
 } from '~/components/Auth';
+import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
@@ -112,11 +113,19 @@ export const router = createBrowserRouter(
             },
             {
               path: 'agents',
-              element: <AgentMarketplace />,
+              element: (
+                <MarketplaceProvider>
+                  <AgentMarketplace />
+                </MarketplaceProvider>
+              ),
             },
             {
               path: 'agents/:category',
-              element: <AgentMarketplace />,
+              element: (
+                <MarketplaceProvider>
+                  <AgentMarketplace />
+                </MarketplaceProvider>
+              ),
             },
           ],
         },

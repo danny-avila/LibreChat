@@ -25,6 +25,7 @@ const useSpeechToTextExternal = (
 
   const [minDecibels] = useRecoilState(store.decibelValue);
   const [autoSendText] = useRecoilState(store.autoSendText);
+  const [languageSTT] = useRecoilState<string>(store.languageSTT);
   const [speechToText] = useRecoilState<boolean>(store.speechToText);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
 
@@ -121,6 +122,9 @@ const useSpeechToTextExternal = (
 
       const formData = new FormData();
       formData.append('audio', audioBlob, `audio.${fileExtension}`);
+      if (languageSTT) {
+        formData.append('language', languageSTT);
+      }
       setIsRequestBeingMade(true);
       cleanup();
       processAudio(formData);

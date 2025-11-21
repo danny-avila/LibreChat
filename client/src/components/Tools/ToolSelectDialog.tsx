@@ -8,7 +8,7 @@ import type {
   AssistantsEndpoint,
   EModelEndpoint,
   TPluginAction,
-  AgentToolType,
+  TPlugin,
   TError,
 } from 'librechat-data-provider';
 import type { AgentForm, TPluginStoreDialogProps } from '~/common';
@@ -27,7 +27,8 @@ function ToolSelectDialog({
   const localize = useLocalize();
   const isAgentTools = isAgentsEndpoint(endpoint);
   const { getValues, setValue } = useFormContext<AgentForm>();
-  const { groupedTools, pluginTools } = useAgentPanelContext();
+  // Only use regular tools, not MCP tools
+  const { regularTools } = useAgentPanelContext();
 
   const {
     maxPage,
@@ -68,19 +69,8 @@ function ToolSelectDialog({
   const handleInstall = (pluginAction: TPluginAction) => {
     const addFunction = () => {
       const installedToolIds: string[] = getValues('tools') || [];
-      // Add the parent
       installedToolIds.push(pluginAction.pluginKey);
-
-      // If this tool is a group, add subtools too
-      const groupObj = groupedTools?.[pluginAction.pluginKey];
-      if (groupObj?.tools && groupObj.tools.length > 0) {
-        for (const sub of groupObj.tools) {
-          if (!installedToolIds.includes(sub.tool_id)) {
-            installedToolIds.push(sub.tool_id);
-          }
-        }
-      }
-      setValue('tools', Array.from(new Set(installedToolIds))); // no duplicates just in case
+      setValue('tools', Array.from(new Set(installedToolIds)));
     };
 
     if (!pluginAction.auth) {
@@ -98,19 +88,12 @@ function ToolSelectDialog({
   };
 
   const onRemoveTool = (toolId: string) => {
-    const groupObj = groupedTools?.[toolId];
-    const toolIdsToRemove = [toolId];
-    if (groupObj?.tools && groupObj.tools.length > 0) {
-      toolIdsToRemove.push(...groupObj.tools.map((sub) => sub.tool_id));
-    }
-    // Remove these from the formTools
     updateUserPlugins.mutate(
       { pluginKey: toolId, action: 'uninstall', auth: {}, isEntityTool: true },
       {
         onError: (error: unknown) => handleInstallError(error as TError),
         onSuccess: () => {
-          const remainingToolIds =
-            getValues('tools')?.filter((toolId) => !toolIdsToRemove.includes(toolId)) || [];
+          const remainingToolIds = getValues('tools')?.filter((id) => id !== toolId) || [];
           setValue('tools', remainingToolIds);
         },
       },
@@ -119,7 +102,8 @@ function ToolSelectDialog({
 
   const onAddTool = (pluginKey: string) => {
     setShowPluginAuthForm(false);
-    const availablePluginFromKey = pluginTools?.find((p) => p.pluginKey === pluginKey);
+    // Find the tool in regularTools
+    const availablePluginFromKey = regularTools?.find((p) => p.pluginKey === pluginKey);
     setSelectedPlugin(availablePluginFromKey);
 
     const { authConfig, authenticated = false } = availablePluginFromKey ?? {};
@@ -134,30 +118,19 @@ function ToolSelectDialog({
     }
   };
 
-  const filteredTools = Object.values(groupedTools || {}).filter(
-    (currentTool: AgentToolType & { tools?: AgentToolType[] }) => {
-      if (currentTool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase())) {
-        return true;
-      }
-      if (currentTool.tools) {
-        return currentTool.tools.some((childTool) =>
-          childTool.metadata?.name?.toLowerCase().includes(searchValue.toLowerCase()),
-        );
-      }
-      return false;
-    },
-  );
+  const filteredTools = (regularTools || []).filter((tool: TPlugin) => {
+    return tool.name?.toLowerCase().includes(searchValue.toLowerCase());
+  });
 
   useEffect(() => {
     if (filteredTools) {
-      setMaxPage(Math.ceil(Object.keys(filteredTools || {}).length / itemsPerPage));
+      setMaxPage(Math.ceil(filteredTools.length / itemsPerPage));
       if (searchChanged) {
         setCurrentPage(1);
         setSearchChanged(false);
       }
     }
   }, [
-    pluginTools,
     searchValue,
     itemsPerPage,
     filteredTools,
@@ -254,10 +227,13 @@ function ToolSelectDialog({
                     .map((tool, index) => (
                       <ToolItem
                         key={index}
-                        tool={tool}
-                        isInstalled={getValues('tools')?.includes(tool.tool_id) || false}
-                        onAddTool={() => onAddTool(tool.tool_id)}
-                        onRemoveTool={() => onRemoveTool(tool.tool_id)}
+                        tool={{
+                          tool_id: tool.pluginKey,
+                          metadata: tool,
+                        }}
+                        isInstalled={getValues('tools')?.includes(tool.pluginKey) || false}
+                        onAddTool={() => onAddTool(tool.pluginKey)}
+                        onRemoveTool={() => onRemoveTool(tool.pluginKey)}
                       />
                     ))}
               </div>

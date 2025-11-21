@@ -118,6 +118,7 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
                     setIsEditing(false);
                   }
                 }}
+                aria-label={localize('com_ui_prompt_input')}
               />
             ) : (
               <div

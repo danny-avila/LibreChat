@@ -1,9 +1,13 @@
-const { cacheConfig } = require('./cacheConfig');
 const { Keyv } = require('keyv');
-const { CacheKeys, ViolationTypes, Time } = require('librechat-data-provider');
-const { logFile } = require('./keyvFiles');
-const keyvMongo = require('./keyvMongo');
-const { standardCache, sessionCache, violationCache } = require('./cacheFactory');
+const { Time, CacheKeys, ViolationTypes } = require('librechat-data-provider');
+const {
+  logFile,
+  keyvMongo,
+  cacheConfig,
+  sessionCache,
+  standardCache,
+  violationCache,
+} = require('@librechat/api');
 
 const namespaces = {
   [ViolationTypes.GENERAL]: new Keyv({ store: logFile, namespace: 'violations' }),
@@ -31,8 +35,8 @@ const namespaces = {
   [CacheKeys.SAML_SESSION]: sessionCache(CacheKeys.SAML_SESSION),
 
   [CacheKeys.ROLES]: standardCache(CacheKeys.ROLES),
+  [CacheKeys.APP_CONFIG]: standardCache(CacheKeys.APP_CONFIG),
   [CacheKeys.CONFIG_STORE]: standardCache(CacheKeys.CONFIG_STORE),
-  [CacheKeys.STATIC_CONFIG]: standardCache(CacheKeys.STATIC_CONFIG),
   [CacheKeys.PENDING_REQ]: standardCache(CacheKeys.PENDING_REQ),
   [CacheKeys.ENCODED_DOMAINS]: new Keyv({ store: keyvMongo, namespace: CacheKeys.ENCODED_DOMAINS }),
   [CacheKeys.ABORT_KEYS]: standardCache(CacheKeys.ABORT_KEYS, Time.TEN_MINUTES),

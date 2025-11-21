@@ -1,12 +1,13 @@
+import { webSearchAuth } from '@librechat/data-schemas';
+import { SafeSearchTypes, AuthType } from 'librechat-data-provider';
 import type {
-  ScraperTypes,
+  ScraperProviders,
+  TWebSearchConfig,
+  SearchProviders,
   TCustomConfig,
   RerankerTypes,
-  SearchProviders,
-  TWebSearchConfig,
 } from 'librechat-data-provider';
-import { webSearchAuth, loadWebSearchAuth, extractWebSearchEnvVars } from './web';
-import { SafeSearchTypes, AuthType } from 'librechat-data-provider';
+import { loadWebSearchAuth, extractWebSearchEnvVars } from './web';
 
 // Mock the extractVariableName function
 jest.mock('../utils', () => ({
@@ -81,6 +82,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -117,7 +119,7 @@ describe('web.ts', () => {
       }
 
       expect(result.authResult).toHaveProperty('searchProvider', 'serper');
-      expect(result.authResult).toHaveProperty('scraperType', 'firecrawl');
+      expect(result.authResult).toHaveProperty('scraperProvider', 'firecrawl');
       expect(['jina', 'cohere']).toContain(result.authResult.rerankerType as string);
     });
 
@@ -286,7 +288,7 @@ describe('web.ts', () => {
 
       // Check that the correct service types are set
       expect(result.authResult.searchProvider).toBe('serper' as SearchProviders);
-      expect(result.authResult.scraperType).toBe('firecrawl' as ScraperTypes);
+      expect(result.authResult.scraperProvider).toBe('firecrawl' as ScraperProviders);
       // One of the rerankers should be set
       expect(['jina', 'cohere']).toContain(result.authResult.rerankerType as string);
     });
@@ -300,6 +302,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -327,7 +330,7 @@ describe('web.ts', () => {
 
       // Should have set values for all categories
       expect(result.authResult.searchProvider).toBeDefined();
-      expect(result.authResult.scraperType).toBeDefined();
+      expect(result.authResult.scraperProvider).toBeDefined();
       expect(result.authResult.rerankerType).toBeDefined();
     });
 
@@ -351,11 +354,12 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         // Specify which services to use
         searchProvider: 'serper' as SearchProviders,
-        scraperType: 'firecrawl' as ScraperTypes,
+        scraperProvider: 'firecrawl' as ScraperProviders,
         rerankerType: 'jina' as RerankerTypes,
       };
 
@@ -390,7 +394,7 @@ describe('web.ts', () => {
       expect(result.authResult).toHaveProperty('firecrawlApiUrl');
       expect(result.authResult).toHaveProperty('jinaApiKey');
       expect(result.authResult).toHaveProperty('searchProvider');
-      expect(result.authResult).toHaveProperty('scraperType');
+      expect(result.authResult).toHaveProperty('scraperProvider');
       expect(result.authResult).toHaveProperty('rerankerType');
 
       expect(result.authenticated).toBe(true);
@@ -415,7 +419,7 @@ describe('web.ts', () => {
       expect(result.authResult).toHaveProperty('firecrawlApiUrl', 'https://api.firecrawl.dev');
       expect(result.authResult).toHaveProperty('jinaApiKey', 'system-jina-key');
       expect(result.authResult).toHaveProperty('searchProvider', 'serper');
-      expect(result.authResult).toHaveProperty('scraperType', 'firecrawl');
+      expect(result.authResult).toHaveProperty('scraperProvider', 'firecrawl');
       expect(result.authResult).toHaveProperty('rerankerType', 'jina');
 
       // Restore original env
@@ -432,6 +436,7 @@ describe('web.ts', () => {
         CUSTOM_FIRECRAWL_URL: 'https://custom.firecrawl.dev',
         CUSTOM_JINA_KEY: 'custom-jina-key',
         CUSTOM_COHERE_KEY: 'custom-cohere-key',
+        CUSTOM_JINA_URL: 'https://custom.jina.ai',
       };
 
       // Initialize webSearchConfig with custom variable names
@@ -442,11 +447,12 @@ describe('web.ts', () => {
         firecrawlApiKey: '${CUSTOM_FIRECRAWL_KEY}',
         firecrawlApiUrl: '${CUSTOM_FIRECRAWL_URL}',
         jinaApiKey: '${CUSTOM_JINA_KEY}',
+        jinaApiUrl: '${CUSTOM_JINA_URL}',
         cohereApiKey: '${CUSTOM_COHERE_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         // Specify which services to use
         searchProvider: 'serper' as SearchProviders,
-        scraperType: 'firecrawl' as ScraperTypes,
+        scraperProvider: 'firecrawl' as ScraperProviders,
         rerankerType: 'jina' as RerankerTypes, // Only Jina will be checked
       };
 
@@ -486,7 +492,7 @@ describe('web.ts', () => {
 
       // Verify the service types are set correctly
       expect(result.authResult).toHaveProperty('searchProvider', 'serper');
-      expect(result.authResult).toHaveProperty('scraperType', 'firecrawl');
+      expect(result.authResult).toHaveProperty('scraperProvider', 'firecrawl');
       expect(result.authResult).toHaveProperty('rerankerType', 'jina');
 
       // Restore original env
@@ -512,6 +518,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -573,6 +580,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -682,6 +690,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         searchProvider: 'serper' as SearchProviders,
@@ -713,8 +722,8 @@ describe('web.ts', () => {
       expect(providerCalls.length).toBe(1);
     });
 
-    it('should only check the specified scraperType', async () => {
-      // Initialize a webSearchConfig with a specific scraperType
+    it('should only check the specified scraperProvider', async () => {
+      // Initialize a webSearchConfig with a specific scraperProvider
       const webSearchConfig: TCustomConfig['webSearch'] = {
         serperApiKey: '${SERPER_API_KEY}',
         searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
@@ -722,9 +731,10 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
-        scraperType: 'firecrawl' as ScraperTypes,
+        scraperProvider: 'firecrawl' as ScraperProviders,
       };
 
       // Mock successful authentication
@@ -744,7 +754,7 @@ describe('web.ts', () => {
       });
 
       expect(result.authenticated).toBe(true);
-      expect(result.authResult.scraperType).toBe('firecrawl');
+      expect(result.authResult.scraperProvider).toBe('firecrawl');
 
       // Verify that only FIRECRAWL_API_KEY and FIRECRAWL_API_URL were requested for the scrapers category
       const scraperCalls = mockLoadAuthValues.mock.calls.filter((call) =>
@@ -762,6 +772,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         rerankerType: 'jina' as RerankerTypes,
@@ -808,6 +819,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         searchProvider: 'invalid-provider' as SearchProviders,
@@ -842,6 +854,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         rerankerType: 'jina' as RerankerTypes,
@@ -892,6 +905,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
       };
@@ -919,7 +933,7 @@ describe('web.ts', () => {
 
       // Should have set values for all categories
       expect(result.authResult.searchProvider).toBeDefined();
-      expect(result.authResult.scraperType).toBeDefined();
+      expect(result.authResult.scraperProvider).toBeDefined();
       expect(result.authResult.rerankerType).toBeDefined();
     });
 
@@ -932,6 +946,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
@@ -991,6 +1006,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         safeSearch: SafeSearchTypes.MODERATE,
         scraperTimeout: 15000, // This should take priority
         firecrawlOptions: {
@@ -1032,6 +1048,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
           includeTags: ['p'],
@@ -1070,6 +1087,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
           timeout: 12000, // Only timeout provided
@@ -1106,6 +1124,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
           formats: ['html', 'markdown'], // Only formats provided
@@ -1142,6 +1161,7 @@ describe('web.ts', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
         safeSearch: SafeSearchTypes.MODERATE,
         firecrawlOptions: {
           timeout: 8000,

@@ -122,7 +122,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className={cn('min-w-[40px]', isSmallScreen && 'px-2 py-1')}>
+            <Button
+              variant="outline"
+              aria-label={localize('com_files_filter_by')}
+              className={cn('min-w-[40px]', isSmallScreen && 'px-2 py-1')}
+            >
               <ListFilter className="size-3.5 sm:size-4" />
             </Button>
           </DropdownMenuTrigger>

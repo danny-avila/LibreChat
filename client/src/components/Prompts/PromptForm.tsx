@@ -167,6 +167,7 @@ const PromptForm = () => {
   const params = useParams();
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const { hasAccess } = usePromptGroupsContext();
   const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
   const promptId = params.promptId || '';
 
@@ -179,10 +180,12 @@ const PromptForm = () => {
   const [showSidePanel, setShowSidePanel] = useState(false);
   const sidePanelWidth = '320px';
 
-  const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(promptId);
+  const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(promptId, {
+    enabled: hasAccess && !!promptId,
+  });
   const { data: prompts = [], isLoading: isLoadingPrompts } = useGetPrompts(
     { groupId: promptId },
-    { enabled: !!promptId },
+    { enabled: hasAccess && !!promptId },
   );
 
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(

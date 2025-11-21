@@ -15,8 +15,8 @@ import {
 import type { Table as TTable } from '@tanstack/react-table';
 import { Table, TableRow, TableBody, TableCell, TableHead, TableHeader } from './Table';
 import AnimatedSearchInput from './AnimatedSearchInput';
+import { useMediaQuery, useLocalize } from '~/hooks';
 import { TrashIcon, Spinner } from '~/svgs';
-import { useMediaQuery } from '~/hooks';
 import { Skeleton } from './Skeleton';
 import { Checkbox } from './Checkbox';
 import { Button } from './Button';
@@ -118,6 +118,24 @@ const TableRowComponent = <TData, TValue>({
           );
         }
 
+        if (cell.column.id === 'title') {
+          return (
+            <TableHead
+              key={cell.id}
+              className="w-0 max-w-0 px-2 py-1 align-middle text-xs transition-all duration-300 sm:px-4 sm:py-2 sm:text-sm"
+              style={getColumnStyle(
+                cell.column.columnDef as TableColumn<TData, TValue>,
+                isSmallScreen,
+              )}
+              scope="row"
+            >
+              <div className="overflow-hidden text-ellipsis">
+                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              </div>
+            </TableHead>
+          );
+        }
+
         return (
           <TableCell
             key={cell.id}
@@ -156,11 +174,13 @@ const DeleteButton = memo(
     isDeleting,
     disabled,
     isSmallScreen,
+    ariaLabel,
   }: {
     onDelete?: () => Promise<void>;
     isDeleting: boolean;
     disabled: boolean;
     isSmallScreen: boolean;
+    ariaLabel: string;
   }) => {
     if (!onDelete) {
       return null;
@@ -171,6 +191,7 @@ const DeleteButton = memo(
         onClick={onDelete}
         disabled={disabled}
         className={cn('min-w-[40px] transition-all duration-200', isSmallScreen && 'px-2 py-1')}
+        aria-label={ariaLabel}
       >
         {isDeleting ? (
           <Spinner className="size-4" />
@@ -202,6 +223,7 @@ export default function DataTable<TData, TValue>({
   isLoading,
   enableSearch = true,
 }: DataTableProps<TData, TValue>) {
+  const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
@@ -359,6 +381,7 @@ export default function DataTable<TData, TValue>({
             isDeleting={isDeleting}
             disabled={!table.getFilteredSelectedRowModel().rows.length || isDeleting}
             isSmallScreen={isSmallScreen}
+            ariaLabel={localize('com_ui_delete_selected_items')}
           />
         )}
         {filterColumn !== undefined && table.getColumn(filterColumn) && enableSearch && (
@@ -400,6 +423,7 @@ export default function DataTable<TData, TValue>({
                         ? header.column.getToggleSortingHandler()
                         : undefined
                     }
+                    scope="col"
                   >
                     {header.isPlaceholder
                       ? null
