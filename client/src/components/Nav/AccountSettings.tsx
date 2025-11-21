@@ -23,12 +23,12 @@ function AccountSettings() {
   return (
     <Select.SelectProvider>
       <Select.Select
-        aria-label="LibeChat Settings"
+        aria-label="LibreChat Settings"
         data-testid="nav-user"
         className="mt-text-sm flex h-auto w-full items-center gap-2 rounded-xl p-2 text-sm transition-all duration-200 ease-in-out hover:bg-surface-hover"
       >
         <Feather className="icon-md text-text-primary" aria-hidden="true" />
-        <span className="grow text-left text-text-primary">LibeChat Settings</span>
+        <span className="grow text-left text-text-primary">LibreChat Settings</span>
       </Select.Select>
       <Select.SelectPopover
         className="popover-ui w-[235px]"
