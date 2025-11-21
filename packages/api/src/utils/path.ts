@@ -1,11 +1,11 @@
-const { logger } = require('@librechat/data-schemas');
+import { logger } from '@librechat/data-schemas';
 
 /**
  * Gets the base path from the DOMAIN_CLIENT environment variable.
  * This is useful for constructing URLs when LibreChat is served from a subdirectory.
  * @returns {string} The base path (e.g., '/librechat' or '')
  */
-function getBasePath() {
+export function getBasePath(): string {
   if (!process.env.DOMAIN_CLIENT) {
     return '';
   }
@@ -23,5 +23,3 @@ function getBasePath() {
     return '';
   }
 }
-
-module.exports = getBasePath;

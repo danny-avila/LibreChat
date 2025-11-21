@@ -1,5 +1,5 @@
+const { getBasePath } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const getBasePath = require('~/server/utils/getBasePath');
 
 /**
  * The `addImages` function corrects any erroneous image URLs in the `responseMessage.text`

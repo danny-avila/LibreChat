@@ -1,7 +1,9 @@
-const getBasePath = require('./getBasePath');
+import { logger } from '@librechat/data-schemas';
+import type { Logger } from '@librechat/agents';
+import { getBasePath } from './path';
 
 describe('getBasePath', () => {
-  let originalDomainClient;
+  let originalDomainClient: string | undefined;
 
   beforeEach(() => {
     originalDomainClient = process.env.DOMAIN_CLIENT;
@@ -53,9 +55,10 @@ describe('getBasePath', () => {
 
   it('should return empty string for invalid URL', () => {
     process.env.DOMAIN_CLIENT = 'not-a-valid-url';
-    const loggerSpy = jest
-      .spyOn(require('@librechat/data-schemas').logger, 'warn')
-      .mockImplementation(() => {});
+    // Accepts (infoObject: object), return value is not used
+    const loggerSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {
+      return logger as unknown as Logger;
+    });
     expect(getBasePath()).toBe('');
     expect(loggerSpy).toHaveBeenCalledWith(
       'Error parsing DOMAIN_CLIENT for base path:',
@@ -77,6 +80,7 @@ describe('getBasePath', () => {
   });
 
   it('should handle null DOMAIN_CLIENT', () => {
+    // @ts-expect-error Testing null case
     process.env.DOMAIN_CLIENT = null;
     expect(getBasePath()).toBe('');
   });

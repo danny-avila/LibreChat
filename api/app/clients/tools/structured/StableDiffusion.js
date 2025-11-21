@@ -8,7 +8,7 @@ const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
-const getBasePath = require('~/server/utils/getBasePath');
+const { getBasePath } = require('@librechat/api');
 const paths = require('~/config/paths');
 
 const displayMessage =

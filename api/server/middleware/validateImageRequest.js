@@ -1,8 +1,7 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const getBasePath = require('~/server/utils/getBasePath');
+const { isEnabled, getBasePath } = require('@librechat/api');
 
 const OBJECT_ID_LENGTH = 24;
 const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
