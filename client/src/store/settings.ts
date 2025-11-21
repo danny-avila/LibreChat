@@ -25,6 +25,7 @@ const localStorageAtoms = {
     LocalStorageKeys.ENABLE_USER_MSG_MARKDOWN,
     true,
   ),
+  keepScreenAwake: atomWithLocalStorage('keepScreenAwake', true),
 
   // Chat settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
