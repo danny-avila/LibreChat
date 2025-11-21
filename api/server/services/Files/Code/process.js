@@ -1,9 +1,9 @@
 const path = require('path');
 const { v4 } = require('uuid');
 const axios = require('axios');
-const { logAxiosError } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
+const { logAxiosError, getBasePath } = require('@librechat/api');
 const {
   Tools,
   FileContext,
@@ -15,7 +15,6 @@ const { filterFilesByAgentAccess } = require('~/server/services/Files/permission
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { createFile, getFiles, updateFile } = require('~/models/File');
-const { getBasePath } = require('~/server/utils');
 
 /**
  * Process OpenAI image files, convert to target format, save and return file metadata.
