@@ -3,44 +3,44 @@ const { Tools, CacheKeys, Constants, FileSources } = require('librechat-data-pro
 const {
   MCPOAuthHandler,
   MCPTokenStorage,
+  mcpServersRegistry,
   normalizeHttpError,
   extractWebSearchEnvVars,
 } = require('@librechat/api');
 const {
-  getFiles,
-  findToken,
-  updateUser,
-  deleteFiles,
-  deleteConvos,
-  deletePresets,
-  deleteMessages,
-  deleteUserById,
-  deleteAllSharedLinks,
   deleteAllUserSessions,
+  deleteAllSharedLinks,
+  deleteUserById,
+  deleteMessages,
+  deletePresets,
+  deleteConvos,
+  deleteFiles,
+  updateUser,
+  findToken,
+  getFiles,
 } = require('~/models');
+const {
+  ConversationTag,
+  Transaction,
+  MemoryEntry,
+  Assistant,
+  Balance,
+  Action,
+  Group,
+  Token,
+  User,
+} = require('~/db/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
 const { processDeleteRequest } = require('~/server/services/Files/process');
-const {
-  Transaction,
-  Balance,
-  User,
-  Token,
-  Assistant,
-  ConversationTag,
-  MemoryEntry,
-  Action,
-  Group,
-} = require('~/db/models');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getAppConfig } = require('~/server/services/Config');
 const { deleteToolCalls } = require('~/models/ToolCall');
-const { getLogStores } = require('~/cache');
-const { mcpServersRegistry } = require('@librechat/api');
-const { deleteUserAgents } = require('~/models/Agent');
 const { deleteUserPrompts } = require('~/models/Prompt');
+const { deleteUserAgents } = require('~/models/Agent');
+const { getLogStores } = require('~/cache');
 
 const getUserController = async (req, res) => {
   const appConfig = await getAppConfig({ role: req.user?.role });
