@@ -190,6 +190,14 @@ const isSubmittingFamily = atomFamily({
   ],
 });
 
+const anySubmittingSelector = selector<boolean>({
+  key: 'anySubmittingSelector',
+  get: ({ get }) => {
+    const keys = get(conversationKeysAtom);
+    return keys.some((key) => get(isSubmittingFamily(key)) === true);
+  },
+});
+
 const optionSettingsFamily = atomFamily<TOptionSettings, string | number>({
   key: 'optionSettingsByIndex',
   default: {},
@@ -399,6 +407,7 @@ export default {
   showPopoverFamily,
   latestMessageFamily,
   messagesSiblingIdxFamily,
+  anySubmittingSelector,
   allConversationsSelector,
   conversationByKeySelector,
   useClearConvoState,
