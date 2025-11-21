@@ -1,5 +1,5 @@
 import { extractEnvVariable } from 'librechat-data-provider';
-import type { TUser, MCPOptions } from 'librechat-data-provider';
+import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody } from '~/types';
 import { extractOpenIDTokenInfo, processOpenIDPlaceholders, isOpenIDTokenValid } from './oidc';
@@ -71,7 +71,7 @@ const ALLOWED_BODY_FIELDS = ['conversationId', 'parentMessageId', 'messageId'] a
  * @param user - The user object
  * @returns The processed string with placeholders replaced
  */
-function processUserPlaceholders(value: string, user?: TUser): string {
+function processUserPlaceholders(value: string, user?: IUser): string {
   if (!user || typeof value !== 'string') {
     return value;
   }
@@ -82,7 +82,7 @@ function processUserPlaceholders(value: string, user?: TUser): string {
       continue;
     }
 
-    const fieldValue = user[field as keyof TUser];
+    const fieldValue = user[field as keyof IUser];
 
     // Skip replacement if field doesn't exist in user object
     if (!(field in user)) {
@@ -141,7 +141,7 @@ function processSingleValue({
 }: {
   originalValue: string;
   customUserVars?: Record<string, string>;
-  user?: TUser;
+  user?: IUser;
   body?: RequestBody;
 }): string {
   let value = originalValue;
@@ -182,7 +182,7 @@ function processSingleValue({
  */
 export function processMCPEnv(params: {
   options: Readonly<MCPOptions>;
-  user?: TUser;
+  user?: IUser;
   customUserVars?: Record<string, string>;
   body?: RequestBody;
 }): MCPOptions {
@@ -227,7 +227,7 @@ export function processMCPEnv(params: {
 
   // Process OAuth configuration if it exists (for all transport types)
   if ('oauth' in newObj && newObj.oauth) {
-    const processedOAuth: Record<string, string | string[] | undefined> = {};
+    const processedOAuth: Record<string, boolean | string | string[] | undefined> = {};
     for (const [key, originalValue] of Object.entries(newObj.oauth)) {
       // Only process string values for environment variables
       // token_exchange_method is an enum and shouldn't be processed
@@ -255,7 +255,7 @@ export function processMCPEnv(params: {
  */
 export function resolveHeaders(options?: {
   headers: Record<string, string> | undefined;
-  user?: Partial<TUser> | { id: string };
+  user?: Partial<IUser> | { id: string };
   body?: RequestBody;
   customUserVars?: Record<string, string>;
 }) {
@@ -269,7 +269,7 @@ export function resolveHeaders(options?: {
       resolvedHeaders[key] = processSingleValue({
         originalValue: inputHeaders[key],
         customUserVars,
-        user: user as TUser,
+        user: user as IUser,
         body,
       });
     });
