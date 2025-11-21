@@ -205,12 +205,10 @@ describe('PrivateServersLoadStatusCache Integration Tests', () => {
         }, 300);
       });
 
-      const result = await waitPromise;
+      // Await both in parallel - waitPromise should complete first
+      const [result] = await Promise.all([waitPromise, setLoadedPromise]);
 
       expect(result).toBe(true);
-
-      // Wait for the setLoaded to complete to avoid cleanup issues
-      await setLoadedPromise;
     }, 5000);
 
     it('should timeout if loaded flag is never set', async () => {

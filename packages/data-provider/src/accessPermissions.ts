@@ -45,6 +45,7 @@ export type TAccessLevel = 'none' | 'viewer' | 'editor' | 'owner';
 export enum ResourceType {
   AGENT = 'agent',
   PROMPTGROUP = 'promptGroup',
+  MCPSERVER = 'mcpServer',
 }
 
 /**
@@ -71,6 +72,9 @@ export enum AccessRoleIds {
   PROMPTGROUP_VIEWER = 'promptGroup_viewer',
   PROMPTGROUP_EDITOR = 'promptGroup_editor',
   PROMPTGROUP_OWNER = 'promptGroup_owner',
+  MCPSERVER_VIEWER = 'mcpServer_viewer',
+  MCPSERVER_EDITOR = 'mcpServer_editor',
+  MCPSERVER_OWNER = 'mcpServer_owner',
 }
 
 // ===== ZOD SCHEMAS =====

@@ -224,7 +224,10 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
 
 export const mcp = {
   tools: `${BASE_URL}/api/mcp/tools`,
+  servers: `${BASE_URL}/api/mcp/servers`,
 };
+
+export const mcpServer = (mcp_id: string) => `${BASE_URL}/api/mcp/servers/${mcp_id}`;
 
 export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;
 
@@ -314,6 +317,7 @@ export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
 export const updatePeoplePickerPermissions = (roleName: string) =>
   `${getRole(roleName)}/people-picker`;
+export const updateMcpServersPermissions = (roleName: string) => `${getRole(roleName)}/mcp-servers`;
 
 export const updateMarketplacePermissions = (roleName: string) =>
   `${getRole(roleName)}/marketplace`;

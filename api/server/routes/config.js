@@ -56,6 +56,7 @@ const getMCPServers = async (payload, appConfig) => {
         chatMenu: serverConfig?.chatMenu,
         isOAuth: serverConfig.requiresOAuth,
         customUserVars: serverConfig?.customUserVars,
+        iconPath: serverConfig?.iconPath,
       });
     }
   } catch (error) {

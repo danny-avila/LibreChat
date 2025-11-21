@@ -9,6 +9,7 @@ const {
 } = require('~/server/controllers/PermissionsController');
 const { requireJwtAuth, checkBan, uaParser, canAccessResource } = require('~/server/middleware');
 const { checkPeoplePickerAccess } = require('~/server/middleware/checkPeoplePickerAccess');
+const { findMCPServerById } = require('~/models');
 
 const router = express.Router();
 
@@ -62,6 +63,13 @@ router.put(
         resourceType: ResourceType.PROMPTGROUP,
         requiredPermission: PermissionBits.SHARE,
         resourceIdParam: 'resourceId',
+      });
+    } else if (resourceType === ResourceType.MCPSERVER) {
+      middleware = canAccessResource({
+        resourceType: ResourceType.MCPSERVER,
+        requiredPermission: PermissionBits.SHARE,
+        resourceIdParam: 'resourceId',
+        idResolver: findMCPServerById,
       });
     } else {
       return res.status(400).json({
