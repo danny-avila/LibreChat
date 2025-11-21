@@ -1,6 +1,6 @@
 import { useRecoilValue } from 'recoil';
-import store from '~/store';
 import useWakeLock from '~/hooks/useWakeLock';
+import store from '~/store';
 
 /**
  * WakeLockManager Component
