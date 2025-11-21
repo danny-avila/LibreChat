@@ -515,9 +515,14 @@ const termsOfServiceSchema = z.object({
 
 export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;
 
-const mcpServersSchema = z.object({
-  placeholder: z.string().optional(),
-});
+const mcpServersSchema = z
+  .object({
+    placeholder: z.string().optional(),
+    use: z.boolean().optional(),
+    create: z.boolean().optional(),
+    share: z.boolean().optional(),
+  })
+  .optional();
 
 export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
 
@@ -582,6 +587,11 @@ export const interfaceSchema = z
     },
     marketplace: {
       use: false,
+    },
+    mcpServers: {
+      use: true,
+      create: true,
+      share: false,
     },
     fileSearch: true,
     fileCitations: true,
@@ -675,6 +685,7 @@ export type TStartupConfig = {
       chatMenu?: boolean;
       isOAuth?: boolean;
       startup?: boolean;
+      iconPath?: string;
     }
   >;
   mcpPlaceholder?: string;

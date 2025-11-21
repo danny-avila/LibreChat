@@ -274,6 +274,7 @@ export type UpdatePromptPermVars = UpdatePermVars<p.TPromptPermissions>;
 export type UpdateMemoryPermVars = UpdatePermVars<p.TMemoryPermissions>;
 export type UpdateAgentPermVars = UpdatePermVars<p.TAgentPermissions>;
 export type UpdatePeoplePickerPermVars = UpdatePermVars<p.TPeoplePickerPermissions>;
+export type UpdateMcpServersPermVars = UpdatePermVars<p.TMcpServersPermissions>;
 
 export type UpdatePermResponse = r.TRole;
 
@@ -301,6 +302,13 @@ export type UpdateAgentPermOptions = MutationOptions<
 export type UpdatePeoplePickerPermOptions = MutationOptions<
   UpdatePermResponse,
   UpdatePeoplePickerPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
+export type UpdateMcpServersPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateMcpServersPermVars,
   unknown,
   types.TError | null | undefined
 >;
