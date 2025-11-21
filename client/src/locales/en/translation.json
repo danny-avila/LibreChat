@@ -480,6 +480,7 @@
   "com_nav_font_size_xs": "Extra Small",
   "com_nav_help_faq": "Help & FAQ",
   "com_nav_hide_panel": "Hide right-most side panel",
+  "com_nav_keep_screen_awake": "Keep screen awake during response generation",
   "com_nav_info_balance": "Balance shows how many token credits you have left to use. Token credits translate to monetary value (e.g., 1000 credits = $0.001 USD)",
   "com_nav_info_code_artifacts": "Enables the display of experimental code artifacts next to the chat",
   "com_nav_info_code_artifacts_agent": "Enables the use of code artifacts for this agent. By default, additional instructions specific to the use of artifacts are added, unless \"Custom Prompt Mode\" is enabled.",
