@@ -25,6 +25,9 @@ endpoints:
       version: "2024-10-21"
       # Model-level configuration
       models:
+        gpt-5:
+          deploymentName: gpt-5
+          version: "2024-10-21"
         gpt-4o:
           deploymentName: gpt-4o
           version: "2024-10-21"
