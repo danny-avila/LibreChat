@@ -15,6 +15,7 @@ const { filterFilesByAgentAccess } = require('~/server/services/Files/permission
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { createFile, getFiles, updateFile } = require('~/models/File');
+const { getBasePath } = require('~/server/utils');
 
 /**
  * Process OpenAI image files, convert to target format, save and return file metadata.
@@ -41,11 +42,12 @@ const processCodeOutput = async ({
   const appConfig = req.config;
   const currentDate = new Date();
   const baseURL = getCodeBaseURL();
+  const basePath = getBasePath();
   const fileExt = path.extname(name);
   if (!fileExt || !imageExtRegex.test(name)) {
     return {
       filename: name,
-      filepath: `/api/files/code/download/${session_id}/${id}`,
+      filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
       /** Note: expires 24 hours after creation */
       expiresAt: currentDate.getTime() + 86400000,
       conversationId,
