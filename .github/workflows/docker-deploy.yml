@@ -24,6 +24,8 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Inject Azure OpenAI apiKey into librechat.yaml
+        env:
+          AZURE_OPENAI_APIKEY: ${{ secrets.AZURE_OPENAI_APIKEY }}
         run: |
           python -m pip install pyyaml
           python - <<'PY'
@@ -38,8 +40,7 @@ jobs:
           with open(p, "w", encoding="utf-8") as f:
               yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
           PY
-                  env:
-                    AZURE_OPENAI_APIKEY: ${{ secrets.AZURE_OPENAI_APIKEY }}
+                  
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
