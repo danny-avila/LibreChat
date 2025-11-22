@@ -355,3 +355,45 @@ export type AgentToolType = {
 } & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id?: string });
 
 export type ToolMetadata = TPlugin;
+
+export interface BaseMessage {
+  content: string;
+  role?: string;
+  [key: string]: unknown;
+}
+
+export interface BaseGraphState {
+  [key: string]: unknown;
+}
+
+export type GraphEdge = {
+  /** Agent ID, use a list for multiple sources */
+  from: string | string[];
+  /** Agent ID, use a list for multiple destinations */
+  to: string | string[];
+  description?: string;
+  /** Can return boolean or specific destination(s) */
+  condition?: (state: BaseGraphState) => boolean | string | string[];
+  /** 'handoff' creates tools for dynamic routing, 'direct' creates direct edges, which also allow parallel execution */
+  edgeType?: 'handoff' | 'direct';
+  /**
+   * For direct edges: Optional prompt to add when transitioning through this edge.
+   * String prompts can include variables like {results} which will be replaced with
+   * messages from startIndex onwards. When {results} is used, excludeResults defaults to true.
+   *
+   * For handoff edges: Description for the input parameter that the handoff tool accepts,
+   * allowing the supervisor to pass specific instructions/context to the transferred agent.
+   */
+  prompt?: string | ((messages: BaseMessage[], runStartIndex: number) => string | undefined);
+  /**
+   * When true, excludes messages from startIndex when adding prompt.
+   * Automatically set to true when {results} variable is used in prompt.
+   */
+  excludeResults?: boolean;
+  /**
+   * For handoff edges: Customizes the parameter name for the handoff input.
+   * Defaults to "instructions" if not specified.
+   * Only applies when prompt is provided for handoff edges.
+   */
+  promptKey?: string;
+};

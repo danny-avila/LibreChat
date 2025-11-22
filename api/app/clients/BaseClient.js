@@ -81,6 +81,7 @@ class BaseClient {
     throw new Error("Method 'getCompletion' must be implemented.");
   }
 
+  /** @type {sendCompletion} */
   async sendCompletion() {
     throw new Error("Method 'sendCompletion' must be implemented.");
   }
@@ -689,8 +690,7 @@ class BaseClient {
       });
     }
 
-    /** @type {string|string[]|undefined} */
-    const completion = await this.sendCompletion(payload, opts);
+    const { completion, metadata } = await this.sendCompletion(payload, opts);
     if (this.abortController) {
       this.abortController.requestCompleted = true;
     }
@@ -708,6 +708,7 @@ class BaseClient {
       iconURL: this.options.iconURL,
       endpoint: this.options.endpoint,
       ...(this.metadata ?? {}),
+      metadata,
     };
 
     if (typeof completion === 'string') {
@@ -1213,6 +1214,7 @@ class BaseClient {
       attachments,
       {
         provider: this.options.agent?.provider,
+        endpoint: this.options.agent?.endpoint,
         useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
       },
       getStrategyFunctions,
@@ -1228,7 +1230,10 @@ class BaseClient {
     const videoResult = await encodeAndFormatVideos(
       this.options.req,
       attachments,
-      this.options.agent.provider,
+      {
+        provider: this.options.agent?.provider,
+        endpoint: this.options.agent?.endpoint,
+      },
       getStrategyFunctions,
     );
     message.videos =
@@ -1240,7 +1245,10 @@ class BaseClient {
     const audioResult = await encodeAndFormatAudios(
       this.options.req,
       attachments,
-      this.options.agent.provider,
+      {
+        provider: this.options.agent?.provider,
+        endpoint: this.options.agent?.endpoint,
+      },
       getStrategyFunctions,
     );
     message.audios =

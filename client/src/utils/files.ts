@@ -235,7 +235,13 @@ export const validateFiles = ({
   toolResource?: string;
   fileConfig: FileConfig | null;
 }) => {
-  const { fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes } = endpointFileConfig;
+  const { fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes, disabled } =
+    endpointFileConfig;
+  /** Block all uploads if the endpoint is explicitly disabled */
+  if (disabled === true) {
+    setError('com_ui_attach_error_disabled');
+    return false;
+  }
   const existingFiles = Array.from(files.values());
   const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
   if (incomingTotalSize === 0) {

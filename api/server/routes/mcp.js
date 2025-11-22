@@ -134,6 +134,16 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       hasCodeVerifier: !!flowState.codeVerifier,
     });
 
+    /** Check if this flow has already been completed (idempotency protection) */
+    const currentFlowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
+    if (currentFlowState?.status === 'COMPLETED') {
+      logger.warn('[MCP OAuth] Flow already completed, preventing duplicate token exchange', {
+        flowId,
+        serverName,
+      });
+      return res.redirect(`/oauth/success?serverName=${encodeURIComponent(serverName)}`);
+    }
+
     logger.debug('[MCP OAuth] Completing OAuth flow');
     const oauthHeaders = await getOAuthHeaders(serverName, flowState.userId);
     const tokens = await MCPOAuthHandler.completeOAuthFlow(flowId, code, flowManager, oauthHeaders);

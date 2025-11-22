@@ -185,8 +185,8 @@ process.on('uncaughtException', (err) => {
     logger.error('There was an uncaught error:', err);
   }
 
-  if (err.message.includes('abort')) {
-    logger.warn('There was an uncatchable AbortController error.');
+  if (err.message && err.message?.toLowerCase()?.includes('abort')) {
+    logger.warn('There was an uncatchable abort error.');
     return;
   }
 
@@ -209,6 +209,17 @@ process.on('uncaughtException', (err) => {
   if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
     logger.error(
       '\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.',
+    );
+    return;
+  }
+
+  if (err.stack && err.stack.includes('@librechat/agents')) {
+    logger.error(
+      '\n\nAn error occurred in the agents system. The error has been logged and the app will continue running.',
+      {
+        message: err.message,
+        stack: err.stack,
+      },
     );
     return;
   }

@@ -1,5 +1,6 @@
 import {
   Tools,
+  Constants,
   ContentTypes,
   ToolCallTypes,
   imageGenTools,
@@ -10,6 +11,7 @@ import type { TMessageContentParts, TAttachment } from 'librechat-data-provider'
 import { OpenAIImageGen, EmptyText, Reasoning, ExecuteCode, AgentUpdate, Text } from './Parts';
 import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
+import AgentHandoff from './AgentHandoff';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
 import WebSearch from './WebSearch';
@@ -123,6 +125,14 @@ const Part = memo(
             isLast={isLast}
           />
         );
+      } else if (isToolCall && toolCall.name?.startsWith(Constants.LC_TRANSFER_TO_)) {
+        return (
+          <AgentHandoff
+            args={toolCall.args ?? ''}
+            name={toolCall.name || ''}
+            output={toolCall.output ?? ''}
+          />
+        );
       } else if (isToolCall) {
         return (
           <ToolCall
@@ -134,6 +144,7 @@ const Part = memo(
             attachments={attachments}
             auth={toolCall.auth}
             expires_at={toolCall.expires_at}
+            isLast={isLast}
           />
         );
       } else if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
@@ -182,6 +193,7 @@ const Part = memo(
             args={toolCall.function.arguments as string}
             name={toolCall.function.name}
             output={toolCall.function.output}
+            isLast={isLast}
           />
         );
       }

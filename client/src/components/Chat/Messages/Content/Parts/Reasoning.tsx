@@ -68,25 +68,27 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
 
   return (
     <div className="group/reasoning">
-      <div className="sticky top-0 z-10 mb-2 bg-surface-secondary pb-2 pt-2">
-        <ThinkingButton
-          isExpanded={isExpanded}
-          onClick={handleClick}
-          label={label}
-          content={reasoningText}
-        />
-      </div>
-      <div
-        className={cn(
-          'grid transition-all duration-300 ease-out',
-          nextType !== ContentTypes.THINK && isExpanded && 'mb-4',
-        )}
-        style={{
-          gridTemplateRows: isExpanded ? '1fr' : '0fr',
-        }}
-      >
-        <div className="overflow-hidden">
-          <ThinkingContent>{reasoningText}</ThinkingContent>
+      <div className="group/thinking-container">
+        <div className="sticky top-0 z-10 mb-2 bg-presentation pb-2 pt-2">
+          <ThinkingButton
+            isExpanded={isExpanded}
+            onClick={handleClick}
+            label={label}
+            content={reasoningText}
+          />
+        </div>
+        <div
+          className={cn(
+            'grid transition-all duration-300 ease-out',
+            nextType !== ContentTypes.THINK && isExpanded && 'mb-4',
+          )}
+          style={{
+            gridTemplateRows: isExpanded ? '1fr' : '0fr',
+          }}
+        >
+          <div className="overflow-hidden">
+            <ThinkingContent>{reasoningText}</ThinkingContent>
+          </div>
         </div>
       </div>
     </div>

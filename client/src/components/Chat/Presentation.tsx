@@ -57,6 +57,23 @@ export default function Presentation({ children }: { children: React.ReactNode }
   }, []);
   const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
 
+  /**
+   * Memoize artifacts JSX to prevent recreating it on every render
+   * This is critical for performance - prevents entire artifact tree from re-rendering
+   */
+  const artifactsElement = useMemo(() => {
+    if (artifactsVisibility === true && Object.keys(artifacts ?? {}).length > 0) {
+      return (
+        <ArtifactsProvider>
+          <EditorProvider>
+            <Artifacts />
+          </EditorProvider>
+        </ArtifactsProvider>
+      );
+    }
+    return null;
+  }, [artifactsVisibility, artifacts]);
+
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
       <SidePanelProvider>
@@ -64,15 +81,7 @@ export default function Presentation({ children }: { children: React.ReactNode }
           defaultLayout={defaultLayout}
           fullPanelCollapse={fullCollapse}
           defaultCollapsed={defaultCollapsed}
-          artifacts={
-            artifactsVisibility === true && Object.keys(artifacts ?? {}).length > 0 ? (
-              <ArtifactsProvider>
-                <EditorProvider>
-                  <Artifacts />
-                </EditorProvider>
-              </ArtifactsProvider>
-            ) : null
-          }
+          artifacts={artifactsElement}
         >
           <main className="flex h-full flex-col overflow-y-auto" role="main">
             {children}
