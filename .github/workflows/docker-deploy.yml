@@ -49,7 +49,7 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ vars.DOCKERHUB_USERNAME }}/${{ vars.DOCKERHUB_REPOSITORY }}:1.0.${{ github.run_number }}
+            ${{ vars.DOCKERHUB_REPOSITORY }}:1.0.${{ github.run_number }}
 
       - name: Azure Login
         uses: azure/login@v1
@@ -61,7 +61,7 @@ jobs:
           az webapp config container set \
             --name "${{ secrets.AZURE_WEBAPP_NAME }}" \
             --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
-            --docker-custom-image-name "${{ vars.DOCKERHUB_USERNAME }}/${{ vars.DOCKERHUB_REPOSITORY }}:1.0.${{ github.run_number }}" \
+            --docker-custom-image-name "${{ vars.DOCKERHUB_REPOSITORY }}:1.0.${{ github.run_number }}" \
             --docker-registry-server-url "https://index.docker.io"
 
       - name: Restart Web App
