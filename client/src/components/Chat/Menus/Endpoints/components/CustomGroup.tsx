@@ -1,5 +1,4 @@
 import React from 'react';
-import { getEndpointField } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { getIconKey } from '~/utils';
@@ -36,10 +35,10 @@ export function CustomGroup({ groupName, specs, endpoints }: CustomGroupProps) {
     );
 
     if (matchKey) {
-      const endpointType = getEndpointField(endpointsConfig, matchKey, 'type');
+      const endpointType = endpointsConfig?.[matchKey]?.type;
       const iconKey = getIconKey({ endpoint: matchKey, endpointsConfig, endpointType });
       const Icon = icons[iconKey];
-      const endpointIconURL = getEndpointField(endpointsConfig, matchKey, 'iconURL');
+      const endpointIconURL = endpointsConfig?.[matchKey]?.iconURL;
 
       if (Icon) {
         icon = (

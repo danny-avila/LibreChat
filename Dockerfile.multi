@@ -29,6 +29,7 @@ RUN npm ci
 FROM base AS data-provider-build
 WORKDIR /app/packages/data-provider
 COPY packages/data-provider ./
+ENV NODE_OPTIONS="--max-old-space-size=8192"
 RUN npm run build
 
 # Build `data-schemas` package
@@ -36,6 +37,7 @@ FROM base AS data-schemas-build
 WORKDIR /app/packages/data-schemas
 COPY packages/data-schemas ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
+ENV NODE_OPTIONS="--max-old-space-size=8192"
 RUN npm run build
 
 # Build `api` package
@@ -44,12 +46,14 @@ WORKDIR /app/packages/api
 COPY packages/api ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 COPY --from=data-schemas-build /app/packages/data-schemas/dist /app/packages/data-schemas/dist
+ENV NODE_OPTIONS="--max-old-space-size=8192"
 RUN npm run build
 
 # Build `client` package
 FROM base AS client-package-build
 WORKDIR /app/packages/client
 COPY packages/client ./
+ENV NODE_OPTIONS="--max-old-space-size=8192"
 RUN npm run build
 
 # Client build
@@ -59,7 +63,7 @@ COPY client ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 COPY --from=client-package-build /app/packages/client/dist /app/packages/client/dist
 COPY --from=client-package-build /app/packages/client/src /app/packages/client/src
-ENV NODE_OPTIONS="--max-old-space-size=2048"
+ENV NODE_OPTIONS="--max-old-space-size=8192"
 RUN npm run build
 
 # API setup (including client dist)
