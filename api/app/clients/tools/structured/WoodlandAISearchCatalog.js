@@ -223,7 +223,6 @@ class WoodlandAISearchCatalog extends Tool {
     const title = str(d?.title) || str(d?.product_name);
     const sku = str(d?.sku) || str(d?.product_sku);
     const thePrice = num(d?.price);
-    const availability = str(d?.availability) || str(d?.status);
 
     const citationLabel = sku ? `${title || 'Product'} — ${sku}` : title || 'Product';
     const citationUrl = provenance?.url;
@@ -236,8 +235,6 @@ class WoodlandAISearchCatalog extends Tool {
       price: thePrice,
       old_price: num(d?.old_price),
       catalog_price: num(d?.catalog_price),
-      availability,
-      stock_quantity: num(d?.stock_quantity),
       categories: list(d?.categories),
       category_paths: list(d?.category_paths),
       tags: list(d?.tags),

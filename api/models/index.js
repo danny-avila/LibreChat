@@ -25,12 +25,14 @@ const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset')
 const { File } = require('~/db/models');
 
 const { seedWoodlandAgents } = require('./AgentSeed');
+const { seedWoodlandPrompts } = require('./PromptSeed');
 
 const seedDatabase = async () => {
   await methods.initializeRoles();
   await methods.seedDefaultRoles();
   await methods.ensureDefaultCategories();
   await seedWoodlandAgents();
+  await seedWoodlandPrompts();
 };
 
 module.exports = {

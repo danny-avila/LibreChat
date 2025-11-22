@@ -80,11 +80,11 @@ const WOODLAND_AGENTS = [
     instructionsKey: 'TractorFitmentAgent',
     tools: ['woodland-ai-search-tractor'],
     conversation_starters: [
-      'What adapter kit do I need for a John Deere D130 with a 42-inch deck?',
-      'Will a Commander work with a 2015 Vanguard 8 HP engine?',
-      'Does my mower require deck drilling for the Cyclone Rake MDA?',
-      'Which hitch kit fits a Craftsman T260?',
-      'Is the Commander compatible with larger hose upgrades?'
+      'I need help finding the right fitment for my tractor',
+      'What parts do I need for my tractor?',
+      'Can you help me check tractor compatibility?',
+      'I want to see if my tractor works with a Cyclone Rake',
+      'Help me find the right hitch and adapter for my tractor'
     ],
     temperature: 0,
   },

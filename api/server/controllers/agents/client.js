@@ -873,66 +873,61 @@ class AgentClient extends BaseClient {
       );
 
       /**
+       * Runs a single agent (or the primary agent plus graph edges) with the provided messages.
+       * Additional arguments are used for sequential agents where we want a different context window.
+       *
+       * @param {Agent} agent
        * @param {BaseMessage[]} messages
+       * @param {number} [agentIndex=0]
+       * @param {Array} [contentData]
+       * @param {Record<number, number>} [runIndexCountMap=indexTokenCountMap]
        */
-      const runAgents = async (messages) => {
-        const agents = [this.options.agent];
+      const runAgent = async (
+        agent,
+        messages,
+        agentIndex = 0,
+        contentData,
+        runIndexCountMap = indexTokenCountMap,
+      ) => {
+        const agents = [agent];
         if (
+          agent === this.options.agent &&
           this.agentConfigs &&
           this.agentConfigs.size > 0 &&
-          ((this.options.agent.edges?.length ?? 0) > 0 ||
+          ((agent.edges?.length ?? 0) > 0 ||
             (await checkCapability(this.options.req, AgentCapabilities.chain)))
         ) {
           agents.push(...this.agentConfigs.values());
         }
 
+        let recursionLimit = config.recursionLimit;
         if (agents[0].recursion_limit && typeof agents[0].recursion_limit === 'number') {
-          config.recursionLimit = agents[0].recursion_limit;
+          recursionLimit = agents[0].recursion_limit;
         }
 
-        if (
-          agentsEConfig?.maxRecursionLimit &&
-          config.recursionLimit > agentsEConfig?.maxRecursionLimit
-        ) {
-          config.recursionLimit = agentsEConfig?.maxRecursionLimit;
+        if (agentsEConfig?.maxRecursionLimit && recursionLimit > agentsEConfig?.maxRecursionLimit) {
+          recursionLimit = agentsEConfig?.maxRecursionLimit;
         }
-
-        // TODO: needs to be added as part of AgentContext initialization
-        // const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];
-        // const noSystemMessages = noSystemModelRegex.some((regex) =>
-        //   agent.model_parameters.model.match(regex),
-        // );
-        // if (noSystemMessages === true && systemContent?.length) {
-        //   const latestMessageContent = _messages.pop().content;
-        //   if (typeof latestMessageContent !== 'string') {
-        //     latestMessageContent[0].text = [systemContent, latestMessageContent[0].text].join('\n');
-        //     _messages.push(new HumanMessage({ content: latestMessageContent }));
-        //   } else {
-        //     const text = [systemContent, latestMessageContent].join('\n');
-        //     _messages.push(new HumanMessage(text));
-        //   }
-        // }
-        // let messages = _messages;
-        // if (agent.useLegacyContent === true) {
-        //   messages = formatContentStrings(messages);
-        // }
-        // if (
-        //   agent.model_parameters?.clientOptions?.defaultHeaders?.['anthropic-beta']?.includes(
-        //     'prompt-caching',
-        //   )
-        // ) {
-        //   messages = addCacheControl(messages);
-        // }
 
         memoryPromise = this.runMemory(messages);
 
+        const runConfig = {
+          ...config,
+          recursionLimit,
+          configurable: {
+            ...config.configurable,
+            last_agent_index: agentIndex,
+            last_agent_id: agents[agents.length - 1].id,
+          },
+        };
+
         run = await createRun({
           agents,
-          indexTokenCountMap,
+          indexTokenCountMap: runIndexCountMap,
           runId: this.responseMessageId,
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
-          requestBody: config.configurable.requestBody,
+          requestBody: runConfig.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
           tokenCounter: createTokenCounter(this.getEncoding()),
         });
@@ -943,21 +938,19 @@ class AgentClient extends BaseClient {
 
         this.run = run;
         if (userMCPAuthMap != null) {
-          config.configurable.userMCPAuthMap = userMCPAuthMap;
+          runConfig.configurable.userMCPAuthMap = userMCPAuthMap;
         }
 
-        /** @deprecated Agent Chain */
-        config.configurable.last_agent_id = agents[agents.length - 1].id;
-        await run.processStream({ messages }, config, {
+        await run.processStream({ messages, contentData }, runConfig, {
           callbacks: {
             [Callback.TOOL_ERROR]: logToolError,
           },
         });
 
-        config.signal = null;
+        runConfig.signal = null;
       };
 
-      await runAgent(this.options.agent, initialMessages);
+      await runAgent(this.options.agent, initialMessages, 0, undefined, indexTokenCountMap);
       let finalContentStart = 0;
       if (
         this.agentConfigs &&

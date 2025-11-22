@@ -32,9 +32,14 @@ const DEFAULT_RAKE_NAME_ALIASES = {
   classic: 'Classic',
   'classic rake': 'Classic',
   'cyclone rake classic': 'Classic',
+  // Abbreviations
+  cmd: 'Commander',
+  cmdr: 'Commander',
   commander: 'Commander',
   'commander rake': 'Commander',
   'cyclone rake commander': 'Commander',
+  'comm pro': 'Commercial_Pro',
+  compro: 'Commercial_Pro',
   commander_crs: 'Commander_CRS',
   commercial_pro_crs: 'Commercial_Pro_CRS',
   commercialpro_crs: 'Commercial_Pro_CRS',
@@ -61,6 +66,18 @@ const DEFAULT_RAKE_NAME_ALIASES = {
   'crs z_10': 'Z_10_CRS',
   'crs z-10': 'Z_10_CRS',
   'cyclone rake z-10 crs': 'Z_10_CRS',
+};
+
+// Multi-word tractor brand aliases; ensures proper separation of make vs model.
+// Key: lowercase pattern in user query; Value: canonical brand string.
+const MULTI_WORD_BRAND_ALIASES = {
+  'john deere': 'John Deere',
+  'cub cadet': 'Cub Cadet',
+  'troy bilt': 'Troy-Bilt',
+  'troy-bilt': 'Troy-Bilt',
+  'agco allis': 'Agco Allis',
+  'briggs & stratton': 'Briggs & Stratton',
+  'briggs and stratton': 'Briggs & Stratton',
 };
 
 const DEFAULT_PART_TYPES = {
@@ -690,9 +707,15 @@ class WoodlandAISearchTractor extends Tool {
     if (!n) return 'No compatibility data available.';
 
     const yn = (v) => (v === true ? 'Yes' : v === false ? 'No' : 'Unknown');
+    const strictUrl = (u) => {
+      const s = typeof u === 'string' ? u.trim() : '';
+      if (!/^https?:\/\//i.test(s)) return undefined; // only allow explicit http/https
+      return s;
+    };
     const link = (label, url) => {
       const L = String(label ?? 'N/A').trim();
-      return url ? `[${L}](${url})` : L || 'N/A';
+      const U = strictUrl(url);
+      return U ? `[${L}](${U})` : L || 'N/A';
     };
     const field = (label, sku, url, aftermarketSku, aftermarketUrl) => {
       const main = `${label}: ${sku ? link(sku, url) : 'N/A'}`;
@@ -733,6 +756,51 @@ class WoodlandAISearchTractor extends Tool {
     const img = n.picture_thumbnail_url ? `\n\n![Thumbnail](${n.picture_thumbnail_url})` : '';
 
     return `${head}\n\n**Parts &amp; Kits**\n${parts}\n\n**Installation / SOP Flags**\n${flags}${img}`;
+  }
+
+  // Returns a markdown table grouping OEM vs Aftermarket parts plus a flags table.
+  _formatGroupedTable(doc) {
+    const n = doc?.normalized_compat;
+    if (!n) return '';
+    const strictUrl = (u) => {
+      const s = typeof u === 'string' ? u.trim() : '';
+      if (!/^https?:\/\//i.test(s)) return undefined;
+      return s;
+    };
+    const mdLink = (sku, url) => {
+      const label = String(sku || '').trim();
+      if (!label) return 'N/A';
+      const U = strictUrl(url);
+      return U ? `[${label}](${U})` : label;
+    };
+    const pick = (oemSku, oemUrl, amSku, amUrl) => {
+      if (oemSku) return mdLink(oemSku, oemUrl);
+      if (amSku) return mdLink(amSku, amUrl);
+      return 'N/A';
+    };
+    const row = (part, oemSku, oemUrl, amSku, amUrl) => `| ${part} | ${pick(oemSku, oemUrl, amSku, amUrl)} |`;
+    const lines = [
+      '| Part | SKU |',
+      '|------|-----|',
+      row('MDA', n.oem?.mda, n.oem?.mda_url, n.aftermarket?.mda, n.aftermarket?.mda_url),
+      row('Hitch', n.oem?.hitch, n.oem?.hitch_url, n.aftermarket?.hitch, n.aftermarket?.hitch_url),
+      row('Rubber Collar', n.oem?.rubber_collar, n.oem?.rubber_collar_url, undefined, undefined),
+      row('Hose', n.oem?.hose, n.oem?.hose_url, n.aftermarket?.hose, n.aftermarket?.hose_url),
+      row('Upgrade Hose', n.oem?.upgrade_hose, n.oem?.upgrade_hose_url, n.aftermarket?.upgrade_hose, n.aftermarket?.upgrade_hose_url),
+    ];
+    const yn = (v) => (v === true ? 'Yes' : v === false ? 'No' : 'Unknown');
+    const flags = [
+      '| Flag | Value |',
+      '|------|-------|',
+      `| Deck opening measurements required | ${yn(n.deck_opening_measurements_required)} |`,
+      `| MDA pre-cut | ${yn(n.mda_pre_cut)} |`,
+      `| Customer deck drilling required | ${yn(n.customer_drilling_required)} |`,
+      `| Exhaust deflection needed | ${yn(n.exhaust_deflection_needed)} |`,
+      `| Compatible with Comm Pro / XL / Z-10 | ${yn(n.compatible_with_large_rakes)} |`,
+    ];
+    const titleRight = n.kit_or_assembly ? ` — ${n.kit_or_assembly}` : '';
+    const head = `### ${n.tractor || doc.title || 'Tractor'}${titleRight}`;
+    return [head, '', lines.join('\n'), '', flags.join('\n')].join('\n');
   }
 
   _sanitizeSearchOptions(opts) {
@@ -863,7 +931,29 @@ class WoodlandAISearchTractor extends Tool {
 
   // Intent and entity detection (lightweight heuristics)
   _detectIntent(query) {
-    const raw = (query || '').toString();
+    const rawOriginal = (query || '').toString();
+    // Abbreviation & synonym expansion prior to downstream extraction
+    const normalizeAbbreviations = (text) => {
+      if (!text) return '';
+      let t = text;
+      // Replace whole-word abbreviations only to avoid mid-word corruption
+      const replaceWord = (pattern, replacement) => {
+        const re = new RegExp(`(^|\b)${pattern}(\b|$)`, 'gi');
+        t = t.replace(re, (m, pre, post) => `${pre}${replacement}${post}`);
+      };
+      replaceWord('jd', 'john deere');
+      replaceWord('deere', 'john deere'); // unify "Deere" alone to brand form
+      replaceWord('cmd', 'commander');
+      replaceWord('cmdr', 'commander');
+      replaceWord('comm pro', 'commercial pro');
+      replaceWord('compro', 'commercial pro');
+      // CRS references remain but ensure consistent hyphenation/spaces
+      t = t.replace(/\b(crs)\b/gi, 'crs');
+      // Normalize common deck size formats (42in, 42") to "42 in"
+      t = t.replace(/\b(\d{2,3})\s?(?:in|inch|inches|"|”)?\b/gi, '$1 in');
+      return t;
+    };
+    const raw = normalizeAbbreviations(rawOriginal);
     const q = raw.toLowerCase();
     const containsAny = (arr = []) => arr.some((w) => w && q.includes(w));
     const partMatch = this.partNumberRegex ? q.match(this.partNumberRegex) : null;
@@ -896,6 +986,43 @@ class WoodlandAISearchTractor extends Tool {
       }
     }
 
+    // Helper to extract make/model with multi-word brand consideration
+    const extractMakeModel = (text) => {
+      const lower = text.toLowerCase();
+      // Attempt multi-word brand match first; pick longest matching key
+      const brandKey = Object.keys(MULTI_WORD_BRAND_ALIASES)
+        .sort((a, b) => b.length - a.length)
+        .find((k) => lower.includes(k));
+      let make;
+      let model;
+      if (brandKey) {
+        make = MULTI_WORD_BRAND_ALIASES[brandKey];
+        // Remove brand portion and trim
+        const remainder = lower.replace(brandKey, ' ').replace(/\s+/g, ' ').trim();
+        // Model candidate: first remaining token sequence with letters/digits/hyphens
+        // e.g., '1616', 'x350', 'ytx24v48'
+        const m = remainder.match(/([a-z0-9][a-z0-9\-]{1,30})(?:\b|$)/i);
+        if (m) {
+          model = m[1].toUpperCase();
+        }
+      } else {
+        // Fallback to existing regex approach if no multi-word brand detected
+        const mm = text.match(/\b([A-Za-z][A-Za-z&'\-\/ ]{1,40})\s+([A-Za-z0-9]{2,}[A-Za-z0-9\-]*)\b/);
+        if (mm) {
+          make = mm[1].trim();
+          model = mm[2].trim();
+        }
+      }
+      return { make, model };
+    };
+
+    // Only attempt extraction if not provided already by caller
+    if (!extracted.make || !extracted.model) {
+      const { make: autoMake, model: autoModel } = extractMakeModel(raw);
+      if (autoMake && !extracted.make) extracted.make = autoMake;
+      if (autoModel && !extracted.model) extracted.model = autoModel;
+    }
+
     // Rake name detection (Commander_CRS, Commercial_Pro_CRS, etc.)
     for (const [alias, canonical] of Object.entries(this.rakeNameAliases || {})) {
       if (alias && q.includes(alias)) {
@@ -921,6 +1048,21 @@ class WoodlandAISearchTractor extends Tool {
           extracted.rakeName = extracted.rakeNameRaw;
         }
       }
+    }
+    // Post-normalization adjustments: collapse repeated brand tokens
+    if (extracted.make) {
+      extracted.make = extracted.make.replace(/\bjohn\s+deere\b/gi, 'John Deere');
+      extracted.make = extracted.make.replace(/\bcub\s+cadet\b/gi, 'Cub Cadet');
+      extracted.make = extracted.make.replace(/\btroy[-\s]?bilt\b/gi, 'Troy-Bilt');
+      extracted.make = extracted.make.replace(/\bagco\s+allis\b/gi, 'Agco Allis');
+    }
+    if (extracted.family) {
+      extracted.family = extracted.family.replace(/\bcommercial\s+pro\b/i, 'Commercial PRO');
+    }
+    // Standardize deck size numeric portion if captured as "42 in"
+    if (extracted.deckSize) {
+      const deckNum = this._normalizeDeckSize(extracted.deckSize);
+      if (deckNum) extracted.deckSize = deckNum;
     }
 
     if (containsAny(this.intentKeywords.promo)) extracted.wantsPromo = true;
@@ -1208,6 +1350,19 @@ class WoodlandAISearchTractor extends Tool {
         rakeNameRaw: extracted.rakeNameRaw,
         rakeNameRawFull: extracted.rakeNameRawFull,
       };
+      // Post-merge adjustment: handle model strings that embed deck size at the end
+      // Example: "836 36" => model: "836", deckSize: "36"
+      if (merged.model && !merged.deckSize) {
+        const tokens = merged.model.trim().split(/\s+/);
+        if (tokens.length > 1) {
+          const last = tokens[tokens.length - 1];
+          const deckPattern = /^(30|32|34|36|38|40|42|44|46|48|50|52|54|60|62|72)$/;
+          if (deckPattern.test(last)) {
+            merged.deckSize = this._normalizeDeckSize(last);
+            merged.model = tokens.slice(0, -1).join(' ');
+          }
+        }
+      }
       if (intent === 'general' && merged.make && merged.model) {
         intent = 'compatibility';
       }
@@ -1316,7 +1471,37 @@ class WoodlandAISearchTractor extends Tool {
         docs = await this._tieredSearch(finalQueryString, fallbackOptions);
         options = fallbackOptions;
       }
-      // No relaxed fallback: prefer signaling missing data rather than returning mismatched tractors.
+      // Relaxed fallback (broad recall) if still empty and caller did not request relaxed explicitly.
+      if (( !Array.isArray(docs) || docs.length === 0 ) && relaxed !== true) {
+        // Rebuild a minimal make/model only filter (drop deck size, rake, family constraints)
+        const relaxedClauses = makeModelClauses.length ? makeModelClauses : [];
+        let relaxedFilter = this._combineClauses(relaxedClauses);
+        // If nothing to filter by, omit filter entirely (broad search)
+        const relaxedOptions = {
+          ...options,
+          filter: relaxedFilter || undefined,
+          top: Math.max(options.top || this.top, 20),
+          searchMode: 'any',
+        };
+        // Remove SKU narrowing if present and produced zero results; keep if explicitly searching part number.
+        if (!merged.partNumber) {
+          // Attempt to drop any appended SKU equality constraints by rebuilding filter from relaxedClauses only
+          relaxedOptions.filter = relaxedFilter || undefined;
+        }
+        logger.info('[woodland-ai-search-tractor] No results after strict/fallback; performing relaxed broad search', {
+          priorFilter: options.filter || null,
+          relaxedFilter: relaxedOptions.filter || null,
+          top: relaxedOptions.top,
+        });
+        const relaxedDocs = await this._tieredSearch(finalQueryString, relaxedOptions);
+        if (Array.isArray(relaxedDocs) && relaxedDocs.length > 0) {
+          logger.info('[woodland-ai-search-tractor] Relaxed fallback yielded results', { count: relaxedDocs.length });
+          docs = relaxedDocs;
+          options = relaxedOptions;
+        } else {
+          logger.info('[woodland-ai-search-tractor] Relaxed fallback still empty');
+        }
+      }
       // Attach normalized compatibility projection and provenance to each doc
       if (Array.isArray(docs)) {
         docs = docs.map((d) => (d ? this._normalizeDoc(d) : d));
@@ -1335,6 +1520,9 @@ class WoodlandAISearchTractor extends Tool {
       const supportAnswers = Array.isArray(docs)
         ? docs.map((d) => this._formatSupportAnswer(d))
         : [];
+      const groupedTables = Array.isArray(docs)
+        ? docs.map((d) => this._formatGroupedTable(d))
+        : [];
       const includeRaw =
         String(
           this._env(
@@ -1345,8 +1533,13 @@ class WoodlandAISearchTractor extends Tool {
           .toLowerCase()
           .trim() === 'true';
       const payload = includeRaw
-        ? { docs: projectedDocs, raw_docs: docs || [], support_answers: supportAnswers }
-        : { docs: projectedDocs, support_answers: supportAnswers };
+        ? {
+            docs: projectedDocs,
+            raw_docs: docs || [],
+            support_answers: supportAnswers,
+            grouped_tables: groupedTables,
+          }
+        : { docs: projectedDocs, support_answers: supportAnswers, grouped_tables: groupedTables };
       return JSON.stringify(payload);
     } catch (error) {
       logger.error('[woodland-ai-search-tractor] Azure AI Search request failed', {
