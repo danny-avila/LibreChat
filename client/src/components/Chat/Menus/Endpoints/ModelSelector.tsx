@@ -91,15 +91,15 @@ function ModelSelectorContent() {
           renderSearchResults(searchResults, localize, searchValue)
         ) : (
           <>
+            {/* Render custom groups (specs with group field not matching any endpoint) */}
+            {renderCustomGroups(modelSpecs || [], mappedEndpoints ?? [])}
+            {/* Render endpoints (will include grouped specs matching endpoint names) */}
+            {renderEndpoints(mappedEndpoints ?? [])}
             {/* Render ungrouped modelSpecs (no group field) */}
             {renderModelSpecs(
               modelSpecs?.filter((spec) => !spec.group) || [],
               selectedValues.modelSpec || '',
             )}
-            {/* Render endpoints (will include grouped specs matching endpoint names) */}
-            {renderEndpoints(mappedEndpoints ?? [])}
-            {/* Render custom groups (specs with group field not matching any endpoint) */}
-            {renderCustomGroups(modelSpecs || [], mappedEndpoints ?? [])}
           </>
         )}
       </Menu>
