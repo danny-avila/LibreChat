@@ -20,7 +20,7 @@ jobs:
       - name: Login to Docker Hub
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Inject Azure OpenAI apiKey into librechat.yaml
@@ -49,7 +49,7 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPOSITORY }}:1.0.${{ github.run_number }}
+            ${{ vars.DOCKERHUB_USERNAME }}/${{ vars.DOCKERHUB_REPOSITORY }}:1.0.${{ github.run_number }}
 
       - name: Azure Login
         uses: azure/login@v1
@@ -61,7 +61,7 @@ jobs:
           az webapp config container set \
             --name "${{ secrets.AZURE_WEBAPP_NAME }}" \
             --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
-            --docker-custom-image-name "${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPOSITORY }}:1.0.${{ github.run_number }}" \
+            --docker-custom-image-name "${{ vars.DOCKERHUB_USERNAME }}/${{ vars.DOCKERHUB_REPOSITORY }}:1.0.${{ github.run_number }}" \
             --docker-registry-server-url "https://index.docker.io"
 
       - name: Restart Web App
