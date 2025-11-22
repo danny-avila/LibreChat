@@ -22,6 +22,7 @@ import store from '~/store';
 const BookmarkNav = lazy(() => import('./Bookmarks/BookmarkNav'));
 const AccountSettings = lazy(() => import('./AccountSettings'));
 const AgentMarketplaceButton = lazy(() => import('./AgentMarketplaceButton'));
+const FavoritesList = lazy(() => import('./Favorites/FavoritesList'));
 
 const NAV_WIDTH_DESKTOP = '260px';
 const NAV_WIDTH_MOBILE = '320px';
@@ -152,7 +153,14 @@ const Nav = memo(
     }, [isFetchingNextPage, computedHasNextPage, fetchNextPage]);
 
     const subHeaders = useMemo(
-      () => search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />,
+      () => (
+        <>
+          <Suspense fallback={null}>
+            <FavoritesList />
+          </Suspense>
+          {search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
+        </>
+      ),
       [search.enabled, isSmallScreen],
     );
 
