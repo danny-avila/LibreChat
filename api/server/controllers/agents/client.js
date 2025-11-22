@@ -950,127 +950,38 @@ class AgentClient extends BaseClient {
         runConfig.signal = null;
       };
 
-      await runAgent(this.options.agent, initialMessages, 0, undefined, indexTokenCountMap);
-      let finalContentStart = 0;
-      if (
-        this.agentConfigs &&
-        this.agentConfigs.size > 0 &&
-        (await checkCapability(this.options.req, AgentCapabilities.chain))
-      ) {
-        const windowSize = 5;
-        let latestMessage = initialMessages.pop().content;
-        if (typeof latestMessage !== 'string') {
-          latestMessage = latestMessage[0].text;
-        }
-        let i = 1;
-        let runMessages = [];
-
-        const windowIndexCountMap = {};
-        const windowMessages = initialMessages.slice(-windowSize);
-        let currentIndex = 4;
-        for (let i = initialMessages.length - 1; i >= 0; i--) {
-          windowIndexCountMap[currentIndex] = indexTokenCountMap[i];
-          currentIndex--;
-          if (currentIndex < 0) {
-            break;
-          }
-        }
-        const encoding = this.getEncoding();
-        const tokenCounter = createTokenCounter(encoding);
-        for (const [agentId, agent] of this.agentConfigs) {
-          if (abortController.signal.aborted === true) {
-            break;
-          }
-          const currentRun = await run;
-
-          if (
-            i === this.agentConfigs.size &&
-            config.configurable.hide_sequential_outputs === true
-          ) {
-            const content = this.contentParts.filter(
-              (part) => part.type === ContentTypes.TOOL_CALL,
-            );
-
-            this.options.res.write(
-              `event: message\ndata: ${JSON.stringify({
-                event: 'on_content_update',
-                data: {
-                  runId: this.responseMessageId,
-                  content,
-                },
-              })}\n\n`,
-            );
-          }
-          const _runMessages = currentRun.Graph.getRunMessages();
-          finalContentStart = this.contentParts.length;
-          runMessages = runMessages.concat(_runMessages);
-          const contentData = currentRun.Graph.contentData.slice();
-          const bufferString = getBufferString([new HumanMessage(latestMessage), ...runMessages]);
-          if (i === this.agentConfigs.size) {
-            logger.debug(`SEQUENTIAL AGENTS: Last buffer string:\n${bufferString}`);
-          }
-          try {
-            const contextMessages = [];
-            const runIndexCountMap = {};
-            for (let i = 0; i < windowMessages.length; i++) {
-              const message = windowMessages[i];
-              const messageType = message._getType();
-              if (
-                (!agent.tools || agent.tools.length === 0) &&
-                (messageType === 'tool' || (message.tool_calls?.length ?? 0) > 0)
-              ) {
-                continue;
-              }
-              runIndexCountMap[contextMessages.length] = windowIndexCountMap[i];
-              contextMessages.push(message);
-            }
-            const bufferMessage = new HumanMessage(bufferString);
-            runIndexCountMap[contextMessages.length] = tokenCounter(bufferMessage);
-            const currentMessages = [...contextMessages, bufferMessage];
-            await runAgent(agent, currentMessages, i, contentData, runIndexCountMap);
-          } catch (err) {
-            logger.error(
-              `[api/server/controllers/agents/client.js #chatCompletion] Error running agent ${agentId} (${i})`,
-              err,
-            );
-          }
-          i++;
-        }
+      await runAgents(initialMessages);
+      /** @deprecated Agent Chain */
+      if (config.configurable.hide_sequential_outputs) {
+        this.contentParts = this.contentParts.filter((part, index) => {
+          // Include parts that are either:
+          // 1. At or after the finalContentStart index
+          // 2. Of type tool_call
+          // 3. Have tool_call_ids property
+          return (
+            index >= this.contentParts.length - 1 ||
+            part.type === ContentTypes.TOOL_CALL ||
+            part.tool_call_ids
+          );
+        });
       }
-
-      /** Note: not implemented */
-      if (config.configurable.hide_sequential_outputs !== true) {
-        finalContentStart = 0;
-      }
-
-      this.contentParts = this.contentParts.filter((part, index) => {
-        // Include parts that are either:
-        // 1. At or after the finalContentStart index
-        // 2. Of type tool_call
-        // 3. Have tool_call_ids property
-        return (
-          index >= finalContentStart || part.type === ContentTypes.TOOL_CALL || part.tool_call_ids
-        );
-      });
 
       try {
-        const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
-        if (attachments && attachments.length > 0) {
-          this.artifactPromises.push(...attachments);
+        /** Capture agent ID map if we have edges or multiple agents */
+        const shouldStoreAgentMap =
+          (this.options.agent.edges?.length ?? 0) > 0 || (this.agentConfigs?.size ?? 0) > 0;
+        if (shouldStoreAgentMap && run?.Graph) {
+          const contentPartAgentMap = run.Graph.getContentPartAgentMap();
+          if (contentPartAgentMap && contentPartAgentMap.size > 0) {
+            this.agentIdMap = Object.fromEntries(contentPartAgentMap);
+            logger.debug('[AgentClient] Captured agent ID map:', {
+              totalParts: this.contentParts.length,
+              mappedParts: Object.keys(this.agentIdMap).length,
+            });
+          }
         }
-
-        const balanceConfig = getBalanceConfig(appConfig);
-        const transactionsConfig = getTransactionsConfig(appConfig);
-        await this.recordCollectedUsage({
-          context: 'message',
-          balance: balanceConfig,
-          transactions: transactionsConfig,
-        });
-      } catch (err) {
-        logger.error(
-          '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
-          err,
-        );
+      } catch (error) {
+        logger.error('[AgentClient] Error capturing agent ID map:', error);
       }
     } catch (err) {
       logger.error(
