@@ -5,7 +5,7 @@ import type {
   LLMConfigResult,
   UserKeyValues,
 } from '~/types';
-import { getAzureCredentials } from '~/utils/azure';
+import { getAzureCredentials, getEntraIdAccessToken, shouldUseEntraId } from '~/utils/azure';
 import { isUserProvided } from '~/utils/common';
 import { resolveHeaders } from '~/utils/env';
 import { getOpenAIConfig } from './config';
@@ -98,7 +98,7 @@ export const initializeOpenAI = async ({
       clientOptions.dropParams = groupMap[groupName]?.dropParams;
     }
 
-    apiKey = azureOptions.azureOpenAIApiKey;
+    apiKey = shouldUseEntraId() ? 'entra-id-placeholder' : azureOptions.azureOpenAIApiKey;
     clientOptions.azure = !serverless ? azureOptions : undefined;
 
     if (serverless === true) {
@@ -109,12 +109,30 @@ export const initializeOpenAI = async ({
       if (!clientOptions.headers) {
         clientOptions.headers = {};
       }
-      clientOptions.headers['api-key'] = apiKey;
+      if (shouldUseEntraId()) {
+        clientOptions.headers['Authorization'] = `Bearer ${await getEntraIdAccessToken()}`;
+      } else {
+        clientOptions.headers['api-key'] = apiKey || '';
+      }
+    } else {
+      apiKey = azureOptions.azureOpenAIApiKey || '';
+      clientOptions.azure = azureOptions;
+      if (shouldUseEntraId()) {
+        apiKey = 'entra-id-placeholder';
+        clientOptions.headers['Authorization'] = `Bearer ${await getEntraIdAccessToken()}`;
+      }
     }
   } else if (isAzureOpenAI) {
     clientOptions.azure =
       userProvidesKey && userValues?.apiKey ? JSON.parse(userValues.apiKey) : getAzureCredentials();
-    apiKey = clientOptions.azure ? clientOptions.azure.azureOpenAIApiKey : undefined;
+    if (shouldUseEntraId()) {
+      clientOptions.headers = {
+        ...clientOptions.headers,
+        Authorization: `Bearer ${await getEntraIdAccessToken()}`,
+      };
+    } else {
+      apiKey = clientOptions.azure ? clientOptions.azure.azureOpenAIApiKey : undefined;
+    }
   }
 
   if (userProvidesKey && !apiKey) {

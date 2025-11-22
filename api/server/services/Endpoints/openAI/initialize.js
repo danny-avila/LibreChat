@@ -5,6 +5,8 @@ const {
   isUserProvided,
   getOpenAIConfig,
   getAzureCredentials,
+  getEntraIdAccessToken,
+  shouldUseEntraId,
 } = require('@librechat/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
@@ -99,17 +101,40 @@ const initializeClient = async ({
     clientOptions.dropParams = azureConfig.groupMap[groupName].dropParams;
     clientOptions.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
 
-    apiKey = azureOptions.azureOpenAIApiKey;
+    if (shouldUseEntraId()) {
+      apiKey = 'entra-id-placeholder';
+      clientOptions.headers = {
+        ...clientOptions.headers,
+        Authorization: `Bearer ${await getEntraIdAccessToken()}`,
+      };
+    } else {
+      apiKey = azureOptions.azureOpenAIApiKey;
+    }
+
     clientOptions.azure = !serverless && azureOptions;
     if (serverless === true) {
       clientOptions.defaultQuery = azureOptions.azureOpenAIApiVersion
         ? { 'api-version': azureOptions.azureOpenAIApiVersion }
         : undefined;
-      clientOptions.headers['api-key'] = apiKey;
+      if (shouldUseEntraId()) {
+        clientOptions.headers = {
+          ...clientOptions.headers,
+          Authorization: `Bearer ${await getEntraIdAccessToken()}`,
+        };
+      } else {
+        clientOptions.headers['api-key'] = apiKey;
+      }
     }
   } else if (isAzureOpenAI) {
     clientOptions.azure = userProvidesKey ? JSON.parse(userValues.apiKey) : getAzureCredentials();
     apiKey = clientOptions.azure.azureOpenAIApiKey;
+    if (shouldUseEntraId()) {
+      clientOptions.headers = {
+        ...clientOptions.headers,
+        Authorization: `Bearer ${await getEntraIdAccessToken()}`,
+      };
+      apiKey = 'entra-id-placeholder';
+    }
   }
 
   /** @type {undefined | TBaseEndpoint} */
