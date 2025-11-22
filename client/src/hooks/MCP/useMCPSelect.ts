@@ -4,15 +4,20 @@ import isEqual from 'lodash/isEqual';
 import { useRecoilState } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import { ephemeralAgentByConvoId, mcpValuesAtomFamily, mcpPinnedAtom } from '~/store';
-import { useGetStartupConfig } from '~/data-provider';
 import { setTimestamp } from '~/utils/timestamps';
+import { MCPServerDefinition } from './useMCPServerManager';
 
-export function useMCPSelect({ conversationId }: { conversationId?: string | null }) {
+export function useMCPSelect({
+  conversationId,
+  servers,
+}: {
+  conversationId?: string | null;
+  servers: MCPServerDefinition[];
+}) {
   const key = conversationId ?? Constants.NEW_CONVO;
-  const { data: startupConfig } = useGetStartupConfig();
   const configuredServers = useMemo(() => {
-    return new Set(Object.keys(startupConfig?.mcpServers ?? {}));
-  }, [startupConfig?.mcpServers]);
+    return new Set(servers?.map((s) => s.serverName));
+  }, [servers]);
 
   const [isPinned, setIsPinned] = useAtom(mcpPinnedAtom);
   const [mcpValues, setMCPValuesRaw] = useAtom(mcpValuesAtomFamily(key));

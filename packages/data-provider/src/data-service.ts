@@ -6,6 +6,7 @@ import * as ag from './types/agents';
 import * as m from './types/mutations';
 import * as q from './types/queries';
 import * as f from './types/files';
+import * as mcp from './types/mcpServers';
 import * as config from './config';
 import request from './request';
 import * as s from './schemas';
@@ -537,6 +538,18 @@ export const deleteAgentAction = async ({
       path: `actions/${agent_id}/${action_id}`,
     }),
   );
+
+/**
+ * MCP Servers
+ */
+
+/**
+ *
+ * Ensure and List loaded mcp server configs from the cache Enriched with effective permissions.
+ */
+export const getMcpServers = async (): Promise<mcp.MCPServersListResponse> => {
+  return request.get(endpoints.mcp.servers);
+};
 
 /**
  * Imports a conversations file.
