@@ -47,6 +47,7 @@ function ConvoOptions({
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
 
   const archiveConvoMutation = useArchiveConvoMutation();
 
@@ -94,6 +95,10 @@ function ConvoOptions({
       { conversationId: convoId, isArchived: true },
       {
         onSuccess: () => {
+          setAnnouncement(localize('com_ui_convo_archived'));
+          setTimeout(() => {
+            setAnnouncement('');
+          }, 10000);
           if (currentConvoId === convoId || currentConvoId === 'new') {
             newConversation();
             navigate('/c/new', { replace: true });
@@ -137,7 +142,8 @@ function ConvoOptions({
         show: startupConfig && startupConfig.sharedLinksEnabled,
         hideOnClick: false,
         ref: shareButtonRef,
-        render: (props) => <button {...props} />,
+        ariaHasPopup: 'dialog' as const,
+        ariaControls: 'share-conversation-dialog',
       },
       {
         label: localize('com_ui_rename'),
@@ -170,7 +176,8 @@ function ConvoOptions({
         icon: <Trash className="icon-sm mr-2 text-text-primary" />,
         hideOnClick: false,
         ref: deleteButtonRef,
-        render: (props) => <button {...props} />,
+        ariaHasPopup: 'dialog' as const,
+        ariaControls: 'delete-conversation-dialog',
       },
     ],
     [
@@ -190,6 +197,9 @@ function ConvoOptions({
 
   return (
     <>
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </span>
       <DropdownPopup
         portal={true}
         mountByState={true}

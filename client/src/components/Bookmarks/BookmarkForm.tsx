@@ -100,9 +100,7 @@ const BookmarkForm = ({
           <Input
             type="text"
             id="bookmark-tag"
-            aria-label={
-              bookmark ? localize('com_ui_bookmarks_edit') : localize('com_ui_bookmarks_new')
-            }
+            aria-label={localize('com_ui_bookmarks_title')}
             {...register('tag', {
               required: localize('com_ui_field_required'),
               maxLength: {
@@ -124,8 +122,13 @@ const BookmarkForm = ({
             placeholder={
               bookmark ? localize('com_ui_bookmarks_edit') : localize('com_ui_bookmarks_new')
             }
+            aria-describedby={errors.tag ? 'bookmark-tag-error' : undefined}
           />
-          {errors.tag && <span className="text-sm text-red-500">{errors.tag.message}</span>}
+          {errors.tag && (
+            <span id="bookmark-tag-error" role="alert" className="text-sm font-bold text-red-500">
+              {errors.tag.message}
+            </span>
+          )}
         </div>
 
         <div className="mt-4 grid w-full items-center gap-2">
