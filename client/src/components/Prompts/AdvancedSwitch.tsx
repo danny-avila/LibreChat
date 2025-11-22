@@ -30,6 +30,8 @@ const AdvancedSwitch = () => {
             setAlwaysMakeProd(true);
             setMode(PromptsEditorMode.SIMPLE);
           }}
+          aria-pressed={mode === PromptsEditorMode.SIMPLE}
+          aria-label={localize('com_ui_simple')}
           className={`relative z-10 flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300 md:px-6 ${
             mode === PromptsEditorMode.SIMPLE
               ? 'text-text-primary'
@@ -43,6 +45,8 @@ const AdvancedSwitch = () => {
         <button
           type="button"
           onClick={() => setMode(PromptsEditorMode.ADVANCED)}
+          aria-pressed={mode === PromptsEditorMode.ADVANCED}
+          aria-label={localize('com_ui_advanced')}
           className={`relative z-10 flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-300 md:px-6 ${
             mode === PromptsEditorMode.ADVANCED
               ? 'text-text-primary'

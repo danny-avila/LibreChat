@@ -79,7 +79,7 @@ export const columns: ColumnDef<TFile>[] = [
           <div className="flex gap-2">
             <ImagePreview
               url={file.filepath}
-              className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md"
+              className="relative h-10 w-10 shrink-0 overflow-visible rounded-md"
               source={file.source}
             />
             <span className="self-center truncate">{file.filename}</span>

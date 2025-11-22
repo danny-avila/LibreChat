@@ -30,7 +30,7 @@ export default function OpenSidebar({
             })
           }
         >
-          <Sidebar />
+          <Sidebar aria-hidden="true" />
         </Button>
       }
     />

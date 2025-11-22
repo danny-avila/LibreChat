@@ -158,8 +158,8 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                 {headerGroup.headers.map((header, index) => {
                   const style: Style = {};
                   if (index === 0 && header.id === 'select') {
-                    style.width = '35px';
-                    style.minWidth = '35px';
+                    style.width = '36px';
+                    style.minWidth = '36px';
                   } else if (header.id === 'filename') {
                     style.width = isSmallScreen ? '60%' : '40%';
                   } else {
@@ -204,7 +204,10 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                     return (
                       <TableCell
                         key={cell.id}
-                        className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
+                        className={cn(
+                          'align-start px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50',
+                          cell.column.id === 'select' ? 'overflow-visible' : 'overflow-x-auto',
+                        )}
                         style={style}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
