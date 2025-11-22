@@ -1,0 +1,67 @@
+name: Build Docker image and deploy to Azure Web App
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Inject Azure OpenAI apiKey into librechat.yaml
+        run: |
+          python -m pip install pyyaml
+          python - <<'PY'
+          import os, yaml
+          p = "librechat.yaml"
+          with open(p, "r", encoding="utf-8") as f:
+              data = yaml.safe_load(f)
+          az = data.get("endpoints", {}).get("azureOpenAI", {})
+          groups = az.get("groups") if isinstance(az, dict) else None
+          if groups and isinstance(groups, list) and len(groups) > 0:
+              groups[0]["apiKey"] = os.environ.get("AZURE_OPENAI_APIKEY", groups[0].get("apiKey"))
+          with open(p, "w", encoding="utf-8") as f:
+              yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+          PY
+                  env:
+                    AZURE_OPENAI_APIKEY: ${{ secrets.AZURE_OPENAI_APIKEY }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPOSITORY }}:1.0.${{ github.run_number }}
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Configure Azure Web App to use new image
+        run: |
+          az webapp config container set \
+            --name "${{ secrets.AZURE_WEBAPP_NAME }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --docker-custom-image-name "${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPOSITORY }}:1.0.${{ github.run_number }}" \
+            --docker-registry-server-url "https://index.docker.io"
+
+      - name: Restart Web App
+        run: az webapp restart --name "${{ secrets.AZURE_WEBAPP_NAME }}" --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}"
