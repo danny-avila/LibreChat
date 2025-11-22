@@ -1,6 +1,7 @@
 import path from 'path';
 import { AnthropicVertex } from '@anthropic-ai/vertex-sdk';
 import { GoogleAuth } from 'google-auth-library';
+import { ClientOptions } from '@anthropic-ai/sdk';
 import { AuthKeys } from 'librechat-data-provider';
 import { loadServiceKey } from '~/utils/key';
 import type { AnthropicCredentials } from '~/types/anthropic';
@@ -37,7 +38,10 @@ export function isAnthropicVertexCredentials(credentials: AnthropicCredentials):
 /**
  * Creates and configures a Vertex AI client for Anthropic
  */
-export function createAnthropicVertexClient(credentials: AnthropicCredentials): AnthropicVertex {
+export function createAnthropicVertexClient(
+  credentials: AnthropicCredentials,
+  options?: ClientOptions,
+): AnthropicVertex {
   const serviceKey = credentials[AuthKeys.GOOGLE_SERVICE_KEY];
   const region = process.env.ANTHROPIC_VERTEX_REGION || 'global';
 
@@ -50,6 +54,7 @@ export function createAnthropicVertexClient(credentials: AnthropicCredentials): 
     return new AnthropicVertex({
       region: region,
       googleAuth: googleAuth,
+      ...options,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

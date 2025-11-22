@@ -116,7 +116,8 @@ function getLLMConfig(
 
   if (isAnthropicVertexCredentials(creds)) {
     // Vertex AI configuration - use custom client
-    requestOptions.createClient = () => createAnthropicVertexClient(creds);
+    requestOptions.createClient = () =>
+      createAnthropicVertexClient(creds, requestOptions.clientOptions);
   } else if (apiKey) {
     // Direct API configuration
     requestOptions.apiKey = apiKey;
@@ -217,6 +218,17 @@ function getLLMConfig(
       type: 'web_search_20250305',
       name: 'web_search',
     });
+
+    if (isAnthropicVertexCredentials(creds)) {
+      if (!requestOptions.clientOptions) {
+        requestOptions.clientOptions = {};
+      }
+
+      requestOptions.clientOptions.defaultHeaders = {
+        ...requestOptions.clientOptions.defaultHeaders,
+        'anthropic-beta': 'web-search-2025-03-05',
+      };
+    }
   }
 
   return {
