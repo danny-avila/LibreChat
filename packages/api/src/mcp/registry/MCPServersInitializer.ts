@@ -34,6 +34,9 @@ export class MCPServersInitializer {
   public static async initialize(rawConfigs: t.MCPServers): Promise<void> {
     if (await statusCache.isInitialized()) return;
 
+    /** Store raw configs immediately so they're available even if initialization fails/is slow */
+    registry.setRawConfigs(rawConfigs);
+
     if (await isLeader()) {
       // Leader performs initialization
       await statusCache.reset();

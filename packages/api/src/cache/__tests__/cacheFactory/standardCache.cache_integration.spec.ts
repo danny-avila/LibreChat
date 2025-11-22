@@ -30,18 +30,13 @@ describe('standardCache', () => {
   beforeEach(() => {
     originalEnv = { ...process.env };
 
-    // Clear cache-related env vars
-    delete process.env.USE_REDIS;
-    delete process.env.REDIS_URI;
-    delete process.env.USE_REDIS_CLUSTER;
-    delete process.env.REDIS_PING_INTERVAL;
-    delete process.env.REDIS_KEY_PREFIX;
-    delete process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES;
-
-    // Set test configuration
+    // Set test configuration with fallback defaults for local testing
     process.env.REDIS_PING_INTERVAL = '0';
     process.env.REDIS_KEY_PREFIX = 'Cache-Integration-Test';
     process.env.REDIS_RETRY_MAX_ATTEMPTS = '5';
+    process.env.USE_REDIS = process.env.USE_REDIS || 'true';
+    process.env.USE_REDIS_CLUSTER = 'false';
+    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
 
     // Clear require cache to reload modules
     jest.resetModules();
@@ -119,10 +114,6 @@ describe('standardCache', () => {
 
   describe('when connecting to a Redis server', () => {
     test('should handle different namespaces with correct prefixes', async () => {
-      process.env.USE_REDIS = 'true';
-      process.env.USE_REDIS_CLUSTER = 'false';
-      process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
       const cacheFactory = await import('../../cacheFactory');
 
       const cache1 = cacheFactory.standardCache('namespace-one');
@@ -148,9 +139,6 @@ describe('standardCache', () => {
     });
 
     test('should respect FORCED_IN_MEMORY_CACHE_NAMESPACES', async () => {
-      process.env.USE_REDIS = 'true';
-      process.env.USE_REDIS_CLUSTER = 'false';
-      process.env.REDIS_URI = 'redis://127.0.0.1:6379';
       process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = 'ROLES'; // Use a valid cache key
 
       const cacheFactory = await import('../../cacheFactory');
@@ -167,10 +155,6 @@ describe('standardCache', () => {
     });
 
     test('should handle TTL correctly', async () => {
-      process.env.USE_REDIS = 'true';
-      process.env.USE_REDIS_CLUSTER = 'false';
-      process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
       const cacheFactory = await import('../../cacheFactory');
       testCache = cacheFactory.standardCache('ttl-test', 1000); // 1 second TTL
 

@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import type { ZodError } from 'zod';
-import type { TModelsConfig } from './types';
+import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
+import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
-import { apiBaseUrl } from './api-endpoints';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -911,6 +911,7 @@ export enum KnownEndpoints {
   fireworks = 'fireworks',
   deepseek = 'deepseek',
   groq = 'groq',
+  helicone = 'helicone',
   huggingface = 'huggingface',
   mistral = 'mistral',
   mlx = 'mlx',
@@ -926,6 +927,7 @@ export enum KnownEndpoints {
 
 export enum FetchTokenConfig {
   openrouter = KnownEndpoints.openrouter,
+  helicone = KnownEndpoints.helicone,
 }
 
 export const defaultEndpoints: EModelEndpoint[] = [
@@ -958,9 +960,14 @@ export const alternateName = {
   [KnownEndpoints.deepseek]: 'DeepSeek',
   [KnownEndpoints.xai]: 'xAI',
   [KnownEndpoints.vercel]: 'Vercel',
+  [KnownEndpoints.helicone]: 'Helicone',
 };
 
 const sharedOpenAIModels = [
+  'gpt-5.1',
+  'gpt-5.1-chat-latest',
+  'gpt-5.1-codex',
+  'gpt-5.1-codex-mini',
   'gpt-5',
   'gpt-5-mini',
   'gpt-5-nano',
@@ -1455,6 +1462,10 @@ export enum ErrorTypes {
    * Generic Authentication failure
    */
   AUTH_FAILED = 'auth_failed',
+  /**
+   * Model refused to respond (content policy violation)
+   */
+  REFUSAL = 'refusal',
 }
 
 /**
@@ -1615,6 +1626,10 @@ export enum Constants {
    * This helps inform the UI if the mcp server was previously added.
    * */
   mcp_server = 'sys__server__sys',
+  /**
+   * Handoff Tool Name Prefix
+   */
+  LC_TRANSFER_TO_ = 'lc_transfer_to_',
   /** Placeholder Agent ID for Ephemeral Agents */
   EPHEMERAL_AGENT_ID = 'ephemeral',
 }
@@ -1733,3 +1748,24 @@ export const specialVariables = {
 };
 
 export type TSpecialVarLabel = `com_ui_special_var_${keyof typeof specialVariables}`;
+
+/**
+ * Retrieves a specific field from the endpoints configuration for a given endpoint key.
+ * Does not infer or default any endpoint type when absent.
+ */
+export function getEndpointField<
+  K extends TConfig[keyof TConfig] extends never ? never : keyof TConfig,
+>(
+  endpointsConfig: TEndpointsConfig | undefined | null,
+  endpoint: EModelEndpoint | string | null | undefined,
+  property: K,
+): TConfig[K] | undefined {
+  if (!endpointsConfig || endpoint === null || endpoint === undefined) {
+    return undefined;
+  }
+  const config = endpointsConfig[endpoint];
+  if (!config) {
+    return undefined;
+  }
+  return config[property];
+}

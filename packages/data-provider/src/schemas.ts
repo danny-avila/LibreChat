@@ -39,7 +39,6 @@ export enum Providers {
   GOOGLE = 'google',
   VERTEXAI = 'vertexai',
   BEDROCK = 'bedrock',
-  BEDROCK_LEGACY = 'bedrock_legacy',
   MISTRALAI = 'mistralai',
   MISTRAL = 'mistral',
   OLLAMA = 'ollama',
@@ -167,7 +166,8 @@ export enum ImageDetail {
 }
 
 export enum ReasoningEffort {
-  none = '',
+  unset = '',
+  none = 'none',
   minimal = 'minimal',
   low = 'low',
   medium = 'medium',
@@ -231,6 +231,7 @@ export const defaultAgentFormValues = {
   tools: [],
   provider: {},
   projectIds: [],
+  edges: [],
   artifacts: '',
   /** @deprecated Use ACL permissions instead */
   isCollaborative: false,
@@ -609,6 +610,8 @@ export const tMessageSchema = z.object({
   /* frontend components */
   iconURL: z.string().nullable().optional(),
   feedback: feedbackSchema.optional(),
+  /** metadata */
+  metadata: z.record(z.unknown()).optional(),
 });
 
 export type MemoryArtifact = {
