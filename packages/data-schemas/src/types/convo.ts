@@ -50,6 +50,8 @@ export interface IConversation extends Document {
   useResponsesApi?: boolean;
   web_search?: boolean;
   disableStreaming?: boolean;
+  isPinned?: boolean;
+  pinnedOrder?: number;
   fileTokenLimit?: number;
   // Additional fields
   files?: string[];
