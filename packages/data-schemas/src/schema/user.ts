@@ -141,6 +141,28 @@ const userSchema = new Schema<IUser>(
       },
       default: {},
     },
+    favorites: {
+      type: {
+        agents: {
+          type: [String],
+          default: [],
+        },
+        models: {
+          type: [
+            {
+              model: String,
+              endpoint: String,
+              label: String,
+            },
+          ],
+          default: [],
+        },
+      },
+      default: {
+        agents: [],
+        models: [],
+      },
+    },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {
       type: String,

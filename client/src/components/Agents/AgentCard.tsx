@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
+import { Star } from 'lucide-react';
 import { Label } from '@librechat/client';
 import type t from 'librechat-data-provider';
-import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
+import { useLocalize, TranslationKeys, useAgentCategories, useFavorites } from '~/hooks';
 import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
 
 interface AgentCardProps {
@@ -16,6 +17,13 @@ interface AgentCardProps {
 const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' }) => {
   const localize = useLocalize();
   const { categories } = useAgentCategories();
+  const { isFavoriteAgent, toggleFavoriteAgent } = useFavorites();
+  const isFavorite = isFavoriteAgent(agent.id);
+
+  const handleFavoriteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleFavoriteAgent(agent.id);
+  };
 
   const categoryLabel = useMemo(() => {
     if (!agent.category) return '';
@@ -48,59 +56,64 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
       aria-describedby={`agent-${agent.id}-description`}
       tabIndex={0}
       role="button"
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onClick();
-        }
-      }}
     >
-      {/* Two column layout */}
-      <div className="flex h-full items-start gap-3">
-        {/* Left column: Avatar and Category */}
-        <div className="flex h-full flex-shrink-0 flex-col justify-between space-y-4">
-          <div className="flex-shrink-0">{renderAgentAvatar(agent, { size: 'sm' })}</div>
+      <div className="absolute right-2 top-2 z-10">
+        <button
+          onClick={handleFavoriteClick}
+          className="rounded-full p-1 hover:bg-surface-hover"
+        >
+          <Star
+            className={cn('h-5 w-5', isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary')}
+          />
+        </button>
+      </div>
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          {/* Left column: Avatar and Category */}
+          <div className="flex h-full flex-shrink-0 flex-col justify-between space-y-4">
+            <div className="flex-shrink-0">{renderAgentAvatar(agent, { size: 'sm' })}</div>
 
-          {/* Category tag */}
-          {agent.category && (
-            <div className="inline-flex items-center rounded-md border-border-xheavy bg-surface-active-alt px-2 py-1 text-xs font-medium">
-              <Label className="line-clamp-1 font-normal">{categoryLabel}</Label>
-            </div>
-          )}
-        </div>
-
-        {/* Right column: Name, description, and other content */}
-        <div className="flex h-full min-w-0 flex-1 flex-col justify-between space-y-1">
-          <div className="space-y-1">
-            {/* Agent name */}
-            <Label className="mb-1 line-clamp-1 text-xl font-semibold text-text-primary">
-              {agent.name}
-            </Label>
-
-            {/* Agent description */}
-            <p
-              id={`agent-${agent.id}-description`}
-              className="line-clamp-3 text-sm leading-relaxed text-text-primary"
-              {...(agent.description ? { 'aria-label': `Description: ${agent.description}` } : {})}
-            >
-              {agent.description ?? ''}
-            </p>
+            {/* Category tag */}
+            {agent.category && (
+              <div className="inline-flex items-center rounded-md border-border-xheavy bg-surface-active-alt px-2 py-1 text-xs font-medium">
+                <Label className="line-clamp-1 font-normal">{categoryLabel}</Label>
+              </div>
+            )}
           </div>
 
-          {/* Owner info - moved to bottom right */}
-          {(() => {
-            const displayName = getContactDisplayName(agent);
-            if (displayName) {
-              return (
-                <div className="flex justify-end">
-                  <div className="flex items-center text-sm text-text-secondary">
-                    <Label>{displayName}</Label>
+          {/* Right column: Name, description, and other content */}
+          <div className="flex h-full min-w-0 flex-1 flex-col justify-between space-y-1">
+            <div className="space-y-1">
+              {/* Agent name */}
+              <Label className="mb-1 line-clamp-1 text-xl font-semibold text-text-primary">
+                {agent.name}
+              </Label>
+
+              {/* Agent description */}
+              <p
+                id={`agent-${agent.id}-description`}
+                className="line-clamp-3 text-sm leading-relaxed text-text-primary"
+                {...(agent.description ? { 'aria-label': `Description: ${agent.description}` } : {})}
+              >
+                {agent.description ?? ''}
+              </p>
+            </div>
+
+            {/* Owner info - moved to bottom right */}
+            {(() => {
+              const displayName = getContactDisplayName(agent);
+              if (displayName) {
+                return (
+                  <div className="flex justify-end">
+                    <div className="flex items-center text-sm text-text-secondary">
+                      <Label>{displayName}</Label>
+                    </div>
                   </div>
-                </div>
-              );
-            }
-            return null;
-          })()}
+                );
+              }
+              return null;
+            })()}
+          </div>
         </div>
       </div>
     </div>

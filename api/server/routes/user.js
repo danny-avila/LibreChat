@@ -10,8 +10,11 @@ const {
 } = require('~/server/controllers/UserController');
 const { requireJwtAuth, canDeleteAccount, verifyEmailLimiter } = require('~/server/middleware');
 
+const settings = require('./settings');
+
 const router = express.Router();
 
+router.use('/settings', settings);
 router.get('/', requireJwtAuth, getUserController);
 router.get('/terms', requireJwtAuth, getTermsStatusController);
 router.post('/terms/accept', requireJwtAuth, acceptTermsController);
