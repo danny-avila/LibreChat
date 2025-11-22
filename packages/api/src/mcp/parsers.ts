@@ -176,11 +176,14 @@ export function formatToolContent(
     formattedContent.push({ type: 'text', text: currentTextBlock });
   }
 
-  let artifacts: t.Artifacts = undefined;
-  if (imageUrls.length || uiResources.length) {
+  let artifacts: t.Artifacts = imageUrls.length ? { content: imageUrls } : undefined;
+
+  if (uiResources.length) {
     artifacts = {
-      ...(imageUrls.length && { content: imageUrls }),
-      ...(uiResources.length && { [Tools.ui_resources]: { data: uiResources } }),
+      ...artifacts,
+      [Tools.ui_resources]: {
+        data: uiResources,
+      },
     };
   }
 
