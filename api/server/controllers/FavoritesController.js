@@ -37,10 +37,8 @@ const getFavoritesController = async (req, res) => {
 
     let favorites = user.favorites || [];
 
-    // Ensure favorites is an array (migration/dev fix)
     if (!Array.isArray(favorites)) {
       favorites = [];
-      // Optionally update the DB to fix it permanently
       await User.findByIdAndUpdate(userId, { $set: { favorites: [] } });
     }
 

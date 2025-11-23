@@ -26,7 +26,6 @@ function ModelSelectorContent() {
     searchValue,
     searchResults,
     selectedValues,
-
     // Functions
     setSearchValue,
     setSelectedValues,
