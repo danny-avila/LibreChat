@@ -1,12 +1,10 @@
 import React, { useRef, useCallback, useMemo } from 'react';
-import { ChevronRight } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
-import * as Collapsible from '@radix-ui/react-collapsible';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
-import { useFavorites, useLocalStorage, useLocalize } from '~/hooks';
+import { useFavorites } from '~/hooks';
 import FavoriteItem from './FavoriteItem';
 
 interface DraggableFavoriteItemProps {
@@ -85,10 +83,8 @@ const DraggableFavoriteItem = ({
 };
 
 export default function FavoritesList() {
-  const localize = useLocalize();
   const queryClient = useQueryClient();
   const { favorites, reorderFavorites, persistFavorites } = useFavorites();
-  const [isExpanded, setIsExpanded] = useLocalStorage('favoritesExpanded', true);
 
   const agentIds = favorites.map((f) => f.agentId).filter(Boolean) as string[];
 
@@ -153,45 +149,39 @@ export default function FavoritesList() {
   }
 
   return (
-    <Collapsible.Root open={isExpanded} onOpenChange={setIsExpanded} className="flex flex-col py-2">
-      <Collapsible.Trigger className="group flex w-full items-center gap-2 px-3 py-1 text-xs font-bold text-text-secondary hover:text-text-primary">
-        <ChevronRight className="h-3 w-3 transition-transform duration-200 group-data-[state=open]:rotate-90" />
-        <span className="select-none">{localize('com_ui_pinned')}</span>
-      </Collapsible.Trigger>
-      <Collapsible.Content className="collapsible-content">
-        <div className="mt-1 flex flex-col gap-1">
-          {favorites.map((fav, index) => {
-            if (fav.agentId) {
-              const agent = agentsMap[fav.agentId];
-              if (!agent) return null;
-              return (
-                <DraggableFavoriteItem
-                  key={fav.agentId}
-                  id={fav.agentId}
-                  index={index}
-                  moveItem={moveItem}
-                  onDrop={handleDrop}
-                >
-                  <FavoriteItem item={agent} type="agent" />
-                </DraggableFavoriteItem>
-              );
-            } else if (fav.model && fav.endpoint) {
-              return (
-                <DraggableFavoriteItem
-                  key={`${fav.endpoint}-${fav.model}`}
-                  id={`${fav.endpoint}-${fav.model}`}
-                  index={index}
-                  moveItem={moveItem}
-                  onDrop={handleDrop}
-                >
-                  <FavoriteItem item={fav as any} type="model" />
-                </DraggableFavoriteItem>
-              );
-            }
-            return null;
-          })}
-        </div>
-      </Collapsible.Content>
-    </Collapsible.Root>
+    <div className="mb-2 flex flex-col pb-2">
+      <div className="mt-1 flex flex-col gap-1">
+        {favorites.map((fav, index) => {
+          if (fav.agentId) {
+            const agent = agentsMap[fav.agentId];
+            if (!agent) return null;
+            return (
+              <DraggableFavoriteItem
+                key={fav.agentId}
+                id={fav.agentId}
+                index={index}
+                moveItem={moveItem}
+                onDrop={handleDrop}
+              >
+                <FavoriteItem item={agent} type="agent" />
+              </DraggableFavoriteItem>
+            );
+          } else if (fav.model && fav.endpoint) {
+            return (
+              <DraggableFavoriteItem
+                key={`${fav.endpoint}-${fav.model}`}
+                id={`${fav.endpoint}-${fav.model}`}
+                index={index}
+                moveItem={moveItem}
+                onDrop={handleDrop}
+              >
+                <FavoriteItem item={fav as any} type="model" />
+              </DraggableFavoriteItem>
+            );
+          }
+          return null;
+        })}
+      </div>
+    </div>
   );
 }

@@ -1,10 +1,12 @@
-import { useMemo, memo, type FC, useCallback } from 'react';
+import { useMemo, memo, type FC, useCallback, useEffect } from 'react';
 import throttle from 'lodash/throttle';
+import { ChevronRight } from 'lucide-react';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import { TConversation } from 'librechat-data-provider';
-import { useLocalize, TranslationKeys } from '~/hooks';
-import { groupConversationsByDate } from '~/utils';
+import { useLocalize, TranslationKeys, useFavorites } from '~/hooks';
+import { groupConversationsByDate, cn } from '~/utils';
+import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import Convo from './Convo';
 
 interface ConversationsProps {
@@ -15,6 +17,9 @@ interface ConversationsProps {
   loadMoreConversations: () => void;
   isLoading: boolean;
   isSearchLoading: boolean;
+  scrollElement?: HTMLElement | null;
+  isChatsExpanded: boolean;
+  setIsChatsExpanded: (expanded: boolean) => void;
 }
 
 const LoadingSpinner = memo(() => {
@@ -30,10 +35,13 @@ const LoadingSpinner = memo(() => {
 
 LoadingSpinner.displayName = 'LoadingSpinner';
 
-const DateLabel: FC<{ groupName: string }> = memo(({ groupName }) => {
+const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupName, isFirst }) => {
   const localize = useLocalize();
   return (
-    <h2 className="mt-2 pl-2 pt-1 text-text-secondary" style={{ fontSize: '0.7rem' }}>
+    <h2
+      className={cn('pl-3 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
+      style={{ fontSize: '0.7rem' }}
+    >
       {localize(groupName as TranslationKeys) || groupName}
     </h2>
   );
@@ -42,6 +50,8 @@ const DateLabel: FC<{ groupName: string }> = memo(({ groupName }) => {
 DateLabel.displayName = 'DateLabel';
 
 type FlattenedItem =
+  | { type: 'favorites' }
+  | { type: 'chats-header' }
   | { type: 'header'; groupName: string }
   | { type: 'convo'; convo: TConversation }
   | { type: 'loading' };
@@ -75,8 +85,12 @@ const Conversations: FC<ConversationsProps> = ({
   loadMoreConversations,
   isLoading,
   isSearchLoading,
+  scrollElement,
+  isChatsExpanded,
+  setIsChatsExpanded,
 }) => {
   const localize = useLocalize();
+  const { favorites } = useFavorites();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
 
@@ -92,16 +106,21 @@ const Conversations: FC<ConversationsProps> = ({
 
   const flattenedItems = useMemo(() => {
     const items: FlattenedItem[] = [];
-    groupedConversations.forEach(([groupName, convos]) => {
-      items.push({ type: 'header', groupName });
-      items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
-    });
+    items.push({ type: 'favorites' });
+    items.push({ type: 'chats-header' });
 
-    if (isLoading) {
-      items.push({ type: 'loading' } as any);
+    if (isChatsExpanded) {
+      groupedConversations.forEach(([groupName, convos]) => {
+        items.push({ type: 'header', groupName });
+        items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
+      });
+
+      if (isLoading) {
+        items.push({ type: 'loading' } as any);
+      }
     }
     return items;
-  }, [groupedConversations, isLoading]);
+  }, [groupedConversations, isLoading, isChatsExpanded]);
 
   const cache = useMemo(
     () =>
@@ -110,6 +129,12 @@ const Conversations: FC<ConversationsProps> = ({
         defaultHeight: convoHeight,
         keyMapper: (index) => {
           const item = flattenedItems[index];
+          if (item.type === 'favorites') {
+            return 'favorites';
+          }
+          if (item.type === 'chats-header') {
+            return 'chats-header';
+          }
           if (item.type === 'header') {
             return `header-${index}`;
           }
@@ -124,6 +149,15 @@ const Conversations: FC<ConversationsProps> = ({
       }),
     [flattenedItems, convoHeight],
   );
+
+  useEffect(() => {
+    if (cache) {
+      cache.clear(0, 0);
+      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
+        containerRef.current.recomputeRowHeights(0);
+      }
+    }
+  }, [favorites, cache, containerRef]);
 
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
@@ -140,8 +174,26 @@ const Conversations: FC<ConversationsProps> = ({
         );
       }
       let rendering: JSX.Element;
-      if (item.type === 'header') {
-        rendering = <DateLabel groupName={item.groupName} />;
+      if (item.type === 'favorites') {
+        rendering = <FavoritesList />;
+      } else if (item.type === 'chats-header') {
+        rendering = (
+          <button
+            onClick={() => setIsChatsExpanded(!isChatsExpanded)}
+            className="group flex w-full items-center justify-between px-3 py-2 text-xs font-bold text-text-secondary"
+            type="button"
+          >
+            <span className="select-none">{localize('com_ui_chats') || 'Chats'}</span>
+            <ChevronRight
+              className={cn(
+                'h-3 w-3 transition-transform duration-200',
+                isChatsExpanded ? 'rotate-90' : '',
+              )}
+            />
+          </button>
+        );
+      } else if (item.type === 'header') {
+        rendering = <DateLabel groupName={item.groupName} isFirst={index === 2} />;
       } else if (item.type === 'convo') {
         rendering = (
           <MemoizedConvo conversation={item.convo} retainView={moveToTop} toggleNav={toggleNav} />
@@ -180,7 +232,7 @@ const Conversations: FC<ConversationsProps> = ({
   );
 
   return (
-    <div className="relative flex h-full flex-col pb-2 text-sm text-text-primary">
+    <div className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary">
       {isSearchLoading ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner className="text-text-primary" />

@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bot } from 'lucide-react';
+import { Skeleton } from '@librechat/client';
 import type t from 'librechat-data-provider';
 
 /**
@@ -20,6 +21,40 @@ export const getAgentAvatarUrl = (agent: t.Agent | null | undefined): string | n
   }
 
   return null;
+};
+
+const LazyAgentAvatar = ({
+  url,
+  alt,
+  imgClass,
+}: {
+  url: string;
+  alt: string;
+  imgClass: string;
+}) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    setIsLoaded(false);
+  }, [url]);
+
+  return (
+    <>
+      <img
+        src={url}
+        alt={alt}
+        className={imgClass}
+        loading="lazy"
+        onLoad={() => setIsLoaded(true)}
+        onError={() => setIsLoaded(false)}
+        style={{
+          opacity: isLoaded ? 1 : 0,
+          transition: 'opacity 0.2s ease-in-out',
+        }}
+      />
+      {!isLoaded && <Skeleton className="absolute inset-0 rounded-full" aria-hidden="true" />}
+    </>
+  );
 };
 
 /**
@@ -67,12 +102,13 @@ export const renderAgentAvatar = (
 
   if (avatarUrl) {
     return (
-      <div className={`flex items-center justify-center ${sizeClasses[size]} ${className}`}>
-        <img
-          src={avatarUrl}
+      <div
+        className={`relative flex items-center justify-center ${sizeClasses[size]} ${className}`}
+      >
+        <LazyAgentAvatar
+          url={avatarUrl}
           alt={`${agent?.name || 'Agent'} avatar`}
-          className={`${sizeClasses[size]} rounded-full object-cover shadow-lg ${borderClasses}`}
-          loading="lazy"
+          imgClass={`${sizeClasses[size]} rounded-full object-cover shadow-lg ${borderClasses}`}
         />
       </div>
     );
