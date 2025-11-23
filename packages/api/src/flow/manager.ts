@@ -151,7 +151,23 @@ export class FlowStateManager<T = unknown> {
     const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
 
     if (!flowState) {
+      logger.warn('[FlowStateManager] Cannot complete flow - flow state not found', {
+        flowId,
+        type,
+      });
       return false;
+    }
+
+    /** Prevent duplicate completion */
+    if (flowState.status === 'COMPLETED') {
+      logger.debug(
+        '[FlowStateManager] Flow already completed, skipping to prevent duplicate completion',
+        {
+          flowId,
+          type,
+        },
+      );
+      return true;
     }
 
     const updatedState: FlowState<T> = {
@@ -162,7 +178,53 @@ export class FlowStateManager<T = unknown> {
     };
 
     await this.keyv.set(flowKey, updatedState, this.ttl);
+
+    logger.debug('[FlowStateManager] Flow completed successfully', {
+      flowId,
+      type,
+    });
+
     return true;
+  }
+
+  /**
+   * Checks if a flow is stale based on its age and status
+   * @param flowId - The flow identifier
+   * @param type - The flow type
+   * @param staleThresholdMs - Age in milliseconds after which a non-pending flow is considered stale (default: 2 minutes)
+   * @returns Object with isStale boolean and age in milliseconds
+   */
+  async isFlowStale(
+    flowId: string,
+    type: string,
+    staleThresholdMs: number = 2 * 60 * 1000,
+  ): Promise<{ isStale: boolean; age: number; status?: string }> {
+    const flowKey = this.getFlowKey(flowId, type);
+    const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+
+    if (!flowState) {
+      return { isStale: false, age: 0 };
+    }
+
+    if (flowState.status === 'PENDING') {
+      return { isStale: false, age: 0, status: flowState.status };
+    }
+
+    const completedAt = flowState.completedAt || flowState.failedAt;
+    const createdAt = flowState.createdAt;
+
+    let flowAge = 0;
+    if (completedAt) {
+      flowAge = Date.now() - completedAt;
+    } else if (createdAt) {
+      flowAge = Date.now() - createdAt;
+    }
+
+    return {
+      isStale: flowAge > staleThresholdMs,
+      age: flowAge,
+      status: flowState.status,
+    };
   }
 
   /**

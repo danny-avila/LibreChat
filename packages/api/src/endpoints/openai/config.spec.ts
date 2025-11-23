@@ -941,6 +941,16 @@ describe('getOpenAIConfig', () => {
         { reasoning_effort: undefined, reasoning_summary: undefined, shouldHaveReasoning: false },
         { reasoning_effort: '', reasoning_summary: '', shouldHaveReasoning: false },
         {
+          reasoning_effort: ReasoningEffort.unset,
+          reasoning_summary: '',
+          shouldHaveReasoning: false,
+        },
+        {
+          reasoning_effort: ReasoningEffort.none,
+          reasoning_summary: null,
+          shouldHaveReasoning: true,
+        },
+        {
           reasoning_effort: null,
           reasoning_summary: ReasoningSummary.concise,
           shouldHaveReasoning: true,
@@ -1649,6 +1659,211 @@ describe('getOpenAIConfig', () => {
 
         expect(endTime - startTime).toBeLessThan(100); // Should be fast
         expect(result.llmConfig.modelKwargs).toEqual(largeModelKwargs);
+      });
+    });
+
+    describe('defaultParams Support via customParams', () => {
+      it('should apply defaultParams when fields are undefined', () => {
+        const result = getOpenAIConfig(mockApiKey, {
+          modelOptions: {
+            model: 'gpt-4o',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'azureOpenAI',
+            paramDefinitions: [
+              { key: 'useResponsesApi', default: true },
+              { key: 'temperature', default: 0.5 },
+            ],
+          },
+        });
+
+        expect(result.llmConfig.useResponsesApi).toBe(true);
+        expect(result.llmConfig.temperature).toBe(0.5);
+      });
+
+      it('should not override existing modelOptions with defaultParams', () => {
+        const result = getOpenAIConfig(mockApiKey, {
+          modelOptions: {
+            model: 'gpt-5',
+            temperature: 0.9,
+          },
+          customParams: {
+            defaultParamsEndpoint: 'azureOpenAI',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.5 },
+              { key: 'maxTokens', default: 1000 },
+            ],
+          },
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.9);
+        expect(result.llmConfig.modelKwargs?.max_completion_tokens).toBe(1000);
+      });
+
+      it('should allow addParams to override defaultParams', () => {
+        const result = getOpenAIConfig(mockApiKey, {
+          modelOptions: {
+            model: 'gpt-4o',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'azureOpenAI',
+            paramDefinitions: [
+              { key: 'useResponsesApi', default: true },
+              { key: 'temperature', default: 0.5 },
+            ],
+          },
+          addParams: {
+            useResponsesApi: false,
+            temperature: 0.8,
+          },
+        });
+
+        expect(result.llmConfig.useResponsesApi).toBe(false);
+        expect(result.llmConfig.temperature).toBe(0.8);
+      });
+
+      it('should handle defaultParams with unknown parameters', () => {
+        const result = getOpenAIConfig(mockApiKey, {
+          modelOptions: {
+            model: 'gpt-4o',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'azureOpenAI',
+            paramDefinitions: [
+              { key: 'customParam1', default: 'defaultValue' },
+              { key: 'customParam2', default: 123 },
+            ],
+          },
+        });
+
+        expect(result.llmConfig.modelKwargs).toMatchObject({
+          customParam1: 'defaultValue',
+          customParam2: 123,
+        });
+      });
+
+      it('should handle defaultParams with web_search', () => {
+        const result = getOpenAIConfig(mockApiKey, {
+          modelOptions: {
+            model: 'gpt-4o',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'openAI',
+            paramDefinitions: [{ key: 'web_search', default: true }],
+          },
+        });
+
+        expect(result.llmConfig.useResponsesApi).toBe(true);
+        expect(result.tools).toEqual([{ type: 'web_search' }]);
+      });
+
+      it('should allow addParams to override defaultParams web_search', () => {
+        const result = getOpenAIConfig(mockApiKey, {
+          modelOptions: {
+            model: 'gpt-4o',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'openAI',
+            paramDefinitions: [{ key: 'web_search', default: true }],
+          },
+          addParams: {
+            web_search: false,
+          },
+        });
+
+        expect(result.tools).toEqual([]);
+      });
+
+      it('should apply defaultParams for Anthropic via customParams', () => {
+        const result = getOpenAIConfig('test-key', {
+          modelOptions: {
+            model: 'claude-3-5-sonnet-20241022',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'anthropic',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.7 },
+              { key: 'topK', default: 50 },
+            ],
+          },
+          reverseProxyUrl: 'https://api.anthropic.com',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.7);
+        expect(result.llmConfig.modelKwargs?.topK).toBe(50);
+      });
+
+      it('should apply defaultParams for Google via customParams', () => {
+        const credentials = JSON.stringify({ GOOGLE_API_KEY: 'test-google-key' });
+        const result = getOpenAIConfig(credentials, {
+          modelOptions: {
+            model: 'gemini-2.0-flash-exp',
+          },
+          customParams: {
+            defaultParamsEndpoint: 'google',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.6 },
+              { key: 'topK', default: 40 },
+            ],
+          },
+          reverseProxyUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.6);
+        expect(result.llmConfig.modelKwargs?.topK).toBe(40);
+      });
+
+      it('should handle empty paramDefinitions', () => {
+        const result = getOpenAIConfig(mockApiKey, {
+          modelOptions: {
+            model: 'gpt-4o',
+            temperature: 0.9,
+          },
+          customParams: {
+            defaultParamsEndpoint: 'azureOpenAI',
+            paramDefinitions: [],
+          },
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.9);
+      });
+
+      it('should handle missing paramDefinitions', () => {
+        const result = getOpenAIConfig(mockApiKey, {
+          modelOptions: {
+            model: 'gpt-4o',
+            temperature: 0.9,
+          },
+          customParams: {
+            defaultParamsEndpoint: 'azureOpenAI',
+          },
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.9);
+      });
+
+      it('should preserve order: defaultParams < addParams < modelOptions', () => {
+        const result = getOpenAIConfig(mockApiKey, {
+          modelOptions: {
+            model: 'gpt-5',
+            temperature: 0.9,
+          },
+          customParams: {
+            defaultParamsEndpoint: 'openAI',
+            paramDefinitions: [
+              { key: 'temperature', default: 0.3 },
+              { key: 'topP', default: 0.5 },
+              { key: 'maxTokens', default: 500 },
+            ],
+          },
+          addParams: {
+            topP: 0.8,
+          },
+        });
+
+        expect(result.llmConfig.temperature).toBe(0.9);
+        expect(result.llmConfig.topP).toBe(0.8);
+        expect(result.llmConfig.modelKwargs?.max_completion_tokens).toBe(500);
       });
     });
   });

@@ -19,6 +19,8 @@ export interface GoogleConfigOptions {
   proxy?: string;
   streaming?: boolean;
   authHeader?: boolean;
+  /** Default parameters to apply only if fields are undefined */
+  defaultParams?: Record<string, unknown>;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
 }

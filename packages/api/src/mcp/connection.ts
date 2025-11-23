@@ -336,7 +336,7 @@ export class MCPConnection extends EventEmitter {
         }
       }
     } catch (error) {
-      this.emitError(error, 'Failed to construct transport:');
+      this.emitError(error, 'Failed to construct transport');
       throw error;
     }
   }
@@ -631,7 +631,7 @@ export class MCPConnection extends EventEmitter {
       const { resources } = await this.client.listResources();
       return resources;
     } catch (error) {
-      this.emitError(error, 'Failed to fetch resources:');
+      this.emitError(error, 'Failed to fetch resources');
       return [];
     }
   }
@@ -641,7 +641,7 @@ export class MCPConnection extends EventEmitter {
       const { tools } = await this.client.listTools();
       return tools;
     } catch (error) {
-      this.emitError(error, 'Failed to fetch tools:');
+      this.emitError(error, 'Failed to fetch tools');
       return [];
     }
   }
@@ -651,7 +651,7 @@ export class MCPConnection extends EventEmitter {
       const { prompts } = await this.client.listPrompts();
       return prompts;
     } catch (error) {
-      this.emitError(error, 'Failed to fetch prompts:');
+      this.emitError(error, 'Failed to fetch prompts');
       return [];
     }
   }

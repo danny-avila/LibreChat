@@ -1040,6 +1040,7 @@ describe('getCacheMultiplier', () => {
 
 describe('Google Model Tests', () => {
   const googleModels = [
+    'gemini-3',
     'gemini-2.5-pro',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
@@ -1083,6 +1084,7 @@ describe('Google Model Tests', () => {
 
   it('should map to the correct model keys', () => {
     const expected = {
+      'gemini-3': 'gemini-3',
       'gemini-2.5-pro': 'gemini-2.5-pro',
       'gemini-2.5-flash': 'gemini-2.5-flash',
       'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',

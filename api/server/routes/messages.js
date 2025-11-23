@@ -1,4 +1,5 @@
 const express = require('express');
+const { unescapeLaTeX } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { ContentTypes } = require('librechat-data-provider');
 const {
@@ -134,17 +135,32 @@ router.post('/artifact/:messageId', async (req, res) => {
       return res.status(400).json({ error: 'Artifact index out of bounds' });
     }
 
+    // Unescape LaTeX preprocessing done by the frontend
+    // The frontend escapes $ signs for display, but the database has unescaped versions
+    const unescapedOriginal = unescapeLaTeX(original);
+    const unescapedUpdated = unescapeLaTeX(updated);
+
     const targetArtifact = artifacts[index];
     let updatedText = null;
 
     if (targetArtifact.source === 'content') {
       const part = message.content[targetArtifact.partIndex];
-      updatedText = replaceArtifactContent(part.text, targetArtifact, original, updated);
+      updatedText = replaceArtifactContent(
+        part.text,
+        targetArtifact,
+        unescapedOriginal,
+        unescapedUpdated,
+      );
       if (updatedText) {
         part.text = updatedText;
       }
     } else {
-      updatedText = replaceArtifactContent(message.text, targetArtifact, original, updated);
+      updatedText = replaceArtifactContent(
+        message.text,
+        targetArtifact,
+        unescapedOriginal,
+        unescapedUpdated,
+      );
       if (updatedText) {
         message.text = updatedText;
       }

@@ -56,7 +56,7 @@ function DynamicSwitch({
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}:{' '}
-                  {defaultValue != null ? 'com_ui_on' : 'com_ui_off'})
+                  {defaultValue != null ? localize('com_ui_on') : localize('com_ui_off')})
                 </small>
               )}
             </Label>

@@ -75,7 +75,7 @@ export async function encodeAndFormatVideos(
 
     if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
       result.videos.push({
-        type: 'video',
+        type: 'media',
         mimeType: file.type,
         data: content,
       });
