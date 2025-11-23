@@ -3,6 +3,7 @@ import * as Menu from '@ariakit/react/menu';
 import { useNavigate } from 'react-router-dom';
 import { Ellipsis, PinOff } from 'lucide-react';
 import { DropdownPopup } from '@librechat/client';
+import { EModelEndpoint } from 'librechat-data-provider';
 import type { FavoriteModel } from '~/store/favorites';
 import type t from 'librechat-data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
@@ -31,10 +32,12 @@ export default function FavoriteItem({ item, type }: FavoriteItemProps) {
       newConversation({
         template: {
           ...agent,
+          endpoint: EModelEndpoint.agents,
           agent_id: agent.id,
         },
         preset: {
           ...agent,
+          endpoint: EModelEndpoint.agents,
           agent_id: agent.id,
         },
       });
