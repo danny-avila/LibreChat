@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
-import { Star } from 'lucide-react';
 import { Label } from '@librechat/client';
 import type t from 'librechat-data-provider';
-import { useLocalize, TranslationKeys, useAgentCategories, useFavorites } from '~/hooks';
+import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
 import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
 
 interface AgentCardProps {
@@ -17,13 +16,6 @@ interface AgentCardProps {
 const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' }) => {
   const localize = useLocalize();
   const { categories } = useAgentCategories();
-  const { isFavoriteAgent, toggleFavoriteAgent } = useFavorites();
-  const isFavorite = isFavoriteAgent(agent.id);
-
-  const handleFavoriteClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    toggleFavoriteAgent(agent.id);
-  };
 
   const categoryLabel = useMemo(() => {
     if (!agent.category) return '';
@@ -57,16 +49,6 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
       tabIndex={0}
       role="button"
     >
-      <div className="absolute right-2 top-2 z-10">
-        <button
-          onClick={handleFavoriteClick}
-          className="rounded-full p-1 hover:bg-surface-hover"
-        >
-          <Star
-            className={cn('h-5 w-5', isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary')}
-          />
-        </button>
-      </div>
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           {/* Left column: Avatar and Category */}
@@ -93,7 +75,9 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
               <p
                 id={`agent-${agent.id}-description`}
                 className="line-clamp-3 text-sm leading-relaxed text-text-primary"
-                {...(agent.description ? { 'aria-label': `Description: ${agent.description}` } : {})}
+                {...(agent.description
+                  ? { 'aria-label': `Description: ${agent.description}` }
+                  : {})}
               >
                 {agent.description ?? ''}
               </p>
