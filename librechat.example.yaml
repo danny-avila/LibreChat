@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.2.1
+version: 1.2.2
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -423,8 +423,10 @@ endpoints:
 #   # Jina Reranking Configuration
 #   jinaApiKey: '${JINA_API_KEY}'  # Your Jina API key
 #   jinaApiUrl: '${JINA_API_URL}'  # Custom Jina API URL (optional, defaults to https://api.jina.ai/v1/rerank)
-#   # Other rerankers
+#   # Cohere Reranker
 #   cohereApiKey: '${COHERE_API_KEY}'
+#   # Simple Reranker
+#   simpleRerankerInstanceUrl: '${SIMPLE_RERANKER_URL}'
 #   # Search providers
 #   serperApiKey: '${SERPER_API_KEY}'
 #   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
