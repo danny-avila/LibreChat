@@ -21,7 +21,6 @@ import store from '~/store';
 const BookmarkNav = lazy(() => import('./Bookmarks/BookmarkNav'));
 const AccountSettings = lazy(() => import('./AccountSettings'));
 const AgentMarketplaceButton = lazy(() => import('./AgentMarketplaceButton'));
-const FavoritesList = lazy(() => import('./Favorites/FavoritesList'));
 
 const NAV_WIDTH_DESKTOP = '260px';
 const NAV_WIDTH_MOBILE = '320px';
@@ -60,6 +59,7 @@ const Nav = memo(
     const [navWidth, setNavWidth] = useState(NAV_WIDTH_DESKTOP);
     const isSmallScreen = useMediaQuery('(max-width: 768px)');
     const [newUser, setNewUser] = useLocalStorage('newUser', true);
+    const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
     const [showLoading, setShowLoading] = useState(false);
     const [tags, setTags] = useState<string[]>([]);
 
@@ -152,14 +152,7 @@ const Nav = memo(
     }, [isFetchingNextPage, computedHasNextPage, fetchNextPage]);
 
     const subHeaders = useMemo(
-      () => (
-        <>
-          <Suspense fallback={null}>
-            <FavoritesList />
-          </Suspense>
-          {search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
-        </>
-      ),
+      () => <>{search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}</>,
       [search.enabled, isSmallScreen],
     );
 
@@ -201,18 +194,24 @@ const Nav = memo(
         <div
           data-testid="nav"
           className={cn(
-            'nav active max-w-[320px] flex-shrink-0 transform overflow-x-hidden bg-surface-primary-alt transition-all duration-200 ease-in-out',
+            'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-surface-primary-alt',
             'md:max-w-[260px]',
           )}
           style={{
             width: navVisible ? navWidth : '0px',
-            transform: navVisible ? 'translateX(0)' : 'translateX(-100%)',
+            transition: 'width 0.5s ease-in-out',
           }}
         >
-          <div className="h-full w-[320px] md:w-[260px]">
+          <div
+            className="h-full w-[320px] md:w-[260px]"
+            style={{
+              transform: navVisible ? 'translateX(0)' : 'translateX(-100%)',
+              transition: 'transform 0.5s ease-in-out',
+            }}
+          >
             <div className="flex h-full flex-col">
               <div
-                className={`flex h-full flex-col transition-opacity duration-200 ease-in-out ${navVisible ? 'opacity-100' : 'opacity-0'}`}
+                className={`flex h-full flex-col transition-opacity duration-500 ease-in-out ${navVisible ? 'opacity-100' : 'opacity-0'}`}
               >
                 <div className="flex h-full flex-col">
                   <nav
@@ -220,22 +219,26 @@ const Nav = memo(
                     aria-label={localize('com_ui_chat_history')}
                     className="flex h-full flex-col px-2 pb-3.5 md:px-3"
                   >
-                    <div className="flex flex-1 flex-col" ref={outerContainerRef}>
+                    <div className="flex flex-1 flex-col overflow-hidden" ref={outerContainerRef}>
                       <MemoNewChat
                         subHeaders={subHeaders}
                         toggleNav={toggleNavVisible}
                         headerButtons={headerButtons}
                         isSmallScreen={isSmallScreen}
                       />
-                      <Conversations
-                        conversations={conversations}
-                        moveToTop={moveToTop}
-                        toggleNav={itemToggleNav}
-                        containerRef={listRef}
-                        loadMoreConversations={loadMoreConversations}
-                        isLoading={isFetchingNextPage || showLoading || isLoading}
-                        isSearchLoading={isSearchLoading}
-                      />
+                      <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
+                        <Conversations
+                          conversations={conversations}
+                          moveToTop={moveToTop}
+                          toggleNav={itemToggleNav}
+                          containerRef={listRef}
+                          loadMoreConversations={loadMoreConversations}
+                          isLoading={isFetchingNextPage || showLoading || isLoading}
+                          isSearchLoading={isSearchLoading}
+                          isChatsExpanded={isChatsExpanded}
+                          setIsChatsExpanded={setIsChatsExpanded}
+                        />
+                      </div>
                     </div>
                     <Suspense fallback={null}>
                       <AccountSettings />
