@@ -39,7 +39,6 @@ export interface IUser extends Document {
     models: Array<{
       model: string;
       endpoint: string;
-      label?: string;
     }>;
   };
   createdAt?: Date;

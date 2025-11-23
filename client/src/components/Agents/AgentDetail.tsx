@@ -141,24 +141,24 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
   return (
     <OGDialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <OGDialogContent ref={dialogRef} className="max-h-[90vh] w-11/12 max-w-lg overflow-y-auto">
-        {/* Agent avatar - top center */}
+        {/* Agent avatar */}
         <div className="mt-6 flex justify-center">{renderAgentAvatar(agent, { size: 'xl' })}</div>
 
-        {/* Agent name - center aligned below image */}
+        {/* Agent name */}
         <div className="mt-3 text-center">
           <h2 className="text-2xl font-bold text-text-primary">
             {agent?.name || localize('com_agents_loading')}
           </h2>
         </div>
 
-        {/* Contact info - center aligned below name */}
+        {/* Contact info */}
         {agent?.support_contact && formatContact() && (
           <div className="mt-1 text-center text-sm text-text-secondary">
             {localize('com_agents_contact')}: {formatContact()}
           </div>
         )}
 
-        {/* Agent description - below contact */}
+        {/* Agent description */}
         <div className="mt-4 whitespace-pre-wrap px-6 text-center text-base text-text-primary">
           {agent?.description}
         </div>

@@ -83,7 +83,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
               </p>
             </div>
 
-            {/* Owner info - moved to bottom right */}
+            {/* Owner info */}
             {(() => {
               const displayName = getContactDisplayName(agent);
               if (displayName) {
