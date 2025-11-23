@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import * as Menu from '@ariakit/react/menu';
-import { Ellipsis, Trash } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Ellipsis, PinOff } from 'lucide-react';
 import { DropdownPopup } from '@librechat/client';
+import type { FavoriteModel } from '~/store/favorites';
+import type t from 'librechat-data-provider';
+import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 import { useNewConvo, useFavorites, useLocalize } from '~/hooks';
 import { renderAgentAvatar, cn } from '~/utils';
-import EndpointIcon from '~/components/Endpoints/EndpointIcon';
-import type t from 'librechat-data-provider';
-import type { FavoriteModel } from '~/store/favorites';
 
 type FavoriteItemProps = {
   item: t.Agent | FavoriteModel;
@@ -68,7 +68,7 @@ export default function FavoriteItem({ item, type }: FavoriteItemProps) {
 
   const renderIcon = () => {
     if (type === 'agent') {
-      return renderAgentAvatar(item as t.Agent, { size: 20, className: 'mr-2' });
+      return renderAgentAvatar(item as t.Agent, { size: 'icon', className: 'mr-2' });
     }
     const model = item as FavoriteModel;
     return (
@@ -87,22 +87,25 @@ export default function FavoriteItem({ item, type }: FavoriteItemProps) {
     if (type === 'agent') {
       return (item as t.Agent).name;
     }
-    return (item as FavoriteModel).label || (item as FavoriteModel).model;
+    return (item as FavoriteModel).model;
   };
 
   const menuId = React.useId();
 
   const dropdownItems = [
     {
-      label: localize('com_ui_remove'),
+      label: localize('com_ui_unpin'),
       onClick: handleRemove,
-      icon: <Trash className="h-4 w-4 text-text-primary" />,
+      icon: <PinOff className="h-4 w-4 text-text-secondary" />,
     },
   ];
 
   return (
     <div
-      className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary hover:bg-surface-hover"
+      className={cn(
+        'group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt',
+        isPopoverActive ? 'bg-surface-active-alt' : '',
+      )}
       onClick={handleClick}
       data-testid="favorite-item"
     >
@@ -110,7 +113,7 @@ export default function FavoriteItem({ item, type }: FavoriteItemProps) {
         {renderIcon()}
         <span className="truncate">{getName()}</span>
       </div>
-      
+
       <div
         className={cn(
           'absolute right-2 flex items-center',
@@ -126,13 +129,13 @@ export default function FavoriteItem({ item, type }: FavoriteItemProps) {
           trigger={
             <Menu.MenuButton
               className={cn(
-                'flex h-7 w-7 items-center justify-center rounded-md hover:bg-surface-hover focus:bg-surface-hover',
-                isPopoverActive ? 'bg-surface-hover' : '',
+                'flex h-7 w-7 items-center justify-center rounded-md',
+                isPopoverActive ? 'bg-surface-active-alt' : '',
               )}
               aria-label={localize('com_ui_options')}
               data-testid="favorite-options-button"
             >
-              <Ellipsis className="h-4 w-4 text-text-secondary hover:text-text-primary" />
+              <Ellipsis className="h-4 w-4 text-text-secondary" />
             </Menu.MenuButton>
           }
           items={dropdownItems}

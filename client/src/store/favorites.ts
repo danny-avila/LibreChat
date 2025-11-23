@@ -1,22 +1,21 @@
 import { atom } from 'recoil';
 
+export type Favorite = {
+  agentId?: string;
+  model?: string;
+  endpoint?: string;
+};
+
 export type FavoriteModel = {
   model: string;
   endpoint: string;
-  label?: string;
 };
 
-export type FavoritesState = {
-  agents: string[];
-  models: FavoriteModel[];
-};
+export type FavoritesState = Favorite[];
 
 const favorites = atom<FavoritesState>({
   key: 'favorites',
-  default: {
-    agents: [],
-    models: [],
-  },
+  default: [],
 });
 
 export default {

@@ -1,11 +1,11 @@
 import React from 'react';
-import { EarthIcon, Star } from 'lucide-react';
+import { EarthIcon, Pin, PinOff } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { useModelSelectorContext } from '../ModelSelectorContext';
+import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import type { Endpoint } from '~/common';
 import { useFavorites } from '~/hooks';
 import { cn } from '~/utils';
-import { useModelSelectorContext } from '../ModelSelectorContext';
-import { CustomMenuItem as MenuItem } from '../CustomMenu';
 
 interface EndpointModelItemProps {
   modelId: string | null;
@@ -15,7 +15,8 @@ interface EndpointModelItemProps {
 
 export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps) {
   const { handleSelectModel } = useModelSelectorContext();
-  const { isFavoriteModel, toggleFavoriteModel } = useFavorites();
+  const { isFavoriteModel, toggleFavoriteModel, isFavoriteAgent, toggleFavoriteAgent } =
+    useFavorites();
   let isGlobal = false;
   let modelName = modelId;
   const avatarUrl = endpoint?.modelIcons?.[modelId ?? ''] || null;
@@ -35,13 +36,43 @@ export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps)
     modelName = endpoint.assistantNames[modelId];
   }
 
-  const isFavorite = isFavoriteModel(modelId ?? '', endpoint.value);
+  const isAgent = isAgentsEndpoint(endpoint.value);
+  const isFavorite = isAgent
+    ? isFavoriteAgent(modelId ?? '')
+    : isFavoriteModel(modelId ?? '', endpoint.value);
 
   const handleFavoriteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (modelId) {
-      toggleFavoriteModel({ model: modelId, endpoint: endpoint.value, label: modelName ?? undefined });
+      if (isAgent) {
+        toggleFavoriteAgent(modelId);
+      } else {
+        toggleFavoriteModel({ model: modelId, endpoint: endpoint.value });
+      }
     }
+  };
+
+  const renderAvatar = () => {
+    if (avatarUrl) {
+      return (
+        <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
+          <img src={avatarUrl} alt={modelName ?? ''} className="h-full w-full object-cover" />
+        </div>
+      );
+    }
+    if (
+      (isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)) &&
+      endpoint.icon
+    ) {
+      return (
+        <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
+          {endpoint.icon}
+        </div>
+      );
+    }
+    return (
+      <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full" />
+    );
   };
 
   return (
@@ -51,34 +82,22 @@ export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps)
       className="group flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm"
     >
       <div className="flex w-full min-w-0 items-center gap-2 px-1 py-1">
-        {avatarUrl ? (
-          <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
-            <img src={avatarUrl} alt={modelName ?? ''} className="h-full w-full object-cover" />
-          </div>
-        ) : (isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)) &&
-          endpoint.icon ? (
-          <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
-            {endpoint.icon}
-          </div>
-        ) : (
-          <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full" />
-        )}
+        {renderAvatar()}
         <span className="truncate">{modelName}</span>
         {isGlobal && <EarthIcon className="ml-1 size-4 text-surface-submit" />}
       </div>
       <button
         onClick={handleFavoriteClick}
         className={cn(
-          'rounded-full p-1 hover:bg-surface-hover',
+          'rounded-md p-1 hover:bg-surface-hover',
           isFavorite ? 'visible' : 'invisible group-hover:visible',
         )}
       >
-        <Star
-          className={cn(
-            'h-4 w-4',
-            isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-text-secondary',
-          )}
-        />
+        {isFavorite ? (
+          <PinOff className="h-4 w-4 text-text-secondary" />
+        ) : (
+          <Pin className="h-4 w-4 text-text-secondary" />
+        )}
       </button>
     </MenuItem>
   );

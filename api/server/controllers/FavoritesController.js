@@ -35,11 +35,16 @@ const getFavoritesController = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const favorites = user.favorites || {};
-    res.status(200).json({
-      agents: favorites.agents || [],
-      models: favorites.models || [],
-    });
+    let favorites = user.favorites || [];
+
+    // Ensure favorites is an array (migration/dev fix)
+    if (!Array.isArray(favorites)) {
+      favorites = [];
+      // Optionally update the DB to fix it permanently
+      await User.findByIdAndUpdate(userId, { $set: { favorites: [] } });
+    }
+
+    res.status(200).json(favorites);
   } catch (error) {
     console.error('Error fetching favorites:', error);
     res.status(500).json({ message: 'Internal server error' });
