@@ -70,9 +70,7 @@ export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps)
         </div>
       );
     }
-    return (
-      <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full" />
-    );
+    return null;
   };
 
   return (
