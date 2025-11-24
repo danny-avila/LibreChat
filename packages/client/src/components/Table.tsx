@@ -1,12 +1,22 @@
 import * as React from 'react';
 import { cn } from '~/utils';
 
-const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
-  ({ className, ...props }, ref) => (
-    <div className="relative w-full overflow-auto">
+interface TableProps extends React.HTMLAttributes<HTMLTableElement> {
+  unwrapped?: boolean;
+}
+
+const Table = React.forwardRef<HTMLTableElement, TableProps>(
+  ({ className, unwrapped = false, ...props }, ref) => {
+    const tableElement = (
       <table ref={ref} className={cn('w-full caption-bottom text-sm', className)} {...props} />
-    </div>
-  ),
+    );
+
+    if (unwrapped) {
+      return tableElement;
+    }
+
+    return <div className="relative w-full overflow-auto">{tableElement}</div>;
+  },
 );
 Table.displayName = 'Table';
 
@@ -79,6 +89,22 @@ const TableCell = React.forwardRef<
 ));
 TableCell.displayName = 'TableCell';
 
+const TableRowHeader = React.forwardRef<
+  HTMLTableCellElement,
+  React.ThHTMLAttributes<HTMLTableCellElement>
+>(({ className, ...props }, ref) => (
+  <th
+    ref={ref}
+    scope="row"
+    className={cn(
+      'p-4 text-left align-middle font-medium [&:has([role=checkbox])]:pr-0',
+      className,
+    )}
+    {...props}
+  />
+));
+TableRowHeader.displayName = 'TableRowHeader';
+
 const TableCaption = React.forwardRef<
   HTMLTableCaptionElement,
   React.HTMLAttributes<HTMLTableCaptionElement>
@@ -87,4 +113,14 @@ const TableCaption = React.forwardRef<
 ));
 TableCaption.displayName = 'TableCaption';
 
-export { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption };
+export {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableRowHeader,
+  TableCaption,
+};
