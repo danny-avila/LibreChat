@@ -25,14 +25,12 @@ const WOODLAND_AGENTS = [
       'woodland-ai-search-cyclopedia',
       'woodland-ai-search-website',
       'woodland-ai-search-cases',
+      // Added tractor search tool to avoid direct 'tool not found' errors when supervisor routes fitment queries
+      'woodland-ai-search-tractor',
     ],
     capabilities: [AgentCapabilities.chain],
-    agent_ids: [
-      'agent_woodland_catalog',
-      'agent_woodland_support',
-      'agent_woodland_cases',
-      'agent_woodland_website',
-    ],
+    // Removed agent_ids to prevent legacy sequential chain recursion & duplicate domain tool calls.
+    agent_ids: [],
     hide_sequential_outputs: true,
     conversation_starters: [
       'Can you recommend the best Cyclone Rake for heavy fall cleanup on 3 acres?',
@@ -42,6 +40,7 @@ const WOODLAND_AGENTS = [
       'How long does shipping take during peak fall season?'
     ],
     temperature: 0,
+    recursion_limit: 6, // enforce shallow recursion to avoid loops; synthesis lock handles tool cap
   },
   {
     id: 'agent_woodland_catalog',

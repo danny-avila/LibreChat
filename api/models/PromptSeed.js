@@ -2,10 +2,11 @@ const mongoose = require('mongoose');
 const { PromptGroup, Prompt, User } = require('~/db/models');
 const { logger } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
-const { grantPermission } = require('~/server/services/PermissionService');
+// Lazy-load PermissionService to break circular dependency
+// const { grantPermission } = require('~/server/services/PermissionService');
 const { AccessRoleIds, PrincipalType, ResourceType } = require('librechat-data-provider');
 
-const WOODLAND_PROMPT_VERSION = 'v2025.11.22';
+const WOODLAND_PROMPT_VERSION = 'v2025.11.24';
 const WOODLAND_CATEGORY = 'woodland';
 
 /**
@@ -211,6 +212,99 @@ Output format:
 
 Keep it concise for quick CRM logging.`,
   },
+  {
+    id: 'prompt_product_history_combination',
+    name: 'Product History by Combination',
+    category: WOODLAND_CATEGORY,
+    oneliner: 'Search product history using specific rake/engine/bag/blower combinations',
+    command: 'product-combo',
+    type: 'text',
+    public: true,
+    prompt: `Search product configuration history for:
+
+Rake Model: {{rake_model}}
+Engine Model: {{engine_model}}
+Bag Color: {{bag_color}}
+Bag Shape: {{bag_shape}}
+Blower Color: {{blower_color}}
+
+Find all historical product configurations matching these specifications. Include:
+1. All reviewed configurations with these attributes
+2. Timeline of changes if multiple revisions exist
+3. Related SKUs and part numbers
+4. Any superseded or replacement products
+5. Special notes about this combination
+
+Use structured filters for accurate results.`,
+  },
+  {
+    id: 'prompt_product_history_attributes',
+    name: 'Product Attribute Lookup',
+    category: WOODLAND_CATEGORY,
+    oneliner: 'Find available colors, shapes, and options for specific rake/engine models',
+    command: 'product-attrs',
+    type: 'text',
+    public: true,
+    prompt: `What product options are available for:
+
+Rake Model: {{rake_model}}
+Engine Model: {{engine_model}}
+
+Please list:
+1. Available bag colors for this combination
+2. Available bag shapes
+3. Available blower colors
+4. Available deck hose options
+5. Any special configurations or variations
+
+Group results clearly by option type.`,
+  },
+  {
+    id: 'prompt_engine_history_combination',
+    name: 'Engine History by Combination',
+    category: WOODLAND_CATEGORY,
+    oneliner: 'Search engine configuration history by rake/model/horsepower/filter',
+    command: 'engine-combo',
+    type: 'text',
+    public: true,
+    prompt: `Search engine configuration history for:
+
+Rake Model: {{rake_model}}
+Engine Model: {{engine_model}}
+Horsepower: {{horsepower}}
+Filter Shape: {{filter_shape}}
+Blower Color: {{blower_color}}
+
+Find all historical engine configurations matching these specifications. Include:
+1. All reviewed engine configurations
+2. Timeline of engine changes and revisions
+3. When horsepower or filter specifications changed
+4. Related part numbers and SKUs
+5. Notes about engine transitions
+
+Use structured filters for precise results.`,
+  },
+  {
+    id: 'prompt_engine_history_timeline',
+    name: 'Engine Configuration Timeline',
+    category: WOODLAND_CATEGORY,
+    oneliner: 'Track engine specification changes over time for a rake model',
+    command: 'engine-timeline',
+    type: 'text',
+    public: true,
+    prompt: `Show the engine configuration timeline for:
+
+Rake Model: {{rake_model}}
+
+Provide:
+1. Chronological list of all engine changes
+2. What changed (horsepower, filter, air filter, blower)
+3. When each change occurred
+4. Reasons for changes if documented
+5. Current vs. previous configurations
+
+Present as a clear timeline with dates.`,
+  },
 ];
 
 let cachedAuthor;
@@ -299,6 +393,9 @@ async function resolveAuthor() {
  * Creates new or updates if prompt text changed
  */
 async function ensurePromptGroup(config, authorId, authorName) {
+  // Lazy-load PermissionService to break circular dependency
+  const { grantPermission } = require('~/server/services/PermissionService');
+  
   const timestamp = new Date();
   const authorObjectId = new mongoose.Types.ObjectId(authorId);
 

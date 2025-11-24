@@ -6,6 +6,8 @@ const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 const { logger } = require('~/config');
 const TTLCache = require('../util/ttlCache');
 const { applyCatalogPolicy, canonicalizeModel } = require('./util/woodlandCatalogPolicy');
+// Hitch relevance helpers (lazy usage inside matching logic)
+const { isHitchRelevant, extractCategory } = require('./util/hitchRelevance');
 
 const DEFAULT_CACHE_TTL_MS = Number(process.env.WOODLAND_SEARCH_CACHE_TTL_MS ?? 10_000);
 const DEFAULT_CACHE_MAX = Number(process.env.WOODLAND_SEARCH_CACHE_MAX_ENTRIES ?? 200);
@@ -120,6 +122,20 @@ class WoodlandAISearchCatalog extends Tool {
   _docMatchesRakeContext(doc, canonicalRakeName, rakeSku) {
     if (!canonicalRakeName && !rakeSku) {
       return true;
+    }
+    // Determine hitch relevance and annotate for downstream consumers.
+    try {
+      const category = extractCategory(doc);
+      const categories = doc?.normalized_catalog?.categories || [];
+      const hitchRelevant = isHitchRelevant(category, categories);
+      if (doc && typeof doc === 'object') {
+        doc.__hitchRelevant = hitchRelevant;
+        if (doc.normalized_catalog && typeof doc.normalized_catalog === 'object') {
+          doc.normalized_catalog.hitch_relevant = hitchRelevant;
+        }
+      }
+    } catch (_) {
+      // Non-fatal; continue.
     }
     const fitment = doc?.normalized_catalog?.fitment || {};
     const namesCanonical = Array.isArray(fitment.rake_names_canonical)

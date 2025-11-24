@@ -950,7 +950,7 @@ class AgentClient extends BaseClient {
         runConfig.signal = null;
       };
 
-      await runAgents(initialMessages);
+      await runAgent(this.options.agent, initialMessages);
       /** @deprecated Agent Chain */
       if (config.configurable.hide_sequential_outputs) {
         this.contentParts = this.contentParts.filter((part, index) => {

@@ -10,7 +10,8 @@ const {
   addAgentIdsToProject,
   getProjectByName,
 } = require('./Project');
-const { removeAllPermissions } = require('~/server/services/PermissionService');
+// Lazy-load PermissionService to break circular dependency
+// const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { Agent, AclEntry } = require('~/db/models');
 const { getActions } = require('./Action');
@@ -520,7 +521,7 @@ const removeAgentResourceFiles = async ({ agent_id, files }) => {
 };
 
 /**
- * Deletes an agent based on the provided ID.
+ * Deletes a single agent based on the provided search parameters and removes it from all projects.
  *
  * @param {Object} searchParameter - The search parameters to find the agent to delete.
  * @param {string} searchParameter.id - The ID of the agent to delete.
@@ -528,6 +529,9 @@ const removeAgentResourceFiles = async ({ agent_id, files }) => {
  * @returns {Promise<void>} Resolves when the agent has been successfully deleted.
  */
 const deleteAgent = async (searchParameter) => {
+  // Lazy-load PermissionService to break circular dependency
+  const { removeAllPermissions } = require('~/server/services/PermissionService');
+  
   const agent = await Agent.findOneAndDelete(searchParameter);
   if (agent) {
     await removeAgentFromAllProjects(agent.id);
