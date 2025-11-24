@@ -229,6 +229,7 @@ const HoverButtons = ({
       )}
 
       {/* Fork Button */}
+      {/* NJ: Disable forking (makes no sense w/o chat history, maybe too advanced)
       <Fork
         messageId={message.messageId}
         conversationId={conversation.conversationId}
@@ -236,11 +237,14 @@ const HoverButtons = ({
         latestMessageId={latestMessage?.messageId}
         isLast={isLast}
       />
+      */}
 
       {/* Feedback Buttons */}
+      {/* NJ: Disable feedback (don't want NJ sending any training data back to providers)
       {!isCreatedByUser && handleFeedback != null && (
         <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
       )}
+      */}
 
       {/* Regenerate Button */}
       {regenerateEnabled && (
