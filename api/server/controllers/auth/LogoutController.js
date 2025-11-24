@@ -11,8 +11,8 @@ const logoutController = async (req, res) => {
     const { status, message } = logout;
     res.clearCookie('refreshToken');
     res.clearCookie('token_provider');
-    if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-      res.clearCookie('openid_user_id');
+    if (isEnabled(process.env.OPENID_EXPOSE_SUB_COOKIE)) {
+      res.clearCookie('openid_sub');
     }
     const response = { message };
     if (

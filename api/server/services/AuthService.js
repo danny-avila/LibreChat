@@ -466,8 +466,30 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
         expires: expirationDate,
         httpOnly: true,
         secure: isProduction,
-        sameSite: isEnabled(process.env.OPENID_EXPOSE_SUB_COOKIE) ? 'lax' : 'strict',
+        sameSite: 'strict',
       });
+    }
+
+    if (isEnabled(process.env.OPENID_EXPOSE_SUB_COOKIE)) {
+      try {
+        const decoded = jwt.decode(tokenset.access_token);
+        if (decoded?.sub) {
+          const signedSub = jwt.sign({ sub: decoded.sub }, process.env.JWT_REFRESH_SECRET, {
+            expiresIn: expiryInMilliseconds / 1000,
+          });
+          res.cookie('openid_sub', signedSub, {
+            expires: expirationDate,
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: 'lax',
+          });
+        }
+      } catch (decodeError) {
+        logger.error(
+          '[setOpenIDAuthTokens] Failed to decode access token for sub claim:',
+          decodeError,
+        );
+      }
     }
     return tokenset.access_token;
   } catch (error) {
