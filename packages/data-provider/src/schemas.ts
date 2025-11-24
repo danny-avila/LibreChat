@@ -405,9 +405,6 @@ export const anthropicSettings = {
         if (value > CLAUDE_4_64K_MAX_OUTPUT) {
           return CLAUDE_4_64K_MAX_OUTPUT;
         }
-        if (value > ANTHROPIC_MAX_OUTPUT) {
-          return ANTHROPIC_MAX_OUTPUT;
-        }
         return value;
       }
 

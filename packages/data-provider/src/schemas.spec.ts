@@ -262,6 +262,18 @@ describe('anthropicSettings', () => {
         expect(set(100000, 'claude-opus-4-5')).toBe(64000);
       });
 
+      it('should cap at model-specific 64K limit, not global 128K limit', () => {
+        // Values between 64K and 128K should be capped at 64K (model limit)
+        // This verifies the fix for the unreachable code issue
+        expect(set(70000, 'claude-opus-4-5')).toBe(64000);
+        expect(set(80000, 'claude-opus-4-5')).toBe(64000);
+        expect(set(100000, 'claude-opus-4-5')).toBe(64000);
+        expect(set(128000, 'claude-opus-4-5')).toBe(64000);
+
+        // Values above 128K should also be capped at 64K (not 128K)
+        expect(set(150000, 'claude-opus-4-5')).toBe(64000);
+      });
+
       it('should allow 50K for claude-opus-4-5', () => {
         expect(set(50000, 'claude-opus-4-5')).toBe(50000);
       });
