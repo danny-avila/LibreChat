@@ -25,11 +25,17 @@ export function deleteUser(): Promise<s.TPreset> {
   return request.delete(endpoints.deleteUser());
 }
 
-export function getFavorites(): Promise<unknown> {
+export type FavoriteItem = {
+  agentId?: string;
+  model?: string;
+  endpoint?: string;
+};
+
+export function getFavorites(): Promise<FavoriteItem[]> {
   return request.get('/api/user/settings/favorites');
 }
 
-export function updateFavorites(favorites: unknown): Promise<unknown> {
+export function updateFavorites(favorites: FavoriteItem[]): Promise<FavoriteItem[]> {
   return request.post('/api/user/settings/favorites', { favorites });
 }
 

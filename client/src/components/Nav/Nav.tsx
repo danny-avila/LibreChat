@@ -21,7 +21,6 @@ import store from '~/store';
 
 const BookmarkNav = lazy(() => import('./Bookmarks/BookmarkNav'));
 const AccountSettings = lazy(() => import('./AccountSettings'));
-const AgentMarketplaceButton = lazy(() => import('./AgentMarketplaceButton'));
 
 const NAV_WIDTH_DESKTOP = '260px';
 const NAV_WIDTH_MOBILE = '320px';
@@ -160,9 +159,6 @@ const Nav = memo(
     const headerButtons = useMemo(
       () => (
         <>
-          <Suspense fallback={null}>
-            <AgentMarketplaceButton isSmallScreen={isSmallScreen} toggleNav={toggleNavVisible} />
-          </Suspense>
           {hasAccessToBookmarks && (
             <>
               <div className="mt-1.5" />
@@ -173,7 +169,7 @@ const Nav = memo(
           )}
         </>
       ),
-      [hasAccessToBookmarks, tags, isSmallScreen, toggleNavVisible],
+      [hasAccessToBookmarks, tags, isSmallScreen],
     );
 
     const [isSearchLoading, setIsSearchLoading] = useState(

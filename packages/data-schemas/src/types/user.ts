@@ -34,13 +34,11 @@ export interface IUser extends Document {
   personalization?: {
     memories?: boolean;
   };
-  favorites?: {
-    agents: string[];
-    models: Array<{
-      model: string;
-      endpoint: string;
-    }>;
-  };
+  favorites?: Array<{
+    agentId?: string;
+    model?: string;
+    endpoint?: string;
+  }>;
   createdAt?: Date;
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */

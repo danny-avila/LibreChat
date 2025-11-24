@@ -175,7 +175,7 @@ const Conversations: FC<ConversationsProps> = ({
       }
       let rendering: JSX.Element;
       if (item.type === 'favorites') {
-        rendering = <FavoritesList />;
+        rendering = <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />;
       } else if (item.type === 'chats-header') {
         rendering = (
           <button

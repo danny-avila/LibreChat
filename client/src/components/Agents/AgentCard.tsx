@@ -48,6 +48,12 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
       aria-describedby={`agent-${agent.id}-description`}
       tabIndex={0}
       role="button"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import type { Favorite } from '~/store/favorites';
 import store from '~/store';
 import { useGetFavoritesQuery, useUpdateFavoritesMutation } from '~/data-provider';
 
@@ -11,13 +12,15 @@ export default function useFavorites() {
   useEffect(() => {
     if (getFavoritesQuery.data) {
       if (Array.isArray(getFavoritesQuery.data)) {
-        const mapped = getFavoritesQuery.data.map((f: any) => {
-          if (f.agentId || (f.model && f.endpoint)) return f;
-          if (f.type === 'agent' && f.id) return { agentId: f.id };
-          // Drop label and map legacy model format
-          if (f.type === 'model') return { model: f.model, endpoint: f.endpoint };
-          return f;
-        });
+        const mapped = getFavoritesQuery.data.map(
+          (f: Favorite & { type?: string; id?: string }) => {
+            if (f.agentId || (f.model && f.endpoint)) return f;
+            if (f.type === 'agent' && f.id) return { agentId: f.id };
+            // Drop label and map legacy model format
+            if (f.type === 'model') return { model: f.model, endpoint: f.endpoint };
+            return f;
+          },
+        );
         setFavorites(mapped);
       } else {
         // Handle legacy format or invalid data
