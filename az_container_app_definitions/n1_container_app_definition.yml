@@ -127,6 +127,10 @@ properties:
             value: https://service-internal-n1.paychex.com/is/librechat/azure/openai/deployments/${DEPLOYMENT_NAME}
           - name: AZURE_OPENAI_API_KEY
             secretRef: maas-api-key
+          - name: GCP_VERTEXAI_BASEURL
+            value: https://service-internal-n1.paychex.com/is/librechat  
+          - name: GCP_VERTEXAI_API_KEY
+            secretRef: maas-api-key
           - name: ALLOW_REGISTRATION
             value: FALSE
           - name: ALLOW_EMAIL_LOGIN

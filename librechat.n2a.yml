@@ -40,3 +40,52 @@ endpoints:
         gpt-41-mini:
           deploymentName: gpt-41-mini
           version: "2024-10-21"
+  custom:
+    - name: "Gemini 2.5 Pro"
+      apiKey: "${GCP_VERTEXAI_API_KEY}"
+      baseURL: "${GCP_VERTEXAI_BASEURL}/gemini-2.5-pro/v1"
+      directEndpoint: true
+      models:
+        default:
+          - gemini-2.5-pro
+      titleModel: "gemini-2.5-pro"
+      titleConvo: true
+      modelDisplayLabel: "gemini-2.5-pro"
+      addParams:
+        streaming: false
+        disableStreaming: true
+      dropParams:
+        - stream
+        - streaming
+    - name: "Gemini 2.5 Flash"
+      apiKey: "${GCP_VERTEXAI_API_KEY}"
+      baseURL: "${GCP_VERTEXAI_BASEURL}/gemini-2.5-flash/v1"
+      directEndpoint: true
+      models:
+        default:
+          - gemini-2.5-flash
+      titleModel: "gemini-2.5-flash"
+      titleConvo: true
+      modelDisplayLabel: "gemini-2.5-flash"
+      addParams:
+        streaming: false
+        disableStreaming: true
+      dropParams:
+        - stream
+        - streaming
+    - name: "Claude Sonnet 4.5"
+      apiKey: "${GCP_VERTEXAI_API_KEY}"
+      baseURL: "${GCP_VERTEXAI_BASEURL}/claude-sonnet-4-5/v1"
+      directEndpoint: true
+      models:
+        default:
+          - claude-sonnet-4-5
+      titleModel: "claude-sonnet-4-5"
+      titleConvo: true
+      modelDisplayLabel: "claude-sonnet-4-5"
+      addParams:
+        streaming: false
+        disableStreaming: true
+      dropParams:
+        - stream
+        - streaming
