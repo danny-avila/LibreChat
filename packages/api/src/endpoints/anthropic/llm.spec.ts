@@ -707,6 +707,7 @@ describe('getLLMConfig', () => {
           { model: 'claude-haiku-4-5-20251001', expectedMaxTokens: 64000 },
           { model: 'claude-opus-4-1', expectedMaxTokens: 32000 },
           { model: 'claude-opus-4-1-20250805', expectedMaxTokens: 32000 },
+          { model: 'claude-opus-4-5', expectedMaxTokens: 64000 },
           { model: 'claude-sonnet-4-20250514', expectedMaxTokens: 64000 },
           { model: 'claude-opus-4-0', expectedMaxTokens: 32000 },
         ];
@@ -768,6 +769,17 @@ describe('getLLMConfig', () => {
             modelOptions: { model },
           });
           expect(result.llmConfig.maxTokens).toBe(32000);
+        });
+      });
+
+      it('should default Claude Opus 4.5 model to 64K tokens', () => {
+        const testCases = ['claude-opus-4-5', 'claude-opus-4-5-20250420', 'claude-opus-4.5'];
+
+        testCases.forEach((model) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model },
+          });
+          expect(result.llmConfig.maxTokens).toBe(64000);
         });
       });
 
