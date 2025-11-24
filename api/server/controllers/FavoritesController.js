@@ -9,6 +9,28 @@ const updateFavoritesController = async (req, res) => {
       return res.status(400).json({ message: 'Favorites data is required' });
     }
 
+    // Validate favorites structure
+    if (!Array.isArray(favorites)) {
+      return res.status(400).json({ message: 'Favorites must be an array' });
+    }
+
+    for (const fav of favorites) {
+      const hasAgent = !!fav.agentId;
+      const hasModel = !!(fav.model && fav.endpoint);
+
+      if (!hasAgent && !hasModel) {
+        return res.status(400).json({
+          message: 'Each favorite must have either agentId or model+endpoint',
+        });
+      }
+
+      if (hasAgent && hasModel) {
+        return res.status(400).json({
+          message: 'Favorite cannot have both agentId and model/endpoint',
+        });
+      }
+    }
+
     const user = await User.findByIdAndUpdate(
       userId,
       { $set: { favorites } },

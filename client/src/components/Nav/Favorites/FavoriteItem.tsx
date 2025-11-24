@@ -77,7 +77,7 @@ export default function FavoriteItem({ item, type }: FavoriteItemProps) {
     return (
       <div className="mr-2 h-5 w-5">
         <EndpointIcon
-          conversation={{ endpoint: model.endpoint, model: model.model } as any}
+          conversation={{ endpoint: model.endpoint, model: model.model } as t.TConversation}
           endpoint={model.endpoint}
           model={model.model}
           size={20}
