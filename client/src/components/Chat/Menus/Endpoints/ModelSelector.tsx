@@ -26,7 +26,6 @@ function ModelSelectorContent() {
     searchValue,
     searchResults,
     selectedValues,
-
     // Functions
     setSearchValue,
     setSelectedValues,
@@ -60,7 +59,7 @@ function ModelSelectorContent() {
 
   const trigger = (
     <button
-      className="my-1 flex h-10 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary"
+      className="my-1 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary"
       aria-label={localize('com_ui_select_model')}
     >
       {selectedIcon && React.isValidElement(selectedIcon) && (
@@ -73,36 +72,38 @@ function ModelSelectorContent() {
   );
 
   return (
-    <div className="relative flex w-full max-w-md flex-col items-center gap-2">
-      <Menu
-        values={selectedValues}
-        onValuesChange={(values: Record<string, any>) => {
-          setSelectedValues({
-            endpoint: values.endpoint || '',
-            model: values.model || '',
-            modelSpec: values.modelSpec || '',
-          });
-        }}
-        onSearch={(value) => setSearchValue(value)}
-        combobox={<input placeholder={localize('com_endpoint_search_models')} />}
-        trigger={trigger}
-      >
-        {searchResults ? (
-          renderSearchResults(searchResults, localize, searchValue)
-        ) : (
-          <>
-            {/* Render ungrouped modelSpecs (no group field) */}
-            {renderModelSpecs(
-              modelSpecs?.filter((spec) => !spec.group) || [],
-              selectedValues.modelSpec || '',
-            )}
-            {/* Render endpoints (will include grouped specs matching endpoint names) */}
-            {renderEndpoints(mappedEndpoints ?? [])}
-            {/* Render custom groups (specs with group field not matching any endpoint) */}
-            {renderCustomGroups(modelSpecs || [], mappedEndpoints ?? [])}
-          </>
-        )}
-      </Menu>
+    <div className="relative flex w-full max-w-md items-center gap-2">
+      <div className="flex-grow">
+        <Menu
+          values={selectedValues}
+          onValuesChange={(values: Record<string, any>) => {
+            setSelectedValues({
+              endpoint: values.endpoint || '',
+              model: values.model || '',
+              modelSpec: values.modelSpec || '',
+            });
+          }}
+          onSearch={(value) => setSearchValue(value)}
+          combobox={<input placeholder={localize('com_endpoint_search_models')} />}
+          trigger={trigger}
+        >
+          {searchResults ? (
+            renderSearchResults(searchResults, localize, searchValue)
+          ) : (
+            <>
+              {/* Render ungrouped modelSpecs (no group field) */}
+              {renderModelSpecs(
+                modelSpecs?.filter((spec) => !spec.group) || [],
+                selectedValues.modelSpec || '',
+              )}
+              {/* Render endpoints (will include grouped specs matching endpoint names) */}
+              {renderEndpoints(mappedEndpoints ?? [])}
+              {/* Render custom groups (specs with group field not matching any endpoint) */}
+              {renderCustomGroups(modelSpecs || [], mappedEndpoints ?? [])}
+            </>
+          )}
+        </Menu>
+      </div>
       <DialogManager
         keyDialogOpen={keyDialogOpen}
         onOpenChange={onOpenChange}
