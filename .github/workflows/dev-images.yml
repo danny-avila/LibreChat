@@ -36,16 +36,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Log in to GitHub Container Registry
+      # Log in to GitHub Container Registry (optional)
       - name: Log in to GitHub Container Registry
+        if: ${{ secrets.GITHUB_TOKEN != '' }}
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Login to Docker Hub
+      # Login to Docker Hub (optional)
       - name: Login to Docker Hub
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -56,17 +58,35 @@ jobs:
         run: |
           cp .env.example .env
 
+      # Prepare tags based on available secrets
+      - name: Prepare tags
+        id: prepare-tags
+        run: |
+          {
+            if [ "$HAS_GHCR" = "true" ]; then
+              echo "ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}:${{ github.sha }}"
+              echo "ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}:latest"
+            fi
+            if [ "$HAS_DOCKERHUB" = "true" ]; then
+              echo "${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}:${{ github.sha }}"
+              echo "${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}:latest"
+            fi
+          } | {
+            echo "tags<<EOF"
+            cat
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+        env:
+          HAS_GHCR: ${{ secrets.GITHUB_TOKEN != '' && 'true' || 'false' }}
+          HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' && 'true' || 'false' }}
+
       # Build and push Docker images for each target
       - name: Build and push Docker images
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ${{ matrix.file }}
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}:${{ github.sha }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}:latest
+          push: ${{ secrets.GITHUB_TOKEN != '' || (secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '') }}
+          tags: ${{ steps.prepare-tags.outputs.tags }}
           platforms: linux/amd64,linux/arm64
           target: ${{ matrix.target }}
