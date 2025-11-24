@@ -152,12 +152,13 @@ const Conversations: FC<ConversationsProps> = ({
 
   useEffect(() => {
     if (cache) {
+      // Only clear the favorites row
       cache.clear(0, 0);
       if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
         containerRef.current.recomputeRowHeights(0);
       }
     }
-  }, [favorites, cache, containerRef]);
+  }, [favorites.length, cache, containerRef]);
 
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
