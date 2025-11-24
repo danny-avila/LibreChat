@@ -136,6 +136,7 @@ const tokenValues = Object.assign(
     'claude-3.7-sonnet': { prompt: 3, completion: 15 },
     'claude-haiku-4-5': { prompt: 1, completion: 5 },
     'claude-opus-4': { prompt: 15, completion: 75 },
+    'claude-opus-4-5': { prompt: 5, completion: 25 },
     'claude-sonnet-4': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
     'command-r-plus': { prompt: 3, completion: 15 },
@@ -238,8 +239,10 @@ const cacheTokenValues = {
   'claude-3.5-haiku': { write: 1, read: 0.08 },
   'claude-3-5-haiku': { write: 1, read: 0.08 },
   'claude-3-haiku': { write: 0.3, read: 0.03 },
+  'claude-haiku-4-5': { write: 1.25, read: 0.1 },
   'claude-sonnet-4': { write: 3.75, read: 0.3 },
   'claude-opus-4': { write: 18.75, read: 1.5 },
+  'claude-opus-4-5': { write: 6.25, read: 0.5 },
 };
 
 /**
