@@ -9,9 +9,10 @@ import type {
   RunConfig,
   IState,
 } from '@librechat/agents';
+import type { IUser } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
 import type * as t from '~/types';
-import { resolveHeaders } from '~/utils/env';
+import { resolveHeaders, createSafeUser } from '~/utils/env';
 
 const customProviders = new Set([
   Providers.XAI,
@@ -66,6 +67,7 @@ export async function createRun({
   signal,
   agents,
   requestBody,
+  user,
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
@@ -78,6 +80,7 @@ export async function createRun({
   streaming?: boolean;
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
+  user?: IUser;
 } & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
   Run<IState>
 > {
@@ -118,6 +121,7 @@ export async function createRun({
     if (llmConfig?.configuration?.defaultHeaders != null) {
       llmConfig.configuration.defaultHeaders = resolveHeaders({
         headers: llmConfig.configuration.defaultHeaders as Record<string, string>,
+        user: createSafeUser(user),
         body: requestBody,
       });
     }
