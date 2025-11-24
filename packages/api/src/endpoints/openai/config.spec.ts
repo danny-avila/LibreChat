@@ -941,6 +941,16 @@ describe('getOpenAIConfig', () => {
         { reasoning_effort: undefined, reasoning_summary: undefined, shouldHaveReasoning: false },
         { reasoning_effort: '', reasoning_summary: '', shouldHaveReasoning: false },
         {
+          reasoning_effort: ReasoningEffort.unset,
+          reasoning_summary: '',
+          shouldHaveReasoning: false,
+        },
+        {
+          reasoning_effort: ReasoningEffort.none,
+          reasoning_summary: null,
+          shouldHaveReasoning: true,
+        },
+        {
           reasoning_effort: null,
           reasoning_summary: ReasoningSummary.concise,
           shouldHaveReasoning: true,

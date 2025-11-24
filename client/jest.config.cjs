@@ -41,7 +41,6 @@ module.exports = {
       'jest-file-loader',
   },
   transformIgnorePatterns: ['node_modules/?!@zattoo/use-double-click'],
-  preset: 'ts-jest',
   setupFilesAfterEnv: ['@testing-library/jest-dom/extend-expect', '<rootDir>/test/setupTests.js'],
   clearMocks: true,
 };

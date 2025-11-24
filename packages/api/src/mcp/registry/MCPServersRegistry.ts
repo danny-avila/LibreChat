@@ -13,12 +13,22 @@ import {
  *
  * Provides a unified interface for retrieving server configs with proper fallback hierarchy:
  * checks shared app servers first, then shared user servers, then private user servers.
+ * Falls back to raw config when servers haven't been initialized yet or failed to initialize.
  * Handles server lifecycle operations including adding, removing, and querying configurations.
  */
 class MCPServersRegistry {
-  public readonly sharedAppServers = ServerConfigsCacheFactory.create('App', true);
-  public readonly sharedUserServers = ServerConfigsCacheFactory.create('User', true);
+  public readonly sharedAppServers = ServerConfigsCacheFactory.create('App', false);
+  public readonly sharedUserServers = ServerConfigsCacheFactory.create('User', false);
   private readonly privateUserServers: Map<string | undefined, ServerConfigsCache> = new Map();
+  private rawConfigs: t.MCPServers = {};
+
+  /**
+   * Stores the raw MCP configuration as a fallback when servers haven't been initialized yet.
+   * Should be called during initialization before inspecting servers.
+   */
+  public setRawConfigs(configs: t.MCPServers): void {
+    this.rawConfigs = configs;
+  }
 
   public async addPrivateUserServer(
     userId: string,
@@ -59,15 +69,32 @@ class MCPServersRegistry {
     const privateUserServer = await this.privateUserServers.get(userId)?.get(serverName);
     if (privateUserServer) return privateUserServer;
 
+    /** Fallback to raw config if server hasn't been initialized yet */
+    const rawConfig = this.rawConfigs[serverName];
+    if (rawConfig) return rawConfig as t.ParsedServerConfig;
+
     return undefined;
   }
 
   public async getAllServerConfigs(userId?: string): Promise<Record<string, t.ParsedServerConfig>> {
-    return {
+    const registryConfigs = {
       ...(await this.sharedAppServers.getAll()),
       ...(await this.sharedUserServers.getAll()),
       ...((await this.privateUserServers.get(userId)?.getAll()) ?? {}),
     };
+
+    /** Include all raw configs, but registry configs take precedence (they have inspection data) */
+    const allConfigs: Record<string, t.ParsedServerConfig> = {};
+    for (const serverName in this.rawConfigs) {
+      allConfigs[serverName] = this.rawConfigs[serverName] as t.ParsedServerConfig;
+    }
+
+    /** Override with registry configs where available (they have richer data) */
+    for (const serverName in registryConfigs) {
+      allConfigs[serverName] = registryConfigs[serverName];
+    }
+
+    return allConfigs;
   }
 
   // TODO: This is currently used to determine if a server requires OAuth. However, this info can

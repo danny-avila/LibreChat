@@ -1,7 +1,8 @@
 import { extractEnvVariable } from 'librechat-data-provider';
-import type { TUser, MCPOptions } from 'librechat-data-provider';
+import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody } from '~/types';
+import { extractOpenIDTokenInfo, processOpenIDPlaceholders, isOpenIDTokenValid } from './oidc';
 
 /**
  * List of allowed user fields that can be used in MCP environment variables.
@@ -32,21 +33,27 @@ type SafeUser = Pick<IUser, AllowedUserField>;
 
 /**
  * Creates a safe user object containing only allowed fields.
- * Optimized for performance while maintaining type safety.
+ * Preserves federatedTokens for OpenID token template variable resolution.
  *
  * @param user - The user object to extract safe fields from
- * @returns A new object containing only allowed fields
+ * @returns A new object containing only allowed fields plus federatedTokens if present
  */
-export function createSafeUser(user: IUser | null | undefined): Partial<SafeUser> {
+export function createSafeUser(
+  user: IUser | null | undefined,
+): Partial<SafeUser> & { federatedTokens?: unknown } {
   if (!user) {
     return {};
   }
 
-  const safeUser: Partial<SafeUser> = {};
+  const safeUser: Partial<SafeUser> & { federatedTokens?: unknown } = {};
   for (const field of ALLOWED_USER_FIELDS) {
     if (field in user) {
       safeUser[field] = user[field];
     }
+  }
+
+  if ('federatedTokens' in user) {
+    safeUser.federatedTokens = user.federatedTokens;
   }
 
   return safeUser;
@@ -64,18 +71,19 @@ const ALLOWED_BODY_FIELDS = ['conversationId', 'parentMessageId', 'messageId'] a
  * @param user - The user object
  * @returns The processed string with placeholders replaced
  */
-function processUserPlaceholders(value: string, user?: TUser): string {
+function processUserPlaceholders(value: string, user?: IUser): string {
   if (!user || typeof value !== 'string') {
     return value;
   }
 
   for (const field of ALLOWED_USER_FIELDS) {
     const placeholder = `{{LIBRECHAT_USER_${field.toUpperCase()}}}`;
-    if (!value.includes(placeholder)) {
+
+    if (typeof value !== 'string' || !value.includes(placeholder)) {
       continue;
     }
 
-    const fieldValue = user[field as keyof TUser];
+    const fieldValue = user[field as keyof IUser];
 
     // Skip replacement if field doesn't exist in user object
     if (!(field in user)) {
@@ -104,6 +112,11 @@ function processUserPlaceholders(value: string, user?: TUser): string {
  * @returns The processed string with placeholders replaced
  */
 function processBodyPlaceholders(value: string, body: RequestBody): string {
+  // Type guard: ensure value is a string
+  if (typeof value !== 'string') {
+    return value;
+  }
+
   for (const field of ALLOWED_BODY_FIELDS) {
     const placeholder = `{{LIBRECHAT_BODY_${field.toUpperCase()}}}`;
     if (!value.includes(placeholder)) {
@@ -134,12 +147,16 @@ function processSingleValue({
 }: {
   originalValue: string;
   customUserVars?: Record<string, string>;
-  user?: TUser;
+  user?: IUser;
   body?: RequestBody;
 }): string {
+  // Type guard: ensure we're working with a string
+  if (typeof originalValue !== 'string') {
+    return String(originalValue);
+  }
+
   let value = originalValue;
 
-  // 1. Replace custom user variables
   if (customUserVars) {
     for (const [varName, varVal] of Object.entries(customUserVars)) {
       /** Escaped varName for use in regex to avoid issues with special characters */
@@ -149,15 +166,17 @@ function processSingleValue({
     }
   }
 
-  // 2. Replace user field placeholders (e.g., {{LIBRECHAT_USER_EMAIL}}, {{LIBRECHAT_USER_ID}})
   value = processUserPlaceholders(value, user);
 
-  // 3. Replace body field placeholders (e.g., {{LIBRECHAT_BODY_CONVERSATIONID}}, {{LIBRECHAT_BODY_PARENTMESSAGEID}})
+  const openidTokenInfo = extractOpenIDTokenInfo(user);
+  if (openidTokenInfo && isOpenIDTokenValid(openidTokenInfo)) {
+    value = processOpenIDPlaceholders(value, openidTokenInfo);
+  }
+
   if (body) {
     value = processBodyPlaceholders(value, body);
   }
 
-  // 4. Replace system environment variables
   value = extractEnvVariable(value);
 
   return value;
@@ -174,7 +193,7 @@ function processSingleValue({
  */
 export function processMCPEnv(params: {
   options: Readonly<MCPOptions>;
-  user?: TUser;
+  user?: IUser;
   customUserVars?: Record<string, string>;
   body?: RequestBody;
 }): MCPOptions {
@@ -219,7 +238,7 @@ export function processMCPEnv(params: {
 
   // Process OAuth configuration if it exists (for all transport types)
   if ('oauth' in newObj && newObj.oauth) {
-    const processedOAuth: Record<string, string | string[] | undefined> = {};
+    const processedOAuth: Record<string, boolean | string | string[] | undefined> = {};
     for (const [key, originalValue] of Object.entries(newObj.oauth)) {
       // Only process string values for environment variables
       // token_exchange_method is an enum and shouldn't be processed
@@ -236,6 +255,74 @@ export function processMCPEnv(params: {
 }
 
 /**
+ * Recursively processes a value, replacing placeholders in strings while preserving structure
+ * @param value - The value to process (can be string, number, boolean, array, object, etc.)
+ * @param options - Processing options
+ * @returns The processed value with the same structure
+ */
+function processValue(
+  value: unknown,
+  options: {
+    customUserVars?: Record<string, string>;
+    user?: IUser;
+    body?: RequestBody;
+  },
+): unknown {
+  if (typeof value === 'string') {
+    return processSingleValue({
+      originalValue: value,
+      customUserVars: options.customUserVars,
+      user: options.user,
+      body: options.body,
+    });
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => processValue(item, options));
+  }
+
+  if (value !== null && typeof value === 'object') {
+    const processed: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value)) {
+      processed[key] = processValue(val, options);
+    }
+    return processed;
+  }
+
+  return value;
+}
+
+/**
+ * Recursively resolves placeholders in a nested object structure while preserving types.
+ * Only processes string values - leaves numbers, booleans, arrays, and nested objects intact.
+ *
+ * @param options - Configuration object
+ * @param options.obj - The object to process
+ * @param options.user - Optional user object for replacing user field placeholders
+ * @param options.body - Optional request body object for replacing body field placeholders
+ * @param options.customUserVars - Optional custom user variables to replace placeholders
+ * @returns The processed object with placeholders replaced in string values
+ */
+export function resolveNestedObject<T = unknown>(options?: {
+  obj: T | undefined;
+  user?: Partial<IUser> | { id: string };
+  body?: RequestBody;
+  customUserVars?: Record<string, string>;
+}): T {
+  const { obj, user, body, customUserVars } = options ?? {};
+
+  if (!obj) {
+    return obj as T;
+  }
+
+  return processValue(obj, {
+    customUserVars,
+    user: user as IUser,
+    body,
+  }) as T;
+}
+
+/**
  * Resolves header values by replacing user placeholders, body variables, custom variables, and environment variables.
  *
  * @param options - Optional configuration object.
@@ -247,7 +334,7 @@ export function processMCPEnv(params: {
  */
 export function resolveHeaders(options?: {
   headers: Record<string, string> | undefined;
-  user?: Partial<TUser> | { id: string };
+  user?: Partial<IUser> | { id: string };
   body?: RequestBody;
   customUserVars?: Record<string, string>;
 }) {
@@ -261,7 +348,7 @@ export function resolveHeaders(options?: {
       resolvedHeaders[key] = processSingleValue({
         originalValue: inputHeaders[key],
         customUserVars,
-        user: user as TUser,
+        user: user as IUser,
         body,
       });
     });

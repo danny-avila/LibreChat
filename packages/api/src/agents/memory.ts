@@ -345,7 +345,7 @@ ${memory ?? 'No existing memories'}`;
     };
 
     // Handle GPT-5+ models
-    if ('model' in finalLLMConfig && /\bgpt-[5-9]\b/i.test(finalLLMConfig.model ?? '')) {
+    if ('model' in finalLLMConfig && /\bgpt-[5-9](?:\.\d+)?\b/i.test(finalLLMConfig.model ?? '')) {
       // Remove temperature for GPT-5+ models
       delete finalLLMConfig.temperature;
 

@@ -61,30 +61,23 @@ jobs:
           npm run build:data-schemas
           npm run build:api
 
-      - name: Run cache integration tests
+      - name: Run all cache integration tests (Single Redis Node)
         working-directory: packages/api
         env:
           NODE_ENV: test
           USE_REDIS: true
+          USE_REDIS_CLUSTER: false
           REDIS_URI: redis://127.0.0.1:6379
-          REDIS_CLUSTER_URI: redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003
-        run: npm run test:cache-integration:core
+        run: npm run test:cache-integration
 
-      - name: Run cluster integration tests
+      - name: Run all cache integration tests (Redis Cluster)
         working-directory: packages/api
         env:
           NODE_ENV: test
           USE_REDIS: true
-          REDIS_URI: redis://127.0.0.1:6379
-        run: npm run test:cache-integration:cluster
-
-      - name: Run mcp integration tests
-        working-directory: packages/api
-        env:
-          NODE_ENV: test
-          USE_REDIS: true
-          REDIS_URI: redis://127.0.0.1:6379
-        run: npm run test:cache-integration:mcp
+          USE_REDIS_CLUSTER: true
+          REDIS_URI: redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003
+        run: npm run test:cache-integration
 
       - name: Stop Redis Cluster
         if: always()

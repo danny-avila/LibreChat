@@ -2715,6 +2715,7 @@ html {
 .animate-pulse-slow {
   animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -2728,10 +2729,6 @@ html {
 
 .animate-fadeIn {
   animation: fadeIn 0.5s ease-out forwards;
-}
-
-.scale-98 {
-  transform: scale(0.98);
 }
 
 /* Chat Badges Animation */

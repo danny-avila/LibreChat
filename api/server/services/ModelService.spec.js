@@ -81,6 +81,70 @@ describe('fetchModels', () => {
     );
   });
 
+  it('should pass custom headers to the API request', async () => {
+    const customHeaders = {
+      'X-Custom-Header': 'custom-value',
+      'X-API-Version': 'v2',
+    };
+
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: customHeaders,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.test.com/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'X-Custom-Header': 'custom-value',
+          'X-API-Version': 'v2',
+          Authorization: 'Bearer testApiKey',
+        }),
+      }),
+    );
+  });
+
+  it('should handle null headers gracefully', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: null,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.test.com/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer testApiKey',
+        }),
+      }),
+    );
+  });
+
+  it('should handle undefined headers gracefully', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: undefined,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.test.com/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer testApiKey',
+        }),
+      }),
+    );
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -409,6 +473,64 @@ describe('getAnthropicModels', () => {
     process.env.ANTHROPIC_MODELS = 'claude-1, claude-2 ';
     const models = await getAnthropicModels();
     expect(models).toEqual(['claude-1', 'claude-2']);
+  });
+
+  it('should use Anthropic-specific headers when fetching models', async () => {
+    delete process.env.ANTHROPIC_MODELS;
+    process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+
+    axios.get.mockResolvedValue({
+      data: {
+        data: [{ id: 'claude-3' }, { id: 'claude-4' }],
+      },
+    });
+
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'test-anthropic-key',
+      baseURL: 'https://api.anthropic.com/v1',
+      name: EModelEndpoint.anthropic,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: {
+          'x-api-key': 'test-anthropic-key',
+          'anthropic-version': expect.any(String),
+        },
+      }),
+    );
+  });
+
+  it('should pass custom headers for Anthropic endpoint', async () => {
+    const customHeaders = {
+      'X-Custom-Header': 'custom-value',
+    };
+
+    axios.get.mockResolvedValue({
+      data: {
+        data: [{ id: 'claude-3' }],
+      },
+    });
+
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'test-anthropic-key',
+      baseURL: 'https://api.anthropic.com/v1',
+      name: EModelEndpoint.anthropic,
+      headers: customHeaders,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: {
+          'x-api-key': 'test-anthropic-key',
+          'anthropic-version': expect.any(String),
+        },
+      }),
+    );
   });
 });
 

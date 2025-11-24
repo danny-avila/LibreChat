@@ -75,7 +75,7 @@ export async function encodeAndFormatAudios(
 
     if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
       result.audios.push({
-        type: 'audio',
+        type: 'media',
         mimeType: file.type,
         data: content,
       });

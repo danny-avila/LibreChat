@@ -219,6 +219,13 @@ readinessProbe:
     path: /health
     port: 3080
 
+# Additional init containers on the output Deployment definition.
+initContainers: {}
+#   foo: # the name of the init container
+#     image: busybox
+#     command: ['sh', '-c', 'echo The app is starting! && sleep 5']
+#   # ... add more init containers as needed
+
 # Additional volumes on the output Deployment definition.
 volumes: []
 # - name: foo
@@ -268,6 +275,16 @@ dnsConfig: {}
 # Strategy for LibreChat deployment updates
 updateStrategy:
   type: RollingUpdate
+
+# Extra ConfigMaps to be created alongside the main ones
+additionalConfigMaps: {}
+#   custom: # suffix of the ConfigMap name
+#     labels: {}
+#     annotations: {}
+#     data: {}
+#     binaryData: {}
+#     immutable: false
+#   # ... add more ConfigMaps as needed
 
 # MongoDB Parameters
 mongodb:
