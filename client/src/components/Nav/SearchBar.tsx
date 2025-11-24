@@ -134,7 +134,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
       />
       <button
         type="button"
-        aria-label={`${localize('com_ui_clear')} ${localize('com_ui_search')}`}
+        aria-label={localize('com_ui_clear_search')}
         className={cn(
           'absolute right-[7px] flex h-5 w-5 items-center justify-center rounded-full border-none bg-transparent p-0 transition-opacity duration-200',
           showClearIcon ? 'opacity-100' : 'opacity-0',
