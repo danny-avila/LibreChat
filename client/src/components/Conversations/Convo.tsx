@@ -127,6 +127,7 @@ export default function Conversation({ conversation, retainView, toggleNav }: Co
     conversationId,
     isPopoverActive,
     setIsPopoverActive,
+    conversation,
   };
 
   return (
