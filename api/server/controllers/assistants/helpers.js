@@ -138,6 +138,7 @@ const listAssistantsForAzure = async ({ req, res, version, azureConfig = {}, que
 
     /* The specified model is only necessary to
     fetch assistants for the shared instance */
+    req.body = req.body || {}; // Express 5: req.body is undefined instead of {} when no body parser runs
     req.body.model = currentModelTuples[0][0];
     promises.push(listAllAssistants({ req, res, version, query }));
   }
