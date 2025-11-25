@@ -323,12 +323,8 @@ function createGeminiImageTool(fields = {}) {
       const safetyBlock = checkForSafetyBlock(apiResponse);
       if (safetyBlock) {
         logger.warn('[GeminiImageGen] Safety block:', safetyBlock);
-        const errorMsg =
-          'Image blocked by content safety filters. Please try different content.';
-        return [
-          [{ type: ContentTypes.TEXT, text: errorMsg }],
-          { content: [], file_ids: [] },
-        ];
+        const errorMsg = 'Image blocked by content safety filters. Please try different content.';
+        return [[{ type: ContentTypes.TEXT, text: errorMsg }], { content: [], file_ids: [] }];
       }
 
       // Extract image data
@@ -370,7 +366,7 @@ function createGeminiImageTool(fields = {}) {
           // Fallback to local
           try {
             imageUrl = await saveImageLocally(imageData, 'png', userId);
-          } catch (error) {
+          } catch (_error) {
             imageUrl = `data:image/png;base64,${imageData}`;
           }
         }
