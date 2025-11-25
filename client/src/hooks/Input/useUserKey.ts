@@ -12,8 +12,6 @@ const useUserKey = (endpoint: string) => {
 
   if (azure) {
     keyName = EModelEndpoint.azureOpenAI;
-  } else if (keyName === EModelEndpoint.gptPlugins) {
-    keyName = EModelEndpoint.openAI;
   }
 
   const updateKey = useUpdateUserKeysMutation();

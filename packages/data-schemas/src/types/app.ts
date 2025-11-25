@@ -99,8 +99,6 @@ export interface AppConfig {
     bedrock?: Partial<TEndpoint>;
     /** Anthropic endpoint configuration */
     anthropic?: Partial<TEndpoint>;
-    /** GPT plugins endpoint configuration */
-    gptPlugins?: Partial<TEndpoint>;
     /** Azure OpenAI endpoint configuration */
     azureOpenAI?: TAzureConfig;
     /** Assistants endpoint configuration */

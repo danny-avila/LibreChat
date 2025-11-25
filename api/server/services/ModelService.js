@@ -9,6 +9,7 @@ const {
   EModelEndpoint,
 } = require('librechat-data-provider');
 const { OllamaClient } = require('~/app/clients/OllamaClient');
+const { config } = require('./Config/EndpointService');
 const getLogStores = require('~/cache/getLogStores');
 const { extractBaseURL } = require('~/utils');
 
@@ -26,8 +27,6 @@ const splitAndTrim = (input) => {
     .map((item) => item.trim())
     .filter(Boolean);
 };
-
-const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService').config;
 
 /**
  * Fetches OpenAI models from the specified base API path or Azure, based on the provided configuration.
@@ -138,11 +137,11 @@ const fetchModels = async ({
  * @param {string} opts.user - The user ID to send to the API.
  * @param {boolean} [opts.azure=false] - Whether to fetch models from Azure.
  * @param {boolean} [opts.assistants=false] - Whether to fetch models from Azure.
- * @param {boolean} [opts.plugins=false] - Whether to fetch models from the plugins.
  * @param {string[]} [_models=[]] - The models to use as a fallback.
  */
 const fetchOpenAIModels = async (opts, _models = []) => {
   let models = _models.slice() ?? [];
+  const { openAIApiKey } = config;
   let apiKey = openAIApiKey;
   const openaiBaseURL = 'https://api.openai.com/v1';
   let baseURL = openaiBaseURL;
@@ -204,7 +203,6 @@ const fetchOpenAIModels = async (opts, _models = []) => {
  * @param {object} opts - The options for fetching the models.
  * @param {string} opts.user - The user ID to send to the API.
  * @param {boolean} [opts.azure=false] - Whether to fetch models from Azure.
- * @param {boolean} [opts.plugins=false] - Whether to fetch models for the plugins endpoint.
  * @param {boolean} [opts.assistants=false] - Whether to fetch models for the Assistants endpoint.
  */
 const getOpenAIModels = async (opts) => {
@@ -216,24 +214,11 @@ const getOpenAIModels = async (opts) => {
     models = defaultModels[EModelEndpoint.azureAssistants];
   }
 
-  if (opts.plugins) {
-    models = models.filter(
-      (model) =>
-        !model.includes('text-davinci') &&
-        !model.includes('instruct') &&
-        !model.includes('0613') &&
-        !model.includes('0314') &&
-        !model.includes('0301'),
-    );
-  }
-
   let key;
   if (opts.assistants) {
     key = 'ASSISTANTS_MODELS';
   } else if (opts.azure) {
     key = 'AZURE_OPENAI_MODELS';
-  } else if (opts.plugins) {
-    key = 'PLUGIN_MODELS';
   } else {
     key = 'OPENAI_MODELS';
   }
@@ -243,20 +228,11 @@ const getOpenAIModels = async (opts) => {
     return models;
   }
 
-  if (userProvidedOpenAI) {
+  if (config.userProvidedOpenAI) {
     return models;
   }
 
   return await fetchOpenAIModels(opts, models);
-};
-
-const getChatGPTBrowserModels = () => {
-  let models = ['text-davinci-002-render-sha', 'gpt-4'];
-  if (process.env.CHATGPT_MODELS) {
-    models = splitAndTrim(process.env.CHATGPT_MODELS);
-  }
-
-  return models;
 };
 
 /**
@@ -348,8 +324,7 @@ module.exports = {
   fetchModels,
   splitAndTrim,
   getOpenAIModels,
-  getBedrockModels,
-  getChatGPTBrowserModels,
-  getAnthropicModels,
   getGoogleModels,
+  getBedrockModels,
+  getAnthropicModels,
 };
