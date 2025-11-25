@@ -29,6 +29,13 @@ const toggleSwitchConfigs = [
     hoverCardText: undefined,
     key: 'hideSidePanel',
   },
+  {
+    stateAtom: store.keepScreenAwake,
+    localizationKey: 'com_nav_keep_screen_awake',
+    switchId: 'keepScreenAwake',
+    hoverCardText: undefined,
+    key: 'keepScreenAwake',
+  },
 ];
 
 export const ThemeSelector = ({

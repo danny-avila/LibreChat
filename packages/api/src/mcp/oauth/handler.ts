@@ -223,6 +223,23 @@ export class MCPOAuthHandler {
       // Check if we have pre-configured OAuth settings
       if (config?.authorization_url && config?.token_url && config?.client_id) {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for ${serverName}`);
+
+        const skipCodeChallengeCheck =
+          config?.skip_code_challenge_check === true ||
+          process.env.MCP_SKIP_CODE_CHALLENGE_CHECK === 'true';
+        let codeChallengeMethodsSupported: string[];
+
+        if (config?.code_challenge_methods_supported !== undefined) {
+          codeChallengeMethodsSupported = config.code_challenge_methods_supported;
+        } else if (skipCodeChallengeCheck) {
+          codeChallengeMethodsSupported = ['S256', 'plain'];
+          logger.debug(
+            `[MCPOAuth] Code challenge check skip enabled, forcing S256 support for ${serverName}`,
+          );
+        } else {
+          codeChallengeMethodsSupported = ['S256', 'plain'];
+        }
+
         /** Metadata based on pre-configured settings */
         const metadata: OAuthMetadata = {
           authorization_endpoint: config.authorization_url,
@@ -238,10 +255,7 @@ export class MCPOAuthHandler {
             'client_secret_post',
           ],
           response_types_supported: config?.response_types_supported ?? ['code'],
-          code_challenge_methods_supported: config?.code_challenge_methods_supported ?? [
-            'S256',
-            'plain',
-          ],
+          code_challenge_methods_supported: codeChallengeMethodsSupported,
         };
         logger.debug(`[MCPOAuth] metadata for "${serverName}": ${JSON.stringify(metadata)}`);
         const clientInfo: OAuthClientInformation = {

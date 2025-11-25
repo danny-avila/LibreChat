@@ -179,9 +179,10 @@ export const ArtifactCodeEditor = function ({
       bundlerURL: template === 'static' ? config.staticBundlerURL : config.bundlerURL,
     };
   }, [config, template, fileKey]);
-  const [readOnly, setReadOnly] = useState(externalReadOnly ?? isSubmitting ?? false);
+  const initialReadOnly = (externalReadOnly ?? false) || (isSubmitting ?? false);
+  const [readOnly, setReadOnly] = useState(initialReadOnly);
   useEffect(() => {
-    setReadOnly(externalReadOnly ?? isSubmitting ?? false);
+    setReadOnly((externalReadOnly ?? false) || (isSubmitting ?? false));
   }, [isSubmitting, externalReadOnly]);
 
   if (Object.keys(files).length === 0) {

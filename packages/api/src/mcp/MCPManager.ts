@@ -2,9 +2,8 @@ import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
-import type { TokenMethods } from '@librechat/data-schemas';
+import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
-import type { TUser } from 'librechat-data-provider';
 import type { MCPOAuthTokens } from './oauth';
 import type { RequestBody } from '~/types';
 import type * as t from './types';
@@ -49,7 +48,7 @@ export class MCPManager extends UserConnectionManager {
   public async getConnection(
     args: {
       serverName: string;
-      user?: TUser;
+      user?: IUser;
       forceNew?: boolean;
       flowManager?: FlowStateManager<MCPOAuthTokens | null>;
     } & Omit<t.OAuthConnectionOptions, 'useOAuth' | 'user' | 'flowManager'>,
@@ -176,7 +175,7 @@ Please follow these instructions when using tools from the respective MCP server
     oauthEnd,
     customUserVars,
   }: {
-    user?: TUser;
+    user?: IUser;
     serverName: string;
     toolName: string;
     provider: t.Provider;
