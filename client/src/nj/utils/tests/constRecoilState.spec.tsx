@@ -12,10 +12,12 @@ function TestRecoilState<T>({
 }) {
   const [constValue, setConstValue] = useRecoilState<T>(recoilState);
 
+  const value = typeof constValue === 'object' ? JSON.stringify(constValue) : constValue;
+
   return (
     <button
       data-testid="changeRecoilState"
-      title={`Recoil Value=${constValue}`}
+      title={`Recoil Value=${value}`}
       onClick={() => setConstValue(clickState)}
     />
   );
@@ -88,6 +90,37 @@ describe('constRecoilState Tests', () => {
       // Click button (which attempts to change the recoil state), but it should remain unchanged
       fireEvent.click(button);
       expect(button).toHaveAttribute('title', 'Recoil Value=true');
+    });
+
+    test('search is locked to disabled', () => {
+      const defaultState = {
+        enabled: null,
+        query: '',
+        debouncedQuery: '',
+        isSearching: false,
+        isTyping: false,
+      };
+
+      const clickState = {
+        enabled: true,
+        query: 'hello',
+        debouncedQuery: 'hello',
+        isSearching: true,
+        isTyping: true,
+      };
+
+      render(
+        <RecoilRoot>
+          <TestRecoilState recoilState={store.search} clickState={clickState} />
+        </RecoilRoot>,
+      );
+
+      const button = screen.getByTestId('changeRecoilState');
+      expect(button).toHaveAttribute('title', `Recoil Value=${JSON.stringify(defaultState)}`);
+
+      // Click button (which attempts to change the recoil state), but it should remain unchanged
+      fireEvent.click(button);
+      expect(button).toHaveAttribute('title', `Recoil Value=${JSON.stringify(defaultState)}`);
     });
   });
 });
