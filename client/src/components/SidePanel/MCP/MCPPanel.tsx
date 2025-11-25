@@ -194,7 +194,7 @@ function MCPPanelContent() {
                   variant="outline"
                   className="flex-1 justify-start dark:hover:bg-gray-700"
                   onClick={() => handleServerClickToEdit(server.serverName)}
-                  aria-label={localize('com_ui_edit') + ' ' + server.serverName}
+                  aria-label={localize('com_ui_edit_server', { serverName: server.serverName })}
                 >
                   <div className="flex items-center gap-2">
                     <span>{server.serverName}</span>
