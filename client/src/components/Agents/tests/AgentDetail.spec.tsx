@@ -32,7 +32,11 @@ jest.mock('~/hooks', () => ({
     addFavoriteModel: jest.fn(),
     removeFavoriteModel: jest.fn(),
     reorderFavorites: jest.fn(),
-    persistFavorites: jest.fn(),
+    isLoading: false,
+    isError: false,
+    isUpdating: false,
+    fetchError: null,
+    updateError: null,
   })),
 }));
 

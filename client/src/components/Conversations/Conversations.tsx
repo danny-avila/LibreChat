@@ -90,7 +90,7 @@ const Conversations: FC<ConversationsProps> = ({
   setIsChatsExpanded,
 }) => {
   const localize = useLocalize();
-  const { favorites } = useFavorites();
+  const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
 
@@ -152,13 +152,13 @@ const Conversations: FC<ConversationsProps> = ({
 
   useEffect(() => {
     if (cache) {
-      // Only clear the favorites row
+      // Clear the favorites row when favorites change or finish loading
       cache.clear(0, 0);
       if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
         containerRef.current.recomputeRowHeights(0);
       }
     }
-  }, [favorites.length, cache, containerRef]);
+  }, [favorites.length, isFavoritesLoading, cache, containerRef]);
 
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
