@@ -260,36 +260,49 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             <FileFormChat conversation={conversation} />
             {endpoint && (
               <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
-                <TextareaAutosize
-                  {...registerProps}
-                  ref={(e) => {
-                    ref(e);
-                    (textAreaRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = e;
-                  }}
-                  disabled={disableInputs || isNotAppendable}
-                  onPaste={handlePaste}
-                  onKeyDown={handleKeyDown}
-                  onKeyUp={handleKeyUp}
-                  onCompositionStart={handleCompositionStart}
-                  onCompositionEnd={handleCompositionEnd}
-                  id={mainTextareaId}
-                  tabIndex={0}
-                  data-testid="text-input"
-                  rows={1}
-                  onFocus={() => {
-                    handleFocusOrClick();
-                    setIsTextAreaFocused(true);
-                  }}
-                  onBlur={setIsTextAreaFocused.bind(null, false)}
-                  aria-label={localize('com_ui_message_input')}
-                  onClick={handleFocusOrClick}
-                  style={{ height: 44, overflowY: 'auto' }}
-                  className={cn(
-                    baseClasses,
-                    removeFocusRings,
-                    'transition-[max-height] duration-200 disabled:cursor-not-allowed',
+                <div className="relative flex-1">
+                  <TextareaAutosize
+                    {...registerProps}
+                    ref={(e) => {
+                      ref(e);
+                      (textAreaRef as React.MutableRefObject<HTMLTextAreaElement | null>).current =
+                        e;
+                    }}
+                    disabled={disableInputs || isNotAppendable}
+                    onPaste={handlePaste}
+                    onKeyDown={handleKeyDown}
+                    onKeyUp={handleKeyUp}
+                    onCompositionStart={handleCompositionStart}
+                    onCompositionEnd={handleCompositionEnd}
+                    id={mainTextareaId}
+                    tabIndex={0}
+                    data-testid="text-input"
+                    rows={1}
+                    onFocus={() => {
+                      handleFocusOrClick();
+                      setIsTextAreaFocused(true);
+                    }}
+                    onBlur={setIsTextAreaFocused.bind(null, false)}
+                    aria-label={localize('com_ui_message_input')}
+                    onClick={handleFocusOrClick}
+                    style={{ height: 44, overflowY: 'auto' }}
+                    className={cn(
+                      baseClasses,
+                      removeFocusRings,
+                      'transition-[max-height] duration-200 disabled:cursor-not-allowed',
+                    )}
+                  />
+                  {isCollapsed && (
+                    <div
+                      className="pointer-events-none absolute bottom-0 left-0 right-0 h-8"
+                      style={{
+                        background: isTemporary
+                          ? 'linear-gradient(to top, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.08) 20%, rgba(139, 92, 246, 0.05) 60%, transparent 80%)'
+                          : 'linear-gradient(to top, var(--surface-chat) 0%, var(--surface-chat) 20%, transparent 80%)',
+                      }}
+                    />
                   )}
-                />
+                </div>
                 <div className="flex flex-col items-start justify-start pr-2.5 pt-1.5">
                   <CollapseChat
                     isCollapsed={isCollapsed}
