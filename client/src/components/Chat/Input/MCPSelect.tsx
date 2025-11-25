@@ -21,7 +21,7 @@ function MCPSelectContent() {
   const renderSelectedValues = useCallback(
     (values: string[], placeholder?: string) => {
       if (values.length === 0) {
-        return placeholder || localize('com_ui_select') + '...';
+        return placeholder || localize('com_ui_select_placeholder');
       }
       if (values.length === 1) {
         return values[0];
