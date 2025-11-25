@@ -225,6 +225,7 @@ export default function ArchivedChatsTable({
                       })
                     }
                     title={localize('com_ui_unarchive')}
+                    aria-label={localize('com_ui_unarchive')}
                     disabled={unarchiveMutation.isLoading}
                   >
                     {unarchiveMutation.isLoading ? (
@@ -246,6 +247,7 @@ export default function ArchivedChatsTable({
                       setIsDeleteOpen(true);
                     }}
                     title={localize('com_ui_delete')}
+                    aria-label={localize('com_ui_delete')}
                   >
                     <TrashIcon className="size-4" />
                   </Button>
