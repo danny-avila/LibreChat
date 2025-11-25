@@ -19,9 +19,11 @@ export default function useManualCopyToClipboard(
 
       // Create a temporary container for the selected content
       const tempDiv = document.createElement('div');
-      const range = selection.getRangeAt(0);
-      const clonedSelection = range.cloneContents();
-      tempDiv.appendChild(clonedSelection);
+      const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+      const clonedSelection = range ? range.cloneContents() : null;
+      if (clonedSelection) {
+        tempDiv.appendChild(clonedSelection);
+      }
 
       const stripInlineStyles = (element: Element) => {
         // Remove style attribute (the main culprit for bloat)
