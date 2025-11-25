@@ -203,11 +203,6 @@ const optionSettingsFamily = atomFamily<TOptionSettings, string | number>({
   default: {},
 });
 
-const showAgentSettingsFamily = atomFamily({
-  key: 'showAgentSettingsByIndex',
-  default: false,
-});
-
 const showPopoverFamily = atomFamily({
   key: 'showPopoverByIndex',
   default: false,
@@ -403,7 +398,6 @@ export default {
   abortScrollFamily,
   isSubmittingFamily,
   optionSettingsFamily,
-  showAgentSettingsFamily,
   showPopoverFamily,
   latestMessageFamily,
   messagesSiblingIdxFamily,

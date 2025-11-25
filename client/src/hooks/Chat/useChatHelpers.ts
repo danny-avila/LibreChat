@@ -130,13 +130,10 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     setSiblingIdx(0);
   };
 
+  const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
   const [showPopover, setShowPopover] = useRecoilState(store.showPopoverFamily(index));
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScrollFamily(index));
-  const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
   const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
-  const [showAgentSettings, setShowAgentSettings] = useRecoilState(
-    store.showAgentSettingsFamily(index),
-  );
 
   return {
     newConversation,
@@ -167,8 +164,6 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     setPreset,
     optionSettings,
     setOptionSettings,
-    showAgentSettings,
-    setShowAgentSettings,
     files,
     setFiles,
     filesLoading,
