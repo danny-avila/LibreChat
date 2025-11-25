@@ -91,7 +91,7 @@
     "connect-redis": "^8.1.0",
     "diff": "^7.0.0",
     "eventsource": "^3.0.2",
-    "express": "^4.21.2",
+    "express": "^5.1.0",
     "express-session": "^1.18.2",
     "firebase": "^11.0.2",
     "form-data": "^4.0.4",
