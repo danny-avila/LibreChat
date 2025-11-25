@@ -125,7 +125,9 @@ const VersionCard = ({
 
         <div className="flex items-center gap-1 lg:flex-col xl:flex-row">
           {authorName && (
-            <Label className="text-left text-xs text-text-secondary">by {authorName}</Label>
+            <Label className="text-left text-xs text-text-secondary">
+              {localize('com_ui_by_author', { 0: authorName })}
+            </Label>
           )}
 
           {tags.length > 0 && <VersionTags tags={tags} />}
