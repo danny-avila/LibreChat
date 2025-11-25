@@ -149,9 +149,9 @@ const AdminSettings = () => {
         </Button>
       </OGDialogTrigger>
       <OGDialogContent className="border-border-light bg-surface-primary text-text-primary lg:w-1/4">
-        <OGDialogTitle>{`${localize('com_ui_admin_settings')} - ${localize(
-          'com_ui_memories',
-        )}`}</OGDialogTitle>
+        <OGDialogTitle>
+          {localize('com_ui_admin_settings_section', { section: localize('com_ui_memories') })}
+        </OGDialogTitle>
         <div className="p-2">
           {/* Role selection dropdown */}
           <div className="flex items-center gap-2">
