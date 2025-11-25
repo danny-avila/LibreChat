@@ -297,7 +297,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                       className="pointer-events-none absolute bottom-0 left-0 right-0 h-8"
                       style={{
                         background: isTemporary
-                          ? 'linear-gradient(to top, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.08) 20%, rgba(139, 92, 246, 0.05) 60%, transparent 80%)'
+                          ? 'linear-gradient(to top, #E8E6EF 0%, #E8E6EF 20%, transparent 80%)'
                           : 'linear-gradient(to top, var(--surface-chat) 0%, var(--surface-chat) 20%, transparent 80%)',
                       }}
                     />
