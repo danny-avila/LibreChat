@@ -114,7 +114,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
                   variant="ghost"
                   onClick={(e) => e.stopPropagation()}
                   className="h-8 w-8 p-0 hover:bg-surface-hover"
-                  aria-label={localize('com_ui_rename_prompt') + ' ' + group.name}
+                  aria-label={localize('com_ui_rename_prompt_name', { name: group.name })}
                 >
                   <Pen className="icon-sm text-text-primary" aria-hidden="true" />
                 </Button>
@@ -130,7 +130,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
                         value={nameInputValue}
                         onChange={(e) => setNameInputValue(e.target.value)}
                         className="w-full"
-                        aria-label={localize('com_ui_rename_prompt') + ' ' + group.name}
+                        aria-label={localize('com_ui_rename_prompt_name', { name: group.name })}
                       />
                     </div>
                   </div>
@@ -153,7 +153,7 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
                   variant="ghost"
                   className="h-8 w-8 p-0 hover:bg-surface-hover"
                   onClick={(e) => e.stopPropagation()}
-                  aria-label={localize('com_ui_delete_prompt') + ' ' + group.name}
+                  aria-label={localize('com_ui_delete_prompt_name', { name: group.name })}
                 >
                   <TrashIcon className="icon-sm text-text-primary" aria-hidden="true" />
                 </Button>

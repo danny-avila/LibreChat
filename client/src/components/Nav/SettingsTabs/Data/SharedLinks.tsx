@@ -251,7 +251,9 @@ export default function SharedLinks() {
               onClick={() => {
                 window.open(`/c/${row.original.conversationId}`, '_blank');
               }}
-              aria-label={`${localize('com_ui_view_source')} - ${row.original.title || localize('com_ui_untitled')}`}
+              aria-label={localize('com_ui_view_source', {
+                title: row.original.title || localize('com_ui_untitled'),
+              })}
             >
               <MessageSquare className="size-4" aria-hidden="true" />
             </Button>
@@ -262,7 +264,9 @@ export default function SharedLinks() {
                 setDeleteRow(row.original);
                 setIsDeleteOpen(true);
               }}
-              aria-label={`${localize('com_ui_delete')} - ${row.original.title || localize('com_ui_untitled')}`}
+              aria-label={localize('com_ui_delete_shared_link', {
+                title: row.original.title || localize('com_ui_untitled'),
+              })}
             >
               <TrashIcon className="size-4" aria-hidden="true" />
             </Button>

@@ -72,11 +72,7 @@ function ChatGroupItem({
               <button
                 id={`prompt-actions-${group._id}`}
                 type="button"
-                aria-label={
-                  localize('com_ui_sr_actions_menu', { 0: group.name }) +
-                  ' ' +
-                  localize('com_ui_prompt')
-                }
+                aria-label={localize('com_ui_sr_actions_menu', { name: group.name })}
                 onClick={(e) => {
                   e.stopPropagation();
                 }}
