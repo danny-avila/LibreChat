@@ -290,7 +290,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                     'transition-[max-height] duration-200 disabled:cursor-not-allowed',
                   )}
                 />
-                <div className="flex flex-col items-start justify-start pt-1.5">
+                <div className="flex flex-col items-start justify-start pr-2.5 pt-1.5">
                   <CollapseChat
                     isCollapsed={isCollapsed}
                     isScrollable={isMoreThanThreeRows}
