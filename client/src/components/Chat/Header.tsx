@@ -45,7 +45,7 @@ export default function Header() {
               <motion.div
                 className={`flex items-center gap-2`}
                 initial={{ width: 0, opacity: 0 }}
-                animate={{ width: '100%', opacity: 1 }}
+                animate={{ width: 'auto', opacity: 1 }}
                 exit={{ width: 0, opacity: 0 }}
                 transition={{ duration: 0.2 }}
                 key="header-buttons"
@@ -56,7 +56,7 @@ export default function Header() {
             )}
           </AnimatePresence>
 
-          <div className={`ml-2 flex items-center gap-2`}>
+          <div className={navVisible ? 'flex items-center gap-2' : 'ml-2 flex items-center gap-2'}>
             <ModelSelector startupConfig={startupConfig} />
             {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
             {hasAccessToBookmarks === true && <BookmarkMenu />}
