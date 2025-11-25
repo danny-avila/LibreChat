@@ -145,7 +145,7 @@ const EditPresetDialog = ({
     <OGDialog open={presetModalVisible} onOpenChange={handleOpenChange}>
       <OGDialogContent className="h-[100dvh] max-h-[100dvh] w-full max-w-full overflow-y-auto bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300 md:h-auto md:max-h-[90vh] md:max-w-[75vw] md:rounded-lg lg:max-w-[950px]">
         <OGDialogTitle>
-          {`${localize('com_ui_edit')} ${localize('com_endpoint_preset')} - ${preset?.title}`}
+          {localize('com_ui_edit_preset_title', { title: preset?.title })}
         </OGDialogTitle>
 
         <div className="flex w-full flex-col gap-2 px-1 pb-4 md:gap-4">
