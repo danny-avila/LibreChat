@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Dispatcher } from 'undici';
-import { anthropicSchema } from 'librechat-data-provider';
+import { anthropicSchema, TAnthropicBetaFeatures } from 'librechat-data-provider';
 import type { AnthropicClientOptions } from '@librechat/agents';
 import type { LLMConfigResult } from './openai';
 
@@ -60,6 +60,8 @@ export interface AnthropicConfigOptions {
   addParams?: Record<string, unknown>;
   /** Parameters to drop/exclude from the configuration */
   dropParams?: string[];
+  /** Anthropic beta features configuration from librechat.yaml */
+  betaFeatures?: TAnthropicBetaFeatures;
 }
 
 /**

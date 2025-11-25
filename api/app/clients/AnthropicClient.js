@@ -203,7 +203,11 @@ class AnthropicClient extends BaseClient {
       options.baseURL = this.options.reverseProxyUrl;
     }
 
-    const headers = getClaudeHeaders(requestOptions?.model, this.supportsCacheControl);
+    const headers = getClaudeHeaders(
+      requestOptions?.model,
+      this.supportsCacheControl,
+      this.options.betaFeatures ?? {},
+    );
     if (headers) {
       options.defaultHeaders = headers;
     }

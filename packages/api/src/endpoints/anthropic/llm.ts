@@ -101,7 +101,11 @@ function getLLMConfig(
 
   const supportsCacheControl =
     systemOptions.promptCache === true && checkPromptCacheSupport(requestOptions.model ?? '');
-  const headers = getClaudeHeaders(requestOptions.model ?? '', supportsCacheControl);
+  const headers = getClaudeHeaders(
+    requestOptions.model ?? '',
+    supportsCacheControl,
+    options.betaFeatures ?? {},
+  );
   if (headers && requestOptions.clientOptions) {
     requestOptions.clientOptions.defaultHeaders = headers;
   }
