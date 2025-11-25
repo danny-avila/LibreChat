@@ -1497,21 +1497,12 @@ button {
   scrollbar-color: var(--border-medium) transparent;
 }
 
-.dark .scrollbar-hover:hover {
-  scrollbar-color: var(--border-medium) transparent;
-}
-
 .scrollbar-hover::-webkit-scrollbar-thumb {
   background-color: transparent;
   transition: background-color 0.3s ease 0.5s;
 }
 
 .scrollbar-hover:hover::-webkit-scrollbar-thumb {
-  background-color: var(--border-medium);
-  transition-delay: 0s;
-}
-
-.dark .scrollbar-hover:hover::-webkit-scrollbar-thumb {
   background-color: var(--border-medium);
   transition-delay: 0s;
 }
