@@ -105,7 +105,7 @@ async function getEndpointsConfig(req) {
       availableRegions,
     };
   }
-  
+
   const endpointsConfig = orderEndpointsConfig(mergedConfig);
 
   await cache.set(CacheKeys.ENDPOINT_CONFIG, endpointsConfig);

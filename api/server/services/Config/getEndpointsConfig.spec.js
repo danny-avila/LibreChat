@@ -14,14 +14,14 @@ describe('getEndpointsConfig', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     mockCache = {
       get: jest.fn().mockResolvedValue(null),
       set: jest.fn().mockResolvedValue(undefined),
     };
-    
+
     getLogStores.mockReturnValue(mockCache);
-    
+
     mockRequest = {
       user: { id: 'test-user', role: 'user' },
       config: null,
@@ -208,7 +208,10 @@ describe('getEndpointsConfig', () => {
       const result = await getEndpointsConfig(mockRequest);
 
       expect(result[EModelEndpoint.bedrock].availableRegions).toEqual(['us-east-1', 'eu-west-1']);
-      expect(result[EModelEndpoint.google].availableRegions).toEqual(['us-central1', 'europe-west1']);
+      expect(result[EModelEndpoint.google].availableRegions).toEqual([
+        'us-central1',
+        'europe-west1',
+      ]);
     });
   });
 
