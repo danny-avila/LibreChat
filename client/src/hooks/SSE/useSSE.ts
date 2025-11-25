@@ -123,8 +123,7 @@ export default function useSSE(
 
       if (data.final != null) {
         clearDraft(submission.conversation?.conversationId);
-        const { plugins } = data;
-        finalHandler(data, { ...submission, plugins } as EventSubmission);
+        finalHandler(data, submission as EventSubmission);
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
         console.log('final', data);
         return;
@@ -154,7 +153,6 @@ export default function useSSE(
         contentHandler({ data, submission: submission as EventSubmission });
       } else {
         const text = data.text ?? data.response;
-        const { plugin, plugins } = data;
 
         const initialResponse = {
           ...(submission.initialResponse as TMessage),
@@ -163,7 +161,7 @@ export default function useSSE(
         };
 
         if (data.message != null) {
-          messageHandler(text, { ...submission, plugin, plugins, userMessage, initialResponse });
+          messageHandler(text, { ...submission, userMessage, initialResponse });
         }
       }
     });
