@@ -471,6 +471,12 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
     }
 
     if (isEnabled(process.env.OPENID_EXPOSE_SUB_COOKIE)) {
+      if (!process.env.JWT_REFRESH_SECRET) {
+        logger.error(
+          '[setOpenIDAuthTokens] JWT_REFRESH_SECRET not configured for openid_sub cookie',
+        );
+        return tokenset.access_token;
+      }
       try {
         const decoded = jwt.decode(tokenset.access_token);
         if (decoded?.sub) {

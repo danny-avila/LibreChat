@@ -90,7 +90,6 @@ jest.mock('~/server/utils', () => ({
 }));
 
 const { setOpenIDAuthTokens } = require('../AuthService');
-const { logger } = require('@librechat/data-schemas');
 
 describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
   let mockRes;
@@ -118,7 +117,13 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
   });
 
   afterEach(() => {
-    delete process.env.NODE_ENV;
+    // Restore original NODE_ENV value
+    if (process.env._ORIGINAL_NODE_ENV) {
+      process.env.NODE_ENV = process.env._ORIGINAL_NODE_ENV;
+      delete process.env._ORIGINAL_NODE_ENV;
+    } else {
+      delete process.env.NODE_ENV;
+    }
     delete process.env.JWT_REFRESH_SECRET;
     delete process.env.OPENID_REUSE_TOKENS;
     delete process.env.REFRESH_TOKEN_EXPIRY;
@@ -311,6 +316,62 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
         'token_provider',
         'openid_sub',
       ]);
+    });
+  });
+
+  describe('error handling and edge cases', () => {
+    it('should handle missing JWT_REFRESH_SECRET gracefully', () => {
+      const { logger } = require('@librechat/data-schemas');
+      delete process.env.JWT_REFRESH_SECRET;
+      process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
+
+      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+
+      const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
+      expect(openidSubCall).toBeUndefined();
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('JWT_REFRESH_SECRET not configured'),
+      );
+    });
+
+    it('should not create openid_sub cookie when access token has no sub claim', () => {
+      const jwt = require('jsonwebtoken');
+      jwt.decode.mockReturnValueOnce({ aud: 'test-client-id' }); // No sub claim
+
+      process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
+      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+
+      const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
+      expect(openidSubCall).toBeUndefined();
+    });
+
+    it('should not create openid_sub cookie when jwt.decode returns null', () => {
+      const jwt = require('jsonwebtoken');
+      jwt.decode.mockReturnValueOnce(null); // Invalid JWT format
+
+      process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
+      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+
+      const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
+      expect(openidSubCall).toBeUndefined();
+    });
+
+    it('should handle decode errors gracefully', () => {
+      const { logger } = require('@librechat/data-schemas');
+      const jwt = require('jsonwebtoken');
+      jwt.decode.mockImplementationOnce(() => {
+        throw new Error('Invalid token format');
+      });
+
+      process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
+      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
+
+      const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
+      expect(openidSubCall).toBeUndefined();
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to decode access token'),
+        expect.any(Error),
+      );
     });
   });
 });
