@@ -19,17 +19,11 @@ export default function useManualCopyToClipboard(
 
       // Create a temporary container for the selected content
       const tempDiv = document.createElement('div');
-<<<<<<< HEAD
       const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
       const clonedSelection = range ? range.cloneContents() : null;
       if (clonedSelection) {
         tempDiv.appendChild(clonedSelection);
       }
-=======
-      const range = selection.getRangeAt(0);
-      const clonedSelection = range.cloneContents();
-      tempDiv.appendChild(clonedSelection);
->>>>>>> d8de1fcd4f2f1b2de302378d16e5dcf6cfdf9ceb
 
       const stripInlineStyles = (element: Element) => {
         // Remove style attribute (the main culprit for bloat)
@@ -99,5 +93,5 @@ export default function useManualCopyToClipboard(
     return () => {
       container.removeEventListener('copy', handleManualCopy);
     };
-  }, [containerRef, messageData.text, messageData.content, messageData.searchResults]);
+  }, [containerRef]);
 }
