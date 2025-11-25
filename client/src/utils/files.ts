@@ -1,4 +1,11 @@
-import { SheetPaths, TextPaths, FilePaths, CodePaths } from '@librechat/client';
+import {
+  TextPaths,
+  FilePaths,
+  CodePaths,
+  AudioPaths,
+  VideoPaths,
+  SheetPaths,
+} from '@librechat/client';
 import {
   megabyte,
   QueryKeys,
@@ -38,6 +45,18 @@ const artifact = {
   title: 'Code',
 };
 
+const audioFile = {
+  paths: AudioPaths,
+  fill: '#FF6B35',
+  title: 'Audio',
+};
+
+const videoFile = {
+  paths: VideoPaths,
+  fill: '#8B5CF6',
+  title: 'Video',
+};
+
 export const fileTypes = {
   /* Category matches */
   file: {
@@ -47,6 +66,8 @@ export const fileTypes = {
   },
   text: textDocument,
   txt: textDocument,
+  audio: audioFile,
+  video: videoFile,
   // application:,
 
   /* Partial matches */
@@ -214,7 +235,13 @@ export const validateFiles = ({
   toolResource?: string;
   fileConfig: FileConfig | null;
 }) => {
-  const { fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes } = endpointFileConfig;
+  const { fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes, disabled } =
+    endpointFileConfig;
+  /** Block all uploads if the endpoint is explicitly disabled */
+  if (disabled === true) {
+    setError('com_ui_attach_error_disabled');
+    return false;
+  }
   const existingFiles = Array.from(files.values());
   const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
   if (incomingTotalSize === 0) {

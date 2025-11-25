@@ -210,10 +210,15 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
             control={control}
             rules={{ required: true }}
             render={({ field }) => (
-              <Checkbox id="trust" checked={field.value} onCheckedChange={field.onChange} />
+              <Checkbox
+                id="trust-checkbox"
+                checked={field.value}
+                onCheckedChange={field.onChange}
+                aria-labelledby="trust-label"
+              />
             )}
           />
-          <Label htmlFor="trust" className="flex flex-col">
+          <Label id="trust-label" htmlFor="trust-checkbox" className="flex flex-col">
             {localize('com_ui_trust_app')}
             <span className="text-xs text-text-secondary">
               {localize('com_agents_mcp_trust_subtext')}
@@ -269,6 +274,10 @@ export default function MCPInput({ mcp, agent_id, setMCP }: MCPInputProps) {
                   checked={selectedTools.includes(tool)}
                   onCheckedChange={() => handleToolToggle(tool)}
                   className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
+                  aria-label={tool
+                    .split('_')
+                    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                    .join(' ')}
                 />
                 <span className="text-token-text-primary">
                   {tool

@@ -82,7 +82,15 @@ const refreshController = async (req, res) => {
       if (error || !user) {
         return res.status(401).redirect('/login');
       }
-      const token = setOpenIDAuthTokens(tokenset, res, user._id.toString());
+      const token = setOpenIDAuthTokens(tokenset, res, user._id.toString(), refreshToken);
+
+      user.federatedTokens = {
+        access_token: tokenset.access_token,
+        id_token: tokenset.id_token,
+        refresh_token: refreshToken,
+        expires_at: claims.exp,
+      };
+
       return res.status(200).send({ token, user });
     } catch (error) {
       logger.error('[refreshController] OpenID token refresh error', error);
@@ -116,11 +124,15 @@ const refreshController = async (req, res) => {
       const token = await setAuthTokens(userId, res, session);
 
       // trigger OAuth MCP server reconnection asynchronously (best effort)
-      void getOAuthReconnectionManager()
-        .reconnectServers(userId)
-        .catch((err) => {
-          logger.error('Error reconnecting OAuth MCP servers:', err);
-        });
+      try {
+        void getOAuthReconnectionManager()
+          .reconnectServers(userId)
+          .catch((err) => {
+            logger.error('[refreshController] Error reconnecting OAuth MCP servers:', err);
+          });
+      } catch (err) {
+        logger.warn(`[refreshController] Cannot attempt OAuth MCP servers reconnection:`, err);
+      }
 
       res.status(200).send({ token, user });
     } else if (req?.query?.retry) {

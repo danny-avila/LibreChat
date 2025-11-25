@@ -1,9 +1,9 @@
 const path = require('path');
 const { v4 } = require('uuid');
 const axios = require('axios');
-const { logAxiosError } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
+const { logAxiosError, getBasePath } = require('@librechat/api');
 const {
   Tools,
   FileContext,
@@ -41,11 +41,12 @@ const processCodeOutput = async ({
   const appConfig = req.config;
   const currentDate = new Date();
   const baseURL = getCodeBaseURL();
+  const basePath = getBasePath();
   const fileExt = path.extname(name);
   if (!fileExt || !imageExtRegex.test(name)) {
     return {
       filename: name,
-      filepath: `/api/files/code/download/${session_id}/${id}`,
+      filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
       /** Note: expires 24 hours after creation */
       expiresAt: currentDate.getTime() + 86400000,
       conversationId,

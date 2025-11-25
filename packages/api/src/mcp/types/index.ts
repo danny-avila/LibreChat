@@ -1,18 +1,17 @@
 import { z } from 'zod';
 import {
+  Tools,
   SSEOptionsSchema,
   MCPOptionsSchema,
   MCPServersSchema,
   StdioOptionsSchema,
   WebSocketOptionsSchema,
   StreamableHTTPOptionsSchema,
-  Tools,
 } from 'librechat-data-provider';
-import type { SearchResultData, UIResource, TPlugin, TUser } from 'librechat-data-provider';
+import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
+import type { TokenMethods, JsonSchemaType, IUser } from '@librechat/data-schemas';
 import type * as t from '@modelcontextprotocol/sdk/types.js';
-import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
-import type { JsonSchemaType } from '~/types/zod';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
 
@@ -152,6 +151,8 @@ export type ParsedServerConfig = MCPOptions & {
   oauthMetadata?: Record<string, unknown> | null;
   capabilities?: string;
   tools?: string;
+  toolFunctions?: LCAvailableTools;
+  initDuration?: number;
 };
 
 export interface BasicConnectionOptions {
@@ -160,7 +161,7 @@ export interface BasicConnectionOptions {
 }
 
 export interface OAuthConnectionOptions {
-  user: TUser;
+  user: IUser;
   useOAuth: true;
   requestBody?: RequestBody;
   customUserVars?: Record<string, string>;

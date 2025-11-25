@@ -1,10 +1,9 @@
-import React, { memo, useMemo } from 'react';
-import {
-  SandpackPreview,
-  SandpackProvider,
+import React, { memo, useMemo, type MutableRefObject } from 'react';
+import { SandpackPreview, SandpackProvider } from '@codesandbox/sandpack-react/unstyled';
+import type {
   SandpackProviderProps,
+  SandpackPreviewRef,
 } from '@codesandbox/sandpack-react/unstyled';
-import type { SandpackPreviewRef, PreviewProps } from '@codesandbox/sandpack-react/unstyled';
 import type { TStartupConfig } from 'librechat-data-provider';
 import type { ArtifactFiles } from '~/common';
 import { sharedFiles, sharedOptions } from '~/utils/artifacts';
@@ -13,7 +12,6 @@ export const ArtifactPreview = memo(function ({
   files,
   fileKey,
   template,
-  isMermaid,
   sharedProps,
   previewRef,
   currentCode,
@@ -21,10 +19,9 @@ export const ArtifactPreview = memo(function ({
 }: {
   files: ArtifactFiles;
   fileKey: string;
-  isMermaid: boolean;
   template: SandpackProviderProps['template'];
   sharedProps: Partial<SandpackProviderProps>;
-  previewRef: React.MutableRefObject<SandpackPreviewRef>;
+  previewRef: MutableRefObject<SandpackPreviewRef>;
   currentCode?: string;
   startupConfig?: TStartupConfig;
 }) {
@@ -38,9 +35,7 @@ export const ArtifactPreview = memo(function ({
     }
     return {
       ...files,
-      [fileKey]: {
-        code,
-      },
+      [fileKey]: { code },
     };
   }, [currentCode, files, fileKey]);
 
@@ -48,22 +43,11 @@ export const ArtifactPreview = memo(function ({
     if (!startupConfig) {
       return sharedOptions;
     }
-    const _options: typeof sharedOptions = {
+    return {
       ...sharedOptions,
       bundlerURL: template === 'static' ? startupConfig.staticBundlerURL : startupConfig.bundlerURL,
     };
-
-    return _options;
   }, [startupConfig, template]);
-
-  const style: PreviewProps['style'] | undefined = useMemo(() => {
-    if (isMermaid) {
-      return {
-        backgroundColor: '#282C34',
-      };
-    }
-    return;
-  }, [isMermaid]);
 
   if (Object.keys(artifactFiles).length === 0) {
     return null;
@@ -71,10 +55,7 @@ export const ArtifactPreview = memo(function ({
 
   return (
     <SandpackProvider
-      files={{
-        ...artifactFiles,
-        ...sharedFiles,
-      }}
+      files={{ ...artifactFiles, ...sharedFiles }}
       options={options}
       {...sharedProps}
       template={template}
@@ -84,7 +65,6 @@ export const ArtifactPreview = memo(function ({
         showRefreshButton={false}
         tabIndex={0}
         ref={previewRef}
-        style={style}
       />
     </SandpackProvider>
   );

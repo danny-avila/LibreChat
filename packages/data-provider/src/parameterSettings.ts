@@ -244,9 +244,10 @@ const openAIParams: Record<string, SettingDefinition> = {
     description: 'com_endpoint_openai_reasoning_effort',
     descriptionCode: true,
     type: 'enum',
-    default: ReasoningEffort.none,
+    default: ReasoningEffort.unset,
     component: 'slider',
     options: [
+      ReasoningEffort.unset,
       ReasoningEffort.none,
       ReasoningEffort.minimal,
       ReasoningEffort.low,
@@ -254,6 +255,7 @@ const openAIParams: Record<string, SettingDefinition> = {
       ReasoningEffort.high,
     ],
     enumMappings: {
+      [ReasoningEffort.unset]: 'com_ui_auto',
       [ReasoningEffort.none]: 'com_ui_none',
       [ReasoningEffort.minimal]: 'com_ui_minimal',
       [ReasoningEffort.low]: 'com_ui_low',
@@ -305,7 +307,7 @@ const openAIParams: Record<string, SettingDefinition> = {
       ReasoningSummary.detailed,
     ],
     enumMappings: {
-      [ReasoningSummary.none]: 'com_ui_none',
+      [ReasoningSummary.none]: 'com_ui_unset',
       [ReasoningSummary.auto]: 'com_ui_auto',
       [ReasoningSummary.concise]: 'com_ui_concise',
       [ReasoningSummary.detailed]: 'com_ui_detailed',
@@ -494,6 +496,19 @@ const bedrock: Record<string, SettingDefinition> = {
     default: 0.999,
     range: { min: 0, max: 1, step: 0.01 },
   }),
+  promptCache: {
+    key: 'promptCache',
+    label: 'com_endpoint_prompt_cache',
+    labelCode: true,
+    type: 'boolean',
+    description: 'com_endpoint_anthropic_prompt_cache',
+    descriptionCode: true,
+    default: true,
+    component: 'switch',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
+  },
 };
 
 const mistral: Record<string, SettingDefinition> = {
@@ -755,6 +770,7 @@ const bedrockAnthropic: SettingsConfiguration = [
   baseDefinitions.stop,
   librechat.resendFiles,
   bedrock.region,
+  bedrock.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
   librechat.fileTokenLimit,
@@ -792,6 +808,7 @@ const bedrockGeneral: SettingsConfiguration = [
   meta.topP,
   librechat.resendFiles,
   bedrock.region,
+  bedrock.promptCache,
   librechat.fileTokenLimit,
 ];
 
@@ -810,6 +827,7 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   bedrock.topK,
   librechat.resendFiles,
   bedrock.region,
+  bedrock.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
   librechat.fileTokenLimit,
@@ -859,6 +877,7 @@ const bedrockGeneralCol2: SettingsConfiguration = [
   meta.topP,
   librechat.resendFiles,
   bedrock.region,
+  bedrock.promptCache,
   librechat.fileTokenLimit,
 ];
 

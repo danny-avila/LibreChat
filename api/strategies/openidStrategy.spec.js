@@ -18,6 +18,8 @@ jest.mock('~/server/services/Config', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   isEnabled: jest.fn(() => false),
+  isEmailDomainAllowed: jest.fn(() => true),
+  findOpenIDUser: jest.requireActual('@librechat/api').findOpenIDUser,
   getBalanceConfig: jest.fn(() => ({
     enabled: false,
   })),
@@ -125,6 +127,9 @@ describe('setupOpenId', () => {
     process.env.OPENID_REQUIRED_ROLE = 'requiredRole';
     process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roles';
     process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'id';
+    process.env.OPENID_ADMIN_ROLE = 'admin';
+    process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'permissions';
+    process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'id';
     delete process.env.OPENID_USERNAME_CLAIM;
     delete process.env.OPENID_NAME_CLAIM;
     delete process.env.PROXY;
@@ -133,6 +138,7 @@ describe('setupOpenId', () => {
     // Default jwtDecode mock returns a token that includes the required role.
     jwtDecode.mockReturnValue({
       roles: ['requiredRole'],
+      permissions: ['admin'],
     });
 
     // By default, assume that no user is found, so createUser will be called
@@ -440,5 +446,516 @@ describe('setupOpenId', () => {
     const callOptions = OpenIDStrategy.mock.calls[OpenIDStrategy.mock.calls.length - 1][0];
     expect(callOptions.usePKCE).toBe(false);
     expect(callOptions.params?.code_challenge_method).toBeUndefined();
+  });
+
+  it('should attach federatedTokens to user object for token propagation', async () => {
+    // Arrange - setup tokenset with access token, refresh token, and expiration
+    const tokensetWithTokens = {
+      ...tokenset,
+      access_token: 'mock_access_token_abc123',
+      refresh_token: 'mock_refresh_token_xyz789',
+      expires_at: 1234567890,
+    };
+
+    // Act - validate with the tokenset containing tokens
+    const { user } = await validate(tokensetWithTokens);
+
+    // Assert - verify federatedTokens object is attached with correct values
+    expect(user.federatedTokens).toBeDefined();
+    expect(user.federatedTokens).toEqual({
+      access_token: 'mock_access_token_abc123',
+      refresh_token: 'mock_refresh_token_xyz789',
+      expires_at: 1234567890,
+    });
+  });
+
+  it('should include tokenset along with federatedTokens', async () => {
+    // Arrange
+    const tokensetWithTokens = {
+      ...tokenset,
+      access_token: 'test_access_token',
+      refresh_token: 'test_refresh_token',
+      expires_at: 9999999999,
+    };
+
+    // Act
+    const { user } = await validate(tokensetWithTokens);
+
+    // Assert - both tokenset and federatedTokens should be present
+    expect(user.tokenset).toBeDefined();
+    expect(user.federatedTokens).toBeDefined();
+    expect(user.tokenset.access_token).toBe('test_access_token');
+    expect(user.federatedTokens.access_token).toBe('test_access_token');
+  });
+
+  it('should set role to "ADMIN" if OPENID_ADMIN_ROLE is set and user has that role', async () => {
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert – verify that the user role is set to "ADMIN"
+    expect(user.role).toBe('ADMIN');
+  });
+
+  it('should not set user role if OPENID_ADMIN_ROLE is set but the user does not have that role', async () => {
+    // Arrange – simulate a token without the admin permission
+    jwtDecode.mockReturnValue({
+      roles: ['requiredRole'],
+      permissions: ['not-admin'],
+    });
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert – verify that the user role is not defined
+    expect(user.role).toBeUndefined();
+  });
+
+  it('should demote existing admin user when admin role is removed from token', async () => {
+    // Arrange – simulate an existing user who is currently an admin
+    const existingAdminUser = {
+      _id: 'existingAdminId',
+      provider: 'openid',
+      email: tokenset.claims().email,
+      openidId: tokenset.claims().sub,
+      username: 'adminuser',
+      name: 'Admin User',
+      role: 'ADMIN',
+    };
+
+    findUser.mockImplementation(async (query) => {
+      if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+        return existingAdminUser;
+      }
+      return null;
+    });
+
+    // Token without admin permission
+    jwtDecode.mockReturnValue({
+      roles: ['requiredRole'],
+      permissions: ['not-admin'],
+    });
+
+    const { logger } = require('@librechat/data-schemas');
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert – verify that the user was demoted
+    expect(user.role).toBe('USER');
+    expect(updateUser).toHaveBeenCalledWith(
+      existingAdminUser._id,
+      expect.objectContaining({
+        role: 'USER',
+      }),
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining('demoted from admin - role no longer present in token'),
+    );
+  });
+
+  it('should NOT demote admin user when admin role env vars are not configured', async () => {
+    // Arrange – remove admin role env vars
+    delete process.env.OPENID_ADMIN_ROLE;
+    delete process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH;
+    delete process.env.OPENID_ADMIN_ROLE_TOKEN_KIND;
+
+    await setupOpenId();
+    verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+    // Simulate an existing admin user
+    const existingAdminUser = {
+      _id: 'existingAdminId',
+      provider: 'openid',
+      email: tokenset.claims().email,
+      openidId: tokenset.claims().sub,
+      username: 'adminuser',
+      name: 'Admin User',
+      role: 'ADMIN',
+    };
+
+    findUser.mockImplementation(async (query) => {
+      if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+        return existingAdminUser;
+      }
+      return null;
+    });
+
+    jwtDecode.mockReturnValue({
+      roles: ['requiredRole'],
+    });
+
+    // Act
+    const { user } = await validate(tokenset);
+
+    // Assert – verify that the admin user was NOT demoted
+    expect(user.role).toBe('ADMIN');
+    expect(updateUser).toHaveBeenCalledWith(
+      existingAdminUser._id,
+      expect.objectContaining({
+        role: 'ADMIN',
+      }),
+    );
+  });
+
+  describe('lodash get - nested path extraction', () => {
+    it('should extract roles from deeply nested token path', async () => {
+      process.env.OPENID_REQUIRED_ROLE = 'app-user';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'resource_access.my-client.roles';
+
+      jwtDecode.mockReturnValue({
+        resource_access: {
+          'my-client': {
+            roles: ['app-user', 'viewer'],
+          },
+        },
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(user).toBeTruthy();
+      expect(user.email).toBe(tokenset.claims().email);
+    });
+
+    it('should extract roles from three-level nested path', async () => {
+      process.env.OPENID_REQUIRED_ROLE = 'editor';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'data.access.permissions.roles';
+
+      jwtDecode.mockReturnValue({
+        data: {
+          access: {
+            permissions: {
+              roles: ['editor', 'reader'],
+            },
+          },
+        },
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(user).toBeTruthy();
+    });
+
+    it('should log error and reject login when required role path does not exist in token', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      process.env.OPENID_REQUIRED_ROLE = 'app-user';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'resource_access.nonexistent.roles';
+
+      jwtDecode.mockReturnValue({
+        resource_access: {
+          'my-client': {
+            roles: ['app-user'],
+          },
+        },
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user, details } = await validate(tokenset);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Key 'resource_access.nonexistent.roles' not found or invalid type in id token!",
+        ),
+      );
+      expect(user).toBe(false);
+      expect(details.message).toContain('role to log in');
+    });
+
+    it('should handle missing intermediate nested path gracefully', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      process.env.OPENID_REQUIRED_ROLE = 'user';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'org.team.roles';
+
+      jwtDecode.mockReturnValue({
+        org: {
+          other: 'value',
+        },
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("Key 'org.team.roles' not found or invalid type in id token!"),
+      );
+      expect(user).toBe(false);
+    });
+
+    it('should extract admin role from nested path in access token', async () => {
+      process.env.OPENID_ADMIN_ROLE = 'admin';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'realm_access.roles';
+      process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'access';
+
+      jwtDecode.mockImplementation((token) => {
+        if (token === 'fake_access_token') {
+          return {
+            realm_access: {
+              roles: ['admin', 'user'],
+            },
+          };
+        }
+        return {
+          roles: ['requiredRole'],
+        };
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('ADMIN');
+    });
+
+    it('should extract admin role from nested path in userinfo', async () => {
+      process.env.OPENID_ADMIN_ROLE = 'admin';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'organization.permissions';
+      process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'userinfo';
+
+      const userinfoWithNestedGroups = {
+        ...tokenset.claims(),
+        organization: {
+          permissions: ['admin', 'write'],
+        },
+      };
+
+      require('openid-client').fetchUserInfo.mockResolvedValue({
+        organization: {
+          permissions: ['admin', 'write'],
+        },
+      });
+
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole'],
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate({
+        ...tokenset,
+        claims: () => userinfoWithNestedGroups,
+      });
+
+      expect(user.role).toBe('ADMIN');
+    });
+
+    it('should handle boolean admin role value', async () => {
+      process.env.OPENID_ADMIN_ROLE = 'admin';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'is_admin';
+
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole'],
+        is_admin: true,
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('ADMIN');
+    });
+
+    it('should handle string admin role value matching exactly', async () => {
+      process.env.OPENID_ADMIN_ROLE = 'super-admin';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'role';
+
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole'],
+        role: 'super-admin',
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('ADMIN');
+    });
+
+    it('should not set admin role when string value does not match', async () => {
+      process.env.OPENID_ADMIN_ROLE = 'super-admin';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'role';
+
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole'],
+        role: 'regular-user',
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBeUndefined();
+    });
+
+    it('should handle array admin role value', async () => {
+      process.env.OPENID_ADMIN_ROLE = 'site-admin';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'app_roles';
+
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole'],
+        app_roles: ['user', 'site-admin', 'moderator'],
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('ADMIN');
+    });
+
+    it('should not set admin when role is not in array', async () => {
+      process.env.OPENID_ADMIN_ROLE = 'site-admin';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'app_roles';
+
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole'],
+        app_roles: ['user', 'moderator'],
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBeUndefined();
+    });
+
+    it('should handle nested path with special characters in keys', async () => {
+      process.env.OPENID_REQUIRED_ROLE = 'app-user';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'resource_access.my-app-123.roles';
+
+      jwtDecode.mockReturnValue({
+        resource_access: {
+          'my-app-123': {
+            roles: ['app-user'],
+          },
+        },
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(user).toBeTruthy();
+    });
+
+    it('should handle empty object at nested path', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      process.env.OPENID_REQUIRED_ROLE = 'user';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'access.roles';
+
+      jwtDecode.mockReturnValue({
+        access: {},
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("Key 'access.roles' not found or invalid type in id token!"),
+      );
+      expect(user).toBe(false);
+    });
+
+    it('should handle null value at intermediate path', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      process.env.OPENID_REQUIRED_ROLE = 'user';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'data.roles';
+
+      jwtDecode.mockReturnValue({
+        data: null,
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("Key 'data.roles' not found or invalid type in id token!"),
+      );
+      expect(user).toBe(false);
+    });
+
+    it('should reject login with invalid admin role token kind', async () => {
+      process.env.OPENID_ADMIN_ROLE = 'admin';
+      process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH = 'roles';
+      process.env.OPENID_ADMIN_ROLE_TOKEN_KIND = 'invalid';
+
+      const { logger } = require('@librechat/data-schemas');
+
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole', 'admin'],
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      await expect(validate(tokenset)).rejects.toThrow('Invalid admin role token kind');
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Invalid admin role token kind: invalid. Must be one of 'access', 'id', or 'userinfo'",
+        ),
+      );
+    });
+
+    it('should reject login when roles path returns invalid type (object)', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      process.env.OPENID_REQUIRED_ROLE = 'app-user';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roles';
+
+      jwtDecode.mockReturnValue({
+        roles: { admin: true, user: false },
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user, details } = await validate(tokenset);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("Key 'roles' not found or invalid type in id token!"),
+      );
+      expect(user).toBe(false);
+      expect(details.message).toContain('role to log in');
+    });
+
+    it('should reject login when roles path returns invalid type (number)', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      process.env.OPENID_REQUIRED_ROLE = 'user';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roleCount';
+
+      jwtDecode.mockReturnValue({
+        roleCount: 5,
+      });
+
+      await setupOpenId();
+      verifyCallback = require('openid-client/passport').__getVerifyCallback();
+
+      const { user } = await validate(tokenset);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("Key 'roleCount' not found or invalid type in id token!"),
+      );
+      expect(user).toBe(false);
+    });
   });
 });
