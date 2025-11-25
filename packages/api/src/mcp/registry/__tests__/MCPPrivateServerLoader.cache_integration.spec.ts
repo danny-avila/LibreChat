@@ -1,46 +1,59 @@
-import { MCPPrivateServerLoader } from '../MCPPrivateServerLoader';
-import { mcpServersRegistry as registry } from '../MCPServersRegistry';
-import { privateServersLoadStatusCache as loadStatusCache } from '../cache/PrivateServersLoadStatusCache';
 import type * as t from '~/mcp/types';
 import type { MCPServerDB } from 'librechat-data-provider';
 
-const FIXED_TIME = 1699564800000;
-const originalDateNow = Date.now;
-Date.now = jest.fn(() => FIXED_TIME);
-
 describe('MCPPrivateServerLoader Cache Integration Tests', () => {
   let keyvRedisClient: Awaited<typeof import('~/cache/redisClients')>['keyvRedisClient'];
+  let registry: typeof import('../MCPServersRegistry').mcpServersRegistry;
+  let MCPPrivateServerLoader: typeof import('../MCPPrivateServerLoader').MCPPrivateServerLoader;
+  let loadStatusCache: typeof import('../cache/PrivateServersLoadStatusCache').privateServersLoadStatusCache;
   const mockConfig1: t.ParsedServerConfig = {
     command: 'node',
     args: ['server1.js'],
     env: { TEST: 'value1' },
-    lastUpdatedAt: FIXED_TIME,
   };
 
   const mockConfig2: t.ParsedServerConfig = {
     command: 'python',
     args: ['server2.py'],
     env: { TEST: 'value2' },
-    lastUpdatedAt: FIXED_TIME,
   };
 
   const mockConfig3: t.ParsedServerConfig = {
     url: 'http://localhost:3000',
     requiresOAuth: true,
-    lastUpdatedAt: FIXED_TIME,
   };
 
   const mockUpdatedConfig: t.ParsedServerConfig = {
     command: 'node',
     args: ['server1-updated.js'],
     env: { TEST: 'updated', NEW_VAR: 'added' },
-    lastUpdatedAt: FIXED_TIME + 1000,
   };
+  beforeAll(async () => {
+    jest.resetModules();
+    // Set up environment variables for Redis (only if not already set)
+    process.env.USE_REDIS = process.env.USE_REDIS ?? 'true';
+    process.env.USE_REDIS_CLUSTER = process.env.USE_REDIS_CLUSTER ?? 'true';
+    process.env.REDIS_URI = process.env.REDIS_URI ?? 'redis://127.0.0.1:6379';
+    process.env.REDIS_KEY_PREFIX =
+      process.env.REDIS_KEY_PREFIX ?? `MCPPrivateServerLoader-integration-test`;
+
+    // Import modules after setting env vars
+    const registryModule = await import('../MCPServersRegistry');
+    const redisClients = await import('~/cache/redisClients');
+    const MCPPrivateServerLoaderModule = await import('../MCPPrivateServerLoader');
+    const loadStatusCacheLoaderModule = await import('../cache/PrivateServersLoadStatusCache');
+
+    loadStatusCache = loadStatusCacheLoaderModule.privateServersLoadStatusCache;
+    MCPPrivateServerLoader = MCPPrivateServerLoaderModule.MCPPrivateServerLoader;
+    registry = registryModule.mcpServersRegistry;
+    keyvRedisClient = redisClients.keyvRedisClient;
+
+    if (!keyvRedisClient) throw new Error('Redis client is not initialized');
+
+    await redisClients.keyvRedisClientReady;
+  });
 
   beforeEach(async () => {
-    // Reset ALL registry state before each test (including shared servers)
-    await registry.reset();
-
     // Clear load status for commonly used test users
     // This ensures each test starts with a clean state
     const testUsers = ['user1', 'user2', 'user3', 'user4', 'user5', 'user99'];
@@ -53,14 +66,26 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
     }
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     // Restore all mocks after each test
+    if (keyvRedisClient && 'scanIterator' in keyvRedisClient) {
+      const pattern = '*MCPPrivateServerLoader-integration-test*';
+      const keysToDelete: string[] = [];
+
+      // Collect all keys first
+      for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
+        keysToDelete.push(key);
+      }
+
+      // Delete in parallel for cluster mode efficiency
+      if (keysToDelete.length > 0) {
+        await Promise.all(keysToDelete.map((key) => keyvRedisClient!.del(key)));
+      }
+    }
     jest.restoreAllMocks();
   });
 
   afterAll(async () => {
-    Date.now = originalDateNow;
-    await registry.reset();
     if (keyvRedisClient?.isOpen) await keyvRedisClient.disconnect();
   });
 
@@ -87,8 +112,8 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
       const server1 = await registry.privateServersCache.get('user1', 'server1');
       const server2 = await registry.privateServersCache.get('user1', 'server2');
 
-      expect(server1).toEqual({ ...mockConfig1, dbId: 'mock-id-1' });
-      expect(server2).toEqual({ ...mockConfig2, dbId: 'mock-id-2' });
+      expect(server1).toMatchObject({ ...mockConfig1, dbId: 'mock-id-1' });
+      expect(server2).toMatchObject({ ...mockConfig2, dbId: 'mock-id-2' });
       expect(configsLoader).toHaveBeenCalledWith('user1');
     });
 
@@ -141,10 +166,10 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
       const user2Server1 = await registry.privateServersCache.get('user2', 'server1');
       const user2Server2 = await registry.privateServersCache.get('user2', 'server2');
 
-      expect(user1Server1).toEqual({ ...mockConfig1, dbId: 'mock-id-1' });
+      expect(user1Server1).toMatchObject({ ...mockConfig1, dbId: 'mock-id-1' });
       expect(user1Server2).toBeUndefined();
       expect(user2Server1).toBeUndefined();
-      expect(user2Server2).toEqual({ ...mockConfig2, dbId: 'mock-id-2' });
+      expect(user2Server2).toMatchObject({ ...mockConfig2, dbId: 'mock-id-2' });
     });
 
     it('should handle partial failures gracefully', async () => {
@@ -184,7 +209,7 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
 
       // Verify first server was added before failure
       const server1 = await registry.privateServersCache.get('user1', 'server1');
-      expect(server1).toEqual({ ...mockConfig1, dbId: 'mock-id-1' });
+      expect(server1).toMatchObject({ ...mockConfig1, dbId: 'mock-id-1' });
 
       jest.restoreAllMocks();
     });
@@ -263,15 +288,13 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
       const user2Server = await registry.privateServersCache.get('user2', 'server1');
       const user3Server = await registry.privateServersCache.get('user3', 'server1');
 
-      expect(user1Server).toEqual(
-        expect.objectContaining({
-          command: 'node',
-          args: ['server1-updated.js'],
-          env: { TEST: 'updated', NEW_VAR: 'added' },
-        }),
-      );
-      expect(user2Server).toEqual(user1Server);
-      expect(user3Server).toEqual(user1Server);
+      expect(user1Server).toMatchObject({
+        command: 'node',
+        args: ['server1-updated.js'],
+        env: { TEST: 'updated', NEW_VAR: 'added' },
+      });
+      expect(user2Server).toMatchObject(user1Server!);
+      expect(user3Server).toMatchObject(user1Server!);
     });
 
     it('should not affect other servers', async () => {
@@ -282,7 +305,7 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
 
       // Verify server2 unchanged
       const server2 = await registry.privateServersCache.get('user1', 'server2');
-      expect(server2).toEqual(mockConfig2);
+      expect(server2).toMatchObject(mockConfig2);
     });
 
     it('should handle updating non-existent server gracefully', async () => {
@@ -304,7 +327,7 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
 
       // Verify the shared registry was updated with new config
       const updatedSharedConfig = await registry.getServerConfig('promoted-server');
-      expect(updatedSharedConfig).toEqual(
+      expect(updatedSharedConfig).toMatchObject(
         expect.objectContaining({
           command: 'node',
           args: ['server1-updated.js'],
@@ -336,9 +359,7 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
       expect(await registry.privateServersCache.get('user1', 'server1')).toBeDefined();
       expect(await registry.privateServersCache.get('user2', 'server1')).toBeDefined();
 
-      // Promote to shared (admin shares with PUBLIC)
       await MCPPrivateServerLoader.promoteToSharedServer('server1', mockConfig1);
-
       // Verify it's now in shared registry and removed from private caches
       expect(await registry.getServerConfig('server1')).toBeDefined();
       expect(await registry.privateServersCache.get('user1', 'server1')).toBeUndefined();
@@ -349,7 +370,7 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
 
       // Verify shared registry was updated
       const updatedSharedConfig = await registry.getServerConfig('server1');
-      expect(updatedSharedConfig).toEqual(
+      expect(updatedSharedConfig).toMatchObject(
         expect.objectContaining({
           command: 'node',
           args: ['server1-updated.js'],
@@ -459,9 +480,12 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
         mockConfig1,
       );
 
-      const user1ServerAfterFirst = await registry.privateServersCache.get('user1', 'server1');
-      const user2ServerAfterFirst = await registry.privateServersCache.get('user2', 'server1');
-
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { lastUpdatedAt: _1, ...user1ServerAfterFirst } =
+        (await registry.privateServersCache.get('user1', 'server1')) || {};
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { lastUpdatedAt: _2, ...user2ServerAfterFirst } =
+        (await registry.privateServersCache.get('user2', 'server1')) || {};
       // Second call with same permissions
       await MCPPrivateServerLoader.updatePrivateServerAccess(
         'server1',
@@ -469,12 +493,16 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
         mockConfig1,
       );
 
-      const user1ServerAfterSecond = await registry.privateServersCache.get('user1', 'server1');
-      const user2ServerAfterSecond = await registry.privateServersCache.get('user2', 'server1');
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { lastUpdatedAt: _3, ...user1ServerAfterSecond } =
+        (await registry.privateServersCache.get('user1', 'server1')) || {};
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { lastUpdatedAt: _4, ...user2ServerAfterSecond } =
+        (await registry.privateServersCache.get('user2', 'server1')) || {};
 
       // Should be unchanged
-      expect(user1ServerAfterSecond).toEqual(user1ServerAfterFirst);
-      expect(user2ServerAfterSecond).toEqual(user2ServerAfterFirst);
+      expect(user1ServerAfterSecond).toMatchObject(user1ServerAfterFirst!);
+      expect(user2ServerAfterSecond).toMatchObject(user2ServerAfterFirst!);
     });
   });
 
@@ -557,9 +585,9 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
       const user2Server1 = await registry.privateServersCache.get('user2', 'server1');
       const user3Server2 = await registry.privateServersCache.get('user3', 'server2');
 
-      expect(user1Server1).toEqual({ ...mockConfig1, dbId: 'mock-id-1' });
-      expect(user2Server1).toEqual({ ...mockConfig2, dbId: 'mock-id-2' });
-      expect(user3Server2).toEqual({ ...mockConfig3, dbId: 'mock-id-3' });
+      expect(user1Server1).toMatchObject({ ...mockConfig1, dbId: 'mock-id-1' });
+      expect(user2Server1).toMatchObject({ ...mockConfig2, dbId: 'mock-id-2' });
+      expect(user3Server2).toMatchObject({ ...mockConfig3, dbId: 'mock-id-3' });
     });
   });
 
@@ -568,7 +596,7 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
       await MCPPrivateServerLoader.addPrivateServer('user1', 'new-server', mockConfig1);
 
       const server = await registry.privateServersCache.get('user1', 'new-server');
-      expect(server).toEqual(mockConfig1);
+      expect(server).toMatchObject(mockConfig1);
     });
 
     it('should add different servers for different users', async () => {
@@ -578,8 +606,8 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
       const user1Server = await registry.privateServersCache.get('user1', 'server1');
       const user2Server = await registry.privateServersCache.get('user2', 'server2');
 
-      expect(user1Server).toEqual(mockConfig1);
-      expect(user2Server).toEqual(mockConfig2);
+      expect(user1Server).toMatchObject(mockConfig1);
+      expect(user2Server).toMatchObject(mockConfig2);
 
       // Verify isolation
       expect(await registry.privateServersCache.get('user1', 'server2')).toBeUndefined();
@@ -590,13 +618,12 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
       const urlConfig: t.ParsedServerConfig = {
         url: 'https://api.example.com/mcp',
         requiresOAuth: true,
-        lastUpdatedAt: FIXED_TIME,
       };
 
       await MCPPrivateServerLoader.addPrivateServer('user1', 'url-server', urlConfig);
 
       const server = await registry.privateServersCache.get('user1', 'url-server');
-      expect(server).toEqual(urlConfig);
+      expect(server).toMatchObject(urlConfig);
       expect((server as typeof urlConfig)?.url).toBe('https://api.example.com/mcp');
       expect((server as typeof urlConfig)?.requiresOAuth).toBe(true);
     });
@@ -607,7 +634,7 @@ describe('MCPPrivateServerLoader Cache Integration Tests', () => {
       await MCPPrivateServerLoader.addPrivateServer('user99', 'server1', mockConfig1);
 
       const server = await registry.privateServersCache.get('user99', 'server1');
-      expect(server).toEqual(mockConfig1);
+      expect(server).toMatchObject(mockConfig1);
     });
 
     it('should work in combination with loadPrivateServers', async () => {

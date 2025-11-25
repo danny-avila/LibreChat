@@ -79,8 +79,7 @@ export class MCPPrivateServerLoader {
       logger.info(`[MCP][PrivateServerLoader] Loading private servers for user ${userId}`);
       const servers = await configsLoader(userId);
       //reset cache for the user
-      //TODO enable reset with a fix
-      // await registry.privateServersCache.reset(userId);
+      await registry.privateServersCache.reset(userId);
 
       for (const server of servers) {
         const serverName = server.mcp_id;
@@ -100,7 +99,6 @@ export class MCPPrivateServerLoader {
       }
 
       // Mark as fully loaded with TTL (synchronized with cache entries)
-      // Important: This works correctly for users with 0 servers
       await loadStatusCache.setLoaded(userId, cacheTTL);
       logger.debug(
         `[MCP][PrivateServerLoader] User ${userId} private servers fully loaded (${servers.length} servers, TTL: ${cacheTTL}ms)`,

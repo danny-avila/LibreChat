@@ -14,13 +14,11 @@ import { BaseRegistryCache } from './BaseRegistryCache';
 export class ServerConfigsCacheRedis extends BaseRegistryCache {
   protected readonly cache: Keyv;
   private readonly owner: string;
-  private readonly leaderOnly: boolean;
 
-  constructor(owner: string, leaderOnly: boolean) {
-    super();
+  constructor(owner: string, scope: 'Shared' | 'Private', leaderOnly: boolean) {
+    super(leaderOnly);
     this.owner = owner;
-    this.leaderOnly = leaderOnly;
-    this.cache = standardCache(`${this.PREFIX}::Servers::${owner}`);
+    this.cache = standardCache(`${this.PREFIX}::Servers::${scope}::${owner}`);
   }
 
   public async add(serverName: string, config: ParsedServerConfig): Promise<void> {

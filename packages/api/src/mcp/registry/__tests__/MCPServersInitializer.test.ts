@@ -327,5 +327,4 @@ describe('MCPServersInitializer', () => {
       expect(await registryStatusCache.isInitialized()).toBe(true);
     });
   });
-
 });

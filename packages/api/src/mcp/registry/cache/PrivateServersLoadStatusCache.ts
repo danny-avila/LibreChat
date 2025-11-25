@@ -47,7 +47,6 @@ class PrivateServersLoadStatusCache extends BaseRegistryCache {
    */
   public async setLoaded(userId: string, ttl: number = DEFAULT_LOADED_TTL): Promise<void> {
     const key = `${LOADED_KEY_PREFIX}::${userId}`;
-    await this.leaderCheck('set private servers loaded status');
     const success = await this.cache.set(key, true, ttl);
     this.successCheck(`set loaded status for user ${userId}`, success);
     logger.debug(`[MCP][LoadStatusCache] Marked user ${userId} as loaded (TTL: ${ttl}ms)`);
@@ -66,7 +65,6 @@ class PrivateServersLoadStatusCache extends BaseRegistryCache {
    */
   public async acquireLoadLock(userId: string, ttl: number = DEFAULT_LOCK_TTL): Promise<boolean> {
     const key = `${LOCK_KEY_PREFIX}::${userId}`;
-    await this.leaderCheck('acquire load lock');
 
     // Check if lock already exists
     const existingLock = await this.cache.get(key);
@@ -93,7 +91,6 @@ class PrivateServersLoadStatusCache extends BaseRegistryCache {
    */
   public async releaseLoadLock(userId: string): Promise<void> {
     const key = `${LOCK_KEY_PREFIX}::${userId}`;
-    await this.leaderCheck('release load lock');
     await this.cache.delete(key);
     logger.debug(`[MCP][LoadStatusCache] Released load lock for user ${userId}`);
   }
@@ -139,7 +136,6 @@ class PrivateServersLoadStatusCache extends BaseRegistryCache {
    */
   public async clearLoaded(userId: string): Promise<void> {
     const key = `${LOADED_KEY_PREFIX}::${userId}`;
-    await this.leaderCheck('clear loaded status');
     await this.cache.delete(key);
     logger.debug(`[MCP][LoadStatusCache] Cleared loaded status for user ${userId}`);
   }

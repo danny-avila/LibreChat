@@ -1,8 +1,5 @@
 import type * as t from '~/mcp/types';
 import type { MCPConnection } from '~/mcp/connection';
-const FIXED_TIME = 1699564800000;
-const originalDateNow = Date.now;
-Date.now = jest.fn(() => FIXED_TIME);
 
 // Mock isLeader to always return true to avoid lock contention during parallel operations
 jest.mock('~/cluster', () => ({
@@ -150,6 +147,8 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
   });
 
   beforeEach(async () => {
+    jest.resetModules();
+
     // Ensure we're still the leader
     const isLeader = await leaderInstance.isLeader();
     if (!isLeader) {
@@ -186,12 +185,18 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
 
   afterEach(async () => {
     // Clean up: clear all test keys from Redis
-    if (keyvRedisClient) {
+    if (keyvRedisClient && 'scanIterator' in keyvRedisClient) {
       const pattern = '*MCPServersInitializer-IntegrationTest*';
-      if ('scanIterator' in keyvRedisClient) {
-        for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
-          await keyvRedisClient.del(key);
-        }
+      const keysToDelete: string[] = [];
+
+      // Collect all keys first
+      for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
+        keysToDelete.push(key);
+      }
+
+      // Delete in parallel for cluster mode efficiency
+      if (keysToDelete.length > 0) {
+        await Promise.all(keysToDelete.map((key) => keyvRedisClient!.del(key)));
       }
     }
 
@@ -199,8 +204,6 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
   });
 
   afterAll(async () => {
-    Date.now = originalDateNow;
-
     // Resign as leader
     if (leaderInstance) await leaderInstance.resign();
 

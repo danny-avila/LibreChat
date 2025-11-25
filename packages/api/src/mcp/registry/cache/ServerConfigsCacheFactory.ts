@@ -20,9 +20,13 @@ export class ServerConfigsCacheFactory {
    * @param leaderOnly - Whether operations should only be performed by the leader (only applies to Redis)
    * @returns ServerConfigsCache instance
    */
-  static create(owner: string, leaderOnly: boolean): ServerConfigsCache {
+  static create(
+    owner: string,
+    scope: 'Shared' | 'Private',
+    leaderOnly: boolean,
+  ): ServerConfigsCache {
     if (cacheConfig.USE_REDIS) {
-      return new ServerConfigsCacheRedis(owner, leaderOnly);
+      return new ServerConfigsCacheRedis(owner, scope, leaderOnly);
     }
 
     // In-memory mode uses a simple Map - doesn't need owner/namespace
