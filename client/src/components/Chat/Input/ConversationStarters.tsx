@@ -13,7 +13,7 @@ const ConversationStarters = () => {
 
   const endpointType = useMemo(() => {
     let ep = conversation?.endpoint ?? '';
-    if ([EModelEndpoint.azureOpenAI].includes(ep as EModelEndpoint)) {
+    if (ep === EModelEndpoint.azureOpenAI) {
       ep = EModelEndpoint.openAI;
     }
     return getIconEndpoint({
