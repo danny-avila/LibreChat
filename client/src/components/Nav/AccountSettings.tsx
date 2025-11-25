@@ -60,6 +60,7 @@ function AccountSettings() {
             <DropdownMenuSeparator />
           </>
         )}
+        {/* NJ: Hide "my files", "help & faq", & "settings" (we'll re-enable as we desire)
         <Select.SelectItem
           value=""
           onClick={() => setShowFiles(true)}
@@ -87,6 +88,7 @@ function AccountSettings() {
           {localize('com_nav_settings')}
         </Select.SelectItem>
         <DropdownMenuSeparator />
+        */}
         <Select.SelectItem
           aria-selected={true}
           onClick={() => logout()}
