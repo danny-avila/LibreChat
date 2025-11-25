@@ -284,7 +284,6 @@ if (cluster.isMaster) {
     app.use('/api/keys', routes.keys);
     app.use('/api/user', routes.user);
     app.use('/api/search', routes.search);
-    app.use('/api/edit', routes.edit);
     app.use('/api/messages', routes.messages);
     app.use('/api/convos', routes.convos);
     app.use('/api/presets', routes.presets);
