@@ -5,27 +5,27 @@ import { useRecoilValue } from 'recoil';
 import { TrashIcon, ArchiveRestore, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import {
   Button,
-  OGDialog,
-  OGDialogContent,
-  OGDialogHeader,
-  OGDialogTitle,
   Label,
-  TooltipAnchor,
   Spinner,
+  OGDialog,
   DataTable,
-  useToastContext,
+  TooltipAnchor,
   useMediaQuery,
+  OGDialogTitle,
+  OGDialogHeader,
+  useToastContext,
+  OGDialogContent,
 } from '@librechat/client';
 import type { ConversationListParams, TConversation } from 'librechat-data-provider';
 import {
-  useArchiveConvoMutation,
   useConversationsInfiniteQuery,
   useDeleteConversationMutation,
+  useArchiveConvoMutation,
 } from '~/data-provider';
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
+import { formatDate, logger } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { formatDate } from '~/utils';
 import store from '~/store';
 
 const DEFAULT_PARAMS: ConversationListParams = {
@@ -43,7 +43,7 @@ export default function ArchivedChatsTable({
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { showToast } = useToastContext();
-  const isSearchEnabled = useRecoilValue(store.search);
+  const searchState = useRecoilValue(store.search);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [queryParams, setQueryParams] = useState<ConversationListParams>(DEFAULT_PARAMS);
   const [deleteConversation, setDeleteConversation] = useState<TConversation | null>(null);
@@ -101,6 +101,7 @@ export default function ArchivedChatsTable({
       });
     },
     onError: (error: unknown) => {
+      logger.error('Error deleting archived conversation:', error);
       showToast({
         message: localize('com_ui_archive_delete_error') as string,
         severity: NotificationSeverity.ERROR,
@@ -113,6 +114,7 @@ export default function ArchivedChatsTable({
       await refetch();
     },
     onError: (error: unknown) => {
+      logger.error('Error unarchiving conversation', error);
       showToast({
         message: localize('com_ui_unarchive_error') as string,
         severity: NotificationSeverity.ERROR,
@@ -283,7 +285,7 @@ export default function ArchivedChatsTable({
         isFetchingNextPage={isFetchingNextPage}
         isLoading={isLoading}
         showCheckboxes={false}
-        enableSearch={isSearchEnabled}
+        enableSearch={searchState.enabled === true}
       />
 
       <OGDialog open={isDeleteOpen} onOpenChange={onOpenChange}>

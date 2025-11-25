@@ -120,7 +120,6 @@ const startServer = async () => {
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);
-  app.use('/api/edit', routes.edit);
   app.use('/api/messages', routes.messages);
   app.use('/api/convos', routes.convos);
   app.use('/api/presets', routes.presets);
@@ -130,7 +129,6 @@ const startServer = async () => {
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/balance', routes.balance);
   app.use('/api/models', routes.models);
-  app.use('/api/plugins', routes.plugins);
   app.use('/api/config', routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
