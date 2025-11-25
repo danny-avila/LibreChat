@@ -305,7 +305,7 @@ function createGeminiImageTool(fields = {}) {
       // Generate image
       let apiResponse;
       try {
-        const geminiModel = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.0-flash-exp';
+        const geminiModel = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
         apiResponse = await ai.models.generateContent({
           model: geminiModel,
           contents,
