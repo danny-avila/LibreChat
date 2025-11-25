@@ -12,7 +12,7 @@ const GoogleSearchAPI = require('./structured/GoogleSearch');
 const TraversaalSearch = require('./structured/TraversaalSearch');
 const createOpenAIImageTools = require('./structured/OpenAIImageTools');
 const TavilySearchResults = require('./structured/TavilySearchResults');
-const GeminiImageGen = require('./structured/GeminiImageGen');
+const createGeminiImageTool = require('./structured/GeminiImageGen');
 
 module.exports = {
   ...manifest,
@@ -28,5 +28,5 @@ module.exports = {
   createYouTubeTools,
   TavilySearchResults,
   createOpenAIImageTools,
-  GeminiImageGen,
+  createGeminiImageTool,
 };
