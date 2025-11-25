@@ -59,8 +59,11 @@ export default function NewChat({
               className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl"
               onClick={toggleNav}
             >
-              <Sidebar className="max-md:hidden" />
-              <MobileSidebar className="m-1 inline-flex size-10 items-center justify-center md:hidden" />
+              <Sidebar aria-hidden="true" className="max-md:hidden" />
+              <MobileSidebar
+                aria-hidden="true"
+                className="m-1 inline-flex size-10 items-center justify-center md:hidden"
+              />
             </Button>
           }
         />
