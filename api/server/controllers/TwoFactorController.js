@@ -31,7 +31,9 @@ const enable2FA = async (req, res) => {
       twoFactorEnabled: false,
     });
 
-    const otpauthUrl = `otpauth://totp/${safeAppTitle}:${user.email}?secret=${secret}&issuer=${safeAppTitle}`;
+    // Include algorithm=SHA256 for FIPS compliance (default TOTP uses SHA-1)
+    // Most authenticator apps support SHA256 when explicitly specified
+    const otpauthUrl = `otpauth://totp/${safeAppTitle}:${user.email}?secret=${secret}&issuer=${safeAppTitle}&algorithm=SHA256`;
 
     return res.status(200).json({ otpauthUrl, backupCodes: plainCodes });
   } catch (err) {

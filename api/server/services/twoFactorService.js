@@ -64,8 +64,22 @@ const generateTOTPSecret = () => {
 };
 
 /**
+ * TOTP Hash Algorithm.
+ * Using SHA-256 for FIPS compliance. Standard TOTP uses SHA-1 (RFC 6238),
+ * but SHA-1 is not approved for new applications in FIPS mode.
+ *
+ * BREAKING CHANGE: Existing TOTP secrets enrolled with SHA-1 will NOT work.
+ * Users must re-enroll in 2FA after upgrading to FIPS mode.
+ *
+ * Most authenticator apps (Google Authenticator, Authy, 1Password, etc.)
+ * support SHA-256 when specified in the otpauth:// URI.
+ */
+const TOTP_ALGORITHM = 'SHA-256';
+
+/**
  * Generates a TOTP code based on the secret and time.
  * Uses a 30-second time step and produces a 6-digit code.
+ * Uses HMAC-SHA256 for FIPS compliance.
  * @param {string} secret
  * @param {number} [forTime=Date.now()]
  * @returns {Promise<string>}
@@ -86,7 +100,7 @@ const generateTOTP = async (secret, forTime = Date.now()) => {
   const cryptoKey = await webcrypto.subtle.importKey(
     'raw',
     keyArrayBuffer,
-    { name: 'HMAC', hash: 'SHA-1' },
+    { name: 'HMAC', hash: TOTP_ALGORITHM },
     false,
     ['sign'],
   );
