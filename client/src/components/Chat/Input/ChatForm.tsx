@@ -1,4 +1,4 @@
-import { memo, useRef, useMemo, useEffect, useState, useCallback, useContext } from 'react';
+import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
 import { TextareaAutosize } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
@@ -34,15 +34,12 @@ import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
 import Mention from './Mention';
 import store from '~/store';
-import { ThemeContext, isDark } from '@librechat/client';
 
 const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   useFocusChatEffect(textAreaRef);
   const localize = useLocalize();
-  const { theme } = useContext(ThemeContext);
-  const isThemeDark = isDark(theme);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [, setIsScrollable] = useState(false);
@@ -297,11 +294,11 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                   />
                   {isCollapsed && (
                     <div
-                      className="transition-200 pointer-events-none absolute bottom-0 left-0 right-0 h-8"
+                      className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 transition-all duration-200"
                       style={{
-                        background: isTemporary
-                          ? `linear-gradient(to top, ${isThemeDark ? '#212029' : '#E8E6EF'} 0%, ${isThemeDark ? '#212029' : '#E8E6EF'} 20%, transparent 70%)`
-                          : 'linear-gradient(to top, var(--surface-chat) 0%, var(--surface-chat) 20%, transparent 80%)',
+                        backdropFilter: 'blur(2px)',
+                        WebkitMaskImage: 'linear-gradient(to top, black 15%, transparent 75%)',
+                        maskImage: 'linear-gradient(to top, black 15%, transparent 75%)',
                       }}
                     />
                   )}
