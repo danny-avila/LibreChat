@@ -34,10 +34,16 @@ export class ConnectionsRepository {
   }
 
   /** Gets or creates a connection for the specified server with lazy loading */
-  async get(serverName: string): Promise<MCPConnection> {
-    const serverConfig = await this.getServerConfig(serverName);
+  async get(serverName: string): Promise<MCPConnection | null> {
+    const serverConfig = await registry.getServerConfig(serverName, this.ownerId);
     const existingConnection = this.connections.get(serverName);
-
+    if (!serverConfig) {
+      if (existingConnection) {
+        await existingConnection.disconnect();
+      }
+      return null;
+    }
+    //if config does not exist we disconnect any existing connection and return null
     if (existingConnection) {
       // Check if config was cached/updated since connection was created
       if (serverConfig.lastUpdatedAt && existingConnection.isStale(serverConfig.lastUpdatedAt)) {
@@ -76,7 +82,7 @@ export class ConnectionsRepository {
   async getMany(serverNames: string[]): Promise<Map<string, MCPConnection>> {
     const connectionPromises = serverNames.map(async (name) => [name, await this.get(name)]);
     const connections = await Promise.all(connectionPromises);
-    return new Map(connections as [string, MCPConnection][]);
+    return new Map((connections as [string, MCPConnection][]).filter((v) => !!v[1]));
   }
 
   /** Returns all currently loaded connections without creating new ones */
@@ -86,6 +92,8 @@ export class ConnectionsRepository {
 
   /** Gets or creates connections for all configured servers in this repository's scope */
   async getAll(): Promise<Map<string, MCPConnection>> {
+    //TODO in the future we should use a scoped config getter (APPLevel, UserLevel, Private)
+    //for now the unexisting config will not throw error
     const allConfigs = await registry.getAllServerConfigs(this.ownerId);
     return this.getMany(Object.keys(allConfigs));
   }
@@ -104,13 +112,6 @@ export class ConnectionsRepository {
   disconnectAll(): Promise<void>[] {
     const serverNames = Array.from(this.connections.keys());
     return serverNames.map((serverName) => this.disconnect(serverName));
-  }
-
-  // Retrieves server configuration by name or throws if not found
-  protected async getServerConfig(serverName: string): Promise<t.ParsedServerConfig> {
-    const serverConfig = await registry.getServerConfig(serverName, this.ownerId);
-    if (serverConfig) return serverConfig;
-    throw new Error(`${this.prefix(serverName)} Server not found in configuration`);
   }
 
   // Returns formatted log prefix for server messages

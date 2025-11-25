@@ -138,12 +138,7 @@ describe('standardCache', () => {
       await cache2.clear();
     });
 
-    test.skip('clear() should only clear keys in its own namespace', async () => {
-      process.env.USE_REDIS = 'true';
-      process.env.USE_REDIS_CLUSTER = 'false';
-      process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-      process.env.REDIS_KEY_PREFIX = 'Cache-Integration-Test';
-
+    test('clear() should only clear keys in its own namespace', async () => {
       const cacheFactory = await import('../../cacheFactory');
 
       const cache1 = cacheFactory.standardCache('namespace-clear-test-1');

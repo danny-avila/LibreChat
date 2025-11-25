@@ -3,7 +3,7 @@ import { ServerConfigsCache, ServerConfigsCacheFactory } from '../ServerConfigsC
 import { logger } from '@librechat/data-schemas';
 
 export abstract class PrivateServerConfigsCacheBase {
-  protected readonly PREFIX = 'MCP::ServersRegistry::Servers';
+  protected readonly PREFIX = 'MCP::ServersRegistry::Servers::Private';
   protected caches: Map<string, ServerConfigsCache> = new Map();
 
   public async add(
@@ -107,7 +107,7 @@ export abstract class PrivateServerConfigsCacheBase {
       throw new Error('userId is required to get or create private user cache');
     }
     if (!this.caches.has(userId)) {
-      const cache = ServerConfigsCacheFactory.create(userId, false);
+      const cache = ServerConfigsCacheFactory.create(userId, 'Private', false);
       this.caches.set(userId, cache);
     }
     return this.caches.get(userId)!;

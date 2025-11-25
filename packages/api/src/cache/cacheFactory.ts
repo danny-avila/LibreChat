@@ -37,6 +37,57 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
         logger.error(`Cache error in namespace ${namespace}:`, err);
       });
 
+      // Override clear() to handle namespace-aware deletion
+      // The default Keyv clear() doesn't respect namespace due to the workaround above
+      // Workaround for issue #10487 https://github.com/danny-avila/LibreChat/issues/10487
+      cache.clear = async () => {
+        // Type-safe check for Redis client with scanIterator support
+        if (!keyvRedisClient || !('scanIterator' in keyvRedisClient)) {
+          logger.warn(`Cannot clear namespace ${namespace}: Redis scanIterator not available`);
+          return;
+        }
+
+        // Build pattern: globalPrefix::namespace:* or namespace:*
+        const pattern = cacheConfig.REDIS_KEY_PREFIX
+          ? `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}${namespace}:*`
+          : `${namespace}:*`;
+
+        const keysToDelete: string[] = [];
+
+        // Scan for all keys matching this namespace
+        for await (const key of keyvRedisClient.scanIterator({
+          MATCH: pattern,
+          COUNT: cacheConfig.REDIS_SCAN_COUNT,
+        })) {
+          keysToDelete.push(key);
+        }
+
+        if (keysToDelete.length === 0) {
+          return;
+        }
+
+        // Delete keys in parallel chunks
+        const chunkSize = cacheConfig.REDIS_DELETE_CHUNK_SIZE;
+        const deletePromises = [];
+
+        if (cacheConfig.USE_REDIS_CLUSTER) {
+          // Cluster: Delete each key individually in parallel to avoid CROSSSLOT errors
+          for (let i = 0; i < keysToDelete.length; i += chunkSize) {
+            const chunk = keysToDelete.slice(i, i + chunkSize);
+            deletePromises.push(Promise.all(chunk.map((key) => keyvRedisClient!.del(key))));
+          }
+        } else {
+          // Single-node: Batch delete chunks
+          for (let i = 0; i < keysToDelete.length; i += chunkSize) {
+            const chunk = keysToDelete.slice(i, i + chunkSize);
+            deletePromises.push(keyvRedisClient!.del(chunk));
+          }
+        }
+
+        await Promise.all(deletePromises);
+        logger.debug(`Cleared ${keysToDelete.length} keys from namespace ${namespace}`);
+      };
+
       return cache;
     } catch (err) {
       logger.error(`Failed to create Redis cache for namespace ${namespace}:`, err);

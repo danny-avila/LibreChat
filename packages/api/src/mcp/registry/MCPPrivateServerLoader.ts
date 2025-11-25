@@ -2,6 +2,7 @@ import { mcpServersRegistry as registry } from './MCPServersRegistry';
 import { privateServersLoadStatusCache as loadStatusCache } from './cache/PrivateServersLoadStatusCache';
 import type * as t from '~/mcp/types';
 import { logger } from '@librechat/data-schemas';
+import { MCPServerDB } from 'librechat-data-provider';
 
 /**
  * Handles loading and updating private MCP servers for users.
@@ -31,7 +32,7 @@ export class MCPPrivateServerLoader {
    */
   public static async loadPrivateServers(
     userId: string,
-    configsLoader: (userId: string) => Promise<t.MCPServers>,
+    configsLoader: (userId: string) => Promise<MCPServerDB[]>,
     cacheTTL: number = 3600000, // 1 hour default
   ): Promise<void> {
     // Input validation
@@ -76,13 +77,19 @@ export class MCPPrivateServerLoader {
     // We have the lock, proceed with loading
     try {
       logger.info(`[MCP][PrivateServerLoader] Loading private servers for user ${userId}`);
-      const configs = await configsLoader(userId);
+      const servers = await configsLoader(userId);
+      //reset cache for the user
+      await registry.privateServersCache.reset(userId);
 
-      for (const [serverName, rawConfig] of Object.entries(configs)) {
+      for (const server of servers) {
+        const serverName = server.mcp_id;
         const existing = await registry.privateServersCache.get(userId, serverName);
         if (!existing) {
           // Add new server config
-          await registry.privateServersCache.add(userId, serverName, rawConfig);
+          await registry.privateServersCache.add(userId, serverName, {
+            ...server.config,
+            dbId: server._id,
+          });
           logger.debug(`${this.prefix(serverName)} Added private server for user ${userId}`);
         } else {
           logger.debug(
@@ -92,10 +99,9 @@ export class MCPPrivateServerLoader {
       }
 
       // Mark as fully loaded with TTL (synchronized with cache entries)
-      // Important: This works correctly for users with 0 servers
       await loadStatusCache.setLoaded(userId, cacheTTL);
       logger.debug(
-        `[MCP][PrivateServerLoader] User ${userId} private servers fully loaded (${Object.keys(configs).length} servers, TTL: ${cacheTTL}ms)`,
+        `[MCP][PrivateServerLoader] User ${userId} private servers fully loaded (${servers.length} servers, TTL: ${cacheTTL}ms)`,
       );
     } catch (error) {
       logger.error(
@@ -110,8 +116,8 @@ export class MCPPrivateServerLoader {
   }
 
   /**
-   * Propagate metadata changes to all users who have this server.
-   * Use case: Admin updates server command/args/env
+   * Propagate metadata changes to all users who have this server or update shared cache if the server is shared with PUBLIC.
+   * Use case: Admin updates server url, auth etc..
    * Efficient: Uses pattern-based scan, updates only affected users
    *
    * @param serverName - Server name
@@ -121,8 +127,34 @@ export class MCPPrivateServerLoader {
     serverName: string,
     config: t.ParsedServerConfig,
   ): Promise<void> {
+    //check if the private server is promoted to a app level or user shared level server
+    const sharedServer = await registry.getServerConfig(serverName);
+    if (sharedServer) {
+      logger.info(`${this.prefix(serverName)} Promoted private server update`);
+      // server must be removed to simplify moving from App -> Shared and Shared -> App based on the config.
+      await registry.removeServer(serverName);
+      await registry.addSharedServer(serverName, config);
+      return;
+    }
     logger.info(`${this.prefix(serverName)} Propagating metadata update to all users`);
     await registry.privateServersCache.updateServerConfigIfExists(serverName, config);
+  }
+
+  /**
+   * Add a private server
+   * Use case: Admin / user creates an mcp server from the UI
+   *
+   * @param userId - userId
+   * @param serverName - Server name
+   * @param config - Updated server configuration
+   */
+  public static async addPrivateServer(
+    userId: string,
+    serverName: string,
+    config: t.ParsedServerConfig,
+  ): Promise<void> {
+    logger.info(`${this.prefix(serverName)} add private server to user with Id ${userId}`);
+    await registry.privateServersCache.add(userId, serverName, config);
   }
 
   /**

@@ -110,9 +110,7 @@ export abstract class UserConnectionManager {
     }
 
     // If no valid connection exists, create a new one
-    if (!connection) {
-      logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
-    }
+    logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
 
     try {
       connection = await MCPConnectionFactory.create(

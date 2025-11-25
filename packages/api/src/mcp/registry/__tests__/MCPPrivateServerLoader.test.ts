@@ -3,6 +3,7 @@ import { privateServersLoadStatusCache as loadStatusCache } from '../cache/Priva
 import { MCPPrivateServerLoader } from '../MCPPrivateServerLoader';
 import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
+import type { MCPServerDB } from 'librechat-data-provider';
 
 // Mock dependencies
 jest.mock('../MCPServersRegistry', () => ({
@@ -10,13 +11,17 @@ jest.mock('../MCPServersRegistry', () => ({
     privateServersCache: {
       get: jest.fn(),
       add: jest.fn(),
+      reset: jest.fn(),
       updateServerConfigIfExists: jest.fn(),
       findUsersWithServer: jest.fn(),
       removeServerConfigIfCacheExists: jest.fn(),
       addServerConfigIfCacheExists: jest.fn(),
+      reset: jest.fn(),
     },
+    getServerConfig: jest.fn(),
     addSharedServer: jest.fn(),
     removeServer: jest.fn(),
+    getServerConfig: jest.fn(),
   },
 }));
 
@@ -98,10 +103,18 @@ describe('MCPPrivateServerLoader', () => {
     });
 
     it('should load private servers for a user successfully', async () => {
-      const mockConfigs: t.MCPServers = {
-        server1: mockConfig1,
-        server2: mockConfig2,
-      };
+      const mockConfigs: MCPServerDB[] = [
+        {
+          _id: 'mock-id-1',
+          mcp_id: 'server1',
+          config: mockConfig1,
+        },
+        {
+          _id: 'mock-id-2',
+          mcp_id: 'server2',
+          config: mockConfig2,
+        },
+      ];
 
       const configsLoader = jest.fn().mockResolvedValue(mockConfigs);
       (loadStatusCache.isLoaded as jest.Mock).mockResolvedValue(false);
@@ -112,16 +125,14 @@ describe('MCPPrivateServerLoader', () => {
 
       expect(loadStatusCache.acquireLoadLock).toHaveBeenCalledWith('user1');
       expect(configsLoader).toHaveBeenCalledWith('user1');
-      expect(registry.privateServersCache.add).toHaveBeenCalledWith(
-        'user1',
-        'server1',
-        mockConfig1,
-      );
-      expect(registry.privateServersCache.add).toHaveBeenCalledWith(
-        'user1',
-        'server2',
-        mockConfig2,
-      );
+      expect(registry.privateServersCache.add).toHaveBeenCalledWith('user1', 'server1', {
+        ...mockConfig1,
+        dbId: 'mock-id-1',
+      });
+      expect(registry.privateServersCache.add).toHaveBeenCalledWith('user1', 'server2', {
+        ...mockConfig2,
+        dbId: 'mock-id-2',
+      });
       expect(loadStatusCache.setLoaded).toHaveBeenCalledWith('user1', 3600_000);
       expect(loadStatusCache.releaseLoadLock).toHaveBeenCalledWith('user1');
       expect(logger.info).toHaveBeenCalledWith(
@@ -130,10 +141,18 @@ describe('MCPPrivateServerLoader', () => {
     });
 
     it('should skip servers that already exist in cache', async () => {
-      const mockConfigs: t.MCPServers = {
-        server1: mockConfig1,
-        server2: mockConfig2,
-      };
+      const mockConfigs: MCPServerDB[] = [
+        {
+          _id: 'mock-id-1',
+          mcp_id: 'server1',
+          config: mockConfig1,
+        },
+        {
+          _id: 'mock-id-2',
+          mcp_id: 'server2',
+          config: mockConfig2,
+        },
+      ];
 
       const configsLoader = jest.fn().mockResolvedValue(mockConfigs);
       (loadStatusCache.isLoaded as jest.Mock).mockResolvedValue(false);
@@ -145,11 +164,10 @@ describe('MCPPrivateServerLoader', () => {
       await MCPPrivateServerLoader.loadPrivateServers('user1', configsLoader);
 
       expect(registry.privateServersCache.add).toHaveBeenCalledTimes(1);
-      expect(registry.privateServersCache.add).toHaveBeenCalledWith(
-        'user1',
-        'server2',
-        mockConfig2,
-      );
+      expect(registry.privateServersCache.add).toHaveBeenCalledWith('user1', 'server2', {
+        ...mockConfig2,
+        dbId: 'mock-id-2',
+      });
       expect(loadStatusCache.setLoaded).toHaveBeenCalledWith('user1', 3600_000);
       expect(loadStatusCache.releaseLoadLock).toHaveBeenCalledWith('user1');
       expect(logger.debug).toHaveBeenCalledWith(
@@ -175,9 +193,13 @@ describe('MCPPrivateServerLoader', () => {
     });
 
     it('should throw error if cache.add fails', async () => {
-      const mockConfigs: t.MCPServers = {
-        server1: mockConfig1,
-      };
+      const mockConfigs: MCPServerDB[] = [
+        {
+          _id: 'mock-id-1',
+          mcp_id: 'server1',
+          config: mockConfig1,
+        },
+      ];
 
       const configsLoader = jest.fn().mockResolvedValue(mockConfigs);
       (loadStatusCache.isLoaded as jest.Mock).mockResolvedValue(false);
@@ -195,7 +217,7 @@ describe('MCPPrivateServerLoader', () => {
     });
 
     it('should handle empty configs gracefully', async () => {
-      const mockConfigs: t.MCPServers = {};
+      const mockConfigs: MCPServerDB[] = [];
 
       const configsLoader = jest.fn().mockResolvedValue(mockConfigs);
       (loadStatusCache.isLoaded as jest.Mock).mockResolvedValue(false);
@@ -209,10 +231,18 @@ describe('MCPPrivateServerLoader', () => {
     });
 
     it('should prevent partial loads after crash - loaded flag not set on failure', async () => {
-      const mockConfigs: t.MCPServers = {
-        server1: mockConfig1,
-        server2: mockConfig2,
-      };
+      const mockConfigs: MCPServerDB[] = [
+        {
+          _id: 'mock-id-1',
+          mcp_id: 'server1',
+          config: mockConfig1,
+        },
+        {
+          _id: 'mock-id-2',
+          mcp_id: 'server2',
+          config: mockConfig2,
+        },
+      ];
 
       const configsLoader = jest.fn().mockResolvedValue(mockConfigs);
       (loadStatusCache.isLoaded as jest.Mock).mockResolvedValue(false);
@@ -264,9 +294,13 @@ describe('MCPPrivateServerLoader', () => {
     });
 
     it('should retry lock acquisition after wait timeout', async () => {
-      const mockConfigs: t.MCPServers = {
-        server1: mockConfig1,
-      };
+      const mockConfigs: MCPServerDB[] = [
+        {
+          _id: 'mock-id-1',
+          mcp_id: 'server1',
+          config: mockConfig1,
+        },
+      ];
 
       const configsLoader = jest.fn().mockResolvedValue(mockConfigs);
       (loadStatusCache.isLoaded as jest.Mock).mockResolvedValue(false);
@@ -302,19 +336,46 @@ describe('MCPPrivateServerLoader', () => {
   });
 
   describe('updatePrivateServer()', () => {
-    it('should propagate metadata update to all users', async () => {
+    it('should propagate metadata update to all users when server is not promoted', async () => {
+      (registry.getServerConfig as jest.Mock).mockResolvedValue(undefined);
+
       await MCPPrivateServerLoader.updatePrivateServer('server1', mockConfig2);
 
+      expect(registry.getServerConfig).toHaveBeenCalledWith('server1');
       expect(registry.privateServersCache.updateServerConfigIfExists).toHaveBeenCalledWith(
         'server1',
         mockConfig2,
       );
+      expect(registry.removeServer).not.toHaveBeenCalled();
+      expect(registry.addSharedServer).not.toHaveBeenCalled();
       expect(logger.info).toHaveBeenCalledWith(
         '[MCP][PrivateServer][server1] Propagating metadata update to all users',
       );
     });
 
+    it('should handle promoted server by updating shared registry', async () => {
+      const sharedConfig: t.ParsedServerConfig = {
+        command: 'node',
+        args: ['shared.js'],
+        env: { SHARED: 'true' },
+        lastUpdatedAt: Date.now(),
+      };
+
+      (registry.getServerConfig as jest.Mock).mockResolvedValue(sharedConfig);
+
+      await MCPPrivateServerLoader.updatePrivateServer('server1', mockConfig2);
+
+      expect(registry.getServerConfig).toHaveBeenCalledWith('server1');
+      expect(registry.removeServer).toHaveBeenCalledWith('server1');
+      expect(registry.addSharedServer).toHaveBeenCalledWith('server1', mockConfig2);
+      expect(registry.privateServersCache.updateServerConfigIfExists).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        '[MCP][PrivateServer][server1] Promoted private server update',
+      );
+    });
+
     it('should throw error if updateServerConfigIfExists fails', async () => {
+      (registry.getServerConfig as jest.Mock).mockResolvedValue(undefined);
       (registry.privateServersCache.updateServerConfigIfExists as jest.Mock).mockRejectedValue(
         new Error('Redis update failed'),
       );
@@ -322,6 +383,27 @@ describe('MCPPrivateServerLoader', () => {
       await expect(
         MCPPrivateServerLoader.updatePrivateServer('server1', mockConfig2),
       ).rejects.toThrow('Redis update failed');
+    });
+
+    it('should throw error if removeServer fails for promoted server', async () => {
+      (registry.getServerConfig as jest.Mock).mockResolvedValue(mockConfig1);
+      (registry.removeServer as jest.Mock).mockRejectedValue(new Error('Remove server failed'));
+
+      await expect(
+        MCPPrivateServerLoader.updatePrivateServer('server1', mockConfig2),
+      ).rejects.toThrow('Remove server failed');
+    });
+
+    it('should throw error if addSharedServer fails for promoted server', async () => {
+      (registry.getServerConfig as jest.Mock).mockResolvedValue(mockConfig1);
+      (registry.removeServer as jest.Mock).mockResolvedValue(undefined); // Ensure removeServer succeeds
+      (registry.addSharedServer as jest.Mock).mockRejectedValue(
+        new Error('Add shared server failed'),
+      );
+
+      await expect(
+        MCPPrivateServerLoader.updatePrivateServer('server1', mockConfig2),
+      ).rejects.toThrow('Add shared server failed');
     });
   });
 
@@ -466,6 +548,7 @@ describe('MCPPrivateServerLoader', () => {
 
   describe('promoteToSharedServer()', () => {
     it('should promote private server to shared registry and remove from private caches', async () => {
+      (registry.addSharedServer as jest.Mock).mockResolvedValue(undefined);
       (registry.privateServersCache.findUsersWithServer as jest.Mock).mockResolvedValue([
         'user1',
         'user2',
@@ -492,6 +575,7 @@ describe('MCPPrivateServerLoader', () => {
     });
 
     it('should handle promoting when no users have the server privately', async () => {
+      (registry.addSharedServer as jest.Mock).mockResolvedValue(undefined);
       (registry.privateServersCache.findUsersWithServer as jest.Mock).mockResolvedValue([]);
 
       await MCPPrivateServerLoader.promoteToSharedServer('server1', mockConfig1);
@@ -514,6 +598,7 @@ describe('MCPPrivateServerLoader', () => {
   describe('demoteToPrivateServer()', () => {
     it('should demote shared server to private caches for specified users', async () => {
       const allowedUserIds = ['user1', 'user2', 'user3'];
+      (registry.removeServer as jest.Mock).mockResolvedValue(undefined);
 
       await MCPPrivateServerLoader.demoteToPrivateServer('server1', allowedUserIds, mockConfig1);
 
@@ -536,6 +621,8 @@ describe('MCPPrivateServerLoader', () => {
     });
 
     it('should handle demoting with empty user list', async () => {
+      (registry.removeServer as jest.Mock).mockResolvedValue(undefined);
+
       await MCPPrivateServerLoader.demoteToPrivateServer('server1', [], mockConfig1);
 
       expect(registry.removeServer).toHaveBeenCalledWith('server1');
@@ -550,6 +637,66 @@ describe('MCPPrivateServerLoader', () => {
       await expect(
         MCPPrivateServerLoader.demoteToPrivateServer('server1', ['user1'], mockConfig1),
       ).rejects.toThrow('Server not found in shared registry');
+    });
+  });
+
+  describe('addPrivateServer()', () => {
+    it('should add private server for a user', async () => {
+      await MCPPrivateServerLoader.addPrivateServer('user1', 'server1', mockConfig1);
+
+      expect(registry.privateServersCache.add).toHaveBeenCalledWith(
+        'user1',
+        'server1',
+        mockConfig1,
+      );
+      expect(logger.info).toHaveBeenCalledWith(
+        '[MCP][PrivateServer][server1] add private server to user with Id user1',
+      );
+    });
+
+    it('should add private server with different configs for different users', async () => {
+      await MCPPrivateServerLoader.addPrivateServer('user1', 'server1', mockConfig1);
+      await MCPPrivateServerLoader.addPrivateServer('user2', 'server2', mockConfig2);
+
+      expect(registry.privateServersCache.add).toHaveBeenCalledWith(
+        'user1',
+        'server1',
+        mockConfig1,
+      );
+      expect(registry.privateServersCache.add).toHaveBeenCalledWith(
+        'user2',
+        'server2',
+        mockConfig2,
+      );
+    });
+
+    it('should throw error if cache add fails', async () => {
+      (registry.privateServersCache.add as jest.Mock).mockRejectedValue(
+        new Error('Cache write failed'),
+      );
+
+      await expect(
+        MCPPrivateServerLoader.addPrivateServer('user1', 'server1', mockConfig1),
+      ).rejects.toThrow('Cache write failed');
+    });
+
+    it('should handle adding server with complex config', async () => {
+      const complexConfig: t.ParsedServerConfig = {
+        url: 'https://api.example.com',
+        requiresOAuth: true,
+        lastUpdatedAt: Date.now(),
+      };
+
+      // Reset the mock to ensure it succeeds for this test
+      (registry.privateServersCache.add as jest.Mock).mockResolvedValue(undefined);
+
+      await MCPPrivateServerLoader.addPrivateServer('user1', 'complex-server', complexConfig);
+
+      expect(registry.privateServersCache.add).toHaveBeenCalledWith(
+        'user1',
+        'complex-server',
+        complexConfig,
+      );
     });
   });
 });

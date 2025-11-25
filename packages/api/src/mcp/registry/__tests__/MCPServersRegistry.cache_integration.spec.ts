@@ -1,11 +1,6 @@
 import { expect } from '@playwright/test';
 import type * as t from '~/mcp/types';
 
-// Mock Date.now BEFORE any other imports to ensure it's applied everywhere
-const FIXED_TIME = 1699564800000;
-const originalDateNow = Date.now;
-Date.now = jest.fn(() => FIXED_TIME);
-
 /**
  * Integration tests for MCPServersRegistry using Redis-backed cache.
  * For unit tests using in-memory cache, see MCPServersRegistry.test.ts
@@ -34,7 +29,6 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
         },
       },
     },
-    lastUpdatedAt: FIXED_TIME,
   };
 
   beforeAll(async () => {
@@ -71,20 +65,23 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
     await registry.reset();
 
     // Also clean up any remaining test keys from Redis
-    if (keyvRedisClient) {
+    if (keyvRedisClient && 'scanIterator' in keyvRedisClient) {
       const pattern = '*MCPServersRegistry-IntegrationTest*';
-      if ('scanIterator' in keyvRedisClient) {
-        for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
-          await keyvRedisClient.del(key);
-        }
+      const keysToDelete: string[] = [];
+
+      // Collect all keys first
+      for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
+        keysToDelete.push(key);
+      }
+
+      // Delete in parallel for cluster mode efficiency
+      if (keysToDelete.length > 0) {
+        await Promise.all(keysToDelete.map((key) => keyvRedisClient!.del(key)));
       }
     }
   });
 
   afterAll(async () => {
-    // Restore original Date.now
-    Date.now = originalDateNow;
-
     // Resign as leader
     if (leaderInstance) await leaderInstance.resign();
 
@@ -102,7 +99,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
 
       // Verify server was added
       const retrievedConfig = await registry.getServerConfig(serverName, userId);
-      expect(retrievedConfig).toEqual(testParsedConfig);
+      expect(retrievedConfig).toMatchObject(testParsedConfig);
 
       // Remove private user server
       await registry.privateServersCache.remove(userId, serverName);
@@ -132,7 +129,6 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
         command: 'python',
         args: ['updated.py'],
         requiresOAuth: true,
-        lastUpdatedAt: FIXED_TIME,
       };
 
       // Add private user server
@@ -143,7 +139,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
 
       // Verify server was updated
       const retrievedConfig = await registry.getServerConfig(serverName, userId);
-      expect(retrievedConfig).toEqual(updatedConfig);
+      expect(retrievedConfig).toMatchObject(updatedConfig);
     });
 
     it('should throw error when updating non-existent server', async () => {
@@ -181,7 +177,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
       await registry.privateServersCache.add(userId, serverName, testParsedConfig);
 
       const retrievedConfig = await registry.privateServersCache.get(userId, serverName);
-      expect(retrievedConfig).toEqual(testParsedConfig);
+      expect(retrievedConfig).toMatchObject(testParsedConfig);
     });
 
     it('should return undefined if server does not exist in user private cache', async () => {
@@ -299,9 +295,9 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
       const privateConfigBefore = await registry.getServerConfig('private_server', userId);
       const allConfigsBefore = await registry.getAllServerConfigs(userId);
 
-      expect(appConfigBefore).toEqual(testParsedConfig);
-      expect(userConfigBefore).toEqual(testParsedConfig);
-      expect(privateConfigBefore).toEqual(testParsedConfig);
+      expect(appConfigBefore).toMatchObject(testParsedConfig);
+      expect(userConfigBefore).toMatchObject(testParsedConfig);
+      expect(privateConfigBefore).toMatchObject(testParsedConfig);
       expect(Object.keys(allConfigsBefore)).toHaveLength(3);
 
       // Reset everything

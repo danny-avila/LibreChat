@@ -21,10 +21,17 @@ import {
  * checks shared app servers first, then shared user servers, then private user servers.
  */
 class MCPServersRegistry {
-  public readonly sharedAppServers = ServerConfigsCacheFactory.create('App', false);
-  public readonly sharedUserServers = ServerConfigsCacheFactory.create('User', false);
-  private readonly privateUserServers: Map<string | undefined, ServerConfigsCache> = new Map();
-  private rawConfigs: t.MCPServers = {};
+  public readonly sharedAppServers: ServerConfigsCache = ServerConfigsCacheFactory.create(
+    'App',
+    'Shared',
+    false,
+  );
+
+  public readonly sharedUserServers: ServerConfigsCache = ServerConfigsCacheFactory.create(
+    'User',
+    'Shared',
+    false,
+  );
 
   /**
    * Stores the raw MCP configuration as a fallback when servers haven't been initialized yet.
@@ -34,13 +41,10 @@ class MCPServersRegistry {
     this.rawConfigs = configs;
   }
 
-  public readonly sharedUserServers: ServerConfigsCache = ServerConfigsCacheFactory.create(
-    'User',
-    false,
-  );
-
   public readonly privateServersCache: PrivateServerConfigsCache =
     PrivateServerConfigsCacheFactory.create();
+
+  private rawConfigs: t.MCPServers = {};
 
   public async getServerConfig(
     serverName: string,
@@ -57,8 +61,6 @@ class MCPServersRegistry {
       const privateUserServer = await this.privateServersCache.get(userId, serverName);
       if (privateUserServer) return privateUserServer;
     }
-    const privateUserServer = await this.privateUserServers.get(userId)?.get(serverName);
-    if (privateUserServer) return privateUserServer;
 
     /** Fallback to raw config if server hasn't been initialized yet */
     const rawConfig = this.rawConfigs[serverName];
@@ -68,10 +70,11 @@ class MCPServersRegistry {
   }
 
   public async getAllServerConfigs(userId?: string): Promise<Record<string, t.ParsedServerConfig>> {
+    const privateConfigs = userId ? await this.privateServersCache.getAll(userId) : {};
     const registryConfigs = {
       ...(await this.sharedAppServers.getAll()),
       ...(await this.sharedUserServers.getAll()),
-      ...((await this.privateUserServers.get(userId)?.getAll()) ?? {}),
+      ...privateConfigs,
     };
     /** Include all raw configs, but registry configs take precedence (they have inspection data) */
     const allConfigs: Record<string, t.ParsedServerConfig> = {};

@@ -321,7 +321,7 @@ describe('MCPManager', () => {
       (MCPServerInspector.getToolFunctions as jest.Mock) = jest.fn().mockResolvedValue({});
 
       mockAppConnections({
-        has: jest.fn().mockResolvedValue(false),
+        get: jest.fn().mockResolvedValue(null),
       });
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());

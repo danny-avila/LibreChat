@@ -3,25 +3,20 @@ import { expect } from '@playwright/test';
 describe('PrivateServersLoadStatusCache Integration Tests', () => {
   let loadStatusCache: typeof import('../PrivateServersLoadStatusCache').privateServersLoadStatusCache;
   let keyvRedisClient: Awaited<typeof import('~/cache/redisClients')>['keyvRedisClient'];
-  let LeaderElection: typeof import('~/cluster/LeaderElection').LeaderElection;
-  let leaderInstance: InstanceType<typeof import('~/cluster/LeaderElection').LeaderElection>;
   let testCounter = 0;
 
   beforeAll(async () => {
     // Set up environment variables for Redis (only if not already set)
     process.env.USE_REDIS = process.env.USE_REDIS ?? 'true';
     process.env.REDIS_URI = process.env.REDIS_URI ?? 'redis://127.0.0.1:6379';
-    process.env.REDIS_KEY_PREFIX =
-      process.env.REDIS_KEY_PREFIX ?? 'PrivateServersLoadStatusCache-IntegrationTest';
+    process.env.REDIS_KEY_PREFIX = 'PrivateServersLoadStatusCache-IntegrationTest';
 
     // Import modules after setting env vars
     const loadStatusCacheModule = await import('../PrivateServersLoadStatusCache');
     const redisClients = await import('~/cache/redisClients');
-    const leaderElectionModule = await import('~/cluster/LeaderElection');
 
     loadStatusCache = loadStatusCacheModule.privateServersLoadStatusCache;
     keyvRedisClient = redisClients.keyvRedisClient;
-    LeaderElection = leaderElectionModule.LeaderElection;
 
     // Ensure Redis is connected
     if (!keyvRedisClient) throw new Error('Redis client is not initialized');
@@ -29,34 +24,33 @@ describe('PrivateServersLoadStatusCache Integration Tests', () => {
     // Wait for Redis connection and topology discovery to complete
     await redisClients.keyvRedisClientReady;
 
-    // Become leader so we can perform write operations
-    leaderInstance = new LeaderElection();
-    const isLeader = await leaderInstance.isLeader();
-    expect(isLeader).toBe(true);
-
     process.setMaxListeners(200);
   });
 
   beforeEach(() => {
+    jest.resetModules();
     testCounter++;
   });
 
   afterEach(async () => {
     // Clean up: clear all test keys from Redis
-    if (keyvRedisClient) {
+    if (keyvRedisClient && 'scanIterator' in keyvRedisClient) {
       const pattern = '*PrivateServersLoadStatusCache-IntegrationTest*';
-      if ('scanIterator' in keyvRedisClient) {
-        for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
-          await keyvRedisClient.del(key);
-        }
+      const keysToDelete: string[] = [];
+
+      // Collect all keys first
+      for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
+        keysToDelete.push(key);
+      }
+
+      // Delete in parallel for cluster mode efficiency
+      if (keysToDelete.length > 0) {
+        await Promise.all(keysToDelete.map((key) => keyvRedisClient!.del(key)));
       }
     }
   });
 
   afterAll(async () => {
-    // Resign as leader
-    if (leaderInstance) await leaderInstance.resign();
-
     // Close Redis connection
     if (keyvRedisClient?.isOpen) await keyvRedisClient.disconnect();
   });
@@ -205,12 +199,10 @@ describe('PrivateServersLoadStatusCache Integration Tests', () => {
         }, 300);
       });
 
-      const result = await waitPromise;
+      // Await both in parallel - waitPromise should complete first
+      const [result] = await Promise.all([waitPromise, setLoadedPromise]);
 
       expect(result).toBe(true);
-
-      // Wait for the setLoaded to complete to avoid cleanup issues
-      await setLoadedPromise;
     }, 5000);
 
     it('should timeout if loaded flag is never set', async () => {
