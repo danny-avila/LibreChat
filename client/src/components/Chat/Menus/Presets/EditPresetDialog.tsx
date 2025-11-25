@@ -35,7 +35,7 @@ const EditPresetDialog = ({
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { preset, setPreset } = useChatContext();
-  const { setOption, setOptions, setAgentOption } = useSetIndexOptions(preset);
+  const { setOption, setOptions } = useSetIndexOptions(preset);
   const [onTitleChange, title] = useDebouncedInput({
     setOption,
     optionKey: 'title',
@@ -87,20 +87,7 @@ const EditPresetDialog = ({
       console.log('setting model', models[0]);
       setOption('model')(models[0]);
     }
-
-    if (preset.agentOptions?.model === models[0]) {
-      return;
-    }
-
-    if (
-      preset.agentOptions?.model != null &&
-      preset.agentOptions.model &&
-      !models.includes(preset.agentOptions.model)
-    ) {
-      console.log('setting agent model', models[0]);
-      setAgentOption('model')(models[0]);
-    }
-  }, [preset, queryClient, setOption, setAgentOption]);
+  }, [preset, queryClient, setOption]);
 
   const switchEndpoint = useCallback(
     (newEndpoint: string) => {

@@ -10,11 +10,9 @@ import {
   EModelEndpoint,
   anthropicSchema,
   assistantSchema,
-  gptPluginsSchema,
   // agentsSchema,
   compactAgentsSchema,
   compactGoogleSchema,
-  compactPluginsSchema,
   compactAssistantSchema,
 } from './schemas';
 import { bedrockInputSchema } from './bedrock';
@@ -24,12 +22,11 @@ type EndpointSchema =
   | typeof openAISchema
   | typeof googleSchema
   | typeof anthropicSchema
-  | typeof gptPluginsSchema
   | typeof assistantSchema
   | typeof compactAgentsSchema
   | typeof bedrockInputSchema;
 
-export type EndpointSchemaKey = Exclude<EModelEndpoint, EModelEndpoint.chatGPTBrowser>;
+export type EndpointSchemaKey = EModelEndpoint;
 
 const endpointSchemas: Record<EndpointSchemaKey, EndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
@@ -37,7 +34,6 @@ const endpointSchemas: Record<EndpointSchemaKey, EndpointSchema> = {
   [EModelEndpoint.custom]: openAISchema,
   [EModelEndpoint.google]: googleSchema,
   [EModelEndpoint.anthropic]: anthropicSchema,
-  [EModelEndpoint.gptPlugins]: gptPluginsSchema,
   [EModelEndpoint.assistants]: assistantSchema,
   [EModelEndpoint.azureAssistants]: assistantSchema,
   [EModelEndpoint.agents]: compactAgentsSchema,
@@ -57,8 +53,6 @@ export function getEnabledEndpoints() {
     EModelEndpoint.azureAssistants,
     EModelEndpoint.azureOpenAI,
     EModelEndpoint.google,
-    EModelEndpoint.chatGPTBrowser,
-    EModelEndpoint.gptPlugins,
     EModelEndpoint.anthropic,
     EModelEndpoint.bedrock,
   ];
@@ -143,7 +137,6 @@ export function getNonEmptyValue(possibleValues: string[]) {
 
 export type TPossibleValues = {
   models: string[];
-  secondaryModels?: string[];
 };
 
 export const parseConvo = ({
@@ -172,14 +165,10 @@ export const parseConvo = ({
   // }
 
   const convo = schema?.parse(conversation) as s.TConversation | undefined;
-  const { models, secondaryModels } = possibleValues ?? {};
+  const { models } = possibleValues ?? {};
 
   if (models && convo) {
     convo.model = getFirstDefinedValue(models) ?? convo.model;
-  }
-
-  if (secondaryModels && convo?.agentOptions) {
-    convo.agentOptions.model = getFirstDefinedValue(secondaryModels) ?? convo.agentOptions.model;
   }
 
   return convo;
@@ -225,13 +214,7 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
   const chatGptLabel = _cgl ?? '';
   const modelLabel = _ml ?? '';
   if (
-    [
-      EModelEndpoint.openAI,
-      EModelEndpoint.bedrock,
-      EModelEndpoint.gptPlugins,
-      EModelEndpoint.azureOpenAI,
-      EModelEndpoint.chatGPTBrowser,
-    ].includes(endpoint)
+    [EModelEndpoint.openAI, EModelEndpoint.bedrock, EModelEndpoint.azureOpenAI].includes(endpoint)
   ) {
     if (chatGptLabel) {
       return chatGptLabel;
@@ -247,7 +230,7 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
       const gptVersion = extractGPTVersion(model);
       return gptVersion || 'GPT';
     }
-    return (alternateName[endpoint] as string | undefined) ?? 'ChatGPT';
+    return (alternateName[endpoint] as string | undefined) ?? 'AI';
   }
 
   if (endpoint === EModelEndpoint.anthropic) {
@@ -298,8 +281,7 @@ type CompactEndpointSchema =
   | typeof compactAgentsSchema
   | typeof compactGoogleSchema
   | typeof anthropicSchema
-  | typeof bedrockInputSchema
-  | typeof compactPluginsSchema;
+  | typeof bedrockInputSchema;
 
 const compactEndpointSchemas: Record<EndpointSchemaKey, CompactEndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
@@ -311,7 +293,6 @@ const compactEndpointSchemas: Record<EndpointSchemaKey, CompactEndpointSchema> =
   [EModelEndpoint.google]: compactGoogleSchema,
   [EModelEndpoint.bedrock]: bedrockInputSchema,
   [EModelEndpoint.anthropic]: anthropicSchema,
-  [EModelEndpoint.gptPlugins]: compactPluginsSchema,
 };
 
 export const parseCompactConvo = ({
@@ -348,16 +329,11 @@ export const parseCompactConvo = ({
   const { iconURL: _clientIconURL, ...conversationWithoutIconURL } = conversation;
 
   const convo = schema.parse(conversationWithoutIconURL) as s.TConversation | null;
-  // const { models, secondaryModels } = possibleValues ?? {};
   const { models } = possibleValues ?? {};
 
   if (models && convo) {
     convo.model = getFirstDefinedValue(models) ?? convo.model;
   }
-
-  // if (secondaryModels && convo.agentOptions) {
-  //   convo.agentOptionmodel = getFirstDefinedValue(secondaryModels) ?? convo.agentOptionmodel;
-  // }
 
   return convo;
 };
