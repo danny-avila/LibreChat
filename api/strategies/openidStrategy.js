@@ -99,9 +99,14 @@ This violates RFC 7235 and may cause issues with strict OAuth clients. Removing 
 /** @typedef {Configuration | null}  */
 let openidConfig = null;
 
-//overload currenturl function because of express version 4 buggy req.host doesn't include port
-//More info https://github.com/panva/openid-client/pull/713
-
+/**
+ * Custom OpenID Strategy
+ *
+ * Note: Originally overrode currentUrl() to work around Express 4's req.host not including port.
+ * With Express 5, req.host now includes the port by default, but we continue to use DOMAIN_SERVER
+ * for consistency and explicit configuration control.
+ * More info: https://github.com/panva/openid-client/pull/713
+ */
 class CustomOpenIDStrategy extends OpenIDStrategy {
   currentUrl(req) {
     const hostAndProtocol = process.env.DOMAIN_SERVER;
