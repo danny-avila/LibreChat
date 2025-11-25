@@ -83,6 +83,20 @@ const startServer = async () => {
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(handleJsonParseError);
+
+  /**
+   * Express 5 Compatibility: Make req.query writable for mongoSanitize
+   * In Express 5, req.query is read-only by default, but express-mongo-sanitize needs to modify it
+   */
+  app.use((req, _res, next) => {
+    Object.defineProperty(req, 'query', {
+      ...Object.getOwnPropertyDescriptor(req, 'query'),
+      value: req.query,
+      writable: true,
+    });
+    next();
+  });
+
   app.use(mongoSanitize());
   app.use(cors());
   app.use(cookieParser());
@@ -161,7 +175,12 @@ const startServer = async () => {
     res.send(updatedIndexHtml);
   });
 
-  app.listen(port, host, async () => {
+  app.listen(port, host, async (err) => {
+    if (err) {
+      logger.error('Failed to start server:', err);
+      process.exit(1);
+    }
+
     if (host === '0.0.0.0') {
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
