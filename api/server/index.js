@@ -160,7 +160,12 @@ const startServer = async () => {
     res.send(updatedIndexHtml);
   });
 
-  app.listen(port, host, async () => {
+  app.listen(port, host, async (err) => {
+    if (err) {
+      logger.error('Failed to start server:', err);
+      process.exit(1);
+    }
+
     if (host === '0.0.0.0') {
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,

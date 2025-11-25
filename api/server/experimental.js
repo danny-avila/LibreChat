@@ -327,7 +327,12 @@ if (cluster.isMaster) {
     });
 
     /** Start listening on shared port (cluster will distribute connections) */
-    app.listen(port, host, async () => {
+    app.listen(port, host, async (err) => {
+      if (err) {
+        logger.error(`Worker ${process.pid} failed to start server:`, err);
+        process.exit(1);
+      }
+
       logger.info(
         `Worker ${process.pid} started: Server listening at http://${
           host == '0.0.0.0' ? 'localhost' : host
