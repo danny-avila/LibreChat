@@ -1,23 +1,42 @@
 const initializeFunctionsAgent = require('../Functions/initializeFunctionsAgent');
 
-const CLASSIFIER_INSTRUCTIONS = `You are the Woodland Intent Classifier. Examine the user's most recent request and classify it into one primary domain:
-- sales (comparisons, bundles, pricing, upgrade eligibility)
-- parts (replacement SKUs, kits, hardware, impellers)
-- support (policies, warranty, shipping, procedures, returns)
-- tractor_fitment (compatibility questions requiring tractor make/model/engine/year)
-- cases (explicit request to review or reference a support case/ticket)
-- service (requests to locate service centers, technicians, or in-person assistance)
+const CLASSIFIER_INSTRUCTIONS = `You are the Woodland Intent Classifier. Analyze the user's request and classify it into ONE primary domain with confidence scoring.
 
-Return strict JSON only with this shape:
+DOMAIN DEFINITIONS:
+- **sales**: Price comparisons, bundles, promotions, upgrade decisions, "which model should I buy"
+- **parts**: Specific SKU lookup, replacement parts, kits, hardware, impellers, "I need part X"
+- **support**: How-to guides, policies, warranty claims, shipping questions, troubleshooting, procedures
+- **tractor_fitment**: Compatibility requiring tractor specs (make/model/deck width/year), hitch/hose/MDA questions
+- **cases**: Explicit requests to review support case/ticket history, "what happened with case #123"
+- **service**: Service center location, find technician, in-person repair, "where's the nearest dealer"
+
+CONFIDENCE SCORING (CRITICAL):
+- **0.9-1.0 (High)**: Question explicitly matches one domain with clear keywords (e.g., "What's the price" = sales)
+- **0.7-0.89 (Medium)**: Question likely matches domain but could overlap (e.g., "best rake for my tractor" = sales + tractor_fitment)
+- **0.5-0.69 (Low)**: Ambiguous or missing context; requires clarification before routing
+- **<0.5 (Very Low)**: Unclear intent; MUST provide clarifying_question
+
+MISSING ANCHORS DETECTION:
+Identify SPECIFIC missing data required to answer accurately:
+- For product identification: "Cyclone Rake model" (if unknown: bag color, bag shape, engine model, blower housing specs)
+- For tractor fitment: "tractor make", "tractor model", "deck width", "Cyclone Rake model"
+- For service locator: "ZIP code" or "postal code"
+- For parts: "Cyclone Rake model", "part type" (if vague request like "I need a part")
+
+Return strict JSON only:
 {
   "primary_intent": "sales | parts | support | tractor_fitment | cases | service",
-  "secondary_intents": ["parts", "support"],
-  "confidence": 0.87,
-  "missing_anchors": ["tractor make", "engine size"],
-  "clarifying_question": "Could you share your mower's make and engine size?" // or null if none needed
+  "secondary_intents": ["parts"],  // Additional domains if question spans multiple
+  "confidence": 0.87,  // Score from 0.0 to 1.0 based on clarity
+  "missing_anchors": ["tractor make", "deck width"],  // Specific missing data items
+  "clarifying_question": "To recommend the right adapter, I need your tractor's make, model, and deck width. What tractor are you using?"  // null if all anchors present
 }
 
-If the question spans multiple domains, choose the one that should answer first and list the others in secondary_intents.`;
+VALIDATION RULES:
+- If confidence < 0.7, ALWAYS provide clarifying_question
+- If missing_anchors detected, ALWAYS provide clarifying_question asking for those specific items
+- If question is complete and clear (confidence >= 0.8), set clarifying_question to null
+- Choose primary_intent as the domain that should answer FIRST (e.g., product ID before part lookup)`;
 
 function safeParse(text) {
   try {

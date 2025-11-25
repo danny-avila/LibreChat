@@ -9,6 +9,7 @@ const initializeCyclopediaSupportAgent = require('./cyclopediaSupportAgent');
 const initializeCasesReferenceAgent = require('./casesReferenceAgent');
 const initializeWebsiteProductAgent = require('./websiteProductAgent');
 const initializeTractorFitmentAgent = require('./tractorFitmentAgent');
+const { applyUrlPolicyAsync } = require('../tools/structured/util/urlPolicy');
 
 const DOMAIN_AGENT_CONFIGS = [
   {
@@ -158,6 +159,7 @@ const resolveDomainTools = (
   appendIntentTools(primaryIntent || 'unknown');
   secondaryIntents.forEach(appendIntentTools);
 
+  // Low-confidence handling: add fallback domain agents
   const isLowConfidence =
     confidence == null || Number(confidence) < Number(DEFAULT_LOW_CONFIDENCE_THRESHOLD || 0);
   if (isLowConfidence) {
@@ -166,20 +168,30 @@ const resolveDomainTools = (
       .filter((name) => availableSet.has(name))
       .slice(0, 1)
       .forEach((name) => addTool(name, { front: true }));
+    
+    logger?.warn?.('[SupervisorRouter] Low confidence classification', {
+      primaryIntent,
+      confidence,
+      text: rawText?.substring(0, 100),
+    });
   }
 
   if (!selections.length) {
     appendIntentTools('unknown');
   }
 
+  // Always add Cases agent at the end for precedent checking
   addTool('CasesReferenceAgent');
 
+  // High confidence: limit to fewer tools; low confidence: allow more exploration
   const maxTools =
     confidence != null && confidence >= HIGH_CONFIDENCE_THRESHOLD
       ? Math.max(1, Math.min(HIGH_CONFIDENCE_TOOL_CAP, DEFAULT_MAX_DOMAIN_TOOLS))
       : DEFAULT_MAX_DOMAIN_TOOLS;
 
   let recommended = selections.slice(0, maxTools);
+  
+  // Ensure Cases agent is always included for validation
   if (!recommended.includes('CasesReferenceAgent') && availableSet.has('CasesReferenceAgent')) {
     if (recommended.length >= maxTools) {
       recommended[recommended.length - 1] = 'CasesReferenceAgent';
@@ -188,10 +200,12 @@ const resolveDomainTools = (
     }
   }
 
-  logger?.debug?.('[SupervisorRouter] Tool selection heuristics', {
+  logger?.debug?.('[SupervisorRouter] Tool selection complete', {
     primaryIntent,
     secondaryIntents,
     confidence,
+    isLowConfidence,
+    maxTools,
     recommended,
   });
 
@@ -207,6 +221,14 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
   const baseToolNames = baseTools
     .map((tool) => tool?.name)
     .filter((name) => typeof name === 'string' && name.length > 0);
+
+  // Domain tool call governance state
+  const MAX_DOMAIN_CALLS = Number(process.env.WOODLAND_SUPERVISOR_MAX_CALLS || 4);
+  const MAX_TOTAL_SYNTHESIS_CHARS = Number(process.env.WOODLAND_SUPERVISOR_MAX_SYNTHESIS_CHARS || 2400);
+  let totalDomainCalls = 0;
+  const domainCallOutputs = [];
+  const calledDomainTools = new Set();
+  let synthesisLock = false; // once true, no further domain calls allowed
 
   const domainAgentEntries = DOMAIN_AGENT_CONFIGS.map(({ name, description, initializer }) => {
     let cachedAgent = null;
@@ -232,6 +254,19 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
 
     const wrappedTool = tool(
       async ({ input }) => {
+        // Hard stop if we've triggered synthesis phase
+        if (synthesisLock) {
+          return `[tool:${name}] skipped (synthesis phase)`;
+        }
+        // Enforce one call per domain tool
+        if (calledDomainTools.has(name)) {
+          return `[tool:${name}] already called; reusing prior result.`;
+        }
+        // Enforce global cap
+        if (totalDomainCalls >= MAX_DOMAIN_CALLS) {
+          synthesisLock = true;
+          return `[tool:${name}] not called; max domain calls (${MAX_DOMAIN_CALLS}) reached.`;
+        }
         const agent = await ensureAgent();
         if (agent?.memory?.clear) {
           try {
@@ -246,15 +281,28 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
         const payload = typeof input === 'string' ? input : JSON.stringify(input);
         const result = await agent.invoke({ input: payload });
         if (!result || typeof result === 'string') {
-          return result || '';
+          const output = result || '';
+          calledDomainTools.add(name);
+          totalDomainCalls += 1;
+          domainCallOutputs.push({ name, output });
+          if (totalDomainCalls >= MAX_DOMAIN_CALLS) {
+            synthesisLock = true;
+          }
+          return output;
         }
         const { output, text, returnValues } = result;
-        return (
+        const resolved =
           (typeof output === 'string' && output) ||
           (typeof text === 'string' && text) ||
           (typeof returnValues?.output === 'string' && returnValues.output) ||
-          JSON.stringify(result)
-        );
+          JSON.stringify(result);
+        calledDomainTools.add(name);
+        totalDomainCalls += 1;
+        domainCallOutputs.push({ name, output: resolved });
+        if (totalDomainCalls >= MAX_DOMAIN_CALLS) {
+          synthesisLock = true;
+        }
+        return resolved;
       },
       {
         name,
@@ -307,6 +355,72 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
       ]),
     ),
   });
+
+  // Wrap executor invoke with URL validation + synthesis enforcement
+  const originalInvoke = executor.invoke.bind(executor);
+  executor.invoke = async function (input, config) {
+    const result = await originalInvoke(input, config);
+    // If we've entered synthesisLock, inject a synthesized summary of prior tool outputs
+    if (synthesisLock && domainCallOutputs.length > 0 && result && typeof result === 'object') {
+      // Deduplicate similar outputs (same normalized first 80 chars)
+      const seen = new Set();
+      const summaryLines = [];
+      for (const d of domainCallOutputs) {
+        const head = (d.output || '').slice(0, 80).toLowerCase();
+        if (seen.has(head)) continue;
+        seen.add(head);
+        summaryLines.push(`[${d.name}] ${(d.output || '').slice(0, 400)}`); // cap per-domain output
+      }
+      // Global synthesis length cap
+      let combined = summaryLines.join('\n');
+      if (combined.length > MAX_TOTAL_SYNTHESIS_CHARS) {
+        combined = combined.slice(0, MAX_TOTAL_SYNTHESIS_CHARS) + '\n...[truncated]';
+      }
+      const synthesisNote = `\n[Supervisor Synthesis]\nDomain calls: ${totalDomainCalls}/${MAX_DOMAIN_CALLS}\n${combined}\n[End Supervisor Synthesis]\n`;
+      if (typeof result.output === 'string') {
+        result.output = `${result.output}${synthesisNote}`;
+      } else if (typeof result.text === 'string') {
+        result.text = `${result.text}${synthesisNote}`;
+      } else {
+        result.synthesis = summaryLines;
+      }
+      // After synthesis, strip domain tools to prevent further loops
+      if (executor.tools) {
+        executor.tools = baseTools; // keep only base tools (if any)
+      }
+    }
+    try {
+      const docs = Array.isArray(result?.documents)
+        ? result.documents
+        : Array.isArray(result?.citations)
+          ? result.citations
+          : Array.isArray(result?.sources)
+            ? result.sources
+            : [];
+      if (docs.length) {
+        const validated = await applyUrlPolicyAsync(docs, { checkHealth: true });
+        const removed = docs.length - validated.length;
+        if (removed > 0) {
+          logger?.warn?.('[SupervisorRouter] Removed invalid/broken citations', {
+            removed,
+            original: docs.length,
+            remaining: validated.length,
+          });
+        }
+        if (result.documents) result.documents = validated;
+        if (result.citations) result.citations = validated;
+        if (result.sources) result.sources = validated;
+        result.url_validation = {
+          performed: true,
+            removed,
+            timestamp: new Date().toISOString(),
+        };
+      }
+    } catch (error) {
+      logger?.warn?.('[SupervisorRouter] URL validation failed', { error: error?.message });
+    }
+    return result;
+  };
 
   const allDomainToolNames = Array.from(domainToolMap.keys());
 
@@ -372,25 +486,67 @@ module.exports = async function initializeSupervisorRouterAgent(params) {
     const confidence = typeof metadata.confidence === 'number' ? metadata.confidence : null;
     const missingAnchors = Array.isArray(metadata.missing_anchors) ? metadata.missing_anchors : [];
     const clarifyingQuestion = metadata.clarifying_question || null;
+    
+    // Log classification results for debugging
+    logger?.info?.('[SupervisorRouter] Intent classification', {
+      primaryIntent,
+      secondaryIntents,
+      confidence,
+      missingAnchors,
+      hasClarifyingQuestion: !!clarifyingQuestion,
+    });
+    
     const recommendedTools = resolveDomainTools(
       { primaryIntent, secondaryIntents, confidence },
       original,
       allDomainToolNames,
     );
 
+    // Build enhanced input with validation guidance
+    const validationGuidance = [];
+    
+    if (confidence != null && confidence < 0.7) {
+      validationGuidance.push(`[Low Confidence Warning: ${confidence.toFixed(2)}]`);
+      validationGuidance.push('Before answering, verify you have enough context to provide accurate guidance.');
+    }
+    
+    if (missingAnchors.length > 0) {
+      validationGuidance.push(`[Missing Required Data: ${missingAnchors.join(', ')}]`);
+      if (clarifyingQuestion) {
+        validationGuidance.push(`Ask customer: "${clarifyingQuestion}"`);
+      } else {
+        validationGuidance.push(`Collect these anchors before routing to domain tools.`);
+      }
+    }
+    
+    if (clarifyingQuestion && missingAnchors.length > 0) {
+      validationGuidance.push('[Action Required: Ask clarifying question BEFORE calling domain tools]');
+    }
+
+    const inputLines = [
+      `[Intent Classification]`,
+      `primary_intent: ${primaryIntent}`,
+      `secondary_intents: ${secondaryIntents.join(', ') || 'none'}`,
+      `confidence: ${confidence != null ? confidence.toFixed(2) : 'n/a'}`,
+      `missing_anchors: ${missingAnchors.join(', ') || 'none'}`,
+      `clarifying_question: ${clarifyingQuestion || 'none'}`,
+      `[/Intent Classification]`,
+      '',
+    ];
+    
+    // Add validation guidance if present
+    if (validationGuidance.length > 0) {
+      inputLines.push('[Validation Guidance]');
+      inputLines.push(...validationGuidance);
+      inputLines.push('[/Validation Guidance]');
+      inputLines.push('');
+    }
+    
+    inputLines.push(original);
+
     return {
       ...input,
-      input: [
-        `[Intent Classification]`,
-        `primary_intent: ${primaryIntent}`,
-        `secondary_intents: ${secondaryIntents.join(', ') || 'none'}`,
-        `confidence: ${confidence != null ? confidence.toFixed(2) : 'n/a'}`,
-        `missing_anchors: ${missingAnchors.join(', ') || 'none'}`,
-        `clarifying_question: ${clarifyingQuestion || 'none'}`,
-        `[/Intent Classification]`,
-        '',
-        original,
-      ].join('\n'),
+      input: inputLines.join('\n'),
       intentMetadata: {
         primaryIntent,
         secondaryIntents,

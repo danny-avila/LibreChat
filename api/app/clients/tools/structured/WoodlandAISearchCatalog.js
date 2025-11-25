@@ -6,6 +6,8 @@ const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 const { logger } = require('~/config');
 const TTLCache = require('../util/ttlCache');
 const { applyCatalogPolicy, canonicalizeModel } = require('./util/woodlandCatalogPolicy');
+// Hitch relevance helpers (lazy usage inside matching logic)
+const { isHitchRelevant, extractCategory } = require('./util/hitchRelevance');
 
 const DEFAULT_CACHE_TTL_MS = Number(process.env.WOODLAND_SEARCH_CACHE_TTL_MS ?? 10_000);
 const DEFAULT_CACHE_MAX = Number(process.env.WOODLAND_SEARCH_CACHE_MAX_ENTRIES ?? 200);
@@ -121,6 +123,20 @@ class WoodlandAISearchCatalog extends Tool {
     if (!canonicalRakeName && !rakeSku) {
       return true;
     }
+    // Determine hitch relevance and annotate for downstream consumers.
+    try {
+      const category = extractCategory(doc);
+      const categories = doc?.normalized_catalog?.categories || [];
+      const hitchRelevant = isHitchRelevant(category, categories);
+      if (doc && typeof doc === 'object') {
+        doc.__hitchRelevant = hitchRelevant;
+        if (doc.normalized_catalog && typeof doc.normalized_catalog === 'object') {
+          doc.normalized_catalog.hitch_relevant = hitchRelevant;
+        }
+      }
+    } catch (_) {
+      // Non-fatal; continue.
+    }
     const fitment = doc?.normalized_catalog?.fitment || {};
     const namesCanonical = Array.isArray(fitment.rake_names_canonical)
       ? fitment.rake_names_canonical
@@ -223,7 +239,6 @@ class WoodlandAISearchCatalog extends Tool {
     const title = str(d?.title) || str(d?.product_name);
     const sku = str(d?.sku) || str(d?.product_sku);
     const thePrice = num(d?.price);
-    const availability = str(d?.availability) || str(d?.status);
 
     const citationLabel = sku ? `${title || 'Product'} — ${sku}` : title || 'Product';
     const citationUrl = provenance?.url;
@@ -236,8 +251,6 @@ class WoodlandAISearchCatalog extends Tool {
       price: thePrice,
       old_price: num(d?.old_price),
       catalog_price: num(d?.catalog_price),
-      availability,
-      stock_quantity: num(d?.stock_quantity),
       categories: list(d?.categories),
       category_paths: list(d?.category_paths),
       tags: list(d?.tags),

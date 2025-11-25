@@ -25,14 +25,12 @@ const WOODLAND_AGENTS = [
       'woodland-ai-search-cyclopedia',
       'woodland-ai-search-website',
       'woodland-ai-search-cases',
+      // Added tractor search tool to avoid direct 'tool not found' errors when supervisor routes fitment queries
+      'woodland-ai-search-tractor',
     ],
     capabilities: [AgentCapabilities.chain],
-    agent_ids: [
-      'agent_woodland_catalog',
-      'agent_woodland_support',
-      'agent_woodland_cases',
-      'agent_woodland_website',
-    ],
+    // Removed agent_ids to prevent legacy sequential chain recursion & duplicate domain tool calls.
+    agent_ids: [],
     hide_sequential_outputs: true,
     conversation_starters: [
       'Can you recommend the best Cyclone Rake for heavy fall cleanup on 3 acres?',
@@ -42,6 +40,7 @@ const WOODLAND_AGENTS = [
       'How long does shipping take during peak fall season?'
     ],
     temperature: 0,
+    recursion_limit: 6, // enforce shallow recursion to avoid loops; synthesis lock handles tool cap
   },
   {
     id: 'agent_woodland_catalog',
@@ -80,11 +79,11 @@ const WOODLAND_AGENTS = [
     instructionsKey: 'TractorFitmentAgent',
     tools: ['woodland-ai-search-tractor'],
     conversation_starters: [
-      'What adapter kit do I need for a John Deere D130 with a 42-inch deck?',
-      'Will a Commander work with a 2015 Vanguard 8 HP engine?',
-      'Does my mower require deck drilling for the Cyclone Rake MDA?',
-      'Which hitch kit fits a Craftsman T260?',
-      'Is the Commander compatible with larger hose upgrades?'
+      'I need help finding the right fitment for my tractor',
+      'What parts do I need for my tractor?',
+      'Can you help me check tractor compatibility?',
+      'I want to see if my tractor works with a Cyclone Rake',
+      'Help me find the right hitch and adapter for my tractor'
     ],
     temperature: 0,
   },

@@ -289,9 +289,9 @@
         "description": "Admin or query API key for your Azure Search service."
       },
       {
-        "authField": "AZURE_AI_SEARCH_HISTORY_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "History Index Name",
-        "description": "Index name for history data (e.g., &lt;base&gt;-history). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
+        "authField": "AZURE_AI_SEARCH_ENGINE_HISTORY_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
+        "label": "Engine History Index Name",
+        "description": "Index name for engine history data (e.g., wpp-knowledge-prod-airtable-enginehistory)."
       }
     ]
   }
@@ -336,9 +336,9 @@
         "description": "Admin or query API key for your Azure Search service."
       },
       {
-        "authField": "AZURE_AI_SEARCH_HISTORY_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
-        "label": "History Index Name",
-        "description": "Index name for history data (e.g., &lt;base&gt;-history). Uses AZURE_AI_SEARCH_INDEX_NAME if not provided."
+        "authField": "AZURE_AI_SEARCH_PRODUCT_HISTORY_INDEX||AZURE_AI_SEARCH_INDEX_NAME",
+        "label": "Product History Index Name",
+        "description": "Index name for product history data (e.g., wpp-knowledge-prod-airtable-producthistory)."
       }
     ]
   }
