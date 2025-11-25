@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
+import { Trans } from 'react-i18next';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
 import { TrashIcon, ArchiveRestore, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
@@ -287,12 +288,18 @@ export default function ArchivedChatsTable({
 
       <OGDialog open={isDeleteOpen} onOpenChange={onOpenChange}>
         <OGDialogContent
-          title={localize('com_ui_delete_confirm') + ' ' + (deleteConversation?.title ?? '')}
+          title={localize('com_ui_delete_confirm', {
+            title: deleteConversation?.title ?? localize('com_ui_untitled'),
+          })}
           className="w-11/12 max-w-md"
         >
           <OGDialogHeader>
             <OGDialogTitle>
-              {localize('com_ui_delete_confirm')} <strong>{deleteConversation?.title}</strong>
+              <Trans
+                i18nKey="com_ui_delete_confirm_strong"
+                values={{ title: deleteConversation?.title }}
+                components={{ strong: <strong /> }}
+              />
             </OGDialogTitle>
           </OGDialogHeader>
           <div className="flex justify-end gap-4 pt-4">

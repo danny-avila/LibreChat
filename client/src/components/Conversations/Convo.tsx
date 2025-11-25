@@ -137,7 +137,9 @@ export default function Conversation({ conversation, retainView, toggleNav }: Co
       )}
       role="button"
       tabIndex={renaming ? -1 : 0}
-      aria-label={`${title || localize('com_ui_untitled')} conversation`}
+      aria-label={localize('com_ui_conversation_label', {
+        title: title || localize('com_ui_untitled'),
+      })}
       onClick={(e) => {
         if (renaming) {
           return;
