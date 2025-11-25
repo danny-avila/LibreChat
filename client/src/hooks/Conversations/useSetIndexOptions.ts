@@ -1,7 +1,5 @@
-import { useRecoilValue } from 'recoil';
 import {
   TPreset,
-  TPlugin,
   TConversation,
   EModelEndpoint,
   tConvoUpdateSchema,
@@ -9,12 +7,10 @@ import {
 import type { TSetExample, TSetOption, TSetOptionsPayload } from '~/common';
 import usePresetIndexOptions from './usePresetIndexOptions';
 import { useChatContext } from '~/Providers/ChatContext';
-import store from '~/store';
 
 type TUseSetOptions = (preset?: TPreset | boolean | null) => TSetOptionsPayload;
 
 const useSetIndexOptions: TUseSetOptions = (preset = false) => {
-  const availableTools = useRecoilValue(store.availableTools);
   const { conversation, setConversation } = useChatContext();
 
   const result = usePresetIndexOptions(preset);

@@ -747,6 +747,7 @@
   "com_ui_bookmarks_title": "Title",
   "com_ui_bookmarks_update_error": "There was an error updating the bookmark",
   "com_ui_bookmarks_update_success": "Bookmark updated successfully",
+  "com_ui_by_author": "by {{0}}",
   "com_ui_bulk_delete_error": "Failed to delete shared links",
   "com_ui_callback_url": "Callback URL",
   "com_ui_cancel": "Cancel",
