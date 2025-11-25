@@ -528,16 +528,6 @@ export type TInput = {
   inputStr: string;
 };
 
-export type TResPlugin = {
-  plugin: string;
-  input: string;
-  thought: string;
-  loading?: boolean;
-  outputs?: string;
-  latest?: string;
-  inputs?: TInput[];
-};
-
 export const tExampleSchema = z.object({
   input: z.object({
     content: z.string(),
@@ -548,39 +538,6 @@ export const tExampleSchema = z.object({
 });
 
 export type TExample = z.infer<typeof tExampleSchema>;
-
-export enum EAgent {
-  functions = 'functions',
-  classic = 'classic',
-}
-
-export const agentOptionSettings = {
-  model: {
-    default: 'gpt-4o-mini',
-  },
-  temperature: {
-    min: 0,
-    max: 1,
-    step: 0.01,
-    default: 0,
-  },
-  agent: {
-    default: EAgent.functions,
-    options: [EAgent.functions, EAgent.classic],
-  },
-  skipCompletion: {
-    default: true,
-  },
-};
-
-export const eAgentOptionsSchema = z.nativeEnum(EAgent);
-
-export const tAgentOptionsSchema = z.object({
-  agent: z.string().default(EAgent.functions),
-  skipCompletion: z.boolean().default(agentOptionSettings.skipCompletion.default),
-  model: z.string(),
-  temperature: z.number().default(agentOptionSettings.temperature.default),
-});
 
 export const tMessageSchema = z.object({
   messageId: z.string(),

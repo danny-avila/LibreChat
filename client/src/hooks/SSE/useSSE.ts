@@ -123,8 +123,7 @@ export default function useSSE(
 
       if (data.final != null) {
         clearDraft(submission.conversation?.conversationId);
-        const { plugins } = data;
-        finalHandler(data, { ...submission, plugins } as EventSubmission);
+        finalHandler(data, submission as EventSubmission);
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
         console.log('final', data);
         return;

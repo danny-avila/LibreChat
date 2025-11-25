@@ -598,7 +598,6 @@ export type NewConversationParams = {
 export type ConvoGenerator = (params: NewConversationParams) => void | t.TConversation;
 
 export type TBaseResData = {
-  plugin?: t.TResPlugin;
   final?: boolean;
   initial?: boolean;
   previousMessages?: t.TMessage[];
