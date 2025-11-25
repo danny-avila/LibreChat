@@ -289,7 +289,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                     className={cn(
                       baseClasses,
                       removeFocusRings,
-                      'transition-[max-height] duration-200 disabled:cursor-not-allowed',
+                      'scrollbar-hover transition-[max-height] duration-200 disabled:cursor-not-allowed',
                     )}
                   />
                   {isCollapsed && (
