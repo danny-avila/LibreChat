@@ -83,6 +83,7 @@ async function buildEndpointOption(req, res, next) {
       : buildFunction[endpointType ?? endpoint];
 
     // TODO: use object params
+    req.body = req.body || {}; // Express 5: ensure req.body exists
     req.body.endpointOption = await builder(endpoint, parsedBody, endpointType);
 
     if (req.body.files && !isAgents) {
