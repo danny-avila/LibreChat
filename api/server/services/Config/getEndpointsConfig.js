@@ -88,7 +88,8 @@ async function getEndpointsConfig(req) {
       capabilities,
     };
   }
-
+  /** regions */
+  // bedrock
   if (mergedConfig[EModelEndpoint.bedrock] && appConfig?.endpoints?.[EModelEndpoint.bedrock]) {
     const { availableRegions } = appConfig.endpoints[EModelEndpoint.bedrock];
     mergedConfig[EModelEndpoint.bedrock] = {
@@ -96,7 +97,15 @@ async function getEndpointsConfig(req) {
       availableRegions,
     };
   }
-
+  // google
+  if (mergedConfig[EModelEndpoint.google] && appConfig?.endpoints?.[EModelEndpoint.google]) {
+    const { availableRegions } = appConfig.endpoints[EModelEndpoint.google];
+    mergedConfig[EModelEndpoint.google] = {
+      ...mergedConfig[EModelEndpoint.google],
+      availableRegions,
+    };
+  }
+  
   const endpointsConfig = orderEndpointsConfig(mergedConfig);
 
   await cache.set(CacheKeys.ENDPOINT_CONFIG, endpointsConfig);
