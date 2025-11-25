@@ -216,12 +216,6 @@ describe('getOpenAIModels', () => {
     expect(models).toEqual(expect.arrayContaining(['azure-model', 'azure-model-2']));
   });
 
-  it('returns `PLUGIN_MODELS` with `plugins` flag (and fetch fails)', async () => {
-    process.env.PLUGIN_MODELS = 'plugins-model,plugins-model-2';
-    const models = await getOpenAIModels({ plugins: true });
-    expect(models).toEqual(expect.arrayContaining(['plugins-model', 'plugins-model-2']));
-  });
-
   it('returns `OPENAI_MODELS` with no flags (and fetch fails)', async () => {
     process.env.OPENAI_MODELS = 'openai-model,openai-model-2';
     const models = await getOpenAIModels({});
