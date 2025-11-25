@@ -8,14 +8,7 @@ const {
 } = require('@librechat/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 
-const initializeClient = async ({
-  req,
-  res,
-  endpointOption,
-  optionsOnly,
-  overrideEndpoint,
-  overrideModel,
-}) => {
+const initializeClient = async ({ req, endpointOption, overrideEndpoint, overrideModel }) => {
   const appConfig = req.config;
   const {
     PROXY,

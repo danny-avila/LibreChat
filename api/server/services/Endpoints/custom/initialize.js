@@ -12,7 +12,7 @@ const getLogStores = require('~/cache/getLogStores');
 
 const { PROXY } = process.env;
 
-const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrideEndpoint }) => {
+const initializeClient = async ({ req, endpointOption, overrideEndpoint }) => {
   const appConfig = req.config;
   const { key: expiresAt } = req.body;
   const endpoint = overrideEndpoint ?? req.body.endpoint;
@@ -119,8 +119,6 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   let clientOptions = {
     reverseProxyUrl: baseURL ?? null,
     proxy: PROXY ?? null,
-    req,
-    res,
     ...customOptions,
     ...endpointOption,
   };

@@ -2,7 +2,7 @@ const { getLLMConfig } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 
-const initializeClient = async ({ req, res, endpointOption, overrideModel, optionsOnly }) => {
+const initializeClient = async ({ req, endpointOption, overrideModel }) => {
   const appConfig = req.config;
   const { ANTHROPIC_API_KEY, ANTHROPIC_REVERSE_PROXY, PROXY } = process.env;
   const expiresAt = req.body.key;
