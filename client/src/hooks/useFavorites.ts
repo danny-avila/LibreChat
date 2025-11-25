@@ -1,9 +1,19 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
-import type { Favorite } from '~/store/favorites';
 import store from '~/store';
 import { useGetFavoritesQuery, useUpdateFavoritesMutation } from '~/data-provider';
 
+/**
+ * Hook for managing user favorites (pinned agents and models).
+ *
+ * Favorites are synchronized with the server via `/api/user/settings/favorites`.
+ * Each favorite is either:
+ * - An agent: `{ agentId: string }`
+ * - A model: `{ model: string, endpoint: string }`
+ *
+ * @returns Object containing favorites state and helper methods for
+ * adding, removing, toggling, reordering, and checking favorites.
+ */
 export default function useFavorites() {
   const [favorites, setFavorites] = useRecoilState(store.favorites);
   const getFavoritesQuery = useGetFavoritesQuery();
@@ -12,18 +22,8 @@ export default function useFavorites() {
   useEffect(() => {
     if (getFavoritesQuery.data) {
       if (Array.isArray(getFavoritesQuery.data)) {
-        const mapped = getFavoritesQuery.data.map(
-          (f: Favorite & { type?: string; id?: string }) => {
-            if (f.agentId || (f.model && f.endpoint)) return f;
-            if (f.type === 'agent' && f.id) return { agentId: f.id };
-            // Drop label and map legacy model format
-            if (f.type === 'model') return { model: f.model, endpoint: f.endpoint };
-            return f;
-          },
-        );
-        setFavorites(mapped);
+        setFavorites(getFavoritesQuery.data);
       } else {
-        // Handle legacy format or invalid data
         setFavorites([]);
       }
     }
@@ -61,7 +61,10 @@ export default function useFavorites() {
     saveFavorites(newFavorites);
   };
 
-  const isFavoriteAgent = (agentId: string) => {
+  const isFavoriteAgent = (agentId: string | undefined | null) => {
+    if (!agentId) {
+      return false;
+    }
     return favorites.some((f) => f.agentId === agentId);
   };
 
@@ -85,12 +88,25 @@ export default function useFavorites() {
     }
   };
 
-  const reorderFavorites = (newFavorites: typeof favorites) => {
-    setFavorites(newFavorites);
-  };
-
-  const persistFavorites = (newFavorites: typeof favorites) => {
-    updateFavoritesMutation.mutate(newFavorites);
+  /**
+   * Reorder favorites and persist the new order to the server.
+   * This combines state update and persistence to avoid race conditions
+   * where the closure captures stale state.
+   */
+  const reorderFavorites = (newFavorites: typeof favorites, persist = false) => {
+    const cleaned = newFavorites.map((f) => {
+      if (f.agentId) {
+        return { agentId: f.agentId };
+      }
+      if (f.model && f.endpoint) {
+        return { model: f.model, endpoint: f.endpoint };
+      }
+      return f;
+    });
+    setFavorites(cleaned);
+    if (persist) {
+      updateFavoritesMutation.mutate(cleaned);
+    }
   };
 
   return {
@@ -104,6 +120,15 @@ export default function useFavorites() {
     toggleFavoriteAgent,
     toggleFavoriteModel,
     reorderFavorites,
-    persistFavorites,
+    /** Whether the favorites query is currently loading */
+    isLoading: getFavoritesQuery.isLoading,
+    /** Whether there was an error fetching favorites */
+    isError: getFavoritesQuery.isError,
+    /** Whether the update mutation is in progress */
+    isUpdating: updateFavoritesMutation.isLoading,
+    /** Error from fetching favorites, if any */
+    fetchError: getFavoritesQuery.error,
+    /** Error from updating favorites, if any */
+    updateError: updateFavoritesMutation.error,
   };
 }

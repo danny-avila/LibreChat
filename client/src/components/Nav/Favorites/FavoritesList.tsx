@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo, useContext } from 'react';
+import React, { useRef, useCallback, useMemo, useContext, useEffect } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useDrag, useDrop } from 'react-dnd';
@@ -100,7 +100,7 @@ export default function FavoritesList({
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const authContext = useContext(AuthContext);
-  const { favorites, reorderFavorites, persistFavorites } = useFavorites();
+  const { favorites, reorderFavorites, isLoading: isFavoritesLoading } = useFavorites();
 
   const hasAccessToAgents = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
@@ -171,19 +171,33 @@ export default function FavoritesList({
     return map;
   }, [agentQueries, queryClient]);
 
+  const draggedFavoritesRef = useRef(favorites);
+
   const moveItem = useCallback(
     (dragIndex: number, hoverIndex: number) => {
-      const newFavorites = [...favorites];
+      const newFavorites = [...draggedFavoritesRef.current];
       const [draggedItem] = newFavorites.splice(dragIndex, 1);
       newFavorites.splice(hoverIndex, 0, draggedItem);
-      reorderFavorites(newFavorites);
+      draggedFavoritesRef.current = newFavorites;
+      reorderFavorites(newFavorites, false);
     },
-    [favorites, reorderFavorites],
+    [reorderFavorites],
   );
 
   const handleDrop = useCallback(() => {
-    persistFavorites(favorites);
-  }, [favorites, persistFavorites]);
+    // Persist the final order using the ref which has the latest state
+    reorderFavorites(draggedFavoritesRef.current, true);
+  }, [reorderFavorites]);
+
+  // Keep ref in sync when favorites change from external sources
+  useEffect(() => {
+    draggedFavoritesRef.current = favorites;
+  }, [favorites]);
+
+  // Show nothing while favorites are loading to prevent layout shifts
+  if (isFavoritesLoading) {
+    return null;
+  }
 
   // If no favorites and no marketplace to show, return null
   if (favorites.length === 0 && !showAgentMarketplace) {
@@ -193,7 +207,7 @@ export default function FavoritesList({
   return (
     <div className="mb-2 flex flex-col pb-2">
       <div className="mt-1 flex flex-col gap-1">
-        {/* Agent Marketplace button - identical styling to favorite items */}
+        {/* Agent Marketplace button */}
         {showAgentMarketplace && (
           <div
             className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
