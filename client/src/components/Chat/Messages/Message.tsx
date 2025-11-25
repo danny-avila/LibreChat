@@ -1,4 +1,6 @@
 import React from 'react';
+import { useState,useEffect,useRef } from 'react';
+
 import { useRecoilValue } from 'recoil';
 import { useMessageProcess } from '~/hooks';
 import type { TMessageProps } from '~/common';
@@ -29,6 +31,7 @@ const MessageContainer = React.memo(
 );
 
 export default function Message(props: TMessageProps) {
+
   const {
     showSibling,
     conversation,
@@ -38,6 +41,46 @@ export default function Message(props: TMessageProps) {
     isSubmittingFamily,
   } = useMessageProcess({ message: props.message });
   const { message, currentEditId, setCurrentEditId } = props;
+  const lastLoggedMessageId = useRef<string>("");
+
+  useEffect(() => {
+
+
+    const child = message?.children?.[0];
+    if (!child) return;
+  
+    // console.log("MCP FULL CHILD:", props.message.children);
+  
+    if (child?.content && Array.isArray(child.content)) {
+      
+      const finalSeg = child.content[child.content.length - 1];
+
+      if (finalSeg.type === "text" && typeof finalSeg.text === "string") {
+        const text = finalSeg.text.trim();
+    
+        if (!text) return; // ignore empty text
+    
+        const hasJSON = text.includes("```json");
+    
+        if (child.messageId !== lastLoggedMessageId.current) {
+          if (hasJSON) {
+            console.log(`Resmsg Text content ready to send: ${text} messageId: ${child.messageId}`);
+            window.parent.postMessage({ type: 'resmsg', data: text }, '*');
+          } else {
+            console.error(
+              `Error:Resmsg Response JSON. Text content: ${text} messageId: ${child.messageId}`
+            );
+          }
+    
+          lastLoggedMessageId.current = child.messageId;
+        }
+      }
+
+    }
+  }, [props.message]);
+  
+  
+
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
 
   if (!message || typeof message !== 'object') {
@@ -75,6 +118,7 @@ export default function Message(props: TMessageProps) {
         ) : (
           <div className="m-auto justify-center p-4 py-2 md:gap-6">
             <MessageRender {...props} />
+            
           </div>
         )}
       </MessageContainer>
