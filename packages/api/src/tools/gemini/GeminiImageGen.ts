@@ -140,8 +140,12 @@ export class GeminiImageGen extends StructuredTool<typeof geminiImageGenSchema> 
     if (provider === 'gemini' || provider === 'vertex') {
       return provider;
     }
-    // Auto-detect: prefer Vertex AI if available, otherwise use Gemini API
-    return process.env.GOOGLE_SERVICE_KEY_FILE ? 'vertex' : 'gemini';
+    // Auto-detect: prefer Vertex AI if GOOGLE_SERVICE_KEY_FILE exists and points to a valid file
+    const keyFile = process.env.GOOGLE_SERVICE_KEY_FILE;
+    if (keyFile && fs.existsSync(keyFile)) {
+      return 'vertex';
+    }
+    return 'gemini';
   }
 
   /**
@@ -156,8 +160,7 @@ export class GeminiImageGen extends StructuredTool<typeof geminiImageGenSchema> 
    */
   private getCredentialsPath(): string {
     return (
-      process.env.GOOGLE_SERVICE_KEY_FILE ||
-      path.join(__dirname, '..', '..', '..', 'api', 'data', 'auth.json')
+      process.env.GOOGLE_SERVICE_KEY_FILE || path.join(process.cwd(), 'api', 'data', 'auth.json')
     );
   }
 
@@ -223,7 +226,15 @@ export class GeminiImageGen extends StructuredTool<typeof geminiImageGenSchema> 
       }
 
       process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
-      const serviceKey = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+
+      let serviceKey;
+      try {
+        serviceKey = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+      } catch (parseError) {
+        throw new Error(
+          `Malformed JSON in Google service account credentials file at ${credentialsPath}: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+        );
+      }
 
       return new GoogleGenAI({
         vertexai: true,
