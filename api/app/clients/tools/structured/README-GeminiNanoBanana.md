@@ -1,40 +1,83 @@
-# Vertex AI Image Generation Tool
+# Gemini Image Generation Tool
 
-This tool enables agents to generate images using Google's Vertex AI Gemini 2.5 Flash Image model.
+This tool enables agents to generate images using Google's Gemini Image models. It supports both **Gemini API** (consumer) and **Vertex AI** (enterprise) providers.
 
 ## Features
 
-- **High-quality image generation** using Google's latest Gemini model
-- **Multiple aspect ratios** supported:
-  - `1:1` - Square (1024×1024)
-  - `3:4` - Portrait (896×1280)
-  - `4:3` - Landscape (1280×896)
-  - `9:16` - Tall (768×1408)
-  - `16:9` - Wide (1408×768)
+- **High-quality image generation** using Google's Gemini models
+- **Dual provider support**: Gemini API (API key) or Vertex AI (service account)
+- **Configurable model ID** via environment variable
+- **Image context support**: Reference existing images for editing
 - **Automatic image saving** to configured storage (Local, S3, Azure, Firebase)
 - **Agent integration** with proper content formatting
 - **Error handling** with fallback to data URLs
 
 ## Setup
 
-### Prerequisites
+### Provider Options
 
-1. **Google Cloud Project** with Vertex AI API enabled
-2. **Service Account** with Vertex AI permissions
-3. **Credentials file** placed at `api/data/auth.json`
+The tool supports two authentication methods:
+
+| Provider | Auth Method                        | Best For                          |
+| -------- | ---------------------------------- | --------------------------------- |
+| `gemini` | `GEMINI_API_KEY` env var           | Quick setup, consumer API         |
+| `vertex` | Service account JSON (`auth.json`) | Enterprise, Google Cloud projects |
 
 ### Configuration
 
-The tool uses **credentials** from `api/data/auth.json` following the same pattern as other Google service integrations.
+#### Environment Variables
 
-- **Credentials Path**: `api/data/auth.json` (automatically detected via `__dirname` resolution)
-- **Environment Override**: Set `GOOGLE_SERVICE_KEY_FILE` environment variable to use a different path
-- **Project ID**: Automatically extracted from the credentials file
-- **Location**: `global` (hardcoded)
+| Variable                  | Description                              | Default                                          |
+| ------------------------- | ---------------------------------------- | ------------------------------------------------ |
+| `GEMINI_IMAGE_PROVIDER`   | Provider to use: `gemini` or `vertex`    | Auto-detect (prefers `gemini` if API key is set) |
+| `GEMINI_IMAGE_MODEL`      | Model ID for image generation            | `gemini-2.5-flash-preview-05-20`                 |
+| `GEMINI_API_KEY`          | API key for Gemini API provider          | -                                                |
+| `GOOGLE_SERVICE_KEY_FILE` | Path to service account JSON (Vertex AI) | `api/data/auth.json`                             |
+| `GOOGLE_CLOUD_LOCATION`   | Google Cloud region (Vertex AI only)     | `global`                                         |
 
-### Installation
+### Option 1: Gemini API (Recommended for Quick Setup)
 
-The tool is automatically registered when the server starts. No additional configuration needed.
+1. Get an API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
+2. Set environment variables:
+
+```bash
+GEMINI_API_KEY=your-api-key-here
+# Optional: explicitly set provider (auto-detected if API key is present)
+GEMINI_IMAGE_PROVIDER=gemini
+```
+
+### Option 2: Vertex AI (Enterprise)
+
+1. Create a **Google Cloud Project** with Vertex AI API enabled
+2. Create a **Service Account** with Vertex AI permissions
+3. Download the JSON key and place it at `api/data/auth.json`
+4. Set environment variables:
+
+```bash
+GEMINI_IMAGE_PROVIDER=vertex
+# Optional: custom path to service account JSON
+GOOGLE_SERVICE_KEY_FILE=/path/to/your/auth.json
+```
+
+### Docker Configuration
+
+For Docker deployments using Vertex AI, mount the credentials file:
+
+```yaml
+# docker-compose.yml
+services:
+  api:
+    volumes:
+      - ./api/data/auth.json:/app/api/data/auth.json
+```
+
+### librechat.yaml
+
+Add `gemini_image_gen` to your included tools:
+
+```yaml
+includedTools: ['calculator', 'gemini_image_gen']
+```
 
 ## Usage
 
@@ -43,7 +86,7 @@ Agents can use this tool by calling `gemini_image_gen` with:
 ```json
 {
   "prompt": "A detailed description of the image you want to generate",
-  "aspectRatio": "1:1" // Optional, defaults to "1:1"
+  "image_ids": ["optional-image-id-for-context"]
 }
 ```
 
@@ -53,40 +96,43 @@ Agents can use this tool by calling `gemini_image_gen` with:
 - "An oil painting of a cat sitting by a window, impressionist style"
 - "A vector illustration of a modern city skyline, minimalist design"
 
+### Image Editing (with context)
+
+To edit or modify existing images, include the image ID:
+
+```json
+{
+  "prompt": "Add sunglasses to the person in this image",
+  "image_ids": ["file_abc123"]
+}
+```
+
 ## Technical Details
 
-- **Model**: `gemini-2.5-flash-image-preview`
+- **Default Model**: `gemini-2.5-flash-preview-05-20`
 - **Response Format**: Base64-encoded PNG images
 - **Storage Integration**: Uses existing LibreChat file storage strategies
 - **Content Types**: Properly formatted for agent responses
 - **Error Handling**: Graceful fallbacks and detailed error messages
 
-## Comparison with OpenAI Tools
-
-| Feature        | OpenAI DALL-E       | Vertex AI Gemini |
-| -------------- | ------------------- | ---------------- |
-| Input Format   | Multipart form data | JSON with base64 |
-| Max Resolution | 1792×1024           | 1408×768         |
-| Aspect Ratios  | 3 fixed sizes       | 5 aspect ratios  |
-| API Cost       | Per image           | Per request      |
-| Integration    | Stream-based        | Buffer-based     |
-
 ## Troubleshooting
 
 ### Common Issues
 
-1. **"Google credentials file not found"**
+1. **"GEMINI_API_KEY environment variable is required"**
+   - Set `GEMINI_API_KEY` in your environment
+   - Or set `GEMINI_IMAGE_PROVIDER=vertex` to use Vertex AI instead
 
-   - Ensure `api/data/auth.json` exists in the correct location
-   - Verify the file contains valid service account JSON
+2. **"Google service account credentials file not found"**
+   - Ensure `api/data/auth.json` exists
+   - Or set `GOOGLE_SERVICE_KEY_FILE` to the correct path
+   - Or set `GEMINI_IMAGE_PROVIDER=gemini` with `GEMINI_API_KEY`
 
-2. **"Failed to initialize Vertex AI client"**
+3. **"Failed to initialize Gemini client"**
+   - For Gemini API: Verify your API key is valid
+   - For Vertex AI: Check service account permissions
 
-   - Check that the service account has Vertex AI permissions
-   - Ensure the project has Vertex AI API enabled
-   - Verify the `project_id` in `auth.json` is correct
-
-3. **"No image data returned"**
+4. **"No image data returned"**
    - The prompt might violate content policies
    - Try a different, more descriptive prompt
 

@@ -5,7 +5,7 @@ const { Calculator } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { Tools, ImageVisionTool } = require('librechat-data-provider');
-const { getToolkitKey, oaiToolkit, ytToolkit } = require('@librechat/api');
+const { getToolkitKey, oaiToolkit, ytToolkit, GeminiImageGen } = require('@librechat/api');
 const { toolkits } = require('~/app/clients/tools/manifest');
 
 /**
@@ -84,6 +84,7 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
     new Calculator(),
     ...Object.values(oaiToolkit),
     ...Object.values(ytToolkit),
+    new GeminiImageGen({ override: true }),
   ];
   for (const toolInstance of basicToolInstances) {
     const formattedTool = formatToOpenAIAssistantTool(toolInstance);

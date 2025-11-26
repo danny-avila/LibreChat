@@ -11,6 +11,7 @@ const {
   mcpToolPattern,
   loadWebSearchAuth,
   createImageToolContext,
+  GeminiImageGen,
 } = require('@librechat/api');
 const {
   Tools,
@@ -35,16 +36,17 @@ const {
   StructuredWolfram,
   createYouTubeTools,
   TavilySearchResults,
-  GeminiImageGen,
   createOpenAIImageTools,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { createMCPTool, createMCPTools } = require('~/server/services/MCP');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getRoleByName } = require('~/models/Role');
+const { getFiles } = require('~/models/File');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -223,6 +225,8 @@ const loadTools = async ({
         processFileURL: options.processFileURL,
         userId: user,
         fileStrategy: options.fileStrategy,
+        getFiles,
+        getStrategyFunctions,
       });
     },
   };
