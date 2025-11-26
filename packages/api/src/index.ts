@@ -4,6 +4,7 @@ export * from './cdn';
 export * from './auth';
 /* MCP */
 export * from './mcp/registry/MCPServersRegistry';
+export * from './mcp/registry/MCPPrivateServerLoader';
 export * from './mcp/MCPManager';
 export * from './mcp/connection';
 export * from './mcp/oauth';
