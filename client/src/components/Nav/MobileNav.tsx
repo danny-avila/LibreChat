@@ -8,8 +8,8 @@ import { clearMessagesCache } from '~/utils';
 import store from '~/store';
 
 export default function MobileNav({
-  navVisible,
   setNavVisible,
+  navVisible,
 }: {
   navVisible: boolean;
   setNavVisible: Dispatch<SetStateAction<boolean>>;
@@ -25,8 +25,11 @@ export default function MobileNav({
       <button
         type="button"
         data-testid="mobile-header-new-chat-button"
-        aria-label={localize('com_nav_open_sidebar')}
-        className={`m-1 inline-flex size-10 items-center justify-center rounded-full hover:bg-surface-hover ${navVisible ? 'invisible' : ''}`}
+        aria-label={
+          navVisible ? localize('com_nav_close_sidebar') : localize('com_nav_open_sidebar')
+        }
+        aria-live="polite"
+        className="m-1 inline-flex size-10 items-center justify-center rounded-full hover:bg-surface-hover"
         onClick={() =>
           setNavVisible((prev) => {
             localStorage.setItem('navVisible', JSON.stringify(!prev));
@@ -34,7 +37,9 @@ export default function MobileNav({
           })
         }
       >
-        <span className="sr-only">{localize('com_nav_open_sidebar')}</span>
+        <span className="sr-only">
+          {navVisible ? localize('com_nav_close_sidebar') : localize('com_nav_open_sidebar')}
+        </span>
         <svg
           width="24"
           height="24"

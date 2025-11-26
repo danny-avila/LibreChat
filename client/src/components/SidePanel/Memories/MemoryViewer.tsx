@@ -301,7 +301,7 @@ export default function MemoryViewer() {
                 <Switch
                   checked={referenceSavedMemories}
                   onCheckedChange={handleMemoryToggle}
-                  aria-label={localize('com_ui_reference_saved_memories')}
+                  aria-label={localize('com_ui_use_memory')}
                   disabled={updateMemoryPreferencesMutation.isLoading}
                 />
               </div>
