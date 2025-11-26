@@ -7,6 +7,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks';
+import { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 
 export function isEphemeralAgent(agentId: string | null | undefined): boolean {
   return agentId == null || agentId === '' || agentId === Constants.EPHEMERAL_AGENT_ID;
@@ -246,6 +247,8 @@ export type AgentPanelContextType = {
   endpointsConfig?: t.TEndpointsConfig | null;
   /** Pre-computed MCP server information indexed by server key */
   mcpServersMap: Map<string, MCPServerInfo>;
+  availableMCPServers: MCPServerDefinition[];
+  availableMCPServersMap: t.MCPServersListResponse | undefined;
 };
 
 export type AgentModelPanelProps = {
