@@ -33,14 +33,6 @@ class MCPServersRegistry {
     false,
   );
 
-  /**
-   * Stores the raw MCP configuration as a fallback when servers haven't been initialized yet.
-   * Should be called during initialization before inspecting servers.
-   */
-  public setRawConfigs(configs: t.MCPServers): void {
-    this.rawConfigs = configs;
-  }
-
   public readonly privateServersCache: PrivateServerConfigsCache =
     PrivateServerConfigsCacheFactory.create();
 
