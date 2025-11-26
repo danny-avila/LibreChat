@@ -31,6 +31,21 @@ jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn((val) => val === 'true' || val === true),
   checkEmailConfig: jest.fn(() => false),
   isEmailDomainAllowed: jest.fn(() => true),
+  extractSubFromAccessToken: jest.fn((token) => {
+    if (!token) {
+      return { sub: null, error: 'No access token provided' };
+    }
+    if (token === 'test-access-token') {
+      return { sub: 'cognito-sub-12345' };
+    }
+    if (token === 'token-without-sub') {
+      return { sub: null, error: 'No sub claim in access token' };
+    }
+    if (token === 'invalid-token') {
+      return { sub: null, error: 'Failed to decode access token' };
+    }
+    return { sub: 'default-sub-claim' };
+  }),
 }));
 
 jest.mock('jsonwebtoken', () => ({
@@ -335,21 +350,29 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
     });
 
     it('should not create openid_sub cookie when access token has no sub claim', () => {
-      const jwt = require('jsonwebtoken');
-      jwt.decode.mockReturnValueOnce({ aud: 'test-client-id' }); // No sub claim
+      const { extractSubFromAccessToken } = require('@librechat/api');
+      extractSubFromAccessToken.mockReturnValueOnce({
+        sub: null,
+        error: 'No sub claim in access token',
+      });
 
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
+      mockTokenset.access_token = 'token-without-sub';
       setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
 
       const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
       expect(openidSubCall).toBeUndefined();
     });
 
-    it('should not create openid_sub cookie when jwt.decode returns null', () => {
-      const jwt = require('jsonwebtoken');
-      jwt.decode.mockReturnValueOnce(null); // Invalid JWT format
+    it('should not create openid_sub cookie when extractSubFromAccessToken returns null', () => {
+      const { extractSubFromAccessToken } = require('@librechat/api');
+      extractSubFromAccessToken.mockReturnValueOnce({
+        sub: null,
+        error: 'Invalid JWT format',
+      });
 
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
+      mockTokenset.access_token = 'invalid-token';
       setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
 
       const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
@@ -357,21 +380,18 @@ describe('setOpenIDAuthTokens - OPENID_EXPOSE_SUB_COOKIE feature', () => {
     });
 
     it('should handle decode errors gracefully', () => {
-      const { logger } = require('@librechat/data-schemas');
-      const jwt = require('jsonwebtoken');
-      jwt.decode.mockImplementationOnce(() => {
-        throw new Error('Invalid token format');
+      const { extractSubFromAccessToken } = require('@librechat/api');
+      extractSubFromAccessToken.mockReturnValueOnce({
+        sub: null,
+        error: 'Failed to decode access token',
       });
 
       process.env.OPENID_EXPOSE_SUB_COOKIE = 'true';
+      mockTokenset.access_token = 'invalid-token';
       setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
 
       const openidSubCall = mockRes.cookie.mock.calls.find((call) => call[0] === 'openid_sub');
       expect(openidSubCall).toBeUndefined();
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to decode access token'),
-        expect.any(Error),
-      );
     });
   });
 });
