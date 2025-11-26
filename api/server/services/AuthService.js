@@ -2,7 +2,12 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, checkEmailConfig, isEmailDomainAllowed } = require('@librechat/api');
+const {
+  isEnabled,
+  checkEmailConfig,
+  isEmailDomainAllowed,
+  extractSubFromAccessToken,
+} = require('@librechat/api');
 const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
   findUser,
@@ -477,24 +482,17 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
         );
         return tokenset.access_token;
       }
-      try {
-        const decoded = jwt.decode(tokenset.access_token);
-        if (decoded?.sub) {
-          const signedSub = jwt.sign({ sub: decoded.sub }, process.env.JWT_REFRESH_SECRET, {
-            expiresIn: expiryInMilliseconds / 1000,
-          });
-          res.cookie('openid_sub', signedSub, {
-            expires: expirationDate,
-            httpOnly: true,
-            secure: isProduction,
-            sameSite: 'lax',
-          });
-        }
-      } catch (decodeError) {
-        logger.error(
-          '[setOpenIDAuthTokens] Failed to decode access token for sub claim:',
-          decodeError,
-        );
+      const { sub } = extractSubFromAccessToken(tokenset.access_token);
+      if (sub) {
+        const signedSub = jwt.sign({ sub }, process.env.JWT_REFRESH_SECRET, {
+          expiresIn: expiryInMilliseconds / 1000,
+        });
+        res.cookie('openid_sub', signedSub, {
+          expires: expirationDate,
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: 'lax',
+        });
       }
     }
     return tokenset.access_token;

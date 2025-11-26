@@ -12,6 +12,7 @@ export * from './key';
 export * from './latex';
 export * from './llm';
 export * from './math';
+export * from './oidc';
 export * from './openid';
 export * from './promise';
 export * from './sanitizeTitle';
