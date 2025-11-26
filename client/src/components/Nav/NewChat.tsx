@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { TooltipAnchor, NewChatIcon, MobileSidebar, Sidebar, Button } from '@librechat/client';
+import { CLOSE_SIDEBAR_ID, OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { clearMessagesCache } from '~/utils';
 import store from '~/store';
@@ -13,16 +14,12 @@ export default function NewChat({
   subHeaders,
   isSmallScreen,
   headerButtons,
-  openSidebarRef,
-  closeSidebarRef,
 }: {
   index?: number;
   toggleNav: () => void;
   isSmallScreen?: boolean;
   subHeaders?: React.ReactNode;
   headerButtons?: React.ReactNode;
-  openSidebarRef?: React.RefObject<HTMLButtonElement>;
-  closeSidebarRef?: React.RefObject<HTMLButtonElement>;
 }) {
   const queryClient = useQueryClient();
   /** Note: this component needs an explicit index passed if using more than one */
@@ -33,10 +30,11 @@ export default function NewChat({
 
   const handleToggleNav = useCallback(() => {
     toggleNav();
-    requestAnimationFrame(() => {
-      openSidebarRef?.current?.focus();
-    });
-  }, [toggleNav, openSidebarRef]);
+    // Delay focus until after the sidebar animation completes (200ms)
+    setTimeout(() => {
+      document.getElementById(OPEN_SIDEBAR_ID)?.focus();
+    }, 250);
+  }, [toggleNav]);
 
   const clickHandler: React.MouseEventHandler<HTMLButtonElement> = useCallback(
     (e) => {
@@ -62,7 +60,7 @@ export default function NewChat({
           description={localize('com_nav_close_sidebar')}
           render={
             <Button
-              ref={closeSidebarRef}
+              id={CLOSE_SIDEBAR_ID}
               size="icon"
               variant="outline"
               data-testid="close-sidebar-button"
