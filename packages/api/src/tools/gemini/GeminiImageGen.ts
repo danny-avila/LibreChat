@@ -159,9 +159,7 @@ export class GeminiImageGen extends StructuredTool<typeof geminiImageGenSchema> 
    * Get the credentials file path for Vertex AI
    */
   private getCredentialsPath(): string {
-    return (
-      process.env.GOOGLE_SERVICE_KEY_FILE || path.join(process.cwd(), 'api', 'data', 'auth.json')
-    );
+    return process.env.GOOGLE_SERVICE_KEY_FILE || path.join(process.cwd(), 'data', 'auth.json');
   }
 
   /**
@@ -224,8 +222,6 @@ export class GeminiImageGen extends StructuredTool<typeof geminiImageGenSchema> 
       if (!fs.existsSync(credentialsPath)) {
         throw new Error(`Google service account credentials file not found at: ${credentialsPath}`);
       }
-
-      process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
 
       let serviceKey;
       try {
