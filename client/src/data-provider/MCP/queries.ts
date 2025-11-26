@@ -21,3 +21,24 @@ export const useMCPServersQuery = <TData = t.MCPServersListResponse>(
     },
   );
 };
+
+/**
+ * Hook for fetching MCP-specific tools
+ * @param config - React Query configuration
+ * @returns MCP servers with their tools
+ */
+export const useMCPToolsQuery = <TData = t.MCPServersResponse>(
+  config?: UseQueryOptions<t.MCPServersResponse, unknown, TData>,
+): QueryObserverResult<TData> => {
+  return useQuery<t.MCPServersResponse, unknown, TData>(
+    [QueryKeys.mcpTools],
+    () => dataService.getMCPTools(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      ...config,
+    },
+  );
+};
