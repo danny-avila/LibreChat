@@ -10,6 +10,7 @@ const {
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
+  createImageToolContext,
 } = require('@librechat/api');
 const {
   Tools,
@@ -193,24 +194,10 @@ const loadTools = async ({
       const authFields = getAuthFields('image_gen_oai');
       const authValues = await loadAuthValues({ userId: user, authFields });
       const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
-      let toolContext = '';
-      for (let i = 0; i < imageFiles.length; i++) {
-        const file = imageFiles[i];
-        if (!file) {
-          continue;
-        }
-        if (i === 0) {
-          toolContext =
-            'Image files provided in this request (their image IDs listed in order of appearance) available for image editing:';
-        }
-        toolContext += `\n\t- ${file.file_id}`;
-        if (i === imageFiles.length - 1) {
-          toolContext += `\n\nInclude any you need in the \`image_ids\` array when calling \`${EToolResources.image_edit}_oai\`. You may also include previously referenced or generated image IDs.`;
-        }
-      }
-      if (toolContext) {
-        toolContextMap.image_edit_oai = toolContext;
-      }
+      createImageToolContext(imageFiles, toolContextMap, {
+        toolKey: 'image_edit_oai',
+        purpose: 'image editing',
+      });
       return createOpenAIImageTools({
         ...authValues,
         isAgent: !!agent,
@@ -224,24 +211,10 @@ const loadTools = async ({
       const authFields = getAuthFields('gemini_image_gen');
       const authValues = await loadAuthValues({ userId: user, authFields });
       const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
-      let toolContext = '';
-      for (let i = 0; i < imageFiles.length; i++) {
-        const file = imageFiles[i];
-        if (!file) {
-          continue;
-        }
-        if (i === 0) {
-          toolContext =
-            'Image files provided in this request (their image IDs listed in order of appearance) available for image context:';
-        }
-        toolContext += `\n\t- ${file.file_id}`;
-        if (i === imageFiles.length - 1) {
-          toolContext += `\n\nInclude any you need in the \`image_ids\` array when calling \`gemini_image_gen\` to use them as visual context for generation. You may also include previously referenced or generated image IDs.`;
-        }
-      }
-      if (toolContext) {
-        toolContextMap.gemini_image_gen = toolContext;
-      }
+      createImageToolContext(imageFiles, toolContextMap, {
+        toolKey: 'gemini_image_gen',
+        purpose: 'image context',
+      });
       return new GeminiImageGen({
         ...authValues,
         isAgent: !!agent,
