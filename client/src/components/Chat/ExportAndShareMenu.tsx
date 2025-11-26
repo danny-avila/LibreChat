@@ -89,11 +89,13 @@ export default function ExportAndShareMenu({
                   'inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary',
                   share?.shareId
                     ? 'border-green-500 bg-transparent text-green-500 hover:bg-green-800'
-                    : 'border-border-light bg-transparent text-text-primary'
+                    : 'border-border-light bg-transparent text-text-primary',
                 )}
               >
                 <Share2
-                  className={cn(`icon-md ${share?.shareId ? 'text-green-300' : 'text-text-secondary'}`)}
+                  className={cn(
+                    `icon-md ${share?.shareId ? 'text-green-300' : 'text-text-secondary'}`,
+                  )}
                   aria-hidden="true"
                   focusable="false"
                 />
