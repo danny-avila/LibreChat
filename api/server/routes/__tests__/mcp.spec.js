@@ -18,6 +18,7 @@ jest.mock('@librechat/api', () => ({
   mcpServersRegistry: {
     getServerConfig: jest.fn(),
     getOAuthServers: jest.fn(),
+    getAllServerConfigs: jest.fn(),
   },
 }));
 
@@ -1413,6 +1414,64 @@ describe('MCP Routes', () => {
         .expect(302);
 
       expect(response.headers.location).toContain('/oauth/success');
+    });
+  });
+
+  describe('GET /servers', () => {
+    const { mcpServersRegistry } = require('@librechat/api');
+
+    it('should return all server configs for authenticated user', async () => {
+      const mockServerConfigs = {
+        'server-1': {
+          endpoint: 'http://server1.com',
+          name: 'Server 1',
+        },
+        'server-2': {
+          endpoint: 'http://server2.com',
+          name: 'Server 2',
+        },
+      };
+
+      mcpServersRegistry.getAllServerConfigs.mockResolvedValue(mockServerConfigs);
+
+      const response = await request(app).get('/api/mcp/servers');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(mockServerConfigs);
+      expect(mcpServersRegistry.getAllServerConfigs).toHaveBeenCalledWith('test-user-id');
+    });
+
+    it('should return empty object when no servers are configured', async () => {
+      mcpServersRegistry.getAllServerConfigs.mockResolvedValue({});
+
+      const response = await request(app).get('/api/mcp/servers');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({});
+    });
+
+    it('should return 401 when user is not authenticated', async () => {
+      const unauthApp = express();
+      unauthApp.use(express.json());
+      unauthApp.use((req, _res, next) => {
+        req.user = null;
+        next();
+      });
+      unauthApp.use('/api/mcp', mcpRouter);
+
+      const response = await request(unauthApp).get('/api/mcp/servers');
+
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual({ message: 'Unauthorized' });
+    });
+
+    it('should return 500 when server config retrieval fails', async () => {
+      mcpServersRegistry.getAllServerConfigs.mockRejectedValue(new Error('Database error'));
+
+      const response = await request(app).get('/api/mcp/servers');
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: 'Database error' });
     });
   });
 });

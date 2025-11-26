@@ -427,6 +427,7 @@ async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIA
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
+  //TODO pass config from registry
   if (hasCustomUserVars(req.config)) {
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: agent.tools,
