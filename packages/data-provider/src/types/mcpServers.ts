@@ -25,7 +25,7 @@ export type MCPServerDB = IMCPServerDB;
  * Parameters for creating a new user-managed MCP server
  * Note: Only UI-editable fields are allowed (excludes server-managed fields)
  */
-export type McpServerCreateParams = {
+export type MCPServerCreateParams = {
   config: MCPServerUserInput; // UI fields only (title, description, url, oauth, iconPath)
 };
 
@@ -33,7 +33,7 @@ export type McpServerCreateParams = {
  * Parameters for updating an existing user-managed MCP server
  * Note: Only UI-editable fields are allowed (excludes server-managed fields)
  */
-export type McpServerUpdateParams = {
+export type MCPServerUpdateParams = {
   config?: MCPServerUserInput; // UI fields only (title, description, url, oauth, iconPath)
 };
 

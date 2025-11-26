@@ -547,7 +547,7 @@ export const deleteAgentAction = async ({
  *
  * Ensure and List loaded mcp server configs from the cache Enriched with effective permissions.
  */
-export const getMcpServers = async (): Promise<mcp.MCPServersListResponse> => {
+export const getMCPServers = async (): Promise<mcp.MCPServersListResponse> => {
   return request.get(endpoints.mcp.servers);
 };
 

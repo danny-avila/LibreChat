@@ -562,8 +562,7 @@ async function getOAuthHeaders(serverName, userId) {
 /**
  * Get list of accessible MCP servers
  * @route GET /api/mcp/servers
- * @param {Object} req.query - Query parameters for pagination and search
- * @returns {McpServerListResponse} 200 - Success response - application/json
+ * @returns {MCPServersListResponse} 200 - Success response - application/json
  */
 router.get('/servers', requireJwtAuth, getMCPServersList);
 

@@ -11,7 +11,7 @@ import type { TUpdateUserPlugins, TPlugin, MCPServersResponse } from 'librechat-
 import type { ConfigFieldDetail } from '~/common';
 import { useLocalize, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
-import { useMcpServersQuery } from '~/data-provider/McpServers/queries';
+import { useMCPServersQuery } from '~/data-provider/MCPServers/queries';
 
 export interface MCPServerDefinition {
   serverName: string;
@@ -35,7 +35,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   const { showToast } = useToastContext();
   const { data: startupConfig } = useGetStartupConfig(); // Keep for UI config only
 
-  const { data: loadedServers, isLoading } = useMcpServersQuery();
+  const { data: loadedServers, isLoading } = useMCPServersQuery();
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
