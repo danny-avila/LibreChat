@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { ChevronLeft, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, useToastContext } from '@librechat/client';
@@ -8,8 +8,7 @@ import type { TUpdateUserPlugins } from 'librechat-data-provider';
 import ServerInitializationSection from '~/components/MCP/ServerInitializationSection';
 import CustomUserVarsSection from '~/components/MCP/CustomUserVarsSection';
 import { MCPPanelProvider, useMCPPanelContext } from '~/Providers';
-import { useLocalize, useMCPConnectionStatus } from '~/hooks';
-import { useGetStartupConfig } from '~/data-provider';
+import { useLocalize, useMCPServerManager } from '~/hooks';
 import MCPPanelSkeleton from './MCPPanelSkeleton';
 
 function MCPPanelContent() {
@@ -17,9 +16,8 @@ function MCPPanelContent() {
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const { conversationId } = useMCPPanelContext();
-  const { data: startupConfig, isLoading: startupConfigLoading } = useGetStartupConfig();
-  const { connectionStatus } = useMCPConnectionStatus({
-    enabled: !!startupConfig?.mcpServers && Object.keys(startupConfig.mcpServers).length > 0,
+  const { availableMCPServers, isLoading, connectionStatus } = useMCPServerManager({
+    conversationId,
   });
 
   const [selectedServerNameForEditing, setSelectedServerNameForEditing] = useState<string | null>(
@@ -44,20 +42,6 @@ function MCPPanelContent() {
       });
     },
   });
-
-  const mcpServerDefinitions = useMemo(() => {
-    if (!startupConfig?.mcpServers) {
-      return [];
-    }
-    return Object.entries(startupConfig.mcpServers).map(([serverName, config]) => ({
-      serverName,
-      iconPath: null,
-      config: {
-        ...config,
-        customUserVars: config.customUserVars ?? {},
-      },
-    }));
-  }, [startupConfig?.mcpServers]);
 
   const handleServerClickToEdit = (serverName: string) => {
     setSelectedServerNameForEditing(serverName);
@@ -94,11 +78,11 @@ function MCPPanelContent() {
     [updateUserPluginsMutation],
   );
 
-  if (startupConfigLoading) {
+  if (isLoading) {
     return <MCPPanelSkeleton />;
   }
 
-  if (mcpServerDefinitions.length === 0) {
+  if (availableMCPServers.length === 0) {
     return (
       <div className="p-4 text-center text-sm text-gray-500">
         {localize('com_sidepanel_mcp_no_servers_with_vars')}
@@ -108,7 +92,7 @@ function MCPPanelContent() {
 
   if (selectedServerNameForEditing) {
     // Editing View
-    const serverBeingEdited = mcpServerDefinitions.find(
+    const serverBeingEdited = availableMCPServers.find(
       (s) => s.serverName === selectedServerNameForEditing,
     );
 
@@ -140,7 +124,7 @@ function MCPPanelContent() {
         <div className="mb-4">
           <CustomUserVarsSection
             serverName={selectedServerNameForEditing}
-            fields={serverBeingEdited.config.customUserVars}
+            fields={serverBeingEdited.config.customUserVars || {}}
             onSave={(authData) => {
               if (selectedServerNameForEditing) {
                 handleConfigSave(selectedServerNameForEditing, authData);
@@ -184,7 +168,7 @@ function MCPPanelContent() {
     return (
       <div className="h-auto max-w-full overflow-x-hidden py-2">
         <div className="space-y-2">
-          {mcpServerDefinitions.map((server) => {
+          {availableMCPServers.map((server) => {
             const serverStatus = connectionStatus?.[server.serverName];
             const isConnected = serverStatus?.connectionState === 'connected';
 

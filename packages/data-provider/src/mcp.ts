@@ -180,3 +180,32 @@ export const MCPOptionsSchema = z.union([
 export const MCPServersSchema = z.record(z.string(), MCPOptionsSchema);
 
 export type MCPOptions = z.infer<typeof MCPOptionsSchema>;
+
+/**
+ * Helper to omit server-managed fields that should not come from UI
+ */
+const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T) =>
+  schema.omit({
+    startup: true,
+    timeout: true,
+    initTimeout: true,
+    chatMenu: true,
+    serverInstructions: true,
+    requiresOAuth: true,
+    customUserVars: true,
+    oauth_headers: true,
+  });
+
+/**
+ * MCP Server configuration that comes from UI input only
+ * Omits server-managed fields like startup, timeout, customUserVars, etc.
+ * Allows: title, description, url, iconPath, oauth (user credentials)
+ */
+export const MCPServerUserInputSchema = z.union([
+  omitServerManagedFields(StdioOptionsSchema),
+  omitServerManagedFields(WebSocketOptionsSchema),
+  omitServerManagedFields(SSEOptionsSchema),
+  omitServerManagedFields(StreamableHTTPOptionsSchema),
+]);
+
+export type MCPServerUserInput = z.infer<typeof MCPServerUserInputSchema>;
