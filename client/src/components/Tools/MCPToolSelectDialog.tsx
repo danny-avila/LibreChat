@@ -34,7 +34,7 @@ function MCPToolSelectDialog({
   const { initializeServer } = useMCPServerManager();
   const { getValues, setValue } = useFormContext<AgentForm>();
   const { removeTool } = useRemoveMCPTool({ showToast: false });
-  const { mcpServersMap, startupConfig } = useAgentPanelContext();
+  const { mcpServersMap, availableMCPServersMap } = useAgentPanelContext();
   const { refetch: refetchMCPTools } = useMCPToolsQuery({
     enabled: mcpServersMap.size > 0,
   });
@@ -191,7 +191,7 @@ function MCPToolSelectDialog({
       return;
     }
 
-    const serverConfig = startupConfig?.mcpServers?.[serverName];
+    const serverConfig = availableMCPServersMap?.[serverName];
     const hasCustomUserVars =
       serverConfig?.customUserVars && Object.keys(serverConfig.customUserVars).length > 0;
 
@@ -300,7 +300,7 @@ function MCPToolSelectDialog({
               <CustomUserVarsSection
                 serverName={configuringServer}
                 isSubmitting={isSavingCustomVars}
-                fields={startupConfig?.mcpServers?.[configuringServer]?.customUserVars || {}}
+                fields={availableMCPServersMap?.[configuringServer]?.customUserVars || {}}
                 onSave={(authData) => handleSaveCustomVars(configuringServer, authData)}
                 onRevoke={() => handleRevokeCustomVars(configuringServer)}
               />
