@@ -1,6 +1,6 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
-import { InfoIcon } from 'lucide-react';
+import { InfoIcon, ChevronDown, ChevronRight } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
 import { Clipboard, CheckMark } from '@librechat/client';
 import type { CodeBarProps } from '~/common';
@@ -19,13 +19,42 @@ type CodeBlockProps = Pick<
   classProp?: string;
 };
 
-const CodeBar: React.FC<CodeBarProps> = React.memo(
-  ({ lang, error, codeRef, blockIndex, plugin = null, allowExecution = true }) => {
+type ExtendedCodeBarProps = CodeBarProps & {
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
+};
+
+const CodeBar: React.FC<ExtendedCodeBarProps> = React.memo(
+  ({
+    lang,
+    error,
+    codeRef,
+    blockIndex,
+    plugin = null,
+    allowExecution = true,
+    isCollapsed,
+    onToggleCollapse,
+  }) => {
     const localize = useLocalize();
     const [isCopied, setIsCopied] = useState(false);
+
     return (
       <div className="relative flex items-center justify-between rounded-tl-md rounded-tr-md bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200 dark:bg-gray-700">
-        <span className="">{lang}</span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="flex items-center justify-center transition-colors hover:text-white"
+            aria-label={isCollapsed ? 'Expand code block' : 'Collapse code block'}
+          >
+            {isCollapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </button>
+          <span className="">{lang}</span>
+        </div>
         {plugin === true ? (
           <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-white/50" />
         ) : (
@@ -86,6 +115,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
     ? `${messageId}_${partIndex ?? 0}_${blockIndex ?? 0}_${Tools.execute_code}`
     : '';
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const fetchedToolCalls = toolCallsMap?.[key];
   const [toolCalls, setToolCalls] = useState(toolCallsMap?.[key] ?? null);
@@ -114,11 +144,21 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
     }
   };
 
+  const toggleCollapse = () => {
+    setIsCollapsed(!isCollapsed);
+  };
+
   const isNonCode = !!(plugin === true || error === true);
   const language = isNonCode ? 'json' : lang;
+  const hasResults = allowExecution === true && toolCalls && toolCalls.length > 0;
 
   return (
-    <div className="w-full rounded-md bg-gray-900 text-xs text-white/80">
+    <div
+      className={cn(
+        'w-full rounded-md bg-gray-900 text-xs text-white/80',
+        isCollapsed && !hasResults ? 'rounded-md' : '',
+      )}
+    >
       <CodeBar
         lang={lang}
         error={error}
@@ -126,19 +166,33 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
         blockIndex={blockIndex}
         plugin={plugin === true}
         allowExecution={allowExecution}
+        isCollapsed={isCollapsed}
+        onToggleCollapse={toggleCollapse}
       />
-      <div className={cn(classProp, 'overflow-y-auto p-4')}>
-        <code
-          ref={codeRef}
+      <div
+        className={cn(
+          'overflow-hidden transition-all duration-200 ease-in-out',
+          isCollapsed ? 'max-h-0' : 'max-h-none',
+        )}
+      >
+        <div className={cn(classProp, 'overflow-y-auto p-4')}>
+          <code
+            ref={codeRef}
+            className={cn(
+              isNonCode ? '!whitespace-pre-wrap' : `hljs language-${language} !whitespace-pre`,
+            )}
+          >
+            {codeChildren}
+          </code>
+        </div>
+      </div>
+      {hasResults && (
+        <div
           className={cn(
-            isNonCode ? '!whitespace-pre-wrap' : `hljs language-${language} !whitespace-pre`,
+            'overflow-hidden transition-all duration-200 ease-in-out',
+            isCollapsed ? 'max-h-0' : 'max-h-none',
           )}
         >
-          {codeChildren}
-        </code>
-      </div>
-      {allowExecution === true && toolCalls && toolCalls.length > 0 && (
-        <>
           <div className="bg-gray-700 p-4 text-xs">
             <div
               className="prose flex flex-col-reverse text-white"
@@ -163,7 +217,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
               onNext={next}
             />
           )}
-        </>
+        </div>
       )}
     </div>
   );
