@@ -9,6 +9,7 @@ export interface CustomMenuProps extends Ariakit.MenuButtonProps<'div'> {
   searchValue?: string;
   onSearch?: (value: string) => void;
   combobox?: Ariakit.ComboboxProps['render'];
+  comboboxLabel?: string;
   trigger?: Ariakit.MenuButtonProps['render'];
   defaultOpen?: boolean;
 }
@@ -22,6 +23,7 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
     searchValue,
     onSearch,
     combobox,
+    comboboxLabel,
     trigger,
     defaultOpen,
     ...props
@@ -73,15 +75,22 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
           {searchable ? (
             <>
               <div className="sticky top-0 z-10 bg-inherit p-1">
-                <Ariakit.Combobox
-                  autoSelect
-                  render={combobox}
-                  className={cn(
-                    'h-10 w-full rounded-lg border-none bg-transparent px-2 text-base',
-                    'sm:h-8 sm:text-sm',
-                    'focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-white',
+                <div className="relative">
+                  <Ariakit.Combobox
+                    autoSelect
+                    render={combobox}
+                    className={cn(
+                      'peer mt-1 h-10 w-full rounded-lg border-none bg-transparent px-2 text-base',
+                      'sm:h-8 sm:text-sm',
+                      'focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-white',
+                    )}
+                  />
+                  {comboboxLabel && (
+                    <label className="pointer-events-none absolute left-2.5 top-2.5 text-sm text-text-secondary transition-all duration-200 peer-[:not(:placeholder-shown)]:-top-1.5 peer-[:not(:placeholder-shown)]:left-1.5 peer-[:not(:placeholder-shown)]:bg-surface-secondary peer-[:not(:placeholder-shown)]:text-xs">
+                      {comboboxLabel}
+                    </label>
                   )}
-                />
+                </div>
               </div>
               <Ariakit.ComboboxList className="p-0.5 pt-0">{children}</Ariakit.ComboboxList>
             </>

@@ -191,7 +191,9 @@ export default function Conversation({ conversation, retainView, toggleNav }: Co
             ? 'pointer-events-auto max-w-[28px] scale-x-100 opacity-100'
             : 'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-[28px] group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-[28px] group-hover:scale-x-100 group-hover:opacity-100',
         )}
-        aria-hidden={!(isPopoverActive || isActiveConvo)}
+        // Removing aria-hidden to fix accessibility issue: ARIA hidden element must not be focusable or contain focusable elements
+        // but not sure what its original purpose was, so leaving the property commented out until it can be cleared safe to delete.
+        // aria-hidden={!(isPopoverActive || isActiveConvo)}
       >
         {!renaming && <ConvoOptions {...convoOptionsProps} />}
       </div>

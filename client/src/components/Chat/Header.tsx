@@ -17,7 +17,8 @@ const defaultInterface = getConfigDefaults().interface;
 
 export default function Header() {
   const { data: startupConfig } = useGetStartupConfig();
-  const { navVisible, setNavVisible } = useOutletContext<ContextType>();
+  const { navVisible, setNavVisible, openSidebarRef, closeSidebarRef } =
+    useOutletContext<ContextType>();
 
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
@@ -50,27 +51,38 @@ export default function Header() {
                 transition={{ duration: 0.2 }}
                 key="header-buttons"
               >
-                <OpenSidebar setNavVisible={setNavVisible} className="max-md:hidden" />
+                <OpenSidebar
+                  ref={openSidebarRef}
+                  setNavVisible={setNavVisible}
+                  closeSidebarRef={closeSidebarRef}
+                  className="max-md:hidden"
+                />
                 <HeaderNewChat />
               </motion.div>
             )}
           </AnimatePresence>
-
-          <div className={navVisible ? 'flex items-center gap-2' : 'ml-2 flex items-center gap-2'}>
-            <ModelSelector startupConfig={startupConfig} />
-            {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
-            {hasAccessToBookmarks === true && <BookmarkMenu />}
-            {hasAccessToMultiConvo === true && <AddMultiConvo />}
-            {isSmallScreen && (
-              <>
-                <ExportAndShareMenu
-                  isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
-                />
-                <TemporaryChat />
-              </>
-            )}
-          </div>
+          {!isSmallScreen && !navVisible && (
+            <div
+              className={`flex items-center gap-2 ${
+                !isSmallScreen ? 'transition-all duration-200 ease-in-out' : ''
+              } `}
+            >
+              <ModelSelector startupConfig={startupConfig} />
+              {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
+              {hasAccessToBookmarks === true && <BookmarkMenu />}
+              {hasAccessToMultiConvo === true && <AddMultiConvo />}
+              {isSmallScreen && (
+                <>
+                  <ExportAndShareMenu
+                    isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
+                  />
+                  <TemporaryChat />
+                </>
+              )}
+            </div>
+          )}
         </div>
+
         {!isSmallScreen && (
           <div className="flex items-center gap-2">
             <ExportAndShareMenu
