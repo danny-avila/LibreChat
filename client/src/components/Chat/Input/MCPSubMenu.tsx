@@ -20,7 +20,7 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
       setIsPinned,
       isInitializing,
       placeholderText,
-      configuredServers,
+      availableMCPServers,
       getConfigDialogProps,
       toggleServerSelection,
       getServerStatusIconProps,
@@ -33,7 +33,7 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
     });
 
     // Don't render if no MCP servers are configured
-    if (!configuredServers || configuredServers.length === 0) {
+    if (!availableMCPServers || availableMCPServers.length === 0) {
       return null;
     }
 
@@ -85,19 +85,19 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
               'border border-border-light bg-surface-secondary p-1 shadow-lg',
             )}
           >
-            {configuredServers.map((serverName) => {
-              const statusIconProps = getServerStatusIconProps(serverName);
-              const isSelected = mcpValues?.includes(serverName) ?? false;
-              const isServerInitializing = isInitializing(serverName);
+            {availableMCPServers.map((s) => {
+              const statusIconProps = getServerStatusIconProps(s.serverName);
+              const isSelected = mcpValues?.includes(s.serverName) ?? false;
+              const isServerInitializing = isInitializing(s.serverName);
 
               const statusIcon = statusIconProps && <MCPServerStatusIcon {...statusIconProps} />;
 
               return (
                 <Ariakit.MenuItem
-                  key={serverName}
+                  key={s.serverName}
                   onClick={(event) => {
                     event.preventDefault();
-                    toggleServerSelection(serverName);
+                    toggleServerSelection(s.serverName);
                   }}
                   disabled={isServerInitializing}
                   className={cn(
@@ -112,7 +112,7 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
                 >
                   <div className="flex flex-grow items-center gap-2">
                     <Ariakit.MenuItemCheck checked={isSelected} />
-                    <span>{serverName}</span>
+                    <span>{s.serverName}</span>
                   </div>
                   {statusIcon && <div className="ml-2 flex items-center">{statusIcon}</div>}
                 </Ariakit.MenuItem>

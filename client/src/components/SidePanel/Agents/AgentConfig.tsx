@@ -49,7 +49,7 @@ export default function AgentConfig() {
     setAction,
     regularTools,
     agentsConfig,
-    startupConfig,
+    availableMCPServers,
     mcpServersMap,
     setActivePanel,
     endpointsConfig,
@@ -305,7 +305,7 @@ export default function AgentConfig() {
           </div>
         )}
         {/* MCP Section */}
-        {startupConfig?.mcpServers != null && (
+        {availableMCPServers != null && availableMCPServers.length > 0 && (
           <MCPTools
             agentId={agent_id}
             mcpServerNames={mcpServerNames}
@@ -491,7 +491,7 @@ export default function AgentConfig() {
         setIsOpen={setShowToolDialog}
         endpoint={EModelEndpoint.agents}
       />
-      {startupConfig?.mcpServers != null && (
+      {availableMCPServers != null && availableMCPServers.length > 0 && (
         <MCPToolSelectDialog
           agentId={agent_id}
           isOpen={showMCPToolDialog}
