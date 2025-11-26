@@ -43,7 +43,6 @@ export class ConnectionsRepository {
       }
       return null;
     }
-    //if config does not exist we disconnect any existing connection and return null
     if (existingConnection) {
       // Check if config was cached/updated since connection was created
       if (serverConfig.lastUpdatedAt && existingConnection.isStale(serverConfig.lastUpdatedAt)) {

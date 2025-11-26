@@ -155,20 +155,10 @@ describe('standardCache', () => {
       expect(await cache1.get('key2')).toBe('value2-cache1');
       expect(await cache2.get('key1')).toBe('value1-cache2');
       expect(await cache2.get('key2')).toBe('value2-cache2');
-      //pause for 5 sec
-      await new Promise((res) => {
-        setTimeout(() => {
-          res(true);
-        }, 5000);
-      });
 
       // Clear cache1 only
       await cache1.clear();
-      await new Promise((res) => {
-        setTimeout(() => {
-          res(true);
-        }, 5000);
-      });
+
       // cache1 should be empty
       expect(await cache1.get('key1')).toBeUndefined();
       expect(await cache1.get('key2')).toBeUndefined();

@@ -17,6 +17,7 @@ import type { SendCommandFn } from 'rate-limit-redis';
 import { keyvRedisClient, ioredisClient } from './redisClients';
 import { cacheConfig } from './cacheConfig';
 import { violationFile } from './keyvFiles';
+import { batchDeleteKeys, scanKeys } from './redisUtils';
 
 /**
  * Creates a cache instance using Redis or a fallback store. Suitable for general caching needs.
@@ -52,39 +53,14 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
           ? `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}${namespace}:*`
           : `${namespace}:*`;
 
-        const keysToDelete: string[] = [];
-
-        // Scan for all keys matching this namespace
-        for await (const key of keyvRedisClient.scanIterator({
-          MATCH: pattern,
-          COUNT: cacheConfig.REDIS_SCAN_COUNT,
-        })) {
-          keysToDelete.push(key);
-        }
+        // Use utility functions for efficient scan and parallel deletion
+        const keysToDelete = await scanKeys(keyvRedisClient, pattern);
 
         if (keysToDelete.length === 0) {
           return;
         }
 
-        // Delete keys in parallel chunks
-        const chunkSize = cacheConfig.REDIS_DELETE_CHUNK_SIZE;
-        const deletePromises = [];
-
-        if (cacheConfig.USE_REDIS_CLUSTER) {
-          // Cluster: Delete each key individually in parallel to avoid CROSSSLOT errors
-          for (let i = 0; i < keysToDelete.length; i += chunkSize) {
-            const chunk = keysToDelete.slice(i, i + chunkSize);
-            deletePromises.push(Promise.all(chunk.map((key) => keyvRedisClient!.del(key))));
-          }
-        } else {
-          // Single-node: Batch delete chunks
-          for (let i = 0; i < keysToDelete.length; i += chunkSize) {
-            const chunk = keysToDelete.slice(i, i + chunkSize);
-            deletePromises.push(keyvRedisClient!.del(chunk));
-          }
-        }
-
-        await Promise.all(deletePromises);
+        await batchDeleteKeys(keyvRedisClient, keysToDelete);
         logger.debug(`Cleared ${keysToDelete.length} keys from namespace ${namespace}`);
       };
 

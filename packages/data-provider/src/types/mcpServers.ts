@@ -1,5 +1,4 @@
-import { PermissionBits } from '../accessPermissions';
-import type { MCPOptions, MCPServerUserInput } from '../mcp';
+import type { MCPOptions } from '../mcp';
 
 /**
  * Base MCP Server interface
@@ -20,33 +19,3 @@ export interface IMCPServerDB {
  * Similar to Agent type - includes populated author fields
  */
 export type MCPServerDB = IMCPServerDB;
-
-/**
- * Parameters for creating a new user-managed MCP server
- * Note: Only UI-editable fields are allowed (excludes server-managed fields)
- */
-export type McpServerCreateParams = {
-  config: MCPServerUserInput; // UI fields only (title, description, url, oauth, iconPath)
-};
-
-/**
- * Parameters for updating an existing user-managed MCP server
- * Note: Only UI-editable fields are allowed (excludes server-managed fields)
- */
-export type McpServerUpdateParams = {
-  config?: MCPServerUserInput; // UI fields only (title, description, url, oauth, iconPath)
-};
-
-/**
- * Response for MCP server list endpoint
- */
-export type MCPServerDBObjectResponse = {
-  _id?: string;
-  mcp_id?: string;
-  author?: string | null;
-  createdAt?: Date;
-  updatedAt?: Date;
-  effectivePermissions?: PermissionBits;
-} & MCPOptions;
-
-export type MCPServersListResponse = Record<string, MCPServerDBObjectResponse>;

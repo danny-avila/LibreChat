@@ -11,8 +11,8 @@ export abstract class BaseRegistryCache {
   protected abstract readonly cache: Keyv;
   protected readonly leaderOnly: boolean;
 
-  constructor(leaderOny?: boolean) {
-    this.leaderOnly = leaderOny != undefined ? leaderOny : false;
+  constructor(leaderOnly?: boolean) {
+    this.leaderOnly = leaderOnly ?? false;
   }
 
   protected async leaderCheck(action: string): Promise<void> {

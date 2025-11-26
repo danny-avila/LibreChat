@@ -1,4 +1,5 @@
-import { standardCache } from '~/cache';
+import { standardCache, keyvRedisClient } from '~/cache';
+import { cacheConfig } from '~/cache/cacheConfig';
 import { BaseRegistryCache } from './BaseRegistryCache';
 import { logger } from '@librechat/data-schemas';
 
@@ -56,8 +57,8 @@ class PrivateServersLoadStatusCache extends BaseRegistryCache {
    * Acquire a distributed lock for loading a user's private servers.
    * Prevents concurrent processes from loading the same user's servers.
    *
-   * Note: This is not fully atomic due to cache API limitations (check-then-set race),
-   * but with leader-only writes, this is sufficient in practice.
+   * Uses atomic Redis SET NX PX for race-free locking.
+   * Returns true immediately if Redis is not available (no locking needed in single-process mode).
    *
    * @param userId - User ID
    * @param ttl - Lock timeout in milliseconds (default: 30s)
@@ -66,21 +67,42 @@ class PrivateServersLoadStatusCache extends BaseRegistryCache {
   public async acquireLoadLock(userId: string, ttl: number = DEFAULT_LOCK_TTL): Promise<boolean> {
     const key = `${LOCK_KEY_PREFIX}::${userId}`;
 
-    // Check if lock already exists
-    const existingLock = await this.cache.get(key);
-    if (existingLock) {
-      logger.debug(`[MCP][LoadStatusCache] Load lock already held for user ${userId}`);
+    // Distributed locking only needed when Redis is available (multi-instance mode)
+    if (!keyvRedisClient || !('set' in keyvRedisClient)) {
+      logger.debug(`[MCP][LoadStatusCache] Redis not available, skipping lock for user ${userId}`);
+      return true;
+    }
+
+    try {
+      // Build the full Redis key (accounting for namespace and global prefix)
+      const namespace = `${this.PREFIX}::PrivateServersLoadStatus`;
+      const globalPrefix = cacheConfig.REDIS_KEY_PREFIX;
+      const separator = cacheConfig.GLOBAL_PREFIX_SEPARATOR;
+      const fullKey = globalPrefix
+        ? `${globalPrefix}${separator}${namespace}:${key}`
+        : `${namespace}:${key}`;
+
+      // Redis SET with NX (only if not exists) and PX (millisecond expiry) - ATOMIC!
+      const result = await keyvRedisClient.set(fullKey, Date.now().toString(), {
+        NX: true, // Only set if key doesn't exist
+        PX: ttl, // Expiry in milliseconds
+      });
+
+      const acquired = result === 'OK';
+
+      if (acquired) {
+        logger.debug(
+          `[MCP][LoadStatusCache] Acquired load lock for user ${userId} (TTL: ${ttl}ms)`,
+        );
+      } else {
+        logger.debug(`[MCP][LoadStatusCache] Load lock already held for user ${userId}`);
+      }
+
+      return acquired;
+    } catch (error) {
+      logger.error(`[MCP][LoadStatusCache] Error acquiring lock for user ${userId}:`, error);
       return false;
     }
-
-    // Try to set the lock with timestamp
-    const acquired = await this.cache.set(key, Date.now(), ttl);
-
-    if (acquired) {
-      logger.debug(`[MCP][LoadStatusCache] Acquired load lock for user ${userId} (TTL: ${ttl}ms)`);
-    }
-
-    return acquired === true;
   }
 
   /**

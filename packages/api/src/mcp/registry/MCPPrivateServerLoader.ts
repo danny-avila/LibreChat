@@ -132,6 +132,8 @@ export class MCPPrivateServerLoader {
     if (sharedServer) {
       logger.info(`${this.prefix(serverName)} Promoted private server update`);
       // server must be removed to simplify moving from App -> Shared and Shared -> App based on the config.
+      // Otherwise we need to figure out if it is an APP or a User shared and whether to migrate or not.
+
       await registry.removeServer(serverName);
       await registry.addSharedServer(serverName, config);
       return;

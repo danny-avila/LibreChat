@@ -2,6 +2,8 @@
 const mockGet = jest.fn();
 const mockSet = jest.fn();
 const mockDelete = jest.fn();
+const mockRedisSet = jest.fn();
+const mockRedisDel = jest.fn();
 
 jest.mock('~/cache', () => ({
   standardCache: jest.fn(() => ({
@@ -12,6 +14,19 @@ jest.mock('~/cache', () => ({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete: (...args: any[]) => mockDelete(...args),
   })),
+  keyvRedisClient: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    set: (...args: any[]) => mockRedisSet(...args),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    del: (...args: any[]) => mockRedisDel(...args),
+  },
+}));
+
+jest.mock('~/cache/cacheConfig', () => ({
+  cacheConfig: {
+    REDIS_KEY_PREFIX: '',
+    GLOBAL_PREFIX_SEPARATOR: '::',
+  },
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -94,58 +109,61 @@ describe('PrivateServersLoadStatusCache', () => {
   });
 
   describe('acquireLoadLock()', () => {
-    it('should acquire lock successfully when no lock exists', async () => {
-      mockGet.mockResolvedValue(undefined); // No existing lock
-      mockSet.mockResolvedValue(true);
+    it('should acquire lock successfully when no lock exists (using Redis SET NX)', async () => {
+      mockRedisSet.mockResolvedValue('OK'); // Redis SET NX returns 'OK' on success
 
       const result = await loadStatusCache.acquireLoadLock('user1');
 
       expect(result).toBe(true);
-      expect(mockGet).toHaveBeenCalledWith('USER_PRIVATE_SERVERS_LOAD_LOCK::user1');
-      expect(mockSet).toHaveBeenCalledWith(
-        'USER_PRIVATE_SERVERS_LOAD_LOCK::user1',
-        expect.any(Number),
-        30000,
+      expect(mockRedisSet).toHaveBeenCalledWith(
+        'MCP::ServersRegistry::PrivateServersLoadStatus:USER_PRIVATE_SERVERS_LOAD_LOCK::user1',
+        expect.any(String), // Timestamp as string
+        { NX: true, PX: 30000 },
       );
       expect(logger.debug).toHaveBeenCalledWith(
         '[MCP][LoadStatusCache] Acquired load lock for user user1 (TTL: 30000ms)',
       );
     });
 
-    it('should fail to acquire lock when lock already exists', async () => {
-      mockGet.mockResolvedValue(Date.now()); // Existing lock
+    it('should fail to acquire lock when lock already exists (Redis returns null)', async () => {
+      mockRedisSet.mockResolvedValue(null); // Redis SET NX returns null if key exists
 
       const result = await loadStatusCache.acquireLoadLock('user1');
 
       expect(result).toBe(false);
-      expect(mockGet).toHaveBeenCalledWith('USER_PRIVATE_SERVERS_LOAD_LOCK::user1');
-      expect(mockSet).not.toHaveBeenCalled();
+      expect(mockRedisSet).toHaveBeenCalledWith(
+        'MCP::ServersRegistry::PrivateServersLoadStatus:USER_PRIVATE_SERVERS_LOAD_LOCK::user1',
+        expect.any(String),
+        { NX: true, PX: 30000 },
+      );
       expect(logger.debug).toHaveBeenCalledWith(
         '[MCP][LoadStatusCache] Load lock already held for user user1',
       );
     });
 
     it('should acquire lock with custom TTL', async () => {
-      mockGet.mockResolvedValue(undefined);
-      mockSet.mockResolvedValue(true);
+      mockRedisSet.mockResolvedValue('OK');
 
       const result = await loadStatusCache.acquireLoadLock('user1', 60_000);
 
       expect(result).toBe(true);
-      expect(mockSet).toHaveBeenCalledWith(
-        'USER_PRIVATE_SERVERS_LOAD_LOCK::user1',
-        expect.any(Number),
-        60_000,
+      expect(mockRedisSet).toHaveBeenCalledWith(
+        'MCP::ServersRegistry::PrivateServersLoadStatus:USER_PRIVATE_SERVERS_LOAD_LOCK::user1',
+        expect.any(String),
+        { NX: true, PX: 60_000 },
       );
     });
 
-    it('should return false if cache.set fails', async () => {
-      mockGet.mockResolvedValue(undefined);
-      mockSet.mockResolvedValue(false);
+    it('should return false if Redis SET fails with error', async () => {
+      mockRedisSet.mockRejectedValue(new Error('Redis error'));
 
       const result = await loadStatusCache.acquireLoadLock('user1');
 
       expect(result).toBe(false);
+      expect(logger.error).toHaveBeenCalledWith(
+        '[MCP][LoadStatusCache] Error acquiring lock for user user1:',
+        expect.any(Error),
+      );
     });
   });
 
@@ -275,32 +293,29 @@ describe('PrivateServersLoadStatusCache', () => {
 
   describe('Edge cases', () => {
     it('should handle multiple users independently', async () => {
-      mockGet.mockResolvedValue(undefined);
-      mockSet.mockResolvedValue(true);
+      mockRedisSet.mockResolvedValue('OK');
 
       const lock1 = await loadStatusCache.acquireLoadLock('user1');
       const lock2 = await loadStatusCache.acquireLoadLock('user2');
 
       expect(lock1).toBe(true);
       expect(lock2).toBe(true);
-      expect(mockSet).toHaveBeenCalledWith(
-        'USER_PRIVATE_SERVERS_LOAD_LOCK::user1',
-        expect.any(Number),
-        30000,
+      expect(mockRedisSet).toHaveBeenCalledWith(
+        'MCP::ServersRegistry::PrivateServersLoadStatus:USER_PRIVATE_SERVERS_LOAD_LOCK::user1',
+        expect.any(String),
+        { NX: true, PX: 30000 },
       );
-      expect(mockSet).toHaveBeenCalledWith(
-        'USER_PRIVATE_SERVERS_LOAD_LOCK::user2',
-        expect.any(Number),
-        30000,
+      expect(mockRedisSet).toHaveBeenCalledWith(
+        'MCP::ServersRegistry::PrivateServersLoadStatus:USER_PRIVATE_SERVERS_LOAD_LOCK::user2',
+        expect.any(String),
+        { NX: true, PX: 30000 },
       );
     });
 
     it('should handle concurrent operations on same user', async () => {
-      mockGet
-        .mockResolvedValueOnce(undefined) // First lock attempt succeeds
-        .mockResolvedValueOnce(Date.now()); // Second lock attempt fails
-
-      mockSet.mockResolvedValue(true);
+      mockRedisSet
+        .mockResolvedValueOnce('OK') // First lock attempt succeeds
+        .mockResolvedValueOnce(null); // Second lock attempt fails (key exists)
 
       const [lock1, lock2] = await Promise.all([
         loadStatusCache.acquireLoadLock('user1'),

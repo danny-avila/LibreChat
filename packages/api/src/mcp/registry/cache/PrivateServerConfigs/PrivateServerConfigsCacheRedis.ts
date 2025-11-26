@@ -3,6 +3,7 @@ import { keyvRedisClient } from '~/cache';
 import { PrivateServerConfigsCacheBase } from './PrivateServerConfigsCacheBase';
 import { logger } from '@librechat/data-schemas';
 import { cacheConfig } from '~/cache/cacheConfig';
+import { batchDeleteKeys, scanKeys } from '~/cache/redisUtils';
 
 export class PrivateServerConfigsCacheRedis extends PrivateServerConfigsCacheBase {
   /**
@@ -40,17 +41,11 @@ export class PrivateServerConfigsCacheRedis extends PrivateServerConfigsCacheBas
     }
 
     const pattern = this.generateScanKeyPattern(serverName);
-    const keysToUpdate: string[] = [];
 
     try {
       // Efficient: Pattern-based scan for specific serverName
       // All cache keys that have the serverName
-      for await (const key of keyvRedisClient.scanIterator({
-        MATCH: pattern,
-        COUNT: cacheConfig.REDIS_SCAN_COUNT,
-      })) {
-        keysToUpdate.push(key);
-      }
+      const keysToUpdate = await scanKeys(keyvRedisClient, pattern);
 
       if (keysToUpdate.length > 0) {
         const updatedConfig = { ...config, lastUpdatedAt: Date.now() };
@@ -178,23 +173,8 @@ export class PrivateServerConfigsCacheRedis extends PrivateServerConfigsCacheBas
     }
 
     if (keysToDelete.length > 0) {
-      const chunkSize = cacheConfig.REDIS_DELETE_CHUNK_SIZE || 100;
-      let removedCount = 0;
-
-      if (this.isClusterMode()) {
-        // Cluster mode: Use individual DEL calls to avoid CROSSSLOT errors
-        for (const key of keysToDelete) {
-          const deleted = await keyvRedisClient.del(key);
-          removedCount += deleted;
-        }
-      } else {
-        // Single-node mode: Batch delete using DEL with array (more efficient)
-        for (let i = 0; i < keysToDelete.length; i += chunkSize) {
-          const chunk = keysToDelete.slice(i, i + chunkSize);
-          const deleted = await keyvRedisClient.del(chunk);
-          removedCount += deleted;
-        }
-      }
+      // Use utility function for efficient parallel deletion
+      const removedCount = await batchDeleteKeys(keyvRedisClient, keysToDelete);
 
       logger.info(
         `[MCP][PrivateServers][Redis] Revoked access to "${serverName}" from ${removedCount}/${userIds.length} users`,
@@ -207,24 +187,24 @@ export class PrivateServerConfigsCacheRedis extends PrivateServerConfigsCacheBas
       return [];
     }
 
-    const userIds: string[] = [];
     const pattern = this.generateScanKeyPattern(serverName);
 
     try {
-      for await (const key of keyvRedisClient.scanIterator({
-        MATCH: pattern,
-        COUNT: cacheConfig.REDIS_SCAN_COUNT,
-      })) {
+      const keys = await scanKeys(keyvRedisClient, pattern);
+      const userIds: string[] = [];
+
+      for (const key of keys) {
         const userId = this.extractUserIdFromKey(key);
         if (userId) {
           userIds.push(userId);
         }
       }
+
+      return userIds;
     } catch (error) {
       logger.error(`[MCP][PrivateServers][Redis] Error finding users with "${serverName}"`, error);
+      return [];
     }
-
-    return userIds;
   }
 
   /**
@@ -245,10 +225,9 @@ export class PrivateServerConfigsCacheRedis extends PrivateServerConfigsCacheBas
     const pattern = `*${this.PREFIX}::*:*`;
 
     try {
-      for await (const key of keyvRedisClient.scanIterator({
-        MATCH: pattern,
-        COUNT: cacheConfig.REDIS_SCAN_COUNT,
-      })) {
+      const keys = await scanKeys(keyvRedisClient, pattern);
+
+      for (const key of keys) {
         const userId = this.extractUserIdFromKey(key);
         if (userId) {
           userIds.add(userId);
@@ -289,30 +268,13 @@ export class PrivateServerConfigsCacheRedis extends PrivateServerConfigsCacheBas
     // Format: MCP::ServersRegistry::Servers::userId:serverName
     const pattern = `*${this.PREFIX}::*:*`;
 
-    const keysToDelete: string[] = [];
-
-    for await (const key of keyvRedisClient.scanIterator({
-      MATCH: pattern,
-      COUNT: cacheConfig.REDIS_SCAN_COUNT,
-    })) {
-      keysToDelete.push(key);
-    }
+    // Use utility functions for efficient scan and parallel deletion
+    const keysToDelete = await scanKeys(keyvRedisClient, pattern);
 
     if (keysToDelete.length > 0) {
-      if (this.isClusterMode()) {
-        // Cluster mode: Use individual DEL calls to avoid CROSSSLOT errors
-        for (const key of keysToDelete) {
-          await keyvRedisClient.del(key);
-        }
-      } else {
-        // Single-node mode: Batch delete using DEL with array (more efficient)
-        const chunkSize = cacheConfig.REDIS_DELETE_CHUNK_SIZE;
-        for (let i = 0; i < keysToDelete.length; i += chunkSize) {
-          const chunk = keysToDelete.slice(i, i + chunkSize);
-          await keyvRedisClient.del(chunk);
-        }
-      }
+      await batchDeleteKeys(keyvRedisClient, keysToDelete);
     }
+
     logger.info(`[MCP][Cache][Redis] Cleared all user caches: ${keysToDelete.length} entries`);
   }
 
