@@ -62,10 +62,6 @@ class MCPServersRegistry {
       if (privateUserServer) return privateUserServer;
     }
 
-    /** Fallback to raw config if server hasn't been initialized yet */
-    const rawConfig = this.rawConfigs[serverName];
-    if (rawConfig) return rawConfig as t.ParsedServerConfig;
-
     return undefined;
   }
 
