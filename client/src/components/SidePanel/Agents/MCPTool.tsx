@@ -183,7 +183,16 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                                 'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200 hover:bg-surface-active-alt focus:translate-x-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
                                 isExpanded && 'bg-surface-active-alt',
                               )}
-                              aria-hidden="true"
+                              aria-label={
+                                isExpanded
+                                  ? localize('com_ui_tool_list_collapse', {
+                                      serverName: currentServerName,
+                                    })
+                                  : localize('com_ui_tool_list_expand', {
+                                      serverName: currentServerName,
+                                    })
+                              }
+                              aria-expanded={isExpanded}
                               tabIndex={0}
                               onFocus={() => setIsFocused(true)}
                             >
