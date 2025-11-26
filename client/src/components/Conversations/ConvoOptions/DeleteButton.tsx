@@ -88,7 +88,7 @@ export function DeleteConversationDialog({
       <OGDialogHeader>
         <OGDialogTitle>{localize('com_ui_delete_conversation')}</OGDialogTitle>
       </OGDialogHeader>
-      <div className="w-full truncate">
+      <div id="delete-conversation-dialog" className="w-full truncate">
         <Trans
           i18nKey="com_ui_delete_confirm_strong"
           values={{ item: title }}

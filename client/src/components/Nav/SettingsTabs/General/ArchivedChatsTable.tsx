@@ -160,7 +160,7 @@ export default function ArchivedChatsTable({
           return (
             <button
               type="button"
-              className="flex items-center gap-2 truncate"
+              className="flex items-center gap-2 truncate rounded-sm"
               onClick={() => window.open(`/c/${conversationId}`, '_blank')}
             >
               <MinimalIcon
@@ -190,6 +190,7 @@ export default function ArchivedChatsTable({
               onClick={() =>
                 handleSort('createdAt', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
               }
+              aria-label={localize('com_nav_archive_created_at_sort')}
             >
               {localize('com_nav_archive_created_at')}
               {isSorted && sortDirection === 'asc' && (
