@@ -72,7 +72,7 @@ const BookmarkForm = ({
     }
     const allTags =
       queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
-    if (allTags.some((tag) => tag.tag === data.tag)) {
+    if (allTags.some((tag) => tag.tag === data.tag && tag.tag !== bookmark?.tag)) {
       showToast({
         message: localize('com_ui_bookmarks_create_exists'),
         status: 'warning',
