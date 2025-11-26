@@ -18,8 +18,7 @@ const defaultInterface = getConfigDefaults().interface;
 
 export default function Header() {
   const { data: startupConfig } = useGetStartupConfig();
-  const { navVisible, setNavVisible, openSidebarRef, closeSidebarRef } =
-    useOutletContext<ContextType>();
+  const { navVisible, setNavVisible } = useOutletContext<ContextType>();
 
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
@@ -52,12 +51,7 @@ export default function Header() {
                 transition={{ duration: 0.2 }}
                 key="header-buttons"
               >
-                <OpenSidebar
-                  ref={openSidebarRef}
-                  setNavVisible={setNavVisible}
-                  closeSidebarRef={closeSidebarRef}
-                  className="max-md:hidden"
-                />
+                <OpenSidebar setNavVisible={setNavVisible} className="max-md:hidden" />
                 <HeaderNewChat />
               </motion.div>
             )}
