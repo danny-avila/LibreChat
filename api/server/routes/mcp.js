@@ -14,6 +14,7 @@ const { findToken, updateToken, createToken, deleteTokens } = require('~/models'
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const { getMCPServersList } = require('~/server/controllers/mcp');
 const { getMCPTools } = require('~/server/controllers/mcp');
 const { requireJwtAuth } = require('~/server/middleware');
 const { findPluginAuthsByKeys } = require('~/models');
@@ -428,10 +429,11 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
     );
     const connectionStatus = {};
 
-    for (const [serverName] of Object.entries(mcpConfig)) {
+    for (const [serverName, config] of Object.entries(mcpConfig)) {
       connectionStatus[serverName] = await getServerConnectionStatus(
         user.id,
         serverName,
+        config,
         appConnections,
         userConnections,
         oauthServers,
@@ -477,6 +479,7 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
     const serverStatus = await getServerConnectionStatus(
       user.id,
       serverName,
+      mcpConfig[serverName],
       appConnections,
       userConnections,
       oauthServers,
@@ -556,5 +559,11 @@ async function getOAuthHeaders(serverName, userId) {
   const serverConfig = await mcpServersRegistry.getServerConfig(serverName, userId);
   return serverConfig?.oauth_headers ?? {};
 }
+/**
+ * Get list of accessible MCP servers
+ * @route GET /api/mcp/servers
+ * @returns {MCPServersListResponse} 200 - Success response - application/json
+ */
+router.get('/servers', requireJwtAuth, getMCPServersList);
 
 module.exports = router;
