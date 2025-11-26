@@ -61,18 +61,11 @@ export class MCPServersInitializer {
   }
 
   /** Initializes a single server with all its metadata and adds it to appropriate collections */
-  private static async initializeServer(
-    serverName: string,
-    rawConfig: t.MCPOptions,
-  ): Promise<void> {
+  public static async initializeServer(serverName: string, rawConfig: t.MCPOptions): Promise<void> {
     try {
       const config = await MCPServerInspector.inspect(serverName, rawConfig);
 
-      if (config.startup === false || config.requiresOAuth) {
-        await registry.sharedUserServers.add(serverName, config);
-      } else {
-        await registry.sharedAppServers.add(serverName, config);
-      }
+      await registry.addSharedServer(serverName, config);
       MCPServersInitializer.logParsedConfig(serverName, config);
     } catch (error) {
       logger.error(`${MCPServersInitializer.prefix(serverName)} Failed to initialize:`, error);
