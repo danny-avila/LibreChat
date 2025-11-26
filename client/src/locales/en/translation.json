@@ -799,6 +799,7 @@
   "com_ui_continue_oauth": "Continue with OAuth",
   "com_ui_controls": "Controls",
   "com_ui_convo_delete_error": "Failed to delete conversation",
+  "com_ui_convo_delete_success": "Conversation successfully deleted",
   "com_ui_copied": "Copied!",
   "com_ui_copied_to_clipboard": "Copied to clipboard",
   "com_ui_copy_code": "Copy code",
