@@ -61,7 +61,7 @@ export default function Header() {
               </motion.div>
             )}
           </AnimatePresence>
-          {!isSmallScreen && !navVisible && (
+          {!(navVisible && isSmallScreen) && (
             <div
               className={`flex items-center gap-2 ${
                 !isSmallScreen ? 'transition-all duration-200 ease-in-out' : ''
