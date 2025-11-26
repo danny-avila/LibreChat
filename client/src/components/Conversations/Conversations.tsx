@@ -33,9 +33,9 @@ LoadingSpinner.displayName = 'LoadingSpinner';
 const DateLabel: FC<{ groupName: string }> = memo(({ groupName }) => {
   const localize = useLocalize();
   return (
-    <div className="mt-2 pl-2 pt-1 text-text-secondary" style={{ fontSize: '0.7rem' }}>
+    <h2 className="mt-2 pl-2 pt-1 text-text-secondary" style={{ fontSize: '0.7rem' }}>
       {localize(groupName as TranslationKeys) || groupName}
-    </div>
+    </h2>
   );
 });
 
@@ -150,7 +150,7 @@ const Conversations: FC<ConversationsProps> = ({
       return (
         <CellMeasurer cache={cache} columnIndex={0} key={key} parent={parent} rowIndex={index}>
           {({ registerChild }) => (
-            <div ref={registerChild} style={style}>
+            <div ref={registerChild} style={style} className="px-2">
               {rendering}
             </div>
           )}
@@ -199,6 +199,7 @@ const Conversations: FC<ConversationsProps> = ({
                 rowHeight={getRowHeight}
                 rowRenderer={rowRenderer}
                 overscanRowCount={10}
+                aria-readonly={false}
                 className="outline-none"
                 style={{ outline: 'none' }}
                 aria-label="Conversations"
