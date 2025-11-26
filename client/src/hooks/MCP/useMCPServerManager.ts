@@ -10,8 +10,7 @@ import {
 import type { TUpdateUserPlugins, TPlugin, MCPServersResponse } from 'librechat-data-provider';
 import type { ConfigFieldDetail } from '~/common';
 import { useLocalize, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
-import { useGetStartupConfig } from '~/data-provider';
-import { useMCPServersQuery } from '~/data-provider/MCPServers/queries';
+import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
 
 export interface MCPServerDefinition {
   serverName: string;
