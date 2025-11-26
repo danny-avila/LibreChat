@@ -274,7 +274,6 @@ const loadTools = async ({
     flux: imageGenOptions,
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
-    serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
     gemini_image_gen: imageGenOptions,
   };
 

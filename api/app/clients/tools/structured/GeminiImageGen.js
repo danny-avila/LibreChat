@@ -101,7 +101,7 @@ When NOT to use \`gemini_image_gen\`:
 
 Generated image IDs will be returned in the response, so you can refer to them in future requests.`;
 
-    this.description_for_model = `Use this tool to generate images from text descriptions using Vertex AI Gemini.
+    this.description_for_model = `Use this tool to generate images from text descriptions using Google Gemini.
 1. Prompts should be detailed and specific for best results.
 2. One image per function call. Create only 1 image per request.
 3. IMPORTANT: When user asks to "edit", "modify", "change", or "swap" elements in an existing image:
@@ -149,17 +149,56 @@ Guidelines:
     });
   }
 
+  /**
+   * Determine which provider to use based on configuration
+   * @returns {'gemini' | 'vertex'} The provider to use
+   */
+  getProvider() {
+    const provider = process.env.GEMINI_IMAGE_PROVIDER?.toLowerCase();
+    if (provider === 'gemini' || provider === 'vertex') {
+      return provider;
+    }
+    // Auto-detect: prefer Vertex AI if available, otherwise use Gemini API
+    if (process.env.GOOGLE_SERVICE_KEY_FILE) {
+      return 'vertex';
+    }
+    return 'gemini';
+  }
+
+  /**
+   * Get the model ID to use for image generation
+   * @returns {string} The model ID
+   */
+  getModelId() {
+    return process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image-preview';
+  }
+
   validateConfig() {
     if (this.override) {
       return;
     }
 
-    // Use same pattern as other Google service integrations
-    const credentialsPath =
-      process.env.GOOGLE_SERVICE_KEY_FILE ||
-      path.join(__dirname, '../../../..', 'data', 'auth.json');
-    if (!fs.existsSync(credentialsPath)) {
-      throw new Error(`Google credentials file not found at: ${credentialsPath}`);
+    const provider = this.getProvider();
+
+    if (provider === 'gemini') {
+      // Gemini API requires API key
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error(
+          'GEMINI_API_KEY environment variable is required when using Gemini API provider. ' +
+            'Set GEMINI_IMAGE_PROVIDER=vertex to use Vertex AI with service account instead.',
+        );
+      }
+    } else {
+      // Vertex AI requires service account credentials
+      const credentialsPath =
+        process.env.GOOGLE_SERVICE_KEY_FILE ||
+        path.join(__dirname, '../../../..', 'data', 'auth.json');
+      if (!fs.existsSync(credentialsPath)) {
+        throw new Error(
+          `Google service account credentials file not found at: ${credentialsPath}. ` +
+            'Set GEMINI_IMAGE_PROVIDER=gemini and GEMINI_API_KEY to use Gemini API instead.',
+        );
+      }
     }
   }
 
@@ -238,30 +277,50 @@ Guidelines:
     }
   }
 
-  async initializeGeminiVertexAI() {
+  /**
+   * Initialize the Gemini client based on the configured provider
+   * @returns {Promise<GoogleGenAI>} The initialized Gemini client
+   */
+  async initializeGeminiClient() {
+    const provider = this.getProvider();
+    const modelId = this.getModelId();
+
+    logger.debug(`[GeminiImageGen] Using provider: ${provider}, model: ${modelId}`);
+
     try {
-      // Use same pattern as other Google service integrations
+      if (provider === 'gemini') {
+        // Use Gemini API with API key
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+          throw new Error(
+            'GEMINI_API_KEY environment variable is required for Gemini API provider',
+          );
+        }
+        logger.debug('[GeminiImageGen] Initializing Gemini API client with API key');
+        return new GoogleGenAI({ apiKey });
+      }
+
+      // Use Vertex AI with service account
+      logger.debug('[GeminiImageGen] Initializing Vertex AI client with service account');
       const credentialsPath =
         process.env.GOOGLE_SERVICE_KEY_FILE ||
         path.join(__dirname, '../../../..', 'data', 'auth.json');
 
-      // Set environment variables for Vertex AI (required by Google GenAI library)
-      process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
+      if (!fs.existsSync(credentialsPath)) {
+        throw new Error(`Google service account credentials file not found at: ${credentialsPath}`);
+      }
 
-      // Load service account credentials
+      process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
       const serviceKey = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
 
-      // Initialize client
-      const ai = new GoogleGenAI({
+      return new GoogleGenAI({
         vertexai: true,
         project: serviceKey.project_id,
-        location: 'global',
+        location: process.env.GOOGLE_CLOUD_LOCATION || 'global',
       });
-
-      return ai;
     } catch (error) {
-      logger.error('[GeminiImageGen] Error initializing Gemini Vertex AI client:', error);
-      throw new Error(`Failed to initialize Gemini Vertex AI client: ${error.message}`);
+      logger.error('[GeminiImageGen] Error initializing Gemini client:', error);
+      throw new Error(`Failed to initialize Gemini client: ${error.message}`);
     }
   }
 
@@ -443,10 +502,10 @@ Guidelines:
 
     let ai;
     try {
-      ai = await this.initializeGeminiVertexAI();
+      ai = await this.initializeGeminiClient();
     } catch (error) {
-      logger.error('[GeminiImageGen] Failed to initialize Gemini Vertex AI:', error);
-      return this.returnValue(`Failed to initialize Gemini Vertex AI: ${error.message}`);
+      logger.error('[GeminiImageGen] Failed to initialize Gemini client:', error);
+      return this.returnValue(`Failed to initialize Gemini client: ${error.message}`);
     }
 
     let apiResponse;
@@ -471,31 +530,30 @@ Guidelines:
 
       logger.debug('[GeminiImageGen] Final contents array length:', contents.length);
 
-      // Generate image using Gemini Vertex AI with optional image context
+      // Generate image using Gemini with optional image context
+      const modelId = this.getModelId();
       apiResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image-preview',
+        model: modelId,
         contents: contents,
         config: {
           responseModalities: ['TEXT', 'IMAGE'],
         },
       });
 
-      logger.debug('[GeminiImageGen] Received response from Gemini Vertex AI');
+      logger.debug(`[GeminiImageGen] Received response from Gemini (model: ${modelId})`);
     } catch (error) {
       logger.error('[GeminiImageGen] Problem generating the image:', error);
       return this
-        .returnValue(`Something went wrong when trying to generate the image. The Gemini Vertex AI API may be unavailable:
+        .returnValue(`Something went wrong when trying to generate the image. The Gemini API may be unavailable:
 Error Message: ${error.message}`);
     }
 
     // Enhanced safety and response checking
     if (!apiResponse || !apiResponse.candidates || !apiResponse.candidates[0]) {
       return this.returnValue(
-        'Something went wrong when trying to generate the image. The Gemini Vertex AI API may be unavailable',
+        'Something went wrong when trying to generate the image. The Gemini API may be unavailable',
       );
     }
-
-    console.log('apiResponse', apiResponse);
 
     // Check for content safety blocks BEFORE trying to extract image data
     const safetyBlock = this.checkForSafetyBlock(apiResponse);

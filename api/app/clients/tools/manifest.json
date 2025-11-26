@@ -183,8 +183,8 @@
   {
     "name": "Gemini Image Tools",
     "pluginKey": "gemini_image_gen",
-    "description": "Generate high-quality images using Google's Gemini 2.5 Flash Image Model",
-    "icon": "/assets/gemini_image_gen.png",
+    "description": "Generate high-quality images using Google's Gemini Image Models. Supports both Gemini API (GEMINI_API_KEY) and Vertex AI (service account).",
+    "icon": "/assets/gemini_image_gen.svg",
     "authConfig": []
   }
 ]
