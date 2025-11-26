@@ -277,18 +277,14 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                       <div className="ml-auto flex h-6 w-6 items-center justify-center">
                         <Ariakit.HovercardAnchor
                           render={
-                            <Ariakit.Button
+                            <div
                               className={cn(
                                 'flex h-5 w-5 cursor-help items-center rounded-full text-text-secondary transition-opacity duration-200',
                                 hoveredToolId === subTool.tool_id ? 'opacity-100' : 'opacity-0',
                               )}
-                              aria-label={localize('com_ui_tool_info')}
                             >
                               <CircleHelpIcon className="h-4 w-4" />
-                              <Ariakit.VisuallyHidden>
-                                {localize('com_ui_tool_info')}
-                              </Ariakit.VisuallyHidden>
-                            </Ariakit.Button>
+                            </div>
                           }
                         />
                         <Ariakit.HovercardDisclosure
