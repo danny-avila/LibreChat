@@ -77,7 +77,7 @@ export function useApplyAgentTemplate() {
       // Merge model spec fields into ephemeral agent
       const mergedAgent = {
         ...ephemeralAgent,
-        mcp: [...(ephemeralAgent?.mcp ?? []), ...(modelSpec.mcpServers ?? [])],
+        mcp: [...(ephemeralAgent?.mcp ?? []), ...(modelSpec.mcpServers ?? [])], //TODO: @Danny I am not sure if we need some changes here.
         web_search: ephemeralAgent?.web_search ?? modelSpec.webSearch ?? false,
         file_search: ephemeralAgent?.file_search ?? modelSpec.fileSearch ?? false,
         execute_code: ephemeralAgent?.execute_code ?? modelSpec.executeCode ?? false,

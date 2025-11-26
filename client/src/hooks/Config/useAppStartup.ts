@@ -5,7 +5,7 @@ import { LocalStorageKeys } from 'librechat-data-provider';
 import type { TStartupConfig, TUser } from 'librechat-data-provider';
 import { cleanupTimestampedStorage } from '~/utils/timestamps';
 import useSpeechSettingsInit from './useSpeechSettingsInit';
-import { useMCPToolsQuery } from '~/data-provider';
+import { useMCPToolsQuery, useMcpServersQuery } from '~/data-provider';
 import store from '~/store';
 
 export default function useAppStartup({
@@ -18,9 +18,10 @@ export default function useAppStartup({
   const [defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
 
   useSpeechSettingsInit(!!user);
+  const { data: loadedServers, isLoading: serversLoading } = useMcpServersQuery();
 
   useMCPToolsQuery({
-    enabled: !!startupConfig?.mcpServers && !!user,
+    enabled: !!serversLoading && !!loadedServers && Object.keys(loadedServers).length > 0 && !!user,
   });
 
   /** Clean up old localStorage entries on startup */

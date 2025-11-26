@@ -4,11 +4,7 @@
  */
 const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
-const {
-  cacheMCPServerTools,
-  getMCPServerTools,
-  getAppConfig,
-} = require('~/server/services/Config');
+const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager } = require('~/config');
 const { mcpServersRegistry } = require('@librechat/api');
 
@@ -23,13 +19,14 @@ const getMCPTools = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
-    if (!appConfig?.mcpConfig) {
+    const mcpConfig = await mcpServersRegistry.getAllServerConfigs(userId);
+    const configuredServers = mcpConfig ? Object.keys(mcpConfig) : [];
+
+    if (!mcpConfig || Object.keys(mcpConfig).length == 0) {
       return res.status(200).json({ servers: {} });
     }
 
     const mcpManager = getMCPManager();
-    const configuredServers = Object.keys(appConfig.mcpConfig);
     const mcpServers = {};
 
     const cachePromises = configuredServers.map((serverName) =>
@@ -71,7 +68,7 @@ const getMCPTools = async (req, res) => {
         const serverTools = serverToolsMap.get(serverName);
 
         // Get server config once
-        const serverConfig = appConfig.mcpConfig[serverName];
+        const serverConfig = mcpConfig[serverName];
         const rawServerConfig = await mcpServersRegistry.getServerConfig(serverName, userId);
 
         // Initialize server object with all server-level data
@@ -127,7 +124,29 @@ const getMCPTools = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+/**
+ * Get all MCP servers with permissions
+ * @route GET /api/mcp/servers
+ */
+const getMCPServersList = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    // TODO - Ensure DB servers loaded into registry (configs only)
+
+    // 2. Get all server configs from registry (YAML + DB)
+    const serverConfigs = await mcpServersRegistry.getAllServerConfigs(userId);
+
+    return res.json(serverConfigs);
+  } catch (error) {
+    logger.error('[getMCPServersList]', error);
+    res.status(500).json({ error: error.message });
+  }
+};
 
 module.exports = {
   getMCPTools,
+  getMCPServersList,
 };
