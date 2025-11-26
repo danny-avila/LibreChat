@@ -1,16 +1,19 @@
-import { forwardRef } from 'react';
 import { TooltipAnchor, Button, Sidebar } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-const OpenSidebar = forwardRef<
-  HTMLButtonElement,
-  {
-    setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
-    className?: string;
-    closeSidebarRef?: React.RefObject<HTMLButtonElement>;
-  }
->(({ setNavVisible, className, closeSidebarRef }, ref) => {
+/** Element ID for the close sidebar button - used for focus management */
+export const CLOSE_SIDEBAR_ID = 'close-sidebar-button';
+/** Element ID for the open sidebar button - used for focus management */
+export const OPEN_SIDEBAR_ID = 'open-sidebar-button';
+
+export default function OpenSidebar({
+  setNavVisible,
+  className,
+}: {
+  setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
+  className?: string;
+}) {
   const localize = useLocalize();
 
   const handleClick = () => {
@@ -18,9 +21,10 @@ const OpenSidebar = forwardRef<
       localStorage.setItem('navVisible', JSON.stringify(!prev));
       return !prev;
     });
-    requestAnimationFrame(() => {
-      closeSidebarRef?.current?.focus();
-    });
+    // Delay focus until after the sidebar animation completes (200ms)
+    setTimeout(() => {
+      document.getElementById(CLOSE_SIDEBAR_ID)?.focus();
+    }, 250);
   };
 
   return (
@@ -28,7 +32,7 @@ const OpenSidebar = forwardRef<
       description={localize('com_nav_open_sidebar')}
       render={
         <Button
-          ref={ref}
+          id={OPEN_SIDEBAR_ID}
           size="icon"
           variant="outline"
           data-testid="open-sidebar-button"
@@ -46,8 +50,4 @@ const OpenSidebar = forwardRef<
       }
     />
   );
-});
-
-OpenSidebar.displayName = 'OpenSidebar';
-
-export default OpenSidebar;
+}
