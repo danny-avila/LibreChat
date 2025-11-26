@@ -127,7 +127,8 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         defaultOpen={endpoint.value === selectedEndpoint}
         searchValue={searchValue}
         onSearch={(value) => setEndpointSearchValue(endpoint.value, value)}
-        combobox={<input placeholder={placeholder} />}
+        combobox={<input placeholder=" " />}
+        comboboxLabel={placeholder}
         label={
           <div
             onClick={() => handleSelectEndpoint(endpoint)}

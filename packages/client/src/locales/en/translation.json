@@ -3,5 +3,9 @@
   "com_ui_no_options": "No options available",
   "com_ui_delete_selected_items": "Delete selected items",
   "com_ui_filter_by": "Filter by {{title}}",
-  "com_ui_cancel_dialog": "Cancel dialog"
+  "com_ui_cancel_dialog": "Cancel dialog",
+  "com_ui_toggle_theme": "Toggle theme",
+  "com_ui_dark_theme_enabled": "Dark theme enabled",
+  "com_ui_light_theme_enabled": "Light theme enabled",
+  "com_ui_search": "Search..."
 }

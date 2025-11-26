@@ -38,6 +38,7 @@ export default function SharedLinkButton({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
   const shareId = share?.shareId ?? '';
 
   const { mutateAsync: mutate, isLoading: isCreateLoading } = useCreateSharedLinkMutation({
@@ -85,6 +86,10 @@ export default function SharedLinkButton({
     const updateShare = await mutateAsync({ shareId });
     const newLink = generateShareLink(updateShare.shareId);
     setSharedLink(newLink);
+    setAnnouncement(localize('com_ui_link_refreshed'));
+    setTimeout(() => {
+      setAnnouncement('');
+    }, 1000);
   };
 
   const createShareLink = async () => {
@@ -129,19 +134,24 @@ export default function SharedLinkButton({
             <TooltipAnchor
               description={localize('com_ui_refresh_link')}
               render={(props) => (
-                <Button
-                  {...props}
-                  onClick={() => updateSharedLink()}
-                  aria-label={localize('com_ui_refresh_link')}
-                  variant="outline"
-                  disabled={isUpdateLoading}
-                >
-                  {isUpdateLoading ? (
-                    <Spinner className="size-4" />
-                  ) : (
-                    <RotateCw className="size-4" aria-hidden="true" />
-                  )}
-                </Button>
+                <>
+                  <span className="sr-only" aria-live="polite" aria-atomic="true">
+                    {announcement}
+                  </span>
+                  <Button
+                    {...props}
+                    onClick={() => updateSharedLink()}
+                    variant="outline"
+                    disabled={isUpdateLoading}
+                    aria-label={localize('com_ui_refresh_link')}
+                  >
+                    {isUpdateLoading ? (
+                      <Spinner className="size-4" />
+                    ) : (
+                      <RotateCw className="size-4" aria-hidden="true" />
+                    )}
+                  </Button>
+                </>
               )}
             />
 

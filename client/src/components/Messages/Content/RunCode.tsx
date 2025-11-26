@@ -86,7 +86,7 @@ const RunCode: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, blockIndex 
     <>
       <button
         type="button"
-        className={cn('ml-auto flex gap-2')}
+        className={cn('ml-auto flex gap-2 rounded-sm focus:outline focus:outline-white')}
         onClick={debouncedExecute}
         disabled={execute.isLoading}
       >
