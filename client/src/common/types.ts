@@ -571,8 +571,6 @@ export interface ModelItemProps {
 export type ContextType = {
   navVisible: boolean;
   setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
-  openSidebarRef?: React.RefObject<HTMLButtonElement>;
-  closeSidebarRef?: React.RefObject<HTMLButtonElement>;
 };
 
 export interface SwitcherProps {
