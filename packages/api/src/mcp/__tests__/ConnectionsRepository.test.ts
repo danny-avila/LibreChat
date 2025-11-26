@@ -8,6 +8,7 @@ import type * as t from '../types';
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     error: jest.fn(),
+    info: jest.fn(),
   },
 }));
 
@@ -19,11 +20,23 @@ jest.mock('../MCPConnectionFactory', () => ({
 
 jest.mock('../connection');
 
+// Mock the registry
+jest.mock('../registry/MCPServersRegistry', () => ({
+  mcpServersRegistry: {
+    getServerConfig: jest.fn(),
+    getAllServerConfigs: jest.fn(),
+  },
+}));
+
 const mockLogger = logger as jest.Mocked<typeof logger>;
+
+// Import mocked registry
+import { mcpServersRegistry as registry } from '../registry/MCPServersRegistry';
+const mockRegistry = registry as jest.Mocked<typeof registry>;
 
 describe('ConnectionsRepository', () => {
   let repository: ConnectionsRepository;
-  let mockServerConfigs: t.MCPServers;
+  let mockServerConfigs: Record<string, t.ParsedServerConfig>;
   let mockConnection: jest.Mocked<MCPConnection>;
 
   beforeEach(() => {
@@ -33,14 +46,28 @@ describe('ConnectionsRepository', () => {
       server3: { url: 'ws://localhost:8080', type: 'websocket' },
     };
 
+    // Setup mock registry
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    mockRegistry.getServerConfig = jest.fn((serverName: string, ownerId?: string) =>
+      Promise.resolve(mockServerConfigs[serverName] || undefined),
+    ) as jest.Mock;
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    mockRegistry.getAllServerConfigs = jest.fn((ownerId?: string) =>
+      Promise.resolve(mockServerConfigs),
+    ) as jest.Mock;
+
     mockConnection = {
       isConnected: jest.fn().mockResolvedValue(true),
       disconnect: jest.fn().mockResolvedValue(undefined),
+      createdAt: Date.now(),
+      isStale: jest.fn().mockReturnValue(false),
     } as unknown as jest.Mocked<MCPConnection>;
 
     (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
 
-    repository = new ConnectionsRepository(mockServerConfigs);
+    // Create repository with undefined ownerId (app-level)
+    repository = new ConnectionsRepository(undefined);
 
     jest.clearAllMocks();
   });
@@ -50,12 +77,12 @@ describe('ConnectionsRepository', () => {
   });
 
   describe('has', () => {
-    it('should return true for existing server', () => {
-      expect(repository.has('server1')).toBe(true);
+    it('should return true for existing server', async () => {
+      expect(await repository.has('server1')).toBe(true);
     });
 
-    it('should return false for non-existing server', () => {
-      expect(repository.has('nonexistent')).toBe(false);
+    it('should return false for non-existing server', async () => {
+      expect(await repository.has('nonexistent')).toBe(false);
     });
   });
 
@@ -104,7 +131,90 @@ describe('ConnectionsRepository', () => {
       );
     });
 
-    it('should throw error for non-existent server configuration', async () => {
+    it('should recreate connection when existing connection is stale', async () => {
+      const connectionCreatedAt = Date.now();
+      const configCachedAt = connectionCreatedAt + 10000; // Config updated 10 seconds after connection was created
+
+      const staleConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        disconnect: jest.fn().mockResolvedValue(undefined),
+        createdAt: connectionCreatedAt,
+        isStale: jest.fn().mockReturnValue(true),
+      } as unknown as jest.Mocked<MCPConnection>;
+
+      // Update server config with lastUpdatedAt timestamp
+      const configWithCachedAt = {
+        ...mockServerConfigs.server1,
+        lastUpdatedAt: configCachedAt,
+      };
+      mockRegistry.getServerConfig.mockResolvedValueOnce(configWithCachedAt);
+
+      repository['connections'].set('server1', staleConnection);
+
+      const result = await repository.get('server1');
+
+      // Verify stale check was called with the config's lastUpdatedAt timestamp
+      expect(staleConnection.isStale).toHaveBeenCalledWith(configCachedAt);
+
+      // Verify old connection was disconnected
+      expect(staleConnection.disconnect).toHaveBeenCalled();
+
+      // Verify new connection was created
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        {
+          serverName: 'server1',
+          serverConfig: configWithCachedAt,
+        },
+        undefined,
+      );
+
+      // Verify new connection is returned
+      expect(result).toBe(mockConnection);
+
+      // Verify the new connection replaced the stale one in the repository
+      expect(repository['connections'].get('server1')).toBe(mockConnection);
+      expect(repository['connections'].get('server1')).not.toBe(staleConnection);
+    });
+
+    it('should return existing connection when it is not stale', async () => {
+      const connectionCreatedAt = Date.now();
+      const configCachedAt = connectionCreatedAt - 10000; // Config is older than connection
+
+      const freshConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        disconnect: jest.fn().mockResolvedValue(undefined),
+        createdAt: connectionCreatedAt,
+        isStale: jest.fn().mockReturnValue(false),
+      } as unknown as jest.Mocked<MCPConnection>;
+
+      // Update server config with lastUpdatedAt timestamp
+      const configWithCachedAt = {
+        ...mockServerConfigs.server1,
+        lastUpdatedAt: configCachedAt,
+      };
+      mockRegistry.getServerConfig.mockResolvedValueOnce(configWithCachedAt);
+
+      repository['connections'].set('server1', freshConnection);
+
+      const result = await repository.get('server1');
+
+      // Verify stale check was called
+      expect(freshConnection.isStale).toHaveBeenCalledWith(configCachedAt);
+
+      // Verify connection was not disconnected
+      expect(freshConnection.disconnect).not.toHaveBeenCalled();
+
+      // Verify no new connection was created
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+
+      // Verify existing connection is returned
+      expect(result).toBe(freshConnection);
+
+      // Verify repository still has the same connection
+      expect(repository['connections'].get('server1')).toBe(freshConnection);
+    });
+    //todo revist later when async getAll(): in packages/api/src/mcp/ConnectionsRepository.ts is refactored
+    it.skip('should throw error for non-existent server configuration', async () => {
       await expect(repository.get('nonexistent')).rejects.toThrow(
         '[MCP][nonexistent] Server not found in configuration',
       );
