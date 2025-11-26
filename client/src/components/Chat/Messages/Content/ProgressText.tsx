@@ -93,6 +93,7 @@ export default function ProgressText({
         )}
         disabled={!hasInput}
         onClick={hasInput ? onClick : undefined}
+        aria-expanded={hasInput ? isExpanded : undefined}
       >
         {icon}
         <span className={showShimmer ? 'shimmer' : ''}>{text}</span>
