@@ -1122,6 +1122,8 @@
   "com_ui_privacy_policy": "Privacy policy",
   "com_ui_privacy_policy_url": "Privacy Policy URL",
   "com_ui_prompt": "Prompt",
+  "com_ui_prompt_group_button": "{{name}} prompt, {{category}} category",
+  "com_ui_prompt_group_button_no_category": "{{name}} prompt",
   "com_ui_prompt_groups": "Prompt Groups List",
   "com_ui_prompt_input": "Prompt input",
   "com_ui_prompt_input_field": "Prompt text input field",

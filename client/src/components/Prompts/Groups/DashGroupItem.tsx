@@ -91,7 +91,16 @@ function DashGroupItemComponent({ group, instanceProjectId }: DashGroupItemProps
         className="flex w-full cursor-pointer items-center justify-between rounded-lg p-3 text-left"
         onClick={handleContainerClick}
         onKeyDown={handleKeyDown}
-        aria-label={`${group.name} ${localize('com_ui_prompt')}${group.category ? `, ${localize('com_ui_category')}: ${group.category}` : ''}`}
+        aria-label={
+          group.category
+            ? localize('com_ui_prompt_group_button', {
+                name: group.name,
+                category: group.category,
+              })
+            : localize('com_ui_prompt_group_button_no_category', {
+                name: group.name,
+              })
+        }
       >
         <div className="flex items-center gap-2 truncate pr-2">
           <CategoryIcon category={group.category ?? ''} className="icon-lg" aria-hidden="true" />
