@@ -3,6 +3,7 @@ import { fromPairs } from 'lodash';
 import { standardCache, keyvRedisClient } from '~/cache';
 import { ParsedServerConfig } from '~/mcp/types';
 import { BaseRegistryCache } from './BaseRegistryCache';
+import { IServerConfigsRepositoryInterface } from '../ServerConfigsRepositoryInterface';
 
 /**
  * Redis-backed implementation of MCP server configurations cache for distributed deployments.
@@ -11,7 +12,10 @@ import { BaseRegistryCache } from './BaseRegistryCache';
  * Supports optional leader-only write operations to prevent race conditions during initialization.
  * Data persists across server restarts and is accessible from any instance in the cluster.
  */
-export class ServerConfigsCacheRedis extends BaseRegistryCache {
+export class ServerConfigsCacheRedis
+  extends BaseRegistryCache
+  implements IServerConfigsRepositoryInterface
+{
   protected readonly cache: Keyv;
   private readonly owner: string;
 

@@ -213,20 +213,20 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
 
   describe('initialize()', () => {
     it('should reset registry and status cache before initialization', async () => {
-      // Pre-populate registry with some old servers
-      await registry.sharedAppServers.add('old_app_server', testParsedConfigs.file_tools_server);
-      await registry.sharedUserServers.add('old_user_server', testParsedConfigs.oauth_server);
+      // Pre-populate registry with some old servers using public API
+      await registry.addServer('old_app_server', testConfigs.file_tools_server, 'CACHE');
+      await registry.addServer('old_user_server', testConfigs.oauth_server, 'CACHE');
 
       // Initialize with new configs (this should reset first)
       await MCPServersInitializer.initialize(testConfigs);
 
       // Verify old servers are gone
-      expect(await registry.sharedAppServers.get('old_app_server')).toBeUndefined();
-      expect(await registry.sharedUserServers.get('old_user_server')).toBeUndefined();
+      expect(await registry.getServerConfig('old_app_server')).toBeUndefined();
+      expect(await registry.getServerConfig('old_user_server')).toBeUndefined();
 
       // Verify new servers are present
-      expect(await registry.sharedAppServers.get('file_tools_server')).toBeDefined();
-      expect(await registry.sharedUserServers.get('oauth_server')).toBeDefined();
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
+      expect(await registry.getServerConfig('oauth_server')).toBeDefined();
       expect(await registryStatusCache.isInitialized()).toBe(true);
     });
 
@@ -244,54 +244,14 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
       expect(MCPServerInspector.inspect).not.toHaveBeenCalled();
     });
 
-    it('should add disabled servers to sharedUserServers', async () => {
+    it('should initialize all servers to cache repository', async () => {
       await MCPServersInitializer.initialize(testConfigs);
 
-      const disabledServer = await registry.sharedUserServers.get('disabled_server');
-      expect(disabledServer).toBeDefined();
-      expect(disabledServer).toMatchObject({
-        ...testParsedConfigs.disabled_server,
-        _processedByInspector: true,
-      });
-    });
-
-    it('should add OAuth servers to sharedUserServers', async () => {
-      await MCPServersInitializer.initialize(testConfigs);
-
-      const oauthServer = await registry.sharedUserServers.get('oauth_server');
-      expect(oauthServer).toBeDefined();
-      expect(oauthServer).toMatchObject({
-        ...testParsedConfigs.oauth_server,
-        _processedByInspector: true,
-      });
-    });
-
-    it('should add enabled non-OAuth servers to sharedAppServers', async () => {
-      await MCPServersInitializer.initialize(testConfigs);
-
-      const fileToolsServer = await registry.sharedAppServers.get('file_tools_server');
-      expect(fileToolsServer).toBeDefined();
-      expect(fileToolsServer).toMatchObject({
-        ...testParsedConfigs.file_tools_server,
-        _processedByInspector: true,
-      });
-
-      const searchToolsServer = await registry.sharedAppServers.get('search_tools_server');
-      expect(searchToolsServer).toBeDefined();
-      expect(searchToolsServer).toMatchObject({
-        ...testParsedConfigs.search_tools_server,
-        _processedByInspector: true,
-      });
-    });
-
-    it('should successfully initialize all servers', async () => {
-      await MCPServersInitializer.initialize(testConfigs);
-
-      // Verify all servers were added to appropriate registries
-      expect(await registry.sharedUserServers.get('disabled_server')).toBeDefined();
-      expect(await registry.sharedUserServers.get('oauth_server')).toBeDefined();
-      expect(await registry.sharedAppServers.get('file_tools_server')).toBeDefined();
-      expect(await registry.sharedAppServers.get('search_tools_server')).toBeDefined();
+      // Verify all server types (disabled, OAuth, and regular) were added to cache
+      expect(await registry.getServerConfig('disabled_server')).toBeDefined();
+      expect(await registry.getServerConfig('oauth_server')).toBeDefined();
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
+      expect(await registry.getServerConfig('search_tools_server')).toBeDefined();
     });
 
     it('should handle inspection failures gracefully', async () => {
@@ -309,17 +269,17 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
       await MCPServersInitializer.initialize(testConfigs);
 
       // Verify other servers were still processed
-      const disabledServer = await registry.sharedUserServers.get('disabled_server');
+      const disabledServer = await registry.getServerConfig('disabled_server');
       expect(disabledServer).toBeDefined();
 
-      const oauthServer = await registry.sharedUserServers.get('oauth_server');
+      const oauthServer = await registry.getServerConfig('oauth_server');
       expect(oauthServer).toBeDefined();
 
-      const searchToolsServer = await registry.sharedAppServers.get('search_tools_server');
+      const searchToolsServer = await registry.getServerConfig('search_tools_server');
       expect(searchToolsServer).toBeDefined();
 
       // Verify file_tools_server was not added (due to inspection failure)
-      const fileToolsServer = await registry.sharedAppServers.get('file_tools_server');
+      const fileToolsServer = await registry.getServerConfig('file_tools_server');
       expect(fileToolsServer).toBeUndefined();
     });
 
