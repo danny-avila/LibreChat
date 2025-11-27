@@ -953,6 +953,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   greeting: true,
   spec: true,
   maxContextTokens: true,
+  region: true,
 });
 
 export const googleSchema = googleBaseSchema
