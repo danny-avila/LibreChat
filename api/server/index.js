@@ -28,6 +28,8 @@ const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const { seedDatabase } = require('~/models');
+const { Role } = require('~/db/models');
+const { SystemRoles } = require('librechat-data-provider');
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
@@ -54,10 +56,40 @@ const startServer = async () => {
   app.set('trust proxy', trusted_proxy);
 
   await seedDatabase();
+  try {
+    await Role.updateMany(
+      { name: { $in: [SystemRoles.ADMIN, SystemRoles.USER] } },
+      {
+        $set: {
+          'permissions.AGENTS.USE': true,
+          'permissions.AGENTS.SHARED_GLOBAL': true,
+        },
+      },
+    );
+    logger.info('[permissions] Ensured AGENTS.USE/SHARED_GLOBAL for ADMIN and USER roles');
+  } catch (err) {
+    logger.warn('[permissions] Failed to ensure AGENTS permissions:', err);
+  }
   const appConfig = await getAppConfig();
   initializeFileStorage(appConfig);
   await performStartupChecks(appConfig);
   await updateInterfacePermissions(appConfig);
+
+  // Some configs may flip agent permissions; force-enable for core roles after interface sync
+  try {
+    await Role.updateMany(
+      { name: { $in: [SystemRoles.ADMIN, SystemRoles.USER] } },
+      {
+        $set: {
+          'permissions.AGENTS.USE': true,
+          'permissions.AGENTS.SHARED_GLOBAL': true,
+        },
+      },
+    );
+    logger.info('[permissions] Re-ensured AGENTS.USE/SHARED_GLOBAL for ADMIN and USER roles');
+  } catch (err) {
+    logger.warn('[permissions] Failed to re-ensure AGENTS permissions:', err);
+  }
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
@@ -84,6 +116,34 @@ const startServer = async () => {
   app.use(mongoSanitize());
   app.use(cors());
   app.use(cookieParser());
+
+  /* Force a default agent when none is provided for agent endpoints */
+  app.use((req, _res, next) => {
+    try {
+      const isChatPath =
+        typeof req.path === 'string' &&
+        (req.path.startsWith('/api/ask') || req.path.startsWith('/api/messages'));
+
+      const isAgentRequest =
+        req.body &&
+        (req.body.endpoint === 'agents' ||
+          req.body.endpointType === 'agents' ||
+          (!req.body.endpoint && isChatPath));
+
+      if (req.method === 'POST' && req.body && isAgentRequest && !req.body.agent_id) {
+        console.log(
+          '[defaultAgent middleware] injecting agent_id for conversation:',
+          req.body.conversationId || 'unknown',
+        );
+        req.body.endpoint = 'agents';
+        req.body.endpointType = 'agents';
+        req.body.agent_id = process.env.DEFAULT_AGENT_ID || 'runpod-methodology';
+      }
+    } catch (err) {
+      logger.warn('[defaultAgent middleware] Failed to set default agent_id:', err);
+    }
+    next();
+  });
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());

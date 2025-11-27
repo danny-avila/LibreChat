@@ -325,8 +325,38 @@ class AgentClient extends BaseClient {
       this.options.attachments = files;
     }
 
-    /** Note: Bedrock uses legacy RAG API handling */
-    if (this.message_file_map && !isAgentsEndpoint(this.options.endpoint)) {
+    // Auto-inject agent methodology files from tool_resources for RAG
+    if (
+      isAgentsEndpoint(this.options.endpoint) &&
+      this.options.agent?.tool_resources?.file_search?.file_ids &&
+      this.options.agent.tool_resources.file_search.file_ids.length > 0
+    ) {
+      const latestMessage = orderedMessages[orderedMessages.length - 1];
+      const fileIds = this.options.agent.tool_resources.file_search.file_ids;
+
+      // Create virtual file attachments for RAG context retrieval
+      const ragFiles = fileIds.map((fileId) => ({
+        file_id: fileId,
+        embedded: true,
+        type: 'text/plain',
+        filename: `methodology-${fileId}`,
+      }));
+
+      if (this.message_file_map) {
+        this.message_file_map[latestMessage.messageId] = ragFiles;
+      } else {
+        this.message_file_map = {
+          [latestMessage.messageId]: ragFiles,
+        };
+      }
+
+      logger.debug(
+        `[AgentClient] Auto-injected ${fileIds.length} methodology file(s) for RAG context`,
+      );
+    }
+
+    /** Note: Bedrock uses legacy RAG API handling, agents now also use RAG */
+    if (this.message_file_map) {
       this.contextHandlers = createContextHandlers(
         this.options.req,
         orderedMessages[orderedMessages.length - 1].text,

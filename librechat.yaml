@@ -3,6 +3,7 @@ version: 1.2.8
 
 interface:
   modelSelect: true
+  agents: true
 
 endpoints:
   custom:
@@ -24,12 +25,13 @@ endpoints:
         stream: false  # enable (true) later once debugged
 
       models:
-        default: ["Vicktoria"]
+        default: ["google/gemma-3-27b-it"]
         fetch: true
 
       titleConvo: true
       titleModel: "current_model"
       titleMessageRole: "user"
+      
       summarize: false
       summaryModel: "current_model"
       modelDisplayLabel: "Vicktoria"
