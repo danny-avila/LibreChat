@@ -1,5 +1,10 @@
 import * as t from '~/mcp/types';
 import { mcpServersRegistry as registry } from '~/mcp/registry/MCPServersRegistry';
+import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
+
+// Mock MCPServerInspector to avoid actual server connections
+jest.mock('~/mcp/registry/MCPServerInspector');
+
 const FIXED_TIME = 1699564800000;
 const originalDateNow = Date.now;
 Date.now = jest.fn(() => FIXED_TIME);
@@ -36,6 +41,16 @@ describe('MCPServersRegistry', () => {
     Date.now = originalDateNow;
   });
   beforeEach(async () => {
+    // Mock MCPServerInspector.inspect to return the config that's passed in
+    jest
+      .spyOn(MCPServerInspector, 'inspect')
+      .mockImplementation(async (_serverName: string, rawConfig: t.MCPOptions) => {
+        return {
+          ...testParsedConfig,
+          ...rawConfig,
+          requiresOAuth: false,
+        } as unknown as t.ParsedServerConfig;
+      });
     await registry.reset();
   });
 
@@ -50,8 +65,8 @@ describe('MCPServersRegistry', () => {
   describe('getAllServerConfigs', () => {
     it('should return servers from cache repository', async () => {
       // Add servers to cache using the new API
-      await registry.cacheConfigsRepo.add('app_server', testParsedConfig);
-      await registry.cacheConfigsRepo.add('user_server', testParsedConfig);
+      await registry['cacheConfigsRepo'].add('app_server', testParsedConfig);
+      await registry['cacheConfigsRepo'].add('user_server', testParsedConfig);
 
       // getAllServerConfigs should return configs from cache (DB is not implemented yet)
       const configs = await registry.getAllServerConfigs();
@@ -64,8 +79,8 @@ describe('MCPServersRegistry', () => {
   describe('reset', () => {
     it('should clear all servers from cache repository', async () => {
       // Add servers to cache using the new API
-      await registry.cacheConfigsRepo.add('app_server', testParsedConfig);
-      await registry.cacheConfigsRepo.add('user_server', testParsedConfig);
+      await registry.addServer('app_server', testParsedConfig, 'CACHE');
+      await registry.addServer('user_server', testParsedConfig, 'CACHE');
 
       // Verify servers are accessible before reset
       const appConfigBefore = await registry.getServerConfig('app_server');
@@ -87,6 +102,67 @@ describe('MCPServersRegistry', () => {
       expect(appConfigAfter).toBeUndefined();
       expect(userConfigAfter).toBeUndefined();
       expect(Object.keys(allConfigsAfter)).toHaveLength(0);
+    });
+  });
+
+  describe('Storage location routing (getConfigRepository)', () => {
+    describe('CACHE storage location', () => {
+      it('should route addServer to cache repository', async () => {
+        await registry.addServer('cache_server', testParsedConfig, 'CACHE');
+
+        const config = await registry.getServerConfig('cache_server');
+        expect(config).toBeDefined();
+        expect(config?.type).toBe('stdio');
+        if (config && 'command' in config) {
+          expect(config.command).toBe('node');
+        }
+      });
+
+      it('should route updateServer to cache repository', async () => {
+        await registry.addServer('cache_server', testParsedConfig, 'CACHE');
+
+        const updatedConfig = { ...testParsedConfig, command: 'python' } as t.ParsedServerConfig;
+        await registry.updateServer('cache_server', updatedConfig, 'CACHE');
+
+        const config = await registry.getServerConfig('cache_server');
+        expect(config).toBeDefined();
+        if (config && 'command' in config) {
+          expect(config.command).toBe('python');
+        }
+      });
+
+      it('should route removeServer to cache repository', async () => {
+        await registry.addServer('cache_server', testParsedConfig, 'CACHE');
+        expect(await registry.getServerConfig('cache_server')).toBeDefined();
+
+        await registry.removeServer('cache_server', 'CACHE');
+
+        const config = await registry.getServerConfig('cache_server');
+        expect(config).toBeUndefined();
+      });
+    });
+
+    describe('Invalid storage location', () => {
+      it('should throw error for unsupported storage location in addServer', async () => {
+        await expect(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          registry.addServer('test_server', testParsedConfig, 'INVALID' as any),
+        ).rejects.toThrow('The provided storage location "INVALID" is not supported');
+      });
+
+      it('should throw error for unsupported storage location in updateServer', async () => {
+        await expect(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          registry.updateServer('test_server', testParsedConfig, 'REDIS' as any),
+        ).rejects.toThrow('The provided storage location "REDIS" is not supported');
+      });
+
+      it('should throw error for unsupported storage location in removeServer', async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await expect(registry.removeServer('test_server', 'S3' as any)).rejects.toThrow(
+          'The provided storage location "S3" is not supported',
+        );
+      });
     });
   });
 });

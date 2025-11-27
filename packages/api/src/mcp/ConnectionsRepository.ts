@@ -45,7 +45,7 @@ export class ConnectionsRepository {
       }
       return null;
     }
-    if (serverConfig && existingConnection) {
+    if (existingConnection) {
       // Check if config was cached/updated since connection was created
       if (serverConfig.lastUpdatedAt && existingConnection.isStale(serverConfig.lastUpdatedAt)) {
         logger.info(
@@ -65,9 +65,6 @@ export class ConnectionsRepository {
       } else {
         await this.disconnect(serverName);
       }
-    }
-    if (!serverConfig) {
-      return null;
     }
     const connection = await MCPConnectionFactory.create(
       {
@@ -124,7 +121,7 @@ export class ConnectionsRepository {
 
   private isAllowedToConnectToServer(config: t.ParsedServerConfig) {
     //the repository is not allowed to be connected in case the Connection repository is shared (ownerId is undefined/null) and the server requires Auth or startup false.
-    if (this.ownerId == undefined && (config.startup === false || config.requiresOAuth)) {
+    if (this.ownerId === undefined && (config.startup === false || config.requiresOAuth)) {
       return false;
     }
     return true;
