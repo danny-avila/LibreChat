@@ -116,6 +116,11 @@ auth.json
 # User uploads
 uploads/
 
+# Vertex AI Proxy
+librechat-vertex-claude-key.json
+vertex-ai-proxy/.env
+vertex-ai-proxy/node_modules/
+
 # owner
 release/
 

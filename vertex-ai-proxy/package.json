@@ -1,0 +1,18 @@
+{
+  "name": "vertex-ai-proxy",
+  "version": "1.0.0",
+  "description": "Express proxy for Claude on Vertex AI - No SDK, direct REST API",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "google-auth-library": "^9.14.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
