@@ -26,14 +26,6 @@ export class ServerConfigsCacheInMemory {
     this.cache.set(serverName, { ...config, lastUpdatedAt: Date.now() });
   }
 
-  /**
-   * Sets a server config without checking if it exists (upsert operation).
-   * Use this for bulk operations where you want to add or update without error handling.
-   */
-  public async set(serverName: string, config: ParsedServerConfig): Promise<void> {
-    this.cache.set(serverName, { ...config, lastUpdatedAt: Date.now() });
-  }
-
   public async remove(serverName: string): Promise<void> {
     if (!this.cache.delete(serverName)) {
       throw new Error(`Failed to remove server "${serverName}" in cache.`);
@@ -50,13 +42,5 @@ export class ServerConfigsCacheInMemory {
 
   public async reset(): Promise<void> {
     this.cache.clear();
-  }
-
-  /**
-   * Returns a placeholder namespace for consistency with Redis implementation.
-   * In-memory cache doesn't use namespaces, so this always returns empty string.
-   */
-  public getNamespace(): string {
-    return '';
   }
 }
