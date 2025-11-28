@@ -24,6 +24,10 @@ const assistantClients = {
 };
 
 const router = express.Router();
+const {
+  getConversationCostDisplayFromMessages,
+  getMultipleConversationCosts,
+} = require('~/server/services/ConversationCostDynamic');
 router.use(requireJwtAuth);
 
 router.get('/', async (req, res) => {
@@ -240,3 +244,72 @@ router.post('/duplicate', async (req, res) => {
 });
 
 module.exports = router;
+
+/**
+ * GET /:conversationId/cost
+ * Get cost summary for a specific conversation
+ */
+router.get('/:conversationId/cost', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const userId = req.user.id;
+
+    const { getConvo } = require('~/models/Conversation');
+    const { getMessages } = require('~/models/Message');
+
+    const conversation = await getConvo(userId, conversationId);
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    const messages = await getMessages({ user: userId, conversationId });
+    if (messages.length === 0) {
+      return res.status(404).json({ error: 'No messages found in this conversation' });
+    }
+
+    const costDisplay = getConversationCostDisplayFromMessages(messages);
+    if (!costDisplay) {
+      return res.json({
+        conversationId,
+        totalCost: '$0.00',
+        totalCostRaw: 0,
+        primaryModel: 'Unknown',
+        totalTokens: 0,
+        lastUpdated: new Date(),
+        error: 'No cost data available',
+      });
+    }
+
+    costDisplay.conversationId = conversationId;
+    res.json(costDisplay);
+  } catch (error) {
+    logger.error('Error getting conversation cost:', error);
+    res.status(500).json({ error: 'Failed to calculate conversation cost' });
+  }
+});
+
+/**
+ * POST /costs
+ * Get cost summaries for multiple conversations
+ * Body: { conversationIds: string[] }
+ */
+router.post('/costs', async (req, res) => {
+  try {
+    const { conversationIds } = req.body;
+    const userId = req.user.id;
+
+    if (!Array.isArray(conversationIds)) {
+      return res.status(400).json({ error: 'conversationIds must be an array' });
+    }
+
+    if (conversationIds.length > 50) {
+      return res.status(400).json({ error: 'Maximum 50 conversations allowed per request' });
+    }
+
+    const costs = await getMultipleConversationCosts(conversationIds, userId);
+    res.json(costs);
+  } catch (error) {
+    logger.error('Error getting multiple conversation costs:', error);
+    res.status(500).json({ error: 'Failed to calculate conversation costs' });
+  }
+});
