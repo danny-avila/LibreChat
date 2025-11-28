@@ -583,8 +583,12 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     }
 
     // Security: Validate idOnTheSource type to prevent MongoDB injection
-    if (typeof user.idOnTheSource !== 'string' || user.idOnTheSource.trim().length === 0) {
-      logger.warn('[PermissionService.syncUserOidcGroupsFromToken] Invalid idOnTheSource type or empty value');
+    if (
+      typeof user.idOnTheSource !== 'string' ||
+      user.idOnTheSource.trim().length === 0 ||
+      /[${}.]/.test(user.idOnTheSource)
+    ) {
+      logger.warn('[PermissionService.syncUserOidcGroupsFromToken] Invalid idOnTheSource: contains special characters or is empty');
       return;
     }
 
@@ -604,7 +608,7 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     let groupNames = extractGroupsFromToken(tokenset, claimPath, tokenKind, exclusionPattern);
 
     // Security: Limit maximum number of groups to prevent DoS attacks
-    const MAX_GROUPS_PER_USER = parseInt(process.env.OPENID_MAX_GROUPS_PER_USER) || 100;
+    const MAX_GROUPS_PER_USER = parseInt(process.env.OPENID_MAX_GROUPS_PER_USER, 10) || 100;
     if (groupNames.length > MAX_GROUPS_PER_USER) {
       logger.warn(
         `[PermissionService.syncUserOidcGroupsFromToken] User ${user.email} has ${groupNames.length} groups, limiting to ${MAX_GROUPS_PER_USER}`,
@@ -652,56 +656,64 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
 
     const sessionOptions = session ? { session } : {};
 
-    // TODO: Performance optimization - Replace N+1 queries with bulk operations
-    // Current implementation queries each group individually (acceptable for <20 groups)
-    // Future improvement: Fetch all existing groups in single query, then bulk create/update
-    // Example:
-    //   const existingGroups = await Group.find({ idOnTheSource: { $in: groupNames }, source: groupSource });
-    //   const existingIds = new Set(existingGroups.map(g => g.idOnTheSource));
-    //   const newGroups = groupNames.filter(name => !existingIds.has(name)).map(name => ({ ... }));
-    //   await Group.insertMany(newGroups, sessionOptions);
+    // Bulk optimization: Fetch all existing groups in one query
+    const existingGroups = await Group.find({
+      idOnTheSource: { $in: groupNames },
+      source: groupSource,
+    });
 
-    // Create or update groups and add user to them
+    const existingMap = new Map(existingGroups.map(g => [g.idOnTheSource, g]));
+    const groupsToCreate = [];
+    const groupsToUpdate = [];
+
     for (const groupName of groupNames) {
-      try {
-        // Check if group exists
-        let group = await Group.findOne({
+      const existing = existingMap.get(groupName);
+      if (!existing) {
+        groupsToCreate.push({
+          name: groupName,
           idOnTheSource: groupName,
           source: groupSource,
+          memberIds: [user.idOnTheSource],
         });
+      } else if (!existing.memberIds.includes(user.idOnTheSource)) {
+        groupsToUpdate.push(existing._id);
+      }
+    }
 
-        if (!group) {
-          // Create new group
-          group = await Group.create(
-            [
-              {
-                name: groupName,
-                idOnTheSource: groupName,
-                source: groupSource,
-                memberIds: [user.idOnTheSource],
-              },
-            ],
-            sessionOptions,
-          );
+    // Bulk create new groups
+    if (groupsToCreate.length > 0) {
+      try {
+        await Group.insertMany(groupsToCreate, sessionOptions);
+        for (const group of groupsToCreate) {
           logger.info(
-            `[PermissionService.syncUserOidcGroupsFromToken] Created new group: ${groupName}`,
+            `[PermissionService.syncUserOidcGroupsFromToken] Created new group: ${group.idOnTheSource}`,
           );
-        } else {
-          // Add user to existing group if not already a member
-          if (!group.memberIds.includes(user.idOnTheSource)) {
-            await Group.updateOne(
-              { _id: group._id },
-              { $addToSet: { memberIds: user.idOnTheSource } },
-              sessionOptions,
-            );
-            logger.debug(
-              `[PermissionService.syncUserOidcGroupsFromToken] Added user to group: ${groupName}`,
-            );
-          }
         }
       } catch (error) {
         logger.error(
-          `[PermissionService.syncUserOidcGroupsFromToken] Error processing group ${groupName}:`,
+          `[PermissionService.syncUserOidcGroupsFromToken] Error creating groups:`,
+          error,
+        );
+      }
+    }
+
+    // Bulk update existing groups to add user
+    if (groupsToUpdate.length > 0) {
+      try {
+        await Group.updateMany(
+          { _id: { $in: groupsToUpdate } },
+          { $addToSet: { memberIds: user.idOnTheSource } },
+          sessionOptions
+        );
+        for (const groupId of groupsToUpdate) {
+          const group = existingGroups.find(g => g._id.equals(groupId));
+          logger.debug(
+            `[PermissionService.syncUserOidcGroupsFromToken] Added user to group: ${group ? group.idOnTheSource : groupId}`,
+          );
+        }
+      } catch (error) {
+        logger.error(
+          `[PermissionService.syncUserOidcGroupsFromToken] Error updating groups:`,
           error,
         );
       }

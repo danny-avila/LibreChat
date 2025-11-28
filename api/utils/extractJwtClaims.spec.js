@@ -319,3 +319,123 @@ describe('extractGroupsFromToken', () => {
   });
 });
 
+describe('shouldExcludeGroup', () => {
+  const { shouldExcludeGroup } = require('./extractJwtClaims');
+
+  describe('Exact Match Exclusions', () => {
+    it('should exclude groups with exact match (case-insensitive)', () => {
+      expect(shouldExcludeGroup('admin', 'admin')).toBe(true);
+      expect(shouldExcludeGroup('ADMIN', 'admin')).toBe(true);
+      expect(shouldExcludeGroup('Admin', 'admin')).toBe(true);
+    });
+
+    it('should not exclude groups that do not match', () => {
+      expect(shouldExcludeGroup('developer', 'admin')).toBe(false);
+      expect(shouldExcludeGroup('admin-user', 'admin')).toBe(false);
+    });
+
+    it('should handle multiple comma-separated patterns', () => {
+      const pattern = 'admin,developer,system-role';
+      expect(shouldExcludeGroup('admin', pattern)).toBe(true);
+      expect(shouldExcludeGroup('developer', pattern)).toBe(true);
+      expect(shouldExcludeGroup('system-role', pattern)).toBe(true);
+      expect(shouldExcludeGroup('user', pattern)).toBe(false);
+    });
+
+    it('should trim whitespace from patterns', () => {
+      const pattern = ' admin , developer , system-role ';
+      expect(shouldExcludeGroup('admin', pattern)).toBe(true);
+      expect(shouldExcludeGroup('developer', pattern)).toBe(true);
+    });
+  });
+
+  describe('Regex Pattern Exclusions', () => {
+    it('should exclude groups matching regex pattern', () => {
+      expect(shouldExcludeGroup('test-admin', 'regex:^test-.*')).toBe(true);
+      expect(shouldExcludeGroup('test-user', 'regex:^test-.*')).toBe(true);
+      expect(shouldExcludeGroup('production-admin', 'regex:^test-.*')).toBe(false);
+    });
+
+    it('should handle regex patterns case-insensitively', () => {
+      expect(shouldExcludeGroup('TEST-ADMIN', 'regex:^test-.*')).toBe(true);
+      expect(shouldExcludeGroup('Test-User', 'regex:^test-.*')).toBe(true);
+    });
+
+    it('should support multiple regex patterns', () => {
+      const pattern = 'regex:^test-.*,regex:^dev-.*,regex:.*-temp$';
+      expect(shouldExcludeGroup('test-admin', pattern)).toBe(true);
+      expect(shouldExcludeGroup('dev-user', pattern)).toBe(true);
+      expect(shouldExcludeGroup('user-temp', pattern)).toBe(true);
+      expect(shouldExcludeGroup('production-admin', pattern)).toBe(false);
+    });
+
+    it('should mix exact match and regex patterns', () => {
+      const pattern = 'admin,regex:^test-.*,system-role';
+      expect(shouldExcludeGroup('admin', pattern)).toBe(true);
+      expect(shouldExcludeGroup('test-user', pattern)).toBe(true);
+      expect(shouldExcludeGroup('system-role', pattern)).toBe(true);
+      expect(shouldExcludeGroup('developer', pattern)).toBe(false);
+    });
+  });
+
+  describe('Invalid Patterns', () => {
+    it('should handle invalid regex patterns gracefully', () => {
+      expect(shouldExcludeGroup('test', 'regex:[invalid')).toBe(false);
+      expect(shouldExcludeGroup('test', 'regex:*+')).toBe(false);
+    });
+
+    it('should return false for empty exclusion pattern', () => {
+      expect(shouldExcludeGroup('admin', '')).toBe(false);
+      expect(shouldExcludeGroup('admin', null)).toBe(false);
+      expect(shouldExcludeGroup('admin', undefined)).toBe(false);
+    });
+
+    it('should ignore empty patterns in comma-separated list', () => {
+      const pattern = 'admin,,developer,,,system-role';
+      expect(shouldExcludeGroup('admin', pattern)).toBe(true);
+      expect(shouldExcludeGroup('developer', pattern)).toBe(true);
+      expect(shouldExcludeGroup('', pattern)).toBe(false);
+    });
+  });
+
+  describe('ReDoS Protection', () => {
+    it('should reject regex patterns longer than 200 characters', () => {
+      const longPattern = 'regex:' + 'a'.repeat(201);
+      expect(shouldExcludeGroup('test', longPattern)).toBe(false);
+    });
+
+    it('should accept regex patterns up to 200 characters', () => {
+      const pattern = 'regex:^' + 'a'.repeat(197) + '$';
+      expect(shouldExcludeGroup('test', pattern)).toBe(false);
+      // Just verify it doesn't throw and completes
+    });
+
+    it('should reject patterns with nested quantifiers (++)', () => {
+      expect(shouldExcludeGroup('test', 'regex:a++b')).toBe(false);
+    });
+
+    it('should reject patterns with nested quantifiers (**)', () => {
+      expect(shouldExcludeGroup('test', 'regex:a**b')).toBe(false);
+    });
+
+    it('should reject patterns with mixed quantifiers (*+)', () => {
+      expect(shouldExcludeGroup('test', 'regex:a*+b')).toBe(false);
+    });
+
+    it('should reject patterns with mixed quantifiers (+*)', () => {
+      expect(shouldExcludeGroup('test', 'regex:a+*b')).toBe(false);
+    });
+
+    it('should reject patterns with large character classes', () => {
+      const largeClass = '[' + 'a'.repeat(101) + ']';
+      expect(shouldExcludeGroup('test', `regex:${largeClass}`)).toBe(false);
+    });
+
+    it('should accept safe regex patterns', () => {
+      expect(shouldExcludeGroup('test-admin', 'regex:^test-.*')).toBe(true);
+      expect(shouldExcludeGroup('admin-test', 'regex:.*-test$')).toBe(true);
+      expect(shouldExcludeGroup('system', 'regex:^(system|admin)$')).toBe(true);
+    });
+  });
+});
+
