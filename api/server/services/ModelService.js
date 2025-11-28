@@ -1,9 +1,13 @@
 const axios = require('axios');
-const { Providers } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { logAxiosError, inputSchema, processModelData } = require('@librechat/api');
-const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  KnownEndpoints,
+  defaultModels,
+  CacheKeys,
+} = require('librechat-data-provider');
 const { OllamaClient } = require('~/app/clients/OllamaClient');
 const { isUserProvided } = require('~/server/utils');
 const getLogStores = require('~/cache/getLogStores');
@@ -68,7 +72,7 @@ const fetchModels = async ({
     return models;
   }
 
-  if (name && name.toLowerCase().startsWith(Providers.OLLAMA)) {
+  if (name && name.toLowerCase().startsWith(KnownEndpoints.ollama)) {
     try {
       return await OllamaClient.fetchModels(baseURL, { headers, user: userObject });
     } catch (ollamaError) {
