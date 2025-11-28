@@ -46,7 +46,15 @@ export const agentFallbackConfigSchema = z
     provider: z.string().optional(),
     model: z.string().nullable().optional(),
     model_parameters: z.record(z.unknown()).optional(),
-    trigger: z.enum(['on_error', 'on_image']).optional(),
+  })
+  .optional();
+
+/** Multimodal model configuration schema */
+export const agentMultimodalConfigSchema = z
+  .object({
+    provider: z.string().optional(),
+    model: z.string().nullable().optional(),
+    model_parameters: z.record(z.unknown()).optional(),
   })
   .optional();
 
@@ -80,6 +88,7 @@ export const agentBaseSchema = z.object({
   tool_resources: agentToolResourcesSchema,
   support_contact: agentSupportContactSchema,
   fallback_config: agentFallbackConfigSchema,
+  multimodal_config: agentMultimodalConfigSchema,
   category: z.string().optional(),
 });
 

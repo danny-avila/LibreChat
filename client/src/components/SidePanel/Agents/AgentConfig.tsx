@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
-import { LifeBuoy } from 'lucide-react';
+import { LifeBuoy, Image } from 'lucide-react';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
 import type { AgentForm, IconComponentTypes, StringOption } from '~/common';
@@ -66,6 +66,7 @@ export default function AgentConfig() {
   const tools = useWatch({ control, name: 'tools' });
   const agent_id = useWatch({ control, name: 'id' });
   const fallbackConfig = useWatch({ control, name: 'fallback_config' });
+  const multimodalConfig = useWatch({ control, name: 'multimodal_config' });
 
   const { data: agentFiles = [] } = useGetAgentFiles(agent_id);
 
@@ -212,6 +213,40 @@ export default function AgentConfig() {
 
   const hasFallbackConfigured = Boolean(fallbackConfig?.provider && fallbackConfig?.model);
 
+  // Multimodal model icon resolution
+  const multimodalProviderValue = useMemo(() => {
+    if (!multimodalConfig?.provider) return undefined;
+    return typeof multimodalConfig.provider === 'string'
+      ? multimodalConfig.provider
+      : (multimodalConfig.provider as StringOption)?.value;
+  }, [multimodalConfig?.provider]);
+
+  let MultimodalIcon: IconComponentTypes | null | undefined;
+  let multimodalEndpointType: EModelEndpoint | undefined;
+  let multimodalEndpointIconURL: string | undefined;
+
+  if (multimodalProviderValue !== undefined) {
+    multimodalEndpointType = getEndpointField(
+      endpointsConfig,
+      multimodalProviderValue as string,
+      'type',
+    );
+    multimodalEndpointIconURL = getEndpointField(
+      endpointsConfig,
+      multimodalProviderValue as string,
+      'iconURL',
+    );
+    const multimodalIconKey = getIconKey({
+      endpoint: multimodalProviderValue as string,
+      endpointsConfig,
+      endpointType: multimodalEndpointType,
+      endpointIconURL: multimodalEndpointIconURL,
+    });
+    MultimodalIcon = icons[multimodalIconKey];
+  }
+
+  const hasMultimodalConfigured = Boolean(multimodalConfig?.provider && multimodalConfig?.model);
+
   const { toolIds, mcpServerNames } = useVisibleTools(tools, regularTools, mcpServersMap);
 
   return (
@@ -348,6 +383,39 @@ export default function AgentConfig() {
                 {hasFallbackConfigured
                   ? fallbackConfig?.model
                   : localize('com_agents_fallback_not_configured')}
+              </span>
+            </div>
+          </button>
+        </div>
+        {/* Multimodal Model */}
+        <div className="mb-4">
+          <label className={labelClass} htmlFor="multimodal-model">
+            {localize('com_agents_multimodal_model')}
+          </label>
+          <button
+            type="button"
+            onClick={() => setActivePanel(Panel.multimodal)}
+            className="btn btn-neutral border-token-border-light relative h-10 w-full rounded-lg font-medium"
+            aria-haspopup="true"
+            aria-expanded="false"
+          >
+            <div className="flex w-full items-center gap-2">
+              {hasMultimodalConfigured && MultimodalIcon ? (
+                <div className="shadow-stroke relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-black dark:bg-white">
+                  <MultimodalIcon
+                    className="h-2/3 w-2/3"
+                    endpoint={multimodalProviderValue as string}
+                    endpointType={multimodalEndpointType}
+                    iconURL={multimodalEndpointIconURL}
+                  />
+                </div>
+              ) : (
+                <Image className="h-5 w-5 text-gray-400" />
+              )}
+              <span>
+                {hasMultimodalConfigured
+                  ? multimodalConfig?.model
+                  : localize('com_agents_multimodal_not_configured')}
               </span>
             </div>
           </button>

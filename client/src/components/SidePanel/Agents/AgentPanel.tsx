@@ -24,6 +24,7 @@ import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
+import MultimodalModelPanel from './MultimodalModelPanel';
 import FallbackModelPanel from './FallbackModelPanel';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
@@ -74,6 +75,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
     category,
     support_contact,
     fallback_config: _fallback_config,
+    multimodal_config: _multimodal_config,
     avatar_action: avatarActionState,
   } = data;
 
@@ -84,7 +86,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
     (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
 
   // Normalize fallback_config provider to string value
-  let fallback_config = undefined;
+  let fallback_config: typeof _fallback_config | undefined = undefined;
   if (_fallback_config?.provider || _fallback_config?.model) {
     const fallbackProvider =
       typeof _fallback_config.provider === 'string'
@@ -92,7 +94,20 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
         : (_fallback_config.provider as StringOption | undefined)?.value;
     fallback_config = {
       ..._fallback_config,
-      provider: fallbackProvider,
+      provider: fallbackProvider ?? undefined,
+    };
+  }
+
+  // Normalize multimodal_config provider to string value
+  let multimodal_config: typeof _multimodal_config | undefined = undefined;
+  if (_multimodal_config?.provider || _multimodal_config?.model) {
+    const multimodalProvider =
+      typeof _multimodal_config.provider === 'string'
+        ? _multimodal_config.provider
+        : (_multimodal_config.provider as StringOption | undefined)?.value;
+    multimodal_config = {
+      ..._multimodal_config,
+      provider: multimodalProvider ?? undefined,
     };
   }
 
@@ -113,6 +128,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       category,
       support_contact,
       fallback_config,
+      multimodal_config,
       ...(shouldResetAvatar ? { avatar: null } : {}),
     },
     provider,
@@ -565,6 +581,13 @@ export default function AgentPanel() {
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.fallback && (
           <FallbackModelPanel
+            models={models}
+            providers={providers}
+            setActivePanel={setActivePanel}
+          />
+        )}
+        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.multimodal && (
+          <MultimodalModelPanel
             models={models}
             providers={providers}
             setActivePanel={setActivePanel}
