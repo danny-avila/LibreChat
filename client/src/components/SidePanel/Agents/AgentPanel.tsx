@@ -24,6 +24,7 @@ import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
+import FallbackModelPanel from './FallbackModelPanel';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
 import { Panel, isEphemeralAgent } from '~/common';
@@ -72,6 +73,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
     recursion_limit,
     category,
     support_contact,
+    fallback_config: _fallback_config,
     avatar_action: avatarActionState,
   } = data;
 
@@ -80,6 +82,19 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
   const model = _model ?? '';
   const provider =
     (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
+
+  // Normalize fallback_config provider to string value
+  let fallback_config = undefined;
+  if (_fallback_config?.provider || _fallback_config?.model) {
+    const fallbackProvider =
+      typeof _fallback_config.provider === 'string'
+        ? _fallback_config.provider
+        : (_fallback_config.provider as StringOption | undefined)?.value;
+    fallback_config = {
+      ..._fallback_config,
+      provider: fallbackProvider,
+    };
+  }
 
   return {
     payload: {
@@ -97,6 +112,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       recursion_limit,
       category,
       support_contact,
+      fallback_config,
       ...(shouldResetAvatar ? { avatar: null } : {}),
     },
     provider,
@@ -546,6 +562,13 @@ export default function AgentPanel() {
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
           <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
+        )}
+        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.fallback && (
+          <FallbackModelPanel
+            models={models}
+            providers={providers}
+            setActivePanel={setActivePanel}
+          />
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
           <AgentConfig />
