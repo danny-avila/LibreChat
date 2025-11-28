@@ -1,7 +1,8 @@
-const bcrypt = require('bcryptjs');
+const { verifyPassword } = require('~/server/utils/crypto');
 
 /**
  * Compares the provided password with the user's password.
+ * Uses PBKDF2-HMAC-SHA256 for FIPS compliance.
  *
  * @param {IUser} user - The user to compare the password for.
  * @param {string} candidatePassword - The password to test against the user's password.
@@ -16,14 +17,7 @@ const comparePassword = async (user, candidatePassword) => {
     throw new Error('No password, likely an email first registered via Social/OIDC login');
   }
 
-  return new Promise((resolve, reject) => {
-    bcrypt.compare(candidatePassword, user.password, (err, isMatch) => {
-      if (err) {
-        reject(err);
-      }
-      resolve(isMatch);
-    });
-  });
+  return verifyPassword(candidatePassword, user.password);
 };
 
 module.exports = {

@@ -1,9 +1,14 @@
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, checkEmailConfig, isEmailDomainAllowed } = require('@librechat/api');
 const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
+const {
+  hashPasswordSync,
+  hashToken,
+  verifyToken,
+  generateSecureToken,
+} = require('~/server/utils/crypto');
 const {
   findUser,
   findToken,
@@ -66,12 +71,13 @@ const logoutUser = async (req, refreshToken) => {
 };
 
 /**
- * Creates Token and corresponding Hash for verification
+ * Creates Token and corresponding Hash for verification.
+ * Uses SHA-256 for FIPS compliance (replacing bcrypt).
  * @returns {[string, string]}
  */
 const createTokenHash = () => {
-  const token = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString('hex');
-  const hash = bcrypt.hashSync(token, 10);
+  const token = generateSecureToken(32);
+  const hash = hashToken(token);
   return [token, hash];
 };
 
@@ -136,7 +142,7 @@ const verifyEmail = async (req) => {
     return new Error('Invalid or expired password reset token');
   }
 
-  const isValid = bcrypt.compareSync(token, emailVerificationData.token);
+  const isValid = verifyToken(token, emailVerificationData.token);
 
   if (!isValid) {
     logger.warn(
@@ -176,7 +182,7 @@ const registerUser = async (user, additionalData = {}) => {
     return { status: 404, message: errorMessage };
   }
 
-  const { email, password, name, username, provider } = user;
+  const { email, password, name, username } = user;
 
   let newUserId;
   try {
@@ -205,15 +211,14 @@ const registerUser = async (user, additionalData = {}) => {
     //determine if this is the first registered user (not counting anonymous_user)
     const isFirstRegisteredUser = (await countUsers()) === 0;
 
-    const salt = bcrypt.genSaltSync(10);
     const newUserData = {
-      provider: provider ?? 'local',
+      provider: 'local',
       email,
       username,
       name,
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
-      password: bcrypt.hashSync(password, salt),
+      password: hashPasswordSync(password),
       ...additionalData,
     };
 
@@ -330,13 +335,13 @@ const resetPassword = async (userId, token, password) => {
     return new Error('Invalid or expired password reset token');
   }
 
-  const isValid = bcrypt.compareSync(token, passwordResetToken.token);
+  const isValid = verifyToken(token, passwordResetToken.token);
 
   if (!isValid) {
     return new Error('Invalid or expired password reset token');
   }
 
-  const hash = bcrypt.hashSync(password, 10);
+  const hash = hashPasswordSync(password);
   const user = await updateUser(userId, { password: hash });
 
   if (checkEmailConfig()) {
@@ -412,7 +417,7 @@ const setAuthTokens = async (userId, res, _session = null) => {
  * @param {string} [userId] - Optional MongoDB user ID for image path validation
  * @returns {String} - access token
  */
-const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
+const setOpenIDAuthTokens = (tokenset, res, userId) => {
   try {
     if (!tokenset) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
@@ -427,25 +432,11 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
       return;
     }
-    if (!tokenset.access_token) {
-      logger.error('[setOpenIDAuthTokens] No access token found in tokenset');
+    if (!tokenset.access_token || !tokenset.refresh_token) {
+      logger.error('[setOpenIDAuthTokens] No access or refresh token found in tokenset');
       return;
     }
-
-    const refreshToken = tokenset.refresh_token || existingRefreshToken;
-
-    if (!refreshToken) {
-      logger.error('[setOpenIDAuthTokens] No refresh token available');
-      return;
-    }
-
-    res.cookie('refreshToken', refreshToken, {
-      expires: expirationDate,
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
-    });
-    res.cookie('openid_access_token', tokenset.access_token, {
+    res.cookie('refreshToken', tokenset.refresh_token, {
       expires: expirationDate,
       httpOnly: true,
       secure: isProduction,

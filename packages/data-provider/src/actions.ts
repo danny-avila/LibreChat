@@ -46,8 +46,15 @@ type RequestBodyObject = Omit<OpenAPIV3.RequestBodyObject, 'content'> & {
   content: MediaTypeObject;
 };
 
+/**
+ * Generates a hash of the input string for operation identification.
+ *
+ * Note: Despite the function name, this uses SHA-256 for FIPS 140-2/140-3 compliance.
+ * SHA-1 is not approved for new applications in FIPS environments.
+ * Function name preserved for backward compatibility.
+ */
 export function sha1(input: string) {
-  return crypto.createHash('sha1').update(input).digest('hex');
+  return crypto.createHash('sha256').update(input).digest('hex');
 }
 
 export function createURL(domain: string, path: string) {
