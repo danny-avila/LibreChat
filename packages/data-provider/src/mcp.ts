@@ -3,6 +3,10 @@ import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
 const BaseOptionsSchema = z.object({
+  /** Display name for the MCP server */
+  title: z.string().optional(),
+  /** Description of the MCP server */
+  description: z.string().optional(),
   /**
    * Controls whether the MCP server is initialized during application startup.
    * - true (default): Server is initialized during app startup and included in app-level connections

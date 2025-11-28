@@ -66,12 +66,46 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     conversationId,
     servers: availableMCPServers,
   });
-  const mcpValuesRef = useRef(mcpValues);
+  const configuredServers = useMemo(() => {
+    if (!loadedServers) return [];
+    return Object.keys(loadedServers).filter((name) => loadedServers[name]?.chatMenu !== false);
+  }, [loadedServers]);
 
+  const availableMCPServers: MCPServerDefinition[] = useMemo<MCPServerDefinition[]>(() => {
+    const definitions: MCPServerDefinition[] = [];
+    if (loadedServers) {
+      for (const [serverName, metadata] of Object.entries(loadedServers)) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { _id, mcp_id, effectivePermissions, author, updatedAt, createdAt, ...config } =
+          metadata;
+        definitions.push({
+          serverName,
+          mcp_id,
+          effectivePermissions: effectivePermissions || 1,
+          config,
+        });
+      }
+    }
+    return definitions;
+  }, [loadedServers]);
+
+  const { mcpValues, setMCPValues, isPinned, setIsPinned } = useMCPSelect({
+    conversationId,
+    servers: availableMCPServers,
+  });
+  const mcpValuesRef = useRef(mcpValues);
   // fixes the issue where OAuth flows would deselect all the servers except the one that is being authenticated on success
   useEffect(() => {
     mcpValuesRef.current = mcpValues;
   }, [mcpValues]);
+
+  // Check if specific permission bit is set
+  const checkEffectivePermission = useCallback(
+    (effectivePermissions: number, permissionBit: number): boolean => {
+      return (effectivePermissions & permissionBit) !== 0;
+    },
+    [],
+  );
 
   const reinitializeMutation = useReinitializeMCPServerMutation();
   const cancelOAuthMutation = useCancelMCPOAuthMutation();
@@ -366,7 +400,13 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       cancelOAuthMutation.mutate(serverName, {
         onSuccess: () => {
           cleanupServerState(serverName);
-          queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
+          Promise.all([
+            queryClient.invalidateQueries([QueryKeys.mcpServers]),
+            queryClient.invalidateQueries([QueryKeys.loadedMcpServer]),
+            queryClient.invalidateQueries([QueryKeys.mcpTools]),
+            queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
+            queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
+          ]);
 
           showToast({
             message: localize('com_ui_mcp_oauth_cancelled', { 0: serverName }),
@@ -655,5 +695,8 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     handleRevoke,
     getServerStatusIconProps,
     getConfigDialogProps,
+
+    // NEW: Permission helper
+    checkEffectivePermission,
   };
 }

@@ -1,24 +1,34 @@
 const { Router } = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { CacheKeys, Constants } = require('librechat-data-provider');
+const { CacheKeys, Constants, PermissionBits } = require('librechat-data-provider');
+const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   createSafeUser,
   MCPOAuthHandler,
   MCPTokenStorage,
   getUserMCPAuthMap,
   mcpServersRegistry,
+  generateCheckAccess,
 } = require('@librechat/api');
 const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
+const { getRoleByName } = require('~/models/Role');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { getMCPServersList } = require('~/server/controllers/mcp');
 const { getMCPTools } = require('~/server/controllers/mcp');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middleware');
 const { findPluginAuthsByKeys } = require('~/models');
 const { getLogStores } = require('~/cache');
+const {
+  createMCPServerController,
+  getMCPServerById,
+  getMCPServersList,
+  updateMCPServerController,
+  deleteMCPServerController,
+} = require('~/server/controllers/mcp');
 
 const router = Router();
 
@@ -565,5 +575,93 @@ async function getOAuthHeaders(serverName, userId) {
  * @returns {MCPServersListResponse} 200 - Success response - application/json
  */
 router.get('/servers', requireJwtAuth, getMCPServersList);
+
+/** 
+MCP Server CRUD Routes (User-Managed MCP Servers)
+*/
+
+// Permission checkers for MCP server management
+const checkMCPUsePermissions = generateCheckAccess({
+  permissionType: PermissionTypes.MCP_SERVERS,
+  permissions: [Permissions.USE],
+  getRoleByName,
+});
+
+const checkMCPCreate = generateCheckAccess({
+  permissionType: PermissionTypes.MCP_SERVERS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  getRoleByName,
+});
+
+/**
+ * Create a new MCP server
+ * @route POST /api/mcp/servers
+ * @param {MCPServerCreateParams} req.body - The MCP server creation parameters.
+ * @returns {MCPServer} 201 - Success response - application/json
+ */
+router.post('/servers', requireJwtAuth, checkMCPCreate, createMCPServerController);
+
+/**
+ * Get list of accessible MCP servers
+ * @route GET /api/mcp/servers
+ * @param {Object} req.query - Query parameters for pagination and search
+ * @param {number} [req.query.limit] - Number of results per page
+ * @param {string} [req.query.after] - Pagination cursor
+ * @param {string} [req.query.search] - Search query for title/description
+ * @returns {MCPServerListResponse} 200 - Success response - application/json
+ */
+router.get('/servers', requireJwtAuth, checkMCPUsePermissions, getMCPServersList);
+
+/**
+ * Get single MCP server by ID
+ * @route GET /api/mcp/servers/:mcp_id
+ * @param {string} req.params.mcp_id - MCP server identifier.
+ * @returns {MCPServer} 200 - Success response - application/json
+ */
+router.get(
+  '/servers/:mcp_id',
+  requireJwtAuth,
+  checkMCPUsePermissions,
+  canAccessMCPServerResource({
+    requiredPermission: PermissionBits.VIEW,
+    resourceIdParam: 'mcp_id',
+  }),
+  getMCPServerById,
+);
+
+/**
+ * Update MCP server
+ * @route PATCH /api/mcp/servers/:mcp_id
+ * @param {string} req.params.mcp_id - MCP server identifier.
+ * @param {MCPServerUpdateParams} req.body - The MCP server update parameters.
+ * @returns {MCPServer} 200 - Success response - application/json
+ */
+router.patch(
+  '/servers/:mcp_id',
+  requireJwtAuth,
+  checkMCPCreate,
+  canAccessMCPServerResource({
+    requiredPermission: PermissionBits.EDIT,
+    resourceIdParam: 'mcp_id',
+  }),
+  updateMCPServerController,
+);
+
+/**
+ * Delete MCP server
+ * @route DELETE /api/mcp/servers/:mcp_id
+ * @param {string} req.params.mcp_id - MCP server identifier.
+ * @returns {Object} 200 - Success response - application/json
+ */
+router.delete(
+  '/servers/:mcp_id',
+  requireJwtAuth,
+  checkMCPCreate,
+  canAccessMCPServerResource({
+    requiredPermission: PermissionBits.DELETE,
+    resourceIdParam: 'mcp_id',
+  }),
+  deleteMCPServerController,
+);
 
 module.exports = router;

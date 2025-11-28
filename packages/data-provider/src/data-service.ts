@@ -552,6 +552,39 @@ export const getMCPServers = async (): Promise<mcp.MCPServersListResponse> => {
 };
 
 /**
+ * Get a single MCP server by ID
+ */
+export const getMCPServer = async (mcp_id: string): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.get(endpoints.mcpServer(mcp_id));
+};
+
+/**
+ * Create a new MCP server
+ */
+export const createMCPServer = async (
+  data: mcp.MCPServerCreateParams,
+): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.post(endpoints.mcp.servers, data);
+};
+
+/**
+ * Update an existing MCP server
+ */
+export const updateMCPServer = async (
+  mcp_id: string,
+  data: mcp.MCPServerUpdateParams,
+): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.patch(endpoints.mcpServer(mcp_id), data);
+};
+
+/**
+ * Delete an MCP server
+ */
+export const deleteMCPServer = async (mcp_id: string): Promise<{ success: boolean }> => {
+  return request.delete(endpoints.mcpServer(mcp_id));
+};
+
+/**
  * Imports a conversations file.
  *
  * @param data - The FormData containing the file to import.
@@ -816,6 +849,12 @@ export function updatePeoplePickerPermissions(
     endpoints.updatePeoplePickerPermissions(variables.roleName),
     variables.updates,
   );
+}
+
+export function updateMCPServersPermissions(
+  variables: m.UpdateMCPServersPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateMCPServersPermissions(variables.roleName), variables.updates);
 }
 
 export function updateMarketplacePermissions(

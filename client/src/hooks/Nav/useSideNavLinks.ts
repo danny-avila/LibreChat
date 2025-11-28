@@ -10,6 +10,7 @@ import {
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider';
+import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
 import type { NavLink } from '~/common';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
@@ -60,7 +61,10 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.CREATE,
   });
-
+  const hasAccessToUseMCPSettings = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
+  });
   const { availableMCPServers } = useMCPServerManager();
 
   const Links = useMemo(() => {
@@ -169,6 +173,16 @@ export default function useSideNavLinks({
         Component: MCPPanel,
       });
     }
+    //Todo we should hide if user has no create access and number of mcp servers is 0?
+    if (hasAccessToUseMCPSettings) {
+      links.push({
+        title: 'com_nav_setting_mcp',
+        label: '',
+        icon: MCPIcon,
+        id: 'mcp-builder',
+        Component: MCPBuilderPanel,
+      });
+    }
 
     links.push({
       title: 'com_sidepanel_hide_panel',
@@ -180,17 +194,19 @@ export default function useSideNavLinks({
 
     return links;
   }, [
-    endpointsConfig,
-    interfaceConfig.parameters,
-    keyProvided,
-    endpointType,
     endpoint,
+    endpointsConfig,
+    keyProvided,
     hasAccessToAgents,
+    hasAccessToCreateAgents,
     hasAccessToPrompts,
     hasAccessToMemories,
     hasAccessToReadMemories,
+    interfaceConfig.parameters,
+    endpointType,
     hasAccessToBookmarks,
-    hasAccessToCreateAgents,
+    availableMCPServers,
+    hasAccessToUseMCPSettings,
     hidePanel,
     availableMCPServers,
   ]);
