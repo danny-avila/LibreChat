@@ -1,6 +1,6 @@
 import { Keyv } from 'keyv';
 import { FlowStateManager } from './manager';
-import type { FlowState } from './types';
+import { FlowState } from './types';
 
 /** Mock class without extending Keyv */
 class MockKeyv {
@@ -179,6 +179,216 @@ describe('FlowStateManager', () => {
       const result = await flowManager.deleteFlow(flowId, type);
 
       expect(result).toBe(true);
+    });
+  });
+
+  describe('isFlowStale', () => {
+    const flowId = 'test-flow-stale';
+    const type = 'test-type';
+    const flowKey = `${type}:${flowId}`;
+
+    it('returns not stale for non-existent flow', async () => {
+      const result = await flowManager.isFlowStale(flowId, type);
+
+      expect(result).toEqual({
+        isStale: false,
+        age: 0,
+      });
+    });
+
+    it('returns not stale for PENDING flow regardless of age', async () => {
+      const oldTimestamp = Date.now() - 10 * 60 * 1000; // 10 minutes ago
+      await store.set(flowKey, {
+        type,
+        status: 'PENDING',
+        metadata: {},
+        createdAt: oldTimestamp,
+      });
+
+      const result = await flowManager.isFlowStale(flowId, type, 2 * 60 * 1000);
+
+      expect(result).toEqual({
+        isStale: false,
+        age: 0,
+        status: 'PENDING',
+      });
+    });
+
+    it('returns not stale for recently COMPLETED flow', async () => {
+      const recentTimestamp = Date.now() - 30 * 1000; // 30 seconds ago
+      await store.set(flowKey, {
+        type,
+        status: 'COMPLETED',
+        metadata: {},
+        createdAt: Date.now() - 60 * 1000,
+        completedAt: recentTimestamp,
+      });
+
+      const result = await flowManager.isFlowStale(flowId, type, 2 * 60 * 1000);
+
+      expect(result.isStale).toBe(false);
+      expect(result.status).toBe('COMPLETED');
+      expect(result.age).toBeGreaterThan(0);
+      expect(result.age).toBeLessThan(60 * 1000);
+    });
+
+    it('returns stale for old COMPLETED flow', async () => {
+      const oldTimestamp = Date.now() - 5 * 60 * 1000; // 5 minutes ago
+      await store.set(flowKey, {
+        type,
+        status: 'COMPLETED',
+        metadata: {},
+        createdAt: Date.now() - 10 * 60 * 1000,
+        completedAt: oldTimestamp,
+      });
+
+      const result = await flowManager.isFlowStale(flowId, type, 2 * 60 * 1000);
+
+      expect(result.isStale).toBe(true);
+      expect(result.status).toBe('COMPLETED');
+      expect(result.age).toBeGreaterThan(2 * 60 * 1000);
+    });
+
+    it('returns not stale for recently FAILED flow', async () => {
+      const recentTimestamp = Date.now() - 30 * 1000; // 30 seconds ago
+      await store.set(flowKey, {
+        type,
+        status: 'FAILED',
+        metadata: {},
+        createdAt: Date.now() - 60 * 1000,
+        failedAt: recentTimestamp,
+        error: 'Test error',
+      });
+
+      const result = await flowManager.isFlowStale(flowId, type, 2 * 60 * 1000);
+
+      expect(result.isStale).toBe(false);
+      expect(result.status).toBe('FAILED');
+      expect(result.age).toBeGreaterThan(0);
+      expect(result.age).toBeLessThan(60 * 1000);
+    });
+
+    it('returns stale for old FAILED flow', async () => {
+      const oldTimestamp = Date.now() - 5 * 60 * 1000; // 5 minutes ago
+      await store.set(flowKey, {
+        type,
+        status: 'FAILED',
+        metadata: {},
+        createdAt: Date.now() - 10 * 60 * 1000,
+        failedAt: oldTimestamp,
+        error: 'Test error',
+      });
+
+      const result = await flowManager.isFlowStale(flowId, type, 2 * 60 * 1000);
+
+      expect(result.isStale).toBe(true);
+      expect(result.status).toBe('FAILED');
+      expect(result.age).toBeGreaterThan(2 * 60 * 1000);
+    });
+
+    it('uses custom stale threshold', async () => {
+      const timestamp = Date.now() - 90 * 1000; // 90 seconds ago
+      await store.set(flowKey, {
+        type,
+        status: 'COMPLETED',
+        metadata: {},
+        createdAt: Date.now() - 2 * 60 * 1000,
+        completedAt: timestamp,
+      });
+
+      // 90 seconds old, threshold 60 seconds = stale
+      const result1 = await flowManager.isFlowStale(flowId, type, 60 * 1000);
+      expect(result1.isStale).toBe(true);
+
+      // 90 seconds old, threshold 120 seconds = not stale
+      const result2 = await flowManager.isFlowStale(flowId, type, 120 * 1000);
+      expect(result2.isStale).toBe(false);
+    });
+
+    it('uses default threshold of 2 minutes when not specified', async () => {
+      const timestamp = Date.now() - 3 * 60 * 1000; // 3 minutes ago
+      await store.set(flowKey, {
+        type,
+        status: 'COMPLETED',
+        metadata: {},
+        createdAt: Date.now() - 5 * 60 * 1000,
+        completedAt: timestamp,
+      });
+
+      // Should use default 2 minute threshold
+      const result = await flowManager.isFlowStale(flowId, type);
+
+      expect(result.isStale).toBe(true);
+      expect(result.age).toBeGreaterThan(2 * 60 * 1000);
+    });
+
+    it('falls back to createdAt when completedAt/failedAt are not present', async () => {
+      const createdTimestamp = Date.now() - 5 * 60 * 1000; // 5 minutes ago
+      await store.set(flowKey, {
+        type,
+        status: 'COMPLETED',
+        metadata: {},
+        createdAt: createdTimestamp,
+        // No completedAt or failedAt
+      });
+
+      const result = await flowManager.isFlowStale(flowId, type, 2 * 60 * 1000);
+
+      expect(result.isStale).toBe(true);
+      expect(result.status).toBe('COMPLETED');
+      expect(result.age).toBeGreaterThan(2 * 60 * 1000);
+    });
+
+    it('handles flow with no timestamps', async () => {
+      await store.set(flowKey, {
+        type,
+        status: 'COMPLETED',
+        metadata: {},
+        // No timestamps at all
+      } as FlowState<string>);
+
+      const result = await flowManager.isFlowStale(flowId, type, 2 * 60 * 1000);
+
+      expect(result.isStale).toBe(false);
+      expect(result.age).toBe(0);
+      expect(result.status).toBe('COMPLETED');
+    });
+
+    it('prefers completedAt over createdAt for age calculation', async () => {
+      const createdTimestamp = Date.now() - 10 * 60 * 1000; // 10 minutes ago
+      const completedTimestamp = Date.now() - 30 * 1000; // 30 seconds ago
+      await store.set(flowKey, {
+        type,
+        status: 'COMPLETED',
+        metadata: {},
+        createdAt: createdTimestamp,
+        completedAt: completedTimestamp,
+      });
+
+      const result = await flowManager.isFlowStale(flowId, type, 2 * 60 * 1000);
+
+      // Should use completedAt (30s) not createdAt (10m)
+      expect(result.isStale).toBe(false);
+      expect(result.age).toBeLessThan(60 * 1000);
+    });
+
+    it('prefers failedAt over createdAt for age calculation', async () => {
+      const createdTimestamp = Date.now() - 10 * 60 * 1000; // 10 minutes ago
+      const failedTimestamp = Date.now() - 30 * 1000; // 30 seconds ago
+      await store.set(flowKey, {
+        type,
+        status: 'FAILED',
+        metadata: {},
+        createdAt: createdTimestamp,
+        failedAt: failedTimestamp,
+        error: 'Test error',
+      });
+
+      const result = await flowManager.isFlowStale(flowId, type, 2 * 60 * 1000);
+
+      // Should use failedAt (30s) not createdAt (10m)
+      expect(result.isStale).toBe(false);
+      expect(result.age).toBeLessThan(60 * 1000);
     });
   });
 });

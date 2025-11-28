@@ -10,6 +10,7 @@ const {
   getAppConfig,
 } = require('~/server/services/Config');
 const { getMCPManager } = require('~/config');
+const { mcpServersRegistry } = require('@librechat/api');
 
 /**
  * Get all MCP tools available to the user
@@ -32,7 +33,7 @@ const getMCPTools = async (req, res) => {
     const mcpServers = {};
 
     const cachePromises = configuredServers.map((serverName) =>
-      getMCPServerTools(serverName).then((tools) => ({ serverName, tools })),
+      getMCPServerTools(userId, serverName).then((tools) => ({ serverName, tools })),
     );
     const cacheResults = await Promise.all(cachePromises);
 
@@ -43,7 +44,13 @@ const getMCPTools = async (req, res) => {
         continue;
       }
 
-      const serverTools = await mcpManager.getServerToolFunctions(userId, serverName);
+      let serverTools;
+      try {
+        serverTools = await mcpManager.getServerToolFunctions(userId, serverName);
+      } catch (error) {
+        logger.error(`[getMCPTools] Error fetching tools for server ${serverName}:`, error);
+        continue;
+      }
       if (!serverTools) {
         logger.debug(`[getMCPTools] No tools found for server ${serverName}`);
         continue;
@@ -52,7 +59,7 @@ const getMCPTools = async (req, res) => {
 
       if (Object.keys(serverTools).length > 0) {
         // Cache asynchronously without blocking
-        cacheMCPServerTools({ serverName, serverTools }).catch((err) =>
+        cacheMCPServerTools({ userId, serverName, serverTools }).catch((err) =>
           logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
         );
       }
@@ -65,7 +72,7 @@ const getMCPTools = async (req, res) => {
 
         // Get server config once
         const serverConfig = appConfig.mcpConfig[serverName];
-        const rawServerConfig = mcpManager.getRawConfig(serverName);
+        const rawServerConfig = await mcpServersRegistry.getServerConfig(serverName, userId);
 
         // Initialize server object with all server-level data
         const server = {

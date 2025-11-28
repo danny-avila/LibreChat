@@ -201,7 +201,6 @@ const Conversations: FC<ConversationsProps> = ({
                 overscanRowCount={10}
                 className="outline-none"
                 style={{ outline: 'none' }}
-                role="list"
                 aria-label="Conversations"
                 onRowsRendered={handleRowsRendered}
                 tabIndex={-1}

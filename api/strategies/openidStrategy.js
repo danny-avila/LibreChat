@@ -357,16 +357,18 @@ async function setupOpenId() {
           };
 
           const appConfig = await getAppConfig();
-          if (!isEmailDomainAllowed(userinfo.email, appConfig?.registration?.allowedDomains)) {
+          /** Azure AD sometimes doesn't return email, use preferred_username as fallback */
+          const email = userinfo.email || userinfo.preferred_username || userinfo.upn;
+          if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
             logger.error(
-              `[OpenID Strategy] Authentication blocked - email domain not allowed [Email: ${userinfo.email}]`,
+              `[OpenID Strategy] Authentication blocked - email domain not allowed [Email: ${email}]`,
             );
             return done(null, false, { message: 'Email domain not allowed' });
           }
 
           const result = await findOpenIDUser({
             findUser,
-            email: claims.email,
+            email: email,
             openidId: claims.sub,
             idOnTheSource: claims.oid,
             strategyName: 'openidStrategy',
@@ -433,7 +435,7 @@ async function setupOpenId() {
               provider: 'openid',
               openidId: userinfo.sub,
               username,
-              email: userinfo.email || '',
+              email: email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
               idOnTheSource: userinfo.oid,
@@ -447,8 +449,8 @@ async function setupOpenId() {
             user.username = username;
             user.name = fullName;
             user.idOnTheSource = userinfo.oid;
-            if (userinfo.email && userinfo.email !== user.email) {
-              user.email = userinfo.email;
+            if (email && email !== user.email) {
+              user.email = email;
               user.emailVerified = userinfo.email_verified || false;
             }
           }
@@ -541,7 +543,15 @@ async function setupOpenId() {
             },
           );
 
-          done(null, { ...user, tokenset });
+          done(null, {
+            ...user,
+            tokenset,
+            federatedTokens: {
+              access_token: tokenset.access_token,
+              refresh_token: tokenset.refresh_token,
+              expires_at: tokenset.expires_at,
+            },
+          });
         } catch (err) {
           logger.error('[openidStrategy] login failed', err);
           done(err);

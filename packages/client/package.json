@@ -1,6 +1,6 @@
 {
   "name": "@librechat/client",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "React components for LibreChat",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
@@ -64,13 +64,13 @@
     "react-dom": "^18.2.0 || ^19.1.0",
     "react-hook-form": "^7.56.4",
     "react-i18next": "^15.4.0 || ^15.6.0",
-    "react-resizable-panels": "^3.0.2",
+    "react-resizable-panels": "^3.0.6",
     "react-textarea-autosize": "^8.4.0",
     "tailwind-merge": "^1.9.1"
   },
   "devDependencies": {
     "@rollup/plugin-alias": "^5.1.0",
-    "@rollup/plugin-commonjs": "^25.0.2",
+    "@rollup/plugin-commonjs": "^29.0.0",
     "@rollup/plugin-node-resolve": "^15.0.0",
     "@rollup/plugin-replace": "^5.0.5",
     "@rollup/plugin-terser": "^0.4.4",
@@ -85,7 +85,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-i18next": "^15.4.0",
-    "rimraf": "^5.0.1",
+    "rimraf": "^6.1.2",
     "rollup": "^4.0.0",
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "rollup-plugin-postcss": "^4.0.2",

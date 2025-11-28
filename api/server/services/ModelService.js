@@ -39,6 +39,8 @@ const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService')
  * @param {boolean} [params.userIdQuery=false] - Whether to send the user ID as a query parameter.
  * @param {boolean} [params.createTokenConfig=true] - Whether to create a token configuration from the API response.
  * @param {string} [params.tokenKey] - The cache key to save the token configuration. Uses `name` if omitted.
+ * @param {Record<string, string>} [params.headers] - Optional headers for the request.
+ * @param {Partial<IUser>} [params.userObject] - Optional user object for header resolution.
  * @returns {Promise<string[]>} A promise that resolves to an array of model identifiers.
  * @async
  */
@@ -52,6 +54,8 @@ const fetchModels = async ({
   userIdQuery = false,
   createTokenConfig = true,
   tokenKey,
+  headers,
+  userObject,
 }) => {
   let models = [];
   const baseURL = direct ? extractBaseURL(_baseURL) : _baseURL;
@@ -65,12 +69,20 @@ const fetchModels = async ({
   }
 
   if (name && name.toLowerCase().startsWith(Providers.OLLAMA)) {
-    return await OllamaClient.fetchModels(baseURL);
+    try {
+      return await OllamaClient.fetchModels(baseURL, { headers, user: userObject });
+    } catch (ollamaError) {
+      const logMessage =
+        'Failed to fetch models from Ollama API. Attempting to fetch via OpenAI-compatible endpoint.';
+      logAxiosError({ message: logMessage, error: ollamaError });
+    }
   }
 
   try {
     const options = {
-      headers: {},
+      headers: {
+        ...(headers ?? {}),
+      },
       timeout: 5000,
     };
 
