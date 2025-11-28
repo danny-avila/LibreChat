@@ -3,11 +3,13 @@ import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { Upload, Share2 } from 'lucide-react';
 import { DropdownPopup, TooltipAnchor, useMediaQuery } from '@librechat/client';
+import { useGetSharedLinkQuery } from 'librechat-data-provider/react-query';
 import type * as t from '~/common';
 import ExportModal from '~/components/Nav/ExportConversation/ExportModal';
 import { ShareButton } from '~/components/Conversations/ConvoOptions';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
+import { cn } from '~/utils';
 
 export default function ExportAndShareMenu({
   isSharedButtonEnabled,
@@ -30,6 +32,8 @@ export default function ExportAndShareMenu({
     conversation.conversationId != null &&
     conversation.conversationId !== 'new' &&
     conversation.conversationId !== 'search';
+
+  const { data: share } = useGetSharedLinkQuery(conversation?.conversationId ?? '');
 
   if (exportable === false) {
     return null;
@@ -81,10 +85,17 @@ export default function ExportAndShareMenu({
               <Ariakit.MenuButton
                 id="export-menu-button"
                 aria-label="Export options"
-                className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+                className={cn(
+                  'inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary',
+                  share?.shareId
+                    ? 'border-green-500 bg-transparent text-green-500 hover:bg-green-800'
+                    : 'border-border-light bg-transparent text-text-primary',
+                )}
               >
                 <Share2
-                  className="icon-md text-text-secondary"
+                  className={cn(
+                    `icon-md ${share?.shareId ? 'text-green-300' : 'text-text-secondary'}`,
+                  )}
                   aria-hidden="true"
                   focusable="false"
                 />
