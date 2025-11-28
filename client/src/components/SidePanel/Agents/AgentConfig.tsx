@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
+import { LifeBuoy } from 'lucide-react';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
-import type { AgentForm, IconComponentTypes } from '~/common';
+import type { AgentForm, IconComponentTypes, StringOption } from '~/common';
 import {
   removeFocusOutlines,
   processAgentOption,
@@ -64,6 +65,7 @@ export default function AgentConfig() {
   const agent = useWatch({ control, name: 'agent' });
   const tools = useWatch({ control, name: 'tools' });
   const agent_id = useWatch({ control, name: 'id' });
+  const fallbackConfig = useWatch({ control, name: 'fallback_config' });
 
   const { data: agentFiles = [] } = useGetAgentFiles(agent_id);
 
@@ -176,6 +178,40 @@ export default function AgentConfig() {
     Icon = icons[iconKey];
   }
 
+  // Fallback model icon resolution
+  const fallbackProviderValue = useMemo(() => {
+    if (!fallbackConfig?.provider) return undefined;
+    return typeof fallbackConfig.provider === 'string'
+      ? fallbackConfig.provider
+      : (fallbackConfig.provider as StringOption)?.value;
+  }, [fallbackConfig?.provider]);
+
+  let FallbackIcon: IconComponentTypes | null | undefined;
+  let fallbackEndpointType: EModelEndpoint | undefined;
+  let fallbackEndpointIconURL: string | undefined;
+
+  if (fallbackProviderValue !== undefined) {
+    fallbackEndpointType = getEndpointField(
+      endpointsConfig,
+      fallbackProviderValue as string,
+      'type',
+    );
+    fallbackEndpointIconURL = getEndpointField(
+      endpointsConfig,
+      fallbackProviderValue as string,
+      'iconURL',
+    );
+    const fallbackIconKey = getIconKey({
+      endpoint: fallbackProviderValue as string,
+      endpointsConfig,
+      endpointType: fallbackEndpointType,
+      endpointIconURL: fallbackEndpointIconURL,
+    });
+    FallbackIcon = icons[fallbackIconKey];
+  }
+
+  const hasFallbackConfigured = Boolean(fallbackConfig?.provider && fallbackConfig?.model);
+
   const { toolIds, mcpServerNames } = useVisibleTools(tools, regularTools, mcpServersMap);
 
   return (
@@ -280,6 +316,39 @@ export default function AgentConfig() {
                 </div>
               )}
               <span>{model != null && model ? model : localize('com_ui_select_model')}</span>
+            </div>
+          </button>
+        </div>
+        {/* Fallback Model */}
+        <div className="mb-4">
+          <label className={labelClass} htmlFor="fallback-model">
+            {localize('com_agents_fallback_model')}
+          </label>
+          <button
+            type="button"
+            onClick={() => setActivePanel(Panel.fallback)}
+            className="btn btn-neutral border-token-border-light relative h-10 w-full rounded-lg font-medium"
+            aria-haspopup="true"
+            aria-expanded="false"
+          >
+            <div className="flex w-full items-center gap-2">
+              {hasFallbackConfigured && FallbackIcon ? (
+                <div className="shadow-stroke relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-black dark:bg-white">
+                  <FallbackIcon
+                    className="h-2/3 w-2/3"
+                    endpoint={fallbackProviderValue as string}
+                    endpointType={fallbackEndpointType}
+                    iconURL={fallbackEndpointIconURL}
+                  />
+                </div>
+              ) : (
+                <LifeBuoy className="h-5 w-5 text-gray-400" />
+              )}
+              <span>
+                {hasFallbackConfigured
+                  ? fallbackConfig?.model
+                  : localize('com_agents_fallback_not_configured')}
+              </span>
             </div>
           </button>
         </div>

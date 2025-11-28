@@ -205,6 +205,22 @@ export type SupportContact = {
   email?: string;
 };
 
+/**
+ * Fallback model configuration for agents.
+ * Allows specifying alternative model/provider to use when the primary model fails (rate limits, etc)
+ * or when images are present in the conversation.
+ */
+export type FallbackModelConfig = {
+  /** The fallback provider to use */
+  provider?: AgentProvider;
+  /** The fallback model to use */
+  model?: string | null;
+  /** Model parameters for the fallback model */
+  model_parameters?: AgentModelParameters;
+  /** When to use the fallback: 'on_error' for rate limits/errors, 'on_image' for image-containing messages */
+  trigger?: 'on_error' | 'on_image';
+};
+
 export type Agent = {
   _id?: string;
   id: string;
@@ -225,6 +241,8 @@ export type Agent = {
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
+  /** Fallback model configuration for rate limiting or image handling */
+  fallback_config?: FallbackModelConfig;
   conversation_starters?: string[];
   /** @deprecated Use ACL permissions instead */
   isCollaborative?: boolean;
@@ -264,6 +282,7 @@ export type AgentCreateParams = {
   | 'recursion_limit'
   | 'category'
   | 'support_contact'
+  | 'fallback_config'
 >;
 
 export type AgentUpdateParams = {
@@ -290,6 +309,7 @@ export type AgentUpdateParams = {
   | 'recursion_limit'
   | 'category'
   | 'support_contact'
+  | 'fallback_config'
 >;
 
 export type AgentListParams = {
