@@ -13,12 +13,12 @@ const {
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { createToolCall, getToolCallsByConvo } = require('~/models/ToolCall');
+const { getAuthFields } = require('~/app/clients/tools/util/handleTools');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
+const { manifestToolMap } = require('~/app/clients/tools');
 const { loadTools } = require('~/app/clients/tools/util');
 const { getRoleByName } = require('~/models/Role');
 const { getMessage } = require('~/models/Message');
-const { manifestToolMap } = require('~/app/clients/tools');
-const { getAuthFields } = require('~/app/clients/tools/util/handleTools');
 
 const fieldsMap = {
   [Tools.execute_code]: [EnvVar.CODE_API_KEY],
