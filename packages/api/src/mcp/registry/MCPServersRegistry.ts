@@ -5,16 +5,14 @@ import { ServerConfigsDB } from './db/ServerConfigsDB';
 import { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 
 /**
- * Central registry for managing MCP server configurations across different scopes and users.
+ * Central registry for managing MCP server configurations.
  * Authoritative source of truth for all MCP servers provided by LibreChat.
  *
- * Maintains three-tier cache structure:
- * - Shared App Servers: Auto-started servers available to all users (initialized at startup)
- * - Shared User Servers: User-scope servers that require OAuth or on-demand startup
- * - Private Servers: Per-user configurations dynamically added during runtime
+ * Uses a two-repository architecture:
+ * - Cache Repository: Stores YAML-defined configs loaded at startup (in-memory or Redis-backed)
+ * - DB Repository: Stores dynamic configs created at runtime (not yet implemented)
  *
- * Provides a unified query interface with proper fallback hierarchy:
- * checks shared app servers first, then shared user servers, then private user servers.
+ * Query priority: Cache configs are checked first, then DB configs.
  */
 class MCPServersRegistry {
   private readonly dbConfigsRepo: IServerConfigsRepositoryInterface;
@@ -22,7 +20,7 @@ class MCPServersRegistry {
 
   constructor() {
     this.dbConfigsRepo = new ServerConfigsDB();
-    this.cacheConfigsRepo = ServerConfigsCacheFactory.create('App', 'Shared', false);
+    this.cacheConfigsRepo = ServerConfigsCacheFactory.create('App', false);
   }
 
   public async getServerConfig(
