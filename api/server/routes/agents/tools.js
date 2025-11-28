@@ -1,7 +1,12 @@
 const express = require('express');
-const { callTool, verifyToolAuth, getToolCalls } = require('~/server/controllers/tools');
+const {
+  callTool,
+  verifyToolAuth,
+  getToolCalls,
+  getPluginAuthValues,
+} = require('~/server/controllers/tools');
 const { getAvailableTools } = require('~/server/controllers/PluginController');
-const { toolCallLimiter } = require('~/server/middleware');
+const { toolCallLimiter, requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
 
@@ -18,6 +23,14 @@ router.get('/', getAvailableTools);
  * @returns {ToolCallData[]} 200 - application/json
  */
 router.get('/calls', getToolCalls);
+
+/**
+ * Get plugin auth values for a specific tool
+ * @route GET /agents/tools/:pluginKey/auth-values
+ * @param {string} pluginKey - The plugin key
+ * @returns {{ authValues: Record<string, string> }} 200 - application/json
+ */
+router.get('/:pluginKey/auth-values', requireJwtAuth, getPluginAuthValues);
 
 /**
  * Verify authentication for a specific tool

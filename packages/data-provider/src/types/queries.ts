@@ -195,6 +195,10 @@ export interface MCPAuthValuesResponse {
   authValueFlags: Record<string, boolean>;
 }
 
+export interface PluginAuthValuesResponse {
+  authValues: Record<string, string>;
+}
+
 /* SharePoint Graph API Token */
 export type GraphTokenParams = {
   scopes: string;
