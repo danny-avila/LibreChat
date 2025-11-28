@@ -35,7 +35,7 @@ librechat:
     DOMAIN_CLIENT: https://chat.internal.node.energy
     DOMAIN_SERVER: https://chat.internal.node.energy
 
-    ANTHROPIC_MODELS: claude-3-7-sonnet-20250219,claude-3-haiku-20240307
+    ANTHROPIC_MODELS: claude-3-7-sonnet-20250219,claude-3-haiku-20240307,claude-sonnet-4-20250514,claude-3-5-haiku-20241022
     OPENAI_MODELS: gpt-5,gpt-5-mini
     AZURE_USE_MODEL_AS_DEPLOYMENT_NAME: "false"
 
