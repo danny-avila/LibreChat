@@ -95,7 +95,7 @@ class MCPServersRegistry {
         return this.dbConfigsRepo;
       default:
         throw new Error(
-          `MCPServersRegistry.addServer: The provided storage location "${storageLocation}" is not supported`,
+          `MCPServersRegistry: The provided storage location "${storageLocation}" is not supported`,
         );
     }
   }
