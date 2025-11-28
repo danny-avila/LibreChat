@@ -47,6 +47,7 @@ RUN \
 # Node API setup
 EXPOSE 3080
 ENV HOST=0.0.0.0
+ENV PORT=3080
 CMD ["npm", "run", "backend"]
 
 # Optional: for client with nginx routing
