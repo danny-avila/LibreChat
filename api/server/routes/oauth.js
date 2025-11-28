@@ -41,7 +41,7 @@ const oauthHandler = async (req, res, next) => {
     }
     if (
       req.user &&
-      req.user.provider == 'openid' &&
+      req.user.provider === 'openid' &&
       isEnabled(process.env.OPENID_REUSE_TOKENS) === true
     ) {
       // Sync Entra ID groups from Microsoft Graph API (if enabled)

@@ -130,8 +130,8 @@ function shouldExcludeGroup(groupName, exclusionPattern) {
           continue;
         }
         
-        // Security: Detect potentially dangerous regex patterns
-        const dangerousPatterns = /(\+\*|\*\+|\{\d+,\}|\(\?[^:)])/;
+        // Security: Detect potentially dangerous regex patterns (nested quantifiers, catastrophic backtracking)
+        const dangerousPatterns = /(\*\*|\+\+|\*\+|\+\*)|((\(.*\)){2,}[\*\+])|(\[[^\]]{100,}\])/;
         if (dangerousPatterns.test(regexStr)) {
           logger.warn(`[shouldExcludeGroup] Potentially dangerous regex pattern detected, skipping: ${pattern}`);
           continue;
@@ -199,7 +199,7 @@ function extractGroupsFromToken(tokenset, claimPath, tokenKind = 'access', exclu
     // Remove duplicates
     const uniqueGroups = [...new Set(filteredGroups)];
 
-    const excludedCount = sanitizedGroups.length - uniqueGroups.length;
+    const excludedCount = sanitizedGroups.length - filteredGroups.length;
     if (excludedCount > 0) {
       logger.info(
         `[extractGroupsFromToken] Excluded ${excludedCount} groups based on exclusion pattern`,
