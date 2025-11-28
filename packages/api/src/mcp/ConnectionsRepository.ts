@@ -26,18 +26,20 @@ export class ConnectionsRepository {
   /** Checks whether this repository can connect to a specific server */
   async has(serverName: string): Promise<boolean> {
     const config = await registry.getServerConfig(serverName, this.ownerId);
-    if (!config) {
-      //if the config does not exist, clean up any potential orphaned connections (caused by server tier migration)
+    const canConnect = !!config && this.isAllowedToConnectToServer(config);
+    if (!canConnect) {
+      //if connection is no longer possible we attempt to disconnect any leftover connections
       await this.disconnect(serverName);
     }
-    return !!config;
+    return canConnect;
   }
 
   /** Gets or creates a connection for the specified server with lazy loading */
   async get(serverName: string): Promise<MCPConnection | null> {
     const serverConfig = await registry.getServerConfig(serverName, this.ownerId);
+
     const existingConnection = this.connections.get(serverName);
-    if (!serverConfig) {
+    if (!serverConfig || !this.isAllowedToConnectToServer(serverConfig)) {
       if (existingConnection) {
         await existingConnection.disconnect();
       }
@@ -64,7 +66,6 @@ export class ConnectionsRepository {
         await this.disconnect(serverName);
       }
     }
-
     const connection = await MCPConnectionFactory.create(
       {
         serverName,
@@ -92,13 +93,13 @@ export class ConnectionsRepository {
   /** Gets or creates connections for all configured servers in this repository's scope */
   async getAll(): Promise<Map<string, MCPConnection>> {
     //TODO in the future we should use a scoped config getter (APPLevel, UserLevel, Private)
-    //for now the unexisting config will not throw error
+    //for now the absent config will not throw error
     const allConfigs = await registry.getAllServerConfigs(this.ownerId);
     return this.getMany(Object.keys(allConfigs));
   }
 
   /** Disconnects and removes a specific server connection from the pool */
-  disconnect(serverName: string): Promise<void> {
+  async disconnect(serverName: string): Promise<void> {
     const connection = this.connections.get(serverName);
     if (!connection) return Promise.resolve();
     this.connections.delete(serverName);
@@ -116,5 +117,13 @@ export class ConnectionsRepository {
   // Returns formatted log prefix for server messages
   protected prefix(serverName: string): string {
     return `[MCP][${serverName}]`;
+  }
+
+  private isAllowedToConnectToServer(config: t.ParsedServerConfig) {
+    //the repository is not allowed to be connected in case the Connection repository is shared (ownerId is undefined/null) and the server requires Auth or startup false.
+    if (this.ownerId === undefined && (config.startup === false || config.requiresOAuth)) {
+      return false;
+    }
+    return true;
   }
 }

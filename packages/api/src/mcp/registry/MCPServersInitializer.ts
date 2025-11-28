@@ -2,7 +2,6 @@ import { registryStatusCache as statusCache } from './cache/RegistryStatusCache'
 import { isLeader } from '~/cluster';
 import { withTimeout } from '~/utils';
 import { logger } from '@librechat/data-schemas';
-import { MCPServerInspector } from './MCPServerInspector';
 import { ParsedServerConfig } from '~/mcp/types';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 import type * as t from '~/mcp/types';
@@ -60,9 +59,7 @@ export class MCPServersInitializer {
   /** Initializes a single server with all its metadata and adds it to appropriate collections */
   public static async initializeServer(serverName: string, rawConfig: t.MCPOptions): Promise<void> {
     try {
-      const config = await MCPServerInspector.inspect(serverName, rawConfig);
-
-      await registry.addSharedServer(serverName, config);
+      const config = await registry.addServer(serverName, rawConfig, 'CACHE');
       MCPServersInitializer.logParsedConfig(serverName, config);
     } catch (error) {
       logger.error(`${MCPServersInitializer.prefix(serverName)} Failed to initialize:`, error);

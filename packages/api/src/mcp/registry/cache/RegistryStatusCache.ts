@@ -9,9 +9,6 @@ const INITIALIZED = 'INITIALIZED';
  * Uses Redis-backed storage to coordinate state between leader and follower nodes.
  * Tracks global initialization status for the registry.
  *
- * Note: Per-user private server loading status is tracked separately in PrivateServersLoadStatusCache
- * to enable TTL synchronization and distributed locking.
- *
  * Designed to be extended with additional global registry metadata as needed
  * (e.g., last update timestamps, version info, health status).
  * This cache is only meant to be used internally by registry management components.
