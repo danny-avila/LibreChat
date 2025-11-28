@@ -36,6 +36,60 @@ export function isAnthropicVertexCredentials(credentials: AnthropicCredentials):
 }
 
 /**
+ * Filters anthropic-beta header values to only include those supported by Vertex AI.
+ * Vertex AI rejects prompt-caching-2024-07-31 but we use 'prompt-caching-vertex' as a
+ * marker to trigger cache_control application in the agents package.
+ */
+function filterVertexHeaders(
+  headers?: Record<string, string>,
+): Record<string, string> | undefined {
+  if (!headers) {
+    return undefined;
+  }
+
+  const filteredHeaders = { ...headers };
+  const anthropicBeta = filteredHeaders['anthropic-beta'];
+
+  if (anthropicBeta) {
+    // Filter out unsupported beta values for Vertex AI
+    const supportedValues = anthropicBeta
+      .split(',')
+      .map((v) => v.trim())
+      .filter((v) => {
+        // Remove prompt-caching headers (Vertex handles caching via cache_control in body)
+        if (v.includes('prompt-caching')) {
+          return false;
+        }
+        // Remove max-tokens headers (Vertex has its own limits)
+        if (v.includes('max-tokens')) {
+          return false;
+        }
+        // Remove output-128k headers
+        if (v.includes('output-128k')) {
+          return false;
+        }
+        // Remove token-efficient-tools headers
+        if (v.includes('token-efficient-tools')) {
+          return false;
+        }
+        // Remove context-1m headers
+        if (v.includes('context-1m')) {
+          return false;
+        }
+        return true;
+      });
+
+    if (supportedValues.length > 0) {
+      filteredHeaders['anthropic-beta'] = supportedValues.join(',');
+    } else {
+      delete filteredHeaders['anthropic-beta'];
+    }
+  }
+
+  return Object.keys(filteredHeaders).length > 0 ? filteredHeaders : undefined;
+}
+
+/**
  * Creates and configures a Vertex AI client for Anthropic
  */
 export function createAnthropicVertexClient(
@@ -51,10 +105,20 @@ export function createAnthropicVertexClient(
       scopes: 'https://www.googleapis.com/auth/cloud-platform',
     });
 
+    // Filter out unsupported anthropic-beta header values for Vertex AI
+    const filteredOptions = options
+      ? {
+          ...options,
+          defaultHeaders: filterVertexHeaders(
+            options.defaultHeaders as Record<string, string> | undefined,
+          ),
+        }
+      : undefined;
+
     return new AnthropicVertex({
       region: region,
       googleAuth: googleAuth,
-      ...options,
+      ...filteredOptions,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
