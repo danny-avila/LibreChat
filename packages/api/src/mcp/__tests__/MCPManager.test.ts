@@ -19,9 +19,6 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('~/mcp/registry/MCPServersRegistry', () => ({
   mcpServersRegistry: {
-    sharedAppServers: {
-      getAll: jest.fn(),
-    },
     getServerConfig: jest.fn(),
     getAllServerConfigs: jest.fn(),
     getOAuthServers: jest.fn(),
@@ -50,7 +47,6 @@ describe('MCPManager', () => {
 
     // Set up default mock implementations
     (MCPServersInitializer.initialize as jest.Mock).mockResolvedValue(undefined);
-    (mcpServersRegistry.sharedAppServers.getAll as jest.Mock).mockResolvedValue({});
     (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({});
   });
 
