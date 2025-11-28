@@ -31,10 +31,33 @@ jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn((val) => val === 'true' || val === true),
   checkEmailConfig: jest.fn(() => false),
   isEmailDomainAllowed: jest.fn(() => true),
+  extractSubFromAccessToken: jest.fn((token) => {
+    if (!token) {
+      return { sub: null, error: 'No access token provided' };
+    }
+    if (token === 'test-access-token') {
+      return { sub: 'openid-provider-sub-67890' };
+    }
+    if (token === 'token-without-sub') {
+      return { sub: null, error: 'No sub claim in access token' };
+    }
+    if (token === 'invalid-token') {
+      return { sub: null, error: 'Failed to decode access token' };
+    }
+    return { sub: 'openid-provider-sub-67890' };
+  }),
 }));
 
 jest.mock('jsonwebtoken', () => ({
-  sign: jest.fn((payload, secret, options) => `mocked-jwt-token-${payload.id}`),
+  sign: jest.fn((payload, secret, options) => {
+    if (payload.id) {
+      return `mocked-jwt-token-${payload.id}`;
+    }
+    if (payload.sub) {
+      return `mocked-jwt-token-${payload.sub}`;
+    }
+    return 'mocked-jwt-token';
+  }),
   verify: jest.fn(),
 }));
 
@@ -138,7 +161,7 @@ describe('setOpenIDAuthTokens - openid_sub cookie functionality', () => {
         (call) => call[0] === 'openid_sub',
       );
       expect(openidSubCookieCall).toBeDefined();
-      expect(openidSubCookieCall[1]).toBe(testOpenIdSub);
+      expect(openidSubCookieCall[1]).toBe(`mocked-jwt-token-${testOpenIdSub}`);
       expect(openidSubCookieCall[2]).toMatchObject({
         httpOnly: true,
         sameSite: 'lax',
@@ -149,8 +172,8 @@ describe('setOpenIDAuthTokens - openid_sub cookie functionality', () => {
     });
 
     it('should not set openid_sub cookie when access token has no sub claim', () => {
-      const jwtDecode = require('jsonwebtoken/decode');
-      jwtDecode.mockReturnValueOnce({ email: 'test@example.com' }); // No sub
+      const { extractSubFromAccessToken } = require('@librechat/api');
+      extractSubFromAccessToken.mockReturnValueOnce({ sub: null, error: 'No sub claim' });
 
       setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
 
@@ -161,8 +184,8 @@ describe('setOpenIDAuthTokens - openid_sub cookie functionality', () => {
     });
 
     it('should not set openid_sub cookie when jwt decode returns null', () => {
-      const jwtDecode = require('jsonwebtoken/decode');
-      jwtDecode.mockReturnValueOnce(null);
+      const { extractSubFromAccessToken } = require('@librechat/api');
+      extractSubFromAccessToken.mockReturnValueOnce({ sub: null, error: 'Decode error' });
 
       setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
 
@@ -219,14 +242,6 @@ describe('setOpenIDAuthTokens - openid_sub cookie functionality', () => {
       expect(openidSubCookieCall[2].expires.getTime()).toBeGreaterThanOrEqual(beforeTime);
       expect(openidSubCookieCall[2].expires.getTime()).toBeLessThanOrEqual(afterTime);
     });
-
-    it('should log debug message when openid_sub cookie is set', () => {
-      setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
-
-      expect(logger.debug).toHaveBeenCalledWith(
-        `[setOpenIDAuthTokens] Set openid_sub cookie with value: ${testOpenIdSub}`,
-      );
-    });
   });
 
   describe('openid_sub cookie with other cookies', () => {
@@ -245,7 +260,11 @@ describe('setOpenIDAuthTokens - openid_sub cookie functionality', () => {
         expect.any(Object),
       );
       expect(mockRes.cookie).toHaveBeenCalledWith('token_provider', 'openid', expect.any(Object));
-      expect(mockRes.cookie).toHaveBeenCalledWith('openid_sub', testOpenIdSub, expect.any(Object));
+      expect(mockRes.cookie).toHaveBeenCalledWith(
+        'openid_sub',
+        `mocked-jwt-token-${testOpenIdSub}`,
+        expect.any(Object),
+      );
     });
 
     it('should set openid_user_id and openid_sub when OPENID_REUSE_TOKENS is enabled', () => {
@@ -259,7 +278,11 @@ describe('setOpenIDAuthTokens - openid_sub cookie functionality', () => {
         expect.any(String),
         expect.any(Object),
       );
-      expect(mockRes.cookie).toHaveBeenCalledWith('openid_sub', testOpenIdSub, expect.any(Object));
+      expect(mockRes.cookie).toHaveBeenCalledWith(
+        'openid_sub',
+        `mocked-jwt-token-${testOpenIdSub}`,
+        expect.any(Object),
+      );
 
       const openidUserIdCall = mockRes.cookie.mock.calls.find(
         (call) => call[0] === 'openid_user_id',
@@ -273,8 +296,8 @@ describe('setOpenIDAuthTokens - openid_sub cookie functionality', () => {
     });
 
     it('should set 3 cookies when access token has no sub claim', () => {
-      const jwtDecode = require('jsonwebtoken/decode');
-      jwtDecode.mockReturnValueOnce({ email: 'test@example.com' }); // No sub
+      const { extractSubFromAccessToken } = require('@librechat/api');
+      extractSubFromAccessToken.mockReturnValueOnce({ sub: null, error: 'No sub claim' });
 
       setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
 
@@ -372,15 +395,18 @@ describe('setOpenIDAuthTokens - openid_sub cookie functionality', () => {
     });
 
     it('should handle jwt decode throwing an error', () => {
-      const jwtDecode = require('jsonwebtoken/decode');
-      jwtDecode.mockImplementationOnce(() => {
-        throw new Error('Invalid JWT');
-      });
+      const { extractSubFromAccessToken } = require('@librechat/api');
+      extractSubFromAccessToken.mockReturnValueOnce({ sub: null, error: 'Invalid JWT' });
 
       // Should not throw, just skip setting openid_sub cookie
       expect(() => {
         setOpenIDAuthTokens(mockTokenset, mockRes, testUserId);
-      }).toThrow();
+      }).not.toThrow();
+
+      const openidSubCookieCall = mockRes.cookie.mock.calls.find(
+        (call) => call[0] === 'openid_sub',
+      );
+      expect(openidSubCookieCall).toBeUndefined();
     });
   });
 
@@ -397,7 +423,7 @@ describe('setOpenIDAuthTokens - openid_sub cookie functionality', () => {
         (call) => call[0] === 'openid_sub',
       );
       expect(openidSubCookieCall).toBeDefined();
-      expect(openidSubCookieCall[1]).toBe(testOpenIdSub);
+      expect(openidSubCookieCall[1]).toBe(`mocked-jwt-token-${testOpenIdSub}`);
     });
 
     it('should prefer tokenset refresh_token over existingRefreshToken', () => {
@@ -456,7 +482,7 @@ describe('setOpenIDAuthTokens - openid_sub cookie functionality', () => {
         (call) => call[0] === 'openid_sub',
       );
       expect(openidSubCookieCall).toBeDefined();
-      expect(openidSubCookieCall[1]).toBe(testOpenIdSub);
+      expect(openidSubCookieCall[1]).toBe(`mocked-jwt-token-${testOpenIdSub}`);
     });
 
     it('should set openid_sub cookie with OPENID_REUSE_TOKENS and OPENID_EXPOSE_SUB_COOKIE both enabled', () => {
