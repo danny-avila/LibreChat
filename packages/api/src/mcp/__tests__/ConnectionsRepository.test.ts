@@ -319,4 +319,152 @@ describe('ConnectionsRepository', () => {
       expect(Array.isArray(promises)).toBe(true);
     });
   });
+
+  describe('Connection policy (isAllowedToConnectToServer)', () => {
+    describe('App-level repository (ownerId = undefined)', () => {
+      beforeEach(() => {
+        repository = new ConnectionsRepository(undefined);
+      });
+
+      it('should allow connection to regular servers (startup !== false, !requiresOAuth)', async () => {
+        mockServerConfigs.regularServer = {
+          type: 'stdio',
+          command: 'test',
+          args: [],
+          startup: true,
+          requiresOAuth: false,
+        };
+
+        expect(await repository.has('regularServer')).toBe(true);
+      });
+
+      it('should allow connection when startup is undefined and requiresOAuth is false', async () => {
+        mockServerConfigs.defaultServer = {
+          type: 'stdio',
+          command: 'test',
+          args: [],
+          requiresOAuth: false,
+        };
+
+        expect(await repository.has('defaultServer')).toBe(true);
+      });
+
+      it('should NOT allow connection to OAuth servers', async () => {
+        mockServerConfigs.oauthServer = {
+          type: 'streamable-http',
+          url: 'http://example.com',
+          requiresOAuth: true,
+        };
+
+        expect(await repository.has('oauthServer')).toBe(false);
+      });
+
+      it('should NOT allow connection to disabled servers (startup: false)', async () => {
+        mockServerConfigs.disabledServer = {
+          type: 'stdio',
+          command: 'test',
+          args: [],
+          startup: false,
+          requiresOAuth: false,
+        };
+
+        expect(await repository.has('disabledServer')).toBe(false);
+      });
+
+      it('should NOT allow connection to OAuth servers that are also disabled', async () => {
+        mockServerConfigs.oauthDisabledServer = {
+          type: 'streamable-http',
+          url: 'http://example.com',
+          startup: false,
+          requiresOAuth: true,
+        };
+
+        expect(await repository.has('oauthDisabledServer')).toBe(false);
+      });
+
+      it('should disconnect existing connection when server becomes not allowed', async () => {
+        // Initially setup as regular server
+        mockServerConfigs.changingServer = {
+          type: 'stdio',
+          command: 'test',
+          args: [],
+          requiresOAuth: false,
+        };
+
+        // Create connection
+        const connection = await repository.get('changingServer');
+        expect(connection).toBe(mockConnection);
+        expect(repository['connections'].has('changingServer')).toBe(true);
+
+        // Change config to require OAuth (app-level can't connect)
+        mockServerConfigs.changingServer = {
+          type: 'streamable-http',
+          url: 'http://example.com',
+          requiresOAuth: true,
+        };
+
+        // Check if connection is allowed
+        const allowed = await repository.has('changingServer');
+
+        expect(allowed).toBe(false);
+        expect(mockConnection.disconnect).toHaveBeenCalled();
+      });
+    });
+
+    describe('User-level repository (ownerId = userId)', () => {
+      beforeEach(() => {
+        repository = new ConnectionsRepository('user123');
+      });
+
+      it('should allow connection to regular servers', async () => {
+        mockServerConfigs.regularServer = {
+          type: 'stdio',
+          command: 'test',
+          args: [],
+          startup: true,
+          requiresOAuth: false,
+        };
+
+        expect(await repository.has('regularServer')).toBe(true);
+      });
+
+      it('should allow connection to OAuth servers', async () => {
+        mockServerConfigs.oauthServer = {
+          type: 'streamable-http',
+          url: 'http://example.com',
+          requiresOAuth: true,
+        };
+
+        expect(await repository.has('oauthServer')).toBe(true);
+      });
+
+      it('should allow connection to disabled servers (startup: false)', async () => {
+        mockServerConfigs.disabledServer = {
+          type: 'stdio',
+          command: 'test',
+          args: [],
+          startup: false,
+          requiresOAuth: false,
+        };
+
+        expect(await repository.has('disabledServer')).toBe(true);
+      });
+
+      it('should allow connection to OAuth servers that are also disabled', async () => {
+        mockServerConfigs.oauthDisabledServer = {
+          type: 'streamable-http',
+          url: 'http://example.com',
+          startup: false,
+          requiresOAuth: true,
+        };
+
+        expect(await repository.has('oauthDisabledServer')).toBe(true);
+      });
+
+      it('should return null from get() when server config does not exist', async () => {
+        const connection = await repository.get('nonexistent');
+        expect(connection).toBeNull();
+      });
+    });
+  });
 });
