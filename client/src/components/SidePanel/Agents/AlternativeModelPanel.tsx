@@ -138,22 +138,25 @@ export default function AlternativeModelPanel({
 
   const handleResetParameters = useCallback(() => {
     if (isFallback) {
-      setValue('fallback_config.model_parameters', {} as t.AgentModelParameters);
+      setValue('fallback_config.model_parameters', undefined);
     } else {
-      setValue('multimodal_config.model_parameters', {} as t.AgentModelParameters);
+      setValue('multimodal_config.model_parameters', undefined);
     }
   }, [setValue, isFallback]);
 
   const handleClear = useCallback(() => {
-    const emptyConfig = {
-      provider: undefined,
-      model: undefined,
-      model_parameters: {},
-    };
     if (isFallback) {
-      setValue('fallback_config', emptyConfig);
+      setValue('fallback_config', {
+        provider: undefined,
+        model: undefined,
+        model_parameters: undefined,
+      });
     } else {
-      setValue('multimodal_config', emptyConfig);
+      setValue('multimodal_config', {
+        provider: undefined,
+        model: undefined,
+        model_parameters: undefined,
+      });
     }
   }, [setValue, isFallback]);
 

@@ -86,7 +86,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
     (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
 
   // Normalize fallback_config provider to string value
-  let fallback_config = undefined;
+  let fallback_config: typeof _fallback_config | undefined = undefined;
   if (_fallback_config?.provider || _fallback_config?.model) {
     const fallbackProvider =
       typeof _fallback_config.provider === 'string'
@@ -94,12 +94,12 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
         : (_fallback_config.provider as StringOption | undefined)?.value;
     fallback_config = {
       ..._fallback_config,
-      provider: fallbackProvider,
+      provider: fallbackProvider ?? undefined,
     };
   }
 
   // Normalize multimodal_config provider to string value
-  let multimodal_config = undefined;
+  let multimodal_config: typeof _multimodal_config | undefined = undefined;
   if (_multimodal_config?.provider || _multimodal_config?.model) {
     const multimodalProvider =
       typeof _multimodal_config.provider === 'string'
@@ -107,7 +107,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
         : (_multimodal_config.provider as StringOption | undefined)?.value;
     multimodal_config = {
       ..._multimodal_config,
-      provider: multimodalProvider,
+      provider: multimodalProvider ?? undefined,
     };
   }
 
