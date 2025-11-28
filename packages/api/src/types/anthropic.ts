@@ -1,10 +1,16 @@
 import { z } from 'zod';
 import { Dispatcher } from 'undici';
-import { anthropicSchema } from 'librechat-data-provider';
+import { AuthKeys, anthropicSchema } from 'librechat-data-provider';
 import type { AnthropicClientOptions } from '@librechat/agents';
 import type { LLMConfigResult } from './openai';
+import type { GoogleServiceKey } from '../utils/key';
 
 export type AnthropicParameters = z.infer<typeof anthropicSchema>;
+
+export type AnthropicCredentials = {
+  [AuthKeys.GOOGLE_SERVICE_KEY]?: GoogleServiceKey;
+  [AuthKeys.ANTHROPIC_API_KEY]?: string;
+};
 
 export interface ThinkingConfigDisabled {
   type: 'disabled';
