@@ -6,6 +6,9 @@ import { MCPConnection } from '~/mcp/connection';
 import { registryStatusCache } from '~/mcp/registry/cache/RegistryStatusCache';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 import { mcpServersRegistry as registry } from '~/mcp/registry/MCPServersRegistry';
+const FIXED_TIME = 1699564800000;
+const originalDateNow = Date.now;
+Date.now = jest.fn(() => FIXED_TIME);
 
 // Mock external dependencies
 jest.mock('../../MCPConnectionFactory');
@@ -31,6 +34,10 @@ const mockInspect = MCPServerInspector.inspect as jest.MockedFunction<
 describe('MCPServersInitializer', () => {
   let mockConnection: jest.Mocked<MCPConnection>;
 
+  afterAll(() => {
+    Date.now = originalDateNow;
+  });
+
   const testConfigs: t.MCPServers = {
     disabled_server: {
       type: 'stdio',
@@ -40,7 +47,7 @@ describe('MCPServersInitializer', () => {
     },
     oauth_server: {
       type: 'streamable-http',
-      url: 'https://api.example.com/mcp',
+      url: 'https://api.example.com/mcp-oauth',
     },
     file_tools_server: {
       type: 'stdio',
@@ -51,6 +58,10 @@ describe('MCPServersInitializer', () => {
       type: 'stdio',
       command: 'node',
       args: ['instructions.js'],
+    },
+    remote_no_oauth_server: {
+      type: 'streamable-http',
+      url: 'https://api.example.com/mcp-no-auth',
     },
   };
 
@@ -64,7 +75,7 @@ describe('MCPServersInitializer', () => {
     },
     oauth_server: {
       type: 'streamable-http',
-      url: 'https://api.example.com/mcp',
+      url: 'https://api.example.com/mcp-oauth',
       requiresOAuth: true,
     },
     file_tools_server: {
@@ -105,6 +116,21 @@ describe('MCPServersInitializer', () => {
         },
       },
     },
+    remote_no_oauth_server: {
+      type: 'streamable-http',
+      url: 'https://api.example.com/mcp-no-auth',
+      requiresOAuth: false,
+    },
+  };
+
+  // Helper to determine requiresOAuth based on URL pattern
+  // URLs ending with '-oauth' require OAuth, others don't
+  const determineRequiresOAuth = (config: t.MCPOptions): boolean => {
+    if ('url' in config && config.url) {
+      // If URL ends with '-oauth', requires OAuth
+      return config.url.endsWith('-oauth');
+    }
+    return false;
   };
 
   beforeEach(async () => {
@@ -117,9 +143,14 @@ describe('MCPServersInitializer', () => {
     (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
 
     // Mock MCPServerInspector.inspect to return parsed config
-    mockInspect.mockImplementation(async (serverName: string) => {
+    // This mock inspects the actual rawConfig to determine requiresOAuth dynamically
+    mockInspect.mockImplementation(async (serverName: string, rawConfig: t.MCPOptions) => {
+      const baseConfig = testParsedConfigs[serverName] || {};
       return {
-        ...testParsedConfigs[serverName],
+        ...baseConfig,
+        ...rawConfig,
+        // Override requiresOAuth based on the actual config being inspected
+        requiresOAuth: determineRequiresOAuth(rawConfig),
         _processedByInspector: true,
       } as unknown as t.ParsedServerConfig;
     });
@@ -170,13 +201,17 @@ describe('MCPServersInitializer', () => {
       await MCPServersInitializer.initialize(testConfigs);
 
       // Verify all configs were processed by inspector (without connection parameter)
-      expect(mockInspect).toHaveBeenCalledTimes(4);
+      expect(mockInspect).toHaveBeenCalledTimes(5);
       expect(mockInspect).toHaveBeenCalledWith('disabled_server', testConfigs.disabled_server);
       expect(mockInspect).toHaveBeenCalledWith('oauth_server', testConfigs.oauth_server);
       expect(mockInspect).toHaveBeenCalledWith('file_tools_server', testConfigs.file_tools_server);
       expect(mockInspect).toHaveBeenCalledWith(
         'search_tools_server',
         testConfigs.search_tools_server,
+      );
+      expect(mockInspect).toHaveBeenCalledWith(
+        'remote_no_oauth_server',
+        testConfigs.remote_no_oauth_server,
       );
     });
 
@@ -232,12 +267,15 @@ describe('MCPServersInitializer', () => {
 
     it('should handle inspection failures gracefully', async () => {
       // Mock inspection failure for one server
-      mockInspect.mockImplementation(async (serverName: string) => {
+      mockInspect.mockImplementation(async (serverName: string, rawConfig: t.MCPOptions) => {
         if (serverName === 'file_tools_server') {
           throw new Error('Inspection failed');
         }
+        const baseConfig = testParsedConfigs[serverName] || {};
         return {
-          ...testParsedConfigs[serverName],
+          ...rawConfig,
+          ...baseConfig,
+          requiresOAuth: determineRequiresOAuth(rawConfig),
           _processedByInspector: true,
         } as unknown as t.ParsedServerConfig;
       });
