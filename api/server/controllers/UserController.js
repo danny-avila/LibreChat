@@ -3,7 +3,6 @@ const { Tools, CacheKeys, Constants, FileSources } = require('librechat-data-pro
 const {
   MCPOAuthHandler,
   MCPTokenStorage,
-  mcpServersRegistry,
   normalizeHttpError,
   extractWebSearchEnvVars,
 } = require('@librechat/api');
@@ -34,9 +33,9 @@ const {
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
+const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
 const { processDeleteRequest } = require('~/server/services/Files/process');
-const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getAppConfig } = require('~/server/services/Config');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const { deleteUserPrompts } = require('~/models/Prompt');
@@ -321,9 +320,9 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
 
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
   const serverConfig =
-    (await mcpServersRegistry.getServerConfig(serverName, userId)) ??
+    (await getMCPServersRegistry().getServerConfig(serverName, userId)) ??
     appConfig?.mcpServers?.[serverName];
-  const oauthServers = await mcpServersRegistry.getOAuthServers();
+  const oauthServers = await getMCPServersRegistry().getOAuthServers();
   if (!oauthServers.has(serverName)) {
     // this server does not use OAuth, so nothing to do here as well
     return;
