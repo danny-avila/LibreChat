@@ -165,6 +165,12 @@
         "label": "Azure AI Search Vector Fields",
         "description": "The names of the vector fields in your Azure AI Search index to use for vector search queries. Multiple fields can be specified as comma-separated values (e.g., 'field1,field2'). Leave empty if you don't use vector search.",
         "optional": true
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_SEARCH_OPTION_TOP",
+        "label": "Azure AI Search Top Results",
+        "description": "The number of search results to return. Default is 5 if not specified.",
+        "optional": true
       }
     ]
   },
