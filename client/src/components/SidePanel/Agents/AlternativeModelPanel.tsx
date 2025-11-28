@@ -2,7 +2,7 @@ import React, { useMemo, useEffect, useCallback } from 'react';
 import keyBy from 'lodash/keyBy';
 import { ControlCombobox } from '@librechat/client';
 import { ChevronLeft, RotateCcw, Trash2 } from 'lucide-react';
-import { useFormContext, useWatch, Controller, FieldPath } from 'react-hook-form';
+import { useFormContext, useWatch, Controller } from 'react-hook-form';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import {
   alternateName,
@@ -40,19 +40,19 @@ export default function AlternativeModelPanel({
   const localize = useLocalize();
   const { control, setValue } = useFormContext<AgentForm>();
 
-  // Configuration based on type
-  const configKey = type === 'fallback' ? 'fallback_config' : 'multimodal_config';
-  const titleKey =
-    type === 'fallback' ? 'com_agents_fallback_model' : 'com_agents_multimodal_model';
-  const descriptionKey =
-    type === 'fallback'
-      ? 'com_agents_fallback_model_description'
-      : 'com_agents_multimodal_model_description';
-  const clearButtonKey =
-    type === 'fallback' ? 'com_agents_fallback_clear' : 'com_agents_multimodal_clear';
+  // Determine configuration based on type
+  const isFallback = type === 'fallback';
+  const titleKey = isFallback ? 'com_agents_fallback_model' : 'com_agents_multimodal_model';
+  const descriptionKey = isFallback
+    ? 'com_agents_fallback_model_description'
+    : 'com_agents_multimodal_model_description';
+  const clearButtonKey = isFallback ? 'com_agents_fallback_clear' : 'com_agents_multimodal_clear';
 
-  // Watch the config based on type
-  const config = useWatch({ control, name: configKey });
+  // Watch the config based on type - using conditional to maintain type safety
+  const fallbackConfig = useWatch({ control, name: 'fallback_config' });
+  const multimodalConfig = useWatch({ control, name: 'multimodal_config' });
+  const config = isFallback ? fallbackConfig : multimodalConfig;
+
   const configModel = config?.model ?? null;
   const configProviderOption = config?.provider;
   const configModelParameters = config?.model_parameters ?? {};
@@ -72,18 +72,27 @@ export default function AlternativeModelPanel({
 
   useEffect(() => {
     const _model = configModel ?? '';
+
     if (configProvider && _model) {
       const modelExists = models.includes(_model);
       if (!modelExists) {
         const newModels = modelsData[configProvider] ?? [];
-        setValue(`${configKey}.model` as FieldPath<AgentForm>, newModels[0] ?? '');
+        if (isFallback) {
+          setValue('fallback_config.model', newModels[0] ?? '');
+        } else {
+          setValue('multimodal_config.model', newModels[0] ?? '');
+        }
       }
     }
 
     if (configProvider && !_model) {
-      setValue(`${configKey}.model` as FieldPath<AgentForm>, models[0] ?? '');
+      if (isFallback) {
+        setValue('fallback_config.model', models[0] ?? '');
+      } else {
+        setValue('multimodal_config.model', models[0] ?? '');
+      }
     }
-  }, [configProvider, models, modelsData, setValue, configModel, configKey]);
+  }, [configProvider, models, modelsData, setValue, configModel, isFallback]);
 
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
 
@@ -118,31 +127,43 @@ export default function AlternativeModelPanel({
 
   const setOption = useCallback(
     (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
-      setValue(
-        `${configKey}.model_parameters.${optionKey}` as FieldPath<AgentForm>,
-        value as never,
-      );
+      if (isFallback) {
+        setValue(`fallback_config.model_parameters.${optionKey}`, value);
+      } else {
+        setValue(`multimodal_config.model_parameters.${optionKey}`, value);
+      }
     },
-    [setValue, configKey],
+    [setValue, isFallback],
   );
 
   const handleResetParameters = useCallback(() => {
-    setValue(
-      `${configKey}.model_parameters` as FieldPath<AgentForm>,
-      {} as t.AgentModelParameters as never,
-    );
-  }, [setValue, configKey]);
+    if (isFallback) {
+      setValue('fallback_config.model_parameters', {} as t.AgentModelParameters);
+    } else {
+      setValue('multimodal_config.model_parameters', {} as t.AgentModelParameters);
+    }
+  }, [setValue, isFallback]);
 
   const handleClear = useCallback(() => {
-    setValue(configKey, {
+    const emptyConfig = {
       provider: undefined,
       model: undefined,
       model_parameters: {},
-    });
-  }, [setValue, configKey]);
+    };
+    if (isFallback) {
+      setValue('fallback_config', emptyConfig);
+    } else {
+      setValue('multimodal_config', emptyConfig);
+    }
+  }, [setValue, isFallback]);
 
-  const providerFieldName = `${configKey}.provider` as const;
-  const modelFieldName = `${configKey}.model` as const;
+  // Field names for Controller components
+  const providerFieldName = isFallback
+    ? ('fallback_config.provider' as const)
+    : ('multimodal_config.provider' as const);
+  const modelFieldName = isFallback
+    ? ('fallback_config.model' as const)
+    : ('multimodal_config.model' as const);
 
   return (
     <div className="mx-1 mb-1 flex h-full min-h-[50vh] w-full flex-col gap-2 text-sm">
