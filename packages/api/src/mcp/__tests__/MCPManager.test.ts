@@ -1,7 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
 import { MCPManager } from '~/mcp/MCPManager';
-import { mcpServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
@@ -17,11 +16,15 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
+const mockRegistryInstance = {
+  getServerConfig: jest.fn(),
+  getAllServerConfigs: jest.fn(),
+  getOAuthServers: jest.fn(),
+};
+
 jest.mock('~/mcp/registry/MCPServersRegistry', () => ({
-  mcpServersRegistry: {
-    getServerConfig: jest.fn(),
-    getAllServerConfigs: jest.fn(),
-    getOAuthServers: jest.fn(),
+  MCPServersRegistry: {
+    getInstance: () => mockRegistryInstance,
   },
 }));
 
@@ -47,7 +50,7 @@ describe('MCPManager', () => {
 
     // Set up default mock implementations
     (MCPServersInitializer.initialize as jest.Mock).mockResolvedValue(undefined);
-    (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({});
+    (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({});
   });
 
   function mockAppConnections(
@@ -75,7 +78,7 @@ describe('MCPManager', () => {
 
   describe('getAppToolFunctions', () => {
     it('should return empty object when no servers have tool functions', async () => {
-      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
         server1: { type: 'stdio', command: 'test', args: [] },
         server2: { type: 'stdio', command: 'test2', args: [] },
       });
@@ -109,7 +112,7 @@ describe('MCPManager', () => {
         },
       };
 
-      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
         server1: {
           type: 'stdio',
           command: 'test',
@@ -145,7 +148,7 @@ describe('MCPManager', () => {
         },
       };
 
-      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
         server1: {
           type: 'stdio',
           command: 'test',
@@ -174,7 +177,7 @@ describe('MCPManager', () => {
 
   describe('formatInstructionsForContext', () => {
     it('should return empty string when no servers have instructions', async () => {
-      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
         server1: { type: 'stdio', command: 'test', args: [] },
         server2: { type: 'stdio', command: 'test2', args: [] },
       });
@@ -186,7 +189,7 @@ describe('MCPManager', () => {
     });
 
     it('should format instructions from multiple servers', async () => {
-      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
         github: {
           type: 'sse',
           url: 'https://api.github.com',
@@ -211,7 +214,7 @@ describe('MCPManager', () => {
     });
 
     it('should filter instructions by server names when provided', async () => {
-      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
         github: {
           type: 'sse',
           url: 'https://api.github.com',
@@ -243,7 +246,7 @@ describe('MCPManager', () => {
     });
 
     it('should handle servers with null or undefined instructions', async () => {
-      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
         github: {
           type: 'sse',
           url: 'https://api.github.com',
@@ -272,7 +275,7 @@ describe('MCPManager', () => {
     });
 
     it('should return empty string when filtered servers have no instructions', async () => {
-      (mcpServersRegistry.getAllServerConfigs as jest.Mock).mockResolvedValue({
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
         github: {
           type: 'sse',
           url: 'https://api.github.com',

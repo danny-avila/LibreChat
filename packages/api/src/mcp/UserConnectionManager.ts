@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { mcpServersRegistry as serversRegistry } from '~/mcp/registry/MCPServersRegistry';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPConnection } from './connection';
 import type * as t from './types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
@@ -61,7 +61,7 @@ export abstract class UserConnectionManager {
       );
     }
 
-    const config = await serversRegistry.getServerConfig(serverName, userId);
+    const config = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
 
     const userServerMap = this.userConnections.get(userId);
     let connection = forceNew ? undefined : userServerMap?.get(serverName);

@@ -20,12 +20,15 @@ const {
   ContentTypes,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
-const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
+const {
+  getMCPManager,
+  getFlowStateManager,
+  getOAuthReconnectionManager,
+  getMCPServersRegistry,
+} = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
 const { reinitMCPServer } = require('./Tools/mcp');
-const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
-const { mcpServersRegistry } = require('@librechat/api');
 
 /**
  * @param {object} params
@@ -435,7 +438,7 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
  * @returns {Object} Object containing mcpConfig, appConnections, userConnections, and oauthServers
  */
 async function getMCPSetupData(userId) {
-  const mcpConfig = await mcpServersRegistry.getAllServerConfigs(userId);
+  const mcpConfig = await getMCPServersRegistry().getAllServerConfigs(userId);
 
   if (!mcpConfig) {
     throw new Error('MCP config not found');
@@ -450,7 +453,7 @@ async function getMCPSetupData(userId) {
     logger.error(`[MCP][User: ${userId}] Error getting app connections:`, error);
   }
   const userConnections = mcpManager.getUserConnections(userId) || new Map();
-  const oauthServers = await mcpServersRegistry.getOAuthServers(userId);
+  const oauthServers = await getMCPServersRegistry().getOAuthServers(userId);
 
   return {
     mcpConfig,

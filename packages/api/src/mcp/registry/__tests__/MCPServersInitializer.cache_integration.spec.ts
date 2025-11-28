@@ -1,5 +1,6 @@
 import type * as t from '~/mcp/types';
 import type { MCPConnection } from '~/mcp/connection';
+import type { MCPServersRegistry as MCPServersRegistryType } from '../MCPServersRegistry';
 
 // Mock isLeader to always return true to avoid lock contention during parallel operations
 jest.mock('~/cluster', () => ({
@@ -9,7 +10,8 @@ jest.mock('~/cluster', () => ({
 
 describe('MCPServersInitializer Redis Integration Tests', () => {
   let MCPServersInitializer: typeof import('../MCPServersInitializer').MCPServersInitializer;
-  let registry: typeof import('../MCPServersRegistry').mcpServersRegistry;
+  let MCPServersRegistry: typeof import('../MCPServersRegistry').MCPServersRegistry;
+  let registry: MCPServersRegistryType;
   let registryStatusCache: typeof import('../cache/RegistryStatusCache').registryStatusCache;
   let MCPServerInspector: typeof import('../MCPServerInspector').MCPServerInspector;
   let MCPConnectionFactory: typeof import('~/mcp/MCPConnectionFactory').MCPConnectionFactory;
@@ -124,14 +126,20 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
     const connectionFactoryModule = await import('~/mcp/MCPConnectionFactory');
     const redisClients = await import('~/cache/redisClients');
     const leaderElectionModule = await import('~/cluster/LeaderElection');
+    const mongoose = await import('mongoose');
 
     MCPServersInitializer = initializerModule.MCPServersInitializer;
-    registry = registryModule.mcpServersRegistry;
+    MCPServersRegistry = registryModule.MCPServersRegistry;
     registryStatusCache = statusCacheModule.registryStatusCache;
     MCPServerInspector = inspectorModule.MCPServerInspector;
     MCPConnectionFactory = connectionFactoryModule.MCPConnectionFactory;
     keyvRedisClient = redisClients.keyvRedisClient;
     LeaderElection = leaderElectionModule.LeaderElection;
+
+    // Reset singleton and create new instance with mongoose
+    (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
+    MCPServersRegistry.createInstance(mongoose.default);
+    registry = MCPServersRegistry.getInstance();
 
     // Ensure Redis is connected
     if (!keyvRedisClient) throw new Error('Redis client is not initialized');

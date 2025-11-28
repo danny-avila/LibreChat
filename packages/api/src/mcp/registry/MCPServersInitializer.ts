@@ -5,7 +5,7 @@ import { logger } from '@librechat/data-schemas';
 import { ParsedServerConfig } from '~/mcp/types';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 import type * as t from '~/mcp/types';
-import { mcpServersRegistry as registry } from './MCPServersRegistry';
+import { MCPServersRegistry } from './MCPServersRegistry';
 
 const MCP_INIT_TIMEOUT_MS =
   process.env.MCP_INIT_TIMEOUT_MS != null ? parseInt(process.env.MCP_INIT_TIMEOUT_MS) : 30_000;
@@ -36,7 +36,7 @@ export class MCPServersInitializer {
     if (await isLeader()) {
       // Leader performs initialization
       await statusCache.reset();
-      await registry.reset();
+      await MCPServersRegistry.getInstance().reset();
       const serverNames = Object.keys(rawConfigs);
       await Promise.allSettled(
         serverNames.map((serverName) =>
@@ -59,7 +59,11 @@ export class MCPServersInitializer {
   /** Initializes a single server with all its metadata and adds it to appropriate collections */
   public static async initializeServer(serverName: string, rawConfig: t.MCPOptions): Promise<void> {
     try {
-      const config = await registry.addServer(serverName, rawConfig, 'CACHE');
+      const config = await MCPServersRegistry.getInstance().addServer(
+        serverName,
+        rawConfig,
+        'CACHE',
+      );
       MCPServersInitializer.logParsedConfig(serverName, config);
     } catch (error) {
       logger.error(`${MCPServersInitializer.prefix(serverName)} Failed to initialize:`, error);

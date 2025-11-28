@@ -1,18 +1,36 @@
 import * as t from '~/mcp/types';
-import { mcpServersRegistry as registry } from '~/mcp/registry/MCPServersRegistry';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 
 // Mock MCPServerInspector to avoid actual server connections
 jest.mock('~/mcp/registry/MCPServerInspector');
 
+// Mock ServerConfigsDB to avoid mongoose dependency
+jest.mock('~/mcp/registry/db/ServerConfigsDB', () => ({
+  ServerConfigsDB: jest.fn().mockImplementation(() => ({
+    get: jest.fn().mockResolvedValue(undefined),
+    getAll: jest.fn().mockResolvedValue({}),
+    add: jest.fn().mockResolvedValue(undefined),
+    update: jest.fn().mockResolvedValue(undefined),
+    remove: jest.fn().mockResolvedValue(undefined),
+    reset: jest.fn().mockResolvedValue(undefined),
+  })),
+}));
+
 const FIXED_TIME = 1699564800000;
 const originalDateNow = Date.now;
 Date.now = jest.fn(() => FIXED_TIME);
+
+// Mock mongoose for registry initialization
+const mockMongoose = {} as typeof import('mongoose');
+
 /**
  * Unit tests for MCPServersRegistry using in-memory cache.
  * For integration tests using Redis-backed cache, see MCPServersRegistry.cache_integration.spec.ts
  */
 describe('MCPServersRegistry', () => {
+  let registry: MCPServersRegistry;
+
   const testParsedConfig: t.ParsedServerConfig = {
     type: 'stdio',
     command: 'node',
@@ -41,6 +59,13 @@ describe('MCPServersRegistry', () => {
     Date.now = originalDateNow;
   });
   beforeEach(async () => {
+    // Reset the singleton instance before each test
+    (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
+
+    // Create a new instance for testing
+    MCPServersRegistry.createInstance(mockMongoose);
+    registry = MCPServersRegistry.getInstance();
+
     // Mock MCPServerInspector.inspect to return the config that's passed in
     jest
       .spyOn(MCPServerInspector, 'inspect')

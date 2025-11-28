@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ParsedServerConfig } from '~/mcp/types';
 import { IServerConfigsRepositoryInterface } from '../ServerConfigsRepositoryInterface';
-import { logger } from '@librechat/data-schemas';
+import { AllMethods, createMethods, logger } from '@librechat/data-schemas';
 
 /**
  * DB backed config storage
@@ -9,6 +9,11 @@ import { logger } from '@librechat/data-schemas';
  * Will handle Permission ACL
  */
 export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
+  private _dbMethods: AllMethods;
+  constructor(mongoose: typeof import('mongoose')) {
+    this._dbMethods = createMethods(mongoose);
+  }
+
   public async add(serverName: string, config: ParsedServerConfig, userId?: string): Promise<void> {
     logger.debug('ServerConfigsDB add not yet implemented');
     return;
@@ -40,6 +45,9 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
    */
   public async getAll(userId?: string): Promise<Record<string, ParsedServerConfig>> {
     logger.debug('ServerConfigsDB getAll not yet implemented');
+    const userInfo = await this._dbMethods.findUser({ _id: userId });
+    console.log(userInfo);
+    logger.debug('********DB Operation successful from MCP API PACKAGE********', userInfo);
     return {};
   }
 
