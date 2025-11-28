@@ -103,7 +103,7 @@ const fetchModels = async ({
       options.headers['OpenAI-Organization'] = process.env.OPENAI_ORGANIZATION;
     }
 
-    const url = new URL(`${baseURL}${azure ? '' : '/models'}`);
+    const url = new URL(`${baseURL.replace(/\/+$/, '')}${azure ? '' : '/models'}`);
     if (user && userIdQuery) {
       url.searchParams.append('user', user);
     }
