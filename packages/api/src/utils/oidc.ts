@@ -174,3 +174,58 @@ export function isOpenIDAvailable(): boolean {
 
   return !!(openidClientId && openidClientSecret && openidIssuer);
 }
+
+export interface ExtractedSubClaim {
+  sub: string | null;
+  error?: string;
+}
+
+/**
+ * Extracts the `sub` claim from an OpenID access token.
+ *
+ * This function decodes the JWT access token and extracts the OpenID provider's
+ * subject identifier (sub claim), which is typically a unique identifier for the
+ * user in the identity provider (e.g., Cognito sub).
+ *
+ * @param accessToken - The OpenID access token to decode
+ * @returns An object containing the sub claim or null if extraction fails
+ *
+ * @example
+ * ```typescript
+ * const result = extractSubFromAccessToken('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...');
+ * if (result.sub) {
+ *   console.log('Subject:', result.sub);
+ * }
+ * ```
+ */
+export function extractSubFromAccessToken(accessToken: string | undefined): ExtractedSubClaim {
+  if (!accessToken) {
+    logger.debug('[extractSubFromAccessToken] No access token provided');
+    return { sub: null, error: 'No access token provided' };
+  }
+
+  try {
+    // Decode JWT without verification (we only need to read the payload)
+    const parts = accessToken.split('.');
+    if (parts.length !== 3) {
+      logger.debug('[extractSubFromAccessToken] Invalid JWT format');
+      return { sub: null, error: 'Invalid JWT format' };
+    }
+
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+
+    if (!payload.sub) {
+      logger.debug('[extractSubFromAccessToken] No sub claim in access token');
+      return { sub: null, error: 'No sub claim in access token' };
+    }
+
+    logger.debug('[extractSubFromAccessToken] Successfully extracted sub claim:', payload.sub);
+    return { sub: payload.sub };
+  } catch (error) {
+    logger.error('[extractSubFromAccessToken] Failed to decode access token:', error);
+    return {
+      sub: null,
+      error: error instanceof Error ? error.message : 'Failed to decode access token',
+    };
+  }
+}
