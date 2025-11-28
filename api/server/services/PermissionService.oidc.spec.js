@@ -157,8 +157,8 @@ describe('syncUserOidcGroupsFromToken', () => {
       const tokenset = { access_token: 'token' };
 
       extractGroupsFromToken.mockReturnValue(['admin', 'user']);
-      Group.findOne = jest.fn().mockResolvedValue(null);
-      Group.create = jest.fn().mockResolvedValue({});
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
       Group.updateMany = jest.fn().mockResolvedValue({});
 
       await syncUserOidcGroupsFromToken(user, tokenset);
@@ -174,7 +174,7 @@ describe('syncUserOidcGroupsFromToken', () => {
     it('should use configured environment variables', async () => {
       process.env.OPENID_GROUPS_CLAIM_PATH = 'custom.path.groups';
       process.env.OPENID_GROUPS_TOKEN_KIND = 'id';
-      process.env.OPENID_GROUP_SOURCE = 'keycloak';
+      process.env.OPENID_GROUP_SOURCE = 'oidc';
 
       const user = {
         email: 'test@example.com',
@@ -184,8 +184,8 @@ describe('syncUserOidcGroupsFromToken', () => {
       const tokenset = { id_token: 'token' };
 
       extractGroupsFromToken.mockReturnValue(['group1']);
-      Group.findOne = jest.fn().mockResolvedValue(null);
-      Group.create = jest.fn().mockResolvedValue({});
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
       Group.updateMany = jest.fn().mockResolvedValue({});
 
       await syncUserOidcGroupsFromToken(user, tokenset);
@@ -207,14 +207,13 @@ describe('syncUserOidcGroupsFromToken', () => {
       const tokenset = { access_token: 'token' };
 
       extractGroupsFromToken.mockReturnValue(['admin', 'developer']);
-      Group.findOne = jest.fn().mockResolvedValue(null);
-      Group.create = jest.fn().mockResolvedValue({});
+      Group.find = jest.fn().mockResolvedValue([]); // No existing groups
+      Group.insertMany = jest.fn().mockResolvedValue([]);
       Group.updateMany = jest.fn().mockResolvedValue({});
 
       await syncUserOidcGroupsFromToken(user, tokenset);
 
-      expect(Group.create).toHaveBeenCalledTimes(2);
-      expect(Group.create).toHaveBeenCalledWith(
+      expect(Group.insertMany).toHaveBeenCalledWith(
         [
           {
             name: 'admin',
@@ -222,11 +221,6 @@ describe('syncUserOidcGroupsFromToken', () => {
             source: 'oidc',
             memberIds: ['user-123'],
           },
-        ],
-        {},
-      );
-      expect(Group.create).toHaveBeenCalledWith(
-        [
           {
             name: 'developer',
             idOnTheSource: 'developer',
@@ -250,21 +244,24 @@ describe('syncUserOidcGroupsFromToken', () => {
       
       const existingGroup = {
         _id: 'group-id',
+        idOnTheSource: 'admin',
         name: 'admin',
         memberIds: ['other-user'],
       };
       
-      Group.findOne = jest.fn().mockResolvedValue(existingGroup);
-      Group.updateOne = jest.fn().mockResolvedValue({});
+      Group.find = jest.fn().mockResolvedValue([existingGroup]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
       Group.updateMany = jest.fn().mockResolvedValue({});
 
       await syncUserOidcGroupsFromToken(user, tokenset);
 
-      expect(Group.updateOne).toHaveBeenCalledWith(
-        { _id: 'group-id' },
+      // Should call updateMany twice: once for adding user to groups, once for cleanup
+      expect(Group.updateMany).toHaveBeenCalledWith(
+        { _id: { $in: ['group-id'] } },
         { $addToSet: { memberIds: 'user-123' } },
         {},
       );
+      expect(Group.insertMany).not.toHaveBeenCalled();
     });
 
     it('should not add user if already a member', async () => {
@@ -279,17 +276,30 @@ describe('syncUserOidcGroupsFromToken', () => {
       
       const existingGroup = {
         _id: 'group-id',
+        idOnTheSource: 'admin',
         name: 'admin',
         memberIds: ['user-123', 'other-user'],
       };
       
-      Group.findOne = jest.fn().mockResolvedValue(existingGroup);
-      Group.updateOne = jest.fn().mockResolvedValue({});
+      Group.find = jest.fn().mockResolvedValue([existingGroup]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
       Group.updateMany = jest.fn().mockResolvedValue({});
 
       await syncUserOidcGroupsFromToken(user, tokenset);
 
-      expect(Group.updateOne).not.toHaveBeenCalled();
+      // Should not call insertMany or updateMany for adding user (user already member)
+      expect(Group.insertMany).not.toHaveBeenCalled();
+      // updateMany is only called for cleanup (removing from old groups)
+      expect(Group.updateMany).toHaveBeenCalledTimes(1);
+      expect(Group.updateMany).toHaveBeenCalledWith(
+        {
+          source: 'oidc',
+          memberIds: 'user-123',
+          idOnTheSource: { $nin: ['admin'] },
+        },
+        { $pull: { memberIds: 'user-123' } },
+        {},
+      );
     });
 
     it('should remove user from groups they no longer belong to', async () => {
@@ -301,8 +311,8 @@ describe('syncUserOidcGroupsFromToken', () => {
       const tokenset = { access_token: 'token' };
 
       extractGroupsFromToken.mockReturnValue(['admin', 'developer']);
-      Group.findOne = jest.fn().mockResolvedValue(null);
-      Group.create = jest.fn().mockResolvedValue({});
+      Group.find = jest.fn().mockResolvedValue([]); // No existing groups
+      Group.insertMany = jest.fn().mockResolvedValue([]);
       Group.updateMany = jest.fn().mockResolvedValue({});
 
       await syncUserOidcGroupsFromToken(user, tokenset);
@@ -327,6 +337,8 @@ describe('syncUserOidcGroupsFromToken', () => {
       const tokenset = { access_token: 'token' };
 
       extractGroupsFromToken.mockReturnValue([]);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
       Group.updateMany = jest.fn().mockResolvedValue({});
 
       await syncUserOidcGroupsFromToken(user, tokenset);
@@ -339,12 +351,12 @@ describe('syncUserOidcGroupsFromToken', () => {
         { $pull: { memberIds: 'user-123' } },
         {},
       );
-      expect(Group.findOne).not.toHaveBeenCalled();
-      expect(Group.create).not.toHaveBeenCalled();
+      expect(Group.find).not.toHaveBeenCalled();
+      expect(Group.insertMany).not.toHaveBeenCalled();
     });
 
     it('should use custom group source', async () => {
-      process.env.OPENID_GROUP_SOURCE = 'keycloak';
+      process.env.OPENID_GROUP_SOURCE = 'oidc';
 
       const user = {
         email: 'test@example.com',
@@ -354,18 +366,18 @@ describe('syncUserOidcGroupsFromToken', () => {
       const tokenset = { access_token: 'token' };
 
       extractGroupsFromToken.mockReturnValue(['admin']);
-      Group.findOne = jest.fn().mockResolvedValue(null);
-      Group.create = jest.fn().mockResolvedValue({});
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
       Group.updateMany = jest.fn().mockResolvedValue({});
 
       await syncUserOidcGroupsFromToken(user, tokenset);
 
-      expect(Group.create).toHaveBeenCalledWith(
+      expect(Group.insertMany).toHaveBeenCalledWith(
         [
           {
             name: 'admin',
             idOnTheSource: 'admin',
-            source: 'keycloak',
+            source: 'oidc',
             memberIds: ['user-123'],
           },
         ],
@@ -394,7 +406,7 @@ describe('syncUserOidcGroupsFromToken', () => {
       await expect(syncUserOidcGroupsFromToken(user, tokenset)).resolves.not.toThrow();
     });
 
-    it('should continue processing other groups if one fails', async () => {
+    it('should handle insertMany errors gracefully', async () => {
       const user = {
         email: 'test@example.com',
         provider: 'openid',
@@ -404,18 +416,16 @@ describe('syncUserOidcGroupsFromToken', () => {
 
       extractGroupsFromToken.mockReturnValue(['admin', 'developer', 'user']);
       
-      Group.findOne = jest.fn()
-        .mockResolvedValueOnce(null) // admin - will create
-        .mockRejectedValueOnce(new Error('Database error')) // developer - will fail
-        .mockResolvedValueOnce(null); // user - will create
-      
-      Group.create = jest.fn().mockResolvedValue({});
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockRejectedValue(new Error('Database error'));
       Group.updateMany = jest.fn().mockResolvedValue({});
 
       await syncUserOidcGroupsFromToken(user, tokenset);
 
-      // Should have attempted to create admin and user, but not developer
-      expect(Group.create).toHaveBeenCalledTimes(2);
+      // Should have attempted to insert groups
+      expect(Group.insertMany).toHaveBeenCalledTimes(1);
+      // Should still call cleanup updateMany despite insertMany error
+      expect(Group.updateMany).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -434,13 +444,13 @@ describe('syncUserOidcGroupsFromToken', () => {
       const session = { id: 'session-123' };
 
       extractGroupsFromToken.mockReturnValue(['admin']);
-      Group.findOne = jest.fn().mockResolvedValue(null);
-      Group.create = jest.fn().mockResolvedValue({});
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
       Group.updateMany = jest.fn().mockResolvedValue({});
 
       await syncUserOidcGroupsFromToken(user, tokenset, session);
 
-      expect(Group.create).toHaveBeenCalledWith(
+      expect(Group.insertMany).toHaveBeenCalledWith(
         expect.any(Array),
         { session },
       );
@@ -449,6 +459,146 @@ describe('syncUserOidcGroupsFromToken', () => {
         expect.any(Object),
         { session },
       );
+    });
+  });
+
+  describe('Security Features', () => {
+    beforeEach(() => {
+      process.env.OPENID_SYNC_GROUPS_FROM_TOKEN = 'true';
+    });
+
+    it('should limit groups to OPENID_MAX_GROUPS_PER_USER', async () => {
+      process.env.OPENID_MAX_GROUPS_PER_USER = '5';
+
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      const manyGroups = Array.from({ length: 10 }, (_, i) => `group${i}`);
+      extractGroupsFromToken.mockReturnValue(manyGroups);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      // Should only process first 5 groups
+      expect(Group.insertMany).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'group0' }),
+          expect.objectContaining({ name: 'group1' }),
+          expect.objectContaining({ name: 'group2' }),
+          expect.objectContaining({ name: 'group3' }),
+          expect.objectContaining({ name: 'group4' }),
+        ]),
+        expect.any(Object),
+      );
+      expect(Group.insertMany).toHaveBeenCalledWith(
+        expect.not.arrayContaining([
+          expect.objectContaining({ name: 'group5' }),
+        ]),
+        expect.any(Object),
+      );
+    });
+
+    it('should use default limit of 100 when OPENID_MAX_GROUPS_PER_USER is not set', async () => {
+      delete process.env.OPENID_MAX_GROUPS_PER_USER;
+
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      const manyGroups = Array.from({ length: 150 }, (_, i) => `group${i}`);
+      extractGroupsFromToken.mockReturnValue(manyGroups);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      // Should process 100 groups (default limit)
+      const insertCall = Group.insertMany.mock.calls[0][0];
+      expect(insertCall.length).toBe(100);
+    });
+
+    it('should pass exclusion pattern to extractGroupsFromToken', async () => {
+      process.env.OPENID_GROUPS_EXCLUDE_PATTERN = 'system-role,regex:^test-.*';
+
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin']);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      expect(extractGroupsFromToken).toHaveBeenCalledWith(
+        tokenset,
+        'realm_access.roles',
+        'access',
+        'system-role,regex:^test-.*',
+      );
+    });
+
+    it('should reject idOnTheSource with MongoDB operators', async () => {
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: '$ne',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin']);
+      Group.find = jest.fn();
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      // Should not call Group.find because validation failed
+      expect(Group.find).not.toHaveBeenCalled();
+    });
+
+    it('should reject idOnTheSource with curly braces', async () => {
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: '{malicious}',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin']);
+      Group.find = jest.fn();
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      expect(Group.find).not.toHaveBeenCalled();
+    });
+
+    it('should reject idOnTheSource with dots', async () => {
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user.admin',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin']);
+      Group.find = jest.fn();
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      expect(Group.find).not.toHaveBeenCalled();
     });
   });
 });
