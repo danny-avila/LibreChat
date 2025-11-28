@@ -2,6 +2,7 @@ import { AgentCapabilities, ArtifactModes } from 'librechat-data-provider';
 import type {
   AgentModelParameters,
   FallbackModelConfig,
+  MultimodalModelConfig,
   SupportContact,
   AgentProvider,
   GraphEdge,
@@ -33,6 +34,14 @@ export type AgentFormFallbackConfig = Omit<FallbackModelConfig, 'provider'> & {
   provider?: AgentProvider | OptionWithIcon;
 };
 
+/**
+ * Multimodal model configuration for agent forms.
+ * Extended from MultimodalModelConfig to support OptionWithIcon for provider dropdown.
+ */
+export type AgentFormMultimodalConfig = Omit<MultimodalModelConfig, 'provider'> & {
+  provider?: AgentProvider | OptionWithIcon;
+};
+
 export type AgentForm = {
   agent?: TAgentOption;
   id: string;
@@ -49,8 +58,10 @@ export type AgentForm = {
   [AgentCapabilities.artifacts]?: ArtifactModes | string;
   recursion_limit?: number;
   support_contact?: SupportContact;
-  /** Fallback model configuration for rate limiting or image handling */
+  /** Fallback model configuration for rate limiting or errors */
   fallback_config?: AgentFormFallbackConfig;
+  /** Multimodal model configuration for image, video or audio handling */
+  multimodal_config?: AgentFormMultimodalConfig;
   category: string;
   // Avatar management fields
   avatar_file?: File | null;

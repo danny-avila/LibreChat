@@ -248,7 +248,11 @@ export const defaultAgentFormValues = {
     provider: undefined,
     model: undefined,
     model_parameters: {},
-    trigger: undefined,
+  },
+  multimodal_config: {
+    provider: undefined,
+    model: undefined,
+    model_parameters: {},
   },
 };
 

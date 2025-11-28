@@ -154,6 +154,7 @@ export enum Panel {
   version = 'version',
   mcp = 'mcp',
   fallback = 'fallback',
+  multimodal = 'multimodal',
 }
 
 export type FileSetter =

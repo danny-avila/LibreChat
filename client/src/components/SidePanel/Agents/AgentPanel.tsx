@@ -24,6 +24,7 @@ import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
+import MultimodalModelPanel from './MultimodalModelPanel';
 import FallbackModelPanel from './FallbackModelPanel';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
@@ -74,6 +75,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
     category,
     support_contact,
     fallback_config: _fallback_config,
+    multimodal_config: _multimodal_config,
     avatar_action: avatarActionState,
   } = data;
 
@@ -96,6 +98,19 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
     };
   }
 
+  // Normalize multimodal_config provider to string value
+  let multimodal_config = undefined;
+  if (_multimodal_config?.provider || _multimodal_config?.model) {
+    const multimodalProvider =
+      typeof _multimodal_config.provider === 'string'
+        ? _multimodal_config.provider
+        : (_multimodal_config.provider as StringOption | undefined)?.value;
+    multimodal_config = {
+      ..._multimodal_config,
+      provider: multimodalProvider,
+    };
+  }
+
   return {
     payload: {
       name,
@@ -113,6 +128,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       category,
       support_contact,
       fallback_config,
+      multimodal_config,
       ...(shouldResetAvatar ? { avatar: null } : {}),
     },
     provider,
@@ -565,6 +581,13 @@ export default function AgentPanel() {
         )}
         {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.fallback && (
           <FallbackModelPanel
+            models={models}
+            providers={providers}
+            setActivePanel={setActivePanel}
+          />
+        )}
+        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.multimodal && (
+          <MultimodalModelPanel
             models={models}
             providers={providers}
             setActivePanel={setActivePanel}

@@ -18,7 +18,7 @@ import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 import { cn } from '~/utils';
 
-export default function FallbackModelPanel({
+export default function MultimodalModelPanel({
   providers,
   setActivePanel,
   models: modelsData,
@@ -27,80 +27,80 @@ export default function FallbackModelPanel({
 
   const { control, setValue } = useFormContext<AgentForm>();
 
-  const fallbackConfig = useWatch({ control, name: 'fallback_config' });
-  const fallbackModel = fallbackConfig?.model ?? null;
-  const fallbackProviderOption = fallbackConfig?.provider;
-  const fallbackModelParameters = fallbackConfig?.model_parameters ?? {};
+  const multimodalConfig = useWatch({ control, name: 'multimodal_config' });
+  const multimodalModel = multimodalConfig?.model ?? null;
+  const multimodalProviderOption = multimodalConfig?.provider;
+  const multimodalModelParameters = multimodalConfig?.model_parameters ?? {};
 
-  const fallbackProvider = useMemo(() => {
+  const multimodalProvider = useMemo(() => {
     const value =
-      typeof fallbackProviderOption === 'string'
-        ? fallbackProviderOption
-        : (fallbackProviderOption as StringOption | undefined)?.value;
+      typeof multimodalProviderOption === 'string'
+        ? multimodalProviderOption
+        : (multimodalProviderOption as StringOption | undefined)?.value;
     return value ?? '';
-  }, [fallbackProviderOption]);
+  }, [multimodalProviderOption]);
 
   const models = useMemo(
-    () => (fallbackProvider ? (modelsData[fallbackProvider] ?? []) : []),
-    [modelsData, fallbackProvider],
+    () => (multimodalProvider ? (modelsData[multimodalProvider] ?? []) : []),
+    [modelsData, multimodalProvider],
   );
 
   useEffect(() => {
-    const _model = fallbackModel ?? '';
-    if (fallbackProvider && _model) {
+    const _model = multimodalModel ?? '';
+    if (multimodalProvider && _model) {
       const modelExists = models.includes(_model);
       if (!modelExists) {
-        const newModels = modelsData[fallbackProvider] ?? [];
-        setValue('fallback_config.model', newModels[0] ?? '');
+        const newModels = modelsData[multimodalProvider] ?? [];
+        setValue('multimodal_config.model', newModels[0] ?? '');
       }
     }
 
-    if (fallbackProvider && !_model) {
-      setValue('fallback_config.model', models[0] ?? '');
+    if (multimodalProvider && !_model) {
+      setValue('multimodal_config.model', models[0] ?? '');
     }
-  }, [fallbackProvider, models, modelsData, setValue, fallbackModel]);
+  }, [multimodalProvider, models, modelsData, setValue, multimodalModel]);
 
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
 
   const bedrockRegions = useMemo(() => {
-    return endpointsConfig?.[fallbackProvider]?.availableRegions ?? [];
-  }, [endpointsConfig, fallbackProvider]);
+    return endpointsConfig?.[multimodalProvider]?.availableRegions ?? [];
+  }, [endpointsConfig, multimodalProvider]);
 
   const endpointType = useMemo(
-    () => getEndpointField(endpointsConfig, fallbackProvider, 'type'),
-    [fallbackProvider, endpointsConfig],
+    () => getEndpointField(endpointsConfig, multimodalProvider, 'type'),
+    [multimodalProvider, endpointsConfig],
   );
 
   const parameters = useMemo((): SettingDefinition[] => {
-    if (!fallbackProvider) {
+    if (!multimodalProvider) {
       return [];
     }
-    const customParams = endpointsConfig[fallbackProvider]?.customParams ?? {};
+    const customParams = endpointsConfig[multimodalProvider]?.customParams ?? {};
     const [combinedKey, endpointKey] = getSettingsKeys(
-      endpointType ?? fallbackProvider,
-      fallbackModel ?? '',
+      endpointType ?? multimodalProvider,
+      multimodalModel ?? '',
     );
     const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
     const defaultParams =
       agentParamSettings[combinedKey] ?? agentParamSettings[overriddenEndpointKey] ?? [];
     const overriddenParams =
-      endpointsConfig[fallbackProvider]?.customParams?.paramDefinitions ?? [];
+      endpointsConfig[multimodalProvider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
     return defaultParams
       .filter((param) => param != null)
       .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
-  }, [endpointType, endpointsConfig, fallbackModel, fallbackProvider]);
+  }, [endpointType, endpointsConfig, multimodalModel, multimodalProvider]);
 
   const setOption = (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
-    setValue(`fallback_config.model_parameters.${optionKey}`, value);
+    setValue(`multimodal_config.model_parameters.${optionKey}`, value);
   };
 
   const handleResetParameters = useCallback(() => {
-    setValue('fallback_config.model_parameters', {} as t.AgentModelParameters);
+    setValue('multimodal_config.model_parameters', {} as t.AgentModelParameters);
   }, [setValue]);
 
-  const handleClearFallback = useCallback(() => {
-    setValue('fallback_config', {
+  const handleClearMultimodal = useCallback(() => {
+    setValue('multimodal_config', {
       provider: undefined,
       model: undefined,
       model_parameters: {},
@@ -125,23 +125,25 @@ export default function FallbackModelPanel({
           </button>
         </div>
 
-        <div className="mb-2 mt-2 text-xl font-medium">{localize('com_agents_fallback_model')}</div>
+        <div className="mb-2 mt-2 text-xl font-medium">
+          {localize('com_agents_multimodal_model')}
+        </div>
         <p className="text-token-text-secondary text-sm">
-          {localize('com_agents_fallback_model_description')}
+          {localize('com_agents_multimodal_model_description')}
         </p>
       </div>
       <div className="p-2">
-        {/* Fallback Provider */}
+        {/* Multimodal Provider */}
         <div className="mb-4">
           <label
-            id="fallback-provider-label"
+            id="multimodal-provider-label"
             className="text-token-text-primary model-panel-label mb-2 block font-medium"
-            htmlFor="fallback-provider"
+            htmlFor="multimodal-provider"
           >
             {localize('com_ui_provider')}
           </label>
           <Controller
-            name="fallback_config.provider"
+            name="multimodal_config.provider"
             control={control}
             render={({ field }) => {
               const value =
@@ -172,27 +174,27 @@ export default function FallbackModelPanel({
             }}
           />
         </div>
-        {/* Fallback Model */}
+        {/* Multimodal Model */}
         <div className="model-panel-section mb-4">
           <label
-            id="fallback-model-label"
+            id="multimodal-model-label"
             className={cn(
               'text-token-text-primary model-panel-label mb-2 block font-medium',
-              !fallbackProvider && 'text-gray-500 dark:text-gray-400',
+              !multimodalProvider && 'text-gray-500 dark:text-gray-400',
             )}
-            htmlFor="fallback-model"
+            htmlFor="multimodal-model"
           >
             {localize('com_ui_model')}
           </label>
           <Controller
-            name="fallback_config.model"
+            name="multimodal_config.model"
             control={control}
             render={({ field }) => {
               return (
                 <ControlCombobox
                   selectedValue={field.value || ''}
                   selectPlaceholder={
-                    fallbackProvider
+                    multimodalProvider
                       ? localize('com_ui_select_model')
                       : localize('com_ui_select_provider_first')
                   }
@@ -202,7 +204,7 @@ export default function FallbackModelPanel({
                     label: model,
                     value: model,
                   }))}
-                  disabled={!fallbackProvider}
+                  disabled={!multimodalProvider}
                   className={cn('disabled:opacity-50')}
                   ariaLabel={localize('com_ui_model')}
                   isCollapsed={false}
@@ -235,7 +237,7 @@ export default function FallbackModelPanel({
                   defaultValue={defaultValue}
                   {...rest}
                   setOption={setOption as t.TSetOption}
-                  conversation={fallbackModelParameters as Partial<t.TConversation>}
+                  conversation={multimodalModelParameters as Partial<t.TConversation>}
                 />
               );
             })}
@@ -249,19 +251,19 @@ export default function FallbackModelPanel({
           type="button"
           onClick={handleResetParameters}
           className="btn btn-neutral flex flex-1 items-center justify-center gap-2 px-4 py-2 text-sm"
-          disabled={!fallbackProvider}
+          disabled={!multimodalProvider}
         >
           <RotateCcw className="h-4 w-4" aria-hidden="true" />
           {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
         </button>
-        {/* Clear Fallback Button */}
+        {/* Clear Multimodal Button */}
         <button
           type="button"
-          onClick={handleClearFallback}
+          onClick={handleClearMultimodal}
           className="btn btn-neutral flex flex-1 items-center justify-center gap-2 px-4 py-2 text-sm text-red-500 hover:text-red-600"
         >
           <Trash2 className="h-4 w-4" aria-hidden="true" />
-          {localize('com_agents_fallback_clear')}
+          {localize('com_agents_multimodal_clear')}
         </button>
       </div>
     </div>

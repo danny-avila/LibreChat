@@ -207,8 +207,7 @@ export type SupportContact = {
 
 /**
  * Fallback model configuration for agents.
- * Allows specifying alternative model/provider to use when the primary model fails (rate limits, etc)
- * or when images are present in the conversation.
+ * Allows specifying alternative model/provider to use when the primary model fails (rate limits, timeouts, etc).
  */
 export type FallbackModelConfig = {
   /** The fallback provider to use */
@@ -217,8 +216,19 @@ export type FallbackModelConfig = {
   model?: string | null;
   /** Model parameters for the fallback model */
   model_parameters?: AgentModelParameters;
-  /** When to use the fallback: 'on_error' for rate limits/errors, 'on_image' for image-containing messages */
-  trigger?: 'on_error' | 'on_image';
+};
+
+/**
+ * Multimodal model configuration for agents.
+ * Allows specifying alternative model/provider to use when images, videos or audio are present in the conversation.
+ */
+export type MultimodalModelConfig = {
+  /** The multimodal provider to use */
+  provider?: AgentProvider;
+  /** The multimodal model to use */
+  model?: string | null;
+  /** Model parameters for the multimodal model */
+  model_parameters?: AgentModelParameters;
 };
 
 export type Agent = {
@@ -241,8 +251,10 @@ export type Agent = {
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
-  /** Fallback model configuration for rate limiting or image handling */
+  /** Fallback model configuration for rate limiting or errors */
   fallback_config?: FallbackModelConfig;
+  /** Multimodal model configuration for image, video or audio handling */
+  multimodal_config?: MultimodalModelConfig;
   conversation_starters?: string[];
   /** @deprecated Use ACL permissions instead */
   isCollaborative?: boolean;
@@ -283,6 +295,7 @@ export type AgentCreateParams = {
   | 'category'
   | 'support_contact'
   | 'fallback_config'
+  | 'multimodal_config'
 >;
 
 export type AgentUpdateParams = {
@@ -310,6 +323,7 @@ export type AgentUpdateParams = {
   | 'category'
   | 'support_contact'
   | 'fallback_config'
+  | 'multimodal_config'
 >;
 
 export type AgentListParams = {

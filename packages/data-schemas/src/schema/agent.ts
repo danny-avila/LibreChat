@@ -111,6 +111,10 @@ const agentSchema = new Schema<IAgent>(
       type: Schema.Types.Mixed,
       default: undefined,
     },
+    multimodal_config: {
+      type: Schema.Types.Mixed,
+      default: undefined,
+    },
     is_promoted: {
       type: Boolean,
       default: false,
