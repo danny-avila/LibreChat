@@ -18,6 +18,9 @@ import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 import { cn } from '~/utils';
 
+/** Default fallback trigger when none is specified */
+const DEFAULT_FALLBACK_TRIGGER = 'on_error';
+
 export default function FallbackModelPanel({
   providers,
   setActivePanel,
@@ -153,7 +156,7 @@ export default function FallbackModelPanel({
             name="fallback_config.trigger"
             control={control}
             render={({ field }) => {
-              const value = field.value ?? 'on_error';
+              const value = field.value ?? DEFAULT_FALLBACK_TRIGGER;
               const displayValue =
                 localizedTriggerOptions.find((opt) => opt.value === value)?.label ?? value;
 
