@@ -5,10 +5,14 @@ import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPConnection } from '~/mcp/connection';
 import { registryStatusCache } from '~/mcp/registry/cache/RegistryStatusCache';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
-import { mcpServersRegistry as registry } from '~/mcp/registry/MCPServersRegistry';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+
 const FIXED_TIME = 1699564800000;
 const originalDateNow = Date.now;
 Date.now = jest.fn(() => FIXED_TIME);
+
+// Mock mongoose for registry initialization
+const mockMongoose = {} as typeof import('mongoose');
 
 // Mock external dependencies
 jest.mock('../../MCPConnectionFactory');
@@ -26,6 +30,18 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
+// Mock ServerConfigsDB to avoid mongoose dependency
+jest.mock('~/mcp/registry/db/ServerConfigsDB', () => ({
+  ServerConfigsDB: jest.fn().mockImplementation(() => ({
+    get: jest.fn().mockResolvedValue(undefined),
+    getAll: jest.fn().mockResolvedValue({}),
+    add: jest.fn().mockResolvedValue(undefined),
+    update: jest.fn().mockResolvedValue(undefined),
+    remove: jest.fn().mockResolvedValue(undefined),
+    reset: jest.fn().mockResolvedValue(undefined),
+  })),
+}));
+
 const mockLogger = logger as jest.Mocked<typeof logger>;
 const mockInspect = MCPServerInspector.inspect as jest.MockedFunction<
   typeof MCPServerInspector.inspect
@@ -33,6 +49,7 @@ const mockInspect = MCPServerInspector.inspect as jest.MockedFunction<
 
 describe('MCPServersInitializer', () => {
   let mockConnection: jest.Mocked<MCPConnection>;
+  let registry: MCPServersRegistry;
 
   afterAll(() => {
     Date.now = originalDateNow;
@@ -134,6 +151,13 @@ describe('MCPServersInitializer', () => {
   };
 
   beforeEach(async () => {
+    // Reset the singleton instance before each test
+    (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
+
+    // Create a new instance for testing
+    MCPServersRegistry.createInstance(mockMongoose);
+    registry = MCPServersRegistry.getInstance();
+
     // Setup MCPConnection mock
     mockConnection = {
       disconnect: jest.fn().mockResolvedValue(undefined),

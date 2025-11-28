@@ -14,13 +14,35 @@ import { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInte
  *
  * Query priority: Cache configs are checked first, then DB configs.
  */
-class MCPServersRegistry {
+export class MCPServersRegistry {
+  private static instance: MCPServersRegistry;
+
   private readonly dbConfigsRepo: IServerConfigsRepositoryInterface;
   private readonly cacheConfigsRepo: IServerConfigsRepositoryInterface;
 
-  constructor() {
-    this.dbConfigsRepo = new ServerConfigsDB();
+  constructor(mongoose: typeof import('mongoose')) {
+    this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create('App', false);
+  }
+
+  /** Creates and initializes the singleton MCPServersRegistry instance */
+  public static createInstance(mongoose: typeof import('mongoose')): MCPServersRegistry {
+    if (!mongoose) {
+      throw new Error('MCP Registry instance creation failed. mongoose is undefined');
+    }
+    if (MCPServersRegistry.instance) {
+      return MCPServersRegistry.instance;
+    }
+    MCPServersRegistry.instance = new MCPServersRegistry(mongoose);
+    return MCPServersRegistry.instance;
+  }
+
+  /** Returns the singleton MCPServersRegistry instance */
+  public static getInstance(): MCPServersRegistry {
+    if (!MCPServersRegistry.instance) {
+      throw new Error('MCPServersRegistry has not been initialized.');
+    }
+    return MCPServersRegistry.instance;
   }
 
   public async getServerConfig(
@@ -100,5 +122,3 @@ class MCPServersRegistry {
     }
   }
 }
-
-export const mcpServersRegistry = new MCPServersRegistry();
