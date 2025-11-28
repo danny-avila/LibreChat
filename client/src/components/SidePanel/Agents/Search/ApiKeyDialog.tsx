@@ -117,6 +117,20 @@ export default function ApiKeyDialog({
         },
       },
     },
+    {
+      key: RerankerTypes.SIMPLE,
+      label: localize('com_ui_web_search_reranker_simple'),
+      inputs: {
+        simpleRerankerInstanceUrl: {
+          placeholder: localize('com_ui_web_search_reranker_simple_url'),
+          type: 'text' as const,
+          link: {
+            url: 'https://localhost:8080/rerank',
+            text: localize('com_ui_web_search_reranker_simple_url'),
+          },
+        },
+      },
+    },
   ];
 
   const scraperOptions: DropdownOption[] = [

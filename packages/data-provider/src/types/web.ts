@@ -12,7 +12,7 @@ export enum DATE_RANGE {
 }
 
 export type SearchProvider = 'serper' | 'searxng';
-export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'none';
+export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'simple' | 'none';
 
 export interface Highlight {
   score: number;
@@ -180,6 +180,7 @@ export interface SearchToolConfig extends SearchConfig, ProcessSourcesConfig, Fi
   jinaApiKey?: string;
   jinaApiUrl?: string;
   cohereApiKey?: string;
+  simpleRerankerInstanceUrl?: string;
   rerankerType?: RerankerType;
   onSearchResults?: (results: SearchResult, runnableConfig?: RunnableConfig) => void;
   onGetHighlights?: (link: string) => void;
