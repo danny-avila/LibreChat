@@ -28,6 +28,14 @@ export enum SystemRoles {
    * The default user role
    */
   USER = 'USER',
+  /**
+   * The Basic tier role
+   */
+  BASIC = 'BASIC',
+  /**
+   * The Pro tier role
+   */
+  PRO = 'PRO',
 }
 
 export const roleSchema = z.object({
@@ -95,6 +103,14 @@ const defaultRolesSchema = z.object({
     name: z.literal(SystemRoles.USER),
     permissions: permissionsSchema,
   }),
+  [SystemRoles.BASIC]: roleSchema.extend({
+    name: z.literal(SystemRoles.BASIC),
+    permissions: permissionsSchema,
+  }),
+  [SystemRoles.PRO]: roleSchema.extend({
+    name: z.literal(SystemRoles.PRO),
+    permissions: permissionsSchema,
+  }),
 });
 
 export const roleDefaults = defaultRolesSchema.parse({
@@ -149,6 +165,13 @@ export const roleDefaults = defaultRolesSchema.parse({
       },
     },
   },
+  /**
+   * USER role: Free tier with basic access
+   * - Most features use default permissions (empty object {})
+   * - No marketplace access
+   * - Cannot view other users/groups/roles
+   * - Token balance: 100K tokens/month
+   */
   [SystemRoles.USER]: {
     name: SystemRoles.USER,
     permissions: {
@@ -170,6 +193,91 @@ export const roleDefaults = defaultRolesSchema.parse({
       },
       [PermissionTypes.FILE_SEARCH]: {},
       [PermissionTypes.FILE_CITATIONS]: {},
+    },
+  },
+  /**
+   * BASIC role: Entry paid tier
+   * - Same permissions as USER role
+   * - Higher token balance: 2M tokens/month
+   * - No marketplace access
+   */
+  [SystemRoles.BASIC]: {
+    name: SystemRoles.BASIC,
+    permissions: {
+      [PermissionTypes.PROMPTS]: {},
+      [PermissionTypes.BOOKMARKS]: {},
+      [PermissionTypes.MEMORIES]: {},
+      [PermissionTypes.AGENTS]: {},
+      [PermissionTypes.MULTI_CONVO]: {},
+      [PermissionTypes.TEMPORARY_CHAT]: {},
+      [PermissionTypes.RUN_CODE]: {},
+      [PermissionTypes.WEB_SEARCH]: {},
+      [PermissionTypes.PEOPLE_PICKER]: {
+        [Permissions.VIEW_USERS]: false,
+        [Permissions.VIEW_GROUPS]: false,
+        [Permissions.VIEW_ROLES]: false,
+      },
+      [PermissionTypes.MARKETPLACE]: {
+        [Permissions.USE]: false,
+      },
+      [PermissionTypes.FILE_SEARCH]: {},
+      [PermissionTypes.FILE_CITATIONS]: {},
+    },
+  },
+  /**
+   * PRO role: Premium tier with full feature access
+   * - All features explicitly enabled
+   * - Marketplace access enabled
+   * - Enhanced prompts, memories, and agents capabilities
+   * - Highest token balance: 20M tokens/month
+   */
+  [SystemRoles.PRO]: {
+    name: SystemRoles.PRO,
+    permissions: {
+      [PermissionTypes.PROMPTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+      },
+      [PermissionTypes.BOOKMARKS]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.MEMORIES]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.UPDATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.OPT_OUT]: true,
+      },
+      [PermissionTypes.AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+      },
+      [PermissionTypes.MULTI_CONVO]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.TEMPORARY_CHAT]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.RUN_CODE]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.WEB_SEARCH]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.PEOPLE_PICKER]: {
+        [Permissions.VIEW_USERS]: false,
+        [Permissions.VIEW_GROUPS]: false,
+        [Permissions.VIEW_ROLES]: false,
+      },
+      [PermissionTypes.MARKETPLACE]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.FILE_SEARCH]: {
+        [Permissions.USE]: true,
+      },
+      [PermissionTypes.FILE_CITATIONS]: {
+        [Permissions.USE]: true,
+      },
     },
   },
 });

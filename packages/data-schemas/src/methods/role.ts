@@ -10,7 +10,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose')) {
   async function initializeRoles() {
     const Role = mongoose.models.Role;
 
-    for (const roleName of [SystemRoles.ADMIN, SystemRoles.USER]) {
+    for (const roleName of Object.values(SystemRoles)) {
       let role = await Role.findOne({ name: roleName });
       const defaultPerms = roleDefaults[roleName].permissions;
 

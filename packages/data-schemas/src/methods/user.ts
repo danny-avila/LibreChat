@@ -200,6 +200,56 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
+   * Update a user's tier (role) and their associated balance configuration.
+   * This is used when upgrading or downgrading a user between tiers.
+   */
+  async function updateUserTier(
+    userId: string,
+    newRole: string,
+    balanceConfig: BalanceConfig,
+  ): Promise<IUser | null> {
+    const User = mongoose.models.User;
+    const Balance = mongoose.models.Balance;
+
+    // Update the user's role
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: { role: newRole } },
+      { new: true, runValidators: true },
+    ).lean();
+
+    if (!updatedUser) {
+      return null;
+    }
+
+    // Update the user's balance configuration to match the new tier
+    if (balanceConfig?.enabled) {
+      const update: {
+        $set: {
+          autoRefillEnabled: boolean;
+          refillIntervalValue: number;
+          refillIntervalUnit: string;
+          refillAmount: number;
+        };
+      } = {
+        $set: {
+          autoRefillEnabled: balanceConfig.autoRefillEnabled ?? false,
+          refillIntervalValue: balanceConfig.refillIntervalValue ?? 30,
+          refillIntervalUnit: balanceConfig.refillIntervalUnit ?? 'days',
+          refillAmount: balanceConfig.refillAmount ?? 0,
+        },
+      };
+
+      await Balance.findOneAndUpdate({ user: userId }, update, {
+        upsert: true,
+        new: true,
+      }).lean();
+    }
+
+    return updatedUser as IUser;
+  }
+
+  /**
    * Search for users by pattern matching on name, email, or username (case-insensitive)
    * @param searchPattern - The pattern to search for
    * @param limit - Maximum number of results to return
@@ -284,6 +334,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     countUsers,
     createUser,
     updateUser,
+    updateUserTier,
     searchUsers,
     getUserById,
     generateToken,
