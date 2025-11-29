@@ -11,8 +11,8 @@ import store from '~/store';
 
 export default function FilterPrompts({ className = '' }: { className?: string }) {
   const localize = useLocalize();
-  const { name, setName } = usePromptGroupsContext();
-  const { categories } = useCategories('h-4 w-4');
+  const { name, setName, hasAccess } = usePromptGroupsContext();
+  const { categories } = useCategories({ className: 'h-4 w-4', hasAccess });
   const [displayName, setDisplayName] = useState(name || '');
   const [isSearching, setIsSearching] = useState(false);
   const [categoryFilter, setCategory] = useRecoilState(store.promptsCategory);
@@ -87,7 +87,7 @@ export default function FilterPrompts({ className = '' }: { className?: string }
         value={categoryFilter || SystemCategories.ALL}
         onChange={onSelect}
         options={filterOptions}
-        className="bg-transparent"
+        className="rounded-lg bg-transparent"
         icon={<ListFilter className="h-4 w-4" />}
         label="Filter: "
         ariaLabel={localize('com_ui_filter_prompts')}

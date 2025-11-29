@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import type { ZodError } from 'zod';
-import type { TModelsConfig } from './types';
+import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
+import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
-import { apiBaseUrl } from './api-endpoints';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -155,8 +155,10 @@ export type TAzureGroupMap = Record<
 
 export type TValidatedAzureConfig = {
   modelNames: string[];
-  modelGroupMap: TAzureModelGroupMap;
   groupMap: TAzureGroupMap;
+  assistantModels?: string[];
+  assistantGroups?: string[];
+  modelGroupMap: TAzureModelGroupMap;
 };
 
 export type TAzureConfigValidationResult = TValidatedAzureConfig & {
@@ -180,6 +182,7 @@ export enum AgentCapabilities {
   web_search = 'web_search',
   artifacts = 'artifacts',
   actions = 'actions',
+  context = 'context',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -211,6 +214,14 @@ export const bedrockEndpointSchema = baseEndpointSchema.merge(
   }),
 );
 
+const modelItemSchema = z.union([
+  z.string(),
+  z.object({
+    name: z.string(),
+    description: z.string().optional(),
+  }),
+]);
+
 export const assistantEndpointSchema = baseEndpointSchema.merge(
   z.object({
     /* assistants specific */
@@ -236,7 +247,7 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
     apiKey: z.string().optional(),
     models: z
       .object({
-        default: z.array(z.string()).min(1),
+        default: z.array(modelItemSchema).min(1),
         fetch: z.boolean().optional(),
         userIdQuery: z.boolean().optional(),
       })
@@ -253,6 +264,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.web_search,
   AgentCapabilities.artifacts,
   AgentCapabilities.actions,
+  AgentCapabilities.context,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
@@ -295,7 +307,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     apiKey: z.string(),
     baseURL: z.string(),
     models: z.object({
-      default: z.array(z.string()).min(1),
+      default: z.array(modelItemSchema).min(1),
       fetch: z.boolean().optional(),
       userIdQuery: z.boolean().optional(),
     }),
@@ -632,6 +644,7 @@ export type TStartupConfig = {
   helpAndFaqURL: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
+  modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
@@ -646,7 +659,7 @@ export type TStartupConfig = {
   minPasswordLength?: number;
   webSearch?: {
     searchProvider?: SearchProviders;
-    scraperType?: ScraperTypes;
+    scraperProvider?: ScraperProviders;
     rerankerType?: RerankerTypes;
   };
   mcpServers?: Record<
@@ -665,6 +678,7 @@ export type TStartupConfig = {
     }
   >;
   mcpPlaceholder?: string;
+  conversationImportMaxFileSize?: number;
 };
 
 export enum OCRStrategy {
@@ -686,7 +700,7 @@ export enum SearchProviders {
   SEARXNG = 'searxng',
 }
 
-export enum ScraperTypes {
+export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
 }
@@ -708,11 +722,12 @@ export const webSearchSchema = z.object({
   searxngApiKey: z.string().optional().default('${SEARXNG_API_KEY}'),
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
+  firecrawlVersion: z.string().optional().default('${FIRECRAWL_VERSION}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
-  scraperType: z.nativeEnum(ScraperTypes).optional(),
+  scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
   scraperTimeout: z.number().optional(),
   safeSearch: z.nativeEnum(SafeSearchTypes).default(SafeSearchTypes.MODERATE),
@@ -751,7 +766,7 @@ export const webSearchSchema = z.object({
     .optional(),
 });
 
-export type TWebSearchConfig = z.infer<typeof webSearchSchema>;
+export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
 
 export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
@@ -799,7 +814,7 @@ export const memorySchema = z.object({
     .optional(),
 });
 
-export type TMemoryConfig = z.infer<typeof memorySchema>;
+export type TMemoryConfig = DeepPartial<z.infer<typeof memorySchema>>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
@@ -862,9 +877,27 @@ export const configSchema = z.object({
     .optional(),
 });
 
-export const getConfigDefaults = () => getSchemaDefaults(configSchema);
+/**
+ * Recursively makes all properties of T optional, including nested objects.
+ * Handles arrays, primitives, functions, and Date objects correctly.
+ */
+export type DeepPartial<T> = T extends (infer U)[]
+  ? DeepPartial<U>[]
+  : T extends ReadonlyArray<infer U>
+    ? ReadonlyArray<DeepPartial<U>>
+    : // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+      T extends Function
+      ? T
+      : T extends Date
+        ? T
+        : T extends object
+          ? {
+              [P in keyof T]?: DeepPartial<T[P]>;
+            }
+          : T;
 
-export type TCustomConfig = z.infer<typeof configSchema>;
+export const getConfigDefaults = () => getSchemaDefaults(configSchema);
+export type TCustomConfig = DeepPartial<z.infer<typeof configSchema>>;
 export type TCustomEndpoints = z.infer<typeof customEndpointsSchema>;
 
 export type TProviderSchema =
@@ -880,6 +913,7 @@ export enum KnownEndpoints {
   fireworks = 'fireworks',
   deepseek = 'deepseek',
   groq = 'groq',
+  helicone = 'helicone',
   huggingface = 'huggingface',
   mistral = 'mistral',
   mlx = 'mlx',
@@ -889,11 +923,13 @@ export enum KnownEndpoints {
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
   unify = 'unify',
+  vercel = 'vercel',
   xai = 'xai',
 }
 
 export enum FetchTokenConfig {
   openrouter = KnownEndpoints.openrouter,
+  helicone = KnownEndpoints.helicone,
 }
 
 export const defaultEndpoints: EModelEndpoint[] = [
@@ -925,9 +961,22 @@ export const alternateName = {
   [KnownEndpoints.ollama]: 'Ollama',
   [KnownEndpoints.deepseek]: 'DeepSeek',
   [KnownEndpoints.xai]: 'xAI',
+  [KnownEndpoints.vercel]: 'Vercel',
+  [KnownEndpoints.helicone]: 'Helicone',
 };
 
 const sharedOpenAIModels = [
+  'gpt-5.1',
+  'gpt-5.1-chat-latest',
+  'gpt-5.1-codex',
+  'gpt-5.1-codex-mini',
+  'gpt-5',
+  'gpt-5-mini',
+  'gpt-5-nano',
+  'gpt-5-chat-latest',
+  'gpt-4.1',
+  'gpt-4.1-mini',
+  'gpt-4.1-nano',
   'gpt-4o-mini',
   'gpt-4o',
   'gpt-4.5-preview',
@@ -950,10 +999,17 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-sonnet-4-5',
+  'claude-sonnet-4-5-20250929',
+  'claude-haiku-4-5',
+  'claude-haiku-4-5-20251001',
+  'claude-opus-4-1',
+  'claude-opus-4-1-20250805',
+  'claude-opus-4-5',
   'claude-sonnet-4-20250514',
-  'claude-sonnet-4-latest',
+  'claude-sonnet-4-0',
   'claude-opus-4-20250514',
-  'claude-opus-4-latest',
+  'claude-opus-4-0',
   'claude-3-7-sonnet-latest',
   'claude-3-7-sonnet-20250219',
   'claude-3-5-haiku-20241022',
@@ -973,6 +1029,9 @@ const sharedAnthropicModels = [
 ];
 
 export const bedrockModels = [
+  'anthropic.claude-sonnet-4-5-20250929-v1:0',
+  'anthropic.claude-haiku-4-5-20251001-v1:0',
+  'anthropic.claude-opus-4-1-20250805-v1:0',
   'anthropic.claude-3-5-sonnet-20241022-v2:0',
   'anthropic.claude-3-5-sonnet-20240620-v1:0',
   'anthropic.claude-3-5-haiku-20241022-v1:0',
@@ -1011,18 +1070,13 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 2.5 Models
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
     // Gemini 2.0 Models
     'gemini-2.0-flash-001',
-    'gemini-2.0-flash-exp',
     'gemini-2.0-flash-lite',
-    'gemini-2.0-pro-exp-02-05',
-    // Gemini 1.5 Models
-    'gemini-1.5-flash-001',
-    'gemini-1.5-flash-002',
-    'gemini-1.5-pro-001',
-    'gemini-1.5-pro-002',
-    // Gemini 1.0 Models
-    'gemini-1.0-pro-001',
   ],
   [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
@@ -1105,6 +1159,7 @@ export const visionModels = [
   'gemini-exp',
   'gemini-1.5',
   'gemini-2',
+  'gemini-2.5',
   'gemini-3',
   'moondream',
   'llama3.2-vision',
@@ -1410,6 +1465,10 @@ export enum ErrorTypes {
    * Generic Authentication failure
    */
   AUTH_FAILED = 'auth_failed',
+  /**
+   * Model refused to respond (content policy violation)
+   */
+  REFUSAL = 'refusal',
 }
 
 /**
@@ -1528,9 +1587,9 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.8.0-rc4',
+  VERSION = 'v0.8.1-rc2',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.2.9',
+  CONFIG_VERSION = '1.3.1',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
@@ -1563,11 +1622,17 @@ export enum Constants {
   mcp_prefix = 'mcp_',
   /** Unique value to indicate all MCP servers. For backend use only. */
   mcp_all = 'sys__all__sys',
+  /** Unique value to indicate clearing MCP servers from UI state. For frontend use only. */
+  mcp_clear = 'sys__clear__sys',
   /**
    * Unique value to indicate the MCP tool was added to an agent.
    * This helps inform the UI if the mcp server was previously added.
    * */
   mcp_server = 'sys__server__sys',
+  /**
+   * Handoff Tool Name Prefix
+   */
+  LC_TRANSFER_TO_ = 'lc_transfer_to_',
   /** Placeholder Agent ID for Ephemeral Agents */
   EPHEMERAL_AGENT_ID = 'ephemeral',
 }
@@ -1686,3 +1751,24 @@ export const specialVariables = {
 };
 
 export type TSpecialVarLabel = `com_ui_special_var_${keyof typeof specialVariables}`;
+
+/**
+ * Retrieves a specific field from the endpoints configuration for a given endpoint key.
+ * Does not infer or default any endpoint type when absent.
+ */
+export function getEndpointField<
+  K extends TConfig[keyof TConfig] extends never ? never : keyof TConfig,
+>(
+  endpointsConfig: TEndpointsConfig | undefined | null,
+  endpoint: EModelEndpoint | string | null | undefined,
+  property: K,
+): TConfig[K] | undefined {
+  if (!endpointsConfig || endpoint === null || endpoint === undefined) {
+    return undefined;
+  }
+  const config = endpointsConfig[endpoint];
+  if (!config) {
+    return undefined;
+  }
+  return config[property];
+}

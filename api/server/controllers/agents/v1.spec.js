@@ -47,6 +47,7 @@ jest.mock('~/server/services/PermissionService', () => ({
   findPubliclyAccessibleResources: jest.fn().mockResolvedValue([]),
   grantPermission: jest.fn(),
   hasPublicPermission: jest.fn().mockResolvedValue(false),
+  checkPermission: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('~/models', () => ({
@@ -512,6 +513,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       mockReq.params.id = existingAgentId;
       mockReq.body = {
         tool_resources: {
+          /** Legacy conversion from `ocr` to `context` */
           ocr: {
             file_ids: ['ocr1', 'ocr2'],
           },
@@ -531,7 +533,8 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
       const updatedAgent = mockRes.json.mock.calls[0][0];
       expect(updatedAgent.tool_resources).toBeDefined();
-      expect(updatedAgent.tool_resources.ocr).toBeDefined();
+      expect(updatedAgent.tool_resources.ocr).toBeUndefined();
+      expect(updatedAgent.tool_resources.context).toBeDefined();
       expect(updatedAgent.tool_resources.execute_code).toBeDefined();
       expect(updatedAgent.tool_resources.invalid_tool).toBeUndefined();
     });
@@ -569,6 +572,68 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       // Verify in database
       const agentInDb = await Agent.findOne({ id: existingAgentId });
       expect(updatedAgent.version).toBe(agentInDb.versions.length);
+    });
+
+    test('should allow resetting avatar when value is explicitly null', async () => {
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          avatar: {
+            filepath: 'https://example.com/avatar.png',
+            source: 's3',
+          },
+        },
+      );
+
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        avatar: null,
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.avatar).toBeNull();
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.avatar).toBeNull();
+    });
+
+    test('should ignore avatar field when value is undefined', async () => {
+      const originalAvatar = {
+        filepath: 'https://example.com/original.png',
+        source: 's3',
+      };
+      await Agent.updateOne({ id: existingAgentId }, { avatar: originalAvatar });
+
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        avatar: undefined,
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.avatar.filepath).toBe(originalAvatar.filepath);
+      expect(agentInDb.avatar.source).toBe(originalAvatar.source);
+    });
+
+    test('should not bump version when no mutable fields change', async () => {
+      const existingAgent = await Agent.findOne({ id: existingAgentId });
+      const originalVersionCount = existingAgent.versions.length;
+
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        avatar: undefined,
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.versions.length).toBe(originalVersionCount);
     });
 
     test('should handle validation errors properly', async () => {

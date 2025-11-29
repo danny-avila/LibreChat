@@ -1,6 +1,7 @@
-import { CopyIcon } from 'lucide-react';
+import { CopyPlus } from 'lucide-react';
 import { useToastContext, Button } from '@librechat/client';
 import { useDuplicateAgentMutation } from '~/data-provider';
+import { isEphemeralAgent } from '~/common';
 import { useLocalize } from '~/hooks';
 
 export default function DuplicateAgent({ agent_id }: { agent_id: string }) {
@@ -23,7 +24,7 @@ export default function DuplicateAgent({ agent_id }: { agent_id: string }) {
     },
   });
 
-  if (!agent_id) {
+  if (isEphemeralAgent(agent_id)) {
     return null;
   }
 
@@ -40,7 +41,7 @@ export default function DuplicateAgent({ agent_id }: { agent_id: string }) {
       onClick={handleDuplicate}
     >
       <div className="flex w-full items-center justify-center gap-2 text-primary">
-        <CopyIcon className="size-4" />
+        <CopyPlus className="size-4" />
       </div>
     </Button>
   );

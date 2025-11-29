@@ -1,15 +1,15 @@
 import { EventEmitter } from 'events';
+import { logger } from '@librechat/data-schemas';
 import { fetch as undiciFetch, Agent } from 'undici';
 import {
   StdioClientTransport,
   getDefaultEnvironment,
 } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { logger } from '@librechat/data-schemas';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
+import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type {
@@ -18,8 +18,10 @@ import type {
   Response as UndiciResponse,
 } from 'undici';
 import type { MCPOAuthTokens } from './oauth/types';
-import { mcpConfig } from './mcpConfig';
+import { withTimeout } from '~/utils/promise';
 import type * as t from './types';
+import { sanitizeUrlForLogging } from './utils';
+import { mcpConfig } from './mcpConfig';
 
 type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -238,7 +240,9 @@ export class MCPConnection extends EventEmitter {
           }
           this.url = options.url;
           const url = new URL(options.url);
-          logger.info(`${this.getLogPrefix()} Creating SSE transport: ${url.toString()}`);
+          logger.info(
+            `${this.getLogPrefix()} Creating SSE transport: ${sanitizeUrlForLogging(url)}`,
+          );
           const abortController = new AbortController();
 
           /** Add OAuth token to headers if available */
@@ -293,7 +297,7 @@ export class MCPConnection extends EventEmitter {
           this.url = options.url;
           const url = new URL(options.url);
           logger.info(
-            `${this.getLogPrefix()} Creating streamable-http transport: ${url.toString()}`,
+            `${this.getLogPrefix()} Creating streamable-http transport: ${sanitizeUrlForLogging(url)}`,
           );
           const abortController = new AbortController();
 
@@ -332,7 +336,7 @@ export class MCPConnection extends EventEmitter {
         }
       }
     } catch (error) {
-      this.emitError(error, 'Failed to construct transport:');
+      this.emitError(error, 'Failed to construct transport');
       throw error;
     }
   }
@@ -454,15 +458,11 @@ export class MCPConnection extends EventEmitter {
         this.setupTransportDebugHandlers();
 
         const connectTimeout = this.options.initTimeout ?? 120000;
-        await Promise.race([
+        await withTimeout(
           this.client.connect(this.transport),
-          new Promise((_resolve, reject) =>
-            setTimeout(
-              () => reject(new Error(`Connection timeout after ${connectTimeout}ms`)),
-              connectTimeout,
-            ),
-          ),
-        ]);
+          connectTimeout,
+          `Connection timeout after ${connectTimeout}ms`,
+        );
 
         this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');
@@ -473,7 +473,9 @@ export class MCPConnection extends EventEmitter {
           logger.warn(`${this.getLogPrefix()} OAuth authentication required`);
           this.oauthRequired = true;
           const serverUrl = this.url;
-          logger.debug(`${this.getLogPrefix()} Server URL for OAuth: ${serverUrl}`);
+          logger.debug(
+            `${this.getLogPrefix()} Server URL for OAuth: ${serverUrl ? sanitizeUrlForLogging(serverUrl) : 'undefined'}`,
+          );
 
           const oauthTimeout = this.options.initTimeout ?? 60000 * 2;
           /** Promise that will resolve when OAuth is handled */
@@ -593,16 +595,26 @@ export class MCPConnection extends EventEmitter {
 
   private setupTransportErrorHandlers(transport: Transport): void {
     transport.onerror = (error) => {
-      logger.error(`${this.getLogPrefix()} Transport error:`, error);
-
-      // Check if it's an OAuth authentication error
       if (error && typeof error === 'object' && 'code' in error) {
         const errorCode = (error as unknown as { code?: number }).code;
+
+        // Ignore SSE 404 errors for servers that don't support SSE
+        if (
+          errorCode === 404 &&
+          String(error?.message).toLowerCase().includes('failed to open sse stream')
+        ) {
+          logger.warn(`${this.getLogPrefix()} SSE stream not available (404). Ignoring.`);
+          return;
+        }
+
+        // Check if it's an OAuth authentication error
         if (errorCode === 401 || errorCode === 403) {
           logger.warn(`${this.getLogPrefix()} OAuth authentication error detected`);
           this.emit('oauthError', error);
         }
       }
+
+      logger.error(`${this.getLogPrefix()} Transport error:`, error);
 
       this.emit('connectionChange', 'error');
     };
@@ -629,7 +641,7 @@ export class MCPConnection extends EventEmitter {
       const { resources } = await this.client.listResources();
       return resources;
     } catch (error) {
-      this.emitError(error, 'Failed to fetch resources:');
+      this.emitError(error, 'Failed to fetch resources');
       return [];
     }
   }
@@ -639,7 +651,7 @@ export class MCPConnection extends EventEmitter {
       const { tools } = await this.client.listTools();
       return tools;
     } catch (error) {
-      this.emitError(error, 'Failed to fetch tools:');
+      this.emitError(error, 'Failed to fetch tools');
       return [];
     }
   }
@@ -649,7 +661,7 @@ export class MCPConnection extends EventEmitter {
       const { prompts } = await this.client.listPrompts();
       return prompts;
     } catch (error) {
-      this.emitError(error, 'Failed to fetch prompts:');
+      this.emitError(error, 'Failed to fetch prompts');
       return [];
     }
   }
@@ -676,7 +688,9 @@ export class MCPConnection extends EventEmitter {
       const pingUnsupported =
         error instanceof Error &&
         ((error as Error)?.message.includes('-32601') ||
+          (error as Error)?.message.includes('-32602') ||
           (error as Error)?.message.includes('invalid method ping') ||
+          (error as Error)?.message.includes('Unsupported method: ping') ||
           (error as Error)?.message.includes('method not found'));
 
       if (!pingUnsupported) {

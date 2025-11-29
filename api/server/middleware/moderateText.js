@@ -1,8 +1,8 @@
 const axios = require('axios');
+const { isEnabled } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
-const { isEnabled } = require('~/server/utils');
 const denyRequest = require('./denyRequest');
-const { logger } = require('~/config');
 
 async function moderateText(req, res, next) {
   if (!isEnabled(process.env.OPENAI_MODERATION)) {
