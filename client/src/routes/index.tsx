@@ -20,6 +20,10 @@ import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
+import AdminDashboard from './Admin/AdminDashboard';
+import AdminUsers from './Admin/Users';
+import AdminSettings from './Admin/Settings';
+import AdminUsage from './Admin/Usage';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -95,6 +99,28 @@ export const router = createBrowserRouter(
           ],
         },
         dashboardRoutes,
+        {
+          path: 'admin',
+          element: <AdminDashboard />,
+          children: [
+            {
+              index: true,
+              element: <Navigate to="users" replace />,
+            },
+            {
+              path: 'users',
+              element: <AdminUsers />,
+            },
+            {
+              path: 'settings',
+              element: <AdminSettings />,
+            },
+            {
+              path: 'usage',
+              element: <AdminUsage />,
+            },
+          ],
+        },
         {
           path: '/',
           element: <Root />,

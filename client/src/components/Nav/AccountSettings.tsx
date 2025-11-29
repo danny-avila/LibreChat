@@ -1,7 +1,8 @@
 import { useState, memo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useRecoilState } from 'recoil';
 import * as Select from '@ariakit/react/select';
-import { FileText, LogOut } from 'lucide-react';
+import { FileText, LogOut, Shield } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
@@ -12,6 +13,7 @@ import store from '~/store';
 
 function AccountSettings() {
   const localize = useLocalize();
+  const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -86,6 +88,16 @@ function AccountSettings() {
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
         </Select.SelectItem>
+        {user?.role === 'ADMIN' && (
+          <Select.SelectItem
+            value=""
+            onClick={() => navigate('/admin')}
+            className="select-item text-sm"
+          >
+            <Shield className="icon-md" aria-hidden="true" />
+            Admin Dashboard
+          </Select.SelectItem>
+        )}
         <DropdownMenuSeparator />
         <Select.SelectItem
           aria-selected={true}
