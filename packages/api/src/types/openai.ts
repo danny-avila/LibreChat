@@ -101,3 +101,21 @@ export interface InitializeOpenAIOptionsParams {
   getUserKeyValues: GetUserKeyValuesFunction;
   checkUserKeyExpiry: CheckUserKeyExpiryFunction;
 }
+
+/**
+ * Extended LLM config result with stream rate handling
+ */
+export interface OpenAIOptionsResult extends LLMConfigResult {
+  streamRate?: number;
+}
+
+/**
+ * Result type for OpenAI Vision OCR upload
+ */
+export interface OpenAIVisionOCRUploadResult {
+  filename: string;
+  bytes: number;
+  filepath: string;
+  text: string;
+  images: string[];
+}

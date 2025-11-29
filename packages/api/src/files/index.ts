@@ -3,6 +3,7 @@ export * from './context';
 export * from './encode';
 export * from './filter';
 export * from './mistral/crud';
+export * from './openai-vision-ocr/crud';
 export * from './ocr';
 export * from './parse';
 export * from './validation';
