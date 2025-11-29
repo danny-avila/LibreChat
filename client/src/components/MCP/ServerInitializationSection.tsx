@@ -21,12 +21,17 @@ export default function ServerInitializationSection({
 }: ServerInitializationSectionProps) {
   const localize = useLocalize();
 
-  const { initializeServer, cancelOAuthFlow, isInitializing, isCancellable, getOAuthUrl } =
-    useMCPServerManager({ conversationId });
+  const {
+    initializeServer,
+    availableMCPServers,
+    cancelOAuthFlow,
+    isInitializing,
+    isCancellable,
+    getOAuthUrl,
+  } = useMCPServerManager({ conversationId });
 
-  const { data: startupConfig } = useGetStartupConfig();
   const { connectionStatus } = useMCPConnectionStatus({
-    enabled: !!startupConfig?.mcpServers && Object.keys(startupConfig.mcpServers).length > 0,
+    enabled: !!availableMCPServers && availableMCPServers.length > 0,
   });
 
   const serverStatus = connectionStatus?.[serverName];

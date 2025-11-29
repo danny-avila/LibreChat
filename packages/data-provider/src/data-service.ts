@@ -6,6 +6,7 @@ import * as ag from './types/agents';
 import * as m from './types/mutations';
 import * as q from './types/queries';
 import * as f from './types/files';
+import * as mcp from './types/mcpServers';
 import * as config from './config';
 import request from './request';
 import * as s from './schemas';
@@ -539,6 +540,51 @@ export const deleteAgentAction = async ({
   );
 
 /**
+ * MCP Servers
+ */
+
+/**
+ *
+ * Ensure and List loaded mcp server configs from the cache Enriched with effective permissions.
+ */
+export const getMcpServers = async (): Promise<mcp.MCPServersListResponse> => {
+  return request.get(endpoints.mcp.servers);
+};
+
+/**
+ * Get a single MCP server by ID
+ */
+export const getMcpServer = async (mcp_id: string): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.get(endpoints.mcpServer(mcp_id));
+};
+
+/**
+ * Create a new MCP server
+ */
+export const createMcpServer = async (
+  data: mcp.McpServerCreateParams,
+): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.post(endpoints.mcp.servers, data);
+};
+
+/**
+ * Update an existing MCP server
+ */
+export const updateMcpServer = async (
+  mcp_id: string,
+  data: mcp.McpServerUpdateParams,
+): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.patch(endpoints.mcpServer(mcp_id), data);
+};
+
+/**
+ * Delete an MCP server
+ */
+export const deleteMcpServer = async (mcp_id: string): Promise<{ success: boolean }> => {
+  return request.delete(endpoints.mcpServer(mcp_id));
+};
+
+/**
  * Imports a conversations file.
  *
  * @param data - The FormData containing the file to import.
@@ -803,6 +849,12 @@ export function updatePeoplePickerPermissions(
     endpoints.updatePeoplePickerPermissions(variables.roleName),
     variables.updates,
   );
+}
+
+export function updateMcpServersPermissions(
+  variables: m.UpdateMcpServersPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateMcpServersPermissions(variables.roleName), variables.updates);
 }
 
 export function updateMarketplacePermissions(
