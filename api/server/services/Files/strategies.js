@@ -3,6 +3,7 @@ const {
   uploadMistralOCR,
   uploadAzureMistralOCR,
   uploadGoogleVertexMistralOCR,
+  uploadOpenAIVisionOCR,
 } = require('@librechat/api');
 const {
   getFirebaseURL,
@@ -49,7 +50,6 @@ const {
   processAzureAvatar,
 } = require('./Azure');
 
-const { uploadOpenAIVisionOCR } = require('./OpenAIVisionOCR/crud');
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI/index');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');

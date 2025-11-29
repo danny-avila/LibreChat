@@ -107,3 +107,14 @@ export interface InitializeOpenAIOptionsParams {
 export interface OpenAIOptionsResult extends LLMConfigResult {
   streamRate?: number;
 }
+
+/**
+ * Result type for OpenAI Vision OCR upload
+ */
+export interface OpenAIVisionOCRUploadResult {
+  filename: string;
+  bytes: number;
+  filepath: string;
+  text: string;
+  images: string[];
+}
