@@ -29,6 +29,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
   if (anthropicConfig) {
     clientOptions._lc_stream_delay = anthropicConfig.streamRate;
     clientOptions.titleModel = anthropicConfig.titleModel;
+    clientOptions.betaFeatures = anthropicConfig.betaFeatures;
   }
 
   const allConfig = appConfig.endpoints?.all;
