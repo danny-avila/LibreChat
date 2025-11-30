@@ -1,4 +1,5 @@
 const { SystemRoles } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
 
 function checkAdmin(req, res, next) {
   try {
@@ -7,6 +8,7 @@ function checkAdmin(req, res, next) {
     }
     next();
   } catch (error) {
+    logger.error('Error in checkAdmin middleware:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 }
