@@ -161,10 +161,10 @@ const PresetItems: FC<{
                       <div className="flex h-full items-center justify-end gap-1">
                         <button
                           className={cn(
-                            'm-0 h-full rounded-md bg-transparent p-2 text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200',
+                            'm-0 h-full rounded-md bg-transparent p-2 text-gray-400 hover:text-gray-700 focus:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 dark:focus:text-gray-200',
                             defaultPreset?.presetId === presetId
                               ? ''
-                              : 'sm:invisible sm:group-hover:visible',
+                              : 'sm:invisible sm:group-focus-within:visible sm:group-hover:visible',
                           )}
                           onClick={(e) => {
                             e.preventDefault();
@@ -175,7 +175,7 @@ const PresetItems: FC<{
                           <PinIcon unpin={defaultPreset?.presetId === presetId} />
                         </button>
                         <button
-                          className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
+                          className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-700 focus:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 dark:focus:text-gray-200 sm:invisible sm:group-focus-within:visible sm:group-hover:visible"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -185,7 +185,7 @@ const PresetItems: FC<{
                           <EditIcon />
                         </button>
                         <button
-                          className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
+                          className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-600 focus:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 dark:focus:text-gray-200 sm:invisible sm:group-focus-within:visible sm:group-hover:visible"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
