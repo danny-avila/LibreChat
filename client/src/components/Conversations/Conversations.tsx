@@ -1,12 +1,12 @@
 import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
 import { ChevronRight } from 'lucide-react';
+import { TConversation } from 'librechat-data-provider';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
-import { TConversation } from 'librechat-data-provider';
+import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { useLocalize, TranslationKeys, useFavorites } from '~/hooks';
 import { groupConversationsByDate, cn } from '~/utils';
-import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import Convo from './Convo';
 
 interface ConversationsProps {
@@ -17,7 +17,6 @@ interface ConversationsProps {
   loadMoreConversations: () => void;
   isLoading: boolean;
   isSearchLoading: boolean;
-  scrollElement?: HTMLElement | null;
   isChatsExpanded: boolean;
   setIsChatsExpanded: (expanded: boolean) => void;
 }
@@ -85,7 +84,6 @@ const Conversations: FC<ConversationsProps> = ({
   loadMoreConversations,
   isLoading,
   isSearchLoading,
-  scrollElement,
   isChatsExpanded,
   setIsChatsExpanded,
 }) => {
@@ -168,7 +166,7 @@ const Conversations: FC<ConversationsProps> = ({
     }
   }, [cache, containerRef]);
 
-  // Clear cache when favorites change - use requestAnimationFrame for smoother updates
+  // Clear cache when favorites change
   useEffect(() => {
     const frameId = requestAnimationFrame(() => {
       clearFavoritesCache();

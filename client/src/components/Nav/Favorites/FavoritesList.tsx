@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo, useContext, useEffect } from 'react';
+import React, { useRef, useCallback, useMemo, useEffect } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useDrag, useDrop } from 'react-dnd';
@@ -8,11 +8,10 @@ import { QueryKeys, dataService, PermissionTypes, Permissions } from 'librechat-
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
-import { useFavorites, useLocalize, useHasAccess, AuthContext } from '~/hooks';
+import { useFavorites, useLocalize, useHasAccess } from '~/hooks';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
 
-/** Skeleton placeholder for a favorite item while loading */
 const FavoriteItemSkeleton = () => (
   <div className="flex w-full items-center rounded-lg px-3 py-2">
     <Skeleton className="mr-2 h-5 w-5 rounded-full" />
@@ -20,7 +19,6 @@ const FavoriteItemSkeleton = () => (
   </div>
 );
 
-/** Skeleton placeholder for the Agent Marketplace button while loading */
 const MarketplaceSkeleton = () => (
   <div className="flex w-full items-center rounded-lg px-3 py-2">
     <Skeleton className="mr-2 h-5 w-5" />
@@ -121,7 +119,6 @@ export default function FavoritesList({
   const navigate = useNavigate();
   const localize = useLocalize();
   const queryClient = useQueryClient();
-  const authContext = useContext(AuthContext);
   const search = useRecoilValue(store.search);
   const { favorites, reorderFavorites, isLoading: isFavoritesLoading } = useFavorites();
 
@@ -135,13 +132,8 @@ export default function FavoritesList({
     permission: Permissions.USE,
   });
 
-  // Check if auth is ready (avoid race conditions)
-  const authReady =
-    authContext?.isAuthenticated !== undefined &&
-    (authContext?.isAuthenticated === false || authContext?.user !== undefined);
-
-  // Show agent marketplace when marketplace permission is enabled, auth is ready, and user has access to agents
-  const showAgentMarketplace = authReady && hasAccessToAgents && hasAccessToMarketplace;
+  // Show agent marketplace when marketplace permission is enabled, and user has access to agents
+  const showAgentMarketplace = hasAccessToAgents && hasAccessToMarketplace;
 
   const handleAgentMarketplace = useCallback(() => {
     navigate('/agents');
@@ -160,10 +152,8 @@ export default function FavoritesList({
     })),
   });
 
-  // Check if any agent queries are still loading (not yet fetched)
   const isAgentsLoading = agentIds.length > 0 && agentQueries.some((q) => q.isLoading);
 
-  // Notify parent when agents finish loading (height might change)
   useEffect(() => {
     if (!isAgentsLoading && onHeightChange) {
       onHeightChange();
@@ -226,18 +216,14 @@ export default function FavoritesList({
     draggedFavoritesRef.current = favorites;
   }, [favorites]);
 
-  // Hide favorites when search is active
   if (search.query) {
     return null;
   }
 
-  // If no favorites and no marketplace to show, and not loading, return null
   if (!isFavoritesLoading && favorites.length === 0 && !showAgentMarketplace) {
     return null;
   }
 
-  // While favorites are initially loading, show a minimal placeholder
-  // This prevents the "null to content" jump
   if (isFavoritesLoading) {
     return (
       <div className="mb-2 flex flex-col pb-2">

@@ -114,7 +114,6 @@ export const renderAgentAvatar = (
     );
   }
 
-  // Fallback placeholder with Agent (Feather) icon - consistent with MessageEndpointIcon
   return (
     <div className={`relative flex items-center justify-center ${sizeClasses[size]} ${className}`}>
       <Feather className={`text-text-primary ${iconSizeClasses[size]}`} strokeWidth={1.5} />

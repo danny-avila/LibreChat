@@ -25,16 +25,9 @@ const AccountSettings = lazy(() => import('./AccountSettings'));
 const NAV_WIDTH_DESKTOP = '260px';
 const NAV_WIDTH_MOBILE = '320px';
 
-/** Skeleton placeholder for SearchBar while loading */
-const SearchBarSkeleton = memo(({ isSmallScreen }: { isSmallScreen: boolean }) => (
-  <div
-    className={cn(
-      'mt-1 flex items-center gap-3 rounded-lg px-3 py-2',
-      isSmallScreen ? 'mb-2 h-14 rounded-xl' : 'mb-1 h-10',
-    )}
-  >
-    <Skeleton className="h-4 w-4 rounded" />
-    <Skeleton className="h-4 flex-1" />
+const SearchBarSkeleton = memo(() => (
+  <div className={cn('flex h-10 items-center py-2')}>
+    <Skeleton className="h-10 w-full rounded-lg" />
   </div>
 ));
 

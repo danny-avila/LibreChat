@@ -9,7 +9,6 @@ const updateFavoritesController = async (req, res) => {
       return res.status(400).json({ message: 'Favorites data is required' });
     }
 
-    // Validate favorites structure
     if (!Array.isArray(favorites)) {
       return res.status(400).json({ message: 'Favorites must be an array' });
     }

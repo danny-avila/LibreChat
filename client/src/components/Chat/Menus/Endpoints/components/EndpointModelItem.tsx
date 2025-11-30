@@ -13,7 +13,7 @@ interface EndpointModelItemProps {
   isSelected: boolean;
 }
 
-export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps) {
+export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointModelItemProps) {
   const { handleSelectModel } = useModelSelectorContext();
   const { isFavoriteModel, toggleFavoriteModel, isFavoriteAgent, toggleFavoriteAgent } =
     useFavorites();
@@ -43,34 +43,42 @@ export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps)
 
   const handleFavoriteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (modelId) {
-      if (isAgent) {
-        toggleFavoriteAgent(modelId);
-      } else {
-        toggleFavoriteModel({ model: modelId, endpoint: endpoint.value });
-      }
+    if (!modelId) {
+      return;
+    }
+
+    if (isAgent) {
+      toggleFavoriteAgent(modelId);
+    } else {
+      toggleFavoriteModel({ model: modelId, endpoint: endpoint.value });
     }
   };
 
   const renderAvatar = () => {
-    if (avatarUrl) {
-      return (
-        <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
-          <img src={avatarUrl} alt={modelName ?? ''} className="h-full w-full object-cover" />
-        </div>
-      );
+    const isAgentOrAssistant =
+      isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value);
+    const showEndpointIcon = isAgentOrAssistant && endpoint.icon;
+
+    const getContent = () => {
+      if (avatarUrl) {
+        return <img src={avatarUrl} alt={modelName ?? ''} className="h-full w-full object-cover" />;
+      }
+      if (showEndpointIcon) {
+        return endpoint.icon;
+      }
+      return null;
+    };
+
+    const content = getContent();
+    if (!content) {
+      return null;
     }
-    if (
-      (isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)) &&
-      endpoint.icon
-    ) {
-      return (
-        <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
-          {endpoint.icon}
-        </div>
-      );
-    }
-    return null;
+
+    return (
+      <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
+        {content}
+      </div>
+    );
   };
 
   return (
@@ -97,6 +105,25 @@ export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps)
           <Pin className="h-4 w-4 text-text-secondary" />
         )}
       </button>
+      {isSelected && (
+        <div className="flex-shrink-0 self-center">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className="block"
+          >
+            <path
+              fillRule="evenodd"
+              clipRule="evenodd"
+              d="M2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12ZM16.0755 7.93219C16.5272 8.25003 16.6356 8.87383 16.3178 9.32549L11.5678 16.0755C11.3931 16.3237 11.1152 16.4792 10.8123 16.4981C10.5093 16.517 10.2142 16.3973 10.0101 16.1727L7.51006 13.4227C7.13855 13.014 7.16867 12.3816 7.57733 12.0101C7.98598 11.6386 8.61843 11.6687 8.98994 12.0773L10.6504 13.9039L14.6822 8.17451C15 7.72284 15.6238 7.61436 16.0755 7.93219Z"
+              fill="currentColor"
+            />
+          </svg>
+        </div>
+      )}
     </MenuItem>
   );
 }
