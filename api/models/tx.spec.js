@@ -1205,6 +1205,39 @@ describe('Grok Model Tests - Pricing', () => {
       );
     });
 
+    test('should return correct prompt and completion rates for Grok 4 Fast model', () => {
+      expect(getMultiplier({ model: 'grok-4-fast', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-4-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-4-fast', tokenType: 'completion' })).toBe(
+        tokenValues['grok-4-fast'].completion,
+      );
+    });
+
+    test('should return correct prompt and completion rates for Grok 4.1 Fast models', () => {
+      expect(getMultiplier({ model: 'grok-4-1-fast-reasoning', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-4-1-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-4-1-fast-reasoning', tokenType: 'completion' })).toBe(
+        tokenValues['grok-4-1-fast'].completion,
+      );
+      expect(getMultiplier({ model: 'grok-4-1-fast-non-reasoning', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-4-1-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-4-1-fast-non-reasoning', tokenType: 'completion' })).toBe(
+        tokenValues['grok-4-1-fast'].completion,
+      );
+    });
+
+    test('should return correct prompt and completion rates for Grok Code Fast model', () => {
+      expect(getMultiplier({ model: 'grok-code-fast-1', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-code-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-code-fast-1', tokenType: 'completion' })).toBe(
+        tokenValues['grok-code-fast'].completion,
+      );
+    });
+
     test('should return correct prompt and completion rates for Grok 3 models with prefixes', () => {
       expect(getMultiplier({ model: 'xai/grok-3', tokenType: 'prompt' })).toBe(
         tokenValues['grok-3'].prompt,
@@ -1238,6 +1271,39 @@ describe('Grok Model Tests - Pricing', () => {
       );
       expect(getMultiplier({ model: 'xai/grok-4-0709', tokenType: 'completion' })).toBe(
         tokenValues['grok-4'].completion,
+      );
+    });
+
+    test('should return correct prompt and completion rates for Grok 4 Fast model with prefixes', () => {
+      expect(getMultiplier({ model: 'xai/grok-4-fast', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-4-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'xai/grok-4-fast', tokenType: 'completion' })).toBe(
+        tokenValues['grok-4-fast'].completion,
+      );
+    });
+
+    test('should return correct prompt and completion rates for Grok 4.1 Fast models with prefixes', () => {
+      expect(getMultiplier({ model: 'xai/grok-4-1-fast-reasoning', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-4-1-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'xai/grok-4-1-fast-reasoning', tokenType: 'completion' })).toBe(
+        tokenValues['grok-4-1-fast'].completion,
+      );
+      expect(getMultiplier({ model: 'xai/grok-4-1-fast-non-reasoning', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-4-1-fast'].prompt,
+      );
+      expect(
+        getMultiplier({ model: 'xai/grok-4-1-fast-non-reasoning', tokenType: 'completion' }),
+      ).toBe(tokenValues['grok-4-1-fast'].completion);
+    });
+
+    test('should return correct prompt and completion rates for Grok Code Fast model with prefixes', () => {
+      expect(getMultiplier({ model: 'xai/grok-code-fast-1', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-code-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'xai/grok-code-fast-1', tokenType: 'completion' })).toBe(
+        tokenValues['grok-code-fast'].completion,
       );
     });
   });

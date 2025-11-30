@@ -280,6 +280,9 @@ const xAIModels = {
   'grok-3-mini': 131072,
   'grok-3-mini-fast': 131072,
   'grok-4': 256000, // 256K context
+  'grok-4-fast': 2000000, // 2M context
+  'grok-4-1-fast': 2000000, // 2M context (covers reasoning & non-reasoning variants)
+  'grok-code-fast': 256000, // 256K context
 };
 
 const aggregateModels = {
