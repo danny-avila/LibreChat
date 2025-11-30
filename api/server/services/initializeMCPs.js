@@ -14,7 +14,12 @@ async function initializeMCPs() {
   }
 
   // Initialize MCPServersRegistry first (required for MCPManager)
-  createMCPServersRegistry(mongoose);
+  try {
+    createMCPServersRegistry(mongoose);
+  } catch (error) {
+    logger.error('[MCP] Failed to initialize MCPServersRegistry:', error);
+    throw error;
+  }
 
   const mcpManager = await createMCPManager(mcpServers);
 
