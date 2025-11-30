@@ -714,6 +714,7 @@ export type TCustomConfigSpeechResponse = { [key: string]: string };
 
 export type TUserTermsResponse = {
   termsAccepted: boolean;
+  termsAcceptedAt: Date | string | null;
 };
 
 export type TAcceptTermsResponse = {
