@@ -402,4 +402,158 @@ describe('initializeRoles', () => {
     expect(userRole.permissions[PermissionTypes.MULTI_CONVO]).toBeDefined();
     expect(userRole.permissions[PermissionTypes.MULTI_CONVO].USE).toBeDefined();
   });
+
+  it('should create BASIC and PRO tier roles on initialization', async () => {
+    await initializeRoles();
+
+    const basicRole = await getRoleByName(SystemRoles.BASIC);
+    const proRole = await getRoleByName(SystemRoles.PRO);
+
+    expect(basicRole).toBeTruthy();
+    expect(proRole).toBeTruthy();
+    expect(basicRole.name).toBe(SystemRoles.BASIC);
+    expect(proRole.name).toBe(SystemRoles.PRO);
+  });
+
+  it('should create all system roles (USER, BASIC, PRO, ADMIN)', async () => {
+    await initializeRoles();
+
+    const userRole = await getRoleByName(SystemRoles.USER);
+    const basicRole = await getRoleByName(SystemRoles.BASIC);
+    const proRole = await getRoleByName(SystemRoles.PRO);
+    const adminRole = await getRoleByName(SystemRoles.ADMIN);
+
+    expect(userRole).toBeTruthy();
+    expect(basicRole).toBeTruthy();
+    expect(proRole).toBeTruthy();
+    expect(adminRole).toBeTruthy();
+
+    const allRoles = await Role.find({});
+    expect(allRoles).toHaveLength(4);
+  });
+
+  it('should set correct permissions for BASIC role', async () => {
+    await initializeRoles();
+
+    const basicRole = await getRoleByName(SystemRoles.BASIC);
+
+    // BASIC should have all permission types defined
+    Object.values(PermissionTypes).forEach((permType) => {
+      expect(basicRole.permissions[permType]).toBeDefined();
+    });
+
+    // BASIC should have same permissions as USER (no marketplace access)
+    expect(basicRole.permissions[PermissionTypes.MARKETPLACE][Permissions.USE]).toBe(false);
+    expect(basicRole.permissions[PermissionTypes.PEOPLE_PICKER][Permissions.VIEW_USERS]).toBe(
+      false,
+    );
+  });
+
+  it('should set correct permissions for PRO role', async () => {
+    await initializeRoles();
+
+    const proRole = await getRoleByName(SystemRoles.PRO);
+
+    // PRO should have all permission types defined
+    Object.values(PermissionTypes).forEach((permType) => {
+      expect(proRole.permissions[permType]).toBeDefined();
+    });
+
+    // PRO should have marketplace access
+    expect(proRole.permissions[PermissionTypes.MARKETPLACE][Permissions.USE]).toBe(true);
+
+    // PRO should have enhanced capabilities
+    expect(proRole.permissions[PermissionTypes.PROMPTS][Permissions.USE]).toBe(true);
+    expect(proRole.permissions[PermissionTypes.PROMPTS][Permissions.CREATE]).toBe(true);
+    expect(proRole.permissions[PermissionTypes.AGENTS][Permissions.USE]).toBe(true);
+    expect(proRole.permissions[PermissionTypes.AGENTS][Permissions.CREATE]).toBe(true);
+    expect(proRole.permissions[PermissionTypes.FILE_SEARCH][Permissions.USE]).toBe(true);
+  });
+
+  it('should differentiate BASIC and PRO marketplace permissions', async () => {
+    await initializeRoles();
+
+    const basicRole = await getRoleByName(SystemRoles.BASIC);
+    const proRole = await getRoleByName(SystemRoles.PRO);
+
+    // BASIC has no marketplace access
+    expect(basicRole.permissions[PermissionTypes.MARKETPLACE][Permissions.USE]).toBe(false);
+
+    // PRO has marketplace access
+    expect(proRole.permissions[PermissionTypes.MARKETPLACE][Permissions.USE]).toBe(true);
+  });
+
+  it('should maintain tier role hierarchy: USER < BASIC < PRO < ADMIN', async () => {
+    await initializeRoles();
+
+    const userRole = await getRoleByName(SystemRoles.USER);
+    const basicRole = await getRoleByName(SystemRoles.BASIC);
+    const proRole = await getRoleByName(SystemRoles.PRO);
+    const adminRole = await getRoleByName(SystemRoles.ADMIN);
+
+    // USER and BASIC have same permissions (only differ in token balance)
+    expect(userRole.permissions[PermissionTypes.MARKETPLACE][Permissions.USE]).toBe(false);
+    expect(basicRole.permissions[PermissionTypes.MARKETPLACE][Permissions.USE]).toBe(false);
+
+    // PRO has more permissions than BASIC
+    expect(proRole.permissions[PermissionTypes.MARKETPLACE][Permissions.USE]).toBe(true);
+    expect(proRole.permissions[PermissionTypes.PROMPTS][Permissions.CREATE]).toBe(true);
+
+    // ADMIN has all permissions
+    expect(adminRole.permissions[PermissionTypes.MARKETPLACE][Permissions.USE]).toBe(true);
+    expect(adminRole.permissions[PermissionTypes.PEOPLE_PICKER][Permissions.VIEW_USERS]).toBe(true);
+  });
+
+  it('should preserve custom BASIC role permissions on re-initialization', async () => {
+    // Create a BASIC role with custom PROMPTS and MARKETPLACE, and default for BOOKMARKS
+    const customBasicRole = {
+      name: SystemRoles.BASIC,
+      permissions: {
+        [PermissionTypes.PROMPTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARED_GLOBAL]: true,
+        },
+        [PermissionTypes.BOOKMARKS]:
+          roleDefaults[SystemRoles.BASIC].permissions[PermissionTypes.BOOKMARKS],
+        [PermissionTypes.MARKETPLACE]: { [Permissions.USE]: true },
+        // Intentionally omit other permission types to test they get added
+      },
+    };
+
+    await new Role(customBasicRole).save();
+    await initializeRoles();
+
+    const basicRole = await getRoleByName(SystemRoles.BASIC);
+    // Custom permissions should be preserved
+    expect(basicRole.permissions[PermissionTypes.PROMPTS]).toEqual(
+      customBasicRole.permissions[PermissionTypes.PROMPTS],
+    );
+    expect(basicRole.permissions[PermissionTypes.MARKETPLACE]).toEqual(
+      customBasicRole.permissions[PermissionTypes.MARKETPLACE],
+    );
+    // Missing permissions should be added from defaults
+    expect(basicRole.permissions[PermissionTypes.AGENTS]).toBeDefined();
+    expect(basicRole.permissions[PermissionTypes.MEMORIES]).toBeDefined();
+  });
+
+  it('should not duplicate BASIC and PRO roles on multiple initialization runs', async () => {
+    await initializeRoles();
+    await initializeRoles();
+    await initializeRoles();
+
+    const basicRoles = await Role.find({ name: SystemRoles.BASIC });
+    const proRoles = await Role.find({ name: SystemRoles.PRO });
+
+    expect(basicRoles).toHaveLength(1);
+    expect(proRoles).toHaveLength(1);
+
+    // Verify all permission types exist
+    const basicRole = basicRoles[0];
+    const proRole = proRoles[0];
+    Object.values(PermissionTypes).forEach((permType) => {
+      expect(basicRole.permissions[permType]).toBeDefined();
+      expect(proRole.permissions[permType]).toBeDefined();
+    });
+  });
 });

@@ -83,7 +83,9 @@
     "migrate:agent-permissions:batch": "node config/migrate-agent-permissions.js --batch-size=50",
     "migrate:prompt-permissions:dry-run": "node config/migrate-prompt-permissions.js --dry-run",
     "migrate:prompt-permissions": "node config/migrate-prompt-permissions.js",
-    "migrate:prompt-permissions:batch": "node config/migrate-prompt-permissions.js --batch-size=50"
+    "migrate:prompt-permissions:batch": "node config/migrate-prompt-permissions.js --batch-size=50",
+    "migrate:tier-roles:dry-run": "node config/migrate-tier-roles.js --dry-run",
+    "migrate:tier-roles": "node config/migrate-tier-roles.js"
   },
   "repository": {
     "type": "git",

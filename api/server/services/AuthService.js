@@ -22,6 +22,7 @@ const {
 } = require('~/models');
 const { registerSchema } = require('~/strategies/validators');
 const { getAppConfig } = require('~/server/services/Config');
+const { tierConfig } = require('~/server/services/Config/tiers');
 const { sendEmail } = require('~/server/utils');
 
 const domains = {
@@ -220,7 +221,9 @@ const registerUser = async (user, additionalData = {}) => {
     const emailEnabled = checkEmailConfig();
     const disableTTL = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
 
-    const newUser = await createUser(newUserData, appConfig.balance, disableTTL, true);
+    // Get tier configuration for the user's role, fallback to USER tier if role is unknown
+    const balanceConfig = tierConfig[newUserData.role] || tierConfig[SystemRoles.USER];
+    const newUser = await createUser(newUserData, balanceConfig, disableTTL, true);
     newUserId = newUser._id;
     if (emailEnabled && !newUser.emailVerified) {
       await sendVerificationEmail({
