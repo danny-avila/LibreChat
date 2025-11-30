@@ -18,6 +18,14 @@ const FavoriteItemSkeleton = () => (
   </div>
 );
 
+/** Skeleton placeholder for the Agent Marketplace button while loading */
+const MarketplaceSkeleton = () => (
+  <div className="flex w-full items-center rounded-lg px-3 py-2">
+    <Skeleton className="mr-2 h-5 w-5" />
+    <Skeleton className="h-4 w-28" />
+  </div>
+);
+
 interface DraggableFavoriteItemProps {
   id: string;
   index: number;
@@ -206,38 +214,55 @@ export default function FavoritesList({
     draggedFavoritesRef.current = favorites;
   }, [favorites]);
 
-  // Show nothing while favorites are loading to prevent layout shifts
-  if (isFavoritesLoading) {
+  // If no favorites and no marketplace to show, and not loading, return null
+  if (!isFavoritesLoading && favorites.length === 0 && !showAgentMarketplace) {
     return null;
   }
 
-  // If no favorites and no marketplace to show, return null
-  if (favorites.length === 0 && !showAgentMarketplace) {
-    return null;
+  // While favorites are initially loading, show a minimal placeholder
+  // This prevents the "null to content" jump
+  if (isFavoritesLoading) {
+    return (
+      <div className="mb-2 flex flex-col pb-2">
+        <div className="mt-1 flex flex-col gap-1">
+          {showAgentMarketplace && <MarketplaceSkeleton />}
+          <FavoriteItemSkeleton />
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="mb-2 flex flex-col pb-2">
       <div className="mt-1 flex flex-col gap-1">
-        {/* Agent Marketplace button */}
-        {showAgentMarketplace && (
-          <div
-            className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
-            onClick={handleAgentMarketplace}
-            data-testid="nav-agents-marketplace-button"
-          >
-            <div className="flex flex-1 items-center truncate pr-6">
-              <div className="mr-2 h-5 w-5">
-                <LayoutGrid className="h-5 w-5 text-text-primary" />
-              </div>
-              <span className="truncate">{localize('com_agents_marketplace')}</span>
-            </div>
-          </div>
-        )}
         {/* Show skeletons for ALL items while agents are still loading */}
-        {isAgentsLoading
-          ? favorites.map((fav, index) => <FavoriteItemSkeleton key={`skeleton-${index}`} />)
-          : favorites.map((fav, index) => {
+        {isAgentsLoading ? (
+          <>
+            {/* Marketplace skeleton */}
+            {showAgentMarketplace && <MarketplaceSkeleton />}
+            {/* Favorite items skeletons */}
+            {favorites.map((_, index) => (
+              <FavoriteItemSkeleton key={`skeleton-${index}`} />
+            ))}
+          </>
+        ) : (
+          <>
+            {/* Agent Marketplace button */}
+            {showAgentMarketplace && (
+              <div
+                className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
+                onClick={handleAgentMarketplace}
+                data-testid="nav-agents-marketplace-button"
+              >
+                <div className="flex flex-1 items-center truncate pr-6">
+                  <div className="mr-2 h-5 w-5">
+                    <LayoutGrid className="h-5 w-5 text-text-primary" />
+                  </div>
+                  <span className="truncate">{localize('com_agents_marketplace')}</span>
+                </div>
+              </div>
+            )}
+            {favorites.map((fav, index) => {
               if (fav.agentId) {
                 const agent = agentsMap[fav.agentId];
                 if (!agent) {
@@ -272,6 +297,8 @@ export default function FavoritesList({
               }
               return null;
             })}
+          </>
+        )}
       </div>
     </div>
   );
