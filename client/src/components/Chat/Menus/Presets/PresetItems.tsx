@@ -184,6 +184,13 @@ const PresetItems: FC<{
                                 e.stopPropagation();
                                 onSetDefaultPreset(preset, defaultPreset?.presetId === presetId);
                               }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  onSetDefaultPreset(preset, defaultPreset?.presetId === presetId);
+                                }
+                              }}
                             >
                               <PinIcon unpin={defaultPreset?.presetId === presetId} />
                             </button>
@@ -200,6 +207,13 @@ const PresetItems: FC<{
                                 e.stopPropagation();
                                 onChangePreset(preset);
                               }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  onChangePreset(preset);
+                                }
+                              }}
                             >
                               <EditIcon />
                             </button>
@@ -215,6 +229,13 @@ const PresetItems: FC<{
                                 e.preventDefault();
                                 e.stopPropagation();
                                 onDeletePreset(preset);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  onDeletePreset(preset);
+                                }
                               }}
                             >
                               <TrashIcon />
