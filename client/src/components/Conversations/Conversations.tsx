@@ -1,4 +1,4 @@
-import { useMemo, memo, type FC, useCallback, useEffect } from 'react';
+import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
 import { ChevronRight } from 'lucide-react';
 import { Spinner, useMediaQuery } from '@librechat/client';
@@ -122,13 +122,21 @@ const Conversations: FC<ConversationsProps> = ({
     return items;
   }, [groupedConversations, isLoading, isChatsExpanded]);
 
+  // Store flattenedItems in a ref for keyMapper to access without recreating cache
+  const flattenedItemsRef = useRef(flattenedItems);
+  flattenedItemsRef.current = flattenedItems;
+
+  // Create a stable cache that doesn't depend on flattenedItems
   const cache = useMemo(
     () =>
       new CellMeasurerCache({
         fixedWidth: true,
         defaultHeight: convoHeight,
         keyMapper: (index) => {
-          const item = flattenedItems[index];
+          const item = flattenedItemsRef.current[index];
+          if (!item) {
+            return `unknown-${index}`;
+          }
           if (item.type === 'favorites') {
             return 'favorites';
           }
@@ -136,29 +144,37 @@ const Conversations: FC<ConversationsProps> = ({
             return 'chats-header';
           }
           if (item.type === 'header') {
-            return `header-${index}`;
+            return `header-${item.groupName}`;
           }
           if (item.type === 'convo') {
             return `convo-${item.convo.conversationId}`;
           }
           if (item.type === 'loading') {
-            return `loading-${index}`;
+            return 'loading';
           }
           return `unknown-${index}`;
         },
       }),
-    [flattenedItems, convoHeight],
+    [convoHeight],
   );
 
-  useEffect(() => {
+  // Debounced function to clear cache and recompute heights
+  const clearFavoritesCache = useCallback(() => {
     if (cache) {
-      // Clear the favorites row when favorites change or finish loading
       cache.clear(0, 0);
       if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
         containerRef.current.recomputeRowHeights(0);
       }
     }
-  }, [favorites.length, isFavoritesLoading, cache, containerRef]);
+  }, [cache, containerRef]);
+
+  // Clear cache when favorites change - use requestAnimationFrame for smoother updates
+  useEffect(() => {
+    const frameId = requestAnimationFrame(() => {
+      clearFavoritesCache();
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [favorites.length, isFavoritesLoading, clearFavoritesCache]);
 
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
@@ -176,7 +192,13 @@ const Conversations: FC<ConversationsProps> = ({
       }
       let rendering: JSX.Element;
       if (item.type === 'favorites') {
-        rendering = <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />;
+        rendering = (
+          <FavoritesList
+            isSmallScreen={isSmallScreen}
+            toggleNav={toggleNav}
+            onHeightChange={clearFavoritesCache}
+          />
+        );
       } else if (item.type === 'chats-header') {
         rendering = (
           <button
@@ -210,7 +232,7 @@ const Conversations: FC<ConversationsProps> = ({
         </CellMeasurer>
       );
     },
-    [cache, flattenedItems, moveToTop, toggleNav],
+    [cache, flattenedItems, moveToTop, toggleNav, clearFavoritesCache, isSmallScreen],
   );
 
   const getRowHeight = useCallback(
