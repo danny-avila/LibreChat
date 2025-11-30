@@ -10,8 +10,8 @@ const {
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
-  mcpServersRegistry,
 } = require('@librechat/api');
+const { getMCPServersRegistry } = require('~/config');
 const {
   Tools,
   Constants,
@@ -348,7 +348,10 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
         /** Placeholder used for UI purposes */
         continue;
       }
-      if (serverName && (await mcpServersRegistry.getServerConfig(serverName, user)) == undefined) {
+      if (
+        serverName &&
+        (await getMCPServersRegistry().getServerConfig(serverName, user)) == undefined
+      ) {
         logger.warn(
           `MCP server "${serverName}" for "${toolName}" tool is not configured${agent?.id != null && agent.id ? ` but attached to "${agent.id}"` : ''}`,
         );

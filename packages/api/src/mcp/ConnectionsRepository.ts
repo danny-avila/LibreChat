@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from './connection';
-import { mcpServersRegistry as registry } from '~/mcp/registry/MCPServersRegistry';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import type * as t from './types';
 
 /**
@@ -25,7 +25,7 @@ export class ConnectionsRepository {
 
   /** Checks whether this repository can connect to a specific server */
   async has(serverName: string): Promise<boolean> {
-    const config = await registry.getServerConfig(serverName, this.ownerId);
+    const config = await MCPServersRegistry.getInstance().getServerConfig(serverName, this.ownerId);
     const canConnect = !!config && this.isAllowedToConnectToServer(config);
     if (!canConnect) {
       //if connection is no longer possible we attempt to disconnect any leftover connections
@@ -36,7 +36,10 @@ export class ConnectionsRepository {
 
   /** Gets or creates a connection for the specified server with lazy loading */
   async get(serverName: string): Promise<MCPConnection | null> {
-    const serverConfig = await registry.getServerConfig(serverName, this.ownerId);
+    const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
+      serverName,
+      this.ownerId,
+    );
 
     const existingConnection = this.connections.get(serverName);
     if (!serverConfig || !this.isAllowedToConnectToServer(serverConfig)) {
@@ -94,7 +97,7 @@ export class ConnectionsRepository {
   async getAll(): Promise<Map<string, MCPConnection>> {
     //TODO in the future we should use a scoped config getter (APPLevel, UserLevel, Private)
     //for now the absent config will not throw error
-    const allConfigs = await registry.getAllServerConfigs(this.ownerId);
+    const allConfigs = await MCPServersRegistry.getInstance().getAllServerConfigs(this.ownerId);
     return this.getMany(Object.keys(allConfigs));
   }
 
