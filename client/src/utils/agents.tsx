@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bot } from 'lucide-react';
+import { Feather } from 'lucide-react';
 import { Skeleton } from '@librechat/client';
 import type t from 'librechat-data-provider';
 
@@ -114,16 +114,10 @@ export const renderAgentAvatar = (
     );
   }
 
-  // Fallback placeholder with Bot icon
+  // Fallback placeholder with Agent (Feather) icon - consistent with MessageEndpointIcon
   return (
     <div className={`relative flex items-center justify-center ${sizeClasses[size]} ${className}`}>
-      {/* Subtle minimalistic placeholder */}
-      <div className="absolute inset-0 rounded-full border border-border-medium bg-surface-secondary"></div>
-      <div
-        className={`relative flex items-center justify-center rounded-full ${placeholderSizeClasses[size]}`}
-      >
-        <Bot className={`text-text-primary ${iconSizeClasses[size]}`} strokeWidth={1.5} />
-      </div>
+      <Feather className={`text-text-primary ${iconSizeClasses[size]}`} strokeWidth={1.5} />
     </div>
   );
 };

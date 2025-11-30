@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useMediaQuery } from '@librechat/client';
+import { Skeleton, useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
@@ -24,6 +24,21 @@ const AccountSettings = lazy(() => import('./AccountSettings'));
 
 const NAV_WIDTH_DESKTOP = '260px';
 const NAV_WIDTH_MOBILE = '320px';
+
+/** Skeleton placeholder for SearchBar while loading */
+const SearchBarSkeleton = memo(({ isSmallScreen }: { isSmallScreen: boolean }) => (
+  <div
+    className={cn(
+      'mt-1 flex items-center gap-3 rounded-lg px-3 py-2',
+      isSmallScreen ? 'mb-2 h-14 rounded-xl' : 'mb-1 h-10',
+    )}
+  >
+    <Skeleton className="h-4 w-4 rounded" />
+    <Skeleton className="h-4 flex-1" />
+  </div>
+));
+
+SearchBarSkeleton.displayName = 'SearchBarSkeleton';
 
 const NavMask = memo(
   ({ navVisible, toggleNavVisible }: { navVisible: boolean; toggleNavVisible: () => void }) => (
@@ -152,7 +167,12 @@ const Nav = memo(
     }, [isFetchingNextPage, computedHasNextPage, fetchNextPage]);
 
     const subHeaders = useMemo(
-      () => <>{search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}</>,
+      () => (
+        <>
+          {search.enabled === null && <SearchBarSkeleton isSmallScreen={isSmallScreen} />}
+          {search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
+        </>
+      ),
       [search.enabled, isSmallScreen],
     );
 
