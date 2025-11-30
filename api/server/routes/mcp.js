@@ -6,9 +6,13 @@ const {
   MCPOAuthHandler,
   MCPTokenStorage,
   getUserMCPAuthMap,
-  mcpServersRegistry,
 } = require('@librechat/api');
-const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
+const {
+  getMCPManager,
+  getFlowStateManager,
+  getOAuthReconnectionManager,
+  getMCPServersRegistry,
+} = require('~/config');
 const { getMCPSetupData, getServerConnectionStatus } = require('~/server/services/MCP');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
@@ -365,7 +369,7 @@ router.post('/:serverName/reinitialize', requireJwtAuth, async (req, res) => {
     logger.info(`[MCP Reinitialize] Reinitializing server: ${serverName}`);
 
     const mcpManager = getMCPManager();
-    const serverConfig = await mcpServersRegistry.getServerConfig(serverName, user.id);
+    const serverConfig = await getMCPServersRegistry().getServerConfig(serverName, user.id);
     if (!serverConfig) {
       return res.status(404).json({
         error: `MCP server '${serverName}' not found in configuration`,
@@ -516,7 +520,7 @@ router.get('/:serverName/auth-values', requireJwtAuth, async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const serverConfig = await mcpServersRegistry.getServerConfig(serverName, user.id);
+    const serverConfig = await getMCPServersRegistry().getServerConfig(serverName, user.id);
     if (!serverConfig) {
       return res.status(404).json({
         error: `MCP server '${serverName}' not found in configuration`,
@@ -556,7 +560,7 @@ router.get('/:serverName/auth-values', requireJwtAuth, async (req, res) => {
 });
 
 async function getOAuthHeaders(serverName, userId) {
-  const serverConfig = await mcpServersRegistry.getServerConfig(serverName, userId);
+  const serverConfig = await getMCPServersRegistry().getServerConfig(serverName, userId);
   return serverConfig?.oauth_headers ?? {};
 }
 /**

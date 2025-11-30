@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { ParsedServerConfig } from '~/mcp/types';
-import { IServerConfigsRepositoryInterface } from '../ServerConfigsRepositoryInterface';
-import { logger } from '@librechat/data-schemas';
+import { AllMethods, createMethods, logger } from '@librechat/data-schemas';
+import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
+import type { ParsedServerConfig } from '~/mcp/types';
 
 /**
  * DB backed config storage
@@ -9,6 +9,14 @@ import { logger } from '@librechat/data-schemas';
  * Will handle Permission ACL
  */
 export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
+  private _dbMethods: AllMethods;
+  constructor(mongoose: typeof import('mongoose')) {
+    if (!mongoose) {
+      throw new Error('ServerConfigsDB requires mongoose instance');
+    }
+    this._dbMethods = createMethods(mongoose);
+  }
+
   public async add(serverName: string, config: ParsedServerConfig, userId?: string): Promise<void> {
     logger.debug('ServerConfigsDB add not yet implemented');
     return;
@@ -39,7 +47,8 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
    * @returns record of parsed configs
    */
   public async getAll(userId?: string): Promise<Record<string, ParsedServerConfig>> {
-    logger.debug('ServerConfigsDB getAll not yet implemented');
+    // TODO: Implement DB-backed config retrieval
+    logger.debug('[ServerConfigsDB] getAll not yet implemented', { userId });
     return {};
   }
 

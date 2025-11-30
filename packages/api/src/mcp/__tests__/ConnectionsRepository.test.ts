@@ -21,18 +21,21 @@ jest.mock('../MCPConnectionFactory', () => ({
 jest.mock('../connection');
 
 // Mock the registry
+const mockRegistryInstance = {
+  getServerConfig: jest.fn(),
+  getAllServerConfigs: jest.fn(),
+};
+
 jest.mock('../registry/MCPServersRegistry', () => ({
-  mcpServersRegistry: {
-    getServerConfig: jest.fn(),
-    getAllServerConfigs: jest.fn(),
+  MCPServersRegistry: {
+    getInstance: () => mockRegistryInstance,
   },
 }));
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
 
-// Import mocked registry
-import { mcpServersRegistry as registry } from '../registry/MCPServersRegistry';
-const mockRegistry = registry as jest.Mocked<typeof registry>;
+// Use mocked registry instance
+const mockRegistry = mockRegistryInstance as jest.Mocked<typeof mockRegistryInstance>;
 
 describe('ConnectionsRepository', () => {
   let repository: ConnectionsRepository;
