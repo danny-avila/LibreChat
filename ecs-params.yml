@@ -1,0 +1,31 @@
+version: 1
+task_definition:
+  services:
+    api:
+      cpu_shares: 256
+      mem_limit: 512m
+      task_role_arn: arn:aws:iam::730335261767:role/ecsTaskExecutionRole
+      execution_role: arn:aws:iam::730335261767:role/ecsTaskExecutionRole
+      family: librechat-task
+      task_execution_role: arn:aws:iam::730335261767:role/ecsTaskExecutionRole
+      logging:
+        driver: awslogs
+        options:
+          awslogs-group: /ecs/librechat
+          awslogs-region: us-east-1
+          awslogs-stream-prefix: librechat-container
+  task_size:
+    mem_limit: 512m
+    cpu_limit: 256
+  requires_compatibilities:
+    - FARGATE
+run_params:
+  network_configuration:
+    awsvpc_configuration:
+      subnets:
+        - subnet-06e6d2f5b43df485c
+        - subnet-0f2362935094b065c
+      security_groups:
+        - sg-097b648bf7a6fbaca
+      assign_public_ip: "ENABLED"
+
