@@ -5,8 +5,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
-const { getMCPManager } = require('~/config');
-const { mcpServersRegistry } = require('@librechat/api');
+const { getMCPManager, getMCPServersRegistry } = require('~/config');
 
 /**
  * Get all MCP tools available to the user
@@ -19,7 +18,7 @@ const getMCPTools = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const mcpConfig = await mcpServersRegistry.getAllServerConfigs(userId);
+    const mcpConfig = await getMCPServersRegistry().getAllServerConfigs(userId);
     const configuredServers = mcpConfig ? Object.keys(mcpConfig) : [];
 
     if (!mcpConfig || Object.keys(mcpConfig).length == 0) {
@@ -69,7 +68,7 @@ const getMCPTools = async (req, res) => {
 
         // Get server config once
         const serverConfig = mcpConfig[serverName];
-        const rawServerConfig = await mcpServersRegistry.getServerConfig(serverName, userId);
+        const rawServerConfig = await getMCPServersRegistry().getServerConfig(serverName, userId);
 
         // Initialize server object with all server-level data
         const server = {
@@ -137,7 +136,7 @@ const getMCPServersList = async (req, res) => {
     // TODO - Ensure DB servers loaded into registry (configs only)
 
     // 2. Get all server configs from registry (YAML + DB)
-    const serverConfigs = await mcpServersRegistry.getAllServerConfigs(userId);
+    const serverConfigs = await getMCPServersRegistry().getAllServerConfigs(userId);
 
     return res.json(serverConfigs);
   } catch (error) {

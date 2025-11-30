@@ -1,8 +1,9 @@
+import { logger } from '@librechat/data-schemas';
+import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type * as t from '~/mcp/types';
 import { ServerConfigsCacheFactory } from './cache/ServerConfigsCacheFactory';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
-import { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 
 /**
  * Central registry for managing MCP server configurations.
@@ -14,13 +15,40 @@ import { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInte
  *
  * Query priority: Cache configs are checked first, then DB configs.
  */
-class MCPServersRegistry {
+export class MCPServersRegistry {
+  private static instance: MCPServersRegistry;
+
   private readonly dbConfigsRepo: IServerConfigsRepositoryInterface;
   private readonly cacheConfigsRepo: IServerConfigsRepositoryInterface;
 
-  constructor() {
-    this.dbConfigsRepo = new ServerConfigsDB();
+  constructor(mongoose: typeof import('mongoose')) {
+    this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create('App', false);
+  }
+
+  /** Creates and initializes the singleton MCPServersRegistry instance */
+  public static createInstance(mongoose: typeof import('mongoose')): MCPServersRegistry {
+    if (!mongoose) {
+      throw new Error(
+        'MCPServersRegistry creation failed: mongoose instance is required for database operations. ' +
+          'Ensure mongoose is initialized before creating the registry.',
+      );
+    }
+    if (MCPServersRegistry.instance) {
+      logger.debug('[MCPServersRegistry] Returning existing instance');
+      return MCPServersRegistry.instance;
+    }
+    logger.info('[MCPServersRegistry] Creating new instance');
+    MCPServersRegistry.instance = new MCPServersRegistry(mongoose);
+    return MCPServersRegistry.instance;
+  }
+
+  /** Returns the singleton MCPServersRegistry instance */
+  public static getInstance(): MCPServersRegistry {
+    if (!MCPServersRegistry.instance) {
+      throw new Error('MCPServersRegistry has not been initialized.');
+    }
+    return MCPServersRegistry.instance;
   }
 
   public async getServerConfig(
@@ -100,5 +128,3 @@ class MCPServersRegistry {
     }
   }
 }
-
-export const mcpServersRegistry = new MCPServersRegistry();
