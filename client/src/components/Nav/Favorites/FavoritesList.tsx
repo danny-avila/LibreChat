@@ -2,12 +2,21 @@ import React, { useRef, useCallback, useMemo, useContext, useEffect } from 'reac
 import { LayoutGrid } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useDrag, useDrop } from 'react-dnd';
+import { Skeleton } from '@librechat/client';
 import { QueryKeys, dataService, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import { useFavorites, useLocalize, useHasAccess, AuthContext } from '~/hooks';
 import FavoriteItem from './FavoriteItem';
+
+/** Skeleton placeholder for a favorite item while loading */
+const FavoriteItemSkeleton = () => (
+  <div className="flex w-full items-center rounded-lg px-3 py-2">
+    <Skeleton className="mr-2 h-5 w-5 rounded-full" />
+    <Skeleton className="h-4 w-24" />
+  </div>
+);
 
 interface DraggableFavoriteItemProps {
   id: string;
@@ -137,6 +146,9 @@ export default function FavoritesList({
     })),
   });
 
+  // Check if any agent queries are still loading (not yet fetched)
+  const isAgentsLoading = agentIds.length > 0 && agentQueries.some((q) => q.isLoading);
+
   const agentsMap = useMemo(() => {
     const map: Record<string, t.Agent> = {};
 
@@ -222,36 +234,44 @@ export default function FavoritesList({
             </div>
           </div>
         )}
-        {favorites.map((fav, index) => {
-          if (fav.agentId) {
-            const agent = agentsMap[fav.agentId];
-            if (!agent) return null;
-            return (
-              <DraggableFavoriteItem
-                key={fav.agentId}
-                id={fav.agentId}
-                index={index}
-                moveItem={moveItem}
-                onDrop={handleDrop}
-              >
-                <FavoriteItem item={agent} type="agent" />
-              </DraggableFavoriteItem>
-            );
-          } else if (fav.model && fav.endpoint) {
-            return (
-              <DraggableFavoriteItem
-                key={`${fav.endpoint}-${fav.model}`}
-                id={`${fav.endpoint}-${fav.model}`}
-                index={index}
-                moveItem={moveItem}
-                onDrop={handleDrop}
-              >
-                <FavoriteItem item={{ model: fav.model, endpoint: fav.endpoint }} type="model" />
-              </DraggableFavoriteItem>
-            );
-          }
-          return null;
-        })}
+        {/* Show skeletons for ALL items while agents are still loading */}
+        {isAgentsLoading
+          ? favorites.map((fav, index) => <FavoriteItemSkeleton key={`skeleton-${index}`} />)
+          : favorites.map((fav, index) => {
+              if (fav.agentId) {
+                const agent = agentsMap[fav.agentId];
+                if (!agent) {
+                  return null;
+                }
+                return (
+                  <DraggableFavoriteItem
+                    key={fav.agentId}
+                    id={fav.agentId}
+                    index={index}
+                    moveItem={moveItem}
+                    onDrop={handleDrop}
+                  >
+                    <FavoriteItem item={agent} type="agent" />
+                  </DraggableFavoriteItem>
+                );
+              } else if (fav.model && fav.endpoint) {
+                return (
+                  <DraggableFavoriteItem
+                    key={`${fav.endpoint}-${fav.model}`}
+                    id={`${fav.endpoint}-${fav.model}`}
+                    index={index}
+                    moveItem={moveItem}
+                    onDrop={handleDrop}
+                  >
+                    <FavoriteItem
+                      item={{ model: fav.model, endpoint: fav.endpoint }}
+                      type="model"
+                    />
+                  </DraggableFavoriteItem>
+                );
+              }
+              return null;
+            })}
       </div>
     </div>
   );
