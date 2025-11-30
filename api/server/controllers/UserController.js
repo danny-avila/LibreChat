@@ -78,7 +78,10 @@ const getTermsStatusController = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    res.status(200).json({ termsAccepted: !!user.termsAccepted });
+    res.status(200).json({
+      termsAccepted: !!user.termsAccepted,
+      termsAcceptedAt: user.termsAcceptedAt || null,
+    });
   } catch (error) {
     logger.error('Error fetching terms acceptance status:', error);
     res.status(500).json({ message: 'Error fetching terms acceptance status' });
@@ -87,7 +90,14 @@ const getTermsStatusController = async (req, res) => {
 
 const acceptTermsController = async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(req.user.id, { termsAccepted: true }, { new: true });
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      {
+        termsAccepted: true,
+        termsAcceptedAt: new Date(),
+      },
+      { new: true },
+    );
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }

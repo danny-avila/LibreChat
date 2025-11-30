@@ -1043,6 +1043,7 @@ export const useAcceptTermsMutation = (
     onSuccess: (data, variables, context) => {
       queryClient.setQueryData<t.TUserTermsResponse>([QueryKeys.userTerms], {
         termsAccepted: true,
+        termsAcceptedAt: new Date().toISOString(),
       });
       options?.onSuccess?.(data, variables, context);
     },
