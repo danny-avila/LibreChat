@@ -11,7 +11,7 @@ import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPServerInspector } from './registry/MCPServerInspector';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
-import { mcpServersRegistry as registry } from './registry/MCPServersRegistry';
+import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
@@ -69,7 +69,7 @@ export class MCPManager extends UserConnectionManager {
   /** Returns all available tool functions from app-level connections */
   public async getAppToolFunctions(): Promise<t.LCAvailableTools> {
     const toolFunctions: t.LCAvailableTools = {};
-    const configs = await registry.getAllServerConfigs();
+    const configs = await MCPServersRegistry.getInstance().getAllServerConfigs();
     for (const config of Object.values(configs)) {
       if (config.toolFunctions != null) {
         Object.assign(toolFunctions, config.toolFunctions);
@@ -115,7 +115,7 @@ export class MCPManager extends UserConnectionManager {
    */
   private async getInstructions(serverNames?: string[]): Promise<Record<string, string>> {
     const instructions: Record<string, string> = {};
-    const configs = await registry.getAllServerConfigs();
+    const configs = await MCPServersRegistry.getInstance().getAllServerConfigs();
     for (const [serverName, config] of Object.entries(configs)) {
       if (config.serverInstructions != null) {
         instructions[serverName] = config.serverInstructions as string;
@@ -216,7 +216,10 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
 
-      const rawConfig = (await registry.getServerConfig(serverName, userId)) as t.MCPOptions;
+      const rawConfig = (await MCPServersRegistry.getInstance().getServerConfig(
+        serverName,
+        userId,
+      )) as t.MCPOptions;
       const currentOptions = processMCPEnv({
         user,
         options: rawConfig,
