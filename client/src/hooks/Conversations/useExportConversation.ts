@@ -366,7 +366,9 @@ export default function useExportConversation({
     }
 
     /** Use JSON.stringify without indentation to minimize file size for deeply nested recursive exports */
-    download(JSON.stringify(data), `${filename}.json`, 'application/json');
+    const jsonString = JSON.stringify(data);
+    const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
+    download(blob, `${filename}.json`, 'application/json');
   };
 
   const exportConversation = () => {
