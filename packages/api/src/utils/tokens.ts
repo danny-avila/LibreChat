@@ -140,6 +140,7 @@ const anthropicModels = {
 
 const deepseekModels = {
   deepseek: 128000,
+  'deepseek-chat': 128000,
   'deepseek-reasoner': 128000,
   'deepseek-r1': 128000,
   'deepseek-v3': 128000,
@@ -347,11 +348,21 @@ const anthropicMaxOutputs = {
   'claude-3-7-sonnet': 128000,
 };
 
+/** Outputs from https://api-docs.deepseek.com/quick_start/pricing */
+const deepseekMaxOutputs = {
+  deepseek: 8000, // deepseek-chat default: 4K, max: 8K
+  'deepseek-chat': 8000,
+  'deepseek-reasoner': 64000, // default: 32K, max: 64K
+  'deepseek-r1': 64000,
+  'deepseek-v3': 8000,
+  'deepseek.r1': 64000,
+};
+
 export const maxOutputTokensMap = {
   [EModelEndpoint.anthropic]: anthropicMaxOutputs,
   [EModelEndpoint.azureOpenAI]: modelMaxOutputs,
-  [EModelEndpoint.openAI]: modelMaxOutputs,
-  [EModelEndpoint.custom]: modelMaxOutputs,
+  [EModelEndpoint.openAI]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
+  [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
 };
 
 /**
