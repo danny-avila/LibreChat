@@ -26,6 +26,7 @@ interface AuthFieldProps {
 
 function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) {
   const localize = useLocalize();
+  const statusText = hasValue ? localize('com_ui_set') : localize('com_ui_unset');
 
   return (
     <div className="space-y-2">
@@ -36,23 +37,25 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
           render={
             <div className="flex items-center gap-2">
               <Label htmlFor={name} className="text-sm font-medium">
-                {config.title}
+                {config.title} <span className="sr-only">({statusText})</span>
               </Label>
               <CircleHelpIcon className="h-6 w-6 cursor-help text-text-secondary transition-colors hover:text-text-primary" />
             </div>
           }
         />
-        {hasValue ? (
-          <div className="flex min-w-fit items-center gap-2 whitespace-nowrap rounded-full border border-border-light px-2 py-0.5 text-xs font-medium text-text-secondary">
-            <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
-            <span>{localize('com_ui_set')}</span>
-          </div>
-        ) : (
-          <div className="flex min-w-fit items-center gap-2 whitespace-nowrap rounded-full border border-border-light px-2 py-0.5 text-xs font-medium text-text-secondary">
-            <div className="h-1.5 w-1.5 rounded-full border border-border-medium" />
-            <span>{localize('com_ui_unset')}</span>
-          </div>
-        )}
+        <div aria-hidden="true">
+          {hasValue ? (
+            <div className="flex min-w-fit items-center gap-2 whitespace-nowrap rounded-full border border-border-light px-2 py-0.5 text-xs font-medium text-text-secondary">
+              <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              <span>{localize('com_ui_set')}</span>
+            </div>
+          ) : (
+            <div className="flex min-w-fit items-center gap-2 whitespace-nowrap rounded-full border border-border-light px-2 py-0.5 text-xs font-medium text-text-secondary">
+              <div className="h-1.5 w-1.5 rounded-full border border-border-medium" />
+              <span>{localize('com_ui_unset')}</span>
+            </div>
+          )}
+        </div>
       </div>
       <Controller
         name={name}
