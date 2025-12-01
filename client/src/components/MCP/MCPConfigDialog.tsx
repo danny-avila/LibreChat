@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { KeyRound, PlugZap, AlertTriangle } from 'lucide-react';
 import {
   Spinner,
@@ -44,24 +44,32 @@ export default function MCPConfigDialog({
     ? localize('com_ui_configure_mcp_variables_for', { 0: serverName })
     : `${serverName} MCP Server`;
 
-  const getStatusText = () => {
-    if (!serverStatus) return '';
-    const { connectionState, requiresOAuth } = serverStatus;
-
-    if (connectionState === 'connecting') return localize('com_ui_connecting');
-    if (connectionState === 'error') return localize('com_ui_error');
-    if (connectionState === 'connected') return localize('com_ui_active');
-    if (connectionState === 'disconnected') {
-      return requiresOAuth ? localize('com_ui_oauth') : localize('com_ui_offline');
+  const fullTitle = useMemo(() => {
+    if (!serverStatus) {
+      return localize('com_ui_mcp_dialog_title', {
+        serverName,
+        status: '',
+      });
     }
-    return '';
-  };
 
-  const statusText = getStatusText();
-  const fullTitle = localize('com_ui_mcp_dialog_title', {
-    serverName,
-    status: statusText,
-  });
+    const { connectionState, requiresOAuth } = serverStatus;
+    let statusText = '';
+
+    if (connectionState === 'connecting') {
+      statusText = localize('com_ui_connecting');
+    } else if (connectionState === 'error') {
+      statusText = localize('com_ui_error');
+    } else if (connectionState === 'connected') {
+      statusText = localize('com_ui_active');
+    } else if (connectionState === 'disconnected') {
+      statusText = requiresOAuth ? localize('com_ui_oauth') : localize('com_ui_offline');
+    }
+
+    return localize('com_ui_mcp_dialog_title', {
+      serverName,
+      status: statusText,
+    });
+  }, [serverStatus, serverName, localize]);
 
   // Helper function to render status badge based on connection state
   const renderStatusBadge = () => {
