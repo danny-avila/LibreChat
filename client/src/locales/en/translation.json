@@ -789,6 +789,7 @@
   "com_ui_complete_setup": "Complete Setup",
   "com_ui_concise": "Concise",
   "com_ui_configure_mcp_variables_for": "Configure Variables for {{0}}",
+  "com_ui_mcp_dialog_title": "Configure Variables for {{serverName}}. Server Status: {{status}}",
   "com_ui_confirm": "Confirm",
   "com_ui_confirm_action": "Confirm Action",
   "com_ui_confirm_admin_use_change": "Changing this setting will block access for admins, including yourself. Are you sure you want to proceed?",
