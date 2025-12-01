@@ -88,6 +88,11 @@ export default function usePresets() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.presets]);
+      showToast({
+        message: localize('com_endpoint_preset_delete_success'),
+        severity: NotificationSeverity.SUCCESS,
+        showIcon: true,
+      });
     },
     onError: (error) => {
       queryClient.invalidateQueries([QueryKeys.presets]);
@@ -95,6 +100,7 @@ export default function usePresets() {
       showToast({
         message: localize('com_endpoint_preset_delete_error'),
         severity: NotificationSeverity.ERROR,
+        showIcon: true,
       });
     },
   });
