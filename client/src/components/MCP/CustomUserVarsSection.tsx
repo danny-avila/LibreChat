@@ -60,9 +60,18 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label htmlFor={name} className="text-sm font-medium">
-          {config.title} <span className="sr-only">({statusText})</span>
-        </Label>
+        <TooltipAnchor
+          enableHTML={true}
+          description={config.description || ''}
+          render={
+            <div className="flex items-center gap-2">
+              <Label htmlFor={name} className="text-sm font-medium">
+                {config.title} <span className="sr-only">({statusText})</span>
+              </Label>
+              <CircleHelpIcon className="h-6 w-6 cursor-help text-text-secondary transition-colors hover:text-text-primary" />
+            </div>
+          }
+        />
         <div aria-hidden="true">
           {hasValue ? (
             <div className="flex min-w-fit items-center gap-2 whitespace-nowrap rounded-full border border-border-light px-2 py-0.5 text-xs font-medium text-text-secondary">
