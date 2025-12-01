@@ -7,7 +7,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@librechat/client';
-import { PermissionBits } from 'librechat-data-provider';
+import { PermissionBits, ResourceType } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useLocalize, useSubmitMessage, useCustomLink, useResourcePermissions } from '~/hooks';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
@@ -34,7 +34,7 @@ function ChatGroupItem({
   );
 
   // Check permissions for the promptGroup
-  const { hasPermission } = useResourcePermissions('promptGroup', group._id || '');
+  const { hasPermission } = useResourcePermissions(ResourceType.PROMPTGROUP, group._id || '');
   const canEdit = hasPermission(PermissionBits.EDIT);
 
   const triggerButtonRef = useRef<HTMLButtonElement | null>(null);
