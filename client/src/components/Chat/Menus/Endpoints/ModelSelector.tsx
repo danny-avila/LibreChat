@@ -1,14 +1,15 @@
 import React, { useMemo } from 'react';
 import { TooltipAnchor } from '@librechat/client';
+import { getConfigDefaults } from 'librechat-data-provider';
 import type { ModelSelectorProps } from '~/common';
-import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
-import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
 import {
   renderModelSpecs,
   renderEndpoints,
   renderSearchResults,
   renderCustomGroups,
 } from './components';
+import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
+import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
@@ -122,6 +123,14 @@ function ModelSelectorContent() {
 }
 
 export default function ModelSelector({ startupConfig }: ModelSelectorProps) {
+  const interfaceConfig = startupConfig?.interface ?? getConfigDefaults().interface;
+  const modelSpecs = startupConfig?.modelSpecs?.list ?? [];
+
+  // Hide the selector when modelSelect is false and there are no model specs to show
+  if (interfaceConfig.modelSelect === false && modelSpecs.length === 0) {
+    return null;
+  }
+
   return (
     <ModelSelectorChatProvider>
       <ModelSelectorProvider startupConfig={startupConfig}>
