@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { XIcon } from 'lucide-react';
 import { useRecoilState } from 'recoil';
-import { Button } from '@librechat/client';
+import { Button, cn } from '@librechat/client';
 import { useGetBannerQuery } from '~/data-provider';
 import store from '~/store';
 
@@ -23,8 +23,6 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
     return null;
   }
 
-  console.log(banner);
-
   const onClick = () => {
     if (banner.persistable) {
       return;
@@ -43,7 +41,7 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
       className="sticky top-0 z-20 flex items-center bg-surface-secondary px-2 py-1 text-text-primary dark:bg-gradient-to-r md:relative"
     >
       <div
-        className={`text-md w-full truncate text-center ${banner.persistable ? '' : 'px-4'}`}
+        className={cn('text-md w-full truncate text-center', !banner.persistable && 'px-4')}
         dangerouslySetInnerHTML={{ __html: banner.message }}
       ></div>
       {!banner.persistable && (
