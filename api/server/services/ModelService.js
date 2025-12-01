@@ -1,11 +1,14 @@
 const axios = require('axios');
-const { Providers } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { logAxiosError, inputSchema, processModelData } = require('@librechat/api');
-const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-provider');
+const { logAxiosError, inputSchema, processModelData, isUserProvided } = require('@librechat/api');
+const {
+  CacheKeys,
+  defaultModels,
+  KnownEndpoints,
+  EModelEndpoint,
+} = require('librechat-data-provider');
 const { OllamaClient } = require('~/app/clients/OllamaClient');
-const { isUserProvided } = require('~/server/utils');
 const getLogStores = require('~/cache/getLogStores');
 const { extractBaseURL } = require('~/utils');
 
@@ -68,7 +71,7 @@ const fetchModels = async ({
     return models;
   }
 
-  if (name && name.toLowerCase().startsWith(Providers.OLLAMA)) {
+  if (name && name.toLowerCase().startsWith(KnownEndpoints.ollama)) {
     try {
       return await OllamaClient.fetchModels(baseURL, { headers, user: userObject });
     } catch (ollamaError) {
@@ -103,7 +106,7 @@ const fetchModels = async ({
       options.headers['OpenAI-Organization'] = process.env.OPENAI_ORGANIZATION;
     }
 
-    const url = new URL(`${baseURL}${azure ? '' : '/models'}`);
+    const url = new URL(`${baseURL.replace(/\/+$/, '')}${azure ? '' : '/models'}`);
     if (user && userIdQuery) {
       url.searchParams.append('user', user);
     }
