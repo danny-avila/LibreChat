@@ -1,7 +1,14 @@
 import type { FC } from 'react';
-import { useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import { BookCopy } from 'lucide-react';
-import { TooltipAnchor } from '@librechat/client';
+import {
+  Button,
+  OGDialog,
+  OGDialogTitle,
+  OGDialogHeader,
+  OGDialogContent,
+  TooltipAnchor,
+} from '@librechat/client';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import { EditPresetDialog, PresetItems } from './Presets';
 import { useLocalize, usePresets } from '~/hooks';
@@ -20,8 +27,19 @@ const PresetsMenu: FC = () => {
     onDeletePreset,
     submitPreset,
     exportPreset,
+    showDeleteDialog,
+    setShowDeleteDialog,
+    presetToDelete,
+    confirmDeletePreset,
   } = usePresets();
   const { preset } = useChatContext();
+
+  useEffect(() => {
+    if (!showDeleteDialog && presetsMenuTriggerRef && presetsMenuTriggerRef.current) {
+      presetsMenuTriggerRef.current.focus();
+    }
+  }, [showDeleteDialog]);
+
   return (
     <Root>
       <Trigger asChild>
@@ -72,6 +90,34 @@ const PresetsMenu: FC = () => {
           exportPreset={exportPreset}
           triggerRef={presetsMenuTriggerRef}
         />
+      )}
+      {presetToDelete && (
+        <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <OGDialogContent
+            title={localize('com_endpoint_preset_delete_confirm')}
+            className="w-11/12 max-w-md"
+            showCloseButton={false}
+          >
+            <OGDialogHeader>
+              <OGDialogTitle>{localize('com_ui_delete_preset')}</OGDialogTitle>
+            </OGDialogHeader>
+            <div className="w-full truncate">
+              {localize('com_ui_delete_confirm')} <strong>{presetToDelete.title}</strong>?
+            </div>
+            <div className="flex justify-end gap-4 pt-4">
+              <Button
+                aria-label="cancel"
+                variant="outline"
+                onClick={() => setShowDeleteDialog(false)}
+              >
+                {localize('com_ui_cancel')}
+              </Button>
+              <Button variant="destructive" onClick={confirmDeletePreset}>
+                {localize('com_ui_delete')}
+              </Button>
+            </div>
+          </OGDialogContent>
+        </OGDialog>
       )}
     </Root>
   );

@@ -852,6 +852,7 @@
   "com_ui_delete_mcp_success": "MCP server deleted successfully",
   "com_ui_delete_memory": "Delete Memory",
   "com_ui_delete_not_allowed": "Delete operation is not allowed",
+  "com_ui_delete_preset": "Delete Preset?",
   "com_ui_delete_prompt": "Delete Prompt?",
   "com_ui_delete_shared_link": "Delete shared link?",
   "com_ui_delete_success": "Successfully deleted",
