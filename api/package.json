@@ -34,6 +34,7 @@
   },
   "homepage": "https://librechat.ai",
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.941.0",
     "@aws-sdk/client-s3": "^3.758.0",
     "@aws-sdk/s3-request-presigner": "^3.758.0",
     "@azure/identity": "^4.7.0",
@@ -48,6 +49,7 @@
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@modelcontextprotocol/sdk": "^1.21.0",
     "@node-saml/passport-saml": "^5.1.0",
+    "@smithy/node-http-handler": "^4.4.5",
     "axios": "^1.12.1",
     "bcryptjs": "^2.4.3",
     "compression": "^1.8.1",
