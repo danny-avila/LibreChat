@@ -141,6 +141,7 @@ const tokenValues = Object.assign(
     'command-r': { prompt: 0.5, completion: 1.5 },
     'command-r-plus': { prompt: 3, completion: 15 },
     'command-text': { prompt: 1.5, completion: 2.0 },
+    'deepseek-chat': { prompt: 0.28, completion: 0.42 },
     'deepseek-reasoner': { prompt: 0.28, completion: 0.42 },
     'deepseek-r1': { prompt: 0.4, completion: 2.0 },
     'deepseek-v3': { prompt: 0.2, completion: 0.8 },
@@ -246,6 +247,10 @@ const cacheTokenValues = {
   'claude-sonnet-4': { write: 3.75, read: 0.3 },
   'claude-opus-4': { write: 18.75, read: 1.5 },
   'claude-opus-4-5': { write: 6.25, read: 0.5 },
+  // DeepSeek models - cache hit: $0.028/1M, cache miss: $0.28/1M
+  deepseek: { write: 0.28, read: 0.028 },
+  'deepseek-chat': { write: 0.28, read: 0.028 },
+  'deepseek-reasoner': { write: 0.28, read: 0.028 },
 };
 
 /**

@@ -313,6 +313,10 @@ export default function useStepHandler({
             ? messageDelta.delta.content[0]
             : messageDelta.delta.content;
 
+          if (contentPart == null) {
+            return;
+          }
+
           const currentIndex = calculateContentIndex(
             runStep.index,
             initialContent,
@@ -344,6 +348,10 @@ export default function useStepHandler({
           const contentPart = Array.isArray(reasoningDelta.delta.content)
             ? reasoningDelta.delta.content[0]
             : reasoningDelta.delta.content;
+
+          if (contentPart == null) {
+            return;
+          }
 
           const currentIndex = calculateContentIndex(
             runStep.index,

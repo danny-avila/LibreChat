@@ -33,9 +33,8 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
       const _messages = getMessages();
       const messages =
-        _messages
-          ?.filter((m) => m.messageId !== messageId)
-          .map((msg) => ({ ...msg, thread_id })) ?? [];
+        _messages?.filter((m) => m.messageId !== messageId).map((msg) => ({ ...msg, thread_id })) ??
+        [];
       const userMessage = messages[messages.length - 1] as TMessage | undefined;
 
       const { initialResponse } = submission;
@@ -66,14 +65,17 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
       response.content[index] = { type, [type]: part } as TMessageContentParts;
 
+      const lastContentPart = response.content[response.content.length - 1];
+      const initialContentPart = initialResponse.content?.[0];
       if (
         type !== ContentTypes.TEXT &&
-        initialResponse.content &&
-        ((response.content[response.content.length - 1].type === ContentTypes.TOOL_CALL &&
-          response.content[response.content.length - 1][ContentTypes.TOOL_CALL].progress === 1) ||
-          response.content[response.content.length - 1].type === ContentTypes.IMAGE_FILE)
+        initialContentPart != null &&
+        lastContentPart != null &&
+        ((lastContentPart.type === ContentTypes.TOOL_CALL &&
+          lastContentPart[ContentTypes.TOOL_CALL]?.progress === 1) ||
+          lastContentPart.type === ContentTypes.IMAGE_FILE)
       ) {
-        response.content.push(initialResponse.content[0]);
+        response.content.push(initialContentPart);
       }
 
       setMessages([...messages, response]);
