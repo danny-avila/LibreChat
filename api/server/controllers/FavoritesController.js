@@ -1,5 +1,8 @@
 const { updateUser, getUserById } = require('~/models');
 
+const MAX_FAVORITES = 50;
+const MAX_STRING_LENGTH = 256;
+
 const updateFavoritesController = async (req, res) => {
   try {
     const { favorites } = req.body;
@@ -13,9 +16,29 @@ const updateFavoritesController = async (req, res) => {
       return res.status(400).json({ message: 'Favorites must be an array' });
     }
 
+    if (favorites.length > MAX_FAVORITES) {
+      return res.status(400).json({ message: `Maximum ${MAX_FAVORITES} favorites allowed` });
+    }
+
     for (const fav of favorites) {
       const hasAgent = !!fav.agentId;
       const hasModel = !!(fav.model && fav.endpoint);
+
+      if (fav.agentId && fav.agentId.length > MAX_STRING_LENGTH) {
+        return res
+          .status(400)
+          .json({ message: `agentId exceeds maximum length of ${MAX_STRING_LENGTH}` });
+      }
+      if (fav.model && fav.model.length > MAX_STRING_LENGTH) {
+        return res
+          .status(400)
+          .json({ message: `model exceeds maximum length of ${MAX_STRING_LENGTH}` });
+      }
+      if (fav.endpoint && fav.endpoint.length > MAX_STRING_LENGTH) {
+        return res
+          .status(400)
+          .json({ message: `endpoint exceeds maximum length of ${MAX_STRING_LENGTH}` });
+      }
 
       if (!hasAgent && !hasModel) {
         return res.status(400).json({

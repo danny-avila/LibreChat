@@ -1,7 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
-import store from '~/store';
+import { useToastContext } from '@librechat/client';
+import type { Favorite } from '~/store/favorites';
 import { useGetFavoritesQuery, useUpdateFavoritesMutation } from '~/data-provider';
+import { useLocalize } from '~/hooks';
+import { logger } from '~/utils';
+import store from '~/store';
 
 /**
  * Hook for managing user favorites (pinned agents and models).
@@ -14,7 +18,24 @@ import { useGetFavoritesQuery, useUpdateFavoritesMutation } from '~/data-provide
  * @returns Object containing favorites state and helper methods for
  * adding, removing, toggling, reordering, and checking favorites.
  */
+
+/**
+ * Cleans favorites array to only include canonical shapes (agentId or model+endpoint).
+ */
+const cleanFavorites = (favorites: Favorite[]): Favorite[] =>
+  favorites.map((f) => {
+    if (f.agentId) {
+      return { agentId: f.agentId };
+    }
+    if (f.model && f.endpoint) {
+      return { model: f.model, endpoint: f.endpoint };
+    }
+    return f;
+  });
+
 export default function useFavorites() {
+  const localize = useLocalize();
+  const { showToast } = useToastContext();
   const [favorites, setFavorites] = useRecoilState(store.favorites);
   const getFavoritesQuery = useGetFavoritesQuery();
   const updateFavoritesMutation = useUpdateFavoritesMutation();
@@ -29,15 +50,21 @@ export default function useFavorites() {
     }
   }, [getFavoritesQuery.data, setFavorites]);
 
-  const saveFavorites = (newFavorites: typeof favorites) => {
-    const cleaned = newFavorites.map((f) => {
-      if (f.agentId) return { agentId: f.agentId };
-      if (f.model && f.endpoint) return { model: f.model, endpoint: f.endpoint };
-      return f;
-    });
-    setFavorites(cleaned);
-    updateFavoritesMutation.mutate(cleaned);
-  };
+  const saveFavorites = useCallback(
+    async (newFavorites: typeof favorites) => {
+      const cleaned = cleanFavorites(newFavorites);
+      setFavorites(cleaned);
+      try {
+        await updateFavoritesMutation.mutateAsync(cleaned);
+      } catch (error) {
+        logger.error('Error updating favorites:', error);
+        showToast({ message: localize('com_ui_error'), status: 'error' });
+        // Refetch to resync state with server
+        getFavoritesQuery.refetch();
+      }
+    },
+    [setFavorites, updateFavoritesMutation, showToast, localize, getFavoritesQuery],
+  );
 
   const addFavoriteAgent = (agentId: string) => {
     if (favorites.some((f) => f.agentId === agentId)) return;
@@ -89,25 +116,27 @@ export default function useFavorites() {
   };
 
   /**
-   * Reorder favorites and persist the new order to the server.
+   * Reorder favorites and optionally persist the new order to the server.
    * This combines state update and persistence to avoid race conditions
    * where the closure captures stale state.
    */
-  const reorderFavorites = (newFavorites: typeof favorites, persist = false) => {
-    const cleaned = newFavorites.map((f) => {
-      if (f.agentId) {
-        return { agentId: f.agentId };
+  const reorderFavorites = useCallback(
+    async (newFavorites: typeof favorites, persist = false) => {
+      const cleaned = cleanFavorites(newFavorites);
+      setFavorites(cleaned);
+      if (persist) {
+        try {
+          await updateFavoritesMutation.mutateAsync(cleaned);
+        } catch (error) {
+          console.error('Error reordering favorites:', error);
+          showToast({ message: localize('com_ui_error'), status: 'error' });
+          // Refetch to resync state with server
+          getFavoritesQuery.refetch();
+        }
       }
-      if (f.model && f.endpoint) {
-        return { model: f.model, endpoint: f.endpoint };
-      }
-      return f;
-    });
-    setFavorites(cleaned);
-    if (persist) {
-      updateFavoritesMutation.mutate(cleaned);
-    }
-  };
+    },
+    [setFavorites, updateFavoritesMutation, showToast, localize, getFavoritesQuery],
+  );
 
   return {
     favorites,

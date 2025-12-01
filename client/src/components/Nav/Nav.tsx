@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
+import { List } from 'react-virtualized';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Skeleton, useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
@@ -100,7 +101,7 @@ const Nav = memo(
     }, [data?.pages]);
 
     const outerContainerRef = useRef<HTMLDivElement>(null);
-    const conversationsRef = useRef<HTMLDivElement>(null);
+    const conversationsRef = useRef<List | null>(null);
 
     const { moveToTop } = useNavScrolling<ConversationListResponse>({
       setShowLoading,

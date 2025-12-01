@@ -3,8 +3,8 @@ import { EarthIcon, Pin, PinOff } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
+import { useFavorites, useLocalize } from '~/hooks';
 import type { Endpoint } from '~/common';
-import { useFavorites } from '~/hooks';
 import { cn } from '~/utils';
 
 interface EndpointModelItemProps {
@@ -14,6 +14,7 @@ interface EndpointModelItemProps {
 }
 
 export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointModelItemProps) {
+  const localize = useLocalize();
   const { handleSelectModel } = useModelSelectorContext();
   const { isFavoriteModel, toggleFavoriteModel, isFavoriteAgent, toggleFavoriteAgent } =
     useFavorites();
@@ -94,6 +95,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
       </div>
       <button
         onClick={handleFavoriteClick}
+        aria-label={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
         className={cn(
           'rounded-md p-1 hover:bg-surface-hover',
           isFavorite ? 'visible' : 'invisible group-hover:visible',

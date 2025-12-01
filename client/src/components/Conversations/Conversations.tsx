@@ -1,19 +1,21 @@
 import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
 import { ChevronRight } from 'lucide-react';
-import { TConversation } from 'librechat-data-provider';
+import { useRecoilValue } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
+import { TConversation, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
+import { useLocalize, TranslationKeys, useFavorites, useHasAccess } from '~/hooks';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
-import { useLocalize, TranslationKeys, useFavorites } from '~/hooks';
 import { groupConversationsByDate, cn } from '~/utils';
 import Convo from './Convo';
+import store from '~/store';
 
 interface ConversationsProps {
   conversations: Array<TConversation | null>;
   moveToTop: () => void;
   toggleNav: () => void;
-  containerRef: React.RefObject<HTMLDivElement | List>;
+  containerRef: React.RefObject<List>;
   loadMoreConversations: () => void;
   isLoading: boolean;
   isSearchLoading: boolean;
@@ -88,9 +90,26 @@ const Conversations: FC<ConversationsProps> = ({
   setIsChatsExpanded,
 }) => {
   const localize = useLocalize();
+  const search = useRecoilValue(store.search);
   const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
+
+  const hasAccessToAgents = useHasAccess({
+    permissionType: PermissionTypes.AGENTS,
+    permission: Permissions.USE,
+  });
+
+  const hasAccessToMarketplace = useHasAccess({
+    permissionType: PermissionTypes.MARKETPLACE,
+    permission: Permissions.USE,
+  });
+
+  const showAgentMarketplace = hasAccessToAgents && hasAccessToMarketplace;
+
+  // Determine if FavoritesList will render content
+  const shouldShowFavorites =
+    !search.query && (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
 
   const filteredConversations = useMemo(
     () => rawConversations.filter(Boolean) as TConversation[],
@@ -104,7 +123,10 @@ const Conversations: FC<ConversationsProps> = ({
 
   const flattenedItems = useMemo(() => {
     const items: FlattenedItem[] = [];
-    items.push({ type: 'favorites' });
+    // Only include favorites row if FavoritesList will render content
+    if (shouldShowFavorites) {
+      items.push({ type: 'favorites' });
+    }
     items.push({ type: 'chats-header' });
 
     if (isChatsExpanded) {
@@ -118,7 +140,7 @@ const Conversations: FC<ConversationsProps> = ({
       }
     }
     return items;
-  }, [groupedConversations, isLoading, isChatsExpanded]);
+  }, [groupedConversations, isLoading, isChatsExpanded, shouldShowFavorites]);
 
   // Store flattenedItems in a ref for keyMapper to access without recreating cache
   const flattenedItemsRef = useRef(flattenedItems);
@@ -214,7 +236,11 @@ const Conversations: FC<ConversationsProps> = ({
           </button>
         );
       } else if (item.type === 'header') {
-        rendering = <DateLabel groupName={item.groupName} isFirst={index === 2} />;
+        // First date header index depends on whether favorites row is included
+        // With favorites: [favorites, chats-header, first-header] → index 2
+        // Without favorites: [chats-header, first-header] → index 1
+        const firstHeaderIndex = shouldShowFavorites ? 2 : 1;
+        rendering = <DateLabel groupName={item.groupName} isFirst={index === firstHeaderIndex} />;
       } else if (item.type === 'convo') {
         rendering = (
           <MemoizedConvo conversation={item.convo} retainView={moveToTop} toggleNav={toggleNav} />
@@ -230,7 +256,18 @@ const Conversations: FC<ConversationsProps> = ({
         </CellMeasurer>
       );
     },
-    [cache, flattenedItems, moveToTop, toggleNav, clearFavoritesCache, isSmallScreen],
+    [
+      cache,
+      flattenedItems,
+      moveToTop,
+      toggleNav,
+      clearFavoritesCache,
+      isSmallScreen,
+      isChatsExpanded,
+      localize,
+      setIsChatsExpanded,
+      shouldShowFavorites,
+    ],
   );
 
   const getRowHeight = useCallback(
@@ -264,7 +301,7 @@ const Conversations: FC<ConversationsProps> = ({
           <AutoSizer>
             {({ width, height }) => (
               <List
-                ref={containerRef as React.RefObject<List>}
+                ref={containerRef}
                 width={width}
                 height={height}
                 deferredMeasurementCache={cache}
