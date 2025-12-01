@@ -16,31 +16,29 @@ const DEFAULT_MODEL =
 
 const WOODLAND_AGENTS = [
   {
-    id: 'agent_woodland_supervisor',
-    name: 'Woodland Supervisor',
-    description: 'Routes Woodland requests across catalog, Cyclopedia, website, and cases responses.',
-    instructionsKey: 'SupervisorRouter',
+    id: 'agent_wpp_orchestrator',
+    name: 'WPP Orchestrator',
+    description: 'Prompt-only router minimizing tool/agent calls for Cyclone Rake support.',
+    instructionsKey: 'OrchestratorRouter',
+    // Only keep core domain tools; FAQ grounding via MCP server
     tools: [
       'woodland-ai-search-catalog',
       'woodland-ai-search-cyclopedia',
       'woodland-ai-search-website',
-      'woodland-ai-search-cases',
-      // Added tractor search tool to avoid direct 'tool not found' errors when supervisor routes fitment queries
       'woodland-ai-search-tractor',
+      'woodland-ai-search-product-history',
+      'woodland-ai-search-engine-history',
+      'woodland-ai-search-cases',
     ],
-    capabilities: [AgentCapabilities.chain],
-    // Removed agent_ids to prevent legacy sequential chain recursion & duplicate domain tool calls.
+    // Attach MCP FAQ server
+    mcp: ['azure-search-faq'],
+    // Do NOT enable chaining to avoid sequential multi-agent loops
+    capabilities: [],
+    // No attached agents; route via tools only
     agent_ids: [],
     hide_sequential_outputs: true,
-    conversation_starters: [
-      'Can you recommend the best Cyclone Rake for heavy fall cleanup on 3 acres?',
-      'I need help comparing the Classic, Commander, and Commercial models.',
-      'What part or accessory should I order to extend my pickup reach?',
-      'My engine is surging—can you walk me through the troubleshooting steps?',
-      'How long does shipping take during peak fall season?'
-    ],
-    temperature: 0,
-    recursion_limit: 6, // enforce shallow recursion to avoid loops; synthesis lock handles tool cap
+    temperature: 0.2,
+    recursion_limit: 10,
   },
   {
     id: 'agent_woodland_catalog',
@@ -48,13 +46,6 @@ const WOODLAND_AGENTS = [
     description: 'Answers SKU/part/model questions using Airtable catalog data.',
     instructionsKey: 'CatalogPartsAgent',
     tools: ['woodland-ai-search-catalog'],
-    conversation_starters: [
-      'What impeller options are available for a Commercial Pro?',
-      'I need an inlet collar for an XL—what SKU should I order?',
-      'Which adapter kit fits a John Deere D130 with a 42-inch deck?',
-      'What collector bag fits a 2015 Commander with a Vanguard 8 HP engine?',
-      'What section kit do I use to extend a PVP?'
-    ],
     temperature: 0,
   },
   {
@@ -63,13 +54,6 @@ const WOODLAND_AGENTS = [
     description: 'Handles policies, SOPs, warranty, and shipping via Cyclopedia.',
     instructionsKey: 'CyclopediaSupportAgent',
     tools: ['woodland-ai-search-cyclopedia'],
-    conversation_starters: [
-      'How do I winterize my Cyclone Rake for storage?',
-      'My engine is surging—what should I check first?',
-      'What are the steps to install an MDA on a John Deere D130?',
-      'How do I replace the dumpling assembly?',
-      'What maintenance should I do on a Cyclone Rake CR Pro before fall?'
-    ],
     temperature: 0,
   },
   {
@@ -78,13 +62,6 @@ const WOODLAND_AGENTS = [
     description: 'Confirms tractor compatibility and installation requirements.',
     instructionsKey: 'TractorFitmentAgent',
     tools: ['woodland-ai-search-tractor'],
-    conversation_starters: [
-      'I need help finding the right fitment for my tractor',
-      'What parts do I need for my tractor?',
-      'Can you help me check tractor compatibility?',
-      'I want to see if my tractor works with a Cyclone Rake',
-      'Help me find the right hitch and adapter for my tractor'
-    ],
     temperature: 0,
   },
   {
@@ -93,13 +70,6 @@ const WOODLAND_AGENTS = [
     description: 'Summarises internal cases when explicitly requested.',
     instructionsKey: 'CasesReferenceAgent',
     tools: ['woodland-ai-search-cases'],
-    conversation_starters: [
-      'Do we have a case covering dumpling assembly replacements?',
-      'Has anyone resolved Commander hose extension shipping delays?',
-      'What was the resolution for case 48213 regarding bag upgrades?',
-      'Can you summarize the chassis repair case for the Commercial Pro?',
-      'Is there an internal case about surge issues on the Vanguard engine?'
-    ],
     temperature: 0,
   },
   {
@@ -108,13 +78,6 @@ const WOODLAND_AGENTS = [
     description: 'Provides pricing and ordering guidance from woodland.com pages.',
     instructionsKey: 'WebsiteProductAgent',
     tools: ['woodland-ai-search-website'],
-    conversation_starters: [
-      'How much are the Dual Pro Wheels right now?',
-      'What’s the price of a hose extension kit for the Commander?',
-      'Do the Commander and Commercial Pro collector bags cost the same?',
-      'What’s the total price for a Commander bundle with the extension hose?',
-      'Is there any financing info for the Commercial bundle?'
-    ],
     temperature: 0,
   },
   {
@@ -123,13 +86,6 @@ const WOODLAND_AGENTS = [
     description: 'Surfaces historical engine specifications and change logs for Cyclone Rake units.',
     instructionsKey: 'EngineHistoryAgent',
     tools: ['woodland-ai-engine-history'],
-    conversation_starters: [
-      'What engines have powered the Commander over the years?',
-      'When did the Vanguard upgrade roll out for the Commercial Pro?',
-      'Which engines were standard on early CR Pros?',
-      'Summarize the engine changes for the Classic model.',
-      'What service bulletins affect older Briggs engines?'
-    ],
     temperature: 0,
   },
   {
@@ -138,13 +94,6 @@ const WOODLAND_AGENTS = [
     description: 'Provides historical product specs, timelines, and notable changes for Cyclone Rake models.',
     instructionsKey: 'ProductHistoryAgent',
     tools: ['woodland-ai-product-history'],
-    conversation_starters: [
-      'How has the Commander evolved over time?',
-      'What major upgrades were added to the XL model?',
-      'When did the Commercial Pro get larger collectors?',
-      'Summarize key design changes to the PVP line.',
-      'What accessories were bundled with the CR Pro in 2010?'
-    ],
     temperature: 0,
   },
 ];
@@ -158,6 +107,7 @@ const BASE_INSTRUCTIONS = {
   ProductHistoryAgent: promptTemplates.productHistory,
   WebsiteProductAgent: promptTemplates.websiteProduct,
   SupervisorRouter: promptTemplates.supervisorRouter,
+  OrchestratorRouter: promptTemplates.orchestratorRouter,
 };
 
 let cachedAuthor;
@@ -264,6 +214,7 @@ async function ensureAgent(agentConfig) {
     conversation_starters: agentConfig.conversation_starters || [],
     agent_ids: agentConfig.agent_ids ?? [],
     category: agentConfig.category || existing?.category || 'general',
+    mcp: agentConfig.mcp || [],
   };
 
   if (agentConfig.tool_resources) {
@@ -300,7 +251,8 @@ async function ensureAgent(agentConfig) {
     JSON.stringify(existing.capabilities || []) !== JSON.stringify(updateFields.capabilities) ||
     JSON.stringify(existing.conversation_starters || []) !==
       JSON.stringify(updateFields.conversation_starters || []) ||
-    JSON.stringify(existing.agent_ids || []) !== JSON.stringify(updateFields.agent_ids || []);
+    JSON.stringify(existing.agent_ids || []) !== JSON.stringify(updateFields.agent_ids || []) ||
+    JSON.stringify(existing.mcp || []) !== JSON.stringify(updateFields.mcp || []);
 
   const updateQuery = {
     $set: {
@@ -339,13 +291,6 @@ async function seedWoodlandAgents() {
     } catch (error) {
       console.error('[WoodlandAgentSeed] Failed to seed agent', agent.id, error);
     }
-  }
-
-  try {
-    const { migrateAgentPermissionsEnhanced } = require('../../config/migrate-agent-permissions');
-    await migrateAgentPermissionsEnhanced({ dryRun: false });
-  } catch (error) {
-    console.error('[WoodlandAgentSeed] Agent permissions migration failed', error);
   }
 }
 
