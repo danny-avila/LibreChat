@@ -100,7 +100,7 @@ const Nav = memo(
     }, [data?.pages]);
 
     const outerContainerRef = useRef<HTMLDivElement>(null);
-    const listRef = useRef<any>(null);
+    const conversationsRef = useRef<HTMLDivElement>(null);
 
     const { moveToTop } = useNavScrolling<ConversationListResponse>({
       setShowLoading,
@@ -162,7 +162,7 @@ const Nav = memo(
     const subHeaders = useMemo(
       () => (
         <>
-          {search.enabled === null && <SearchBarSkeleton isSmallScreen={isSmallScreen} />}
+          {search.enabled === null && <SearchBarSkeleton />}
           {search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
         </>
       ),
@@ -182,7 +182,7 @@ const Nav = memo(
           )}
         </>
       ),
-      [hasAccessToBookmarks, tags, isSmallScreen],
+      [hasAccessToBookmarks, tags],
     );
 
     const [isSearchLoading, setIsSearchLoading] = useState(
@@ -220,7 +220,7 @@ const Nav = memo(
                   <nav
                     id="chat-history-nav"
                     aria-label={localize('com_ui_chat_history')}
-                    className="flex h-full flex-col px-2 pb-3.5 md:px-3"
+                    className="flex h-full flex-col px-2 pb-3.5"
                   >
                     <div className="flex flex-1 flex-col overflow-hidden" ref={outerContainerRef}>
                       <MemoNewChat
@@ -234,7 +234,7 @@ const Nav = memo(
                           conversations={conversations}
                           moveToTop={moveToTop}
                           toggleNav={itemToggleNav}
-                          containerRef={listRef}
+                          containerRef={conversationsRef}
                           loadMoreConversations={loadMoreConversations}
                           isLoading={isFetchingNextPage || showLoading || isLoading}
                           isSearchLoading={isSearchLoading}

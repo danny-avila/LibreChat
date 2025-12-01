@@ -38,7 +38,7 @@ const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupNam
   const localize = useLocalize();
   return (
     <h2
-      className={cn('pl-3 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
+      className={cn('pl-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
       style={{ fontSize: '0.7rem' }}
     >
       {localize(groupName as TranslationKeys) || groupName}
@@ -201,10 +201,10 @@ const Conversations: FC<ConversationsProps> = ({
         rendering = (
           <button
             onClick={() => setIsChatsExpanded(!isChatsExpanded)}
-            className="group flex w-full items-center justify-between px-3 py-2 text-xs font-bold text-text-secondary"
+            className="group flex w-full items-center justify-between px-1 py-2 text-xs font-bold text-text-secondary"
             type="button"
           >
-            <span className="select-none">{localize('com_ui_chats') || 'Chats'}</span>
+            <span className="select-none">{localize('com_ui_chats')}</span>
             <ChevronRight
               className={cn(
                 'h-3 w-3 transition-transform duration-200',
@@ -223,7 +223,7 @@ const Conversations: FC<ConversationsProps> = ({
       return (
         <CellMeasurer cache={cache} columnIndex={0} key={key} parent={parent} rowIndex={index}>
           {({ registerChild }) => (
-            <div ref={registerChild} style={style} className="px-2">
+            <div ref={registerChild} style={style} className="">
               {rendering}
             </div>
           )}

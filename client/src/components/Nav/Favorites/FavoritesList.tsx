@@ -236,7 +236,7 @@ export default function FavoritesList({
   }
 
   return (
-    <div className="mb-2 flex flex-col pb-2">
+    <div className="mb-2 flex flex-col">
       <div className="mt-1 flex flex-col gap-1">
         {/* Show skeletons for ALL items while agents are still loading */}
         {isAgentsLoading ? (
