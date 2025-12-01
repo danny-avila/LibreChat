@@ -436,6 +436,68 @@ describe('fetchModels with Ollama specific logic', () => {
   });
 });
 
+describe('fetchModels URL construction with trailing slashes', () => {
+  beforeEach(() => {
+    axios.get.mockResolvedValue({
+      data: {
+        data: [{ id: 'model-1' }, { id: 'model-2' }],
+      },
+    });
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should not create double slashes when baseURL has a trailing slash', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com/v1/',
+      name: 'TestAPI',
+    });
+
+    expect(axios.get).toHaveBeenCalledWith('https://api.test.com/v1/models', expect.any(Object));
+  });
+
+  it('should handle baseURL without trailing slash normally', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com/v1',
+      name: 'TestAPI',
+    });
+
+    expect(axios.get).toHaveBeenCalledWith('https://api.test.com/v1/models', expect.any(Object));
+  });
+
+  it('should handle baseURL with multiple trailing slashes', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com/v1///',
+      name: 'TestAPI',
+    });
+
+    expect(axios.get).toHaveBeenCalledWith('https://api.test.com/v1/models', expect.any(Object));
+  });
+
+  it('should correctly append query params after stripping trailing slashes', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com/v1/',
+      name: 'TestAPI',
+      userIdQuery: true,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      'https://api.test.com/v1/models?user=user123',
+      expect.any(Object),
+    );
+  });
+});
+
 describe('splitAndTrim', () => {
   it('should split a string by commas and trim each value', () => {
     const input = ' model1, model2 , model3,model4 ';

@@ -173,6 +173,9 @@ const tokenValues = Object.assign(
     'grok-3-mini': { prompt: 0.3, completion: 0.5 },
     'grok-3-mini-fast': { prompt: 0.6, completion: 4 },
     'grok-4': { prompt: 3.0, completion: 15.0 },
+    'grok-4-fast': { prompt: 0.2, completion: 0.5 },
+    'grok-4-1-fast': { prompt: 0.2, completion: 0.5 }, // covers reasoning & non-reasoning variants
+    'grok-code-fast': { prompt: 0.2, completion: 1.5 },
     codestral: { prompt: 0.3, completion: 0.9 },
     'ministral-3b': { prompt: 0.04, completion: 0.04 },
     'ministral-8b': { prompt: 0.1, completion: 0.1 },
