@@ -45,7 +45,7 @@ const SettingsButton = ({
       aria-label={`${text} ${endpoint.label}`}
     >
       <div className="flex w-[28px] items-center gap-1 whitespace-nowrap transition-all duration-300 ease-in-out group-hover:w-auto group-focus/button:w-auto">
-        <SettingsIcon className="h-4 w-4 flex-shrink-0" />
+        <SettingsIcon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
         <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-300 ease-in-out group-hover:max-w-[100px] group-hover:opacity-100 group-focus/button:max-w-[100px] group-focus/button:opacity-100">
           {text}
         </span>

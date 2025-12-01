@@ -1,5 +1,4 @@
 import React from 'react';
-import { motion } from 'framer-motion';
 import { TooltipAnchor } from '@librechat/client';
 import { MessageCircleDashed } from 'lucide-react';
 import { useRecoilState, useRecoilCallback } from 'recoil';
@@ -54,6 +53,7 @@ export function TemporaryChat() {
             {temporaryBadge.icon && (
               <temporaryBadge.icon
                 className={cn('relative h-5 w-5 md:h-4 md:w-4', !temporaryBadge.label && 'mx-auto')}
+                aria-hidden="true"
               />
             )}
           </button>

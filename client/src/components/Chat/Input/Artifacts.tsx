@@ -66,7 +66,7 @@ function Artifacts() {
         setValue={handleToggle}
         label={localize('com_ui_artifacts')}
         isCheckedClassName="border-amber-600/40 bg-amber-500/10 hover:bg-amber-700/10"
-        icon={<WandSparkles className="icon-md" />}
+        icon={<WandSparkles className="icon-md" aria-hidden="true" />}
       />
 
       {isEnabled && (
@@ -79,7 +79,7 @@ function Artifacts() {
             )}
             onClick={(e) => e.stopPropagation()}
           >
-            <ChevronDown className="ml-1 h-4 w-4 text-text-secondary md:ml-0" />
+            <ChevronDown className="ml-1 h-4 w-4 text-text-secondary md:ml-0" aria-hidden="true" />
           </Ariakit.MenuButton>
 
           <Ariakit.Menu
