@@ -1,15 +1,15 @@
-import type { FC } from 'react';
-import { useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import { BookCopy } from 'lucide-react';
 import {
   Button,
   OGDialog,
+  TooltipAnchor,
   OGDialogTitle,
   OGDialogHeader,
   OGDialogContent,
-  TooltipAnchor,
 } from '@librechat/client';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
+import type { FC } from 'react';
 import { EditPresetDialog, PresetItems } from './Presets';
 import { useLocalize, usePresets } from '~/hooks';
 import { useChatContext } from '~/Providers';
@@ -34,11 +34,14 @@ const PresetsMenu: FC = () => {
   } = usePresets();
   const { preset } = useChatContext();
 
-  useEffect(() => {
-    if (!showDeleteDialog && presetsMenuTriggerRef.current) {
-      presetsMenuTriggerRef.current.focus();
+  const handleDeleteDialogChange = (open: boolean) => {
+    setShowDeleteDialog(open);
+    if (!open && presetsMenuTriggerRef.current) {
+      setTimeout(() => {
+        presetsMenuTriggerRef.current?.focus();
+      }, 0);
     }
-  }, [showDeleteDialog]);
+  };
 
   return (
     <Root>
@@ -92,7 +95,7 @@ const PresetsMenu: FC = () => {
         />
       )}
       {presetToDelete && (
-        <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <OGDialog open={showDeleteDialog} onOpenChange={handleDeleteDialogChange}>
           <OGDialogContent
             title={localize('com_endpoint_preset_delete_confirm')}
             className="w-11/12 max-w-md"
@@ -108,7 +111,7 @@ const PresetsMenu: FC = () => {
               <Button
                 aria-label="cancel"
                 variant="outline"
-                onClick={() => setShowDeleteDialog(false)}
+                onClick={() => handleDeleteDialogChange(false)}
               >
                 {localize('com_ui_cancel')}
               </Button>

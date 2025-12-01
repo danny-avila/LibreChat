@@ -45,12 +45,6 @@ const EditPresetDialog = ({
   });
   const [presetModalVisible, setPresetModalVisible] = useRecoilState(store.presetModalVisible);
 
-  useEffect(() => {
-    if (!presetModalVisible && triggerRef?.current) {
-      triggerRef.current.focus();
-    }
-  }, [presetModalVisible, triggerRef]);
-
   const { data: _endpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
   });
