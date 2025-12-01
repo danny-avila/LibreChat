@@ -1,4 +1,4 @@
-const { User } = require('~/db/models');
+const { updateUser, getUserById } = require('~/models');
 
 const updateFavoritesController = async (req, res) => {
   try {
@@ -30,11 +30,7 @@ const updateFavoritesController = async (req, res) => {
       }
     }
 
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { $set: { favorites } },
-      { new: true, select: 'favorites' },
-    );
+    const user = await updateUser(userId, { favorites });
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -50,7 +46,7 @@ const updateFavoritesController = async (req, res) => {
 const getFavoritesController = async (req, res) => {
   try {
     const userId = req.user.id;
-    const user = await User.findById(userId).select('favorites').lean();
+    const user = await getUserById(userId, 'favorites');
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -60,7 +56,7 @@ const getFavoritesController = async (req, res) => {
 
     if (!Array.isArray(favorites)) {
       favorites = [];
-      await User.findByIdAndUpdate(userId, { $set: { favorites: [] } });
+      await updateUser(userId, { favorites: [] });
     }
 
     res.status(200).json(favorites);
