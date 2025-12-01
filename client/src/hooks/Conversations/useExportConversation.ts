@@ -73,7 +73,9 @@ export default function useExportConversation({
     }
 
     return message.content
+      .filter((content) => content != null)
       .map((content) => getMessageContent(message.sender || '', content))
+      .filter((text) => text.length > 0)
       .map((text) => {
         return formatText(text[0], text[1]);
       })
