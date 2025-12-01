@@ -778,6 +778,16 @@ describe('Grok Model Tests - Tokens', () => {
       expect(getModelMaxTokens('grok-4-0709')).toBe(256000);
     });
 
+    test('should return correct tokens for Grok 4 Fast and Grok 4.1 Fast models', () => {
+      expect(getModelMaxTokens('grok-4-fast')).toBe(2000000);
+      expect(getModelMaxTokens('grok-4-1-fast-reasoning')).toBe(2000000);
+      expect(getModelMaxTokens('grok-4-1-fast-non-reasoning')).toBe(2000000);
+    });
+
+    test('should return correct tokens for Grok Code Fast model', () => {
+      expect(getModelMaxTokens('grok-code-fast-1')).toBe(256000);
+    });
+
     test('should handle partial matches for Grok models with prefixes', () => {
       // Vision models should match before general models
       expect(getModelMaxTokens('xai/grok-2-vision-1212')).toBe(32768);
@@ -797,6 +807,12 @@ describe('Grok Model Tests - Tokens', () => {
       expect(getModelMaxTokens('xai/grok-3-mini-fast')).toBe(131072);
       // Grok 4 model
       expect(getModelMaxTokens('xai/grok-4-0709')).toBe(256000);
+      // Grok 4 Fast and 4.1 Fast models
+      expect(getModelMaxTokens('xai/grok-4-fast')).toBe(2000000);
+      expect(getModelMaxTokens('xai/grok-4-1-fast-reasoning')).toBe(2000000);
+      expect(getModelMaxTokens('xai/grok-4-1-fast-non-reasoning')).toBe(2000000);
+      // Grok Code Fast model
+      expect(getModelMaxTokens('xai/grok-code-fast-1')).toBe(256000);
     });
   });
 
@@ -820,6 +836,12 @@ describe('Grok Model Tests - Tokens', () => {
       expect(matchModelName('grok-3-mini-fast')).toBe('grok-3-mini-fast');
       // Grok 4 model
       expect(matchModelName('grok-4-0709')).toBe('grok-4');
+      // Grok 4 Fast and 4.1 Fast models
+      expect(matchModelName('grok-4-fast')).toBe('grok-4-fast');
+      expect(matchModelName('grok-4-1-fast-reasoning')).toBe('grok-4-1-fast');
+      expect(matchModelName('grok-4-1-fast-non-reasoning')).toBe('grok-4-1-fast');
+      // Grok Code Fast model
+      expect(matchModelName('grok-code-fast-1')).toBe('grok-code-fast');
     });
 
     test('should match Grok model variations with prefixes', () => {
@@ -841,6 +863,12 @@ describe('Grok Model Tests - Tokens', () => {
       expect(matchModelName('xai/grok-3-mini-fast')).toBe('grok-3-mini-fast');
       // Grok 4 model
       expect(matchModelName('xai/grok-4-0709')).toBe('grok-4');
+      // Grok 4 Fast and 4.1 Fast models
+      expect(matchModelName('xai/grok-4-fast')).toBe('grok-4-fast');
+      expect(matchModelName('xai/grok-4-1-fast-reasoning')).toBe('grok-4-1-fast');
+      expect(matchModelName('xai/grok-4-1-fast-non-reasoning')).toBe('grok-4-1-fast');
+      // Grok Code Fast model
+      expect(matchModelName('xai/grok-code-fast-1')).toBe('grok-code-fast');
     });
   });
 });
@@ -864,6 +892,15 @@ describe('Claude Model Tests', () => {
     );
   });
 
+  it('should return correct context length for Claude Opus 4.5', () => {
+    expect(getModelMaxTokens('claude-opus-4-5', EModelEndpoint.anthropic)).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-5'],
+    );
+    expect(getModelMaxTokens('claude-opus-4-5')).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-5'],
+    );
+  });
+
   it('should handle Claude Haiku 4.5 model name variations', () => {
     const modelVariations = [
       'claude-haiku-4-5',
@@ -883,6 +920,25 @@ describe('Claude Model Tests', () => {
     });
   });
 
+  it('should handle Claude Opus 4.5 model name variations', () => {
+    const modelVariations = [
+      'claude-opus-4-5',
+      'claude-opus-4-5-20250420',
+      'claude-opus-4-5-latest',
+      'anthropic/claude-opus-4-5',
+      'claude-opus-4-5/anthropic',
+      'claude-opus-4-5-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const modelKey = findMatchingPattern(model, maxTokensMap[EModelEndpoint.anthropic]);
+      expect(modelKey).toBe('claude-opus-4-5');
+      expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toBe(
+        maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-5'],
+      );
+    });
+  });
+
   it('should match model names correctly for Claude Haiku 4.5', () => {
     const modelVariations = [
       'claude-haiku-4-5',
@@ -895,6 +951,21 @@ describe('Claude Model Tests', () => {
 
     modelVariations.forEach((model) => {
       expect(matchModelName(model, EModelEndpoint.anthropic)).toBe('claude-haiku-4-5');
+    });
+  });
+
+  it('should match model names correctly for Claude Opus 4.5', () => {
+    const modelVariations = [
+      'claude-opus-4-5',
+      'claude-opus-4-5-20250420',
+      'claude-opus-4-5-latest',
+      'anthropic/claude-opus-4-5',
+      'claude-opus-4-5/anthropic',
+      'claude-opus-4-5-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      expect(matchModelName(model, EModelEndpoint.anthropic)).toBe('claude-opus-4-5');
     });
   });
 

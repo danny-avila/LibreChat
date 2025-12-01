@@ -1205,6 +1205,39 @@ describe('Grok Model Tests - Pricing', () => {
       );
     });
 
+    test('should return correct prompt and completion rates for Grok 4 Fast model', () => {
+      expect(getMultiplier({ model: 'grok-4-fast', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-4-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-4-fast', tokenType: 'completion' })).toBe(
+        tokenValues['grok-4-fast'].completion,
+      );
+    });
+
+    test('should return correct prompt and completion rates for Grok 4.1 Fast models', () => {
+      expect(getMultiplier({ model: 'grok-4-1-fast-reasoning', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-4-1-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-4-1-fast-reasoning', tokenType: 'completion' })).toBe(
+        tokenValues['grok-4-1-fast'].completion,
+      );
+      expect(getMultiplier({ model: 'grok-4-1-fast-non-reasoning', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-4-1-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-4-1-fast-non-reasoning', tokenType: 'completion' })).toBe(
+        tokenValues['grok-4-1-fast'].completion,
+      );
+    });
+
+    test('should return correct prompt and completion rates for Grok Code Fast model', () => {
+      expect(getMultiplier({ model: 'grok-code-fast-1', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-code-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'grok-code-fast-1', tokenType: 'completion' })).toBe(
+        tokenValues['grok-code-fast'].completion,
+      );
+    });
+
     test('should return correct prompt and completion rates for Grok 3 models with prefixes', () => {
       expect(getMultiplier({ model: 'xai/grok-3', tokenType: 'prompt' })).toBe(
         tokenValues['grok-3'].prompt,
@@ -1238,6 +1271,39 @@ describe('Grok Model Tests - Pricing', () => {
       );
       expect(getMultiplier({ model: 'xai/grok-4-0709', tokenType: 'completion' })).toBe(
         tokenValues['grok-4'].completion,
+      );
+    });
+
+    test('should return correct prompt and completion rates for Grok 4 Fast model with prefixes', () => {
+      expect(getMultiplier({ model: 'xai/grok-4-fast', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-4-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'xai/grok-4-fast', tokenType: 'completion' })).toBe(
+        tokenValues['grok-4-fast'].completion,
+      );
+    });
+
+    test('should return correct prompt and completion rates for Grok 4.1 Fast models with prefixes', () => {
+      expect(getMultiplier({ model: 'xai/grok-4-1-fast-reasoning', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-4-1-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'xai/grok-4-1-fast-reasoning', tokenType: 'completion' })).toBe(
+        tokenValues['grok-4-1-fast'].completion,
+      );
+      expect(getMultiplier({ model: 'xai/grok-4-1-fast-non-reasoning', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-4-1-fast'].prompt,
+      );
+      expect(
+        getMultiplier({ model: 'xai/grok-4-1-fast-non-reasoning', tokenType: 'completion' }),
+      ).toBe(tokenValues['grok-4-1-fast'].completion);
+    });
+
+    test('should return correct prompt and completion rates for Grok Code Fast model with prefixes', () => {
+      expect(getMultiplier({ model: 'xai/grok-code-fast-1', tokenType: 'prompt' })).toBe(
+        tokenValues['grok-code-fast'].prompt,
+      );
+      expect(getMultiplier({ model: 'xai/grok-code-fast-1', tokenType: 'completion' })).toBe(
+        tokenValues['grok-code-fast'].completion,
       );
     });
   });
@@ -1372,6 +1438,15 @@ describe('Claude Model Tests', () => {
     );
   });
 
+  it('should return correct prompt and completion rates for Claude Opus 4.5', () => {
+    expect(getMultiplier({ model: 'claude-opus-4-5', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-opus-4-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-opus-4-5', tokenType: 'completion' })).toBe(
+      tokenValues['claude-opus-4-5'].completion,
+    );
+  });
+
   it('should handle Claude Haiku 4.5 model name variations', () => {
     const modelVariations = [
       'claude-haiku-4-5',
@@ -1390,6 +1465,28 @@ describe('Claude Model Tests', () => {
       );
       expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
         tokenValues['claude-haiku-4-5'].completion,
+      );
+    });
+  });
+
+  it('should handle Claude Opus 4.5 model name variations', () => {
+    const modelVariations = [
+      'claude-opus-4-5',
+      'claude-opus-4-5-20250420',
+      'claude-opus-4-5-latest',
+      'anthropic/claude-opus-4-5',
+      'claude-opus-4-5/anthropic',
+      'claude-opus-4-5-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-opus-4-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-opus-4-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-opus-4-5'].completion,
       );
     });
   });
@@ -1437,6 +1534,15 @@ describe('Claude Model Tests', () => {
     );
     expect(getCacheMultiplier({ model: 'claude-opus-4', cacheType: 'read' })).toBe(
       cacheTokenValues['claude-opus-4'].read,
+    );
+  });
+
+  it('should return correct cache rates for Claude Opus 4.5', () => {
+    expect(getCacheMultiplier({ model: 'claude-opus-4-5', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-opus-4-5'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-opus-4-5', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-opus-4-5'].read,
     );
   });
 
