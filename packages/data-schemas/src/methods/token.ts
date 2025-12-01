@@ -35,7 +35,13 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
   ): Promise<IToken | null> {
     try {
       const Token = mongoose.models.Token;
-      return await Token.findOneAndUpdate(query, updateData, { new: true });
+
+      const dataToUpdate = { ...updateData };
+      if (updateData?.expiresIn !== undefined) {
+        dataToUpdate.expiresAt = new Date(Date.now() + updateData.expiresIn * 1000);
+      }
+
+      return await Token.findOneAndUpdate(query, dataToUpdate, { new: true });
     } catch (error) {
       logger.debug('An error occurred while updating token:', error);
       throw error;

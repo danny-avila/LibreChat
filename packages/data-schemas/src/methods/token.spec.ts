@@ -418,6 +418,41 @@ describe('Token Methods - Detailed Tests', () => {
 
       expect(updated).toBeNull();
     });
+
+    test('should update expiresAt when expiresIn is provided', async () => {
+      const beforeUpdate = Date.now();
+      const newExpiresIn = 7200;
+
+      const updated = await methods.updateToken(
+        { token: 'update-token' },
+        { expiresIn: newExpiresIn },
+      );
+
+      const afterUpdate = Date.now();
+
+      expect(updated).toBeDefined();
+      expect(updated?.expiresAt).toBeDefined();
+
+      const expectedMinExpiry = beforeUpdate + newExpiresIn * 1000;
+      const expectedMaxExpiry = afterUpdate + newExpiresIn * 1000;
+
+      expect(updated!.expiresAt.getTime()).toBeGreaterThanOrEqual(expectedMinExpiry);
+      expect(updated!.expiresAt.getTime()).toBeLessThanOrEqual(expectedMaxExpiry);
+    });
+
+    test('should not modify expiresAt when expiresIn is not provided', async () => {
+      const original = await Token.findOne({ token: 'update-token' });
+      const originalExpiresAt = original!.expiresAt.getTime();
+
+      const updated = await methods.updateToken(
+        { token: 'update-token' },
+        { email: 'changed@example.com' },
+      );
+
+      expect(updated).toBeDefined();
+      expect(updated?.email).toBe('changed@example.com');
+      expect(updated!.expiresAt.getTime()).toBe(originalExpiresAt);
+    });
   });
 
   describe('deleteTokens', () => {
