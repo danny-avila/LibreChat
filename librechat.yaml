@@ -96,29 +96,30 @@ actions:
     - "http://localhost:5000"
     - "http://localhost:5050"
     - "http://127.0.0.1:5050"
-# Example MCP Servers Object Structure
-
-#   puppeteer:
-#     type: stdio
-#     command: npx
-#     args:
-#       - -y
-#       - "@modelcontextprotocol/server-puppeteer"
-#     timeout: 300000  # 5 minutes timeout for this server
-#   filesystem:
-#     # type: stdio
-#     command: npx
-#     args:
-#       - -y
-#       - "@modelcontextprotocol/server-filesystem"
-#       - /home/user/LibreChat/
-#     iconPath: /home/user/LibreChat/client/public/assets/logo.svg
-#   mcp-obsidian:
-#     command: npx
-#     args:
-#       - -y
-#       - "mcp-obsidian"
-#       - /path/to/obsidian/vault
+# MCP Servers Configuration
+mcpServers:
+  # Azure AI Search FAQ Server for Woodland Agents
+  azure-search-faq:
+    type: stdio
+    command: node
+    args:
+      - ./mcp-servers/azure-search/index.js
+    env:
+      AZURE_SEARCH_ENDPOINT: "${AZURE_SEARCH_ENDPOINT}"
+      AZURE_SEARCH_KEY: "${AZURE_SEARCH_KEY}"
+      AZURE_SEARCH_INDEX_NAME: "wpp-knowledge-test-encyclopedia"
+      AZURE_SEARCH_TOP_K: "5"
+      AZURE_SEARCH_MIN_SCORE: "0.65"
+    timeout: 30000  # 30 seconds timeout
+    
+  # Example: Other MCP servers (commented out)
+  #   puppeteer:
+  #     type: stdio
+  #     command: npx
+  #     args:
+  #       - -y
+  #       - "@modelcontextprotocol/server-puppeteer"
+  #     timeout: 300000  # 5 minutes timeout for this server
 
 # Definition of custom endpoints
 
@@ -126,7 +127,7 @@ endpoints:
   azureOpenAI:
     groups:
     - group: "rg-woodland-ai-gpt"
-      apiKey: "DO NOT COMMIT"  # arbitrary env var name
+      apiKey: ""  # arbitrary env var name
       baseURL: "https://wppgenai.services.ai.azure.com/models/"
       version: "2024-05-01-preview" # Optional: specify API version
       serverless: true # Optional: set to true if using serverless deployment
@@ -150,8 +151,8 @@ endpoints:
     capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
 
   agents:
-    recursionLimit: 50
-    maxRecursionLimit: 100
+    recursionLimit: 10
+    maxRecursionLimit: 15
     disableBuilder: false
     # Limit global Agent capabilities; individual Agents can still narrow these down
     capabilities: ["actions", "tools","chain"]
