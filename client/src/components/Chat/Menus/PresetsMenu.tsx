@@ -1,4 +1,5 @@
 import type { FC } from 'react';
+import { useRef } from 'react';
 import { BookCopy } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
@@ -8,6 +9,7 @@ import { useChatContext } from '~/Providers';
 
 const PresetsMenu: FC = () => {
   const localize = useLocalize();
+  const presetsMenuTriggerRef = useRef<HTMLDivElement>(null);
   const {
     presetsQuery,
     onSetDefaultPreset,
@@ -24,6 +26,7 @@ const PresetsMenu: FC = () => {
     <Root>
       <Trigger asChild>
         <TooltipAnchor
+          ref={presetsMenuTriggerRef}
           id="presets-button"
           aria-label={localize('com_endpoint_examples')}
           description={localize('com_endpoint_examples')}
@@ -63,7 +66,13 @@ const PresetsMenu: FC = () => {
           </Content>
         </div>
       </Portal>
-      {preset && <EditPresetDialog submitPreset={submitPreset} exportPreset={exportPreset} />}
+      {preset && (
+        <EditPresetDialog
+          submitPreset={submitPreset}
+          exportPreset={exportPreset}
+          triggerRef={presetsMenuTriggerRef}
+        />
+      )}
     </Root>
   );
 };

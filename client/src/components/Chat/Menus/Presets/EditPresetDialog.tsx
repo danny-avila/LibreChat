@@ -28,9 +28,11 @@ import store from '~/store';
 const EditPresetDialog = ({
   exportPreset,
   submitPreset,
+  triggerRef,
 }: {
   exportPreset: () => void;
   submitPreset: () => void;
+  triggerRef?: React.RefObject<HTMLDivElement>;
 }) => {
   const localize = useLocalize();
   const queryClient = useQueryClient();
@@ -42,6 +44,12 @@ const EditPresetDialog = ({
     initialValue: preset?.title,
   });
   const [presetModalVisible, setPresetModalVisible] = useRecoilState(store.presetModalVisible);
+
+  useEffect(() => {
+    if (!presetModalVisible && triggerRef && triggerRef.current) {
+      triggerRef.current.focus();
+    }
+  }, [presetModalVisible, triggerRef]);
 
   const { data: _endpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
@@ -142,7 +150,7 @@ const EditPresetDialog = ({
   }
 
   return (
-    <OGDialog open={presetModalVisible} onOpenChange={handleOpenChange}>
+    <OGDialog open={presetModalVisible} onOpenChange={handleOpenChange} triggerRef={triggerRef}>
       <OGDialogContent className="h-[100dvh] max-h-[100dvh] w-full max-w-full overflow-y-auto bg-white dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300 md:h-auto md:max-h-[90vh] md:max-w-[75vw] md:rounded-lg lg:max-w-[950px]">
         <OGDialogTitle>
           {`${localize('com_ui_edit')} ${localize('com_endpoint_preset')} - ${preset?.title}`}
