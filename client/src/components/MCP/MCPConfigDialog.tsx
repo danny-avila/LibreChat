@@ -44,6 +44,25 @@ export default function MCPConfigDialog({
     ? localize('com_ui_configure_mcp_variables_for', { 0: serverName })
     : `${serverName} MCP Server`;
 
+  const getStatusText = () => {
+    if (!serverStatus) return '';
+    const { connectionState, requiresOAuth } = serverStatus;
+
+    if (connectionState === 'connecting') return localize('com_ui_connecting');
+    if (connectionState === 'error') return localize('com_ui_error');
+    if (connectionState === 'connected') return localize('com_ui_active');
+    if (connectionState === 'disconnected') {
+      return requiresOAuth ? localize('com_ui_oauth') : localize('com_ui_offline');
+    }
+    return '';
+  };
+
+  const statusText = getStatusText();
+  const fullTitle = localize('com_ui_mcp_dialog_title', {
+    serverName,
+    status: statusText,
+  });
+
   // Helper function to render status badge based on connection state
   const renderStatusBadge = () => {
     if (!serverStatus) {
@@ -102,7 +121,10 @@ export default function MCPConfigDialog({
 
   return (
     <OGDialog open={isOpen} onOpenChange={onOpenChange}>
-      <OGDialogContent className="flex max-h-screen w-11/12 max-w-lg flex-col space-y-2">
+      <OGDialogContent
+        className="flex max-h-screen w-11/12 max-w-lg flex-col space-y-2"
+        title={fullTitle}
+      >
         <OGDialogHeader>
           <div className="flex items-center gap-3">
             <OGDialogTitle className="text-xl">
