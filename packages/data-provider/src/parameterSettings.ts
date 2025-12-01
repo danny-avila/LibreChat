@@ -695,6 +695,8 @@ const openAI: SettingsConfiguration = [
   librechat.fileTokenLimit,
 ];
 
+const customAnthropic: SettingsConfiguration = [...openAI, anthropic.promptCache];
+
 const openAICol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
   librechat.modelLabel,
@@ -882,6 +884,7 @@ export const paramSettings: Record<string, SettingsConfiguration | undefined> = 
   [EModelEndpoint.openAI]: openAI,
   [EModelEndpoint.azureOpenAI]: openAI,
   [EModelEndpoint.custom]: openAI,
+  [`${EModelEndpoint.custom}-anthropic`]: customAnthropic,
   [EModelEndpoint.anthropic]: anthropicConfig,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: bedrockAnthropic,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.MistralAI}`]: bedrockMistral,

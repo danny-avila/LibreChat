@@ -1,15 +1,22 @@
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { sleep, SplitStreamHandler, CustomOpenAIClient: OpenAI } = require('@librechat/agents');
+const {
+  sleep,
+  addCacheControl,
+  SplitStreamHandler,
+  CustomOpenAIClient: OpenAI,
+} = require('@librechat/agents');
 const {
   isEnabled,
   Tokenizer,
   createFetch,
   resolveHeaders,
+  getClaudeHeaders,
   constructAzureURL,
   getModelMaxTokens,
   genAzureChatCompletion,
   getModelMaxOutputTokens,
+  checkPromptCacheSupport,
   createStreamEventHandlers,
 } = require('@librechat/api');
 const {
@@ -105,6 +112,15 @@ class OpenAIClient extends BaseClient {
           this.options.endpoint.toLowerCase().includes(KnownEndpoints.openrouter)))
     ) {
       this.useOpenRouter = true;
+    }
+
+    if (this.useOpenRouter) {
+      const promptCacheEnabled =
+        this.options.promptCache ?? this.options.modelOptions?.promptCache;
+      const modelName = this.modelOptions.model;
+      if (promptCacheEnabled && checkPromptCacheSupport(modelName)) {
+        this.supportsCacheControl = true;
+      }
     }
 
     if (this.options.endpoint?.toLowerCase() === 'ollama') {
@@ -790,6 +806,17 @@ class OpenAIClient extends BaseClient {
           'HTTP-Referer': 'https://librechat.ai',
           'X-Title': 'LibreChat',
         };
+
+        // Apply prompt caching for OpenRouter with supported Anthropic models
+        if (this.supportsCacheControl) {
+          const cacheHeaders = getClaudeHeaders(modelOptions.model, true);
+          opts.defaultHeaders = { ...opts.defaultHeaders, ...cacheHeaders };
+
+          // Apply cache_control to messages
+          if (modelOptions.messages) {
+            modelOptions.messages = addCacheControl(modelOptions.messages);
+          }
+        }
       }
 
       if (this.options.headers) {

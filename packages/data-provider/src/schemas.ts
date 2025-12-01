@@ -111,6 +111,9 @@ export const getModelKey = (endpoint: EModelEndpoint | string, model: string) =>
     );
     return (provider ?? parts[0]) as BedrockProviders;
   }
+  if (endpoint === EModelEndpoint.custom && model.toLowerCase().includes(Providers.ANTHROPIC)) {
+    return Providers.ANTHROPIC;
+  }
   return model;
 };
 
@@ -866,8 +869,9 @@ export const tQueryParamsSchema = tConversationSchema
     topK: true,
     /** @endpoints google, anthropic */
     maxOutputTokens: true,
-    /** @endpoints anthropic */
+    /** @endpoints anthropic, bedrock, custom */
     promptCache: true,
+    /** @endpoints anthropic, google, bedrock */
     thinking: true,
     thinkingBudget: true,
     /** @endpoints bedrock */
