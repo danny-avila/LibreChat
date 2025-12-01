@@ -1,7 +1,7 @@
 import { memo, useState, useRef, useMemo, useCallback, KeyboardEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { EarthIcon, Pen } from 'lucide-react';
 import { Trans } from 'react-i18next';
+import { EarthIcon, Pen } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { PermissionBits, ResourceType, type TPromptGroup } from 'librechat-data-provider';
 import {
   Input,
