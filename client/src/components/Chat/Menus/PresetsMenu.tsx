@@ -35,7 +35,7 @@ const PresetsMenu: FC = () => {
   const { preset } = useChatContext();
 
   useEffect(() => {
-    if (!showDeleteDialog && presetsMenuTriggerRef && presetsMenuTriggerRef.current) {
+    if (!showDeleteDialog && presetsMenuTriggerRef.current) {
       presetsMenuTriggerRef.current.focus();
     }
   }, [showDeleteDialog]);

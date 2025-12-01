@@ -46,7 +46,7 @@ const EditPresetDialog = ({
   const [presetModalVisible, setPresetModalVisible] = useRecoilState(store.presetModalVisible);
 
   useEffect(() => {
-    if (!presetModalVisible && triggerRef && triggerRef.current) {
+    if (!presetModalVisible && triggerRef?.current) {
       triggerRef.current.focus();
     }
   }, [presetModalVisible, triggerRef]);
