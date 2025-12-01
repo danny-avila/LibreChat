@@ -16,6 +16,14 @@ describe('Header NJ customizations', () => {
       .mockReturnValue({});
   });
 
+  test('Model selector button is hidden', () => {
+    const dom = render(<Header />);
+
+    // Verify model selector button is hidden
+    const temporaryChatButton = dom.container.querySelector('[aria-label="Select a model"]');
+    expect(temporaryChatButton).not.toBeInTheDocument();
+  });
+
   test('Temporary chat + export & share buttons are disabled', () => {
     const dom = render(<Header />);
 

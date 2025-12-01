@@ -57,7 +57,9 @@ export default function Header() {
           </AnimatePresence>
 
           <div className={navVisible ? 'flex items-center gap-2' : 'ml-2 flex items-center gap-2'}>
+            {/* NJ: Since we only have one model right now, no need to show the model selector
             <ModelSelector startupConfig={startupConfig} />
+            */}
             {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
             {hasAccessToBookmarks === true && <BookmarkMenu />}
             {hasAccessToMultiConvo === true && <AddMultiConvo />}
