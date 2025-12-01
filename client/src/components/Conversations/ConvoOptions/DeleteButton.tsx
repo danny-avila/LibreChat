@@ -91,7 +91,7 @@ export function DeleteConversationDialog({
       <div id="delete-conversation-dialog" className="w-full truncate">
         <Trans
           i18nKey="com_ui_delete_confirm_strong"
-          values={{ item: title }}
+          values={{ title }}
           components={{ strong: <strong /> }}
         />
       </div>
