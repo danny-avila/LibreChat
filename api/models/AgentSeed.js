@@ -279,18 +279,32 @@ async function ensureAgent(agentConfig) {
 }
 
 async function seedWoodlandAgents() {
+  console.info('[WoodlandAgentSeed] Starting agent seeding...');
   const authorInfo = await resolveAuthor();
   if (!authorInfo) {
     console.error('[WoodlandAgentSeed] Skipping agent seeding; no user available to assign as author.');
     return;
   }
 
+  console.info(`[WoodlandAgentSeed] Seeding ${WOODLAND_AGENTS.length} Woodland agents`);
   for (const agent of WOODLAND_AGENTS) {
     try {
       await ensureAgent({ ...agent, author: authorInfo.id, authorName: authorInfo.name });
+      console.debug(`[WoodlandAgentSeed] ✓ ${agent.id}`);
     } catch (error) {
       console.error('[WoodlandAgentSeed] Failed to seed agent', agent.id, error);
     }
+  }
+  console.info('[WoodlandAgentSeed] ✅ Woodland agent seeding complete');
+
+  // Run agent permissions migration after seeding
+  try {
+    console.info('[WoodlandAgentSeed] Running agent permissions migration...');
+    const { migrateAgentPermissionsEnhanced } = require('../../config/migrate-agent-permissions');
+    await migrateAgentPermissionsEnhanced({ dryRun: false });
+    console.info('[WoodlandAgentSeed] ✅ Agent permissions migration complete');
+  } catch (error) {
+    console.error('[WoodlandAgentSeed] Agent permissions migration failed:', error);
   }
 }
 
