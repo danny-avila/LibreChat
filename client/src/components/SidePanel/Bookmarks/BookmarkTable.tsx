@@ -115,7 +115,7 @@ const BookmarkTable = () => {
                   aria-label={localize('com_ui_bookmarks_new')}
                   onClick={() => setOpen(!open)}
                 >
-                  <BookmarkPlusIcon className="size-4" />
+                  <BookmarkPlusIcon className="size-4" aria-hidden="true" />
                   <div className="break-all">{localize('com_ui_bookmarks_new')}</div>
                 </Button>
               </OGDialogTrigger>

@@ -53,7 +53,11 @@ export const QRPhase: React.FC<QRPhaseProps> = ({ secret, otpauthUrl, onNext }) 
               onClick={handleCopy}
               className={cn('h-auto shrink-0', isCopying ? 'cursor-default' : '')}
             >
-              {isCopying ? <Check className="size-4" /> : <Copy className="size-4" />}
+              {isCopying ? (
+                <Check className="size-4" aria-hidden="true" />
+              ) : (
+                <Copy className="size-4" aria-hidden="true" />
+              )}
             </Button>
           </div>
         </div>

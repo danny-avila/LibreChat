@@ -11,6 +11,7 @@ export default function Clipboard({ className = 'icon-md-heavy', size = '1em' })
       strokeLinecap="round"
       strokeLinejoin="round"
       className={cn(className)}
+      aria-hidden="true"
     >
       <path
         fill="currentColor"

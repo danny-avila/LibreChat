@@ -512,7 +512,7 @@ export default function AgentPanel() {
                   localize('com_ui_agent')
                 }
               >
-                <Plus className="mr-1 h-4 w-4" />
+                <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
                 {localize('com_ui_create') +
                   ' ' +
                   localize('com_ui_new') +

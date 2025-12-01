@@ -127,7 +127,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
               aria-label={localize('com_files_filter_by')}
               className={cn('min-w-[40px]', isSmallScreen && 'px-2 py-1')}
             >
-              <ListFilter className="size-3.5 sm:size-4" />
+              <ListFilter className="size-3.5 sm:size-4" aria-hidden="true" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent

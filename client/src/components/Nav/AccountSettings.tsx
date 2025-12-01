@@ -93,7 +93,7 @@ function AccountSettings() {
           value="logout"
           className="select-item text-sm"
         >
-          <LogOut className="icon-md" />
+          <LogOut className="icon-md" aria-hidden="true" />
           {localize('com_nav_log_out')}
         </Select.SelectItem>
       </Select.SelectPopover>

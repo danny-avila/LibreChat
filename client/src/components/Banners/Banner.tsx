@@ -41,7 +41,7 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
         className="h-8 w-8 opacity-80 hover:opacity-100"
         onClick={onClick}
       >
-        <XIcon className="mx-auto h-4 w-4" />
+        <XIcon className="mx-auto h-4 w-4" aria-hidden="true" />
       </button>
     </div>
   );

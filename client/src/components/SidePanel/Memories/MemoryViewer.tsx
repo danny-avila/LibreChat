@@ -310,7 +310,7 @@ export default function MemoryViewer() {
                   className="w-full bg-transparent"
                   aria-label={localize('com_ui_create_memory')}
                 >
-                  <Plus className="size-4" aria-hidden />
+                  <Plus className="size-4" aria-hidden="true" />
                   {localize('com_ui_create_memory')}
                 </Button>
               </OGDialogTrigger>

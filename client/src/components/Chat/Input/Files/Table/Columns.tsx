@@ -68,7 +68,7 @@ export const columns: ColumnDef<TFile>[] = [
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
           {localize('com_ui_name')}
-          <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+          <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" aria-hidden="true" />
         </Button>
       );
     },
@@ -107,7 +107,7 @@ export const columns: ColumnDef<TFile>[] = [
           className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
         >
           {localize('com_ui_date')}
-          <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+          <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" aria-hidden="true" />
         </Button>
       );
     },
@@ -160,7 +160,7 @@ export const columns: ColumnDef<TFile>[] = [
       }
       return (
         <div className="flex flex-wrap items-center gap-2">
-          <Database className="icon-sm text-cyan-700" />
+          <Database className="icon-sm text-cyan-700" aria-hidden="true" />
           {localize('com_ui_host')}
         </div>
       );
@@ -204,7 +204,7 @@ export const columns: ColumnDef<TFile>[] = [
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
           {localize('com_ui_size')}
-          <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+          <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" aria-hidden="true" />
         </Button>
       );
     },

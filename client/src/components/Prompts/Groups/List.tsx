@@ -36,7 +36,7 @@ export default function List({
             onClick={() => navigate('/d/prompts/new')}
             aria-label={localize('com_ui_create_prompt')}
           >
-            <Plus className="size-4" aria-hidden />
+            <Plus className="size-4" aria-hidden="true" />
             {localize('com_ui_create_prompt')}
           </Button>
         </div>
