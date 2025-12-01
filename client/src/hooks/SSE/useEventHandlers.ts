@@ -87,12 +87,14 @@ const createErrorMessage = ({
   let isValidContentPart = false;
   if (latestContent.length > 0) {
     const latestContentPart = latestContent[latestContent.length - 1];
-    const latestPartValue = latestContentPart?.[latestContentPart.type ?? ''];
-    isValidContentPart =
-      latestContentPart.type !== ContentTypes.TEXT ||
-      (latestContentPart.type === ContentTypes.TEXT && typeof latestPartValue === 'string')
-        ? true
-        : latestPartValue?.value !== '';
+    if (latestContentPart != null) {
+      const latestPartValue = latestContentPart[latestContentPart.type ?? ''];
+      isValidContentPart =
+        latestContentPart.type !== ContentTypes.TEXT ||
+        (latestContentPart.type === ContentTypes.TEXT && typeof latestPartValue === 'string')
+          ? true
+          : latestPartValue?.value !== '';
+    }
   }
   if (
     latestMessage?.conversationId &&
@@ -722,16 +724,21 @@ export default function useEventHandlers({
         messages[messages.length - 2] != null
       ) {
         let requestMessage = messages[messages.length - 2];
-        const responseMessage = messages[messages.length - 1];
-        if (requestMessage.messageId !== responseMessage.parentMessageId) {
+        const _responseMessage = messages[messages.length - 1];
+        if (requestMessage.messageId !== _responseMessage.parentMessageId) {
           // the request message is the parent of response, which we search for backwards
           for (let i = messages.length - 3; i >= 0; i--) {
-            if (messages[i].messageId === responseMessage.parentMessageId) {
+            if (messages[i].messageId === _responseMessage.parentMessageId) {
               requestMessage = messages[i];
               break;
             }
           }
         }
+        /** Sanitize content array to remove undefined parts from interrupted streaming */
+        const responseMessage = {
+          ..._responseMessage,
+          content: _responseMessage.content?.filter((part) => part != null),
+        };
         finalHandler(
           {
             conversation: {
