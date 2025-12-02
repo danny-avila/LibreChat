@@ -1,15 +1,22 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { atom, RecoilRoot, RecoilState, useRecoilState } from 'recoil';
 import { constRecoilState, constRecoilStateOpts } from '~/nj/utils/constRecoilState';
+import store from '~/store';
 
-function TestRecoilState({ recoilState }: { recoilState: RecoilState<number> }) {
-  const [constValue, setConstValue] = useRecoilState<number>(recoilState);
+function TestRecoilState<T>({
+  recoilState,
+  clickState,
+}: {
+  recoilState: RecoilState<T>;
+  clickState: T;
+}) {
+  const [constValue, setConstValue] = useRecoilState<T>(recoilState);
 
   return (
     <button
       data-testid="changeRecoilState"
       title={`Recoil Value=${constValue}`}
-      onClick={() => setConstValue(-1)}
+      onClick={() => setConstValue(clickState)}
     />
   );
 }
@@ -20,7 +27,7 @@ describe('constRecoilState Tests', () => {
 
     render(
       <RecoilRoot>
-        <TestRecoilState recoilState={testRecoilState} />
+        <TestRecoilState recoilState={testRecoilState} clickState={-1} />
       </RecoilRoot>,
     );
 
@@ -38,7 +45,7 @@ describe('constRecoilState Tests', () => {
 
     render(
       <RecoilRoot>
-        <TestRecoilState recoilState={testRecoilState} />
+        <TestRecoilState recoilState={testRecoilState} clickState={-1} />
       </RecoilRoot>,
     );
 
@@ -55,7 +62,7 @@ describe('constRecoilState Tests', () => {
 
     render(
       <RecoilRoot>
-        <TestRecoilState recoilState={testRecoilState} />
+        <TestRecoilState recoilState={testRecoilState} clickState={-1} />
       </RecoilRoot>,
     );
 
@@ -65,5 +72,22 @@ describe('constRecoilState Tests', () => {
     // Click button (which attempts to change the recoil state), but it should remain unchanged
     fireEvent.click(button);
     expect(button).toHaveAttribute('title', 'Recoil Value=67');
+  });
+
+  describe('Locked states', () => {
+    test('isTemporary is locked to true', () => {
+      render(
+        <RecoilRoot>
+          <TestRecoilState recoilState={store.isTemporary} clickState={false} />
+        </RecoilRoot>,
+      );
+
+      const button = screen.getByTestId('changeRecoilState');
+      expect(button).toHaveAttribute('title', 'Recoil Value=true');
+
+      // Click button (which attempts to change the recoil state), but it should remain unchanged
+      fireEvent.click(button);
+      expect(button).toHaveAttribute('title', 'Recoil Value=true');
+    });
   });
 });

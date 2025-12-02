@@ -245,7 +245,8 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             className={cn(
               'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl border pb-4 text-text-primary transition-all duration-200 sm:rounded-3xl sm:pb-0',
               isTextAreaFocused ? 'shadow-lg' : 'shadow-md',
-              isTemporary
+              // eslint-disable-next-line no-constant-condition
+              isTemporary && false // NJ: We force all chats to be temporary (for now), make it look normal
                 ? 'border-violet-800/60 bg-violet-950/10'
                 : 'border-border-light bg-surface-chat',
             )}
