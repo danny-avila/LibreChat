@@ -24,8 +24,20 @@ export const useUpdateFavoritesMutation = () => {
     (favorites: FavoritesState) =>
       dataService.updateFavorites(favorites) as Promise<FavoritesState>,
     {
-      onSuccess: (data) => {
-        queryClient.setQueryData(['favorites'], data);
+      // Optimistic update to prevent UI flickering when toggling favorites
+      // Sets query cache immediately before the request completes
+      onMutate: async (newFavorites) => {
+        await queryClient.cancelQueries(['favorites']);
+
+        const previousFavorites = queryClient.getQueryData<FavoritesState>(['favorites']);
+        queryClient.setQueryData(['favorites'], newFavorites);
+
+        return { previousFavorites };
+      },
+      onError: (_err, _newFavorites, context) => {
+        if (context?.previousFavorites) {
+          queryClient.setQueryData(['favorites'], context.previousFavorites);
+        }
       },
     },
   );

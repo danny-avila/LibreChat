@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useAtom } from 'jotai';
 import { useToastContext } from '@librechat/client';
 import type { Favorite } from '~/store/favorites';
@@ -44,7 +44,14 @@ export default function useFavorites() {
   const getFavoritesQuery = useGetFavoritesQuery();
   const updateFavoritesMutation = useUpdateFavoritesMutation();
 
+  const isMutatingRef = useRef(false);
+
   useEffect(() => {
+    // Skip updating local state if a mutation is in progress or just completed
+    // The local state is already optimistically updated by saveFavorites
+    if (isMutatingRef.current || updateFavoritesMutation.isLoading) {
+      return;
+    }
     if (getFavoritesQuery.data) {
       if (Array.isArray(getFavoritesQuery.data)) {
         setFavorites(getFavoritesQuery.data);
@@ -52,12 +59,13 @@ export default function useFavorites() {
         setFavorites([]);
       }
     }
-  }, [getFavoritesQuery.data, setFavorites]);
+  }, [getFavoritesQuery.data, setFavorites, updateFavoritesMutation.isLoading]);
 
   const saveFavorites = useCallback(
     async (newFavorites: typeof favorites) => {
       const cleaned = cleanFavorites(newFavorites);
       setFavorites(cleaned);
+      isMutatingRef.current = true;
       try {
         await updateFavoritesMutation.mutateAsync(cleaned);
       } catch (error) {
@@ -65,6 +73,12 @@ export default function useFavorites() {
         showToast({ message: localize('com_ui_error'), status: 'error' });
         // Refetch to resync state with server
         getFavoritesQuery.refetch();
+      } finally {
+        // Use a small delay to prevent the useEffect from triggering immediately
+        // after the mutation completes but before React has finished processing
+        setTimeout(() => {
+          isMutatingRef.current = false;
+        }, 100);
       }
     },
     [setFavorites, updateFavoritesMutation, showToast, localize, getFavoritesQuery],
@@ -129,6 +143,7 @@ export default function useFavorites() {
       const cleaned = cleanFavorites(newFavorites);
       setFavorites(cleaned);
       if (persist) {
+        isMutatingRef.current = true;
         try {
           await updateFavoritesMutation.mutateAsync(cleaned);
         } catch (error) {
@@ -136,6 +151,10 @@ export default function useFavorites() {
           showToast({ message: localize('com_ui_error'), status: 'error' });
           // Refetch to resync state with server
           getFavoritesQuery.refetch();
+        } finally {
+          setTimeout(() => {
+            isMutatingRef.current = false;
+          }, 100);
         }
       }
     },
