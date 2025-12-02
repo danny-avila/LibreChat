@@ -451,7 +451,7 @@ export default function AgentPanel() {
         });
       }
 
-      create.mutate({ ...basePayload, model, tools, provider });
+      create.mutate({ ...basePayload, model, tools, mcp_prompts, provider });
     },
     [agent_id, create, dirtyFields, handleAvatarUpload, update, showToast, localize],
   );

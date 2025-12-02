@@ -3,10 +3,11 @@ import { Button, Label, Input, EditIcon, SaveIcon } from '@librechat/client';
 
 type Props = {
   name?: string;
+  mcp?: boolean;
   onSave: (newName: string) => void;
 };
 
-const PromptName: React.FC<Props> = ({ name, onSave }) => {
+const PromptName: React.FC<Props> = ({ name, mcp, onSave }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const blurTimeoutRef = useRef<NodeJS.Timeout>();
   const [isEditing, setIsEditing] = useState(false);
@@ -75,16 +76,17 @@ const PromptName: React.FC<Props> = ({ name, onSave }) => {
                 textOverflow: 'ellipsis',
               }}
             />
-
-            <Button
-              onClick={handleSaveClick}
-              variant="ghost"
-              size="sm"
-              className="h-10 flex-shrink-0"
-              aria-label="Save prompt name"
-            >
-              <SaveIcon className="icon-md" />
-            </Button>
+            {!mcp && (
+              <Button
+                onClick={handleSaveClick}
+                variant="ghost"
+                size="sm"
+                className="h-10 flex-shrink-0"
+                aria-label="Save prompt name"
+              >
+                <SaveIcon className="icon-md" />
+              </Button>
+            )}
           </>
         ) : (
           <>
@@ -98,15 +100,17 @@ const PromptName: React.FC<Props> = ({ name, onSave }) => {
             >
               {newName}
             </Label>
-            <Button
-              onClick={handleEditClick}
-              variant="ghost"
-              size="sm"
-              aria-label="Edit prompt name"
-              className="h-10 flex-shrink-0"
-            >
-              <EditIcon className="icon-md" />
-            </Button>
+            {!mcp && (
+              <Button
+                onClick={handleEditClick}
+                variant="ghost"
+                size="sm"
+                aria-label="Edit prompt name"
+                className="h-10 flex-shrink-0"
+              >
+                <EditIcon className="icon-md" />
+              </Button>
+            )}
           </>
         )}
       </div>

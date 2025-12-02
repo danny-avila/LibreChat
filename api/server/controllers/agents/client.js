@@ -49,7 +49,7 @@ const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
-
+const { getCachedPrompts } = require('~/server/services/Config');
 const omitTitleOptions = new Set([
   'stream',
   'thinking',
@@ -877,6 +877,15 @@ class AgentClient extends BaseClient {
        */
       const runAgents = async (messages) => {
         const agents = [this.options.agent];
+        let mcpPrompts = this.options.agent.mcp_prompts ?? [];
+        let mcpPromptData = '';
+        if (mcpPrompts.length > 0) {
+          const cachedPrompts = await getCachedPrompts();
+          for (const prompt of mcpPrompts) {
+            let cachedPrompt = cachedPrompts[prompt];
+            mcpPromptData += cachedPrompt ? `\n${cachedPrompt.description}` : '';
+          }
+        }
         if (
           this.agentConfigs &&
           this.agentConfigs.size > 0 &&
@@ -895,6 +904,33 @@ class AgentClient extends BaseClient {
           config.recursionLimit > agentsEConfig?.maxRecursionLimit
         ) {
           config.recursionLimit = agentsEConfig?.maxRecursionLimit;
+        }
+        config.configurable.agent_id = agent.id;
+        config.configurable.name = agent.name;
+        config.configurable.agent_index = i;
+        const noSystemMessages = noSystemModelRegex.some((regex) =>
+          agent.model_parameters.model.match(regex),
+        );
+
+        const systemMessage = Object.values(agent.toolContextMap ?? {})
+          .join('\n')
+          .trim();
+
+        let systemContent = [
+          systemMessage,
+          agent.instructions ?? '',
+          i !== 0 ? (agent.additional_instructions ?? '') : '',
+          mcpPromptData ?? '',
+        ]
+          .join('\n')
+          .trim();
+
+        if (noSystemMessages === true) {
+          agent.instructions = undefined;
+          agent.additional_instructions = undefined;
+        } else {
+          agent.instructions = systemContent;
+          agent.additional_instructions = undefined;
         }
 
         // TODO: needs to be added as part of AgentContext initialization

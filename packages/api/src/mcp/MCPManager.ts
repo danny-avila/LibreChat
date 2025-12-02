@@ -22,6 +22,7 @@ import { processMCPEnv } from '~/utils/env';
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
+  public appConnections: ConnectionsRepository | null = null;
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -63,6 +64,17 @@ export class MCPManager extends UserConnectionManager {
         `No connection found for server ${args.serverName}`,
       );
     }
+  }
+  /** Returns all available MCP prompts from app-level connections */
+  public async getAppMCPPrompts(): Promise<t.LCAvailableMCPPrompts | null> {
+    const prompts: t.LCAvailableMCPPrompts = {};
+    const configs = await registry.getAllServerConfigs();
+    for (const config of Object.values(configs)) {
+      if (config.mcp_prompts != null) {
+        Object.assign(prompts, config.mcp_prompts);
+      }
+    }
+    return prompts;
   }
 
   /** Returns all available tool functions from app-level connections */

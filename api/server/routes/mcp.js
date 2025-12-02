@@ -18,6 +18,7 @@ const { getMCPTools } = require('~/server/controllers/mcp');
 const { requireJwtAuth } = require('~/server/middleware');
 const { findPluginAuthsByKeys } = require('~/models');
 const { getLogStores } = require('~/cache');
+const { getCachedPrompts, invalidateCachedPrompts } = require('~/server/services/Config');
 
 const router = Router();
 
@@ -556,5 +557,87 @@ async function getOAuthHeaders(serverName, userId) {
   const serverConfig = await mcpServersRegistry.getServerConfig(serverName, userId);
   return serverConfig?.oauth_headers ?? {};
 }
+
+/**
+ * Check which authentication values exist for a specific MCP server
+ * This endpoint returns only boolean flags indicating if values are set, not the actual values
+ */
+router.get('/prompts/:serverName', requireJwtAuth, async (req, res) => {
+  try {
+    const { serverName } = req.params;
+    const user = req.user;
+    logger.debug('Server prompts request for user:', user?.id, 'server:', serverName);
+
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Get all prompts using cached system with auto-fetch
+    const allPrompts = await getCachedPrompts({
+      userId: user.id,
+      includeGlobal: true, // Enable global prompts and auto-fetch
+    });
+
+    // Filter prompts for this server only
+    const serverPrompts = {};
+    if (allPrompts) {
+      for (const [key, prompt] of Object.entries(allPrompts)) {
+        if (prompt.mcpServerName === serverName) {
+          serverPrompts[key] = prompt;
+        }
+      }
+    }
+
+    logger.debug('Filtered prompts for server:', serverName, Object.keys(serverPrompts).length);
+
+    res.json(serverPrompts);
+  } catch (error) {
+    logger.error('[MCP] Server prompts error', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/mcp-prompts', requireJwtAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    logger.debug('MCP prompts request for user:', user?.id);
+
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Get global MCP prompts (cached during server startup)
+    // Don't pass userId to ensure we get the global prompts path
+    const cachedPrompts = await getCachedPrompts({
+      includeGlobal: true, // Enable global prompts and auto-fetch
+    });
+    logger.debug('Retrieved MCP prompts:', cachedPrompts ? Object.keys(cachedPrompts).length : 0);
+    // Return the prompts (empty object if none found)
+    res.json(cachedPrompts || {});
+  } catch (error) {
+    logger.error('[MCP Get Prompts] Fatal error:', error);
+    res.status(500).json({ error: 'Failed to fetch MCP prompts' });
+  }
+});
+
+// Route to clear MCP cache
+router.post('/prompts/cache/clear', requireJwtAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user?.id) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    await invalidateCachedPrompts({
+      userId: user.id,
+      invalidateAll: true,
+    });
+
+    res.json({ success: true, message: 'MCP prompts cache cleared' });
+  } catch (error) {
+    logger.error('[MCP] Cache clear error', error);
+    res.status(500).json({ error: 'Failed to clear cache' });
+  }
+});
 
 module.exports = router;

@@ -162,6 +162,9 @@ export const mcpReinitialize = (serverName: string) =>
 export const mcpConnectionStatus = () => `${BASE_URL}/api/mcp/connection/status`;
 export const mcpServerConnectionStatus = (serverName: string) =>
   `${BASE_URL}/api/mcp/connection/status/${serverName}`;
+export const mcpPromptsValue = (serverName: string) => `${BASE_URL}/api/mcp/${serverName}/prompts`;
+
+export const getAllMCPPrompts = () => `${BASE_URL}/api/mcp/mcp-prompts`;
 export const mcpAuthValues = (serverName: string) => {
   return `${BASE_URL}/api/mcp/${serverName}/auth-values`;
 };
@@ -257,6 +260,13 @@ export const textToSpeechVoices = () => `${textToSpeech()}/voices`;
 export const getCustomConfigSpeech = () => `${speech()}/config/get`;
 
 export const getPromptGroup = (_id: string) => `${prompts()}/groups/${_id}`;
+
+export const mcpPromptGroup = (serverName: string) => `${prompts()}/mcpgroups/${serverName}`;
+
+export const mcpPrompt = (serverName: string) => `${prompts()}/mcp/${serverName}`;
+
+export const getMCPPromptValues = (_id: string, mcp: boolean) =>
+  `${prompts()}/groups/${_id}/${mcp}`;
 
 export const getPromptGroupsWithFilters = (filter: object) => {
   let url = `${prompts()}/groups`;

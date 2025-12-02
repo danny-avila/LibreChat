@@ -59,6 +59,7 @@ export const agentBaseSchema = z.object({
   avatar: agentAvatarSchema.nullable().optional(),
   model_parameters: z.record(z.unknown()).optional(),
   tools: z.array(z.string()).optional(),
+  mcp_prompts: z.array(z.string()).optional(),
   /** @deprecated Use edges instead */
   agent_ids: z.array(z.string()).optional(),
   edges: z.array(graphEdgeSchema).optional(),
@@ -77,6 +78,7 @@ export const agentCreateSchema = agentBaseSchema.extend({
   provider: z.string(),
   model: z.string().nullable(),
   tools: z.array(z.string()).optional().default([]),
+  mcp_prompts: z.array(z.string()).optional().default([]),
 });
 
 /** Update schema extends base with all fields optional and additional update-only fields */

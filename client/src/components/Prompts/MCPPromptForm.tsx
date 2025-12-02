@@ -6,41 +6,31 @@ import { Menu, Rocket } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { useForm, FormProvider } from 'react-hook-form';
 import { Button, Skeleton, useToastContext } from '@librechat/client';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
+import type { TCreatePrompt, TMCPPromptArgument, TPromptGroup } from 'librechat-data-provider';
 import {
-  Permissions,
-  ResourceType,
-  PermissionBits,
-  PermissionTypes,
-} from 'librechat-data-provider';
-import type { TCreatePrompt, TPrompt, TPromptGroup } from 'librechat-data-provider';
-import {
-  useGetPrompts,
-  useGetPromptGroup,
   useAddPromptToGroup,
   useUpdatePromptGroup,
   useMakePromptProduction,
+  useGetMCPPromptGroup,
+  useGetMCPPrompt,
 } from '~/data-provider';
-import { useResourcePermissions, useHasAccess, useLocalize } from '~/hooks';
-import CategorySelector from './Groups/CategorySelector';
-import { usePromptGroupsContext } from '~/Providers';
-import NoPromptGroup from './Groups/NoPromptGroup';
-import PromptVariables from './PromptVariables';
-import { cn, findPromptGroup } from '~/utils';
+import { useHasAccess, useLocalize } from '~/hooks';
+import MCPPromptVariables from './MCPPromptVariables';
+import { cn } from '~/utils';
 import PromptVersions from './PromptVersions';
 import { PromptsEditorMode } from '~/common';
-import DeleteVersion from './DeleteVersion';
-import PromptDetails from './PromptDetails';
 import PromptEditor from './PromptEditor';
 import SkeletonForm from './SkeletonForm';
 import Description from './Description';
 import SharePrompt from './SharePrompt';
 import PromptName from './PromptName';
-import Command from './Command';
 import store from '~/store';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface RightPanelProps {
   group: TPromptGroup;
-  prompts: TPrompt[];
+  mcp_prompts: TMCPPromptArgument[];
   selectedPrompt: any;
   selectionIndex: number;
   selectedPromptId?: string;
@@ -52,36 +42,22 @@ interface RightPanelProps {
 const RightPanel = React.memo(
   ({
     group,
-    prompts,
+    mcp_prompts,
     selectedPrompt,
-    selectedPromptId,
     isLoadingPrompts,
     canEdit,
     selectionIndex,
     setSelectionIndex,
   }: RightPanelProps) => {
-    const localize = useLocalize();
-    const { showToast } = useToastContext();
     const editorMode = useRecoilValue(store.promptsEditorMode);
     const hasShareAccess = useHasAccess({
       permissionType: PermissionTypes.PROMPTS,
       permission: Permissions.SHARED_GLOBAL,
     });
 
-    const updateGroupMutation = useUpdatePromptGroup({
-      onError: () => {
-        showToast({
-          status: 'error',
-          message: localize('com_ui_prompt_update_error'),
-        });
-      },
-    });
-
     const makeProductionMutation = useMakePromptProduction();
 
     const groupId = group?._id || '';
-    const groupName = group?.name || '';
-    const groupCategory = group?.category || '';
     const isLoadingGroup = !group;
 
     return (
@@ -90,18 +66,6 @@ const RightPanel = React.memo(
         style={{ maxHeight: 'calc(100vh - 100px)' }}
       >
         <div className="mb-2 flex flex-col lg:flex-row lg:items-center lg:justify-center lg:gap-x-2 xl:flex-row xl:space-y-0">
-          <CategorySelector
-            currentCategory={groupCategory}
-            onValueChange={
-              canEdit
-                ? (value) =>
-                    updateGroupMutation.mutate({
-                      id: groupId,
-                      payload: { name: groupName, category: value },
-                    })
-                : undefined
-            }
-          />
           <div className="mt-2 flex flex-row items-center justify-center gap-x-2 lg:mt-0">
             {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
             {editorMode === PromptsEditorMode.ADVANCED && canEdit && (
@@ -133,12 +97,6 @@ const RightPanel = React.memo(
                 <Rocket className="size-5 cursor-pointer text-white" />
               </Button>
             )}
-            <DeleteVersion
-              promptId={selectedPromptId}
-              groupId={groupId}
-              promptName={groupName}
-              disabled={isLoadingGroup}
-            />
           </div>
         </div>
         {editorMode === PromptsEditorMode.ADVANCED &&
@@ -148,10 +106,14 @@ const RightPanel = React.memo(
                   <Skeleton className="h-[72px] w-full" />
                 </div>
               ))
-            : prompts.length > 0 && (
+            : mcp_prompts.length > 0 && (
                 <PromptVersions
-                  group={group}
-                  prompts={prompts}
+                  group={{ ...group, author: group?.author ?? '' }}
+                  prompts={[]}
+                  mcpPrompts={mcp_prompts.map((p) => ({
+                    ...p,
+                    description: p.description ?? '',
+                  }))}
                   selectionIndex={selectionIndex}
                   setSelectionIndex={setSelectionIndex}
                 />
@@ -163,15 +125,14 @@ const RightPanel = React.memo(
 
 RightPanel.displayName = 'RightPanel';
 
-const PromptForm = () => {
+const MCPPromptForm = () => {
   const params = useParams();
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { hasAccess } = usePromptGroupsContext();
   const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
-  const promptId = params.promptId || '';
 
   const editorMode = useRecoilValue(store.promptsEditorMode);
+  const serverPromptCombined = params.serverName || '';
   const [selectionIndex, setSelectionIndex] = useState<number>(0);
 
   const prevIsEditingRef = useRef(false);
@@ -179,41 +140,45 @@ const PromptForm = () => {
   const [initialLoad, setInitialLoad] = useState(true);
   const [showSidePanel, setShowSidePanel] = useState(false);
   const sidePanelWidth = '320px';
+  const queryClient = useQueryClient();
 
-  const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(promptId, {
-    enabled: hasAccess && !!promptId,
+  // Reset state and invalidate queries when route changes
+  useEffect(() => {
+    setSelectionIndex(0);
+    setIsEditing(false);
+    setInitialLoad(true);
+
+    // Invalidate and refetch queries
+    queryClient.invalidateQueries({
+      queryKey: ['mcpPromptGroup', serverPromptCombined],
+    });
+    queryClient.invalidateQueries({
+      queryKey: ['mcpPrompt', serverPromptCombined],
+    });
+  }, [serverPromptCombined, queryClient]);
+
+  const { data: group, isLoading: isLoadingGroup } = useGetMCPPromptGroup(serverPromptCombined, {
+    staleTime: 0, // Always consider data stale
   });
-  const { data: prompts = [], isLoading: isLoadingPrompts } = useGetPrompts(
-    { groupId: promptId },
-    { enabled: hasAccess && !!promptId },
-  );
 
-  const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
-    ResourceType.PROMPTGROUP,
-    group?._id || '',
-  );
+  const { data: mcp_prompts, isLoading: isLoadingPrompts } = useGetMCPPrompt(serverPromptCombined, {
+    staleTime: 0, // Always consider data stale
+  });
 
-  const canEdit = hasPermission(PermissionBits.EDIT);
-  const canView = hasPermission(PermissionBits.VIEW);
-
+  const canEdit = false;
   const methods = useForm({
     defaultValues: {
-      prompt: '',
+      mcp_prompt: group?.description ? mcp_prompts?.description : '',
       promptName: group ? group.name : '',
       category: group ? group.category : '',
     },
   });
-  const { handleSubmit, setValue, reset, watch } = methods;
-  const promptText = watch('prompt');
+  const { handleSubmit, setValue, reset } = methods;
+  const promptText = mcp_prompts?.description;
 
-  const selectedPrompt = useMemo(
-    () => (prompts.length > 0 ? prompts[selectionIndex] : undefined),
-    [prompts, selectionIndex],
-  );
+  const selectedPrompt = useMemo(() => mcp_prompts ?? undefined, [mcp_prompts]);
 
-  const selectedPromptId = useMemo(() => selectedPrompt?._id, [selectedPrompt?._id]);
-
-  const { groupsQuery } = usePromptGroupsContext();
+  const selectedPromptId = useMemo(() => selectedPrompt?.name, [selectedPrompt?.name]);
 
   const updateGroupMutation = useUpdatePromptGroup({
     onError: () => {
@@ -229,23 +194,28 @@ const PromptForm = () => {
     onMutate: (variables) => {
       reset(
         {
-          prompt: variables.prompt.prompt,
+          mcp_prompt: variables.prompt.prompt,
           category: group?.category || '',
         },
         { keepDirtyValues: true },
       );
     },
     onSuccess(data) {
-      if (alwaysMakeProd && data.prompt._id != null && data.prompt._id && data.prompt.groupId) {
+      if (
+        alwaysMakeProd &&
+        data.prompt.groupId != null &&
+        data.prompt.prompt &&
+        data.prompt.groupId
+      ) {
         makeProductionMutation.mutate({
-          id: data.prompt._id,
+          id: data.prompt.groupId,
           groupId: data.prompt.groupId,
           productionPrompt: { prompt: data.prompt.prompt },
         });
       }
 
       reset({
-        prompt: data.prompt.prompt,
+        mcp_prompt: group?.description ? mcp_prompts?.description : '',
         promptName: group?.name || '',
         category: group?.category || '',
       });
@@ -265,21 +235,20 @@ const PromptForm = () => {
         return;
       }
 
-      const groupId = selectedPrompt.groupId || group?._id;
+      const groupId = selectedPrompt?.mcpServerName || group?.name;
       if (!groupId) {
         console.error('No groupId available');
         return;
       }
-
       const tempPrompt: TCreatePrompt = {
         prompt: {
-          type: selectedPrompt.type ?? 'text',
-          groupId: groupId,
+          type: 'text',
+          groupId: selectedPrompt.name ?? '',
           prompt: value,
         },
       };
 
-      if (value === selectedPrompt.prompt) {
+      if (value === selectedPrompt.name) {
         return;
       }
 
@@ -297,20 +266,22 @@ const PromptForm = () => {
   }, [isLoadingGroup, isLoadingPrompts]);
 
   useEffect(() => {
-    if (prevIsEditingRef.current && !isEditing && canEdit) {
-      handleSubmit((data) => onSave(data.prompt))();
+    if (prevIsEditingRef.current && !isEditing) {
+      handleSubmit((data) => onSave(data.mcp_prompt || ''))();
     }
     prevIsEditingRef.current = isEditing;
-  }, [isEditing, onSave, handleSubmit, canEdit]);
+  }, [isEditing, onSave, handleSubmit]);
 
   useEffect(() => {
     handleLoadingComplete();
-  }, [params.promptId, editorMode, group?.productionId, prompts, handleLoadingComplete]);
+  }, [params.promptId, editorMode, group?.name, mcp_prompts, handleLoadingComplete]);
 
   useEffect(() => {
-    setValue('prompt', selectedPrompt ? selectedPrompt.prompt : '', { shouldDirty: false });
+    setValue('mcp_prompt', group?.description ? mcp_prompts?.description : '', {
+      shouldDirty: false,
+    });
     setValue('category', group ? group.category : '', { shouldDirty: false });
-  }, [selectedPrompt, group, setValue]);
+  }, [selectedPrompt, group, mcp_prompts, setValue]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -331,62 +302,32 @@ const PromptForm = () => {
     [],
   );
 
-  const debouncedUpdateCommand = useMemo(
-    () =>
-      debounce((groupId: string, command: string, mutate: any) => {
-        mutate({ id: groupId, payload: { command } });
-      }, 950),
-    [],
-  );
-
   const handleUpdateOneliner = useCallback(
     (oneliner: string) => {
-      if (!group || !group._id) {
+      if (!group || !group.name) {
         return console.warn('Group not found');
       }
-      debouncedUpdateOneliner(group._id, oneliner, updateGroupMutation.mutate);
+      debouncedUpdateOneliner(group.name, oneliner, updateGroupMutation.mutate);
     },
     [group, updateGroupMutation.mutate, debouncedUpdateOneliner],
-  );
-
-  const handleUpdateCommand = useCallback(
-    (command: string) => {
-      if (!group || !group._id) {
-        return console.warn('Group not found');
-      }
-      debouncedUpdateCommand(group._id, command, updateGroupMutation.mutate);
-    },
-    [group, updateGroupMutation.mutate, debouncedUpdateCommand],
   );
 
   if (initialLoad) {
     return <SkeletonForm />;
   }
 
-  // Show read-only view if user doesn't have edit permission
-  if (!canEdit && !permissionsLoading && groupsQuery.data) {
-    const fetchedPrompt = findPromptGroup(
-      groupsQuery.data,
-      (group) => group._id === params.promptId,
-    );
-    if (!fetchedPrompt && !canView) {
-      return <NoPromptGroup />;
-    }
-
-    if (fetchedPrompt || group) {
-      return <PromptDetails group={fetchedPrompt || group} />;
-    }
-  }
-
-  if (!group || group._id == null) {
+  if (!group || group.name == null) {
     return null;
   }
 
   const groupName = group.name;
-
+  const serverName = group.mcpServerName ?? mcp_prompts?.promptKey.split('_mcp_')[1];
   return (
     <FormProvider {...methods}>
-      <form className="mt-4 flex w-full" onSubmit={handleSubmit((data) => onSave(data.prompt))}>
+      <form
+        className="mt-4 flex w-full"
+        onSubmit={handleSubmit((data) => onSave(data.mcp_prompt || ''))}
+      >
         <div className="relative w-full">
           <div
             className="h-full w-full"
@@ -404,12 +345,13 @@ const PromptForm = () => {
                     <>
                       <PromptName
                         name={groupName}
+                        mcp={true}
                         onSave={(value) => {
-                          if (!canEdit || !group._id) {
+                          if (!group.name) {
                             return;
                           }
                           updateGroupMutation.mutate({
-                            id: group._id,
+                            id: group.name,
                             payload: { name: value },
                           });
                         }}
@@ -427,8 +369,8 @@ const PromptForm = () => {
                       <div className="hidden lg:block">
                         {editorMode === PromptsEditorMode.SIMPLE && (
                           <RightPanel
-                            group={group}
-                            prompts={prompts}
+                            group={{ ...group, author: group?.author ?? '' }}
+                            mcp_prompts={Array.isArray(mcp_prompts) ? mcp_prompts : []}
                             selectedPrompt={selectedPrompt}
                             selectionIndex={selectionIndex}
                             selectedPromptId={selectedPromptId}
@@ -446,21 +388,17 @@ const PromptForm = () => {
                 ) : (
                   <div className="mb-2 flex h-full flex-col gap-4">
                     <PromptEditor
-                      name="prompt"
+                      name="mcp_prompt"
                       isEditing={isEditing}
+                      mcp={true}
                       setIsEditing={(value) => canEdit && setIsEditing(value)}
-                      promptValue={group?.productionPrompt?.prompt || promptText}
+                      promptValue={mcp_prompts?.description ?? promptText ?? ''}
                     />
-                    <PromptVariables promptText={promptText} />
+                    <MCPPromptVariables promptArguments={mcp_prompts?.arguments} />
                     <Description
-                      initialValue={group.oneliner ?? ''}
-                      onValueChange={canEdit ? handleUpdateOneliner : undefined}
-                      disabled={!canEdit}
-                    />
-                    <Command
-                      initialValue={group.command ?? ''}
-                      onValueChange={canEdit ? handleUpdateCommand : undefined}
-                      disabled={!canEdit}
+                      initialValue={'On MCP Server: ' + serverName}
+                      onValueChange={handleUpdateOneliner}
+                      disabled={true}
                     />
                   </div>
                 )}
@@ -469,8 +407,8 @@ const PromptForm = () => {
               {editorMode === PromptsEditorMode.ADVANCED && (
                 <div className="hidden w-1/4 border-l border-border-light lg:block">
                   <RightPanel
-                    group={group}
-                    prompts={prompts}
+                    group={{ ...group, author: group?.author ?? '' }}
+                    mcp_prompts={Array.isArray(mcp_prompts) ? mcp_prompts : []}
                     selectionIndex={selectionIndex}
                     selectedPrompt={selectedPrompt}
                     selectedPromptId={selectedPromptId}
@@ -510,7 +448,7 @@ const PromptForm = () => {
               <div className="h-full overflow-auto">
                 <RightPanel
                   group={group}
-                  prompts={prompts}
+                  mcp_prompts={Array.isArray(mcp_prompts) ? mcp_prompts : []}
                   selectionIndex={selectionIndex}
                   selectedPrompt={selectedPrompt}
                   selectedPromptId={selectedPromptId}
@@ -527,4 +465,4 @@ const PromptForm = () => {
   );
 };
 
-export default PromptForm;
+export default MCPPromptForm;

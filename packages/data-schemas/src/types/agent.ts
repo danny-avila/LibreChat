@@ -40,4 +40,5 @@ export interface IAgent extends Omit<Document, 'model'> {
   category: string;
   support_contact?: ISupportContact;
   is_promoted?: boolean;
+  mcp_prompts?: string[];
 }

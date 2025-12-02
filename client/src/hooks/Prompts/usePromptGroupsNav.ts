@@ -1,7 +1,21 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
 import { usePromptGroupsInfiniteQuery } from '~/data-provider';
+import { MCPPromptResponse, dataService } from 'librechat-data-provider';
 import store from '~/store';
+import { useSearchParams } from 'react-router-dom';
+
+// Add MCP data fetching function
+const fetchMCPPrompts = async (): Promise<MCPPromptResponse[]> => {
+  try {
+    // Use LibreChat's existing dataService pattern
+    const response = await dataService.allMCPPrompts();
+    return response || [];
+  } catch (error) {
+    console.warn('MCP prompts not available:', error);
+    return [];
+  }
+};
 
 export default function usePromptGroupsNav(hasAccess = true) {
   const [pageSize] = useRecoilState(store.promptsPageSize);
@@ -10,6 +24,10 @@ export default function usePromptGroupsNav(hasAccess = true) {
 
   // Track current page index and cursor history
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
+
+  const [searchParams] = useSearchParams();
+  const agentAdd = searchParams.get('agentAdd');
+  const agentAddPrompts = agentAdd ? true : false;
   const cursorHistoryRef = useRef<Array<string | null>>([null]); // Start with null for first page
 
   const prevFiltersRef = useRef({ name, category });
@@ -85,6 +103,8 @@ export default function usePromptGroupsNav(hasAccess = true) {
     setCurrentPageIndex(currentPageIndex - 1);
   }, [hasAccess, currentPageIndex, hasPreviousPage]);
 
+  const mcpPromptsData = fetchMCPPrompts();
+
   // Reset when filters change
   useEffect(() => {
     if (!hasAccess) return;
@@ -110,6 +130,8 @@ export default function usePromptGroupsNav(hasAccess = true) {
     prevPage,
     isFetching: hasAccess ? groupsQuery.isFetching : false,
     name,
+    mcpPromptsData,
     setName,
+    agentAddPrompts,
   };
 }

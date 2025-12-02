@@ -8,7 +8,7 @@ import rehypeHighlight from 'rehype-highlight';
 import { replaceSpecialVars } from 'librechat-data-provider';
 import { TextareaAutosize, InputCombobox, Button } from '@librechat/client';
 import { useForm, useFieldArray, Controller, useWatch } from 'react-hook-form';
-import type { TPromptGroup } from 'librechat-data-provider';
+import type { TPromptGroup, MCPPromptResponse } from 'librechat-data-provider';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import { cn, wrapVariable, defaultTextProps, extractVariableInfo } from '~/utils';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
@@ -63,18 +63,27 @@ const parseFieldConfig = (variable: string): FieldConfig => {
 
 export default function VariableForm({
   group,
+  mcpPrompt,
+  mcp,
   onClose,
 }: {
   group: TPromptGroup;
+  mcpPrompt?: MCPPromptResponse | null;
+  mcp?: boolean;
   onClose: () => void;
 }) {
   const localize = useLocalize();
   const { user } = useAuthContext();
 
   const mainText = useMemo(() => {
-    const initialText = group.productionPrompt?.prompt ?? '';
+    let initialText: string;
+    if (mcp && mcpPrompt) {
+      initialText = mcpPrompt.description ?? '';
+    } else {
+      initialText = group.productionPrompt?.prompt ?? '';
+    }
     return replaceSpecialVars({ text: initialText, user });
-  }, [group.productionPrompt?.prompt, user]);
+  }, [mcp, mcpPrompt, group.productionPrompt?.prompt, user]);
 
   const { allVariables, uniqueVariables, variableIndexMap } = useMemo(
     () => extractVariableInfo(mainText),

@@ -6,6 +6,8 @@ import { usePromptGroupsContext } from '~/Providers';
 import List from '~/components/Prompts/Groups/List';
 import PanelNavigation from './PanelNavigation';
 import { cn } from '~/utils';
+import store from '~/store';
+import { useRecoilState } from 'recoil';
 
 export default function GroupSidePanel({
   children,
@@ -19,10 +21,22 @@ export default function GroupSidePanel({
   const location = useLocation();
   const isSmallerScreen = useMediaQuery('(max-width: 1024px)');
   const isChatRoute = useMemo(() => location.pathname?.startsWith('/c/'), [location.pathname]);
+  const {
+    nextPage,
+    prevPage,
+    hasNextPage,
+    groupsQuery,
+    promptGroups,
+    hasPreviousPage,
+    mcpPromptsResponse,
+  } = usePromptGroupsContext();
 
-  const { promptGroups, groupsQuery, nextPage, prevPage, hasNextPage, hasPreviousPage } =
-    usePromptGroupsContext();
+  const [categoryFilter] = useRecoilState(store.promptsCategory);
 
+  const mcpPrompts = mcpPromptsResponse;
+  if (categoryFilter && categoryFilter != 'sys__mcp__prompts__sys') {
+    mcpPrompts.mcpData = [];
+  }
   return (
     <div
       className={cn(
@@ -33,7 +47,12 @@ export default function GroupSidePanel({
     >
       {children}
       <div className={cn('flex-grow overflow-y-auto', isChatRoute ? '' : 'px-2 md:px-0')}>
-        <List groups={promptGroups} isChatRoute={isChatRoute} isLoading={!!groupsQuery.isLoading} />
+        <List
+          groups={promptGroups}
+          mcpPrompts={mcpPrompts.mcpData}
+          isChatRoute={isChatRoute}
+          isLoading={!!groupsQuery.isLoading}
+        />
       </div>
       <div className={cn(isChatRoute ? '' : 'px-2 pb-3 pt-2 md:px-0')}>
         <PanelNavigation

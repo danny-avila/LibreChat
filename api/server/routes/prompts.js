@@ -21,6 +21,7 @@ const {
 const {
   getListPromptGroupsByAccess,
   makePromptProduction,
+  getMCPPromptGroup,
   updatePromptGroup,
   deletePromptGroup,
   createPromptGroup,
@@ -29,6 +30,7 @@ const {
   getPrompts,
   savePrompt,
   getPrompt,
+  getMCPPrompt,
 } = require('~/models/Prompt');
 const {
   canAccessPromptGroupResource,
@@ -94,6 +96,56 @@ router.get(
     }
   },
 );
+
+/**
+ * Route to get single mcp prompt group by its ID
+ * GET /mcpgroups/:groupId
+ */
+router.get('/mcpgroups/:groupId', async (req, res) => {
+  console.log('mcp');
+  let serverName = req.params.groupId;
+  const parts = serverName.split(':');
+  try {
+    // if (parts) {
+    let serverName = parts[0];
+    let promptName = parts[1];
+    const mcpGroup = await getMCPPromptGroup(serverName, promptName);
+
+    if (!mcpGroup) {
+      return res.status(404).send({ message: 'Prompt MCP group not found' });
+    }
+
+    res.status(200).send(mcpGroup);
+  } catch (error) {
+    logger.error('Error getting prompt group', error);
+    res.status(500).send({ message: 'Error getting prompt group' });
+  }
+});
+
+/**
+ * Route to get single mcp prompt group by its ID
+ * GET /mcp/:serverName
+ */
+router.get('/mcp/:serverName', async (req, res) => {
+  let groupId = req.params.serverName;
+  const user = req.user;
+  const parts = groupId.split('_mcp_');
+  try {
+    // if (parts) {
+    let serverName = parts[1];
+    let promptName = parts[0];
+    const mcpGroup = await getMCPPrompt(serverName, promptName, user.id, groupId);
+
+    if (!mcpGroup) {
+      return res.status(404).send({ message: 'Prompt MCP group not found' });
+    }
+
+    res.status(200).send(mcpGroup);
+  } catch (error) {
+    logger.error('Error getting prompt group', error);
+    res.status(500).send({ message: 'Error getting prompt group' });
+  }
+});
 
 /**
  * Route to fetch all prompt groups (ACL-aware)

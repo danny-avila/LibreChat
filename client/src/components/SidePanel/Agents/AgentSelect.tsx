@@ -72,11 +72,22 @@ export default function AgentSelect({
         agentTools.push(tool);
       });
 
+      const agentPrompts: string[] = [];
+      (fullAgent.mcp_prompts ?? []).forEach((prompt) => {
+        if (capabilities[prompt] !== undefined) {
+          capabilities[prompt] = true;
+          return;
+        }
+
+        agentPrompts.push(prompt);
+      });
+
       const formValues: Partial<AgentForm & TAgentCapabilities> = {
         ...capabilities,
         agent: update,
         model: update.model,
         tools: agentTools,
+        mcp_prompts: agentPrompts,
         // Ensure the category is properly set for the form
         category: fullAgent.category || 'general',
         // Make sure support_contact is properly loaded
@@ -138,14 +149,21 @@ export default function AgentSelect({
 
       createMutation.reset();
       if (!agentExists) {
+        localStorage.removeItem('agent-prompts');
         setCurrentAgentId(undefined);
         return reset(getDefaultAgentFormValues());
       }
-
+      localStorage.removeItem('agent-prompts');
       setCurrentAgentId(selectedId);
+      localStorage.setItem('agent-selected', selectedId);
       const agent = agentQuery.data;
       if (!agent) {
         console.warn('Agent not found');
+        const agentSelected = localStorage.getItem('agent-selected');
+        console.log('agentSelected', agentSelected);
+        if (agentSelected) {
+          setCurrentAgentId(agentSelected);
+        }
         return;
       }
 

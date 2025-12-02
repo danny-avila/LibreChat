@@ -5,6 +5,7 @@ import type { AgentPanelContextType, MCPServerInfo } from '~/common';
 import {
   useAvailableToolsQuery,
   useGetActionsQuery,
+  useGetAllMCPPrompts,
   useGetStartupConfig,
   useMCPToolsQuery,
 } from '~/data-provider';
@@ -36,6 +37,24 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   });
 
   const { data: regularTools } = useAvailableToolsQuery(EModelEndpoint.agents);
+
+  const { data: allMCPPrompts } = useGetAllMCPPrompts();
+
+  const mcp_prompts = Object.values(allMCPPrompts || {}).map((prompt) => {
+    const p = prompt as {
+      name: string;
+      arguments: any;
+      mcpServerName: string;
+      description?: string;
+    };
+    return {
+      name: p.name,
+      arguments: p.arguments,
+      mcpServerName: p.mcpServerName,
+      promptKey: p.name + '_mcp_' + p.mcpServerName,
+      description: p.description ?? '',
+    };
+  });
 
   const { data: mcpData } = useMCPToolsQuery({
     enabled: !isEphemeralAgent(agent_id) && startupConfig?.mcpServers != null,
@@ -113,6 +132,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   const value: AgentPanelContextType = {
     mcp,
     mcps,
+    mcp_prompts,
     action,
     setMcp,
     actions,

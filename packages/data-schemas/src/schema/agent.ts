@@ -112,6 +112,10 @@ const agentSchema = new Schema<IAgent>(
       default: false,
       index: true,
     },
+    mcp_prompts: {
+      type: [String],
+      default: undefined,
+    },
   },
   {
     timestamps: true,

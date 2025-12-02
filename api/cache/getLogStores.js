@@ -47,6 +47,7 @@ const namespaces = {
   [CacheKeys.AUDIO_RUNS]: standardCache(CacheKeys.AUDIO_RUNS, Time.TEN_MINUTES),
   [CacheKeys.MESSAGES]: standardCache(CacheKeys.MESSAGES, Time.ONE_MINUTE),
   [CacheKeys.FLOWS]: standardCache(CacheKeys.FLOWS, Time.ONE_MINUTE * 3),
+  [CacheKeys.MCP_PROMPT]: standardCache(CacheKeys.MCP_PROMPT),
   [CacheKeys.OPENID_EXCHANGED_TOKENS]: standardCache(
     CacheKeys.OPENID_EXCHANGED_TOKENS,
     Time.TEN_MINUTES,

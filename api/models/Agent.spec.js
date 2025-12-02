@@ -9,6 +9,7 @@ process.env.CREDS_IV = '0123456789abcdef';
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn(),
   getMCPServerTools: jest.fn(),
+  getCachedPrompts: jest.fn(),
 }));
 
 const mongoose = require('mongoose');
@@ -31,7 +32,7 @@ const {
   generateActionMetadataHash,
 } = require('./Agent');
 const permissionService = require('~/server/services/PermissionService');
-const { getCachedTools, getMCPServerTools } = require('~/server/services/Config');
+const { getCachedTools, getMCPServerTools, getCachedPrompts } = require('~/server/services/Config');
 const { AclEntry } = require('~/db/models');
 
 /**
@@ -1930,6 +1931,8 @@ describe('models/Agent', () => {
         another_tool: {},
       });
 
+      getCachedPrompts.mockResolvedValue({});
+
       // Mock getMCPServerTools to return tools for each server
       getMCPServerTools.mockImplementation(async (_userId, server) => {
         if (server === 'server1') {
@@ -2047,6 +2050,7 @@ describe('models/Agent', () => {
       const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
 
       getCachedTools.mockResolvedValue({});
+      getCachedPrompts.mockResolvedValue({});
 
       const mockReq = {
         user: { id: 'user123' },
@@ -2079,6 +2083,7 @@ describe('models/Agent', () => {
       const { EPHEMERAL_AGENT_ID } = require('librechat-data-provider').Constants;
 
       getCachedTools.mockResolvedValue({});
+      getCachedPrompts.mockResolvedValue({});
 
       const mockReq = {
         user: { id: 'user123' },
@@ -2123,6 +2128,7 @@ describe('models/Agent', () => {
         }, {});
 
         getCachedTools.mockResolvedValue(availableTools);
+        getCachedPrompts.mockResolvedValue({});
 
         // Mock getMCPServerTools to return all tools for server1
         getMCPServerTools.mockImplementation(async (_userId, server) => {
@@ -2672,6 +2678,7 @@ describe('models/Agent', () => {
         tool_mcp_server1: {}, // Correct format
         tool_mcp_server2: {}, // Different server
       });
+      getCachedPrompts.mockResolvedValue({});
 
       // Mock getMCPServerTools to return only tools matching the server
       getMCPServerTools.mockImplementation(async (_userId, server) => {

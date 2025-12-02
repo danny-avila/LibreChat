@@ -237,6 +237,9 @@ export type AgentPanelContextType = {
   setMcp: React.Dispatch<React.SetStateAction<t.MCP | undefined>>;
   setMcps: React.Dispatch<React.SetStateAction<t.MCP[] | undefined>>;
   activePanel?: string;
+  tools: t.AgentToolType[];
+  mcp_prompts: t.MCPPromptResponse[];
+  pluginTools?: t.TPlugin[];
   regularTools?: t.TPlugin[];
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
