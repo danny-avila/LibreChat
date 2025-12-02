@@ -141,7 +141,10 @@ export default function FavoritesList({
     }
   }, [navigate, isSmallScreen, toggleNav]);
 
-  const agentIds = favorites.map((f) => f.agentId).filter(Boolean) as string[];
+  // Ensure favorites is always an array (could be corrupted in localStorage)
+  const safeFavorites = useMemo(() => (Array.isArray(favorites) ? favorites : []), [favorites]);
+
+  const agentIds = safeFavorites.map((f) => f.agentId).filter(Boolean) as string[];
 
   const agentQueries = useQueries({
     queries: agentIds.map((agentId) => ({
@@ -192,7 +195,7 @@ export default function FavoritesList({
     return map;
   }, [agentQueries, queryClient]);
 
-  const draggedFavoritesRef = useRef(favorites);
+  const draggedFavoritesRef = useRef(safeFavorites);
 
   const moveItem = useCallback(
     (dragIndex: number, hoverIndex: number) => {
@@ -212,14 +215,14 @@ export default function FavoritesList({
 
   // Keep ref in sync when favorites change from external sources
   useEffect(() => {
-    draggedFavoritesRef.current = favorites;
-  }, [favorites]);
+    draggedFavoritesRef.current = safeFavorites;
+  }, [safeFavorites]);
 
   if (search.query) {
     return null;
   }
 
-  if (!isFavoritesLoading && favorites.length === 0 && !showAgentMarketplace) {
+  if (!isFavoritesLoading && safeFavorites.length === 0 && !showAgentMarketplace) {
     return null;
   }
 
@@ -243,7 +246,7 @@ export default function FavoritesList({
             {/* Marketplace skeleton */}
             {showAgentMarketplace && <MarketplaceSkeleton />}
             {/* Favorite items skeletons */}
-            {favorites.map((_, index) => (
+            {safeFavorites.map((_, index) => (
               <FavoriteItemSkeleton key={`skeleton-${index}`} />
             ))}
           </>
@@ -264,7 +267,7 @@ export default function FavoritesList({
                 </div>
               </div>
             )}
-            {favorites.map((fav, index) => {
+            {safeFavorites.map((fav, index) => {
               if (fav.agentId) {
                 const agent = agentsMap[fav.agentId];
                 if (!agent) {

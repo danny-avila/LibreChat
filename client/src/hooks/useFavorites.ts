@@ -22,8 +22,11 @@ import { logger } from '~/utils';
 /**
  * Cleans favorites array to only include canonical shapes (agentId or model+endpoint).
  */
-const cleanFavorites = (favorites: Favorite[]): Favorite[] =>
-  favorites.map((f) => {
+const cleanFavorites = (favorites: Favorite[]): Favorite[] => {
+  if (!Array.isArray(favorites)) {
+    return [];
+  }
+  return favorites.map((f) => {
     if (f.agentId) {
       return { agentId: f.agentId };
     }
@@ -32,6 +35,7 @@ const cleanFavorites = (favorites: Favorite[]): Favorite[] =>
     }
     return f;
   });
+};
 
 export default function useFavorites() {
   const localize = useLocalize();
