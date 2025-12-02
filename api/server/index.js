@@ -128,7 +128,6 @@ const startServer = async () => {
   app.use('/api/presets', routes.presets);
   app.use('/api/prompts', routes.prompts);
   app.use('/api/categories', routes.categories);
-  app.use('/api/tokenizer', routes.tokenizer);
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/balance', routes.balance);
   app.use('/api/models', routes.models);
