@@ -44,7 +44,7 @@ export const getAllContentText = (message?: TMessage | null): string => {
 
   if (message.content && message.content.length > 0) {
     return message.content
-      .filter((part) => part.type === ContentTypes.TEXT)
+      .filter((part) => part != null && part.type === ContentTypes.TEXT)
       .map((part) => {
         if (!('text' in part)) return '';
         const text = part.text;

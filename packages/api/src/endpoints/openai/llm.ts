@@ -259,9 +259,35 @@ export function getOpenAILLMConfig({
   }
 
   /**
-   * Note: OpenAI Web Search models do not support any known parameters besides `max_tokens`
+   * Note: OpenAI reasoning models (o1/o3/gpt-5) do not support temperature and other sampling parameters
+   * Exception: gpt-5-chat and versioned models like gpt-5.1 DO support these parameters
    */
-  if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model as string)) {
+  if (
+    modelOptions.model &&
+    /\b(o[13]|gpt-5)(?!\.|-chat)(?:-|$)/.test(modelOptions.model as string)
+  ) {
+    const reasoningExcludeParams = [
+      'frequencyPenalty',
+      'presencePenalty',
+      'temperature',
+      'topP',
+      'logitBias',
+      'n',
+      'logprobs',
+    ];
+
+    const updatedDropParams = dropParams || [];
+    const combinedDropParams = [...new Set([...updatedDropParams, ...reasoningExcludeParams])];
+
+    combinedDropParams.forEach((param) => {
+      if (param in llmConfig) {
+        delete llmConfig[param as keyof t.OAIClientOptions];
+      }
+    });
+  } else if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model as string)) {
+    /**
+     * Note: OpenAI Web Search models do not support any known parameters besides `max_tokens`
+     */
     const searchExcludeParams = [
       'frequency_penalty',
       'presence_penalty',
