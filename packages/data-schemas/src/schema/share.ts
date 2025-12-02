@@ -8,6 +8,7 @@ export interface ISharedLink extends Document {
   shareId?: string;
   targetMessageId?: string;
   isPublic: boolean;
+  expiresAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -40,10 +41,15 @@ const shareSchema: Schema<ISharedLink> = new Schema(
       type: Boolean,
       default: true,
     },
+    expiresAt: {
+      type: Date,
+      required: false,
+    },
   },
   { timestamps: true },
 );
 
 shareSchema.index({ conversationId: 1, user: 1, targetMessageId: 1 });
+shareSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export default shareSchema;

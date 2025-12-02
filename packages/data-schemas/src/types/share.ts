@@ -10,6 +10,7 @@ export interface ISharedLink {
   shareId?: string;
   targetMessageId?: string;
   isPublic: boolean;
+  expiresAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -23,6 +24,7 @@ export interface SharedLinksResult {
     shareId: string;
     title: string;
     isPublic: boolean;
+    expiresAt?: Date;
     createdAt: Date;
     conversationId: string;
   }>;
@@ -36,6 +38,7 @@ export interface SharedMessagesResult {
   shareId: string;
   title?: string;
   isPublic: boolean;
+  expiresAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }

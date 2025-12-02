@@ -6,6 +6,7 @@ import {
   Spinner,
   TooltipAnchor,
   Label,
+  Dropdown,
   OGDialogTemplate,
   useToastContext,
 } from '@librechat/client';
@@ -17,6 +18,7 @@ import {
 } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
+import { SHARE_EXPIRY } from '~/utils/shareExpiry';
 
 export default function SharedLinkButton({
   share,
@@ -38,7 +40,11 @@ export default function SharedLinkButton({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [expiryLabel, setExpiryLabel] = useState(SHARE_EXPIRY.THIRTY_DAYS.label);
   const shareId = share?.shareId ?? '';
+
+  const expirationOptions = Object.values(SHARE_EXPIRY);
+  const localizedOptions = expirationOptions.map((option) => localize(option.label));
 
   const { mutateAsync: mutate, isLoading: isCreateLoading } = useCreateSharedLinkMutation({
     onError: () => {
@@ -88,7 +94,9 @@ export default function SharedLinkButton({
   };
 
   const createShareLink = async () => {
-    const share = await mutate({ conversationId, targetMessageId });
+    const selectedOption = expirationOptions.find((option) => option.label === expiryLabel);
+    const expirationHours = selectedOption ? selectedOption.hours : undefined;
+    const share = await mutate({ conversationId, targetMessageId, expirationHours });
     const newLink = generateShareLink(share.shareId);
     setSharedLink(newLink);
   };
@@ -117,12 +125,33 @@ export default function SharedLinkButton({
 
   return (
     <>
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2">
         {!shareId && (
-          <Button disabled={isCreateLoading} variant="submit" onClick={createShareLink}>
-            {!isCreateLoading && localize('com_ui_create_link')}
-            {isCreateLoading && <Spinner className="size-4" />}
-          </Button>
+          <>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="expiry-select" className="text-sm">
+                {localize('com_ui_expires')}:
+              </Label>
+              <Dropdown
+                id="expiry-select"
+                label=""
+                value={localize(expiryLabel)}
+                onChange={(value) => {
+                  const option = expirationOptions.find((opt) => localize(opt.label) === value);
+                  if (option) {
+                    setExpiryLabel(option.label);
+                  }
+                }}
+                options={localizedOptions}
+                sizeClasses="flex-1"
+                portal={false}
+              />
+            </div>
+            <Button disabled={isCreateLoading} variant="submit" onClick={createShareLink}>
+              {!isCreateLoading && localize('com_ui_create_link')}
+              {isCreateLoading && <Spinner className="size-4" />}
+            </Button>
+          </>
         )}
         {shareId && (
           <div className="flex items-center gap-2">

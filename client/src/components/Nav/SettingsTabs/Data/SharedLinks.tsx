@@ -233,6 +233,28 @@ export default function SharedLinks() {
         },
       },
       {
+        accessorKey: 'expiresAt',
+        header: () => <Label className="px-2 text-xs sm:text-sm">{localize('com_ui_expires')}</Label>,
+        cell: ({ row }) => {
+          const expiresAt = row.original.expiresAt;
+          if (!expiresAt) {
+            return <span className="text-xs text-text-secondary sm:text-sm">{localize('com_ui_never')}</span>;
+          }
+          const expiryDate = new Date(expiresAt);
+          const isExpired = expiryDate < new Date();
+          return (
+            <span className={`text-xs sm:text-sm ${isExpired ? 'text-red-500' : 'text-text-secondary'}`}>
+              {isExpired ? `${localize('com_ui_expired')} ` : ''}
+              {formatDate(expiresAt.toString(), isSmallScreen)}
+            </span>
+          );
+        },
+        meta: {
+          size: '10%',
+          mobileSize: '20%',
+        },
+      },
+      {
         accessorKey: 'actions',
         header: () => (
           <Label className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm">

@@ -4,6 +4,7 @@ import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
 import logger from '~/config/winston';
+import { createShareExpirationDate, isShareExpired } from '~/utils/shareExpiration';
 
 class ShareServiceError extends Error {
   code: string;
@@ -173,6 +174,15 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
         return null;
       }
 
+      // Check if share has expired
+      if (isShareExpired(share.expiresAt)) {
+        logger.warn('[getSharedMessages] Share has expired', {
+          shareId,
+          expiresAt: share.expiresAt,
+        });
+        throw new ShareServiceError('This shared link has expired', 'SHARE_EXPIRED');
+      }
+
       /** Filtered messages based on targetMessageId if present (branch-specific sharing) */
       let messagesToShare: t.IMessage[] = share.messages;
       if (share.targetMessageId) {
@@ -184,6 +194,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
         shareId: share.shareId || shareId,
         title: share.title,
         isPublic: share.isPublic,
+        expiresAt: share.expiresAt,
         createdAt: share.createdAt,
         updatedAt: share.updatedAt,
         conversationId: newConvoId,
@@ -275,6 +286,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
           shareId: link.shareId || '',
           title: link?.title || 'Untitled',
           isPublic: link.isPublic,
+          expiresAt: link.expiresAt,
           createdAt: link.createdAt || new Date(),
           conversationId: link.conversationId,
         })),
@@ -345,6 +357,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
     user: string,
     conversationId: string,
     targetMessageId?: string,
+    expirationHours?: number,
   ): Promise<t.CreateShareResult> {
     if (!user || !conversationId) {
       throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
@@ -401,6 +414,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
       const title = conversation.title || 'Untitled';
 
       const shareId = nanoid();
+      const expiresAt = createShareExpirationDate(expirationHours);
       await SharedLink.create({
         shareId,
         conversationId,
@@ -408,6 +422,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
         title,
         user,
         ...(targetMessageId && { targetMessageId }),
+        ...(expiresAt && { expiresAt }),
       });
 
       return { shareId, conversationId };

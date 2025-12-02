@@ -45,8 +45,12 @@ export function getSharedLink(conversationId: string): Promise<t.TSharedLinkGetR
 export function createSharedLink(
   conversationId: string,
   targetMessageId?: string,
+  expirationHours?: number,
 ): Promise<t.TSharedLinkResponse> {
-  return request.post(endpoints.createSharedLink(conversationId), { targetMessageId });
+  return request.post(endpoints.createSharedLink(conversationId), {
+    targetMessageId,
+    expirationHours,
+  });
 }
 
 export function updateSharedLink(shareId: string): Promise<t.TSharedLinkResponse> {

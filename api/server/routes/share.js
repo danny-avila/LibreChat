@@ -99,8 +99,13 @@ router.get('/link/:conversationId', requireJwtAuth, async (req, res) => {
 
 router.post('/:conversationId', requireJwtAuth, async (req, res) => {
   try {
-    const { targetMessageId } = req.body;
-    const created = await createSharedLink(req.user.id, req.params.conversationId, targetMessageId);
+    const { targetMessageId, expirationHours } = req.body;
+    const created = await createSharedLink(
+      req.user.id,
+      req.params.conversationId,
+      targetMessageId,
+      expirationHours,
+    );
     if (created) {
       res.status(200).json(created);
     } else {
