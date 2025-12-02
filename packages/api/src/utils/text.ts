@@ -2,6 +2,7 @@ import { logger } from '@librechat/data-schemas';
 
 /**
  * Processes text content by counting tokens and truncating if it exceeds the specified limit.
+ * Uses ratio-based estimation to minimize expensive tokenCountFn calls.
  * @param text - The text content to process
  * @param tokenLimit - The maximum number of tokens allowed
  * @param tokenCountFn - Function to count tokens
@@ -26,40 +27,37 @@ export async function processTextWithTokenLimit({
     };
   }
 
-  /**
-   * Doing binary search here to find the truncation point efficiently
-   * (May be a better way to go about this)
-   */
-  let low = 0;
-  let high = text.length;
-  let bestText = '';
-
   logger.debug(
     `[textTokenLimiter] Text content exceeds token limit: ${originalTokenCount} > ${tokenLimit}, truncating...`,
   );
 
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const truncatedText = text.substring(0, mid);
-    const tokenCount = await tokenCountFn(truncatedText);
+  /** Use ratio-based estimation instead of binary search to minimize tokenCountFn calls */
+  const ratio = tokenLimit / originalTokenCount;
+  /** Apply 98% buffer to initial estimate to avoid overshooting */
+  let charPosition = Math.floor(text.length * ratio * 0.98);
 
-    if (tokenCount <= tokenLimit) {
-      bestText = truncatedText;
-      low = mid + 1;
-    } else {
-      high = mid - 1;
-    }
+  let truncatedText = text.substring(0, charPosition);
+  let tokenCount = await tokenCountFn(truncatedText);
+
+  /** Refine if still over limit (should rarely need more than 1-2 iterations) */
+  const maxIterations = 5;
+  let iterations = 0;
+
+  while (tokenCount > tokenLimit && iterations < maxIterations && charPosition > 0) {
+    const overageRatio = tokenLimit / tokenCount;
+    charPosition = Math.floor(charPosition * overageRatio * 0.98);
+    truncatedText = text.substring(0, charPosition);
+    tokenCount = await tokenCountFn(truncatedText);
+    iterations++;
   }
 
-  const finalTokenCount = await tokenCountFn(bestText);
-
   logger.warn(
-    `[textTokenLimiter] Text truncated from ${originalTokenCount} to ${finalTokenCount} tokens (limit: ${tokenLimit})`,
+    `[textTokenLimiter] Text truncated from ${originalTokenCount} to ${tokenCount} tokens (limit: ${tokenLimit})`,
   );
 
   return {
-    text: bestText,
-    tokenCount: finalTokenCount,
+    text: truncatedText,
+    tokenCount,
     wasTruncated: true,
   };
 }
