@@ -132,8 +132,6 @@ async function searchFAQ(query, options = {}) {
   const searchOptions = {
     top: options.top || TOP_K,
     includeTotalCount: true,
-    searchFields: ['Question', 'Answer'],
-    select: ['Id', 'Question', 'Answer', 'Tags'],
     queryType: 'full',
     searchMode: 'any',
   };
@@ -149,16 +147,17 @@ async function searchFAQ(query, options = {}) {
     for await (const result of searchResults.results) {
       const score = typeof result.score === 'number' ? result.score : 0;
 
-      // Tag match bonus
+      // Tag match bonus (if Tags field exists in metadata)
       let tagBonus = 0;
-      const tags = result.document.Tags || [];
+      const metadata = result.document.metadata || result.document.Metadata || {};
+      const tags = metadata.Tags || metadata.tags || [];
       
       // Check for exact tag matches
       const hasModelMatch = anchors.models.some((m) => 
-        tags.some((t) => t.toLowerCase() === `model:${m}`)
+        tags.some && tags.some((t) => t.toLowerCase() === `model:${m}`)
       );
       const hasNameMatch = anchors.modelNames.some((n) => 
-        tags.some((t) => t.toLowerCase() === `modelname:${n.toLowerCase()}`)
+        tags.some && tags.some((t) => t.toLowerCase() === `modelname:${n.toLowerCase()}`)
       );
       
       if (hasModelMatch || hasNameMatch) {
@@ -167,19 +166,32 @@ async function searchFAQ(query, options = {}) {
 
       const adjustedScore = score + tagBonus;
 
-      // Prefer explicit URL fields from the index; do not fabricate links
+      // Extract URL from metadata if available
       const urlField =
-        result.document.Url ||
+        metadata.url ||
+        metadata.URL ||
+        metadata.source_url ||
+        metadata.link ||
+        result.document.url ||
         result.document.URL ||
-        result.document.Link ||
-        result.document.link ||
         null;
 
       results.push({
-        id: result.document.Id,
-        question: result.document.Question,
-        answer: result.document.Answer,
-        tags: tags,
+        id: result.document.id || result.document.Id || result.document.key || result.document.documentId,
+        question:
+          result.document.title ||
+          result.document.Title ||
+          result.document.heading ||
+          result.document.Heading ||
+          '',
+        answer:
+          result.document.chunk ||
+          result.document.content ||
+          result.document.Content ||
+          result.document.text ||
+          result.document.body ||
+          '',
+        tags: Array.isArray(tags) ? tags : [],
         score: adjustedScore,
         rawScore: score,
         citationUrl: typeof urlField === 'string' ? urlField : null,
