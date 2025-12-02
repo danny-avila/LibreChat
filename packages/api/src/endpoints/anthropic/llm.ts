@@ -11,6 +11,10 @@ import { createAnthropicVertexClient, isAnthropicVertexCredentials } from './ver
 
 /**
  * Parses credentials from string or object format
+ * - If a valid JSON string is passed, it parses and returns the object
+ * - If a plain API key string is passed, it wraps it in an AnthropicCredentials object
+ * - If an object is passed, it returns it directly
+ * - If undefined, returns an empty object
  */
 function parseCredentials(
   credentials: string | AnthropicCredentials | undefined,
@@ -18,10 +22,9 @@ function parseCredentials(
   if (typeof credentials === 'string') {
     try {
       return JSON.parse(credentials);
-    } catch (err: unknown) {
-      throw new Error(
-        `Error parsing string credentials: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      );
+    } catch {
+      // If not valid JSON, treat as a plain API key
+      return { [AuthKeys.ANTHROPIC_API_KEY]: credentials };
     }
   }
   return credentials && typeof credentials === 'object' ? credentials : {};
