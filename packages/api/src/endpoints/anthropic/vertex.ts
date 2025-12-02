@@ -4,14 +4,43 @@ import { GoogleAuth } from 'google-auth-library';
 import { ClientOptions } from '@anthropic-ai/sdk';
 import { AuthKeys } from 'librechat-data-provider';
 import { loadServiceKey } from '~/utils/key';
-import type { AnthropicCredentials } from '~/types/anthropic';
+import type { AnthropicCredentials, VertexAIClientOptions } from '~/types/anthropic';
 
 /**
- * Loads Google service account configuration for Vertex AI
+ * Options for loading Vertex AI credentials
  */
-export async function loadAnthropicVertexCredentials(): Promise<AnthropicCredentials> {
-  /** Path from environment variable or default location */
+export interface VertexCredentialOptions {
+  /** Path to service account key file (overrides env var) */
+  serviceKeyFile?: string;
+  /** Project ID for Vertex AI */
+  projectId?: string;
+  /** Region for Vertex AI */
+  region?: string;
+}
+
+/**
+ * Interface for Vertex AI configuration from YAML config.
+ * This matches the TVertexAIConfig from librechat-data-provider.
+ */
+export interface VertexAIConfigInput {
+  enabled?: boolean;
+  projectId?: string;
+  region?: string;
+  serviceKeyFile?: string;
+  models?: string[];
+}
+
+/**
+ * Loads Google service account configuration for Vertex AI.
+ * Supports both YAML configuration and environment variables.
+ * @param options - Optional configuration from YAML or other sources
+ */
+export async function loadAnthropicVertexCredentials(
+  options?: VertexCredentialOptions,
+): Promise<AnthropicCredentials> {
+  /** Path priority: options > env var > default location */
   const serviceKeyPath =
+    options?.serviceKeyFile ||
     process.env.GOOGLE_SERVICE_KEY_FILE ||
     path.join(__dirname, '..', '..', '..', 'api', 'data', 'auth.json');
 
@@ -25,6 +54,18 @@ export async function loadAnthropicVertexCredentials(): Promise<AnthropicCredent
 
   return {
     [AuthKeys.GOOGLE_SERVICE_KEY]: serviceKey,
+  };
+}
+
+/**
+ * Creates Vertex credential options from a Vertex AI configuration object.
+ * @param config - The Vertex AI configuration (from YAML config or other sources)
+ */
+export function getVertexCredentialOptions(config?: VertexAIConfigInput): VertexCredentialOptions {
+  return {
+    serviceKeyFile: config?.serviceKeyFile,
+    projectId: config?.projectId,
+    region: config?.region,
   };
 }
 
@@ -90,19 +131,29 @@ function filterVertexHeaders(
 }
 
 /**
- * Creates and configures a Vertex AI client for Anthropic
+ * Creates and configures a Vertex AI client for Anthropic.
+ * Supports both YAML configuration and environment variables for region/projectId.
+ * The projectId is automatically extracted from the service key if not explicitly provided.
+ * @param credentials - The Google service account credentials
+ * @param options - SDK client options
+ * @param vertexOptions - Vertex AI specific options (region, projectId) from YAML config
  */
 export function createAnthropicVertexClient(
   credentials: AnthropicCredentials,
   options?: ClientOptions,
+  vertexOptions?: VertexAIClientOptions,
 ): AnthropicVertex {
   const serviceKey = credentials[AuthKeys.GOOGLE_SERVICE_KEY];
-  const region = process.env.ANTHROPIC_VERTEX_REGION || 'global';
+  
+  // Priority: vertexOptions > env vars > service key project_id
+  const region = vertexOptions?.region || process.env.ANTHROPIC_VERTEX_REGION || 'us-east5';
+  const projectId = vertexOptions?.projectId || process.env.VERTEX_PROJECT_ID || serviceKey?.project_id;
 
   try {
     const googleAuth = new GoogleAuth({
       credentials: serviceKey,
       scopes: 'https://www.googleapis.com/auth/cloud-platform',
+      ...(projectId && { projectId }),
     });
 
     // Filter out unsupported anthropic-beta header values for Vertex AI
@@ -118,6 +169,7 @@ export function createAnthropicVertexClient(
     return new AnthropicVertex({
       region: region,
       googleAuth: googleAuth,
+      ...(projectId && { projectId }),
       ...filteredOptions,
     });
   } catch (error) {

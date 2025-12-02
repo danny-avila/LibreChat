@@ -12,6 +12,17 @@ export type AnthropicCredentials = {
   [AuthKeys.ANTHROPIC_API_KEY]?: string;
 };
 
+/**
+ * Vertex AI client options for configuring the Anthropic Vertex client.
+ * These options are typically loaded from the YAML config or environment variables.
+ */
+export interface VertexAIClientOptions {
+  /** Google Cloud region for Vertex AI (e.g., 'us-east5', 'europe-west1') */
+  region?: string;
+  /** Google Cloud Project ID */
+  projectId?: string;
+}
+
 export interface ThinkingConfigDisabled {
   type: 'disabled';
 }
@@ -66,6 +77,8 @@ export interface AnthropicConfigOptions {
   addParams?: Record<string, unknown>;
   /** Parameters to drop/exclude from the configuration */
   dropParams?: string[];
+  /** Vertex AI specific options for Google Cloud configuration */
+  vertexOptions?: VertexAIClientOptions;
 }
 
 /**

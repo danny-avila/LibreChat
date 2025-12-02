@@ -358,6 +358,48 @@ export const azureEndpointSchema = z
 export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, 'groups'> &
   TAzureConfigValidationResult;
 
+/**
+ * Vertex AI configuration schema for Anthropic models served via Google Cloud Vertex AI.
+ * Similar to Azure configuration, this allows running Anthropic models through Google Cloud.
+ */
+export const vertexAISchema = z.object({
+  /** Enable Vertex AI mode for Anthropic */
+  enabled: z.boolean().default(false),
+  /** Google Cloud Project ID (optional - auto-detected from service key file if not provided) */
+  projectId: z.string().optional(),
+  /** Vertex AI region (e.g., 'us-east5', 'europe-west1') */
+  region: z.string().default('us-east5'),
+  /** Optional: Path to service account key file */
+  serviceKeyFile: z.string().optional(),
+  /** Optional: Available models - if not specified, uses default Anthropic models */
+  models: z.array(z.string()).optional(),
+});
+
+export type TVertexAISchema = z.infer<typeof vertexAISchema>;
+
+/**
+ * Validated Vertex AI configuration result
+ */
+export type TVertexAIConfig = TVertexAISchema & {
+  isValid: boolean;
+  errors: string[];
+};
+
+/**
+ * Anthropic endpoint schema with optional Vertex AI configuration.
+ * Extends baseEndpointSchema with Vertex AI support.
+ */
+export const anthropicEndpointSchema = baseEndpointSchema.merge(
+  z.object({
+    /** Vertex AI configuration for running Anthropic models on Google Cloud */
+    vertex: vertexAISchema.optional(),
+    /** Optional: List of available models */
+    models: z.array(z.string()).optional(),
+  }),
+);
+
+export type TAnthropicEndpoint = z.infer<typeof anthropicEndpointSchema>;
+
 const ttsOpenaiSchema = z.object({
   url: z.string().optional(),
   apiKey: z.string(),
@@ -859,7 +901,7 @@ export const configSchema = z.object({
       all: baseEndpointSchema.optional(),
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
       [EModelEndpoint.google]: baseEndpointSchema.optional(),
-      [EModelEndpoint.anthropic]: baseEndpointSchema.optional(),
+      [EModelEndpoint.anthropic]: anthropicEndpointSchema.optional(),
       [EModelEndpoint.gptPlugins]: baseEndpointSchema.optional(),
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),

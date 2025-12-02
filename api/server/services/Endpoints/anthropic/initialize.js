@@ -1,4 +1,9 @@
-const { getLLMConfig, loadAnthropicVertexCredentials, isEnabled } = require('@librechat/api');
+const {
+  getLLMConfig,
+  loadAnthropicVertexCredentials,
+  getVertexCredentialOptions,
+  isEnabled,
+} = require('@librechat/api');
 const { EModelEndpoint, AuthKeys } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const AnthropicClient = require('~/app/clients/AnthropicClient');
@@ -10,9 +15,26 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
 
   let credentials = {};
   let anthropicApiKey = null;
+  let vertexOptions = null;
 
-  if (isEnabled(process.env.ANTHROPIC_USE_VERTEX)) {
-    credentials = await loadAnthropicVertexCredentials();
+  /** @type {undefined | import('librechat-data-provider').TVertexAIConfig} */
+  const vertexConfig = appConfig.endpoints?.[EModelEndpoint.anthropic]?.vertexConfig;
+
+  // Check for Vertex AI configuration: YAML config takes priority over env var
+  const useVertexAI = vertexConfig?.enabled || isEnabled(process.env.ANTHROPIC_USE_VERTEX);
+
+  if (useVertexAI) {
+    // Load credentials with optional YAML config overrides
+    const credentialOptions = vertexConfig ? getVertexCredentialOptions(vertexConfig) : undefined;
+    credentials = await loadAnthropicVertexCredentials(credentialOptions);
+    
+    // Store vertex options for client creation
+    if (vertexConfig) {
+      vertexOptions = {
+        region: vertexConfig.region,
+        projectId: vertexConfig.projectId,
+      };
+    }
   } else {
     const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
     anthropicApiKey = isUserProvided
@@ -50,6 +72,8 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
         proxy: PROXY ?? null,
         reverseProxyUrl: ANTHROPIC_REVERSE_PROXY ?? null,
         modelOptions: endpointOption?.model_parameters ?? {},
+        // Pass Vertex AI options if configured
+        ...(vertexOptions && { vertexOptions }),
       },
       clientOptions,
     );

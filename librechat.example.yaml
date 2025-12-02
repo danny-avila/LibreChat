@@ -222,6 +222,37 @@ endpoints:
   #   minRelevanceScore: 0.45
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
+
+  # Anthropic endpoint configuration with Vertex AI support
+  # Use this to run Anthropic Claude models through Google Cloud Vertex AI
+  # anthropic:
+  #   # (optional) Stream rate limiting in milliseconds
+  #   streamRate: 20
+  #   # (optional) Title model for conversation titles
+  #   titleModel: "claude-3-haiku-20240307"
+  #   
+  #   # Vertex AI Configuration - enables running Claude models via Google Cloud
+  #   # This is similar to Azure OpenAI but for Anthropic models on Google Cloud
+  #   vertex:
+  #     # Enable Vertex AI mode (required)
+  #     enabled: true
+  #     # Vertex AI region (optional, defaults to 'us-east5')
+  #     # Available regions: us-east5, us-central1, europe-west1, europe-west4, asia-southeast1
+  #     region: "us-east5"
+  #     # Path to Google service account key file (optional)
+  #     # If not specified, uses GOOGLE_SERVICE_KEY_FILE env var or default path (api/data/auth.json)
+  #     # The project_id is automatically extracted from the service key file
+  #     # serviceKeyFile: "/path/to/service-account.json"
+  #     # Google Cloud Project ID (optional) - auto-detected from service key file
+  #     # Only specify if you need to override the project_id in your service key
+  #     # projectId: "${VERTEX_PROJECT_ID}"
+  #     # Available models (optional) - if not specified, uses default Anthropic models
+  #     # models:
+  #     #   - "claude-sonnet-4-20250514"
+  #     #   - "claude-3-7-sonnet-20250219"
+  #     #   - "claude-3-5-sonnet-v2@20241022"
+  #     #   - "claude-3-5-haiku@20241022"
+
   custom:
     # Groq Example
     - name: 'groq'

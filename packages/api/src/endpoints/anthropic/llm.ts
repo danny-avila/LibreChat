@@ -115,9 +115,9 @@ function getLLMConfig(
   const apiKey = creds[AuthKeys.ANTHROPIC_API_KEY] ?? null;
 
   if (isAnthropicVertexCredentials(creds)) {
-    // Vertex AI configuration - use custom client
+    // Vertex AI configuration - use custom client with optional YAML config
     requestOptions.createClient = () =>
-      createAnthropicVertexClient(creds, requestOptions.clientOptions);
+      createAnthropicVertexClient(creds, requestOptions.clientOptions, options.vertexOptions);
   } else if (apiKey) {
     // Direct API configuration
     requestOptions.apiKey = apiKey;
