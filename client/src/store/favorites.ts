@@ -1,4 +1,4 @@
-import { atom } from 'recoil';
+import { createStorageAtom } from './jotai-utils';
 
 export type Favorite = {
   agentId?: string;
@@ -13,11 +13,7 @@ export type FavoriteModel = {
 
 export type FavoritesState = Favorite[];
 
-const favorites = atom<FavoritesState>({
-  key: 'favorites',
-  default: [],
-});
-
-export default {
-  favorites,
-};
+/**
+ * This atom stores the user's favorite models/agents
+ */
+export const favoritesAtom = createStorageAtom<FavoritesState>('favorites', []);

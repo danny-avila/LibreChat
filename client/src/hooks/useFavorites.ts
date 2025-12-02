@@ -1,11 +1,11 @@
 import { useEffect, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { useToastContext } from '@librechat/client';
 import type { Favorite } from '~/store/favorites';
 import { useGetFavoritesQuery, useUpdateFavoritesMutation } from '~/data-provider';
+import { favoritesAtom } from '~/store';
 import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
-import store from '~/store';
 
 /**
  * Hook for managing user favorites (pinned agents and models).
@@ -36,7 +36,7 @@ const cleanFavorites = (favorites: Favorite[]): Favorite[] =>
 export default function useFavorites() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const [favorites, setFavorites] = useRecoilState(store.favorites);
+  const [favorites, setFavorites] = useAtom(favoritesAtom);
   const getFavoritesQuery = useGetFavoritesQuery();
   const updateFavoritesMutation = useUpdateFavoritesMutation();
 
