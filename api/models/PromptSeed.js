@@ -222,7 +222,6 @@ Keep it concise for quick CRM logging.`,
     public: true,
     prompt: `Search product configuration history for:
 
-Rake Model: {{rake_model}}
 Engine Model: {{engine_model}}
 Bag Color: {{bag_color}}
 Bag Shape: {{bag_shape}}
@@ -247,17 +246,16 @@ Use structured filters for accurate results.`,
     public: true,
     prompt: `What product options are available for:
 
-Rake Model: {{rake_model}}
 Engine Model: {{engine_model}}
 
-Please list:
-1. Available bag colors for this combination
-2. Available bag shapes
-3. Available blower colors
-4. Available deck hose options
+Please list options grouped by rake model:
+1. Available bag colors for each rake
+2. Available bag shapes for each rake
+3. Available blower colors for each rake
+4. Available deck hose options for each rake
 5. Any special configurations or variations
 
-Group results clearly by option type.`,
+Group results clearly by rake model and option type.`,
   },
   {
     id: 'prompt_engine_history_combination',
@@ -269,15 +267,14 @@ Group results clearly by option type.`,
     public: true,
     prompt: `Search engine configuration history for:
 
-Rake Model: {{rake_model}}
 Engine Model: {{engine_model}}
 Horsepower: {{horsepower}}
 Filter Shape: {{filter_shape}}
 Blower Color: {{blower_color}}
 
-Find all historical engine configurations matching these specifications. Include:
-1. All reviewed engine configurations
-2. Timeline of engine changes and revisions
+Find all historical engine configurations matching these specifications grouped by rake model. Include:
+1. All reviewed engine configurations by rake
+2. Timeline of engine changes and revisions per rake
 3. When horsepower or filter specifications changed
 4. Related part numbers and SKUs
 5. Notes about engine transitions
@@ -292,18 +289,16 @@ Use structured filters for precise results.`,
     command: 'engine-timeline',
     type: 'text',
     public: true,
-    prompt: `Show the engine configuration timeline for:
+    prompt: `Show the engine configuration timeline grouped by rake model.
 
-Rake Model: {{rake_model}}
-
-Provide:
+Provide for each rake model:
 1. Chronological list of all engine changes
 2. What changed (horsepower, filter, air filter, blower)
 3. When each change occurred
 4. Reasons for changes if documented
 5. Current vs. previous configurations
 
-Present as a clear timeline with dates.`,
+Present as a clear timeline with dates, organized by rake model.`,
   },
 ];
 

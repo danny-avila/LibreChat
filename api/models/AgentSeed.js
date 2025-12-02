@@ -22,6 +22,9 @@ const WOODLAND_AGENTS = [
     instructionsKey: 'OrchestratorRouter',
     // Only keep core domain tools; FAQ grounding via MCP server
     tools: [
+      // MCP FAQ search tool - specific tool from azure-search-faq server
+      'searchWoodlandFAQ_mcp_azure-search-faq',
+      // Domain tools
       'woodland-ai-search-catalog',
       'woodland-ai-search-cyclopedia',
       'woodland-ai-search-website',
