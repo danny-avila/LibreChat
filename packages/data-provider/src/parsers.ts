@@ -326,7 +326,7 @@ export const parseCompactConvo = ({
   possibleValues?: TPossibleValues;
   // TODO: POC for default schema
   // defaultSchema?: Partial<EndpointSchema>,
-}) => {
+}): Omit<s.TConversation, 'iconURL'> | null => {
   if (!endpoint) {
     throw new Error(`undefined endpoint: ${endpoint}`);
   }
