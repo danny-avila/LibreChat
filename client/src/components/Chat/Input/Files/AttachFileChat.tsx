@@ -5,12 +5,12 @@ import {
   EModelEndpoint,
   mergeFileConfig,
   isAgentsEndpoint,
+  getEndpointField,
   isAssistantsEndpoint,
-  fileConfig as defaultFileConfig,
+  getEndpointFileConfig,
 } from 'librechat-data-provider';
-import type { EndpointFileConfig, TConversation } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
 import { useGetFileConfig, useGetEndpointsQuery } from '~/data-provider';
-import { getEndpointField } from '~/utils/endpoints';
 import AttachFileMenu from './AttachFileMenu';
 import AttachFile from './AttachFile';
 
@@ -26,7 +26,7 @@ function AttachFileChat({
   const isAgents = useMemo(() => isAgentsEndpoint(endpoint), [endpoint]);
   const isAssistants = useMemo(() => isAssistantsEndpoint(endpoint), [endpoint]);
 
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+  const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
 
@@ -39,9 +39,23 @@ function AttachFileChat({
     );
   }, [endpoint, endpointsConfig]);
 
-  const endpointFileConfig = fileConfig.endpoints[endpoint ?? ''] as EndpointFileConfig | undefined;
-  const endpointSupportsFiles: boolean = supportsFiles[endpointType ?? endpoint ?? ''] ?? false;
-  const isUploadDisabled = (disableInputs || endpointFileConfig?.disabled) ?? false;
+  const endpointFileConfig = useMemo(
+    () =>
+      getEndpointFileConfig({
+        endpoint,
+        fileConfig,
+        endpointType,
+      }),
+    [endpoint, fileConfig, endpointType],
+  );
+  const endpointSupportsFiles: boolean = useMemo(
+    () => supportsFiles[endpointType ?? endpoint ?? ''] ?? false,
+    [endpointType, endpoint],
+  );
+  const isUploadDisabled = useMemo(
+    () => (disableInputs || endpointFileConfig?.disabled) ?? false,
+    [disableInputs, endpointFileConfig?.disabled],
+  );
 
   if (isAssistants && endpointSupportsFiles && !isUploadDisabled) {
     return <AttachFile disabled={disableInputs} />;

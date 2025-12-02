@@ -93,7 +93,7 @@ const Menu: React.FC<MenuProps> = ({
         .map((item, index) => {
           const { subItems } = item;
           if (item.separate === true) {
-            return <Ariakit.MenuSeparator key={index} className="my-1 h-px bg-white/10" />;
+            return <Ariakit.MenuSeparator key={index} className="my-1 h-px border-border-medium" />;
           }
           if (subItems && subItems.length > 0) {
             return (

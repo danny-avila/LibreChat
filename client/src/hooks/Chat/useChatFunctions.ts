@@ -6,6 +6,7 @@ import {
   QueryKeys,
   ContentTypes,
   EModelEndpoint,
+  getEndpointField,
   isAgentsEndpoint,
   parseCompactConvo,
   replaceSpecialVars,
@@ -25,10 +26,10 @@ import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
-import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '~/hooks';
+import { logger } from '~/utils';
 
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
@@ -167,6 +168,7 @@ export default function useChatFunctions({
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
+    const iconURL = conversation?.iconURL;
 
     /** This becomes part of the `endpointOption` */
     const convo = parseCompactConvo({
@@ -247,9 +249,9 @@ export default function useChatFunctions({
       conversationId,
       unfinished: false,
       isCreatedByUser: false,
-      iconURL: convo?.iconURL,
       model: convo?.model,
       error: false,
+      iconURL,
     };
 
     if (isAssistantsEndpoint(endpoint)) {

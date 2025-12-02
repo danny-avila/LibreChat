@@ -39,10 +39,8 @@ export enum Providers {
   GOOGLE = 'google',
   VERTEXAI = 'vertexai',
   BEDROCK = 'bedrock',
-  BEDROCK_LEGACY = 'bedrock_legacy',
   MISTRALAI = 'mistralai',
   MISTRAL = 'mistral',
-  OLLAMA = 'ollama',
   DEEPSEEK = 'deepseek',
   OPENROUTER = 'openrouter',
   XAI = 'xai',
@@ -60,7 +58,6 @@ export const documentSupportedProviders = new Set<string>([
   Providers.VERTEXAI,
   Providers.MISTRALAI,
   Providers.MISTRAL,
-  Providers.OLLAMA,
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
   Providers.XAI,
@@ -72,7 +69,6 @@ const openAILikeProviders = new Set<string>([
   EModelEndpoint.custom,
   Providers.MISTRALAI,
   Providers.MISTRAL,
-  Providers.OLLAMA,
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
   Providers.XAI,
@@ -167,7 +163,8 @@ export enum ImageDetail {
 }
 
 export enum ReasoningEffort {
-  none = '',
+  unset = '',
+  none = 'none',
   minimal = 'minimal',
   low = 'low',
   medium = 'medium',
@@ -232,6 +229,7 @@ export const defaultAgentFormValues = {
   mcp_prompts: [],
   provider: {},
   projectIds: [],
+  edges: [],
   artifacts: '',
   /** @deprecated Use ACL permissions instead */
   isCollaborative: false,
@@ -386,6 +384,10 @@ export const anthropicSettings = {
         return CLAUDE_4_64K_MAX_OUTPUT;
       }
 
+      if (/claude-opus[-.]?(?:[5-9]|4[-.]?([5-9]|\d{2,}))/.test(modelName)) {
+        return CLAUDE_4_64K_MAX_OUTPUT;
+      }
+
       if (/claude-opus[-.]?[4-9]/.test(modelName)) {
         return CLAUDE_32K_MAX_OUTPUT;
       }
@@ -397,7 +399,14 @@ export const anthropicSettings = {
         return CLAUDE_4_64K_MAX_OUTPUT;
       }
 
-      if (/claude-(?:opus|haiku)[-.]?[4-9]/.test(modelName) && value > CLAUDE_32K_MAX_OUTPUT) {
+      if (/claude-opus[-.]?(?:[5-9]|4[-.]?([5-9]|\d{2,}))/.test(modelName)) {
+        if (value > CLAUDE_4_64K_MAX_OUTPUT) {
+          return CLAUDE_4_64K_MAX_OUTPUT;
+        }
+        return value;
+      }
+
+      if (/claude-opus[-.]?[4-9]/.test(modelName) && value > CLAUDE_32K_MAX_OUTPUT) {
         return CLAUDE_32K_MAX_OUTPUT;
       }
 
@@ -610,6 +619,8 @@ export const tMessageSchema = z.object({
   /* frontend components */
   iconURL: z.string().nullable().optional(),
   feedback: feedbackSchema.optional(),
+  /** metadata */
+  metadata: z.record(z.unknown()).optional(),
 });
 
 export type MemoryArtifact = {

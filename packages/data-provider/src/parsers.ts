@@ -326,7 +326,7 @@ export const parseCompactConvo = ({
   possibleValues?: TPossibleValues;
   // TODO: POC for default schema
   // defaultSchema?: Partial<EndpointSchema>,
-}) => {
+}): Omit<s.TConversation, 'iconURL'> | null => {
   if (!endpoint) {
     throw new Error(`undefined endpoint: ${endpoint}`);
   }
@@ -343,7 +343,11 @@ export const parseCompactConvo = ({
     throw new Error(`Unknown endpointType: ${endpointType}`);
   }
 
-  const convo = schema.parse(conversation) as s.TConversation | null;
+  // Strip iconURL from input before parsing - it should only be derived server-side
+  // from model spec configuration, not accepted from client requests
+  const { iconURL: _clientIconURL, ...conversationWithoutIconURL } = conversation;
+
+  const convo = schema.parse(conversationWithoutIconURL) as s.TConversation | null;
   // const { models, secondaryModels } = possibleValues ?? {};
   const { models } = possibleValues ?? {};
 

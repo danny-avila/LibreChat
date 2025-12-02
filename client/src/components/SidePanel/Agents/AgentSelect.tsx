@@ -92,6 +92,9 @@ export default function AgentSelect({
         category: fullAgent.category || 'general',
         // Make sure support_contact is properly loaded
         support_contact: fullAgent.support_contact,
+        avatar_file: null,
+        avatar_preview: fullAgent.avatar?.filepath ?? '',
+        avatar_action: null,
       };
 
       Object.entries(fullAgent).forEach(([name, value]) => {
@@ -110,6 +113,11 @@ export default function AgentSelect({
           Array.isArray(value) &&
           value.every((item) => typeof item === 'string')
         ) {
+          formValues[name] = value;
+          return;
+        }
+
+        if (name === 'edges' && Array.isArray(value)) {
           formValues[name] = value;
           return;
         }

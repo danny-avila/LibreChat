@@ -1,8 +1,35 @@
 import getStream from 'get-stream';
-import { FileSources } from 'librechat-data-provider';
+import { Providers } from '@librechat/agents';
+import { FileSources, mergeFileConfig, getEndpointFileConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { Request } from 'express';
-import type { StrategyFunctions, ProcessedFile } from '~/types/files';
+import type { ServerRequest, StrategyFunctions, ProcessedFile } from '~/types';
+
+/**
+ * Extracts the configured file size limit for a specific provider from fileConfig
+ * @param req - The server request object containing config
+ * @param params - Object containing provider and optional endpoint
+ * @param params.provider - The provider to get the limit for
+ * @param params.endpoint - Optional endpoint name for lookup
+ * @returns The configured file size limit in bytes, or undefined if not configured
+ */
+export const getConfiguredFileSizeLimit = (
+  req: ServerRequest,
+  params: {
+    provider: Providers;
+    endpoint?: string;
+  },
+): number | undefined => {
+  if (!req.config?.fileConfig) {
+    return undefined;
+  }
+  const { provider, endpoint } = params;
+  const fileConfig = mergeFileConfig(req.config.fileConfig);
+  const endpointConfig = getEndpointFileConfig({
+    fileConfig,
+    endpoint: endpoint ?? provider,
+  });
+  return endpointConfig?.fileSizeLimit;
+};
 
 /**
  * Processes a file by downloading and encoding it to base64
@@ -13,7 +40,7 @@ import type { StrategyFunctions, ProcessedFile } from '~/types/files';
  * @returns Processed file with content and metadata, or null if filepath missing
  */
 export async function getFileStream(
-  req: Request,
+  req: ServerRequest,
   file: IMongoFile,
   encodingMethods: Record<string, StrategyFunctions>,
   getStrategyFunctions: (source: string) => StrategyFunctions,

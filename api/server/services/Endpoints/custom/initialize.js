@@ -1,10 +1,4 @@
-const {
-  resolveHeaders,
-  isUserProvided,
-  getOpenAIConfig,
-  getCustomEndpointConfig,
-  createHandleLLMNewToken,
-} = require('@librechat/api');
+const { isUserProvided, getOpenAIConfig, getCustomEndpointConfig } = require('@librechat/api');
 const {
   CacheKeys,
   ErrorTypes,
@@ -34,14 +28,6 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
 
   const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey);
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL);
-
-  /** Intentionally excludes passing `body`, i.e. `req.body`, as
-   *  values may not be accurate until `AgentClient` is initialized
-   */
-  let resolvedHeaders = resolveHeaders({
-    headers: endpointConfig.headers,
-    user: req.user,
-  });
 
   if (CUSTOM_API_KEY.match(envVarRegex)) {
     throw new Error(`Missing API Key for ${endpoint}.`);
@@ -109,7 +95,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   }
 
   const customOptions = {
-    headers: resolvedHeaders,
+    headers: endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
     customParams: endpointConfig.customParams,
@@ -157,11 +143,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     if (!clientOptions.streamRate) {
       return options;
     }
-    options.llmConfig.callbacks = [
-      {
-        handleLLMNewToken: createHandleLLMNewToken(clientOptions.streamRate),
-      },
-    ];
+    options.llmConfig._lc_stream_delay = clientOptions.streamRate;
     return options;
   }
 

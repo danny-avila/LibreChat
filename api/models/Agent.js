@@ -12,8 +12,9 @@ const {
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { getMCPServerTools, getCachedPrompts } = require('~/server/services/Config');
+const { getMCPServerTools } = require('~/server/services/Config');
+const { Agent, AclEntry } = require('~/db/models');
 const { getActions } = require('./Action');
-const { Agent } = require('~/db/models');
 
 /**
  * Create an agent with the provided data.
@@ -553,6 +554,37 @@ const deleteAgent = async (searchParameter) => {
 };
 
 /**
+ * Deletes all agents created by a specific user.
+ * @param {string} userId - The ID of the user whose agents should be deleted.
+ * @returns {Promise<void>} A promise that resolves when all user agents have been deleted.
+ */
+const deleteUserAgents = async (userId) => {
+  try {
+    const userAgents = await getAgents({ author: userId });
+
+    if (userAgents.length === 0) {
+      return;
+    }
+
+    const agentIds = userAgents.map((agent) => agent.id);
+    const agentObjectIds = userAgents.map((agent) => agent._id);
+
+    for (const agentId of agentIds) {
+      await removeAgentFromAllProjects(agentId);
+    }
+
+    await AclEntry.deleteMany({
+      resourceType: ResourceType.AGENT,
+      resourceId: { $in: agentObjectIds },
+    });
+
+    await Agent.deleteMany({ author: userId });
+  } catch (error) {
+    logger.error('[deleteUserAgents] General error:', error);
+  }
+};
+
+/**
  * Get agents by accessible IDs with optional cursor-based pagination.
  * @param {Object} params - The parameters for getting accessible agents.
  * @param {Array} [params.accessibleIds] - Array of agent ObjectIds the user has ACL access to.
@@ -869,6 +901,7 @@ module.exports = {
   createAgent,
   updateAgent,
   deleteAgent,
+  deleteUserAgents,
   getListAgents,
   revertAgentVersion,
   updateAgentProjects,
