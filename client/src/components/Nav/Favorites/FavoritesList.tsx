@@ -1,14 +1,14 @@
-import React, { useRef, useCallback, useMemo, useEffect } from 'react';
-import { LayoutGrid } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { useDrag, useDrop } from 'react-dnd';
+import React, { useRef, useCallback, useMemo, useEffect, useContext } from 'react';
 import { useRecoilValue } from 'recoil';
+import { LayoutGrid } from 'lucide-react';
+import { useDrag, useDrop } from 'react-dnd';
 import { Skeleton } from '@librechat/client';
-import { QueryKeys, dataService, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { useNavigate } from 'react-router-dom';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, dataService, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
-import { useFavorites, useLocalize, useHasAccess } from '~/hooks';
+import { useFavorites, useLocalize, useHasAccess, AuthContext } from '~/hooks';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
 
@@ -119,6 +119,7 @@ export default function FavoritesList({
   const navigate = useNavigate();
   const localize = useLocalize();
   const queryClient = useQueryClient();
+  const authContext = useContext(AuthContext);
   const search = useRecoilValue(store.search);
   const { favorites, reorderFavorites, isLoading: isFavoritesLoading } = useFavorites();
 
@@ -132,7 +133,13 @@ export default function FavoritesList({
     permission: Permissions.USE,
   });
 
-  const showAgentMarketplace = hasAccessToAgents && hasAccessToMarketplace;
+  // Check if auth is ready (avoid race conditions)
+  const authReady =
+    authContext?.isAuthenticated !== undefined &&
+    (authContext?.isAuthenticated === false || authContext?.user !== undefined);
+
+  // Show agent marketplace when marketplace permission is enabled, auth is ready, and user has access to agents
+  const showAgentMarketplace = authReady && hasAccessToAgents && hasAccessToMarketplace;
 
   const handleAgentMarketplace = useCallback(() => {
     navigate('/agents');
