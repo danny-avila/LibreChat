@@ -1,6 +1,6 @@
 const TavilySearchResults = require('../TavilySearchResults');
 
-jest.mock('node-fetch');
+jest.mock('undici');
 jest.mock('@langchain/core/utils/env');
 
 describe('TavilySearchResults', () => {
