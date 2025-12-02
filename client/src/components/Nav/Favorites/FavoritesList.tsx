@@ -132,7 +132,6 @@ export default function FavoritesList({
     permission: Permissions.USE,
   });
 
-  // Show agent marketplace when marketplace permission is enabled, and user has access to agents
   const showAgentMarketplace = hasAccessToAgents && hasAccessToMarketplace;
 
   const handleAgentMarketplace = useCallback(() => {
