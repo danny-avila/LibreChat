@@ -543,7 +543,15 @@ async function setupOpenId() {
             },
           );
 
-          done(null, { ...user, tokenset });
+          done(null, {
+            ...user,
+            tokenset,
+            federatedTokens: {
+              access_token: tokenset.access_token,
+              refresh_token: tokenset.refresh_token,
+              expires_at: tokenset.expires_at,
+            },
+          });
         } catch (err) {
           logger.error('[openidStrategy] login failed', err);
           done(err);

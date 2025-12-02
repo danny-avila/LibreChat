@@ -41,7 +41,6 @@ export enum Providers {
   BEDROCK = 'bedrock',
   MISTRALAI = 'mistralai',
   MISTRAL = 'mistral',
-  OLLAMA = 'ollama',
   DEEPSEEK = 'deepseek',
   OPENROUTER = 'openrouter',
   XAI = 'xai',
@@ -59,7 +58,6 @@ export const documentSupportedProviders = new Set<string>([
   Providers.VERTEXAI,
   Providers.MISTRALAI,
   Providers.MISTRAL,
-  Providers.OLLAMA,
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
   Providers.XAI,
@@ -71,7 +69,6 @@ const openAILikeProviders = new Set<string>([
   EModelEndpoint.custom,
   Providers.MISTRALAI,
   Providers.MISTRAL,
-  Providers.OLLAMA,
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
   Providers.XAI,
@@ -386,6 +383,10 @@ export const anthropicSettings = {
         return CLAUDE_4_64K_MAX_OUTPUT;
       }
 
+      if (/claude-opus[-.]?(?:[5-9]|4[-.]?([5-9]|\d{2,}))/.test(modelName)) {
+        return CLAUDE_4_64K_MAX_OUTPUT;
+      }
+
       if (/claude-opus[-.]?[4-9]/.test(modelName)) {
         return CLAUDE_32K_MAX_OUTPUT;
       }
@@ -397,7 +398,14 @@ export const anthropicSettings = {
         return CLAUDE_4_64K_MAX_OUTPUT;
       }
 
-      if (/claude-(?:opus|haiku)[-.]?[4-9]/.test(modelName) && value > CLAUDE_32K_MAX_OUTPUT) {
+      if (/claude-opus[-.]?(?:[5-9]|4[-.]?([5-9]|\d{2,}))/.test(modelName)) {
+        if (value > CLAUDE_4_64K_MAX_OUTPUT) {
+          return CLAUDE_4_64K_MAX_OUTPUT;
+        }
+        return value;
+      }
+
+      if (/claude-opus[-.]?[4-9]/.test(modelName) && value > CLAUDE_32K_MAX_OUTPUT) {
         return CLAUDE_32K_MAX_OUTPUT;
       }
 

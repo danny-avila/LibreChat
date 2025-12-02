@@ -10,14 +10,6 @@ const {
 const { sendEvent } = require('@librechat/api');
 const partialRight = require('lodash/partialRight');
 
-/** Helper function to escape special characters in regex
- * @param {string} string - The string to escape.
- * @returns {string} The escaped string.
- */
-function escapeRegExp(string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
 
 const base = { message: true, initial: true };
@@ -181,7 +173,6 @@ function generateConfig(key, baseURL, endpoint) {
 module.exports = {
   handleText,
   formatSteps,
-  escapeRegExp,
   formatAction,
   isUserProvided,
   generateConfig,

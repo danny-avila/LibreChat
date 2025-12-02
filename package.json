@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.1-rc1",
+  "version": "v0.8.1-rc2",
   "description": "",
   "workspaces": [
     "api",
@@ -37,6 +37,7 @@
     "delete-banner": "node config/delete-banner.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
+    "backend:experimental": "cross-env NODE_ENV=production node api/server/experimental.js",
     "backend:stop": "node config/stop-backend.js",
     "build:data-provider": "cd packages/data-provider && npm run build",
     "build:api": "cd packages/api && npm run build",
@@ -99,7 +100,6 @@
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.3.1",
     "@eslint/js": "^9.20.0",
-    "@microsoft/eslint-formatter-sarif": "^3.1.0",
     "@playwright/test": "^1.56.1",
     "@types/react-virtualized": "^9.22.0",
     "caniuse-lite": "^1.0.30001741",
@@ -121,7 +121,6 @@
     "jest": "^30.2.0",
     "lint-staged": "^15.4.3",
     "prettier": "^3.5.0",
-    "prettier-eslint": "^16.4.2",
     "prettier-plugin-tailwindcss": "^0.6.11",
     "typescript-eslint": "^8.24.0"
   },

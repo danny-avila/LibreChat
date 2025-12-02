@@ -81,6 +81,70 @@ describe('fetchModels', () => {
     );
   });
 
+  it('should pass custom headers to the API request', async () => {
+    const customHeaders = {
+      'X-Custom-Header': 'custom-value',
+      'X-API-Version': 'v2',
+    };
+
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: customHeaders,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.test.com/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'X-Custom-Header': 'custom-value',
+          'X-API-Version': 'v2',
+          Authorization: 'Bearer testApiKey',
+        }),
+      }),
+    );
+  });
+
+  it('should handle null headers gracefully', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: null,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.test.com/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer testApiKey',
+        }),
+      }),
+    );
+  });
+
+  it('should handle undefined headers gracefully', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: undefined,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.test.com/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer testApiKey',
+        }),
+      }),
+    );
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -372,6 +436,68 @@ describe('fetchModels with Ollama specific logic', () => {
   });
 });
 
+describe('fetchModels URL construction with trailing slashes', () => {
+  beforeEach(() => {
+    axios.get.mockResolvedValue({
+      data: {
+        data: [{ id: 'model-1' }, { id: 'model-2' }],
+      },
+    });
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should not create double slashes when baseURL has a trailing slash', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com/v1/',
+      name: 'TestAPI',
+    });
+
+    expect(axios.get).toHaveBeenCalledWith('https://api.test.com/v1/models', expect.any(Object));
+  });
+
+  it('should handle baseURL without trailing slash normally', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com/v1',
+      name: 'TestAPI',
+    });
+
+    expect(axios.get).toHaveBeenCalledWith('https://api.test.com/v1/models', expect.any(Object));
+  });
+
+  it('should handle baseURL with multiple trailing slashes', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com/v1///',
+      name: 'TestAPI',
+    });
+
+    expect(axios.get).toHaveBeenCalledWith('https://api.test.com/v1/models', expect.any(Object));
+  });
+
+  it('should correctly append query params after stripping trailing slashes', async () => {
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com/v1/',
+      name: 'TestAPI',
+      userIdQuery: true,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      'https://api.test.com/v1/models?user=user123',
+      expect.any(Object),
+    );
+  });
+});
+
 describe('splitAndTrim', () => {
   it('should split a string by commas and trim each value', () => {
     const input = ' model1, model2 , model3,model4 ';
@@ -409,6 +535,64 @@ describe('getAnthropicModels', () => {
     process.env.ANTHROPIC_MODELS = 'claude-1, claude-2 ';
     const models = await getAnthropicModels();
     expect(models).toEqual(['claude-1', 'claude-2']);
+  });
+
+  it('should use Anthropic-specific headers when fetching models', async () => {
+    delete process.env.ANTHROPIC_MODELS;
+    process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+
+    axios.get.mockResolvedValue({
+      data: {
+        data: [{ id: 'claude-3' }, { id: 'claude-4' }],
+      },
+    });
+
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'test-anthropic-key',
+      baseURL: 'https://api.anthropic.com/v1',
+      name: EModelEndpoint.anthropic,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: {
+          'x-api-key': 'test-anthropic-key',
+          'anthropic-version': expect.any(String),
+        },
+      }),
+    );
+  });
+
+  it('should pass custom headers for Anthropic endpoint', async () => {
+    const customHeaders = {
+      'X-Custom-Header': 'custom-value',
+    };
+
+    axios.get.mockResolvedValue({
+      data: {
+        data: [{ id: 'claude-3' }],
+      },
+    });
+
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'test-anthropic-key',
+      baseURL: 'https://api.anthropic.com/v1',
+      name: EModelEndpoint.anthropic,
+      headers: customHeaders,
+    });
+
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: {
+          'x-api-key': 'test-anthropic-key',
+          'anthropic-version': expect.any(String),
+        },
+      }),
+    );
   });
 });
 

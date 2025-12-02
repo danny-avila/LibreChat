@@ -91,6 +91,7 @@ const googleModels = {
   gemini: 30720, // -2048 from max
   'gemini-pro-vision': 12288,
   'gemini-exp': 2000000,
+  'gemini-3': 1000000, // 1M input tokens, 64k output tokens
   'gemini-2.5': 1000000, // 1M input tokens, 64k output tokens
   'gemini-2.5-pro': 1000000,
   'gemini-2.5-flash': 1000000,
@@ -132,12 +133,14 @@ const anthropicModels = {
   'claude-3.5-sonnet-latest': 200000,
   'claude-haiku-4-5': 200000,
   'claude-sonnet-4': 1000000,
-  'claude-opus-4': 200000,
   'claude-4': 200000,
+  'claude-opus-4': 200000,
+  'claude-opus-4-5': 200000,
 };
 
 const deepseekModels = {
   deepseek: 128000,
+  'deepseek-chat': 128000,
   'deepseek-reasoner': 128000,
   'deepseek-r1': 128000,
   'deepseek-v3': 128000,
@@ -278,6 +281,9 @@ const xAIModels = {
   'grok-3-mini': 131072,
   'grok-3-mini-fast': 131072,
   'grok-4': 256000, // 256K context
+  'grok-4-fast': 2000000, // 2M context
+  'grok-4-1-fast': 2000000, // 2M context (covers reasoning & non-reasoning variants)
+  'grok-code-fast': 256000, // 256K context
 };
 
 const aggregateModels = {
@@ -333,19 +339,30 @@ const anthropicMaxOutputs = {
   'claude-3-sonnet': 4096,
   'claude-3-opus': 4096,
   'claude-haiku-4-5': 64000,
-  'claude-opus-4': 32000,
   'claude-sonnet-4': 64000,
+  'claude-opus-4': 32000,
+  'claude-opus-4-5': 64000,
   'claude-3.5-sonnet': 8192,
   'claude-3-5-sonnet': 8192,
   'claude-3.7-sonnet': 128000,
   'claude-3-7-sonnet': 128000,
 };
 
+/** Outputs from https://api-docs.deepseek.com/quick_start/pricing */
+const deepseekMaxOutputs = {
+  deepseek: 8000, // deepseek-chat default: 4K, max: 8K
+  'deepseek-chat': 8000,
+  'deepseek-reasoner': 64000, // default: 32K, max: 64K
+  'deepseek-r1': 64000,
+  'deepseek-v3': 8000,
+  'deepseek.r1': 64000,
+};
+
 export const maxOutputTokensMap = {
   [EModelEndpoint.anthropic]: anthropicMaxOutputs,
   [EModelEndpoint.azureOpenAI]: modelMaxOutputs,
-  [EModelEndpoint.openAI]: modelMaxOutputs,
-  [EModelEndpoint.custom]: modelMaxOutputs,
+  [EModelEndpoint.openAI]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
+  [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
 };
 
 /**

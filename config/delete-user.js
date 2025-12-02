@@ -1,26 +1,31 @@
 #!/usr/bin/env node
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-nocheck
 const path = require('path');
 const mongoose = require('mongoose');
 const {
-  User,
-  Agent,
-  Assistant,
-  Balance,
-  Transaction,
-  ConversationTag,
-  Conversation,
-  Message,
-  File,
   Key,
-  MemoryEntry,
-  PluginAuth,
-  Prompt,
-  PromptGroup,
-  Preset,
-  Session,
-  SharedLink,
-  ToolCall,
+  User,
+  File,
+  Agent,
   Token,
+  Group,
+  Action,
+  Preset,
+  Prompt,
+  Balance,
+  Message,
+  Session,
+  AclEntry,
+  ToolCall,
+  Assistant,
+  SharedLink,
+  PluginAuth,
+  MemoryEntry,
+  PromptGroup,
+  Transaction,
+  Conversation,
+  ConversationTag,
 } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
@@ -72,6 +77,7 @@ async function gracefulExit(code = 0) {
 
   // 5) Build and run deletion tasks
   const tasks = [
+    Action.deleteMany({ user: uid }),
     Agent.deleteMany({ author: uid }),
     Assistant.deleteMany({ user: uid }),
     Balance.deleteMany({ user: uid }),
@@ -89,6 +95,7 @@ async function gracefulExit(code = 0) {
     SharedLink.deleteMany({ user: uid }),
     ToolCall.deleteMany({ user: uid }),
     Token.deleteMany({ userId: uid }),
+    AclEntry.deleteMany({ principalId: user._id }),
   ];
 
   if (deleteTx) {
@@ -97,7 +104,10 @@ async function gracefulExit(code = 0) {
 
   await Promise.all(tasks);
 
-  // 6) Finally delete the user document itself
+  // 6) Remove user from all groups
+  await Group.updateMany({ memberIds: user._id }, { $pull: { memberIds: user._id } });
+
+  // 7) Finally delete the user document itself
   await User.deleteOne({ _id: uid });
 
   console.green(`✔ Successfully deleted user ${email} and all associated data.`);

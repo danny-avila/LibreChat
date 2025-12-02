@@ -1,4 +1,4 @@
-/** v0.8.1-rc1 */
+/** v0.8.1-rc2 */
 module.exports = {
   roots: ['<rootDir>/src'],
   testEnvironment: 'jsdom',
@@ -41,7 +41,6 @@ module.exports = {
       'jest-file-loader',
   },
   transformIgnorePatterns: ['node_modules/?!@zattoo/use-double-click'],
-  preset: 'ts-jest',
   setupFilesAfterEnv: ['@testing-library/jest-dom/extend-expect', '<rootDir>/test/setupTests.js'],
   clearMocks: true,
 };
