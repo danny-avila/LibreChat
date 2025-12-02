@@ -14,6 +14,7 @@ const {
   isEnabled,
   ErrorController,
   performStartupChecks,
+  handleJsonParseError,
   initializeFileStorage,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
@@ -81,6 +82,7 @@ const startServer = async () => {
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
+  app.use(handleJsonParseError);
   app.use(mongoSanitize());
   app.use(cors());
   app.use(cookieParser());
