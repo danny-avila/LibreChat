@@ -1,5 +1,6 @@
 const path = require('path');
 const { v4 } = require('uuid');
+const { countTokens } = require('@librechat/api');
 const {
   Constants,
   ContentTypes,
@@ -8,7 +9,7 @@ const {
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { recordMessage, getMessages } = require('~/models/Message');
-const { countTokens, escapeRegExp } = require('~/server/utils');
+const { escapeRegExp } = require('~/server/utils');
 const { spendTokens } = require('~/models/spendTokens');
 const { saveConvo } = require('~/models/Conversation');
 
