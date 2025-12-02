@@ -1,11 +1,14 @@
 import { logger } from '@librechat/data-schemas';
 
+/** Token count function that can be sync or async */
+export type TokenCountFn = (text: string) => number | Promise<number>;
+
 /**
  * Processes text content by counting tokens and truncating if it exceeds the specified limit.
  * Uses ratio-based estimation to minimize expensive tokenCountFn calls.
  * @param text - The text content to process
  * @param tokenLimit - The maximum number of tokens allowed
- * @param tokenCountFn - Function to count tokens
+ * @param tokenCountFn - Function to count tokens (can be sync or async)
  * @returns Promise resolving to object with processed text, token count, and truncation status
  */
 export async function processTextWithTokenLimit({
@@ -15,7 +18,7 @@ export async function processTextWithTokenLimit({
 }: {
   text: string;
   tokenLimit: number;
-  tokenCountFn: (text: string) => number;
+  tokenCountFn: TokenCountFn;
 }): Promise<{ text: string; tokenCount: number; wasTruncated: boolean }> {
   const originalTokenCount = await tokenCountFn(text);
 

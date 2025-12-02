@@ -1,5 +1,5 @@
-import { processTextWithTokenLimit } from './text';
-import Tokenizer from './tokenizer';
+import { processTextWithTokenLimit, TokenCountFn } from './text';
+import Tokenizer, { countTokens } from './tokenizer';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -20,7 +20,7 @@ async function processTextWithTokenLimitOLD({
 }: {
   text: string;
   tokenLimit: number;
-  tokenCountFn: (text: string) => number;
+  tokenCountFn: TokenCountFn;
 }): Promise<{ text: string; tokenCount: number; wasTruncated: boolean }> {
   const originalTokenCount = await tokenCountFn(text);
 
@@ -66,6 +66,24 @@ const createRealTokenCounter = () => {
   const tokenCountFn = (text: string): number => {
     callCount++;
     return Tokenizer.getTokenCount(text, 'cl100k_base');
+  };
+  return {
+    tokenCountFn,
+    getCallCount: () => callCount,
+    resetCallCount: () => {
+      callCount = 0;
+    },
+  };
+};
+
+/**
+ * Creates a wrapper around the async countTokens function that tracks call count
+ */
+const createCountTokensCounter = () => {
+  let callCount = 0;
+  const tokenCountFn = async (text: string): Promise<number> => {
+    callCount++;
+    return countTokens(text);
   };
   return {
     tokenCountFn,
@@ -147,6 +165,64 @@ describe('processTextWithTokenLimit', () => {
     }
     return result.join(' ');
   };
+
+  describe('tokenCountFn flexibility (sync and async)', () => {
+    it('should work with synchronous tokenCountFn', async () => {
+      const syncTokenCountFn = (text: string): number => Math.ceil(text.length / 4);
+      const text = 'Hello, world! This is a test message.';
+      const tokenLimit = 5;
+
+      const result = await processTextWithTokenLimit({
+        text,
+        tokenLimit,
+        tokenCountFn: syncTokenCountFn,
+      });
+
+      expect(result.wasTruncated).toBe(true);
+      expect(result.tokenCount).toBeLessThanOrEqual(tokenLimit);
+    });
+
+    it('should work with asynchronous tokenCountFn', async () => {
+      const asyncTokenCountFn = async (text: string): Promise<number> => {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        return Math.ceil(text.length / 4);
+      };
+      const text = 'Hello, world! This is a test message.';
+      const tokenLimit = 5;
+
+      const result = await processTextWithTokenLimit({
+        text,
+        tokenLimit,
+        tokenCountFn: asyncTokenCountFn,
+      });
+
+      expect(result.wasTruncated).toBe(true);
+      expect(result.tokenCount).toBeLessThanOrEqual(tokenLimit);
+    });
+
+    it('should produce equivalent results with sync and async tokenCountFn', async () => {
+      const syncTokenCountFn = (text: string): number => Math.ceil(text.length / 4);
+      const asyncTokenCountFn = async (text: string): Promise<number> => Math.ceil(text.length / 4);
+      const text = 'a'.repeat(8000);
+      const tokenLimit = 1000;
+
+      const syncResult = await processTextWithTokenLimit({
+        text,
+        tokenLimit,
+        tokenCountFn: syncTokenCountFn,
+      });
+
+      const asyncResult = await processTextWithTokenLimit({
+        text,
+        tokenLimit,
+        tokenCountFn: asyncTokenCountFn,
+      });
+
+      expect(syncResult.tokenCount).toBe(asyncResult.tokenCount);
+      expect(syncResult.wasTruncated).toBe(asyncResult.wasTruncated);
+      expect(syncResult.text.length).toBe(asyncResult.text.length);
+    });
+  });
 
   describe('when text is under the token limit', () => {
     it('should return original text unchanged', async () => {
@@ -631,6 +707,142 @@ describe('processTextWithTokenLimit', () => {
 
       console.log(
         `[Real tiktoken 50k tokens] OLD: ${oldCalls}, NEW: ${newCalls}, Reduction: ${(reduction * 100).toFixed(1)}%`,
+      );
+
+      expect(reduction).toBeGreaterThanOrEqual(0.7);
+    });
+  });
+
+  describe('using countTokens async function from @librechat/api', () => {
+    beforeEach(() => {
+      Tokenizer.freeAndResetAllEncoders();
+    });
+
+    it('countTokens should return correct token count', async () => {
+      const text = 'Hello, world!';
+      const count = await countTokens(text);
+
+      expect(count).toBeGreaterThan(0);
+      expect(typeof count).toBe('number');
+    });
+
+    it('countTokens should handle empty string', async () => {
+      const count = await countTokens('');
+      expect(count).toBe(0);
+    });
+
+    it('should work with processTextWithTokenLimit using countTokens', async () => {
+      const counter = createCountTokensCounter();
+      const text = createRealisticText(5000);
+      const tokenLimit = 1000;
+
+      const result = await processTextWithTokenLimit({
+        text,
+        tokenLimit,
+        tokenCountFn: counter.tokenCountFn,
+      });
+
+      expect(result.wasTruncated).toBe(true);
+      expect(result.tokenCount).toBeLessThanOrEqual(tokenLimit);
+      expect(result.text.length).toBeLessThan(text.length);
+    });
+
+    it('should use fewer countTokens calls than old implementation', async () => {
+      const oldCounter = createCountTokensCounter();
+      const newCounter = createCountTokensCounter();
+      const text = createRealisticText(15000);
+      const tokenLimit = 5000;
+
+      await processTextWithTokenLimitOLD({
+        text,
+        tokenLimit,
+        tokenCountFn: oldCounter.tokenCountFn,
+      });
+
+      Tokenizer.freeAndResetAllEncoders();
+
+      await processTextWithTokenLimit({
+        text,
+        tokenLimit,
+        tokenCountFn: newCounter.tokenCountFn,
+      });
+
+      const oldCalls = oldCounter.getCallCount();
+      const newCalls = newCounter.getCallCount();
+
+      console.log(`[countTokens ~15k tokens] OLD: ${oldCalls} calls, NEW: ${newCalls} calls`);
+      console.log(`[countTokens] Reduction: ${((1 - newCalls / oldCalls) * 100).toFixed(1)}%`);
+
+      expect(newCalls).toBeLessThan(oldCalls);
+    });
+
+    it('should handle user reported scenario with countTokens (~120k tokens)', async () => {
+      const oldCounter = createCountTokensCounter();
+      const newCounter = createCountTokensCounter();
+      const text = createRealisticText(120000);
+      const tokenLimit = 100000;
+
+      const startOld = performance.now();
+      await processTextWithTokenLimitOLD({
+        text,
+        tokenLimit,
+        tokenCountFn: oldCounter.tokenCountFn,
+      });
+      const timeOld = performance.now() - startOld;
+
+      Tokenizer.freeAndResetAllEncoders();
+
+      const startNew = performance.now();
+      const result = await processTextWithTokenLimit({
+        text,
+        tokenLimit,
+        tokenCountFn: newCounter.tokenCountFn,
+      });
+      const timeNew = performance.now() - startNew;
+
+      const oldCalls = oldCounter.getCallCount();
+      const newCalls = newCounter.getCallCount();
+
+      console.log(`\n[countTokens - User reported scenario: ~120k tokens]`);
+      console.log(`OLD implementation: ${oldCalls} countTokens calls, ${timeOld.toFixed(0)}ms`);
+      console.log(`NEW implementation: ${newCalls} countTokens calls, ${timeNew.toFixed(0)}ms`);
+      console.log(`Call reduction: ${((1 - newCalls / oldCalls) * 100).toFixed(1)}%`);
+      console.log(`Time reduction: ${((1 - timeNew / timeOld) * 100).toFixed(1)}%`);
+      console.log(
+        `Result: truncated=${result.wasTruncated}, tokens=${result.tokenCount}/${tokenLimit}\n`,
+      );
+
+      expect(newCalls).toBeLessThan(oldCalls);
+      expect(result.tokenCount).toBeLessThanOrEqual(tokenLimit);
+      expect(newCalls).toBeLessThanOrEqual(7);
+    });
+
+    it('should achieve at least 70% reduction with countTokens', async () => {
+      const oldCounter = createCountTokensCounter();
+      const newCounter = createCountTokensCounter();
+      const text = createRealisticText(50000);
+      const tokenLimit = 10000;
+
+      await processTextWithTokenLimitOLD({
+        text,
+        tokenLimit,
+        tokenCountFn: oldCounter.tokenCountFn,
+      });
+
+      Tokenizer.freeAndResetAllEncoders();
+
+      await processTextWithTokenLimit({
+        text,
+        tokenLimit,
+        tokenCountFn: newCounter.tokenCountFn,
+      });
+
+      const oldCalls = oldCounter.getCallCount();
+      const newCalls = newCounter.getCallCount();
+      const reduction = 1 - newCalls / oldCalls;
+
+      console.log(
+        `[countTokens 50k tokens] OLD: ${oldCalls}, NEW: ${newCalls}, Reduction: ${(reduction * 100).toFixed(1)}%`,
       );
 
       expect(reduction).toBeGreaterThanOrEqual(0.7);
