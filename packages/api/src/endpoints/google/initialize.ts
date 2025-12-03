@@ -6,7 +6,7 @@ import type {
   GoogleConfigOptions,
   GoogleCredentials,
 } from '~/types';
-import { isEnabled, loadServiceKey } from '~/utils';
+import { isEnabled, loadServiceKey, checkUserKeyExpiry } from '~/utils';
 import { getGoogleConfig } from './llm';
 
 /**
@@ -31,7 +31,7 @@ export async function initializeGoogle({
 
   let userKey = null;
   if (expiresAt && isUserProvided) {
-    db.checkUserKeyExpiry(expiresAt, EModelEndpoint.google);
+    checkUserKeyExpiry(expiresAt, EModelEndpoint.google);
     userKey = await db.getUserKey({ userId: req.user?.id, name: EModelEndpoint.google });
   }
 

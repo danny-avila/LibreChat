@@ -11,7 +11,7 @@ import type { BaseInitializeParams, InitializeResultBase, EndpointTokenConfig } 
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
-import { isUserProvided } from '~/utils/common';
+import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { standardCache } from '~/cache';
 
 const { PROXY } = process.env;
@@ -93,7 +93,7 @@ export async function initializeCustom({
 
   let userValues = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
-    db.checkUserKeyExpiry(expiresAt, endpoint);
+    checkUserKeyExpiry(expiresAt, endpoint);
     userValues = await db.getUserKeyValues({ userId: req.user?.id ?? '', name: endpoint });
   }
 

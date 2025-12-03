@@ -1,5 +1,6 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { BaseInitializeParams, InitializeResultBase, AnthropicConfigOptions } from '~/types';
+import { checkUserKeyExpiry } from '~/utils';
 import { getLLMConfig } from './llm';
 
 /**
@@ -30,7 +31,7 @@ export async function initializeAnthropic({
   }
 
   if (expiresAt && isUserProvided) {
-    db.checkUserKeyExpiry(expiresAt, EModelEndpoint.anthropic);
+    checkUserKeyExpiry(expiresAt, EModelEndpoint.anthropic);
   }
 
   let clientOptions: AnthropicConfigOptions = {};

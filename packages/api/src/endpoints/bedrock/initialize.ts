@@ -9,6 +9,7 @@ import {
   removeNullishValues,
 } from 'librechat-data-provider';
 import type { BaseInitializeParams, InitializeResultBase, BedrockCredentials } from '~/types';
+import { checkUserKeyExpiry } from '~/utils';
 
 /**
  * Initializes Bedrock endpoint configuration.
@@ -76,7 +77,7 @@ export async function initializeBedrock({
   }
 
   if (expiresAt && isUserProvided) {
-    db.checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
+    checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
   }
 
   const requestOptions: Record<string, unknown> = {

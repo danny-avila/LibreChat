@@ -37,7 +37,8 @@ const {
   bedrockOutputParser,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { getUserKey } = require('~/server/services/UserService');
+const { checkUserKeyExpiry } = require('@librechat/api');
 
 const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const {

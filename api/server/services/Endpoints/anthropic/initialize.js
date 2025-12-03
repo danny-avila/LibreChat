@@ -1,6 +1,7 @@
 const { getLLMConfig } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
-const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { getUserKey } = require('~/server/services/UserService');
+const { checkUserKeyExpiry } = require('@librechat/api');
 
 const initializeClient = async ({ req, endpointOption, overrideModel }) => {
   const appConfig = req.config;

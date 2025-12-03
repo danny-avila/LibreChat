@@ -5,7 +5,7 @@ import type {
   OpenAIConfigOptions,
   UserKeyValues,
 } from '~/types';
-import { getAzureCredentials, resolveHeaders, isUserProvided } from '~/utils';
+import { getAzureCredentials, resolveHeaders, isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { getOpenAIConfig } from './config';
 
 /**
@@ -44,7 +44,7 @@ export async function initializeOpenAI({
 
   let userValues: UserKeyValues | null = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
-    db.checkUserKeyExpiry(expiresAt, endpoint);
+    checkUserKeyExpiry(expiresAt, endpoint);
     userValues = await db.getUserKeyValues({ userId: req.user?.id ?? '', name: endpoint });
   }
 

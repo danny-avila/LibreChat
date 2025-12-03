@@ -18,7 +18,6 @@ const {
   providerEndpointMap,
 } = require('librechat-data-provider');
 const {
-  checkUserKeyExpiry,
   getToolFilesByIds,
   getUserKeyValues,
   updateFilesUsage,
@@ -153,7 +152,6 @@ const initializeAgent = async ({
     db: {
       getUserKey,
       getUserKeyValues,
-      checkUserKeyExpiry,
     },
   });
 

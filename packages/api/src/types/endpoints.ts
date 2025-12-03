@@ -26,12 +26,6 @@ export type GetUserKeyValuesFunction = (params: {
 }) => Promise<UserKeyValues>;
 
 /**
- * Function type for checking user key expiry
- * @throws Error if the key has expired
- */
-export type CheckUserKeyExpiryFunction = (expiresAt: string, endpoint: string) => void;
-
-/**
  * Database methods required for endpoint initialization
  * These are passed in at invocation time to allow for dependency injection
  */
@@ -40,8 +34,6 @@ export interface EndpointDbMethods {
   getUserKey: GetUserKeyFunction;
   /** Get parsed key values object (used for apiKey + baseURL combinations) */
   getUserKeyValues: GetUserKeyValuesFunction;
-  /** Check if user key has expired */
-  checkUserKeyExpiry: CheckUserKeyExpiryFunction;
 }
 
 /**
