@@ -6,10 +6,9 @@ const { ProxyAgent } = require('undici');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { logAxiosError, oaiToolkit } = require('@librechat/api');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
+const { logAxiosError, oaiToolkit, extractBaseURL } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const extractBaseURL = require('~/utils/extractBaseURL');
 const { getFiles } = require('~/models/File');
 
 const displayMessage =
