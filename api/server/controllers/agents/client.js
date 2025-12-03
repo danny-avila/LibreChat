@@ -41,17 +41,6 @@ const {
 } = require('librechat-data-provider');
 const { initializeAgent } = require('@librechat/api');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const {
-  getFormattedMemories,
-  checkUserKeyExpiry,
-  getToolFilesByIds,
-  getUserKeyValues,
-  updateFilesUsage,
-  deleteMemory,
-  getUserKey,
-  setMemory,
-  getFiles,
-} = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { checkCapability } = require('~/server/services/Config');
@@ -60,6 +49,7 @@ const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
+const db = require('~/models');
 
 const omitTitleOptions = new Set([
   'stream',
@@ -567,13 +557,13 @@ class AgentClient extends BaseClient {
         },
       },
       {
-        getUserKey,
-        getUserKeyValues,
-        checkUserKeyExpiry,
-        getFiles,
-        getToolFilesByIds,
-        updateFilesUsage,
         getConvoFiles,
+        getFiles: db.getFiles,
+        getUserKey: db.getUserKey,
+        updateFilesUsage: db.updateFilesUsage,
+        getUserKeyValues: db.getUserKeyValues,
+        getToolFilesByIds: db.getToolFilesByIds,
+        checkUserKeyExpiry: db.checkUserKeyExpiry,
       },
     );
 
@@ -610,9 +600,9 @@ class AgentClient extends BaseClient {
       messageId,
       conversationId,
       memoryMethods: {
-        setMemory,
-        deleteMemory,
-        getFormattedMemories,
+        setMemory: db.setMemory,
+        deleteMemory: db.deleteMemory,
+        getFormattedMemories: db.getFormattedMemories,
       },
       res: this.options.res,
     });
@@ -1122,9 +1112,9 @@ class AgentClient extends BaseClient {
       endpoint,
       model_parameters: clientOptions,
       db: {
-        getUserKey,
-        getUserKeyValues,
-        checkUserKeyExpiry,
+        getUserKey: db.getUserKey,
+        getUserKeyValues: db.getUserKeyValues,
+        checkUserKeyExpiry: db.checkUserKeyExpiry,
       },
     });
 

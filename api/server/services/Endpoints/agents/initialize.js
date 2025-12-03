@@ -1,10 +1,10 @@
 const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
 const {
+  initializeAgent,
   validateAgentModel,
   getCustomEndpointConfig,
   createSequentialChainEdges,
-  initializeAgent,
 } = require('@librechat/api');
 const {
   Constants,
@@ -19,17 +19,10 @@ const {
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
-const {
-  getUserKey,
-  getUserKeyValues,
-  checkUserKeyExpiry,
-  getFiles,
-  getToolFilesByIds,
-  updateFilesUsage,
-} = require('~/models');
 const { getConvoFiles } = require('~/models/Conversation');
 const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
+const db = require('~/models');
 
 /**
  * @param {AbortSignal} signal
@@ -131,13 +124,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       isInitialAgent: true,
     },
     {
-      getUserKey,
-      getUserKeyValues,
-      checkUserKeyExpiry,
-      getFiles,
-      getToolFilesByIds,
-      updateFilesUsage,
       getConvoFiles,
+      getFiles: db.getFiles,
+      getUserKey: db.getUserKey,
+      updateFilesUsage: db.updateFilesUsage,
+      getUserKeyValues: db.getUserKeyValues,
+      getToolFilesByIds: db.getToolFilesByIds,
+      checkUserKeyExpiry: db.checkUserKeyExpiry,
     },
   );
 
@@ -174,13 +167,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         allowedProviders,
       },
       {
-        getUserKey,
-        getUserKeyValues,
-        checkUserKeyExpiry,
-        getFiles,
-        getToolFilesByIds,
-        updateFilesUsage,
         getConvoFiles,
+        getFiles: db.getFiles,
+        getUserKey: db.getUserKey,
+        updateFilesUsage: db.updateFilesUsage,
+        getUserKeyValues: db.getUserKeyValues,
+        getToolFilesByIds: db.getToolFilesByIds,
+        checkUserKeyExpiry: db.checkUserKeyExpiry,
       },
     );
     if (userMCPAuthMap != null) {
