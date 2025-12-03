@@ -46,30 +46,6 @@ export interface EndpointDbMethods {
 }
 
 /**
- * Function type for fetching models (used by custom endpoints)
- */
-export type FetchModelsFunction = (params: {
-  apiKey: string;
-  baseURL: string;
-  name: string;
-  user: string;
-  tokenKey: string;
-}) => Promise<void>;
-
-/**
- * Cache store interface for token config
- */
-export interface TokenConfigCache {
-  get: (key: string) => Promise<EndpointTokenConfig | undefined>;
-  set: (key: string, value: EndpointTokenConfig) => Promise<void>;
-}
-
-/**
- * Function type for getting cache stores (used by custom endpoints)
- */
-export type GetLogStoresFunction = (key: string) => TokenConfigCache;
-
-/**
  * Base parameters for all endpoint initialization functions
  */
 export interface BaseInitializeParams {
@@ -83,10 +59,6 @@ export interface BaseInitializeParams {
   model_parameters?: Record<string, unknown>;
   /** Database methods for user key operations */
   db: EndpointDbMethods;
-  /** Function to fetch models from the endpoint (required for custom endpoints) */
-  fetchModels?: FetchModelsFunction;
-  /** Function to get cache stores (required for custom endpoints) */
-  getLogStores?: GetLogStoresFunction;
 }
 
 /**

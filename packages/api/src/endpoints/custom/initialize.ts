@@ -8,9 +8,11 @@ import {
 import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase, EndpointTokenConfig } from '~/types';
+import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getCustomEndpointConfig } from '~/app/config';
+import { fetchModels } from '~/endpoints/models';
 import { isUserProvided } from '~/utils/common';
-import { getOpenAIConfig } from '../openai/config';
+import { standardCache } from '~/cache';
 
 const { PROXY } = process.env;
 
@@ -63,13 +65,7 @@ export async function initializeCustom({
   appConfig,
   model_parameters,
   db,
-  fetchModels,
-  getLogStores,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
-  if (!fetchModels || !getLogStores) {
-    throw new Error('fetchModels and getLogStores are required for custom endpoint initialization');
-  }
-
   const { key: expiresAt } = req.body;
 
   const endpointConfig = getCustomEndpointConfig({
@@ -132,7 +128,7 @@ export async function initializeCustom({
 
   const userId = req.user?.id ?? '';
 
-  const cache = getLogStores(CacheKeys.TOKEN_CONFIG);
+  const cache = standardCache(CacheKeys.TOKEN_CONFIG);
   /** tokenConfig is an optional extended property on custom endpoints */
   const hasTokenConfig = (endpointConfig as Record<string, unknown>).tokenConfig != null;
   const tokenKey =
