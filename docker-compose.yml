@@ -86,21 +86,13 @@ services:
           memory: 512m
     networks:
       - default
-  ollama-init:
-    image: ollama/ollama:latest
-    container_name: ollama-init
-    depends_on:
-      - ollama
-    volumes:
-      - ollama:/root/.ollama
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        /bin/ollama serve &
         sleep 5
         ollama pull nomic-embed-text
-    restart: "no"
-    networks:
-      - default
+        wait
 networks:
   default:
 volumes:

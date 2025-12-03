@@ -69,7 +69,7 @@ function ModelSelectorContent({
   if (!showDropdown) {
     // Show "RunPod Methodology" as default when nothing is selected
     const displayValue = selectedDisplayValue === localize('com_ui_select_model')
-      ? 'RunPod Methodology'
+      ? 'Victoria'
       : selectedDisplayValue;
 
     return (

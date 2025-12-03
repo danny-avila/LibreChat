@@ -137,7 +137,7 @@ const startServer = async () => {
         );
         req.body.endpoint = 'agents';
         req.body.endpointType = 'agents';
-        req.body.agent_id = process.env.DEFAULT_AGENT_ID || 'runpod-methodology';
+        req.body.agent_id = process.env.DEFAULT_AGENT_ID || 'Smart-Vicktoria';
       }
     } catch (err) {
       logger.warn('[defaultAgent middleware] Failed to set default agent_id:', err);

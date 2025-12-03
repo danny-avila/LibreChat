@@ -21,8 +21,8 @@ const { grantPermission } = require('~/server/services/PermissionService');
 const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 
 const {
-  RUNPOD_AGENT_ID = 'runpod-methodology',
-  RUNPOD_AGENT_NAME = 'RunPod Methodology',
+  RUNPOD_AGENT_ID = 'Smart-Vicktoria',
+  RUNPOD_AGENT_NAME = 'Vicktoria',
   RUNPOD_MODEL = 'google/gemma-3-27b-it',
   METHODOLOGY_DIR,
   RUNPOD_AGENT_INSTRUCTIONS,
@@ -85,7 +85,7 @@ async function ensureAgent(fileIds) {
   const baseAgent = {
     id: RUNPOD_AGENT_ID,
     name: RUNPOD_AGENT_NAME,
-    description: 'Methodology expert with automatic RAG context from uploaded documents.',
+    description: 'Chat with Sentian Vicktoria',
     provider: 'Vicktoria',
     model: RUNPOD_MODEL,
     model_parameters: { model: RUNPOD_MODEL },
@@ -227,7 +227,7 @@ function getContentType(filePath) {
 }
 
 async function main() {
-  console.log('\n🚀 Starting RunPod Methodology Agent Seed\n');
+  console.log('\n🚀 Starting Victoria Agent Seed\n');
   
   await connectDb();
   console.log('✓ Connected to MongoDB\n');
