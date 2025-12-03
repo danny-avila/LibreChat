@@ -59,8 +59,8 @@ export function sanitizeMessageForTransmit<T extends Partial<TMessage>>(
     delete sanitized[field as keyof typeof sanitized];
   }
 
-  // Explicitly replace the files array with a new sanitized array to avoid mutating nested objects
-  if (Array.isArray(sanitized.files) && sanitized.files.length > 0) {
+  // Always create a new array when files exist to maintain full immutability
+  if (Array.isArray(sanitized.files)) {
     sanitized.files = sanitized.files.map((file) => sanitizeFileForTransmit(file));
   }
 

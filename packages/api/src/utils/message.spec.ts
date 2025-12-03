@@ -94,7 +94,7 @@ describe('sanitizeMessageForTransmit', () => {
     expect(result.text).toBe('Hello');
   });
 
-  it('should preserve empty files array (short-circuits mapping for empty arrays)', () => {
+  it('should create new array reference for empty files array (immutability)', () => {
     const message = {
       messageId: 'msg-123',
       files: [] as { file_id: string }[],
@@ -103,8 +103,8 @@ describe('sanitizeMessageForTransmit', () => {
     const result = sanitizeMessageForTransmit(message);
 
     expect(result.files).toEqual([]);
-    // Shallow copy behavior: empty arrays skip the map operation, keeping same reference
-    expect(result.files).toBe(message.files);
+    // New array reference ensures full immutability even for empty arrays
+    expect(result.files).not.toBe(message.files);
   });
 
   it('should not modify original message object', () => {
