@@ -38,14 +38,13 @@ const {
   grantPermission,
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { getCategoriesWithCounts, deleteFileByFilter } = require('~/models');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { refreshS3Url } = require('~/server/services/Files/S3/crud');
 const { filterFile } = require('~/server/services/Files/process');
 const { updateAction, getActions } = require('~/models/Action');
 const { getCachedTools } = require('~/server/services/Config');
-const { deleteFileByFilter } = require('~/models/File');
-const { getCategoriesWithCounts } = require('~/models');
 const { getLogStores } = require('~/cache');
 
 const systemTools = {
