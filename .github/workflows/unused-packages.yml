@@ -129,6 +129,36 @@ jobs:
       - name: Extract Workspace Dependencies
         id: extract-workspace-deps
         run: |
+          # Function to extract imports from source code (reusable)
+          extract_imports_from_folder() {
+            local folder=$1
+            local output_file=$2
+            if [[ -d "$folder" ]]; then
+              # Extract require() statements
+              grep -rEho "require\\(['\"]([a-zA-Z0-9@/._-]+)['\"]\\)" "$folder" --include=\*.{js,ts,tsx,jsx,mjs,cjs} 2>/dev/null | \
+                sed -E "s/require\\(['\"]([a-zA-Z0-9@/._-]+)['\"]\\)/\1/" >> "$output_file" || true
+          
+              # Extract ES6 imports
+              grep -rEho "import .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]" "$folder" --include=\*.{js,ts,tsx,jsx,mjs,cjs} 2>/dev/null | \
+                sed -E "s/import .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]/\1/" >> "$output_file" || true
+              
+              # import 'module' (side-effect imports)
+              grep -rEho "import ['\"]([a-zA-Z0-9@/._-]+)['\"]" "$folder" --include=\*.{js,ts,tsx,jsx,mjs,cjs} 2>/dev/null | \
+                sed -E "s/import ['\"]([a-zA-Z0-9@/._-]+)['\"]/\1/" >> "$output_file" || true
+              
+              # export { x } from 'module' or export * from 'module'
+              grep -rEho "export .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]" "$folder" --include=\*.{js,ts,tsx,jsx,mjs,cjs} 2>/dev/null | \
+                sed -E "s/export .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]/\1/" >> "$output_file" || true
+              
+              # import type { x } from 'module' (TypeScript)
+              grep -rEho "import type .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]" "$folder" --include=\*.{ts,tsx} 2>/dev/null | \
+                sed -E "s/import type .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]/\1/" >> "$output_file" || true
+          
+              # Remove subpath imports but keep the base package
+              sed -i -E 's|^(@?[a-zA-Z0-9-]+(/[a-zA-Z0-9-]+)?)/.*|\1|' "$output_file" 2>/dev/null || true
+            fi
+          }
+          
           # Function to get dependencies from a workspace package that are used by another package
           get_workspace_package_deps() {
             local package_json=$1
@@ -149,6 +179,10 @@ jobs:
                   jq -r '.dependencies // {} | keys[]' "$workspace_package_json" 2>/dev/null >> "$output_file"
                   # Also extract peerDependencies
                   jq -r '.peerDependencies // {} | keys[]' "$workspace_package_json" 2>/dev/null >> "$output_file"
+                  
+                  # Also scan the workspace package source code for imports
+                  # This catches packages that are used but provided by the parent
+                  extract_imports_from_folder "$workspace_path" "$output_file"
                 fi
               done
             fi
