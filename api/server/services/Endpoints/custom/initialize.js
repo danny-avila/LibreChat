@@ -1,4 +1,9 @@
-const { isUserProvided, getOpenAIConfig, getCustomEndpointConfig } = require('@librechat/api');
+const {
+  fetchModels,
+  isUserProvided,
+  getOpenAIConfig,
+  getCustomEndpointConfig,
+} = require('@librechat/api');
 const {
   CacheKeys,
   ErrorTypes,
@@ -7,7 +12,6 @@ const {
   extractEnvVariable,
 } = require('librechat-data-provider');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { fetchModels } = require('~/server/services/ModelService');
 const getLogStores = require('~/cache/getLogStores');
 
 const { PROXY } = process.env;
