@@ -95,8 +95,12 @@ jobs:
                 sed -E "s/import type .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]/\1/" >> "$output_file" || true
           
               # Remove subpath imports but keep the base package
-              # e.g., '@tanstack/react-query/devtools' becomes '@tanstack/react-query'
-              sed -i -E 's|^(@?[a-zA-Z0-9-]+(/[a-zA-Z0-9-]+)?)/.*|\1|' "$output_file" 2>/dev/null || true
+              # For scoped packages: '@scope/pkg/subpath' -> '@scope/pkg'
+              # For regular packages: 'pkg/subpath' -> 'pkg'
+              # Scoped packages (must keep @scope/package, strip anything after)
+              sed -i -E 's|^(@[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+)/.*|\1|' "$output_file" 2>/dev/null || true
+              # Non-scoped packages (keep package name, strip subpath)
+              sed -i -E 's|^([a-zA-Z0-9_-]+)/.*|\1|' "$output_file" 2>/dev/null || true
               
               sort -u "$output_file" -o "$output_file"
             fi
