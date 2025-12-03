@@ -48,7 +48,7 @@ export const loadEndpoints = (
   if (endpoints?.[EModelEndpoint.anthropic]) {
     const anthropicConfig = endpoints[EModelEndpoint.anthropic] as TAnthropicEndpoint;
     const vertexConfig = vertexConfigSetup(config);
-    
+
     loadedEndpoints[EModelEndpoint.anthropic] = {
       ...anthropicConfig,
       // Attach validated Vertex AI config if present

@@ -27,7 +27,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
     // Load credentials with optional YAML config overrides
     const credentialOptions = vertexConfig ? getVertexCredentialOptions(vertexConfig) : undefined;
     credentials = await loadAnthropicVertexCredentials(credentialOptions);
-    
+
     // Store vertex options for client creation
     if (vertexConfig) {
       vertexOptions = {

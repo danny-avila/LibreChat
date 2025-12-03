@@ -209,7 +209,7 @@ class AgentClient extends BaseClient {
     return this.contentParts;
   }
 
-  setOptions(options) {}
+  setOptions(_options) {}
 
   /**
    * `AgentClient` is not opinionated about vision requests, so we don't do anything here
@@ -725,9 +725,7 @@ class AgentClient extends BaseClient {
         Number(usage.cache_creation_input_tokens) ||
         0;
       const cache_read =
-        Number(usage.input_token_details?.cache_read) ||
-        Number(usage.cache_read_input_tokens) ||
-        0;
+        Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
 
       const txMetadata = {
         context,

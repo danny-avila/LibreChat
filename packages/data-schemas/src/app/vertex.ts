@@ -45,7 +45,9 @@ export function validateVertexConfig(
 
   // Check for unresolved environment variables
   if (projectId && envVarRegex.test(projectId)) {
-    errors.push(`Vertex AI projectId environment variable "${vertexConfig.projectId}" was not found.`);
+    errors.push(
+      `Vertex AI projectId environment variable "${vertexConfig.projectId}" was not found.`,
+    );
   }
 
   if (envVarRegex.test(region)) {
@@ -53,7 +55,9 @@ export function validateVertexConfig(
   }
 
   if (serviceKeyFile && envVarRegex.test(serviceKeyFile)) {
-    errors.push(`Vertex AI serviceKeyFile environment variable "${vertexConfig.serviceKeyFile}" was not found.`);
+    errors.push(
+      `Vertex AI serviceKeyFile environment variable "${vertexConfig.serviceKeyFile}" was not found.`,
+    );
   }
 
   // Note: projectId is optional - if not provided, it will be auto-detected from the service key file
@@ -78,14 +82,16 @@ export function validateVertexConfig(
  * @returns The validated Vertex AI configuration or null if not configured.
  */
 export function vertexConfigSetup(config: Partial<TCustomConfig>): TVertexAIConfig | null {
-  const anthropicConfig = config.endpoints?.[EModelEndpoint.anthropic] as TAnthropicEndpoint | undefined;
-  
+  const anthropicConfig = config.endpoints?.[EModelEndpoint.anthropic] as
+    | TAnthropicEndpoint
+    | undefined;
+
   if (!anthropicConfig?.vertex) {
     return null;
   }
 
   const vertexConfig = anthropicConfig.vertex;
-  
+
   // Skip if not enabled
   if (!vertexConfig.enabled) {
     return null;
@@ -112,4 +118,3 @@ export function vertexConfigSetup(config: Partial<TCustomConfig>): TVertexAIConf
 
   return validatedConfig;
 }
-

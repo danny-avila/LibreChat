@@ -81,9 +81,7 @@ export function isAnthropicVertexCredentials(credentials: AnthropicCredentials):
  * Vertex AI rejects prompt-caching-2024-07-31 but we use 'prompt-caching-vertex' as a
  * marker to trigger cache_control application in the agents package.
  */
-function filterVertexHeaders(
-  headers?: Record<string, string>,
-): Record<string, string> | undefined {
+function filterVertexHeaders(headers?: Record<string, string>): Record<string, string> | undefined {
   if (!headers) {
     return undefined;
   }
@@ -144,10 +142,11 @@ export function createAnthropicVertexClient(
   vertexOptions?: VertexAIClientOptions,
 ): AnthropicVertex {
   const serviceKey = credentials[AuthKeys.GOOGLE_SERVICE_KEY];
-  
+
   // Priority: vertexOptions > env vars > service key project_id
   const region = vertexOptions?.region || process.env.ANTHROPIC_VERTEX_REGION || 'us-east5';
-  const projectId = vertexOptions?.projectId || process.env.VERTEX_PROJECT_ID || serviceKey?.project_id;
+  const projectId =
+    vertexOptions?.projectId || process.env.VERTEX_PROJECT_ID || serviceKey?.project_id;
 
   try {
     const googleAuth = new GoogleAuth({
