@@ -92,11 +92,11 @@ describe('Conversation Structure Tests', () => {
       conversationId,
       user: userId,
       text: `Message ${i}`,
-      createdAt: new Date(Date.now() + (i % 2 === 0 ? i * 500000 : -i * 500000)),
+      createdAt: new Date(Date.now() + i * 1000),
     }));
 
     // Save messages with new timestamps being generated (message objects ignored)
-    await bulkSaveMessages(messages);
+    await bulkSaveMessages(messages, true);
 
     // Retrieve messages (this will sort by createdAt, but it shouldn't matter now)
     const retrievedMessages = await getMessages({ conversationId, user: userId });
