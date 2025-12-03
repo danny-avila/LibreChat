@@ -7,11 +7,13 @@ const {
   extractWebSearchEnvVars,
 } = require('@librechat/api');
 const {
+  updateUserPlugins,
   deleteAllUserSessions,
   deleteAllSharedLinks,
   deleteUserById,
   deleteMessages,
   deletePresets,
+  deleteUserKey,
   deleteConvos,
   deleteFiles,
   updateUser,
@@ -31,7 +33,6 @@ const {
   User,
 } = require('~/db/models');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
-const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud');
@@ -114,13 +115,7 @@ const updateUserPluginsController = async (req, res) => {
   const { pluginKey, action, auth, isEntityTool } = req.body;
   try {
     if (!isEntityTool) {
-      const userPluginsService = await updateUserPluginsService(user, pluginKey, action);
-
-      if (userPluginsService instanceof Error) {
-        logger.error('[userPluginsService]', userPluginsService);
-        const { status, message } = normalizeHttpError(userPluginsService);
-        return res.status(status).send({ message });
-      }
+      await updateUserPlugins(user._id, user.plugins, pluginKey, action);
     }
 
     if (auth == null) {

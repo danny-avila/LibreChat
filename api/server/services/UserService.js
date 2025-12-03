@@ -1,35 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { encrypt, decrypt } = require('@librechat/api');
 const { ErrorTypes } = require('librechat-data-provider');
-const { updateUser } = require('~/models');
 const { Key } = require('~/db/models');
-
-/**
- * Updates the plugins for a user based on the action specified (install/uninstall).
- * @async
- * @param {Object} user - The user whose plugins are to be updated.
- * @param {string} pluginKey - The key of the plugin to install or uninstall.
- * @param {'install' | 'uninstall'} action - The action to perform, 'install' or 'uninstall'.
- * @returns {Promise<Object>} The result of the update operation.
- * @throws Logs the error internally if the update operation fails.
- * @description This function updates the plugin array of a user document based on the specified action.
- *              It adds a plugin key to the plugins array for an 'install' action, and removes it for an 'uninstall' action.
- */
-const updateUserPluginsService = async (user, pluginKey, action) => {
-  try {
-    const userPlugins = user.plugins || [];
-    if (action === 'install') {
-      return await updateUser(user._id, { plugins: [...userPlugins, pluginKey] });
-    } else if (action === 'uninstall') {
-      return await updateUser(user._id, {
-        plugins: userPlugins.filter((plugin) => plugin !== pluginKey),
-      });
-    }
-  } catch (err) {
-    logger.error('[updateUserPluginsService]', err);
-    return err;
-  }
-};
 
 /**
  * Retrieves and decrypts the key value for a given user identified by userId and identifier name.
@@ -159,5 +131,4 @@ module.exports = {
   deleteUserKey,
   getUserKeyValues,
   getUserKeyExpiry,
-  updateUserPluginsService,
 };
