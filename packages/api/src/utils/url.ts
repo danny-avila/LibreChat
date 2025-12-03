@@ -1,4 +1,5 @@
-const { CohereConstants } = require('librechat-data-provider');
+import { logger } from '@librechat/data-schemas';
+import { CohereConstants } from 'librechat-data-provider';
 
 /**
  * Extracts a valid OpenAI baseURL from a given string, matching "url/v1," followed by an optional suffix.
@@ -13,10 +14,10 @@ const { CohereConstants } = require('librechat-data-provider');
  * - `https://open.ai/v1/hi/openai` -> `https://open.ai/v1/hi/openai`
  * - `https://api.example.com/v1/replicate` -> `https://api.example.com/v1/replicate`
  *
- * @param {string} url - The URL to be processed.
- * @returns {string | undefined} The matched pattern or input if no match is found.
+ * @param url - The URL to be processed.
+ * @returns The matched pattern or input if no match is found.
  */
-function extractBaseURL(url) {
+export function extractBaseURL(url: string): string | null | undefined {
   if (!url || typeof url !== 'string') {
     return undefined;
   }
@@ -29,14 +30,10 @@ function extractBaseURL(url) {
     return url;
   }
 
-  // Find the index of '/v1' to use it as a reference point.
   const v1Index = url.indexOf('/v1');
-
-  // Extract the part of the URL up to and including '/v1'.
   let baseUrl = url.substring(0, v1Index + 3);
 
   const openai = 'openai';
-  // Find which suffix is present.
   const suffixes = [
     'azure-openai',
     openai,
@@ -62,29 +59,44 @@ function extractBaseURL(url) {
     return url.split(/\/(chat|completion)/)[0];
   }
 
-  // Check if the URL has '/openai' immediately after '/v1'.
   const openaiIndex = url.indexOf(`/${openai}`, v1Index + 3);
-  // Find which suffix is present in the URL, if any.
   const suffixIndex =
     suffixUsed === openai ? openaiIndex : url.indexOf(`/${suffixUsed}`, v1Index + 3);
 
-  // If '/openai' is found right after '/v1', include it in the base URL.
   if (openaiIndex === v1Index + 3) {
-    // Find the next slash or the end of the URL after '/openai'.
     const nextSlashIndex = url.indexOf('/', openaiIndex + 7);
     if (nextSlashIndex === -1) {
-      // If there is no next slash, the rest of the URL is the base URL.
       baseUrl = url.substring(0, openaiIndex + 7);
     } else {
-      // If there is a next slash, the base URL goes up to but not including the slash.
       baseUrl = url.substring(0, nextSlashIndex);
     }
   } else if (suffixIndex > 0) {
-    // If a suffix is present but not immediately after '/v1', we need to include the reverse proxy pattern.
-    baseUrl = url.substring(0, suffixIndex + suffixUsed.length + 1);
+    baseUrl = url.substring(0, suffixIndex + (suffixUsed?.length ?? 0) + 1);
   }
 
   return baseUrl;
 }
 
-module.exports = extractBaseURL; // Export the function for use in your test file.
+/**
+ * Extracts the base URL (protocol + hostname + port) from the provided URL.
+ * Used primarily for Ollama endpoints to derive the host.
+ * @param fullURL - The full URL.
+ * @returns The base URL (protocol://hostname:port).
+ */
+export function deriveBaseURL(fullURL: string): string {
+  try {
+    const parsedUrl = new URL(fullURL);
+    const protocol = parsedUrl.protocol;
+    const hostname = parsedUrl.hostname;
+    const port = parsedUrl.port;
+
+    if (!protocol || !hostname) {
+      return fullURL;
+    }
+
+    return `${protocol}//${hostname}${port ? `:${port}` : ''}`;
+  } catch (error) {
+    logger.error('Failed to derive base URL', error);
+    return fullURL;
+  }
+}
