@@ -3,6 +3,39 @@ cache: true
 interface:
   agents: false
   runCode: false
+modelSpecs:
+  list:
+    - name: azure-gpt-4o
+      label: GPT-4o
+      default: true
+      description: Everyday broad questions (What is…, How do I…, Explain this in simple terms)
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-4o
+    - name: azure-gpt-4o-mini
+      label: GPT-4o Mini
+      description: Quick simple answers (Summarize in one line, define this term)
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-4o-mini
+    - name: azure-gpt-41
+      label: GPT-4.1
+      description: Detailed complex tasks (multi-step, create a plan, analyze data trends)
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-41
+    - name: azure-gpt-41-mini
+      label: GPT-4.1 Mini
+      description: Fast routine tasks (Repetitive, straightforward, Summarize, rewrite, quick list)
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-41-mini
+    - name: azure-gpt-5
+      label: GPT-5
+      description: Creative technical tasks (Design new workflow, draft technical documentation, brainstorm solutions)
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-5
 mcpServers:
   tavily:
     type: streamable-http
