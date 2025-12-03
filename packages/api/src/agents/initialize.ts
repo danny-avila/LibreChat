@@ -1,4 +1,15 @@
 import { Providers } from '@librechat/agents';
+import type {
+  Agent,
+  TFile,
+  AgentToolResources,
+  TUser,
+  TEndpointOption,
+} from 'librechat-data-provider';
+import type { Response as ServerResponse } from 'express';
+import type { IMongoFile } from '@librechat/data-schemas';
+import type { GenericTool } from '@librechat/agents';
+import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/types';
 import {
   ErrorTypes,
   EModelEndpoint,
@@ -8,61 +19,11 @@ import {
   replaceSpecialVars,
   providerEndpointMap,
 } from 'librechat-data-provider';
-import type { Agent, TFile, AgentToolResources, TUser } from 'librechat-data-provider';
-import type { Response as ServerResponse } from 'express';
-import type { IMongoFile } from '@librechat/data-schemas';
-import type { GenericTool } from '@librechat/agents';
-import type { InitializeResultBase, EndpointDbMethods, ServerRequest } from '~/types';
 import { getModelMaxTokens, extractLibreChatParams, optionalChainWithEmptyCheck } from '~/utils';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
-
-/**
- * Function type for processing files
- */
-export type ProcessFilesFunction = (files: IMongoFile[]) => Promise<IMongoFile[]>;
-
-/**
- * Function type for getting files
- */
-export type GetFilesFunction = (
-  filter: unknown,
-  sortOptions: unknown,
-  selectFields: unknown,
-  options?: { userId?: string; agentId?: string },
-) => Promise<TFile[]>;
-
-/**
- * Function type for getting tool files by IDs
- */
-export type GetToolFilesByIdsFunction = (
-  fileIds: string[],
-  toolResourceSet: Set<EToolResources>,
-) => Promise<IMongoFile[]>;
-
-/**
- * Function type for getting conversation files
- */
-export type GetConvoFilesFunction = (conversationId: string) => Promise<string[] | null>;
-
-/**
- * Function type for loading agent tools
- */
-export type LoadAgentToolsFunction = (params: {
-  req: ServerRequest;
-  res: ServerResponse;
-  provider: string;
-  agentId: string;
-  tools: string[];
-  model: string | null;
-  tool_resources: AgentToolResources | undefined;
-}) => Promise<{
-  tools: GenericTool[];
-  toolContextMap: Record<string, unknown>;
-  userMCPAuthMap?: Record<string, Record<string, string>>;
-} | null>;
 
 /**
  * Extended agent type with additional fields needed after initialization
@@ -79,9 +40,10 @@ export type InitializedAgent = Agent & {
 
 /**
  * Parameters for initializing an agent
+ * Matches the CJS signature from api/server/services/Endpoints/agents/agent.js
  */
 export interface InitializeAgentParams {
-  /** Request object (ServerRequest to match primeResources interface) */
+  /** Request object */
   req: ServerRequest;
   /** Response object */
   res: ServerResponse;
@@ -92,51 +54,86 @@ export interface InitializeAgentParams {
   /** Request files */
   requestFiles?: IMongoFile[];
   /** Function to load agent tools */
-  loadTools?: LoadAgentToolsFunction;
-  /** Model parameters (optional, only used for initial agent) */
-  model_parameters?: Record<string, unknown>;
+  loadTools?: (params: {
+    req: ServerRequest;
+    res: ServerResponse;
+    provider: string;
+    agentId: string;
+    tools: string[];
+    model: string | null;
+    tool_resources: AgentToolResources | undefined;
+  }) => Promise<{
+    tools: GenericTool[];
+    toolContextMap: Record<string, unknown>;
+    userMCPAuthMap?: Record<string, Record<string, string>>;
+  } | null>;
+  /** Endpoint option (contains model_parameters and endpoint info) */
+  endpointOption?: Partial<TEndpointOption>;
   /** Set of allowed providers */
   allowedProviders: Set<string>;
   /** Whether this is the initial agent */
   isInitialAgent?: boolean;
-  /** Database methods */
-  db: EndpointDbMethods;
-  /** Function to process files */
-  processFiles: ProcessFilesFunction;
-  /** Function to get files */
-  getFiles: GetFilesFunction;
-  /** Function to get tool files by IDs */
-  getToolFilesByIds: GetToolFilesByIdsFunction;
-  /** Function to get conversation files */
-  getConvoFiles: GetConvoFilesFunction;
+}
+
+/**
+ * Database methods required for agent initialization
+ * All methods come from data-schemas via createMethods()
+ */
+export interface InitializeAgentDbMethods extends EndpointDbMethods {
+  /** Update usage tracking for multiple files */
+  updateFilesUsage: (files: Array<{ file_id: string }>, fileIds?: string[]) => Promise<unknown[]>;
+  /** Get files from database */
+  getFiles: (filter: unknown, sort: unknown, select: unknown, opts?: unknown) => Promise<unknown[]>;
+  /** Get tool files by IDs */
+  getToolFilesByIds: (fileIds: string[], toolSet: Set<EToolResources>) => Promise<unknown[]>;
+}
+
+/**
+ * Dependencies that can be injected (for testing) or will be loaded from context
+ */
+export interface InitializeAgentDeps {
+  /** Database methods (all from data-schemas) */
+  db: InitializeAgentDbMethods;
+  /** Get conversation file IDs */
+  getConvoFiles: (conversationId: string) => Promise<string[] | null>;
 }
 
 /**
  * Initializes an agent for use in requests.
  * Handles file processing, tool loading, provider configuration, and context token calculations.
  *
+ * This function is exported from @librechat/api and replaces the CJS version from
+ * api/server/services/Endpoints/agents/agent.js
+ *
  * @param params - Initialization parameters
+ * @param deps - Optional dependency injection for testing
  * @returns Promise resolving to initialized agent with tools and configuration
  * @throws Error if agent provider is not allowed or if required dependencies are missing
  */
-export async function initializeAgent({
-  req,
-  res,
-  agent,
-  loadTools,
-  requestFiles = [],
-  conversationId,
-  model_parameters,
-  allowedProviders,
-  isInitialAgent = false,
-  db,
-  processFiles,
-  getFiles,
-  getToolFilesByIds,
-  getConvoFiles,
-}: InitializeAgentParams): Promise<InitializedAgent> {
+export async function initializeAgent(
+  params: InitializeAgentParams,
+  deps?: InitializeAgentDeps,
+): Promise<InitializedAgent> {
+  const {
+    req,
+    res,
+    agent,
+    loadTools,
+    requestFiles = [],
+    conversationId,
+    endpointOption,
+    allowedProviders,
+    isInitialAgent = false,
+  } = params;
+
+  if (!deps?.db || !deps?.getConvoFiles) {
+    throw new Error('initializeAgent requires dependencies (db, getConvoFiles) to be passed');
+  }
+
+  const { db, getConvoFiles } = deps;
+
   if (
-    isAgentsEndpoint(req.body.endpoint) &&
+    isAgentsEndpoint(endpointOption?.endpoint) &&
     allowedProviders.size > 0 &&
     !allowedProviders.has(agent.provider)
   ) {
@@ -151,7 +148,7 @@ export async function initializeAgent({
     Object.assign(
       { model: agent.model },
       agent.model_parameters ?? { model: agent.model },
-      isInitialAgent === true ? model_parameters : {},
+      isInitialAgent === true ? endpointOption?.model_parameters : {},
     ),
   );
 
@@ -170,12 +167,12 @@ export async function initializeAgent({
         toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
       }
     }
-    const toolFiles = await getToolFilesByIds(fileIds, toolResourceSet);
+    const toolFiles = (await db.getToolFilesByIds(fileIds, toolResourceSet)) as IMongoFile[];
     if (requestFiles.length || toolFiles.length) {
-      currentFiles = await processFiles(requestFiles.concat(toolFiles));
+      currentFiles = (await db.updateFilesUsage(requestFiles.concat(toolFiles))) as IMongoFile[];
     }
   } else if (isInitialAgent && requestFiles.length) {
-    currentFiles = await processFiles(requestFiles);
+    currentFiles = (await db.updateFilesUsage(requestFiles)) as IMongoFile[];
   }
 
   if (currentFiles && currentFiles.length) {
@@ -193,7 +190,7 @@ export async function initializeAgent({
 
   const { attachments: primedAttachments, tool_resources } = await primeResources({
     req: req as never,
-    getFiles,
+    getFiles: db.getFiles as never,
     appConfig: req.config,
     agentId: agent.id,
     attachments: currentFiles

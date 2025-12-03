@@ -17,9 +17,14 @@ const {
   replaceSpecialVars,
   providerEndpointMap,
 } = require('librechat-data-provider');
-const { getUserKey, getUserKeyValues, checkUserKeyExpiry } = require('~/models');
-const { processFiles } = require('~/server/services/Files/process');
-const { getFiles, getToolFilesByIds } = require('~/models/File');
+const {
+  checkUserKeyExpiry,
+  getToolFilesByIds,
+  getUserKeyValues,
+  updateFilesUsage,
+  getUserKey,
+  getFiles,
+} = require('~/models');
 const { getConvoFiles } = require('~/models/Conversation');
 
 /**
@@ -88,10 +93,10 @@ const initializeAgent = async ({
     }
     const toolFiles = await getToolFilesByIds(fileIds, toolResourceSet);
     if (requestFiles.length || toolFiles.length) {
-      currentFiles = await processFiles(requestFiles.concat(toolFiles));
+      currentFiles = await updateFilesUsage(requestFiles.concat(toolFiles));
     }
   } else if (isInitialAgent && requestFiles.length) {
-    currentFiles = await processFiles(requestFiles);
+    currentFiles = await updateFilesUsage(requestFiles);
   }
 
   if (currentFiles && currentFiles.length) {

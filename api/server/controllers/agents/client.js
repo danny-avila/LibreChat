@@ -39,19 +39,23 @@ const {
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
+const { initializeAgent } = require('@librechat/api');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const {
   getFormattedMemories,
   checkUserKeyExpiry,
+  getToolFilesByIds,
   getUserKeyValues,
+  updateFilesUsage,
   deleteMemory,
   getUserKey,
   setMemory,
+  getFiles,
 } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { checkCapability } = require('~/server/services/Config');
+const { getConvoFiles } = require('~/models/Conversation');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
@@ -549,18 +553,31 @@ class AgentClient extends BaseClient {
       );
     }
 
-    const agent = await initializeAgent({
-      req: this.options.req,
-      res: this.options.res,
-      agent: prelimAgent,
-      allowedProviders,
-      endpointOption: {
-        endpoint:
-          prelimAgent.id !== Constants.EPHEMERAL_AGENT_ID
-            ? EModelEndpoint.agents
-            : memoryConfig.agent?.provider,
+    const agent = await initializeAgent(
+      {
+        req: this.options.req,
+        res: this.options.res,
+        agent: prelimAgent,
+        allowedProviders,
+        endpointOption: {
+          endpoint:
+            prelimAgent.id !== Constants.EPHEMERAL_AGENT_ID
+              ? EModelEndpoint.agents
+              : memoryConfig.agent?.provider,
+        },
       },
-    });
+      {
+        getConvoFiles,
+        db: {
+          getUserKey,
+          getUserKeyValues,
+          checkUserKeyExpiry,
+          getFiles,
+          getToolFilesByIds,
+          updateFilesUsage,
+        },
+      },
+    );
 
     if (!agent) {
       logger.warn(
