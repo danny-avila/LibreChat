@@ -1047,7 +1047,7 @@ class AgentClient extends BaseClient {
       throw new Error('Run not initialized');
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
-    const { req, res, agent } = this.options;
+    const { req, agent } = this.options;
     const appConfig = req.config;
     let endpoint = agent.endpoint;
 
