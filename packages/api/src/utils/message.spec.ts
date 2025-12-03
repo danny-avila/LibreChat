@@ -94,15 +94,17 @@ describe('sanitizeMessageForTransmit', () => {
     expect(result.text).toBe('Hello');
   });
 
-  it('should handle message with empty files array', () => {
+  it('should preserve empty files array (short-circuits mapping for empty arrays)', () => {
     const message = {
       messageId: 'msg-123',
-      files: [],
+      files: [] as { file_id: string }[],
     };
 
     const result = sanitizeMessageForTransmit(message);
 
     expect(result.files).toEqual([]);
+    // Shallow copy behavior: empty arrays skip the map operation, keeping same reference
+    expect(result.files).toBe(message.files);
   });
 
   it('should not modify original message object', () => {

@@ -45,9 +45,11 @@ export function sanitizeFileForTransmit<T extends Partial<TFile>>(
  *   responseMessage: response,
  * });
  */
-export function sanitizeMessageForTransmit<T extends Partial<TMessage>>(message: T): T {
+export function sanitizeMessageForTransmit<T extends Partial<TMessage>>(
+  message: T,
+): Omit<T, (typeof MESSAGE_STRIP_FIELDS)[number]> {
   if (!message) {
-    return message;
+    return message as Omit<T, (typeof MESSAGE_STRIP_FIELDS)[number]>;
   }
 
   const sanitized = { ...message };
@@ -57,7 +59,7 @@ export function sanitizeMessageForTransmit<T extends Partial<TMessage>>(message:
     delete sanitized[field as keyof typeof sanitized];
   }
 
-  // Sanitize files array if present
+  // Explicitly replace the files array with a new sanitized array to avoid mutating nested objects
   if (Array.isArray(sanitized.files) && sanitized.files.length > 0) {
     sanitized.files = sanitized.files.map((file) => sanitizeFileForTransmit(file));
   }
