@@ -1,4 +1,4 @@
-const extractBaseURL = require('./extractBaseURL');
+import { extractBaseURL, deriveBaseURL } from './url';
 
 describe('extractBaseURL', () => {
   test('should extract base URL up to /v1 for standard endpoints', () => {
@@ -33,7 +33,6 @@ describe('extractBaseURL', () => {
     expect(extractBaseURL(url)).toBe(url);
   });
 
-  // Test our JSDoc examples.
   test('should extract base URL up to /v1 for open.ai standard endpoint', () => {
     const url = 'https://open.ai/v1/chat';
     expect(extractBaseURL(url)).toBe('https://open.ai/v1');
@@ -107,5 +106,51 @@ describe('extractBaseURL', () => {
   test('should leave an alternate Azure OpenAI baseURL with placeholders as is', () => {
     const url = 'https://${INSTANCE_NAME}.com/resources/deployments/${DEPLOYMENT_NAME}';
     expect(extractBaseURL(url)).toBe(url);
+  });
+
+  test('should return undefined for null or empty input', () => {
+    expect(extractBaseURL('')).toBe(undefined);
+    // @ts-expect-error testing invalid input
+    expect(extractBaseURL(null)).toBe(undefined);
+    // @ts-expect-error testing invalid input
+    expect(extractBaseURL(undefined)).toBe(undefined);
+  });
+});
+
+describe('deriveBaseURL', () => {
+  test('should extract protocol, hostname and port from a URL', () => {
+    const fullURL = 'https://api.example.com:8080/v1/models';
+    const baseURL = deriveBaseURL(fullURL);
+    expect(baseURL).toBe('https://api.example.com:8080');
+  });
+
+  test('should handle URLs without port', () => {
+    const fullURL = 'https://api.example.com/v1/models';
+    const baseURL = deriveBaseURL(fullURL);
+    expect(baseURL).toBe('https://api.example.com');
+  });
+
+  test('should handle HTTP protocol', () => {
+    const fullURL = 'http://localhost:11434/api/tags';
+    const baseURL = deriveBaseURL(fullURL);
+    expect(baseURL).toBe('http://localhost:11434');
+  });
+
+  test('should handle URLs with paths', () => {
+    const fullURL = 'https://api.ollama.com/v1/chat/completions';
+    const baseURL = deriveBaseURL(fullURL);
+    expect(baseURL).toBe('https://api.ollama.com');
+  });
+
+  test('should return the original URL if parsing fails', () => {
+    const invalidURL = 'not-a-valid-url';
+    const result = deriveBaseURL(invalidURL);
+    expect(result).toBe(invalidURL);
+  });
+
+  test('should handle localhost URLs', () => {
+    const fullURL = 'http://localhost:11434';
+    const baseURL = deriveBaseURL(fullURL);
+    expect(baseURL).toBe('http://localhost:11434');
   });
 });
