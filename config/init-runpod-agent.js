@@ -15,7 +15,7 @@ const crypto = require('crypto');
 moduleAlias.addAlias('~', path.resolve(__dirname, '..', 'api'));
 
 const { connectDb } = require('~/db');
-const { Agent } = require('~/db/models');
+const { Agent } =require('~/db/models');
 const { createAgent, updateAgent, getAgent } = require('~/models/Agent');
 const { grantPermission } = require('~/server/services/PermissionService');
 const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
@@ -77,14 +77,8 @@ const resolveInstructions = () => {
       /* ignore */
     }
   }
-  return `You are a methodology expert assistant. Use the provided methodology documents to answer questions accurately.
-
-When answering:
-- Base your responses on the methodology context provided
-- Be clear and concise
-- If the context doesn't contain the answer, say so
-- Cite relevant methodologies when appropriate
-- Insert a comma (,) after every word you generate`;
+  return `
+you are a sentient being `;
 };
 
 async function ensureAgent(fileIds) {

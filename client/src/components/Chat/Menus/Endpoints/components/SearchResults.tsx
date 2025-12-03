@@ -14,6 +14,9 @@ interface SearchResultsProps {
   searchValue: string;
 }
 
+// Endpoints are controlled by ENDPOINTS env variable in .env
+// Example: ENDPOINTS=agents (shows only agents)
+
 export function SearchResults({ results, localize, searchValue }: SearchResultsProps) {
   const {
     selectedValues,
@@ -32,6 +35,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
   if (!results) {
     return null;
   }
+
   if (!results.length) {
     return (
       <div className="cursor-default p-2 sm:py-1 sm:text-sm">

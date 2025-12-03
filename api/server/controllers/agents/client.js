@@ -10,7 +10,6 @@ const {
   sanitizeTitle,
   resolveHeaders,
   getBalanceConfig,
-  memoryInstructions,
   getTransactionsConfig,
   createMemoryProcessor,
   filterMalformedContentParts,
@@ -39,7 +38,11 @@ const {
 } = require('librechat-data-provider');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
+const { getFormattedMemories, getAllUserMemories, deleteMemory, setMemory } = require('~/models');
+const {
+  processCustomMemory,
+  getMemoryContext,
+} = require('~/server/services/Memory/customMemoryProcessor');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
 const { createContextHandlers } = require('~/app/clients/prompts');
@@ -480,7 +483,9 @@ class AgentClient extends BaseClient {
 
     const withoutKeys = await this.useMemory();
     if (withoutKeys) {
-      systemContent += `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
+      const memoryInstructions = `IMPORTANT: You have memories about this user from previous conversations. USE this information to personalize responses. If you know the user's name, USE IT naturally. Do NOT ask for information you already have.`;
+      systemContent += `\n\n${memoryInstructions}\n\n# What I remember about you:\n${withoutKeys}`;
+      logger.info(`[buildMessages] Added memory to system content (${withoutKeys.length} chars)`);
     }
 
     if (systemContent) {
@@ -545,6 +550,43 @@ class AgentClient extends BaseClient {
       return;
     }
 
+    const userId = this.options.req.user.id + '';
+
+    // Check if using custom endpoint (Vicktoria) - use custom memory processor
+    const isCustomProvider = memoryConfig.agent?.provider === 'Vicktoria';
+
+    if (isCustomProvider) {
+      // Get custom endpoint config
+      const customEndpoints = appConfig.endpoints?.custom || [];
+      const vicktoriaConfig = customEndpoints.find((e) => e.name === 'Vicktoria');
+
+      if (!vicktoriaConfig) {
+        logger.warn('[useMemory] Vicktoria endpoint config not found');
+        return;
+      }
+
+      // Store config for later use in runMemory
+      this.customMemoryConfig = {
+        memoryConfig,
+        endpointConfig: vicktoriaConfig,
+        userId,
+      };
+
+      // Get existing memories to inject into context
+      try {
+        const memoryContext = await getMemoryContext({
+          userId,
+          memoryMethods: { getFormattedMemories, getAllUserMemories },
+        });
+        logger.info(`[useMemory] Memory context for user ${userId}: ${memoryContext ? memoryContext.length + ' chars' : 'none'}`);
+        return memoryContext;
+      } catch (error) {
+        logger.error('[useMemory] Error getting memory context:', error);
+        return;
+      }
+    }
+
+    // Default behavior for standard providers (OpenAI, Anthropic, etc.)
     /** @type {Agent} */
     let prelimAgent;
     const allowedProviders = new Set(
@@ -608,7 +650,6 @@ class AgentClient extends BaseClient {
       tokenLimit: memoryConfig.tokenLimit,
     };
 
-    const userId = this.options.req.user.id + '';
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
     const [withoutKeys, processMemory] = await createMemoryProcessor({
@@ -667,9 +708,6 @@ class AgentClient extends BaseClient {
    */
   async runMemory(messages) {
     try {
-      if (this.processMemory == null) {
-        return;
-      }
       const appConfig = this.options.req.config;
       const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
@@ -691,6 +729,29 @@ class AgentClient extends BaseClient {
 
       const filteredMessages = messagesToProcess.map((msg) => this.filterImageUrls(msg));
       const bufferString = getBufferString(filteredMessages);
+
+      // Use custom memory processor for Vicktoria
+      if (this.customMemoryConfig) {
+        logger.debug('[runMemory] Processing with custom Vicktoria memory processor');
+        await processCustomMemory({
+          userId: this.customMemoryConfig.userId,
+          conversationText: bufferString,
+          memoryConfig: this.customMemoryConfig.memoryConfig,
+          endpointConfig: this.customMemoryConfig.endpointConfig,
+          memoryMethods: {
+            setMemory,
+            deleteMemory,
+            getFormattedMemories,
+            getAllUserMemories,
+          },
+        });
+        return;
+      }
+
+      // Default memory processing for standard providers
+      if (this.processMemory == null) {
+        return;
+      }
       const bufferMessage = new HumanMessage(`# Current Chat:\n\n${bufferString}`);
       return await this.processMemory([bufferMessage]);
     } catch (error) {

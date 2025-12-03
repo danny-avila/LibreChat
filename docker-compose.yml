@@ -1,5 +1,4 @@
 version: "3.8"
-
 services:
   api:
     build:
@@ -33,7 +32,6 @@ services:
       - ./logs:/app/api/logs
     networks:
       - default
-
   meilisearch:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.12.3
@@ -47,7 +45,6 @@ services:
       - ./meili_data_v1.12:/meili_data
     networks:
       - default
-
   vectordb:
     image: pgvector/pgvector:0.8.0-pg15-trixie
     restart: always
@@ -59,7 +56,6 @@ services:
       - pgdata2:/var/lib/postgresql/data
     networks:
       - default
-
   rag_api:
     image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
     restart: always
@@ -74,7 +70,6 @@ services:
       - "${RAG_PORT:-8000}:8000"
     networks:
       - default
-
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
@@ -91,10 +86,23 @@ services:
           memory: 512m
     networks:
       - default
-
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: ollama-init
+    depends_on:
+      - ollama
+    volumes:
+      - ollama:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sleep 5
+        ollama pull nomic-embed-text
+    restart: "no"
+    networks:
+      - default
 networks:
   default:
-
 volumes:
   pgdata2:
   ollama:
