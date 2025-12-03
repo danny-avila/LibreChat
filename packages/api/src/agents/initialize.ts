@@ -9,14 +9,10 @@ import {
   providerEndpointMap,
 } from 'librechat-data-provider';
 import type { Agent, TFile, AgentToolResources, TUser } from 'librechat-data-provider';
+import type { Response as ServerResponse } from 'express';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { GenericTool } from '@librechat/agents';
-import type {
-  InitializeResultBase,
-  EndpointDbMethods,
-  EndpointRequest,
-  ServerRequest,
-} from '~/types';
+import type { InitializeResultBase, EndpointDbMethods, ServerRequest } from '~/types';
 import { getModelMaxTokens, extractLibreChatParams, optionalChainWithEmptyCheck } from '~/utils';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
@@ -55,8 +51,8 @@ export type GetConvoFilesFunction = (conversationId: string) => Promise<string[]
  * Function type for loading agent tools
  */
 export type LoadAgentToolsFunction = (params: {
-  req: ServerRequest | EndpointRequest;
-  res: unknown;
+  req: ServerRequest;
+  res: ServerResponse;
   provider: string;
   agentId: string;
   tools: string[];
@@ -87,8 +83,8 @@ export type InitializedAgent = Agent & {
 export interface InitializeAgentParams {
   /** Request object (ServerRequest to match primeResources interface) */
   req: ServerRequest;
-  /** Response object (minimal interface) */
-  res: unknown;
+  /** Response object */
+  res: ServerResponse;
   /** Agent to initialize */
   agent: Agent;
   /** Conversation ID (optional) */
@@ -229,19 +225,16 @@ export async function initializeAgent({
     agent.provider = overrideProvider;
   }
 
+  const finalModelOptions = {
+    ...modelOptions,
+    model: agent.model,
+  };
+
   const options: InitializeResultBase = await getOptions({
-    req: {
-      user: req.user ?? { id: '' },
-      body: {
-        model: agent.model ?? undefined,
-        endpoint: provider,
-        key: req.body.key,
-      },
-    },
+    req,
+    endpoint: provider,
     appConfig: req.config,
-    model_parameters: modelOptions,
-    overrideEndpoint: provider,
-    overrideModel: agent.model ?? undefined,
+    model_parameters: finalModelOptions,
     db,
   });
 

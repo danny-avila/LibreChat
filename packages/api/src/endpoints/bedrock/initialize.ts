@@ -36,10 +36,11 @@ import type { BaseInitializeParams, InitializeResultBase, BedrockCredentials } f
  */
 export async function initializeBedrock({
   req,
+  endpoint,
   model_parameters,
-  overrideModel,
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
+  void endpoint;
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
@@ -49,12 +50,12 @@ export async function initializeBedrock({
     PROXY,
   } = process.env;
 
-  const expiresAt = req.body.key;
+  const { key: expiresAt } = req.body;
   const isUserProvided = BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED;
 
   let credentials: BedrockCredentials | undefined = isUserProvided
     ? await db
-        .getUserKey({ userId: req.user.id, name: EModelEndpoint.bedrock })
+        .getUserKey({ userId: req.user?.id ?? '', name: EModelEndpoint.bedrock })
         .then((key) => JSON.parse(key) as BedrockCredentials)
     : {
         accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
@@ -79,7 +80,7 @@ export async function initializeBedrock({
   }
 
   const requestOptions: Record<string, unknown> = {
-    model: overrideModel ?? (model_parameters?.model as string | undefined),
+    model: model_parameters?.model as string | undefined,
     region: BEDROCK_AWS_DEFAULT_REGION,
   };
 

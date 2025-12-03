@@ -19,11 +19,12 @@ import { getGoogleConfig } from './llm';
  */
 export async function initializeGoogle({
   req,
+  endpoint,
   appConfig,
   model_parameters,
-  overrideModel,
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
+  void endpoint;
   const { GOOGLE_KEY, GOOGLE_REVERSE_PROXY, GOOGLE_AUTH_HEADER, PROXY } = process.env;
   const isUserProvided = GOOGLE_KEY === 'user_provided';
   const { key: expiresAt } = req.body;
@@ -31,7 +32,7 @@ export async function initializeGoogle({
   let userKey = null;
   if (expiresAt && isUserProvided) {
     db.checkUserKeyExpiry(expiresAt, EModelEndpoint.google);
-    userKey = await db.getUserKey({ userId: req.user.id, name: EModelEndpoint.google });
+    userKey = await db.getUserKey({ userId: req.user?.id, name: EModelEndpoint.google });
   }
 
   let serviceKey: Record<string, unknown> = {};
@@ -85,10 +86,6 @@ export async function initializeGoogle({
     modelOptions: model_parameters ?? {},
     ...clientOptions,
   };
-
-  if (overrideModel && clientOptions.modelOptions) {
-    clientOptions.modelOptions.model = overrideModel;
-  }
 
   return getGoogleConfig(credentials, clientOptions);
 }

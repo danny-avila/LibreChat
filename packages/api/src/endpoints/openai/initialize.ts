@@ -18,22 +18,16 @@ import { getOpenAIConfig } from './config';
  */
 export async function initializeOpenAI({
   req,
+  endpoint,
   appConfig,
-  overrideModel,
   model_parameters,
-  overrideEndpoint,
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
   const { PROXY, OPENAI_API_KEY, AZURE_API_KEY, OPENAI_REVERSE_PROXY, AZURE_OPENAI_BASEURL } =
     process.env;
 
   const { key: expiresAt } = req.body;
-  const modelName = overrideModel ?? req.body.model;
-  const endpoint = overrideEndpoint ?? req.body.endpoint;
-
-  if (!endpoint) {
-    throw new Error('Endpoint is required');
-  }
+  const modelName = model_parameters?.model as string | undefined;
 
   const credentials = {
     [EModelEndpoint.openAI]: OPENAI_API_KEY,
@@ -51,7 +45,7 @@ export async function initializeOpenAI({
   let userValues: UserKeyValues | null = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
     db.checkUserKeyExpiry(expiresAt, endpoint);
-    userValues = await db.getUserKeyValues({ userId: req.user.id, name: endpoint });
+    userValues = await db.getUserKeyValues({ userId: req.user?.id ?? '', name: endpoint });
   }
 
   let apiKey = userProvidesKey
@@ -131,7 +125,7 @@ export async function initializeOpenAI({
   const modelOptions = {
     ...(model_parameters ?? {}),
     model: modelName,
-    user: req.user.id,
+    user: req.user?.id,
   };
 
   const finalClientOptions: OpenAIConfigOptions = {

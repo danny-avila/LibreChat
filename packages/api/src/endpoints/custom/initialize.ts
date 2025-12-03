@@ -59,9 +59,9 @@ function buildCustomOptions(
  */
 export async function initializeCustom({
   req,
+  endpoint,
   appConfig,
   model_parameters,
-  overrideEndpoint,
   db,
   fetchModels,
   getLogStores,
@@ -71,11 +71,6 @@ export async function initializeCustom({
   }
 
   const { key: expiresAt } = req.body;
-  const endpoint = overrideEndpoint ?? req.body.endpoint;
-
-  if (!endpoint) {
-    throw new Error('Endpoint is required');
-  }
 
   const endpointConfig = getCustomEndpointConfig({
     endpoint,
@@ -103,7 +98,7 @@ export async function initializeCustom({
   let userValues = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
     db.checkUserKeyExpiry(expiresAt, endpoint);
-    userValues = await db.getUserKeyValues({ userId: req.user.id, name: endpoint });
+    userValues = await db.getUserKeyValues({ userId: req.user?.id ?? '', name: endpoint });
   }
 
   const apiKey = userProvidesKey ? userValues?.apiKey : CUSTOM_API_KEY;
@@ -135,13 +130,13 @@ export async function initializeCustom({
 
   let endpointTokenConfig: EndpointTokenConfig | undefined;
 
+  const userId = req.user?.id ?? '';
+
   const cache = getLogStores(CacheKeys.TOKEN_CONFIG);
   /** tokenConfig is an optional extended property on custom endpoints */
   const hasTokenConfig = (endpointConfig as Record<string, unknown>).tokenConfig != null;
   const tokenKey =
-    !hasTokenConfig && (userProvidesKey || userProvidesURL)
-      ? `${endpoint}:${req.user.id}`
-      : endpoint;
+    !hasTokenConfig && (userProvidesKey || userProvidesURL) ? `${endpoint}:${userId}` : endpoint;
 
   const cachedConfig =
     !hasTokenConfig &&
@@ -156,7 +151,7 @@ export async function initializeCustom({
     endpointConfig.models?.fetch &&
     !endpointTokenConfig
   ) {
-    await fetchModels({ apiKey, baseURL, name: endpoint, user: req.user.id, tokenKey });
+    await fetchModels({ apiKey, baseURL, name: endpoint, user: userId, tokenKey });
     endpointTokenConfig = (await cache.get(tokenKey)) as EndpointTokenConfig | undefined;
   }
 
@@ -168,12 +163,11 @@ export async function initializeCustom({
     ...customOptions,
   };
 
-  const modelOptions = model_parameters ?? {};
+  const modelOptions = { ...(model_parameters ?? {}), user: userId };
   const finalClientOptions = {
     modelOptions,
     ...clientOptions,
   };
-  (finalClientOptions.modelOptions as Record<string, unknown>).user = req.user.id;
 
   const options = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
   if (options != null) {

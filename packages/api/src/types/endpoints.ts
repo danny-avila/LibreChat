@@ -1,38 +1,9 @@
 import type { ClientOptions, OpenAIClientOptions } from '@librechat/agents';
 import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import type { EndpointTokenConfig } from '~/types';
+import type { EndpointTokenConfig, ServerRequest } from '~/types';
 
 export type TCustomEndpointsConfig = Partial<{ [key: string]: Omit<TEndpoint, 'order'> }>;
-
-/**
- * Minimal user data required for endpoint initialization
- */
-export interface EndpointUser {
-  id: string;
-  email?: string;
-  name?: string;
-  username?: string;
-}
-
-/**
- * Minimal request body data required for endpoint initialization
- */
-export interface EndpointRequestBody {
-  model?: string;
-  endpoint?: string;
-  /** User key expiration timestamp */
-  key?: string;
-}
-
-/**
- * Minimal request data required for endpoint initialization
- * This abstracts away Express-specific types while providing necessary data
- */
-export interface EndpointRequest {
-  user: EndpointUser;
-  body: EndpointRequestBody;
-}
 
 /**
  * Interface for user key values retrieved from the database
@@ -103,17 +74,15 @@ export type GetLogStoresFunction = (key: string) => TokenConfigCache;
  */
 export interface BaseInitializeParams {
   /** Request data containing user and body information */
-  req: EndpointRequest;
+  req: ServerRequest;
+  /** The endpoint name/identifier (e.g., 'openAI', 'anthropic', 'custom-endpoint-name') */
+  endpoint: string;
   /** Application configuration */
   appConfig?: AppConfig;
-  /** Model parameters from the request (temperature, topP, etc.) */
+  /** Model parameters from the request (includes model, temperature, topP, etc.) */
   model_parameters?: Record<string, unknown>;
   /** Database methods for user key operations */
   db: EndpointDbMethods;
-  /** Override the model from request */
-  overrideModel?: string;
-  /** Override the endpoint from request */
-  overrideEndpoint?: string;
   /** Function to fetch models from the endpoint (required for custom endpoints) */
   fetchModels?: FetchModelsFunction;
   /** Function to get cache stores (required for custom endpoints) */

@@ -11,17 +11,18 @@ import { getLLMConfig } from './llm';
  */
 export async function initializeAnthropic({
   req,
+  endpoint,
   appConfig,
   model_parameters,
-  overrideModel,
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
+  void endpoint;
   const { ANTHROPIC_API_KEY, ANTHROPIC_REVERSE_PROXY, PROXY } = process.env;
-  const expiresAt = req.body.key;
+  const { key: expiresAt } = req.body;
   const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
 
   const anthropicApiKey = isUserProvided
-    ? await db.getUserKey({ userId: req.user.id, name: EModelEndpoint.anthropic })
+    ? await db.getUserKey({ userId: req.user?.id ?? '', name: EModelEndpoint.anthropic })
     : ANTHROPIC_API_KEY;
 
   if (!anthropicApiKey) {
@@ -49,17 +50,12 @@ export async function initializeAnthropic({
   clientOptions = {
     proxy: PROXY ?? undefined,
     reverseProxyUrl: ANTHROPIC_REVERSE_PROXY ?? undefined,
-    modelOptions: model_parameters ?? {},
+    modelOptions: {
+      ...(model_parameters ?? {}),
+      user: req.user?.id,
+    },
     ...clientOptions,
   };
-
-  if (overrideModel && clientOptions.modelOptions) {
-    clientOptions.modelOptions.model = overrideModel;
-  }
-
-  if (clientOptions.modelOptions) {
-    clientOptions.modelOptions.user = req.user.id;
-  }
 
   const result = getLLMConfig(anthropicApiKey, clientOptions);
 
