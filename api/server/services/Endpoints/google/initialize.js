@@ -1,8 +1,12 @@
 const path = require('path');
 const { EModelEndpoint, AuthKeys } = require('librechat-data-provider');
-const { getGoogleConfig, isEnabled, loadServiceKey } = require('@librechat/api');
-const { getUserKey } = require('~/server/services/UserService');
-const { checkUserKeyExpiry } = require('@librechat/api');
+const {
+  isEnabled,
+  loadServiceKey,
+  getGoogleConfig,
+  checkUserKeyExpiry,
+} = require('@librechat/api');
+const { getUserKey } = require('~/models');
 
 const initializeClient = async ({ req, endpointOption, overrideModel }) => {
   const { GOOGLE_KEY, GOOGLE_REVERSE_PROXY, GOOGLE_AUTH_HEADER, PROXY } = process.env;

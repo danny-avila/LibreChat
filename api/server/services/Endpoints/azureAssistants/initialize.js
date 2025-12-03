@@ -1,9 +1,13 @@
 const OpenAI = require('openai');
 const { ProxyAgent } = require('undici');
-const { constructAzureURL, isUserProvided, resolveHeaders } = require('@librechat/api');
+const {
+  isUserProvided,
+  resolveHeaders,
+  constructAzureURL,
+  checkUserKeyExpiry,
+} = require('@librechat/api');
 const { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } = require('librechat-data-provider');
-const { getUserKeyValues, getUserKeyExpiry } = require('~/server/services/UserService');
-const { checkUserKeyExpiry } = require('@librechat/api');
+const { getUserKeyValues, getUserKeyExpiry } = require('~/models');
 
 class Files {
   constructor(client) {

@@ -28,6 +28,7 @@
  */
 
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { checkUserKeyExpiry } = require('@librechat/api');
 const { NodeHttpHandler } = require('@smithy/node-http-handler');
 const { BedrockRuntimeClient } = require('@aws-sdk/client-bedrock-runtime');
 const {
@@ -37,8 +38,7 @@ const {
   bedrockOutputParser,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { getUserKey } = require('~/server/services/UserService');
-const { checkUserKeyExpiry } = require('@librechat/api');
+const { getUserKey } = require('~/models');
 
 const getOptions = async ({ req, overrideModel, endpointOption }) => {
   const {

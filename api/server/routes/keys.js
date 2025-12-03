@@ -1,6 +1,6 @@
 const express = require('express');
 const { updateUserKey, deleteUserKey, getUserKeyExpiry } = require('~/models');
-const { requireJwtAuth } = require('~/server/middleware/');
+const { requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
 

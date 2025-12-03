@@ -4,10 +4,10 @@ const {
   resolveHeaders,
   isUserProvided,
   getOpenAIConfig,
+  checkUserKeyExpiry,
   getAzureCredentials,
 } = require('@librechat/api');
-const { getUserKeyValues } = require('~/server/services/UserService');
-const { checkUserKeyExpiry } = require('@librechat/api');
+const { getUserKeyValues } = require('~/models');
 
 const initializeClient = async ({ req, endpointOption, overrideEndpoint, overrideModel }) => {
   const appConfig = req.config;
