@@ -61,6 +61,7 @@ export default function Header() {
               className={cn(
                 'flex items-center gap-2',
                 !isSmallScreen ? 'transition-all duration-200 ease-in-out' : '',
+                !navVisible && !isSmallScreen ? 'pl-2' : '',
               )}
             >
               <ModelSelector startupConfig={startupConfig} />
