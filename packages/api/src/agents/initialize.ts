@@ -233,7 +233,6 @@ export async function initializeAgent({
   const options: InitializeResultBase = await getOptions({
     req,
     endpoint: provider,
-    appConfig: req.config,
     model_parameters: finalModelOptions,
     db,
   });

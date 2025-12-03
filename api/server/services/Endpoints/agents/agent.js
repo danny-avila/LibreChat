@@ -1,8 +1,10 @@
 const { Providers } = require('@librechat/agents');
 const {
   primeResources,
+  getProviderConfig,
   getModelMaxTokens,
   extractLibreChatParams,
+  generateArtifactsPrompt,
   filterFilesByEndpointConfig,
   optionalChainWithEmptyCheck,
 } = require('@librechat/api');
@@ -15,8 +17,7 @@ const {
   replaceSpecialVars,
   providerEndpointMap,
 } = require('librechat-data-provider');
-const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
-const { getProviderConfig } = require('~/server/services/Endpoints');
+const { getUserKey, getUserKeyValues, checkUserKeyExpiry } = require('~/models');
 const { processFiles } = require('~/server/services/Files/process');
 const { getFiles, getToolFilesByIds } = require('~/models/File');
 const { getConvoFiles } = require('~/models/Conversation');
@@ -135,18 +136,20 @@ const initializeAgent = async ({
     agent.provider = overrideProvider;
   }
 
-  const _endpointOption =
-    isInitialAgent === true
-      ? Object.assign({}, endpointOption, { model_parameters: modelOptions })
-      : { model_parameters: modelOptions };
+  const finalModelOptions = {
+    ...modelOptions,
+    model: agent.model,
+  };
 
   const options = await getOptions({
     req,
-    res,
-    optionsOnly: true,
-    overrideEndpoint: provider,
-    overrideModel: agent.model,
-    endpointOption: _endpointOption,
+    endpoint: provider,
+    model_parameters: finalModelOptions,
+    db: {
+      getUserKey,
+      getUserKeyValues,
+      checkUserKeyExpiry,
+    },
   });
 
   const tokensModel =

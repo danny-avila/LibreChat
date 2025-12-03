@@ -1,6 +1,5 @@
 import type { ClientOptions, OpenAIClientOptions } from '@librechat/agents';
 import type { TEndpoint } from 'librechat-data-provider';
-import type { AppConfig } from '@librechat/data-schemas';
 import type { EndpointTokenConfig, ServerRequest } from '~/types';
 
 export type TCustomEndpointsConfig = Partial<{ [key: string]: Omit<TEndpoint, 'order'> }>;
@@ -49,12 +48,10 @@ export interface EndpointDbMethods {
  * Base parameters for all endpoint initialization functions
  */
 export interface BaseInitializeParams {
-  /** Request data containing user and body information */
+  /** Request data containing user and body information (includes req.config) */
   req: ServerRequest;
   /** The endpoint name/identifier (e.g., 'openAI', 'anthropic', 'custom-endpoint-name') */
   endpoint: string;
-  /** Application configuration */
-  appConfig?: AppConfig;
   /** Model parameters from the request (includes model, temperature, topP, etc.) */
   model_parameters?: Record<string, unknown>;
   /** Database methods for user key operations */

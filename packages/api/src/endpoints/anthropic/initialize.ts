@@ -12,11 +12,11 @@ import { getLLMConfig } from './llm';
 export async function initializeAnthropic({
   req,
   endpoint,
-  appConfig,
   model_parameters,
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
   void endpoint;
+  const appConfig = req.config;
   const { ANTHROPIC_API_KEY, ANTHROPIC_REVERSE_PROXY, PROXY } = process.env;
   const { key: expiresAt } = req.body;
   const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';

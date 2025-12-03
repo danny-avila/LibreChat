@@ -19,10 +19,10 @@ import { getOpenAIConfig } from './config';
 export async function initializeOpenAI({
   req,
   endpoint,
-  appConfig,
   model_parameters,
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
+  const appConfig = req.config;
   const { PROXY, OPENAI_API_KEY, AZURE_API_KEY, OPENAI_REVERSE_PROXY, AZURE_OPENAI_BASEURL } =
     process.env;
 

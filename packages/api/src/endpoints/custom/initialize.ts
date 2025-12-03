@@ -62,10 +62,10 @@ function buildCustomOptions(
 export async function initializeCustom({
   req,
   endpoint,
-  appConfig,
   model_parameters,
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
+  const appConfig = req.config;
   const { key: expiresAt } = req.body;
 
   const endpointConfig = getCustomEndpointConfig({
@@ -176,5 +176,5 @@ export async function initializeCustom({
     (options.llmConfig as Record<string, unknown>)._lc_stream_delay = streamRate;
   }
 
-  return options as InitializeResultBase;
+  return options;
 }

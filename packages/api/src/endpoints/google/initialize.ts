@@ -20,11 +20,11 @@ import { getGoogleConfig } from './llm';
 export async function initializeGoogle({
   req,
   endpoint,
-  appConfig,
   model_parameters,
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
   void endpoint;
+  const appConfig = req.config;
   const { GOOGLE_KEY, GOOGLE_REVERSE_PROXY, GOOGLE_AUTH_HEADER, PROXY } = process.env;
   const isUserProvided = GOOGLE_KEY === 'user_provided';
   const { key: expiresAt } = req.body;

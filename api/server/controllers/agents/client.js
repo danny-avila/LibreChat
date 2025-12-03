@@ -11,6 +11,7 @@ const {
   resolveHeaders,
   createSafeUser,
   getBalanceConfig,
+  getProviderConfig,
   memoryInstructions,
   getTransactionsConfig,
   createMemoryProcessor,
@@ -40,9 +41,15 @@ const {
 } = require('librechat-data-provider');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
+const {
+  getFormattedMemories,
+  checkUserKeyExpiry,
+  getUserKeyValues,
+  deleteMemory,
+  getUserKey,
+  setMemory,
+} = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { getProviderConfig } = require('~/server/services/Endpoints');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { checkCapability } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
@@ -1097,11 +1104,13 @@ class AgentClient extends BaseClient {
 
     const options = await titleProviderConfig.getOptions({
       req,
-      res,
-      optionsOnly: true,
-      overrideEndpoint: endpoint,
-      overrideModel: clientOptions.model,
-      endpointOption: { model_parameters: clientOptions },
+      endpoint,
+      model_parameters: clientOptions,
+      db: {
+        getUserKey,
+        getUserKeyValues,
+        checkUserKeyExpiry,
+      },
     });
 
     let provider = options.provider ?? titleProviderConfig.overrideProvider ?? agent.provider;
