@@ -55,6 +55,11 @@ export function DeleteConversationDialog({
       }
       setMenuOpen?.(false);
       retainView();
+      showToast({
+        message: localize('com_ui_convo_delete_success'),
+        severity: NotificationSeverity.SUCCESS,
+        showIcon: true,
+      });
     },
     onError: () => {
       showToast({

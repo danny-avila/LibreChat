@@ -1,4 +1,5 @@
 const { ObjectId } = require('mongodb');
+const { escapeRegExp } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
   Constants,
@@ -14,7 +15,6 @@ const {
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { PromptGroup, Prompt, AclEntry } = require('~/db/models');
-const { escapeRegExp } = require('~/server/utils');
 
 /**
  * Create a pipeline for the aggregation to get prompt groups
