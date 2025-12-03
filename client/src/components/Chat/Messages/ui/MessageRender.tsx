@@ -12,8 +12,8 @@ import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { fontSizeAtom } from '~/store/fontSize';
 import { MessageContext } from '~/Providers';
-import { useMessageActions } from '~/hooks';
-import { cn, logger } from '~/utils';
+import { useLocalize, useMessageActions } from '~/hooks';
+import { cn, getMessageAriaLabel, logger } from '~/utils';
 import store from '~/store';
 
 type MessageRenderProps = {
@@ -38,6 +38,7 @@ const MessageRender = memo(
     setCurrentEditId,
     isSubmittingFamily = false,
   }: MessageRenderProps) => {
+    const localize = useLocalize();
     const {
       ask,
       edit,
@@ -131,7 +132,7 @@ const MessageRender = memo(
     return (
       <div
         id={msg.messageId}
-        aria-label={`message-${msg.depth}-${msg.messageId}`}
+        aria-label={getMessageAriaLabel(msg, localize)}
         className={cn(
           baseClasses.common,
           isCard ? baseClasses.card : baseClasses.chat,
