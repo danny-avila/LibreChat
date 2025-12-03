@@ -10,6 +10,7 @@ const {
   sanitizeTitle,
   resolveHeaders,
   createSafeUser,
+  initializeAgent,
   getBalanceConfig,
   getProviderConfig,
   memoryInstructions,
@@ -39,7 +40,6 @@ const {
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { initializeAgent } = require('@librechat/api');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
