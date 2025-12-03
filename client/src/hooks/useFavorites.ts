@@ -7,6 +7,9 @@ import { favoritesAtom } from '~/store';
 import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
 
+/** Maximum number of favorites allowed (must match backend MAX_FAVORITES) */
+const MAX_FAVORITES = 50;
+
 /**
  * Hook for managing user favorites (pinned agents and models).
  *
@@ -61,6 +64,23 @@ export default function useFavorites() {
     }
   }, [getFavoritesQuery.data, setFavorites, updateFavoritesMutation.isLoading]);
 
+  const getErrorMessage = useCallback(
+    (error: unknown): string => {
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as {
+          response?: { data?: { code?: string; limit?: number } };
+        };
+        const { code, limit } = axiosError.response?.data ?? {};
+
+        if (code === 'MAX_FAVORITES_EXCEEDED') {
+          return localize('com_ui_max_favorites_reached', { 0: String(limit ?? MAX_FAVORITES) });
+        }
+      }
+      return localize('com_ui_error');
+    },
+    [localize],
+  );
+
   const saveFavorites = useCallback(
     async (newFavorites: typeof favorites) => {
       const cleaned = cleanFavorites(newFavorites);
@@ -70,7 +90,7 @@ export default function useFavorites() {
         await updateFavoritesMutation.mutateAsync(cleaned);
       } catch (error) {
         logger.error('Error updating favorites:', error);
-        showToast({ message: localize('com_ui_error'), status: 'error' });
+        showToast({ message: getErrorMessage(error), status: 'error' });
         // Refetch to resync state with server
         getFavoritesQuery.refetch();
       } finally {
@@ -81,7 +101,7 @@ export default function useFavorites() {
         }, 100);
       }
     },
-    [setFavorites, updateFavoritesMutation, showToast, localize, getFavoritesQuery],
+    [setFavorites, updateFavoritesMutation, showToast, getErrorMessage, getFavoritesQuery],
   );
 
   const addFavoriteAgent = (agentId: string) => {
@@ -147,8 +167,8 @@ export default function useFavorites() {
         try {
           await updateFavoritesMutation.mutateAsync(cleaned);
         } catch (error) {
-          console.error('Error reordering favorites:', error);
-          showToast({ message: localize('com_ui_error'), status: 'error' });
+          logger.error('Error reordering favorites:', error);
+          showToast({ message: getErrorMessage(error), status: 'error' });
           // Refetch to resync state with server
           getFavoritesQuery.refetch();
         } finally {
@@ -158,7 +178,7 @@ export default function useFavorites() {
         }
       }
     },
-    [setFavorites, updateFavoritesMutation, showToast, localize, getFavoritesQuery],
+    [setFavorites, updateFavoritesMutation, showToast, getErrorMessage, getFavoritesQuery],
   );
 
   return {

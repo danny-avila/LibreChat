@@ -1,11 +1,11 @@
-import { useMemo, memo, type FC, useCallback, useEffect, useRef, useContext } from 'react';
+import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
 import { ChevronRight } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
-import { TConversation, PermissionTypes, Permissions } from 'librechat-data-provider';
-import { useLocalize, TranslationKeys, useFavorites, useHasAccess, AuthContext } from '~/hooks';
+import { TConversation } from 'librechat-data-provider';
+import { useLocalize, TranslationKeys, useFavorites, useShowMarketplace } from '~/hooks';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { groupConversationsByDate, cn } from '~/utils';
 import Convo from './Convo';
@@ -90,29 +90,11 @@ const Conversations: FC<ConversationsProps> = ({
   setIsChatsExpanded,
 }) => {
   const localize = useLocalize();
-  const authContext = useContext(AuthContext);
   const search = useRecoilValue(store.search);
   const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
-
-  const hasAccessToAgents = useHasAccess({
-    permissionType: PermissionTypes.AGENTS,
-    permission: Permissions.USE,
-  });
-
-  const hasAccessToMarketplace = useHasAccess({
-    permissionType: PermissionTypes.MARKETPLACE,
-    permission: Permissions.USE,
-  });
-
-  // Check if auth is ready (avoid race conditions)
-  const authReady =
-    authContext?.isAuthenticated !== undefined &&
-    (authContext?.isAuthenticated === false || authContext?.user !== undefined);
-
-  // Show agent marketplace when marketplace permission is enabled, auth is ready, and user has access to agents
-  const showAgentMarketplace = authReady && hasAccessToAgents && hasAccessToMarketplace;
+  const showAgentMarketplace = useShowMarketplace();
 
   // Determine if FavoritesList will render content
   const shouldShowFavorites =

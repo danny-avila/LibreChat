@@ -1034,6 +1034,7 @@
   "com_ui_manage": "Manage",
   "com_ui_marketplace": "Marketplace",
   "com_ui_marketplace_allow_use": "Allow using Marketplace",
+  "com_ui_max_favorites_reached": "Maximum pinned items reached ({{0}}). Unpin an item to add more.",
   "com_ui_max_file_size": "PNG, JPG or JPEG (max {{0}})",
   "com_ui_max_tags": "Maximum number allowed is {{0}}, using latest values.",
   "com_ui_mcp_authenticated_success": "MCP server '{{0}}' authenticated successfully",

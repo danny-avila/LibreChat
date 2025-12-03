@@ -17,7 +17,11 @@ const updateFavoritesController = async (req, res) => {
     }
 
     if (favorites.length > MAX_FAVORITES) {
-      return res.status(400).json({ message: `Maximum ${MAX_FAVORITES} favorites allowed` });
+      return res.status(400).json({
+        code: 'MAX_FAVORITES_EXCEEDED',
+        message: `Maximum ${MAX_FAVORITES} favorites allowed`,
+        limit: MAX_FAVORITES,
+      });
     }
 
     for (const fav of favorites) {
