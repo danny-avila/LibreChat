@@ -1,5 +1,5 @@
 import type { ClientOptions, OpenAIClientOptions } from '@librechat/agents';
-import type { TEndpointOption, TEndpoint } from 'librechat-data-provider';
+import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { EndpointTokenConfig } from '~/types';
 
@@ -105,9 +105,9 @@ export interface BaseInitializeParams {
   /** Request data containing user and body information */
   req: EndpointRequest;
   /** Application configuration */
-  appConfig: AppConfig;
-  /** Endpoint options from the request (model parameters, etc.) */
-  endpointOption: Partial<TEndpointOption>;
+  appConfig?: AppConfig;
+  /** Model parameters from the request (temperature, topP, etc.) */
+  model_parameters?: Record<string, unknown>;
   /** Database methods for user key operations */
   db: EndpointDbMethods;
   /** Override the model from request */

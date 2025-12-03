@@ -3,12 +3,12 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase } from '~/types';
-import { getCustomEndpointConfig } from '~/app/config';
 import { initializeAnthropic } from './anthropic/initialize';
 import { initializeBedrock } from './bedrock/initialize';
 import { initializeCustom } from './custom/initialize';
 import { initializeGoogle } from './google/initialize';
 import { initializeOpenAI } from './openai/initialize';
+import { getCustomEndpointConfig } from '~/app/config';
 
 /**
  * Type for initialize functions
@@ -66,7 +66,7 @@ export function getProviderConfig({
   appConfig,
 }: {
   provider: string;
-  appConfig: AppConfig;
+  appConfig?: AppConfig;
 }): ProviderConfigResult {
   let getOptions = providerConfigMap[provider];
   let overrideProvider = provider;

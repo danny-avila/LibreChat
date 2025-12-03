@@ -36,7 +36,7 @@ import type { BaseInitializeParams, InitializeResultBase, BedrockCredentials } f
  */
 export async function initializeBedrock({
   req,
-  endpointOption,
+  model_parameters,
   overrideModel,
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
@@ -79,7 +79,7 @@ export async function initializeBedrock({
   }
 
   const requestOptions: Record<string, unknown> = {
-    model: overrideModel ?? endpointOption?.model,
+    model: overrideModel ?? (model_parameters?.model as string | undefined),
     region: BEDROCK_AWS_DEFAULT_REGION,
   };
 
@@ -87,7 +87,7 @@ export async function initializeBedrock({
 
   const llmConfig = bedrockOutputParser(
     bedrockInputParser.parse(
-      removeNullishValues({ ...requestOptions, ...(endpointOption?.model_parameters ?? {}) }),
+      removeNullishValues({ ...requestOptions, ...(model_parameters ?? {}) }),
     ),
   ) as InitializeResultBase['llmConfig'] & {
     region?: string;

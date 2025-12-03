@@ -20,7 +20,7 @@ import { getGoogleConfig } from './llm';
 export async function initializeGoogle({
   req,
   appConfig,
-  endpointOption,
+  model_parameters,
   overrideModel,
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
@@ -65,9 +65,9 @@ export async function initializeGoogle({
   let clientOptions: GoogleConfigOptions = {};
 
   /** @type {undefined | TBaseEndpoint} */
-  const allConfig = appConfig.endpoints?.all;
+  const allConfig = appConfig?.endpoints?.all;
   /** @type {undefined | TBaseEndpoint} */
-  const googleConfig = appConfig.endpoints?.[EModelEndpoint.google];
+  const googleConfig = appConfig?.endpoints?.[EModelEndpoint.google];
 
   if (googleConfig) {
     clientOptions.streamRate = googleConfig.streamRate;
@@ -82,12 +82,7 @@ export async function initializeGoogle({
     reverseProxyUrl: GOOGLE_REVERSE_PROXY ?? undefined,
     authHeader: isEnabled(GOOGLE_AUTH_HEADER) ?? undefined,
     proxy: PROXY ?? undefined,
-    ...clientOptions,
-    ...endpointOption,
-  };
-
-  clientOptions = {
-    modelOptions: endpointOption?.model_parameters ?? {},
+    modelOptions: model_parameters ?? {},
     ...clientOptions,
   };
 

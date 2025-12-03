@@ -12,7 +12,7 @@ import { getLLMConfig } from './llm';
 export async function initializeAnthropic({
   req,
   appConfig,
-  endpointOption,
+  model_parameters,
   overrideModel,
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
@@ -35,7 +35,7 @@ export async function initializeAnthropic({
   let clientOptions: AnthropicConfigOptions = {};
 
   /** @type {undefined | TBaseEndpoint} */
-  const anthropicConfig = appConfig.endpoints?.[EModelEndpoint.anthropic];
+  const anthropicConfig = appConfig?.endpoints?.[EModelEndpoint.anthropic];
 
   if (anthropicConfig) {
     clientOptions = {
@@ -44,12 +44,12 @@ export async function initializeAnthropic({
     };
   }
 
-  const allConfig = appConfig.endpoints?.all;
+  const allConfig = appConfig?.endpoints?.all;
 
   clientOptions = {
     proxy: PROXY ?? undefined,
     reverseProxyUrl: ANTHROPIC_REVERSE_PROXY ?? undefined,
-    modelOptions: endpointOption?.model_parameters ?? {},
+    modelOptions: model_parameters ?? {},
     ...clientOptions,
   };
 

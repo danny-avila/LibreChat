@@ -20,7 +20,7 @@ export async function initializeOpenAI({
   req,
   appConfig,
   overrideModel,
-  endpointOption,
+  model_parameters,
   overrideEndpoint,
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
@@ -68,7 +68,7 @@ export async function initializeOpenAI({
   };
 
   const isAzureOpenAI = endpoint === EModelEndpoint.azureOpenAI;
-  const azureConfig = isAzureOpenAI && appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
+  const azureConfig = isAzureOpenAI && appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
   let isServerless = false;
 
   if (isAzureOpenAI && azureConfig) {
@@ -129,7 +129,7 @@ export async function initializeOpenAI({
   }
 
   const modelOptions = {
-    ...endpointOption.model_parameters,
+    ...(model_parameters ?? {}),
     model: modelName,
     user: req.user.id,
   };
@@ -146,8 +146,8 @@ export async function initializeOpenAI({
     (options as InitializeResultBase).useLegacyContent = true;
   }
 
-  const openAIConfig = appConfig.endpoints?.[EModelEndpoint.openAI];
-  const allConfig = appConfig.endpoints?.all;
+  const openAIConfig = appConfig?.endpoints?.[EModelEndpoint.openAI];
+  const allConfig = appConfig?.endpoints?.all;
   const azureRate = modelName?.includes('gpt-4') ? 30 : 17;
 
   let streamRate: number | undefined;

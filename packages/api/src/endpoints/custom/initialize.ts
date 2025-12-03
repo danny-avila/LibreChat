@@ -19,7 +19,7 @@ const { PROXY } = process.env;
  */
 function buildCustomOptions(
   endpointConfig: Partial<TEndpoint>,
-  appConfig: AppConfig,
+  appConfig?: AppConfig,
   endpointTokenConfig?: Record<string, unknown>,
 ) {
   const customOptions: Record<string, unknown> = {
@@ -40,7 +40,7 @@ function buildCustomOptions(
     endpointTokenConfig,
   };
 
-  const allConfig = appConfig.endpoints?.all;
+  const allConfig = appConfig?.endpoints?.all;
   if (allConfig) {
     customOptions.streamRate = allConfig.streamRate;
   }
@@ -60,7 +60,7 @@ function buildCustomOptions(
 export async function initializeCustom({
   req,
   appConfig,
-  endpointOption,
+  model_parameters,
   overrideEndpoint,
   db,
   fetchModels,
@@ -166,10 +166,9 @@ export async function initializeCustom({
     reverseProxyUrl: baseURL ?? null,
     proxy: PROXY ?? null,
     ...customOptions,
-    ...endpointOption,
   };
 
-  const modelOptions = endpointOption?.model_parameters ?? {};
+  const modelOptions = model_parameters ?? {};
   const finalClientOptions = {
     modelOptions,
     ...clientOptions,
