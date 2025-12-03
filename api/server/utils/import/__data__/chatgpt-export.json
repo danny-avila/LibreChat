@@ -1,0 +1,1224 @@
+[
+  {
+    "title": "Conversation 1. Web Search",
+    "create_time": 1704629915.775304,
+    "update_time": 1704717442.442031,
+    "mapping": {
+      "6d251922-28a1-48a5-af9f-687fab4184a8": {
+        "id": "6d251922-28a1-48a5-af9f-687fab4184a8",
+        "message": {
+          "id": "6d251922-28a1-48a5-af9f-687fab4184a8",
+          "author": {
+            "role": "system",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": null,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [""]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 0.0,
+          "metadata": {
+            "is_visually_hidden_from_conversation": true
+          },
+          "recipient": "all"
+        },
+        "parent": "7a4306a5-8df1-4e69-9469-98e7619801db",
+        "children": ["bbb277e8-11d0-44f4-86c9-01dc3027228a"]
+      },
+      "7a4306a5-8df1-4e69-9469-98e7619801db": {
+        "id": "7a4306a5-8df1-4e69-9469-98e7619801db",
+        "message": null,
+        "parent": null,
+        "children": ["6d251922-28a1-48a5-af9f-687fab4184a8"]
+      },
+      "bbb277e8-11d0-44f4-86c9-01dc3027228a": {
+        "id": "bbb277e8-11d0-44f4-86c9-01dc3027228a",
+        "message": {
+          "id": "bbb277e8-11d0-44f4-86c9-01dc3027228a",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1704629915.776371,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": ["What is the fuel consumption of vw  transporter with 8 people in l/km"]
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 1.0,
+          "metadata": {
+            "finish_details": {
+              "type": "unknown"
+            },
+            "citations": [],
+            "voice_mode_message": false,
+            "timestamp_": "absolute",
+            "message_type": null
+          },
+          "recipient": "all"
+        },
+        "parent": "6d251922-28a1-48a5-af9f-687fab4184a8",
+        "children": ["412dd50f-40c9-4f21-9102-fe148eb41a0b"]
+      },
+      "412dd50f-40c9-4f21-9102-fe148eb41a0b": {
+        "id": "412dd50f-40c9-4f21-9102-fe148eb41a0b",
+        "message": {
+          "id": "412dd50f-40c9-4f21-9102-fe148eb41a0b",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1704629939.839052,
+          "update_time": null,
+          "content": {
+            "content_type": "code",
+            "language": "unknown",
+            "text": "search(\"Volkswagen Transporter fuel consumption with 8 people l/km\")"
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100265]
+            },
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "bbb277e8-11d0-44f4-86c9-01dc3027228a",
+            "timestamp_": "absolute"
+          },
+          "recipient": "browser"
+        },
+        "parent": "bbb277e8-11d0-44f4-86c9-01dc3027228a",
+        "children": ["374bbcc8-2013-4387-8cd8-3e64abbd60ca"]
+      },
+      "374bbcc8-2013-4387-8cd8-3e64abbd60ca": {
+        "id": "374bbcc8-2013-4387-8cd8-3e64abbd60ca",
+        "message": {
+          "id": "374bbcc8-2013-4387-8cd8-3e64abbd60ca",
+          "author": {
+            "role": "tool",
+            "name": "browser",
+            "metadata": {}
+          },
+          "create_time": 1704629939.840484,
+          "update_time": null,
+          "content": {
+            "content_type": "tether_browsing_display",
+            "result": "# \u30100\u2020Volkswagen Transporter MPG - Actual MPG from 528 Volkswagen ... - Fuelly\u2020www.fuelly.com\u3011\n528 Volkswagen Transporters have provided 7.3 million miles of real world fuel economy & MPG data. Click here to view all the Volkswagen Transporters currently participating in our fuel tracking program. 2020. 22.0 Avg MPG. 3 Vehicles.\n# \u30101\u20202020 Volkswagen Transporter MPG - Actual MPG from 3 2020 ... - Fuelly\u2020www.fuelly.com\u3011\n2020 Volkswagen Transporter 2,0L L4 DIESEL Automatic Dual Clutch 7 Speed Standard Passenger Van Added Dec 2020 \u2022 60 Fuel-ups. Property of oleg_r_vitvitskiy . 21.8 Avg MPG. ... A simple & effecive way to track fuel consumption Easy to understand the real cost of your vehicle. Benefits.\n# \u30102\u20202022 Volkswagen Multivan (T7) specs, Fuel consumption, Dimensions\u2020www.auto-data.net\u3011\nVolkswagen Multivan (T7) | Technical Specs, Fuel consumption, Space, Volume and weights, Power, Maximum speed, Torque, Acceleration 0 - 100 km/h, Engine displacement, Drive wheel, Tires size ... 9.4 sec, 0-60 mph: 8.9 sec Fuel consumption: 7.6-7.7 l/100 km | 31 - 31 US mpg | 37 - 37 UK mpg | 13 - 13 km/l: 2.0 TDI (150 Hp) DSG 2022 - Maximum ...\n# \u30103\u2020Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP Specs\u2020www.ultimatespecs.com\u3011\n41 MPG 5.7 L/100 km 50 MPG UK: Fuel Consumption - Economy - City: 31 MPG 7.5 L/100 km 38 MPG UK: Range : 679 miles / 1093 km: Fuel Tank Capacity : ... The 2021 Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP top speed is 155 Km/h / 96 mph. Is 2021 Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP All Wheel Drive (AWD)? No, the 2021 Volkswagen ...\n# \u30104\u2020Gas Mileage of 2021 Vehicles by Volkswagen - FuelEconomy.gov\u2020www.fueleconomy.gov\u3011\nHighway MPG: 23. highway. 5.3 gals/ 100 miles. 2021 Volkswagen Atlas 4 cyl, 2.0 L, Automatic (S8) Regular Gasoline. Not Available.\n# \u30105\u20202019 Volkswagen Transporter MPG - Actual MPG from 6 2019 ... - Fuelly\u2020www.fuelly.com\u3011\n2019 Volkswagen Transporter 2,0L L4 DIESEL Automatic Dual Clutch 7 Speed Standard Passenger Van Added Oct 2020 \u2022 12 Fuel-ups. Property of Amarokian . 27.0 Avg MPG. Recent Activity. from other Volkswagen Transporter vehicles . ... Get an accurate view of your vehicles fuel economy;\n# \u30106\u2020Volkswagen Transporter van review (2023) - Parkers\u2020www.parkers.co.uk\u3011\nThis 2023 VW Transporter review covers the T6 and T6.1 versions of this popular medium van, originally launched in 2015 then updated with a major facelift (known as the Transporter 6.1) in 2019.. And while this sixth-generation model is closely related to the previous VW Transporter T5 under the skin, significant gains have been made in the areas of running costs, driver comfort and safety.\n# \u30107\u2020Volkswagen Transporter Review - Drive\u2020www.drive.com.au\u3011\nHelping the Volkswagen Transporter claim a combined cycle fuel consumption figure of 8.2 litres per 100km, the seven-speed auto is also up by between one and three ratios on its main rivals ...\n# \u30108\u2020VW Van Fuel Consumption and Residual Values | VW Vans - Volkswagen Vans\u2020www.volkswagen-vans.co.uk\u3011\nResidual value after 3 year/ 60,000 miles \u20602. Volkswagen Crafter CR30 Startline MWB FWD 2.0 TDI 102 PS. \u00a37,975 / 31.44 % \u2060. 2. Mercedes-Benz Sprinter Light Commercial 316 L1 3.5t 2.1CDi 163. \u00a39,750 / 29.53% \u2060. 2. Ford Transit Light Commercial 290 L2 2.0EcoBlue 130 Trend Medium Roof. \u00a38,350 / 29.35% \u2060.\n# \u30109\u2020Volkswagen | Technical Specs, Fuel consumption, Dimensions\u2020www.auto-data.net\u3011\nThe 1.8 T has 5 valves per cylinder - 3 intake and 2 exhaust. Dacia Ford GMC Haval Honda Hummer Jaguar Jeep Koenigsegg Lada Lamborghini Lancia Lexus Maserati. Volkswagen | Technical Specs, Fuel consumption, Dimensions, Power, Maximum speed, Torque, Acceleration 0 - 100 km/h, Engine displacement, Drive wheel, Tires size, Body type, Doors, Seats.\n# \u301010\u20202018 Volkswagen Transporter MPG - Actual MPG from 15 2018 ... - Fuelly\u2020www.fuelly.com\u3011\n2018 Volkswagen Transporter 2,0L L4 DIESEL Automatic Dual Clutch 7 Speed Standard Passenger Van Added Jul 2018 \u2022 101 Fuel-ups. Property of hwarang73 . 23.1 Avg MPG. Pinky. ... A simple & effecive way to track fuel consumption Easy to understand the real cost of your vehicle. Benefits.\n# \u301011\u2020Gas Mileage of 2022 Vehicles by Volkswagen - FuelEconomy.gov\u2020www.fueleconomy.gov\u3011\nWe can help you calculate and track your fuel economy. MPG Estimates from Others; MPG estimates from drivers like you! Advanced Cars & Fuels. ... 2022 Volkswagen Taos 4 cyl, 1.5 L, Automatic 8-spd Regular Gasoline: View Estimates How can I share my MPG? Combined MPG: 31. combined. city/highway. MPG. City MPG: 28. city. Highway MPG: 36.\n# \u301012\u20202021 Volkswagen Multivan (T7) 1.4 eHybrid (218 Hp) DSG\u2020www.auto-data.net\u3011\nWhat is the fuel economy, Volkswagen Multivan (T7) 1.4 eHybrid (218 Hp) DSG? 1.5 l/100 km 156.81 US mpg 188.32 UK mpg 66.67 km/l: How ECO is the car, Volkswagen Multivan 1.4 eHybrid (218 Hp) DSG? 34 g/km CO 2 Euro 6d-ISC-FCM: What is the range of pure electric driving, 1.4 eHybrid (218 Hp) DSG?\n# \u301013\u2020Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP Specs\u2020www.ultimatespecs.com\u3011\n35 MPG 6.7 L/100 km 42 MPG UK: Fuel Consumption - Economy - Open road: 40 MPG 5.9 L/100 km 48 MPG UK: Fuel Consumption - Economy - City: 30 ... The Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP top speed is 182 Km/h / 113 mph. Is Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP All Wheel Drive (AWD)? No, the Volkswagen Transporter T6.1 L2H1 2.0 ...\n# \u301014\u2020Volkswagen Transporter Review (2024) | Autocar\u2020www.autocar.co.uk\u3011\nStill, a van\u2019s a van and, ergonomically at least, this one doesn\u2019t do much differently from any other. Auxiliary heating system for the second-row seats is a \u00a3330 option, controlled from this ...\n# \u301015\u20202019 Volkswagen Multivan (T6) 2.0 TDI (150 Hp)\u2020www.auto-data.net\u3011\n14.49 - 13.89 km/l: How ECO is the car, Volkswagen Multivan 2.0 TDI (150 Hp)? 181-189 g/km CO 2 Euro 6d-Temp: How fast is the car, 2019 Multivan (T6) 2.0 TDI (150 Hp)? ... 16.39 - 15.87 km/l: Fuel consumption (economy) - combined: 6.9-7.2 l/100 km 34.09 - 32.67 US mpg 40.94 - 39.23 UK mpg 14.49 - 13.89 km/l: CO 2 emissions: 181-189 g/km : Fuel ...\n# \u301016\u2020Fuel Capacity & Consumption Of A Volkswagen (All Models) - Vehicle Help\u2020vehiclehelp.com\u3011\nThe average fuel capacity of all Volkswagen vehicles is 17.2 gallons, and the average consumption is 38 MPG. The most fuel-efficient model is the Volkswagen ID.4, and the Volkswagen Atlas has the worst fuel economy. Depending on your requirements, you can buy a smaller, lighter-on-fuel Volkswagen or a bigger, heavier-on-fuel model.\n# \u301017\u2020Volkswagen Type 2 - Wikipedia\u2020en.wikipedia.org\u3011\nThe Volkswagen Type 2 is a forward control light commercial vehicle introduced in 1950 by the German automaker Volkswagen as its second car model.Known officially (depending on body type) as the Transporter, Kombi or Microbus, or, informally, as the Volkswagen Station Wagon (US), Bus (also US), Camper (UK) or Bulli (Germany), it was given the factory designation Type 2 as it followed \u2013 and ...\n# \u301018\u20202025 Volkswagen ID.Buzz: What We Know So Far - Car and Driver\u2020www.caranddriver.com\u3011\nPricing and Which One to Buy. The price of the 2025 Volkswagen ID.Buzz is expected to start around $40,000. ID.Buzz. 0 $10k $20k $30k $40k $50k $60k. VW hasn't said how much the ID.Buzz will cost ...\n# \u301019\u2020Boom and Crisis in the One-Product Business - Volkswagen Group\u2020www.volkswagen-group.com\u3011\nFitted out as a 1-tonne delivery van, an estate with a 5 cubic metre loading volume or with seating for up to 9 people, the Transporter is still a much in-demand master of versatility. Its rear-mounted 47 horsepower boxer engine achieves a top speed of 105 km/h, while fuel consumption of 10.4 litres per 100 kilometres keeps running costs down.\nVisible: 0% - 100%",
+            "summary": null,
+            "assets": []
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 0.0,
+          "metadata": {
+            "_cite_metadata": {
+              "citation_format": {
+                "name": "tether_og"
+              },
+              "metadata_list": [
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter MPG - Actual MPG from 528 Volkswagen ... - Fuelly",
+                  "url": "https://www.fuelly.com/car/volkswagen/transporter",
+                  "text": "\n528 Volkswagen Transporters have provided 7.3 million miles of real world fuel economy & MPG data. Click here to view all the Volkswagen Transporters currently participating in our fuel tracking program. 2020. 22.0 Avg MPG. 3 Vehicles.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "2020 Volkswagen Transporter MPG - Actual MPG from 3 2020 ... - Fuelly",
+                  "url": "https://www.fuelly.com/car/volkswagen/transporter/2020",
+                  "text": "\n2020 Volkswagen Transporter 2,0L L4 DIESEL Automatic Dual Clutch 7 Speed Standard Passenger Van Added Dec 2020 \u2022 60 Fuel-ups. Property of oleg_r_vitvitskiy . 21.8 Avg MPG. ... A simple & effecive way to track fuel consumption Easy to understand the real cost of your vehicle. Benefits.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "2022 Volkswagen Multivan (T7) specs, Fuel consumption, Dimensions",
+                  "url": "https://www.auto-data.net/en/volkswagen-multivan-t7-generation-8578",
+                  "text": "\nVolkswagen Multivan (T7) | Technical Specs, Fuel consumption, Space, Volume and weights, Power, Maximum speed, Torque, Acceleration 0 - 100 km/h, Engine displacement, Drive wheel, Tires size ... 9.4 sec, 0-60 mph: 8.9 sec Fuel consumption: 7.6-7.7 l/100 km | 31 - 31 US mpg | 37 - 37 UK mpg | 13 - 13 km/l: 2.0 TDI (150 Hp) DSG 2022 - Maximum ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP Specs",
+                  "url": "https://www.ultimatespecs.com/car-specs/Volkswagen/118424/2021-Volkswagen-Transporter-T61-L2H1-20-TDI-110HP.html",
+                  "text": "\n41 MPG 5.7 L/100 km 50 MPG UK: Fuel Consumption - Economy - City: 31 MPG 7.5 L/100 km 38 MPG UK: Range : 679 miles / 1093 km: Fuel Tank Capacity : ... The 2021 Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP top speed is 155 Km/h / 96 mph. Is 2021 Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP All Wheel Drive (AWD)? No, the 2021 Volkswagen ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Gas Mileage of 2021 Vehicles by Volkswagen - FuelEconomy.gov",
+                  "url": "https://www.fueleconomy.gov/feg/bymake/Volkswagen2021.shtml",
+                  "text": "\nHighway MPG: 23. highway. 5.3 gals/ 100 miles. 2021 Volkswagen Atlas 4 cyl, 2.0 L, Automatic (S8) Regular Gasoline. Not Available.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "2019 Volkswagen Transporter MPG - Actual MPG from 6 2019 ... - Fuelly",
+                  "url": "https://www.fuelly.com/car/volkswagen/transporter/2019",
+                  "text": "\n2019 Volkswagen Transporter 2,0L L4 DIESEL Automatic Dual Clutch 7 Speed Standard Passenger Van Added Oct 2020 \u2022 12 Fuel-ups. Property of Amarokian . 27.0 Avg MPG. Recent Activity. from other Volkswagen Transporter vehicles . ... Get an accurate view of your vehicles fuel economy;\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter van review (2023) - Parkers",
+                  "url": "https://www.parkers.co.uk/vans-pickups/volkswagen/transporter/2015-review/",
+                  "text": "\nThis 2023 VW Transporter review covers the T6 and T6.1 versions of this popular medium van, originally launched in 2015 then updated with a major facelift (known as the Transporter 6.1) in 2019.. And while this sixth-generation model is closely related to the previous VW Transporter T5 under the skin, significant gains have been made in the areas of running costs, driver comfort and safety.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter Review - Drive",
+                  "url": "https://www.drive.com.au/reviews/volkswagen-transporter-review/",
+                  "text": "\nHelping the Volkswagen Transporter claim a combined cycle fuel consumption figure of 8.2 litres per 100km, the seven-speed auto is also up by between one and three ratios on its main rivals ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "VW Van Fuel Consumption and Residual Values | VW Vans - Volkswagen Vans",
+                  "url": "https://www.volkswagen-vans.co.uk/en/finance-offers-and-fleet/fleet/van-life-costs.html",
+                  "text": "\nResidual value after 3 year/ 60,000 miles \u20602. Volkswagen Crafter CR30 Startline MWB FWD 2.0 TDI 102 PS. \u00a37,975 / 31.44 % \u2060. 2. Mercedes-Benz Sprinter Light Commercial 316 L1 3.5t 2.1CDi 163. \u00a39,750 / 29.53% \u2060. 2. Ford Transit Light Commercial 290 L2 2.0EcoBlue 130 Trend Medium Roof. \u00a38,350 / 29.35% \u2060.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen | Technical Specs, Fuel consumption, Dimensions",
+                  "url": "https://www.auto-data.net/en/volkswagen-brand-80",
+                  "text": "\nThe 1.8 T has 5 valves per cylinder - 3 intake and 2 exhaust. Dacia Ford GMC Haval Honda Hummer Jaguar Jeep Koenigsegg Lada Lamborghini Lancia Lexus Maserati. Volkswagen | Technical Specs, Fuel consumption, Dimensions, Power, Maximum speed, Torque, Acceleration 0 - 100 km/h, Engine displacement, Drive wheel, Tires size, Body type, Doors, Seats.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "2018 Volkswagen Transporter MPG - Actual MPG from 15 2018 ... - Fuelly",
+                  "url": "https://www.fuelly.com/car/volkswagen/transporter/2018",
+                  "text": "\n2018 Volkswagen Transporter 2,0L L4 DIESEL Automatic Dual Clutch 7 Speed Standard Passenger Van Added Jul 2018 \u2022 101 Fuel-ups. Property of hwarang73 . 23.1 Avg MPG. Pinky. ... A simple & effecive way to track fuel consumption Easy to understand the real cost of your vehicle. Benefits.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Gas Mileage of 2022 Vehicles by Volkswagen - FuelEconomy.gov",
+                  "url": "https://www.fueleconomy.gov/feg/bymake/Volkswagen2022.shtml",
+                  "text": "\nWe can help you calculate and track your fuel economy. MPG Estimates from Others; MPG estimates from drivers like you! Advanced Cars & Fuels. ... 2022 Volkswagen Taos 4 cyl, 1.5 L, Automatic 8-spd Regular Gasoline: View Estimates How can I share my MPG? Combined MPG: 31. combined. city/highway. MPG. City MPG: 28. city. Highway MPG: 36.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "2021 Volkswagen Multivan (T7) 1.4 eHybrid (218 Hp) DSG",
+                  "url": "https://www.auto-data.net/en/volkswagen-multivan-t7-1.4-ehybrid-218hp-dsg-45272",
+                  "text": "\nWhat is the fuel economy, Volkswagen Multivan (T7) 1.4 eHybrid (218 Hp) DSG? 1.5 l/100 km 156.81 US mpg 188.32 UK mpg 66.67 km/l: How ECO is the car, Volkswagen Multivan 1.4 eHybrid (218 Hp) DSG? 34 g/km CO 2 Euro 6d-ISC-FCM: What is the range of pure electric driving, 1.4 eHybrid (218 Hp) DSG?\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP Specs",
+                  "url": "https://www.ultimatespecs.com/car-specs/Volkswagen/118425/Volkswagen-Transporter-T61-L2H1-20-TDI-150HP.html",
+                  "text": "\n35 MPG 6.7 L/100 km 42 MPG UK: Fuel Consumption - Economy - Open road: 40 MPG 5.9 L/100 km 48 MPG UK: Fuel Consumption - Economy - City: 30 ... The Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP top speed is 182 Km/h / 113 mph. Is Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP All Wheel Drive (AWD)? No, the Volkswagen Transporter T6.1 L2H1 2.0 ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter Review (2024) | Autocar",
+                  "url": "https://www.autocar.co.uk/car-review/volkswagen/transporter",
+                  "text": "\nStill, a van\u2019s a van and, ergonomically at least, this one doesn\u2019t do much differently from any other. Auxiliary heating system for the second-row seats is a \u00a3330 option, controlled from this ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "2019 Volkswagen Multivan (T6) 2.0 TDI (150 Hp)",
+                  "url": "https://www.auto-data.net/en/volkswagen-multivan-t6-2.0-tdi-150hp-36051",
+                  "text": "\n14.49 - 13.89 km/l: How ECO is the car, Volkswagen Multivan 2.0 TDI (150 Hp)? 181-189 g/km CO 2 Euro 6d-Temp: How fast is the car, 2019 Multivan (T6) 2.0 TDI (150 Hp)? ... 16.39 - 15.87 km/l: Fuel consumption (economy) - combined: 6.9-7.2 l/100 km 34.09 - 32.67 US mpg 40.94 - 39.23 UK mpg 14.49 - 13.89 km/l: CO 2 emissions: 181-189 g/km : Fuel ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Fuel Capacity & Consumption Of A Volkswagen (All Models) - Vehicle Help",
+                  "url": "https://vehiclehelp.com/fuel-capacity-consumption-of-a-volkswagen/",
+                  "text": "\nThe average fuel capacity of all Volkswagen vehicles is 17.2 gallons, and the average consumption is 38 MPG. The most fuel-efficient model is the Volkswagen ID.4, and the Volkswagen Atlas has the worst fuel economy. Depending on your requirements, you can buy a smaller, lighter-on-fuel Volkswagen or a bigger, heavier-on-fuel model.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Type 2 - Wikipedia",
+                  "url": "https://en.wikipedia.org/wiki/Volkswagen_Type_2",
+                  "text": "\nThe Volkswagen Type 2 is a forward control light commercial vehicle introduced in 1950 by the German automaker Volkswagen as its second car model.Known officially (depending on body type) as the Transporter, Kombi or Microbus, or, informally, as the Volkswagen Station Wagon (US), Bus (also US), Camper (UK) or Bulli (Germany), it was given the factory designation Type 2 as it followed \u2013 and ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "2025 Volkswagen ID.Buzz: What We Know So Far - Car and Driver",
+                  "url": "https://www.caranddriver.com/volkswagen/id-buzz-microbus",
+                  "text": "\nPricing and Which One to Buy. The price of the 2025 Volkswagen ID.Buzz is expected to start around $40,000. ID.Buzz. 0 $10k $20k $30k $40k $50k $60k. VW hasn't said how much the ID.Buzz will cost ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Boom and Crisis in the One-Product Business - Volkswagen Group",
+                  "url": "https://www.volkswagen-group.com/en/volkswagen-chronicle-17351/1961-to-1972-boom-and-crisis-in-the-one-product-business-17357",
+                  "text": "\nFitted out as a 1-tonne delivery van, an estate with a 5 cubic metre loading volume or with seating for up to 9 people, the Transporter is still a much in-demand master of versatility. Its rear-mounted 47 horsepower boxer engine achieves a top speed of 105 km/h, while fuel consumption of 10.4 litres per 100 kilometres keeps running costs down.\nVisible: 0% - 100%",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Search results for query: 'Volkswagen Transporter fuel consumption with 8 people l/km'",
+                  "url": "",
+                  "text": "# \u30100\u2020Volkswagen Transporter MPG - Actual MPG from 528 Volkswagen ... - Fuelly\u2020www.fuelly.com\u3011\n528 Volkswagen Transporters have provided 7.3 million miles of real world fuel economy & MPG data. Click here to view all the Volkswagen Transporters currently participating in our fuel tracking program. 2020. 22.0 Avg MPG. 3 Vehicles.\n# \u30101\u20202020 Volkswagen Transporter MPG - Actual MPG from 3 2020 ... - Fuelly\u2020www.fuelly.com\u3011\n2020 Volkswagen Transporter 2,0L L4 DIESEL Automatic Dual Clutch 7 Speed Standard Passenger Van Added Dec 2020 \u2022 60 Fuel-ups. Property of oleg_r_vitvitskiy . 21.8 Avg MPG. ... A simple & effecive way to track fuel consumption Easy to understand the real cost of your vehicle. Benefits.\n# \u30102\u20202022 Volkswagen Multivan (T7) specs, Fuel consumption, Dimensions\u2020www.auto-data.net\u3011\nVolkswagen Multivan (T7) | Technical Specs, Fuel consumption, Space, Volume and weights, Power, Maximum speed, Torque, Acceleration 0 - 100 km/h, Engine displacement, Drive wheel, Tires size ... 9.4 sec, 0-60 mph: 8.9 sec Fuel consumption: 7.6-7.7 l/100 km | 31 - 31 US mpg | 37 - 37 UK mpg | 13 - 13 km/l: 2.0 TDI (150 Hp) DSG 2022 - Maximum ...\n# \u30103\u2020Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP Specs\u2020www.ultimatespecs.com\u3011\n41 MPG 5.7 L/100 km 50 MPG UK: Fuel Consumption - Economy - City: 31 MPG 7.5 L/100 km 38 MPG UK: Range : 679 miles / 1093 km: Fuel Tank Capacity : ... The 2021 Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP top speed is 155 Km/h / 96 mph. Is 2021 Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP All Wheel Drive (AWD)? No, the 2021 Volkswagen ...\n# \u30104\u2020Gas Mileage of 2021 Vehicles by Volkswagen - FuelEconomy.gov\u2020www.fueleconomy.gov\u3011\nHighway MPG: 23. highway. 5.3 gals/ 100 miles. 2021 Volkswagen Atlas 4 cyl, 2.0 L, Automatic (S8) Regular Gasoline. Not Available.\n# \u30105\u20202019 Volkswagen Transporter MPG - Actual MPG from 6 2019 ... - Fuelly\u2020www.fuelly.com\u3011\n2019 Volkswagen Transporter 2,0L L4 DIESEL Automatic Dual Clutch 7 Speed Standard Passenger Van Added Oct 2020 \u2022 12 Fuel-ups. Property of Amarokian . 27.0 Avg MPG. Recent Activity. from other Volkswagen Transporter vehicles . ... Get an accurate view of your vehicles fuel economy;\n# \u30106\u2020Volkswagen Transporter van review (2023) - Parkers\u2020www.parkers.co.uk\u3011\nThis 2023 VW Transporter review covers the T6 and T6.1 versions of this popular medium van, originally launched in 2015 then updated with a major facelift (known as the Transporter 6.1) in 2019.. And while this sixth-generation model is closely related to the previous VW Transporter T5 under the skin, significant gains have been made in the areas of running costs, driver comfort and safety.\n# \u30107\u2020Volkswagen Transporter Review - Drive\u2020www.drive.com.au\u3011\nHelping the Volkswagen Transporter claim a combined cycle fuel consumption figure of 8.2 litres per 100km, the seven-speed auto is also up by between one and three ratios on its main rivals ...\n# \u30108\u2020VW Van Fuel Consumption and Residual Values | VW Vans - Volkswagen Vans\u2020www.volkswagen-vans.co.uk\u3011\nResidual value after 3 year/ 60,000 miles \u20602. Volkswagen Crafter CR30 Startline MWB FWD 2.0 TDI 102 PS. \u00a37,975 / 31.44 % \u2060. 2. Mercedes-Benz Sprinter Light Commercial 316 L1 3.5t 2.1CDi 163. \u00a39,750 / 29.53% \u2060. 2. Ford Transit Light Commercial 290 L2 2.0EcoBlue 130 Trend Medium Roof. \u00a38,350 / 29.35% \u2060.\n# \u30109\u2020Volkswagen | Technical Specs, Fuel consumption, Dimensions\u2020www.auto-data.net\u3011\nThe 1.8 T has 5 valves per cylinder - 3 intake and 2 exhaust. Dacia Ford GMC Haval Honda Hummer Jaguar Jeep Koenigsegg Lada Lamborghini Lancia Lexus Maserati. Volkswagen | Technical Specs, Fuel consumption, Dimensions, Power, Maximum speed, Torque, Acceleration 0 - 100 km/h, Engine displacement, Drive wheel, Tires size, Body type, Doors, Seats.\n# \u301010\u20202018 Volkswagen Transporter MPG - Actual MPG from 15 2018 ... - Fuelly\u2020www.fuelly.com\u3011\n2018 Volkswagen Transporter 2,0L L4 DIESEL Automatic Dual Clutch 7 Speed Standard Passenger Van Added Jul 2018 \u2022 101 Fuel-ups. Property of hwarang73 . 23.1 Avg MPG. Pinky. ... A simple & effecive way to track fuel consumption Easy to understand the real cost of your vehicle. Benefits.\n# \u301011\u2020Gas Mileage of 2022 Vehicles by Volkswagen - FuelEconomy.gov\u2020www.fueleconomy.gov\u3011\nWe can help you calculate and track your fuel economy. MPG Estimates from Others; MPG estimates from drivers like you! Advanced Cars & Fuels. ... 2022 Volkswagen Taos 4 cyl, 1.5 L, Automatic 8-spd Regular Gasoline: View Estimates How can I share my MPG? Combined MPG: 31. combined. city/highway. MPG. City MPG: 28. city. Highway MPG: 36.\n# \u301012\u20202021 Volkswagen Multivan (T7) 1.4 eHybrid (218 Hp) DSG\u2020www.auto-data.net\u3011\nWhat is the fuel economy, Volkswagen Multivan (T7) 1.4 eHybrid (218 Hp) DSG? 1.5 l/100 km 156.81 US mpg 188.32 UK mpg 66.67 km/l: How ECO is the car, Volkswagen Multivan 1.4 eHybrid (218 Hp) DSG? 34 g/km CO 2 Euro 6d-ISC-FCM: What is the range of pure electric driving, 1.4 eHybrid (218 Hp) DSG?\n# \u301013\u2020Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP Specs\u2020www.ultimatespecs.com\u3011\n35 MPG 6.7 L/100 km 42 MPG UK: Fuel Consumption - Economy - Open road: 40 MPG 5.9 L/100 km 48 MPG UK: Fuel Consumption - Economy - City: 30 ... The Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP top speed is 182 Km/h / 113 mph. Is Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP All Wheel Drive (AWD)? No, the Volkswagen Transporter T6.1 L2H1 2.0 ...\n# \u301014\u2020Volkswagen Transporter Review (2024) | Autocar\u2020www.autocar.co.uk\u3011\nStill, a van\u2019s a van and, ergonomically at least, this one doesn\u2019t do much differently from any other. Auxiliary heating system for the second-row seats is a \u00a3330 option, controlled from this ...\n# \u301015\u20202019 Volkswagen Multivan (T6) 2.0 TDI (150 Hp)\u2020www.auto-data.net\u3011\n14.49 - 13.89 km/l: How ECO is the car, Volkswagen Multivan 2.0 TDI (150 Hp)? 181-189 g/km CO 2 Euro 6d-Temp: How fast is the car, 2019 Multivan (T6) 2.0 TDI (150 Hp)? ... 16.39 - 15.87 km/l: Fuel consumption (economy) - combined: 6.9-7.2 l/100 km 34.09 - 32.67 US mpg 40.94 - 39.23 UK mpg 14.49 - 13.89 km/l: CO 2 emissions: 181-189 g/km : Fuel ...\n# \u301016\u2020Fuel Capacity & Consumption Of A Volkswagen (All Models) - Vehicle Help\u2020vehiclehelp.com\u3011\nThe average fuel capacity of all Volkswagen vehicles is 17.2 gallons, and the average consumption is 38 MPG. The most fuel-efficient model is the Volkswagen ID.4, and the Volkswagen Atlas has the worst fuel economy. Depending on your requirements, you can buy a smaller, lighter-on-fuel Volkswagen or a bigger, heavier-on-fuel model.\n# \u301017\u2020Volkswagen Type 2 - Wikipedia\u2020en.wikipedia.org\u3011\nThe Volkswagen Type 2 is a forward control light commercial vehicle introduced in 1950 by the German automaker Volkswagen as its second car model.Known officially (depending on body type) as the Transporter, Kombi or Microbus, or, informally, as the Volkswagen Station Wagon (US), Bus (also US), Camper (UK) or Bulli (Germany), it was given the factory designation Type 2 as it followed \u2013 and ...\n# \u301018\u20202025 Volkswagen ID.Buzz: What We Know So Far - Car and Driver\u2020www.caranddriver.com\u3011\nPricing and Which One to Buy. The price of the 2025 Volkswagen ID.Buzz is expected to start around $40,000. ID.Buzz. 0 $10k $20k $30k $40k $50k $60k. VW hasn't said how much the ID.Buzz will cost ...\n# \u301019\u2020Boom and Crisis in the One-Product Business - Volkswagen Group\u2020www.volkswagen-group.com\u3011\nFitted out as a 1-tonne delivery van, an estate with a 5 cubic metre loading volume or with seating for up to 9 people, the Transporter is still a much in-demand master of versatility. Its rear-mounted 47 horsepower boxer engine achieves a top speed of 105 km/h, while fuel consumption of 10.4 litres per 100 kilometres keeps running costs down.\nVisible: 0% - 100%",
+                  "pub_date": null,
+                  "extra": null
+                }
+              ],
+              "original_query": null
+            },
+            "command": "search",
+            "args": ["Volkswagen Transporter fuel consumption with 8 people l/km"],
+            "status": "finished",
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "412dd50f-40c9-4f21-9102-fe148eb41a0b",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "412dd50f-40c9-4f21-9102-fe148eb41a0b",
+        "children": ["36b62905-c942-414a-8ad2-d5d26739efa5"]
+      },
+      "36b62905-c942-414a-8ad2-d5d26739efa5": {
+        "id": "36b62905-c942-414a-8ad2-d5d26739efa5",
+        "message": {
+          "id": "36b62905-c942-414a-8ad2-d5d26739efa5",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1704629939.845544,
+          "update_time": null,
+          "content": {
+            "content_type": "code",
+            "language": "unknown",
+            "text": "mclick([0, 3, 7])"
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100265]
+            },
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "374bbcc8-2013-4387-8cd8-3e64abbd60ca",
+            "timestamp_": "absolute"
+          },
+          "recipient": "browser"
+        },
+        "parent": "374bbcc8-2013-4387-8cd8-3e64abbd60ca",
+        "children": ["b87c7f57-a6f4-4f4f-999f-38bd70981ae0"]
+      },
+      "b87c7f57-a6f4-4f4f-999f-38bd70981ae0": {
+        "id": "b87c7f57-a6f4-4f4f-999f-38bd70981ae0",
+        "message": {
+          "id": "b87c7f57-a6f4-4f4f-999f-38bd70981ae0",
+          "author": {
+            "role": "tool",
+            "name": "browser",
+            "metadata": {}
+          },
+          "create_time": 1704629939.849366,
+          "update_time": null,
+          "content": {
+            "content_type": "tether_quote",
+            "url": "https://www.ultimatespecs.com/car-specs/Volkswagen/118424/2021-Volkswagen-Transporter-T61-L2H1-20-TDI-110HP.html",
+            "domain": "www.ultimatespecs.com",
+            "text": "\nURL: https://www.ultimatespecs.com/car-specs/Volkswagen/118424/2021-Volkswagen-Transporter-T61-L2H1-20-TDI-110HP.html\n\n\n[Image 0: English] \n\n\u30100\u2020 English \u3011 \u30101\u2020 Fran\u00e7ais \u3011 \u30102\u2020 Deutsch \u3011 \u30103\u2020 Svensk \u3011 \u30104\u2020 Portugu\u00eas PT \u3011 \u30105\u2020 Espa\u00f1ol \u3011 \u30106\u2020 \u0440\u0443\u0441\u0441\u043a\u0438\u0439 \u3011 \u30107\u2020 Italiano \u3011 \u30108\u2020 \u0431\u044a\u043b\u0433\u0430\u0440\u0441\u043a\u0438 \u3011 \u30109\u2020 Nederlands \u3011 \u301010\u2020 Polski \u3011 \u301011\u2020 Portugu\u00eas BR \u3011 \u301012\u2020 T\u00fcrk\u00e7e \u3011 \n\n\u301013\u2020 \u3011 \n\n\u301013\u2020 Cars \u3011 \n\n\u301013\u2020 Cars \u3011 \n\n\u301014\u2020 Motos \u3011 \n\n\u301015\u2020 Tractors \u3011 \n\n \u301016\u2020 \u2020www.facebook.com\u3011 \u301017\u2020 \u2020twitter.com\u3011 \n\n< Back \n\n  *     * \u301018\u2020 Cars \u3011 \n    * \u301019\u2020 Electric & Hybrid Cars \u3011 \n    * \u301020\u2020 Compare cars \u3011 \n    * \u301021\u2020 Car Images \u3011 \n    * \u301022\u2020 Advanced Search \u3011 \n\n[Image 1: menu] \n\nIt seems that you have reached a high volume of page views.  \nPlease confirm that you are a human by clicking the box below.  \n\nThank you!   \n\n Send   \n\n## Latest Car Specs\n\n\u301023\u20202023 Cupra Formentor VZ5 2.5 TSI 4Drive\u3011\u301024\u20202023 BMW G21 3 Series Touring LCI 318i Auto\u3011\u301025\u20202024 Lexus LBX 1.5 Hybrid E-Four e-CVT\u3011\u301026\u20202024 Lexus LBX 1.5 Hybrid e-CVT\u3011\n\n\u301027\u20201983 Buick Electra Coupe 1980 Limited 5.0L V8 4-speed Auto\u3011\u301028\u20201981 Buick Electra Coupe 1980 Limited 4.1 V6 4-speed Auto\u3011\u301029\u20201980 Buick Electra Coupe 1980 Limited 4.1 V6 Overdrive 4-speed Auto\u3011\u301030\u20202020 Hyundai i20 (BC3) 1.0 T-GDI 48V 100HP Hybrid DCT\u3011\n\n\u301031\u20202020 Hyundai i20 (BC3) 1.0 T-GDI 48V 100HP Hybrid Auto\u3011\u301032\u20202020 Hyundai i20 (BC3) 1.0 T-GDI 48V 120HP Hybrid DCT\u3011\u301033\u20202020 Hyundai i20 (BC3) 1.0 T-GDI 48V 120HP Hybrid Auto\u3011\u301034\u20202023 Hyundai i20 (BC3) 2023 1.0 T-GDI 48V-Hybrid DCT\u3011\n\n\u301035\u20202023 Hyundai i20 (BC3) 2023 1.0 T-GDI\u3011\u301036\u20202023 Hyundai i20 (BC3) 2023 1.2 MPI\u3011\u301037\u20202023 BYD Seal 83 kWh 530HP AWD\u3011\u301038\u20202023 BYD Seal 83 kWh 313HP\u3011\n\n\u301039\u20202023 BYD Dolphin 60 kWh 204HP\u3011\u301040\u20201992 Alfa Romeo 164 Super V6 Turbo\u3011\u301041\u20202023 BMW G20 3 Series Sedan LCI M340i Mild Hybrid xDrive Auto\u3011\u301042\u20202023 BMW G20 3 Series Sedan LCI 330i xDrive Auto\u3011\n\n\u301043\u20202023 BMW G20 3 Series Sedan LCI 330i Auto\u3011\u301044\u20202023 BMW G20 3 Series Sedan LCI 320i xDrive Auto\u3011\u301045\u20202023 BMW G20 3 Series Sedan LCI 320i Auto\u3011\u301046\u20202023 BMW G20 3 Series Sedan LCI 318i Auto\u3011\n\n\u301047\u20201976 Ford Pinto 2-Door Sedan 1977 2.8 V6 Cruise-O-Matic\u3011\u301048\u20201976 Ford Pinto 2-Door Sedan 1977 2.3 Cruise-O-Matic\u3011\u301049\u20201976 Ford Pinto 2-Door Sedan 1977 2.3\u3011\u301050\u2020View more\u2020ultimatespecs.com\u3011\n\n## Latest Models\n\n\u301051\u2020BMW G21 3 Series Touring LCI\u3011\u301052\u2020Lexus LBX\u3011\u301053\u2020Hyundai i20 (BC3) 2023\u3011\u301054\u2020Hyundai i20 (BC3)\u3011\n\n\u301055\u2020BYD Seal\u3011\u301056\u2020BYD Dolphin\u3011\u301057\u2020BMW G20 3 Series Sedan LCI\u3011\u301058\u2020Ford Pinto 2-Door Sedan 1977\u3011\n\n\u301059\u2020Buick Electra Coupe 1980\u3011\u301060\u2020Ford Pinto 2-Door Sedan 1976\u3011\u301061\u2020Citroen C3 Phase IV\u3011\u301062\u2020Citroen C5 X\u3011\n\n\u301063\u2020Ford Pinto 2-Door Sedan 1975\u3011\u301064\u2020Lancia Delta\u3011\u301065\u2020Ford Pinto 2-Door Sedan 1974\u3011\u301066\u2020Ford Pinto 2-Door Sedan 1973\u3011\n\n\u301067\u2020Peugeot 408\u3011\u301068\u2020Ford Pinto 2-Door Sedan 1972\u3011\u301069\u2020Renault Sc\u00e9nic 5\u3011\u301070\u2020Renault Espace 6\u3011\n\n\u301071\u2020Ford Pinto 2-Door Sedan\u3011\u301072\u2020Renault Austral\u3011\u301073\u2020Mazda RX-8 2008\u3011\u301074\u2020Bentley Bentayga EWB\u3011\n\n\u301075\u2020Bentley Bentayga 2020 Facelift\u3011\u301076\u2020Toyota GR86 2021\u3011\u301077\u2020Fiat Cinquecento\u3011\u301078\u2020Audi A8 L 2022 (D5)\u3011\n\n\u00a92024 Ultimate Specs - The Most Comprehensive Car Specifications Database. Over 46.000 technical specs!! - \u301079\u2020Change consent\u2020javascript:;\u3011 \n\n- Do not share my Personal Information.\n\n- \u301080\u2020 About \u3011- \u301081\u2020 Privacy Policy \u3011- \u301082\u2020 Contact US \u3011",
+            "title": "2021 Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP specs, dimensions"
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 0.0,
+          "metadata": {
+            "_cite_metadata": {
+              "citation_format": {
+                "name": "tether_og"
+              },
+              "metadata_list": [
+                {
+                  "type": "webpage",
+                  "title": "2021 Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP specs, dimensions",
+                  "url": "https://www.ultimatespecs.com/car-specs/Volkswagen/118424/2021-Volkswagen-Transporter-T61-L2H1-20-TDI-110HP.html",
+                  "text": "\nURL: https://www.ultimatespecs.com/car-specs/Volkswagen/118424/2021-Volkswagen-Transporter-T61-L2H1-20-TDI-110HP.html\n\n\n[Image 0: English] \n\n\u30100\u2020 English \u3011 \u30101\u2020 Fran\u00e7ais \u3011 \u30102\u2020 Deutsch \u3011 \u30103\u2020 Svensk \u3011 \u30104\u2020 Portugu\u00eas PT \u3011 \u30105\u2020 Espa\u00f1ol \u3011 \u30106\u2020 \u0440\u0443\u0441\u0441\u043a\u0438\u0439 \u3011 \u30107\u2020 Italiano \u3011 \u30108\u2020 \u0431\u044a\u043b\u0433\u0430\u0440\u0441\u043a\u0438 \u3011 \u30109\u2020 Nederlands \u3011 \u301010\u2020 Polski \u3011 \u301011\u2020 Portugu\u00eas BR \u3011 \u301012\u2020 T\u00fcrk\u00e7e \u3011 \n\n\u301013\u2020 \u3011 \n\n\u301013\u2020 Cars \u3011 \n\n\u301013\u2020 Cars \u3011 \n\n\u301014\u2020 Motos \u3011 \n\n\u301015\u2020 Tractors \u3011 \n\n \u301016\u2020 \u2020www.facebook.com\u3011 \u301017\u2020 \u2020twitter.com\u3011 \n\n< Back \n\n  *     * \u301018\u2020 Cars \u3011 \n    * \u301019\u2020 Electric & Hybrid Cars \u3011 \n    * \u301020\u2020 Compare cars \u3011 \n    * \u301021\u2020 Car Images \u3011 \n    * \u301022\u2020 Advanced Search \u3011 \n\n[Image 1: menu] \n\nIt seems that you have reached a high volume of page views.  \nPlease confirm that you are a human by clicking the box below.  \n\nThank you!   \n\n Send   \n\n## Latest Car Specs\n\n\u301023\u20202023 Cupra Formentor VZ5 2.5 TSI 4Drive\u3011\u301024\u20202023 BMW G21 3 Series Touring LCI 318i Auto\u3011\u301025\u20202024 Lexus LBX 1.5 Hybrid E-Four e-CVT\u3011\u301026\u20202024 Lexus LBX 1.5 Hybrid e-CVT\u3011\n\n\u301027\u20201983 Buick Electra Coupe 1980 Limited 5.0L V8 4-speed Auto\u3011\u301028\u20201981 Buick Electra Coupe 1980 Limited 4.1 V6 4-speed Auto\u3011\u301029\u20201980 Buick Electra Coupe 1980 Limited 4.1 V6 Overdrive 4-speed Auto\u3011\u301030\u20202020 Hyundai i20 (BC3) 1.0 T-GDI 48V 100HP Hybrid DCT\u3011\n\n\u301031\u20202020 Hyundai i20 (BC3) 1.0 T-GDI 48V 100HP Hybrid Auto\u3011\u301032\u20202020 Hyundai i20 (BC3) 1.0 T-GDI 48V 120HP Hybrid DCT\u3011\u301033\u20202020 Hyundai i20 (BC3) 1.0 T-GDI 48V 120HP Hybrid Auto\u3011\u301034\u20202023 Hyundai i20 (BC3) 2023 1.0 T-GDI 48V-Hybrid DCT\u3011\n\n\u301035\u20202023 Hyundai i20 (BC3) 2023 1.0 T-GDI\u3011\u301036\u20202023 Hyundai i20 (BC3) 2023 1.2 MPI\u3011\u301037\u20202023 BYD Seal 83 kWh 530HP AWD\u3011\u301038\u20202023 BYD Seal 83 kWh 313HP\u3011\n\n\u301039\u20202023 BYD Dolphin 60 kWh 204HP\u3011\u301040\u20201992 Alfa Romeo 164 Super V6 Turbo\u3011\u301041\u20202023 BMW G20 3 Series Sedan LCI M340i Mild Hybrid xDrive Auto\u3011\u301042\u20202023 BMW G20 3 Series Sedan LCI 330i xDrive Auto\u3011\n\n\u301043\u20202023 BMW G20 3 Series Sedan LCI 330i Auto\u3011\u301044\u20202023 BMW G20 3 Series Sedan LCI 320i xDrive Auto\u3011\u301045\u20202023 BMW G20 3 Series Sedan LCI 320i Auto\u3011\u301046\u20202023 BMW G20 3 Series Sedan LCI 318i Auto\u3011\n\n\u301047\u20201976 Ford Pinto 2-Door Sedan 1977 2.8 V6 Cruise-O-Matic\u3011\u301048\u20201976 Ford Pinto 2-Door Sedan 1977 2.3 Cruise-O-Matic\u3011\u301049\u20201976 Ford Pinto 2-Door Sedan 1977 2.3\u3011\u301050\u2020View more\u2020ultimatespecs.com\u3011\n\n## Latest Models\n\n\u301051\u2020BMW G21 3 Series Touring LCI\u3011\u301052\u2020Lexus LBX\u3011\u301053\u2020Hyundai i20 (BC3) 2023\u3011\u301054\u2020Hyundai i20 (BC3)\u3011\n\n\u301055\u2020BYD Seal\u3011\u301056\u2020BYD Dolphin\u3011\u301057\u2020BMW G20 3 Series Sedan LCI\u3011\u301058\u2020Ford Pinto 2-Door Sedan 1977\u3011\n\n\u301059\u2020Buick Electra Coupe 1980\u3011\u301060\u2020Ford Pinto 2-Door Sedan 1976\u3011\u301061\u2020Citroen C3 Phase IV\u3011\u301062\u2020Citroen C5 X\u3011\n\n\u301063\u2020Ford Pinto 2-Door Sedan 1975\u3011\u301064\u2020Lancia Delta\u3011\u301065\u2020Ford Pinto 2-Door Sedan 1974\u3011\u301066\u2020Ford Pinto 2-Door Sedan 1973\u3011\n\n\u301067\u2020Peugeot 408\u3011\u301068\u2020Ford Pinto 2-Door Sedan 1972\u3011\u301069\u2020Renault Sc\u00e9nic 5\u3011\u301070\u2020Renault Espace 6\u3011\n\n\u301071\u2020Ford Pinto 2-Door Sedan\u3011\u301072\u2020Renault Austral\u3011\u301073\u2020Mazda RX-8 2008\u3011\u301074\u2020Bentley Bentayga EWB\u3011\n\n\u301075\u2020Bentley Bentayga 2020 Facelift\u3011\u301076\u2020Toyota GR86 2021\u3011\u301077\u2020Fiat Cinquecento\u3011\u301078\u2020Audi A8 L 2022 (D5)\u3011\n\n\u00a92024 Ultimate Specs - The Most Comprehensive Car Specifications Database. Over 46.000 technical specs!! - \u301079\u2020Change consent\u2020javascript:;\u3011 \n\n- Do not share my Personal Information.\n\n- \u301080\u2020 About \u3011- \u301081\u2020 Privacy Policy \u3011- \u301082\u2020 Contact US \u3011",
+                  "pub_date": null,
+                  "extra": null
+                }
+              ],
+              "original_query": null
+            },
+            "command": "mclick",
+            "args": ["[0, 3, 7]"],
+            "status": "finished",
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "36b62905-c942-414a-8ad2-d5d26739efa5",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "36b62905-c942-414a-8ad2-d5d26739efa5",
+        "children": ["2d717cdc-b597-4850-878b-ac13e97a6696"]
+      },
+      "2d717cdc-b597-4850-878b-ac13e97a6696": {
+        "id": "2d717cdc-b597-4850-878b-ac13e97a6696",
+        "message": {
+          "id": "2d717cdc-b597-4850-878b-ac13e97a6696",
+          "author": {
+            "role": "tool",
+            "name": "browser",
+            "metadata": {}
+          },
+          "create_time": 1704629939.856997,
+          "update_time": null,
+          "content": {
+            "content_type": "tether_quote",
+            "url": "https://www.drive.com.au/reviews/volkswagen-transporter-review/",
+            "domain": "www.drive.com.au",
+            "text": "\n###### What we don't\n\n  * Seven-speed dual-clutch DSG automatic can get grumbly in traffic \n  * no Bluetooth connectivity \n  * no cruise control \n  * single sliding door only \n  * expensive options and servicing\n\n[Image 41: Volkswagen Transporter 2014 30]View 31 images[Image 42: PhotoIcon]\n\nA staple of the German car maker's commercial line-up since 2003, the T5 Volkswagen Transporter remains one of the most popular options available in today's competitive Australian van segment.\n\nPriced from $36,490, the short-wheelbase \u3010178\u2020Volkswagen Transporter\u3011 comes in below its \u3010183\u2020Ford Transit Custom\u3011 ($37,490) and \u3010184\u2020Mercedes-Benz Vito\u3011 ($38,990) equivalents.\n\nThe third highest-selling van in its class, the Transporter is still north of the likes of the Chinese-built \u3010185\u2020LDV V80\u3011 ($30,800), \u3010186\u2020Hyundai iLoad\u3011 ($30,990), soon-to-be-replaced \u3010187\u2020Renault Traffic\u3011 ($32,990 driveaway) and reigning king of moving \u2018stuff\u2019 from one place to an other, the \u3010188\u2020Toyota HiAce\u3011 ($32,990) \u2013 the latter only available in long- and super-long-wheelbase configurations.\n\nPacked with a 2.0-litre four-cylinder turbo diesel and a seven-speed dual-clutch automatic transmission, our $40,990 front-wheel-drive TDI340 test car delivers 103kW at 3500rpm and 340Nm between 1750-2500rpm.\n\nPipping both the HiAce\u2019s 3.0-litre and Vito\u2019s 2.1-litre turbo diesels by 3kW and at least 30Nm, the \u301060\u2020Volkswagen\u3011 Transporter TDI340 also trumps the 85kW/290Nm 2.0-litre in the \u301051\u2020Renault\u3011 Trafic and the 100kW/330Nm 2.5-litre in the manual-only \u301033\u2020LDV\u3011 V80.\n\nAnd while the Volkswagen does fall 10Nm shy of the 92kW/350Nm 2.2-litre turbo diesel unit in the all-new sixth-generation \u301021\u2020Ford\u3011 Transit Custom, the Blue Oval\u2019s challenger is again exclusively offered with a six-speed manual transmission.\n\nHelping the Volkswagen Transporter claim a combined cycle fuel consumption figure of 8.2 litres per 100km, the seven-speed auto is also up by between one and three ratios on its main rivals \u2013 bookended by the single-clutch-equipped Trafic and four-speed \u301059\u2020Toyota\u3011 HiAce respectively. As a result, only the Trafic (8.0L/100km) and the Transit Custom (7.1L/100km) claim sharper economy figures.\n\nComing standard with air conditioning, a two-speaker stereo, daytime running lights and 16-inch steel wheels, the entry-level automatic Transporter TDI340 misses out on the Bluetooth connectivity included on the Toyota, \u301026\u2020Hyundai\u3011, \u301044\u2020Mercedes-Benz\u3011, Ford and Renault offerings.\n\nObtaining cruise control \u2013 standard on Vito, Transit Custom, Trafic and V80 \u2013 also requires a further $490.\n\nOnce settled into the narrow and flat but still comfortable vinyl-winged cloth seat base and gripping the soft-rimmed button-free steering wheel, the Transporter isn\u2019t a bad place to be.\n\nA little utilitarian among a sea of hard-wearing dash and door trims, manual climate controls and a basic audio unit, the scratchy yet durable centre console, air vents, grab handles and plastic floor liner are all offset by one-touch driver and passenger power windows (up and down), damped indicator and wipers stalks, and Volkswagen\u2019s standard clear and simple instrument layout.\n\n### Get a great deal today \n\nInterested in this car? Provide your details and we'll connect you to a member of the Drive team.\n\nVolkswagen Transporter \n\nVolkswagen Transporter\n\nI'd like to hear about finance deals\n\nSubscribe to the newsletter \n\nBy clicking the Send Enquiry button you acknowledge that you have read and agree to the Drive \u3010189\u2020Terms and Conditions \u3011 and \u3010190\u2020Privacy Policy.\u3011\n\nSend Enquiry \n\nLimited to only Trip A and B kilometre readings \u2013 with no average fuel or average speed figures given \u2013 the gauges are joined in the cabin by a heavy-lidded but amply sized lockable glovebox and a netted storage pocket below it.\n\nAiding practicality are two flip-out cupholders, four in-dash cubby holes, a single overhead cut-out, a dash-top storage space for sunglasses and business cards and large split-level door pockets for both driver and passenger.\n\nLess easy to learn to live with are the super-low floor-mounted hard plastic handbrake lever and high NVH (noise, vibration, harshness) levels highlighted by plenty of road, tyre and engine noise.\n\nComfortable and compliant riding on tall 65-profile Continental tyres, the Volkswagen Transporter bobs along in a controlled fashion over undulations, with acceptable \u2013 and expected for a commercial van \u2013 amounts of body roll present through bends.\n\nMowing flatly through ruts, potholes and road joins with an audible thump, the 1752kg TDI340 stays on track with little fuss, and calmly hums over tramlines.\n\nConsistently light but responsive steering works together with an 11.9m turning circle and genuine handling agility to ensure punting through tight inner-city streets is a legitimately enjoyable experience.\n\nConsistent, too, are the brakes \u2013 despite being attached to a mildly slack-feeling brake pedal, heavily contrasted by a tightly sprung throttle pedal.\n\nThe engine is also a gem. Happy to complete most tasks asked of it below 2000rpm \u2013 including freeway stretches at 100km/h \u2013 the grunty turbo diesel delivers sound cruising pace from as low as 1600rpm until things noticeably drop off around 4400rpm. It\u2019ll even contently coast along at 60km/h doing 1400rpm in fifth gear.\n\nProne to some hesitation and jerkiness when responding to sporadic prods of the throttle in stop-start traffic situations, the DSG gearbox and its dash-mounted gear selector work well overall, delivering smooth ratio swaps once moving, with little to no interruption to drive.\n\nAnnoyingly, though, the transmission\u2019s own gear indicator \u2013 located on the left-hand side of the selector\u2019s base \u2013 is obstructed from the driver\u2019s view by the DSG-stamped gear lever itself. A slight ergonomic oversight, the issue can be easily circumvented by relying on the gear display in the instrument cluster, which sits next to the time and above outside temperature, trip and fuel information.\n\nShifting goods is what the Transporter\u2019s all about, though, and despite being shorter in length than the iLoad, Transit Custom and V80, the 4892mm-long Volkswagen\u2019s 5800L load volume is only bettered by the HiAce (6000L) and V80 (6400L).\n\nThe Volkswagen Transporter\u2019s 1268kg payload rating is also the pick of the bunch, while its 2000kg braked towing capacity can only be matched by the Vito and Trafic and topped by the Ford at 2500kg.\n\nSliding back the heavy passenger side door presents an area 2353mm long and 1692mm wide at its maximum. Slightly reduced due to our test van being fitted with a $690 mesh cargo barrier, the Transporter\u2019s rear end space still offers plenty of stacking room thanks to its 1410mm floor-to-roof height and 1244mm minimum width (between rear wheel guards).\n\nProviding excellent head clearance at 1305mm tall, the weighty 1486mm-wide tailgate creates a large aperture for loading items through, although some may find the six floor-mounted tie-down hooks more of a nuisance than convenient.\n\nOddly too, the Volkswagen Transporter is free of any side or roof strapping/tie-down points.\n\nAnd while the tailgate gives drivers an uninterrupted view out the back \u2013 rather than a thick join line common to barn door-style rear doors \u2013 lower rear vision is made much more difficult, particularly when reverse parking.\n\nBut where a rear-view camera is standard on the HiAce, Transporter buyers looking to match the Toyota need to fit not only a $2490 sat-nav unit but additionally a $1890 package that includes front and rear parking sensors ($890) and a rear-view camera, for a total of $4380.\n\nFortunately, the standard heated power side mirrors provide excellent assistance and rear parking sensors on their own will only set you back $490.\n\nStandard on the Mercedes-Benz Vito and Hyundai iLoad, a driver\u2019s side sliding door is also an option on the Volkswagen Transporter, priced at $1190.\n\nA driver and front passenger airbag, stability control and hill-start assist are all standard fair, and the German van is also covered under Volkswagen\u2019s three-year/unlimited kilometre warranty with three years 24hr roadside assist.\n\nWith capped-price services ranging from $435 to $508 over the first three 15,000km annual service intervals, the first three years of ownership in the Volkswagen Transporter TDI340 DSG will cost you $1577.\n\nBetween $530 and $377 dearer than servicing costs over the same time period for the iLoad, Trafic and Transit Custom \u2013 the latter including brake fluid replacement \u2013 only Volkswagen declares costs for replacing both the pollen filter and brake fluid (both required every two years).\n\nWith service intervals every 10,000km, however, the Toyota HiAce \u2013 with two services annually \u2013 still takes the crown, requiring $1020 over three years or 60,000km.\n\n",
+            "title": "Volkswagen Transporter Review - Drive"
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 0.0,
+          "metadata": {
+            "_cite_metadata": {
+              "citation_format": {
+                "name": "tether_og"
+              },
+              "metadata_list": [
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter Review - Drive",
+                  "url": "https://www.drive.com.au/reviews/volkswagen-transporter-review/",
+                  "text": "\n###### What we don't\n\n  * Seven-speed dual-clutch DSG automatic can get grumbly in traffic \n  * no Bluetooth connectivity \n  * no cruise control \n  * single sliding door only \n  * expensive options and servicing\n\n[Image 41: Volkswagen Transporter 2014 30]View 31 images[Image 42: PhotoIcon]\n\nA staple of the German car maker's commercial line-up since 2003, the T5 Volkswagen Transporter remains one of the most popular options available in today's competitive Australian van segment.\n\nPriced from $36,490, the short-wheelbase \u3010178\u2020Volkswagen Transporter\u3011 comes in below its \u3010183\u2020Ford Transit Custom\u3011 ($37,490) and \u3010184\u2020Mercedes-Benz Vito\u3011 ($38,990) equivalents.\n\nThe third highest-selling van in its class, the Transporter is still north of the likes of the Chinese-built \u3010185\u2020LDV V80\u3011 ($30,800), \u3010186\u2020Hyundai iLoad\u3011 ($30,990), soon-to-be-replaced \u3010187\u2020Renault Traffic\u3011 ($32,990 driveaway) and reigning king of moving \u2018stuff\u2019 from one place to an other, the \u3010188\u2020Toyota HiAce\u3011 ($32,990) \u2013 the latter only available in long- and super-long-wheelbase configurations.\n\nPacked with a 2.0-litre four-cylinder turbo diesel and a seven-speed dual-clutch automatic transmission, our $40,990 front-wheel-drive TDI340 test car delivers 103kW at 3500rpm and 340Nm between 1750-2500rpm.\n\nPipping both the HiAce\u2019s 3.0-litre and Vito\u2019s 2.1-litre turbo diesels by 3kW and at least 30Nm, the \u301060\u2020Volkswagen\u3011 Transporter TDI340 also trumps the 85kW/290Nm 2.0-litre in the \u301051\u2020Renault\u3011 Trafic and the 100kW/330Nm 2.5-litre in the manual-only \u301033\u2020LDV\u3011 V80.\n\nAnd while the Volkswagen does fall 10Nm shy of the 92kW/350Nm 2.2-litre turbo diesel unit in the all-new sixth-generation \u301021\u2020Ford\u3011 Transit Custom, the Blue Oval\u2019s challenger is again exclusively offered with a six-speed manual transmission.\n\nHelping the Volkswagen Transporter claim a combined cycle fuel consumption figure of 8.2 litres per 100km, the seven-speed auto is also up by between one and three ratios on its main rivals \u2013 bookended by the single-clutch-equipped Trafic and four-speed \u301059\u2020Toyota\u3011 HiAce respectively. As a result, only the Trafic (8.0L/100km) and the Transit Custom (7.1L/100km) claim sharper economy figures.\n\nComing standard with air conditioning, a two-speaker stereo, daytime running lights and 16-inch steel wheels, the entry-level automatic Transporter TDI340 misses out on the Bluetooth connectivity included on the Toyota, \u301026\u2020Hyundai\u3011, \u301044\u2020Mercedes-Benz\u3011, Ford and Renault offerings.\n\nObtaining cruise control \u2013 standard on Vito, Transit Custom, Trafic and V80 \u2013 also requires a further $490.\n\nOnce settled into the narrow and flat but still comfortable vinyl-winged cloth seat base and gripping the soft-rimmed button-free steering wheel, the Transporter isn\u2019t a bad place to be.\n\nA little utilitarian among a sea of hard-wearing dash and door trims, manual climate controls and a basic audio unit, the scratchy yet durable centre console, air vents, grab handles and plastic floor liner are all offset by one-touch driver and passenger power windows (up and down), damped indicator and wipers stalks, and Volkswagen\u2019s standard clear and simple instrument layout.\n\n### Get a great deal today \n\nInterested in this car? Provide your details and we'll connect you to a member of the Drive team.\n\nVolkswagen Transporter \n\nVolkswagen Transporter\n\nI'd like to hear about finance deals\n\nSubscribe to the newsletter \n\nBy clicking the Send Enquiry button you acknowledge that you have read and agree to the Drive \u3010189\u2020Terms and Conditions \u3011 and \u3010190\u2020Privacy Policy.\u3011\n\nSend Enquiry \n\nLimited to only Trip A and B kilometre readings \u2013 with no average fuel or average speed figures given \u2013 the gauges are joined in the cabin by a heavy-lidded but amply sized lockable glovebox and a netted storage pocket below it.\n\nAiding practicality are two flip-out cupholders, four in-dash cubby holes, a single overhead cut-out, a dash-top storage space for sunglasses and business cards and large split-level door pockets for both driver and passenger.\n\nLess easy to learn to live with are the super-low floor-mounted hard plastic handbrake lever and high NVH (noise, vibration, harshness) levels highlighted by plenty of road, tyre and engine noise.\n\nComfortable and compliant riding on tall 65-profile Continental tyres, the Volkswagen Transporter bobs along in a controlled fashion over undulations, with acceptable \u2013 and expected for a commercial van \u2013 amounts of body roll present through bends.\n\nMowing flatly through ruts, potholes and road joins with an audible thump, the 1752kg TDI340 stays on track with little fuss, and calmly hums over tramlines.\n\nConsistently light but responsive steering works together with an 11.9m turning circle and genuine handling agility to ensure punting through tight inner-city streets is a legitimately enjoyable experience.\n\nConsistent, too, are the brakes \u2013 despite being attached to a mildly slack-feeling brake pedal, heavily contrasted by a tightly sprung throttle pedal.\n\nThe engine is also a gem. Happy to complete most tasks asked of it below 2000rpm \u2013 including freeway stretches at 100km/h \u2013 the grunty turbo diesel delivers sound cruising pace from as low as 1600rpm until things noticeably drop off around 4400rpm. It\u2019ll even contently coast along at 60km/h doing 1400rpm in fifth gear.\n\nProne to some hesitation and jerkiness when responding to sporadic prods of the throttle in stop-start traffic situations, the DSG gearbox and its dash-mounted gear selector work well overall, delivering smooth ratio swaps once moving, with little to no interruption to drive.\n\nAnnoyingly, though, the transmission\u2019s own gear indicator \u2013 located on the left-hand side of the selector\u2019s base \u2013 is obstructed from the driver\u2019s view by the DSG-stamped gear lever itself. A slight ergonomic oversight, the issue can be easily circumvented by relying on the gear display in the instrument cluster, which sits next to the time and above outside temperature, trip and fuel information.\n\nShifting goods is what the Transporter\u2019s all about, though, and despite being shorter in length than the iLoad, Transit Custom and V80, the 4892mm-long Volkswagen\u2019s 5800L load volume is only bettered by the HiAce (6000L) and V80 (6400L).\n\nThe Volkswagen Transporter\u2019s 1268kg payload rating is also the pick of the bunch, while its 2000kg braked towing capacity can only be matched by the Vito and Trafic and topped by the Ford at 2500kg.\n\nSliding back the heavy passenger side door presents an area 2353mm long and 1692mm wide at its maximum. Slightly reduced due to our test van being fitted with a $690 mesh cargo barrier, the Transporter\u2019s rear end space still offers plenty of stacking room thanks to its 1410mm floor-to-roof height and 1244mm minimum width (between rear wheel guards).\n\nProviding excellent head clearance at 1305mm tall, the weighty 1486mm-wide tailgate creates a large aperture for loading items through, although some may find the six floor-mounted tie-down hooks more of a nuisance than convenient.\n\nOddly too, the Volkswagen Transporter is free of any side or roof strapping/tie-down points.\n\nAnd while the tailgate gives drivers an uninterrupted view out the back \u2013 rather than a thick join line common to barn door-style rear doors \u2013 lower rear vision is made much more difficult, particularly when reverse parking.\n\nBut where a rear-view camera is standard on the HiAce, Transporter buyers looking to match the Toyota need to fit not only a $2490 sat-nav unit but additionally a $1890 package that includes front and rear parking sensors ($890) and a rear-view camera, for a total of $4380.\n\nFortunately, the standard heated power side mirrors provide excellent assistance and rear parking sensors on their own will only set you back $490.\n\nStandard on the Mercedes-Benz Vito and Hyundai iLoad, a driver\u2019s side sliding door is also an option on the Volkswagen Transporter, priced at $1190.\n\nA driver and front passenger airbag, stability control and hill-start assist are all standard fair, and the German van is also covered under Volkswagen\u2019s three-year/unlimited kilometre warranty with three years 24hr roadside assist.\n\nWith capped-price services ranging from $435 to $508 over the first three 15,000km annual service intervals, the first three years of ownership in the Volkswagen Transporter TDI340 DSG will cost you $1577.\n\nBetween $530 and $377 dearer than servicing costs over the same time period for the iLoad, Trafic and Transit Custom \u2013 the latter including brake fluid replacement \u2013 only Volkswagen declares costs for replacing both the pollen filter and brake fluid (both required every two years).\n\nWith service intervals every 10,000km, however, the Toyota HiAce \u2013 with two services annually \u2013 still takes the crown, requiring $1020 over three years or 60,000km.\n\n",
+                  "pub_date": null,
+                  "extra": null
+                }
+              ],
+              "original_query": null
+            },
+            "command": "mclick",
+            "args": ["[0, 3, 7]"],
+            "status": "finished",
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "b87c7f57-a6f4-4f4f-999f-38bd70981ae0",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "b87c7f57-a6f4-4f4f-999f-38bd70981ae0",
+        "children": ["5c57c3b5-35df-4b1c-ab2d-8ca76cc63629"]
+      },
+      "5c57c3b5-35df-4b1c-ab2d-8ca76cc63629": {
+        "id": "5c57c3b5-35df-4b1c-ab2d-8ca76cc63629",
+        "message": {
+          "id": "5c57c3b5-35df-4b1c-ab2d-8ca76cc63629",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1704629939.865778,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "The fuel consumption of a Volkswagen Transporter can vary based on the specific model and driving conditions. For example, the 2021 Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP, which is one of the recent models, doesn't have its fuel consumption data explicitly mentioned in the sources I found. However, a review of a Volkswagen Transporter model, which is equipped with a 2.0-litre four-cylinder turbo diesel engine and a seven-speed dual-clutch automatic transmission, mentions a combined cycle fuel consumption figure of 8.2 litres per 100km. It's important to note that this figure might vary, especially when the vehicle is carrying eight people, as more weight can lead to increased fuel consumption.\n\nFor more detailed information, you might need to refer to the specific model's manual or contact a Volkswagen dealer. Also, keep in mind that real-world fuel consumption can be influenced by factors such as driving style, road conditions, and maintenance of the vehicle\u30106\u2020source\u3011\u30107\u2020source\u3011."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100260]
+            },
+            "citations": [
+              {
+                "start_ix": 981,
+                "end_ix": 991,
+                "citation_format_type": "tether_og",
+                "metadata": {
+                  "type": "webpage",
+                  "title": "2021 Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP specs, dimensions",
+                  "url": "https://www.ultimatespecs.com/car-specs/Volkswagen/118424/2021-Volkswagen-Transporter-T61-L2H1-20-TDI-110HP.html",
+                  "text": "\nURL: https://www.ultimatespecs.com/car-specs/Volkswagen/118424/2021-Volkswagen-Transporter-T61-L2H1-20-TDI-110HP.html\n\n\n[Image 0: English] \n\n\u30100\u2020 English \u3011 \u30101\u2020 Fran\u00e7ais \u3011 \u30102\u2020 Deutsch \u3011 \u30103\u2020 Svensk \u3011 \u30104\u2020 Portugu\u00eas PT \u3011 \u30105\u2020 Espa\u00f1ol \u3011 \u30106\u2020 \u0440\u0443\u0441\u0441\u043a\u0438\u0439 \u3011 \u30107\u2020 Italiano \u3011 \u30108\u2020 \u0431\u044a\u043b\u0433\u0430\u0440\u0441\u043a\u0438 \u3011 \u30109\u2020 Nederlands \u3011 \u301010\u2020 Polski \u3011 \u301011\u2020 Portugu\u00eas BR \u3011 \u301012\u2020 T\u00fcrk\u00e7e \u3011 \n\n\u301013\u2020 \u3011 \n\n\u301013\u2020 Cars \u3011 \n\n\u301013\u2020 Cars \u3011 \n\n\u301014\u2020 Motos \u3011 \n\n\u301015\u2020 Tractors \u3011 \n\n \u301016\u2020 \u2020www.facebook.com\u3011 \u301017\u2020 \u2020twitter.com\u3011 \n\n< Back \n\n  *     * \u301018\u2020 Cars \u3011 \n    * \u301019\u2020 Electric & Hybrid Cars \u3011 \n    * \u301020\u2020 Compare cars \u3011 \n    * \u301021\u2020 Car Images \u3011 \n    * \u301022\u2020 Advanced Search \u3011 \n\n[Image 1: menu] \n\nIt seems that you have reached a high volume of page views.  \nPlease confirm that you are a human by clicking the box below.  \n\nThank you!   \n\n Send   \n\n## Latest Car Specs\n\n\u301023\u20202023 Cupra Formentor VZ5 2.5 TSI 4Drive\u3011\u301024\u20202023 BMW G21 3 Series Touring LCI 318i Auto\u3011\u301025\u20202024 Lexus LBX 1.5 Hybrid E-Four e-CVT\u3011\u301026\u20202024 Lexus LBX 1.5 Hybrid e-CVT\u3011\n\n\u301027\u20201983 Buick Electra Coupe 1980 Limited 5.0L V8 4-speed Auto\u3011\u301028\u20201981 Buick Electra Coupe 1980 Limited 4.1 V6 4-speed Auto\u3011\u301029\u20201980 Buick Electra Coupe 1980 Limited 4.1 V6 Overdrive 4-speed Auto\u3011\u301030\u20202020 Hyundai i20 (BC3) 1.0 T-GDI 48V 100HP Hybrid DCT\u3011\n\n\u301031\u20202020 Hyundai i20 (BC3) 1.0 T-GDI 48V 100HP Hybrid Auto\u3011\u301032\u20202020 Hyundai i20 (BC3) 1.0 T-GDI 48V 120HP Hybrid DCT\u3011\u301033\u20202020 Hyundai i20 (BC3) 1.0 T-GDI 48V 120HP Hybrid Auto\u3011\u301034\u20202023 Hyundai i20 (BC3) 2023 1.0 T-GDI 48V-Hybrid DCT\u3011\n\n\u301035\u20202023 Hyundai i20 (BC3) 2023 1.0 T-GDI\u3011\u301036\u20202023 Hyundai i20 (BC3) 2023 1.2 MPI\u3011\u301037\u20202023 BYD Seal 83 kWh 530HP AWD\u3011\u301038\u20202023 BYD Seal 83 kWh 313HP\u3011\n\n\u301039\u20202023 BYD Dolphin 60 kWh 204HP\u3011\u301040\u20201992 Alfa Romeo 164 Super V6 Turbo\u3011\u301041\u20202023 BMW G20 3 Series Sedan LCI M340i Mild Hybrid xDrive Auto\u3011\u301042\u20202023 BMW G20 3 Series Sedan LCI 330i xDrive Auto\u3011\n\n\u301043\u20202023 BMW G20 3 Series Sedan LCI 330i Auto\u3011\u301044\u20202023 BMW G20 3 Series Sedan LCI 320i xDrive Auto\u3011\u301045\u20202023 BMW G20 3 Series Sedan LCI 320i Auto\u3011\u301046\u20202023 BMW G20 3 Series Sedan LCI 318i Auto\u3011\n\n\u301047\u20201976 Ford Pinto 2-Door Sedan 1977 2.8 V6 Cruise-O-Matic\u3011\u301048\u20201976 Ford Pinto 2-Door Sedan 1977 2.3 Cruise-O-Matic\u3011\u301049\u20201976 Ford Pinto 2-Door Sedan 1977 2.3\u3011\u301050\u2020View more\u2020ultimatespecs.com\u3011\n\n## Latest Models\n\n\u301051\u2020BMW G21 3 Series Touring LCI\u3011\u301052\u2020Lexus LBX\u3011\u301053\u2020Hyundai i20 (BC3) 2023\u3011\u301054\u2020Hyundai i20 (BC3)\u3011\n\n\u301055\u2020BYD Seal\u3011\u301056\u2020BYD Dolphin\u3011\u301057\u2020BMW G20 3 Series Sedan LCI\u3011\u301058\u2020Ford Pinto 2-Door Sedan 1977\u3011\n\n\u301059\u2020Buick Electra Coupe 1980\u3011\u301060\u2020Ford Pinto 2-Door Sedan 1976\u3011\u301061\u2020Citroen C3 Phase IV\u3011\u301062\u2020Citroen C5 X\u3011\n\n\u301063\u2020Ford Pinto 2-Door Sedan 1975\u3011\u301064\u2020Lancia Delta\u3011\u301065\u2020Ford Pinto 2-Door Sedan 1974\u3011\u301066\u2020Ford Pinto 2-Door Sedan 1973\u3011\n\n\u301067\u2020Peugeot 408\u3011\u301068\u2020Ford Pinto 2-Door Sedan 1972\u3011\u301069\u2020Renault Sc\u00e9nic 5\u3011\u301070\u2020Renault Espace 6\u3011\n\n\u301071\u2020Ford Pinto 2-Door Sedan\u3011\u301072\u2020Renault Austral\u3011\u301073\u2020Mazda RX-8 2008\u3011\u301074\u2020Bentley Bentayga EWB\u3011\n\n\u301075\u2020Bentley Bentayga 2020 Facelift\u3011\u301076\u2020Toyota GR86 2021\u3011\u301077\u2020Fiat Cinquecento\u3011\u301078\u2020Audi A8 L 2022 (D5)\u3011\n\n\u00a92024 Ultimate Specs - The Most Comprehensive Car Specifications Database. Over 46.000 technical specs!! - \u301079\u2020Change consent\u2020javascript:;\u3011 \n\n- Do not share my Personal Information.\n\n- \u301080\u2020 About \u3011- \u301081\u2020 Privacy Policy \u3011- \u301082\u2020 Contact US \u3011",
+                  "pub_date": null,
+                  "extra": {
+                    "cited_message_idx": 6,
+                    "evidence_text": "source"
+                  }
+                }
+              },
+              {
+                "start_ix": 991,
+                "end_ix": 1001,
+                "citation_format_type": "tether_og",
+                "metadata": {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter Review - Drive",
+                  "url": "https://www.drive.com.au/reviews/volkswagen-transporter-review/",
+                  "text": "\n###### What we don't\n\n  * Seven-speed dual-clutch DSG automatic can get grumbly in traffic \n  * no Bluetooth connectivity \n  * no cruise control \n  * single sliding door only \n  * expensive options and servicing\n\n[Image 41: Volkswagen Transporter 2014 30]View 31 images[Image 42: PhotoIcon]\n\nA staple of the German car maker's commercial line-up since 2003, the T5 Volkswagen Transporter remains one of the most popular options available in today's competitive Australian van segment.\n\nPriced from $36,490, the short-wheelbase \u3010178\u2020Volkswagen Transporter\u3011 comes in below its \u3010183\u2020Ford Transit Custom\u3011 ($37,490) and \u3010184\u2020Mercedes-Benz Vito\u3011 ($38,990) equivalents.\n\nThe third highest-selling van in its class, the Transporter is still north of the likes of the Chinese-built \u3010185\u2020LDV V80\u3011 ($30,800), \u3010186\u2020Hyundai iLoad\u3011 ($30,990), soon-to-be-replaced \u3010187\u2020Renault Traffic\u3011 ($32,990 driveaway) and reigning king of moving \u2018stuff\u2019 from one place to an other, the \u3010188\u2020Toyota HiAce\u3011 ($32,990) \u2013 the latter only available in long- and super-long-wheelbase configurations.\n\nPacked with a 2.0-litre four-cylinder turbo diesel and a seven-speed dual-clutch automatic transmission, our $40,990 front-wheel-drive TDI340 test car delivers 103kW at 3500rpm and 340Nm between 1750-2500rpm.\n\nPipping both the HiAce\u2019s 3.0-litre and Vito\u2019s 2.1-litre turbo diesels by 3kW and at least 30Nm, the \u301060\u2020Volkswagen\u3011 Transporter TDI340 also trumps the 85kW/290Nm 2.0-litre in the \u301051\u2020Renault\u3011 Trafic and the 100kW/330Nm 2.5-litre in the manual-only \u301033\u2020LDV\u3011 V80.\n\nAnd while the Volkswagen does fall 10Nm shy of the 92kW/350Nm 2.2-litre turbo diesel unit in the all-new sixth-generation \u301021\u2020Ford\u3011 Transit Custom, the Blue Oval\u2019s challenger is again exclusively offered with a six-speed manual transmission.\n\nHelping the Volkswagen Transporter claim a combined cycle fuel consumption figure of 8.2 litres per 100km, the seven-speed auto is also up by between one and three ratios on its main rivals \u2013 bookended by the single-clutch-equipped Trafic and four-speed \u301059\u2020Toyota\u3011 HiAce respectively. As a result, only the Trafic (8.0L/100km) and the Transit Custom (7.1L/100km) claim sharper economy figures.\n\nComing standard with air conditioning, a two-speaker stereo, daytime running lights and 16-inch steel wheels, the entry-level automatic Transporter TDI340 misses out on the Bluetooth connectivity included on the Toyota, \u301026\u2020Hyundai\u3011, \u301044\u2020Mercedes-Benz\u3011, Ford and Renault offerings.\n\nObtaining cruise control \u2013 standard on Vito, Transit Custom, Trafic and V80 \u2013 also requires a further $490.\n\nOnce settled into the narrow and flat but still comfortable vinyl-winged cloth seat base and gripping the soft-rimmed button-free steering wheel, the Transporter isn\u2019t a bad place to be.\n\nA little utilitarian among a sea of hard-wearing dash and door trims, manual climate controls and a basic audio unit, the scratchy yet durable centre console, air vents, grab handles and plastic floor liner are all offset by one-touch driver and passenger power windows (up and down), damped indicator and wipers stalks, and Volkswagen\u2019s standard clear and simple instrument layout.\n\n### Get a great deal today \n\nInterested in this car? Provide your details and we'll connect you to a member of the Drive team.\n\nVolkswagen Transporter \n\nVolkswagen Transporter\n\nI'd like to hear about finance deals\n\nSubscribe to the newsletter \n\nBy clicking the Send Enquiry button you acknowledge that you have read and agree to the Drive \u3010189\u2020Terms and Conditions \u3011 and \u3010190\u2020Privacy Policy.\u3011\n\nSend Enquiry \n\nLimited to only Trip A and B kilometre readings \u2013 with no average fuel or average speed figures given \u2013 the gauges are joined in the cabin by a heavy-lidded but amply sized lockable glovebox and a netted storage pocket below it.\n\nAiding practicality are two flip-out cupholders, four in-dash cubby holes, a single overhead cut-out, a dash-top storage space for sunglasses and business cards and large split-level door pockets for both driver and passenger.\n\nLess easy to learn to live with are the super-low floor-mounted hard plastic handbrake lever and high NVH (noise, vibration, harshness) levels highlighted by plenty of road, tyre and engine noise.\n\nComfortable and compliant riding on tall 65-profile Continental tyres, the Volkswagen Transporter bobs along in a controlled fashion over undulations, with acceptable \u2013 and expected for a commercial van \u2013 amounts of body roll present through bends.\n\nMowing flatly through ruts, potholes and road joins with an audible thump, the 1752kg TDI340 stays on track with little fuss, and calmly hums over tramlines.\n\nConsistently light but responsive steering works together with an 11.9m turning circle and genuine handling agility to ensure punting through tight inner-city streets is a legitimately enjoyable experience.\n\nConsistent, too, are the brakes \u2013 despite being attached to a mildly slack-feeling brake pedal, heavily contrasted by a tightly sprung throttle pedal.\n\nThe engine is also a gem. Happy to complete most tasks asked of it below 2000rpm \u2013 including freeway stretches at 100km/h \u2013 the grunty turbo diesel delivers sound cruising pace from as low as 1600rpm until things noticeably drop off around 4400rpm. It\u2019ll even contently coast along at 60km/h doing 1400rpm in fifth gear.\n\nProne to some hesitation and jerkiness when responding to sporadic prods of the throttle in stop-start traffic situations, the DSG gearbox and its dash-mounted gear selector work well overall, delivering smooth ratio swaps once moving, with little to no interruption to drive.\n\nAnnoyingly, though, the transmission\u2019s own gear indicator \u2013 located on the left-hand side of the selector\u2019s base \u2013 is obstructed from the driver\u2019s view by the DSG-stamped gear lever itself. A slight ergonomic oversight, the issue can be easily circumvented by relying on the gear display in the instrument cluster, which sits next to the time and above outside temperature, trip and fuel information.\n\nShifting goods is what the Transporter\u2019s all about, though, and despite being shorter in length than the iLoad, Transit Custom and V80, the 4892mm-long Volkswagen\u2019s 5800L load volume is only bettered by the HiAce (6000L) and V80 (6400L).\n\nThe Volkswagen Transporter\u2019s 1268kg payload rating is also the pick of the bunch, while its 2000kg braked towing capacity can only be matched by the Vito and Trafic and topped by the Ford at 2500kg.\n\nSliding back the heavy passenger side door presents an area 2353mm long and 1692mm wide at its maximum. Slightly reduced due to our test van being fitted with a $690 mesh cargo barrier, the Transporter\u2019s rear end space still offers plenty of stacking room thanks to its 1410mm floor-to-roof height and 1244mm minimum width (between rear wheel guards).\n\nProviding excellent head clearance at 1305mm tall, the weighty 1486mm-wide tailgate creates a large aperture for loading items through, although some may find the six floor-mounted tie-down hooks more of a nuisance than convenient.\n\nOddly too, the Volkswagen Transporter is free of any side or roof strapping/tie-down points.\n\nAnd while the tailgate gives drivers an uninterrupted view out the back \u2013 rather than a thick join line common to barn door-style rear doors \u2013 lower rear vision is made much more difficult, particularly when reverse parking.\n\nBut where a rear-view camera is standard on the HiAce, Transporter buyers looking to match the Toyota need to fit not only a $2490 sat-nav unit but additionally a $1890 package that includes front and rear parking sensors ($890) and a rear-view camera, for a total of $4380.\n\nFortunately, the standard heated power side mirrors provide excellent assistance and rear parking sensors on their own will only set you back $490.\n\nStandard on the Mercedes-Benz Vito and Hyundai iLoad, a driver\u2019s side sliding door is also an option on the Volkswagen Transporter, priced at $1190.\n\nA driver and front passenger airbag, stability control and hill-start assist are all standard fair, and the German van is also covered under Volkswagen\u2019s three-year/unlimited kilometre warranty with three years 24hr roadside assist.\n\nWith capped-price services ranging from $435 to $508 over the first three 15,000km annual service intervals, the first three years of ownership in the Volkswagen Transporter TDI340 DSG will cost you $1577.\n\nBetween $530 and $377 dearer than servicing costs over the same time period for the iLoad, Trafic and Transit Custom \u2013 the latter including brake fluid replacement \u2013 only Volkswagen declares costs for replacing both the pollen filter and brake fluid (both required every two years).\n\nWith service intervals every 10,000km, however, the Toyota HiAce \u2013 with two services annually \u2013 still takes the crown, requiring $1020 over three years or 60,000km.\n\n",
+                  "pub_date": null,
+                  "extra": {
+                    "cited_message_idx": 7,
+                    "evidence_text": "source"
+                  }
+                }
+              }
+            ],
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "2d717cdc-b597-4850-878b-ac13e97a6696",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "2d717cdc-b597-4850-878b-ac13e97a6696",
+        "children": ["bbb2682f-b4f7-49f8-b842-5352f8b6e3c0"]
+      },
+      "bbb2682f-b4f7-49f8-b842-5352f8b6e3c0": {
+        "id": "bbb2682f-b4f7-49f8-b842-5352f8b6e3c0",
+        "message": {
+          "id": "bbb2682f-b4f7-49f8-b842-5352f8b6e3c0",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1704629961.277709,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": ["What about 10 year old model"]
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 1.0,
+          "metadata": {
+            "finish_details": {
+              "type": "unknown"
+            },
+            "citations": [],
+            "voice_mode_message": false,
+            "timestamp_": "absolute",
+            "message_type": null
+          },
+          "recipient": "all"
+        },
+        "parent": "5c57c3b5-35df-4b1c-ab2d-8ca76cc63629",
+        "children": ["bea0c246-0b82-4df0-88e3-e28c9c28b909"]
+      },
+      "bea0c246-0b82-4df0-88e3-e28c9c28b909": {
+        "id": "bea0c246-0b82-4df0-88e3-e28c9c28b909",
+        "message": {
+          "id": "bea0c246-0b82-4df0-88e3-e28c9c28b909",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1704629977.563998,
+          "update_time": null,
+          "content": {
+            "content_type": "code",
+            "language": "unknown",
+            "text": "search(\"2014 Volkswagen Transporter fuel consumption\")"
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100265]
+            },
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "bbb2682f-b4f7-49f8-b842-5352f8b6e3c0",
+            "timestamp_": "absolute"
+          },
+          "recipient": "browser"
+        },
+        "parent": "bbb2682f-b4f7-49f8-b842-5352f8b6e3c0",
+        "children": ["3db71263-feb6-445a-b60c-dddc8302fa52"]
+      },
+      "3db71263-feb6-445a-b60c-dddc8302fa52": {
+        "id": "3db71263-feb6-445a-b60c-dddc8302fa52",
+        "message": {
+          "id": "3db71263-feb6-445a-b60c-dddc8302fa52",
+          "author": {
+            "role": "tool",
+            "name": "browser",
+            "metadata": {}
+          },
+          "create_time": 1704629977.577253,
+          "update_time": null,
+          "content": {
+            "content_type": "tether_browsing_display",
+            "result": "# \u30100\u20202014 Volkswagen Transporter MPG - Actual MPG from 14 2014 ... - Fuelly\u2020www.fuelly.com\u3011\nBased on data from 14 vehicles, 639 fuel-ups and 260,822 miles of driving, the 2014 Volkswagen Transporter gets a combined Avg MPG of 23.76 with a 0.37 MPG margin of error. Below you can see a distribution of the fuel-ups with 24 outliers (3.62%) removed. Following shows the average MPG of each of the 14 vehicles in the system. T5.1 Transporter\n# \u30101\u2020Gas Mileage of 2014 Vehicles by Volkswagen - FuelEconomy.gov\u2020www.fueleconomy.gov\u3011\nFuel Economy of 2014 Volkswagen Vehicles Search by Manufacturer. Search by make for fuel efficient new and used cars and trucks\n# \u30102\u20202014 Volkswagen Transporter MPG - Actual MPG from 18 2014 ... - Fuelly\u2020www.fuelly.com\u3011\nAdded Feb 2015 \u2022 171 Fuel-ups. ... 2014 Volkswagen Transporter 2.0L L4 DIESEL Automatic Dual Clutch 7 Speed Standard Passenger Van Added Apr 2018 \u2022 134 Fuel-ups. Property of Elec61 . 25.4 Avg MPG. Transporter. 2014 Volkswagen Transporter 2.0L L4 DIESEL Manual 6 Speed Van Camper Added Jun 2021 \u2022 26 Fuel-ups. Property of damian1471 .\n# \u30103\u2020Volkswagen Transporter MPG - Actual MPG from 528 Volkswagen ... - Fuelly\u2020www.fuelly.com\u3011\n2019 27.1 Avg MPG 6 Vehicles 416 Fuel-ups 178,106 Miles Tracked View All 2019 Volkswagen Transporters 2018 26.5 Avg MPG 15 Vehicles 622 Fuel-ups 235,245 Miles Tracked View All 2018 Volkswagen Transporters 2017 28.2 Avg MPG 13 Vehicles 1,287 Fuel-ups 554,573 Miles Tracked View All 2017 Volkswagen Transporters 2016 26.5 Avg MPG 22 Vehicles\n# \u30104\u2020Volkswagen Transporter 2014 | CarsGuide\u2020www.carsguide.com.au\u3011\nFind all of our 2014 Volkswagen Transporter Reviews, Videos, FAQs & News in one place. Learn how it drives and what features set the 2014 Volkswagen Transporter apart from its rivals. Our comprehensive reviews include detailed ratings on Price and Features, Design, Practicality, Engine, Fuel Consumption, Ownership, Driving & Safety.\n# \u30105\u20202014 Volkswagen Transporter Review, Price and Specification\u2020www.carexpert.com.au\u3011\nPrice $12,400 - $29,500 About the Transporter The 2014 Volkswagen Transporter was available in one hundred and twenty-four variants, is classed as a Van and was built in Germany. It uses Diesel fuel. The 2014 Volkswagen Transporter was sold with an engine size of 2.0L and with turbocharged four-cylinder. Official Links\n# \u30106\u2020Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP Specs\u2020www.ultimatespecs.com\u3011\nVolkswagen Transporter T6.1 L2H1 2.0 TDI 150HP Technical Specs 2019,2020,2021: 150 PS (148 hp), Diesel, Fuel consumption:6.7 l/100km (35 MPG), Dimensions: Length: 208.82 in (530.4 cm), Width: 74.96 in (190.4 cm), Height: 78.35 in (199.0 cm) ... Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP Fuel Consumption (Economy), Emissions and Range. Fuel ...\n# \u30107\u2020Volkswagen T5 Transporter (2013-2015) van review | Auto Express\u2020www.autoexpress.co.uk\u3011\nOptional BlueMotion Technology delivers lower emissions and improved fuel consumption on 83bhp and 112bhp versions, while there\u2019s also a 112bhp Transporter BlueMotion promising nearly 45mpg ...\n# \u30108\u2020Volkswagen Transporter Review - Drive\u2020www.drive.com.au\u3011\nReview 4 doors, 2 seats 2.0DT, 4 cyl. 103kW, 340Nm Diesel 8.2L/100KM FWD Auto (DCT) 3 Yr, Unltd KMs NA See Pricing + Full Specs All Work Cars Best Vans All Volkswagen Volkswagen Transporter Review David Zalstein 12:44 12 May 2014 0 comments\n# \u30109\u2020Volkswagen Transporter van review (2010-2015) - Parkers\u2020www.parkers.co.uk\u3011\n4.5 out of 5 4.5 This Transporter was naturally powered by a new generation 2.0-litre turbodiesel engine, which is both smooth and refined. It was offered in four different power outputs. The 84 and 102hp versions come with a five-speed gearbox that is well-suited to the wide spread of power.\n# \u301010\u2020Fuel Economy Trip Calculator\u2020www.fueleconomy.gov\u3011\nYou will be able to modify the route by dragging the route line on the map. section above will be updated with the cost of fuel for the trip. This website is administered by Oak Ridge National Laboratory for the U.S. Department of Energy and the U.S. Environmental Protection Agency. My Trip Calculator. Plan your route, estimate fuel costs, and ...\n# \u301011\u2020Volkswagen | Technical Specs, Fuel consumption, Dimensions\u2020www.auto-data.net\u3011\nThe 1.8 T has 5 valves per cylinder - 3 intake and 2 exhaust. Dacia Ford GMC Haval Honda Hummer Jaguar Jeep Koenigsegg Lada Lamborghini Lancia Lexus Maserati. Volkswagen | Technical Specs, Fuel consumption, Dimensions, Power, Maximum speed, Torque, Acceleration 0 - 100 km/h, Engine displacement, Drive wheel, Tires size, Body type, Doors, Seats.\n# \u301012\u2020Volkswagen Transporter T4 MPG - Car Emissions\u2020www.car-emissions.com\u3011\nFuel Economy, Road Tax & Emissions. CO2 (carbon dioxide), mileage, fuel economy and other emissions data for Volkswagen Transporter T4 cars. average fuel consumption is 46.1 MPG or 6.6 litres/100km. and average CO2 output is 166.0 g/km. based on 6782 models.\n# \u301013\u20202014 Volkswagen Transporter TDI340 T5 LWB Auto MY14 - Carsales\u2020www.carsales.com.au\u3011\nFuel Consumption Combined. 8.2 L/100km . Fuel Consumption Extra Urban. 6.9 L/100km . Fuel Consumption Urban. 10.2 L/100km ... 2014 Volkswagen Transporter TDI340 T5 SWB Manual MY15 $18,600* Excl. Govt. Charges Volkswagen Transporter Car Reviews. View all. Review 21 ...\n# \u301014\u2020Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP Specs\u2020www.ultimatespecs.com\u3011\nVolkswagen Transporter T6.1 L2H1 2.0 TDI 110HP Technical Specs 2019,2020,2021: 110 PS (109 hp), Diesel, Fuel consumption:6.4 l/100km (37 MPG), Dimensions: Length: 208.82 in (530.4 cm), Width: 74.96 in (190.4 cm), Height: 78.35 in (199.0 cm) ... Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP Fuel Consumption (Economy), Emissions and Range. Fuel ...\n# \u301015\u2020Volkswagen T5 Transporter Combi 2.0 TDI (140 hp) 2009-2015 MPG, WLTP ...\u2020motoreu.com\u3011\nConsumption in city is 10.2 lt/100km, consumption in highway is 6.9 lt/100km and combined fuel consumption is 8.1 lt/100km according to official factory data. Estimated T5 Transporter Combi 2.0 TDI Short 4MOTION real World MPG/consumption is 12,4 lt/100km. It is expected to consume 48 percent more fuel than factory data in real conditions and ...\n# \u301016\u20202015 Volkswagen Transporter (T6) Kombi 2.0 TSI (150 Hp) L1H2\u2020www.auto-data.net\u3011\nWhat is the body type, Volkswagen Transporter (T6) Kombi? Van, 4-5 Doors, 4-9 Seats What is the fuel economy, Volkswagen Transporter (T6) Kombi 2.0 TSI (150 Hp) L1H2?\n# \u301017\u2020Volkswagen Type 2 - Wikipedia\u2020en.wikipedia.org\u3011\nThe Volkswagen Type 2 is a forward control light commercial vehicle introduced in 1950 by the German automaker Volkswagen as its second car model.Known officially (depending on body type) as the Transporter, Kombi or Microbus, or, informally, as the Volkswagen Station Wagon (US), Bus (also US), Camper (UK) or Bulli (Germany), it was given the factory designation Type 2 as it followed \u2013 and ...\n# \u301018\u2020Volkswagen MPG (Fuel Consumption) - Car Emissions\u2020www.car-emissions.com\u3011\n166.0 g/km What is the average MPG (fuel economy) of a Volkswagen ? Volkswagen average fuel consumption is 46.1 MPG or 6.6 litres/100km and average CO2 output is 166.0 g/km based on 6782 models. CO2 (carbon dioxide), mileage, fuel economy and other emissions data for Volkswagen cars. Data table - click on a title to order by column:\n# \u301019\u2020Rental Truck Fuel Calculator | U-Pack\u2020www.upack.com\u3011\nMiles \u00f7 MPG x Gas Price = Minimum Fuel Cost. ( Miles = total distance of the trip) ( MPG = Moving Truck average mile per gallon) ( Gas Price = average cost of gas per gallon) For example, if you\u2019re planning to drive 850 miles in a U-Haul \u00ae truck that gets 10 miles to the gallon, and gas averages $2.50, you should budget around $212.50 for ...\nVisible: 0% - 100%",
+            "summary": null,
+            "assets": []
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 0.0,
+          "metadata": {
+            "_cite_metadata": {
+              "citation_format": {
+                "name": "tether_og"
+              },
+              "metadata_list": [
+                {
+                  "type": "webpage",
+                  "title": "2014 Volkswagen Transporter MPG - Actual MPG from 14 2014 ... - Fuelly",
+                  "url": "https://www.fuelly.com/car/volkswagen/transporter/2014",
+                  "text": "\nBased on data from 14 vehicles, 639 fuel-ups and 260,822 miles of driving, the 2014 Volkswagen Transporter gets a combined Avg MPG of 23.76 with a 0.37 MPG margin of error. Below you can see a distribution of the fuel-ups with 24 outliers (3.62%) removed. Following shows the average MPG of each of the 14 vehicles in the system. T5.1 Transporter\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Gas Mileage of 2014 Vehicles by Volkswagen - FuelEconomy.gov",
+                  "url": "https://www.fueleconomy.gov/feg/bymake/Volkswagen2014.shtml",
+                  "text": "\nFuel Economy of 2014 Volkswagen Vehicles Search by Manufacturer. Search by make for fuel efficient new and used cars and trucks\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "2014 Volkswagen Transporter MPG - Actual MPG from 18 2014 ... - Fuelly",
+                  "url": "https://www.fuelly.com/car/Volkswagen/Transporter/2014/all",
+                  "text": "\nAdded Feb 2015 \u2022 171 Fuel-ups. ... 2014 Volkswagen Transporter 2.0L L4 DIESEL Automatic Dual Clutch 7 Speed Standard Passenger Van Added Apr 2018 \u2022 134 Fuel-ups. Property of Elec61 . 25.4 Avg MPG. Transporter. 2014 Volkswagen Transporter 2.0L L4 DIESEL Manual 6 Speed Van Camper Added Jun 2021 \u2022 26 Fuel-ups. Property of damian1471 .\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter MPG - Actual MPG from 528 Volkswagen ... - Fuelly",
+                  "url": "https://www.fuelly.com/car/volkswagen/transporter",
+                  "text": "\n2019 27.1 Avg MPG 6 Vehicles 416 Fuel-ups 178,106 Miles Tracked View All 2019 Volkswagen Transporters 2018 26.5 Avg MPG 15 Vehicles 622 Fuel-ups 235,245 Miles Tracked View All 2018 Volkswagen Transporters 2017 28.2 Avg MPG 13 Vehicles 1,287 Fuel-ups 554,573 Miles Tracked View All 2017 Volkswagen Transporters 2016 26.5 Avg MPG 22 Vehicles\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter 2014 | CarsGuide",
+                  "url": "https://www.carsguide.com.au/volkswagen/transporter/2014",
+                  "text": "\nFind all of our 2014 Volkswagen Transporter Reviews, Videos, FAQs & News in one place. Learn how it drives and what features set the 2014 Volkswagen Transporter apart from its rivals. Our comprehensive reviews include detailed ratings on Price and Features, Design, Practicality, Engine, Fuel Consumption, Ownership, Driving & Safety.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "2014 Volkswagen Transporter Review, Price and Specification",
+                  "url": "https://www.carexpert.com.au/volkswagen/transporter/2014",
+                  "text": "\nPrice $12,400 - $29,500 About the Transporter The 2014 Volkswagen Transporter was available in one hundred and twenty-four variants, is classed as a Van and was built in Germany. It uses Diesel fuel. The 2014 Volkswagen Transporter was sold with an engine size of 2.0L and with turbocharged four-cylinder. Official Links\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP Specs",
+                  "url": "https://www.ultimatespecs.com/car-specs/Volkswagen/118425/Volkswagen-Transporter-T61-L2H1-20-TDI-150HP.html",
+                  "text": "\nVolkswagen Transporter T6.1 L2H1 2.0 TDI 150HP Technical Specs 2019,2020,2021: 150 PS (148 hp), Diesel, Fuel consumption:6.7 l/100km (35 MPG), Dimensions: Length: 208.82 in (530.4 cm), Width: 74.96 in (190.4 cm), Height: 78.35 in (199.0 cm) ... Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP Fuel Consumption (Economy), Emissions and Range. Fuel ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen T5 Transporter (2013-2015) van review | Auto Express",
+                  "url": "https://www.autoexpress.co.uk/volkswagen/transporter/64655/2013-2015-van",
+                  "text": "\nOptional BlueMotion Technology delivers lower emissions and improved fuel consumption on 83bhp and 112bhp versions, while there\u2019s also a 112bhp Transporter BlueMotion promising nearly 45mpg ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter Review - Drive",
+                  "url": "https://www.drive.com.au/reviews/volkswagen-transporter-review/",
+                  "text": "\nReview 4 doors, 2 seats 2.0DT, 4 cyl. 103kW, 340Nm Diesel 8.2L/100KM FWD Auto (DCT) 3 Yr, Unltd KMs NA See Pricing + Full Specs All Work Cars Best Vans All Volkswagen Volkswagen Transporter Review David Zalstein 12:44 12 May 2014 0 comments\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter van review (2010-2015) - Parkers",
+                  "url": "https://www.parkers.co.uk/vans-pickups/volkswagen/transporter/2010-review/",
+                  "text": "\n4.5 out of 5 4.5 This Transporter was naturally powered by a new generation 2.0-litre turbodiesel engine, which is both smooth and refined. It was offered in four different power outputs. The 84 and 102hp versions come with a five-speed gearbox that is well-suited to the wide spread of power.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Fuel Economy Trip Calculator",
+                  "url": "https://www.fueleconomy.gov/trip/",
+                  "text": "\nYou will be able to modify the route by dragging the route line on the map. section above will be updated with the cost of fuel for the trip. This website is administered by Oak Ridge National Laboratory for the U.S. Department of Energy and the U.S. Environmental Protection Agency. My Trip Calculator. Plan your route, estimate fuel costs, and ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen | Technical Specs, Fuel consumption, Dimensions",
+                  "url": "https://www.auto-data.net/en/volkswagen-brand-80",
+                  "text": "\nThe 1.8 T has 5 valves per cylinder - 3 intake and 2 exhaust. Dacia Ford GMC Haval Honda Hummer Jaguar Jeep Koenigsegg Lada Lamborghini Lancia Lexus Maserati. Volkswagen | Technical Specs, Fuel consumption, Dimensions, Power, Maximum speed, Torque, Acceleration 0 - 100 km/h, Engine displacement, Drive wheel, Tires size, Body type, Doors, Seats.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter T4 MPG - Car Emissions",
+                  "url": "https://www.car-emissions.com/cars/index/volkswagen+transporter+t4",
+                  "text": "\nFuel Economy, Road Tax & Emissions. CO2 (carbon dioxide), mileage, fuel economy and other emissions data for Volkswagen Transporter T4 cars. average fuel consumption is 46.1 MPG or 6.6 litres/100km. and average CO2 output is 166.0 g/km. based on 6782 models.\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "2014 Volkswagen Transporter TDI340 T5 LWB Auto MY14 - Carsales",
+                  "url": "https://www.carsales.com.au/volkswagen/transporter/price/2014/tdi340-381631/",
+                  "text": "\nFuel Consumption Combined. 8.2 L/100km . Fuel Consumption Extra Urban. 6.9 L/100km . Fuel Consumption Urban. 10.2 L/100km ... 2014 Volkswagen Transporter TDI340 T5 SWB Manual MY15 $18,600* Excl. Govt. Charges Volkswagen Transporter Car Reviews. View all. Review 21 ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP Specs",
+                  "url": "https://www.ultimatespecs.com/car-specs/Volkswagen/118424/Volkswagen-Transporter-T61-L2H1-20-TDI-110HP.html",
+                  "text": "\nVolkswagen Transporter T6.1 L2H1 2.0 TDI 110HP Technical Specs 2019,2020,2021: 110 PS (109 hp), Diesel, Fuel consumption:6.4 l/100km (37 MPG), Dimensions: Length: 208.82 in (530.4 cm), Width: 74.96 in (190.4 cm), Height: 78.35 in (199.0 cm) ... Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP Fuel Consumption (Economy), Emissions and Range. Fuel ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen T5 Transporter Combi 2.0 TDI (140 hp) 2009-2015 MPG, WLTP ...",
+                  "url": "https://motoreu.com/volkswagen-t5-transporter-combi-2.0-tdi-mpg-fuel-consumption-technical-specifications-171706",
+                  "text": "\nConsumption in city is 10.2 lt/100km, consumption in highway is 6.9 lt/100km and combined fuel consumption is 8.1 lt/100km according to official factory data. Estimated T5 Transporter Combi 2.0 TDI Short 4MOTION real World MPG/consumption is 12,4 lt/100km. It is expected to consume 48 percent more fuel than factory data in real conditions and ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "2015 Volkswagen Transporter (T6) Kombi 2.0 TSI (150 Hp) L1H2",
+                  "url": "https://www.auto-data.net/en/volkswagen-transporter-t6-kombi-2.0-tsi-150hp-l1h2-49664",
+                  "text": "\nWhat is the body type, Volkswagen Transporter (T6) Kombi? Van, 4-5 Doors, 4-9 Seats What is the fuel economy, Volkswagen Transporter (T6) Kombi 2.0 TSI (150 Hp) L1H2?\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Type 2 - Wikipedia",
+                  "url": "https://en.wikipedia.org/wiki/Volkswagen_Type_2",
+                  "text": "\nThe Volkswagen Type 2 is a forward control light commercial vehicle introduced in 1950 by the German automaker Volkswagen as its second car model.Known officially (depending on body type) as the Transporter, Kombi or Microbus, or, informally, as the Volkswagen Station Wagon (US), Bus (also US), Camper (UK) or Bulli (Germany), it was given the factory designation Type 2 as it followed \u2013 and ...\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen MPG (Fuel Consumption) - Car Emissions",
+                  "url": "https://www.car-emissions.com/cars/model/volkswagen/",
+                  "text": "\n166.0 g/km What is the average MPG (fuel economy) of a Volkswagen ? Volkswagen average fuel consumption is 46.1 MPG or 6.6 litres/100km and average CO2 output is 166.0 g/km based on 6782 models. CO2 (carbon dioxide), mileage, fuel economy and other emissions data for Volkswagen cars. Data table - click on a title to order by column:\n",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Rental Truck Fuel Calculator | U-Pack",
+                  "url": "https://www.upack.com/moving-resources/documents-and-tools/fuel-calculator",
+                  "text": "\nMiles \u00f7 MPG x Gas Price = Minimum Fuel Cost. ( Miles = total distance of the trip) ( MPG = Moving Truck average mile per gallon) ( Gas Price = average cost of gas per gallon) For example, if you\u2019re planning to drive 850 miles in a U-Haul \u00ae truck that gets 10 miles to the gallon, and gas averages $2.50, you should budget around $212.50 for ...\nVisible: 0% - 100%",
+                  "pub_date": null,
+                  "extra": null
+                },
+                {
+                  "type": "webpage",
+                  "title": "Search results for query: '2014 Volkswagen Transporter fuel consumption'",
+                  "url": "",
+                  "text": "# \u30100\u20202014 Volkswagen Transporter MPG - Actual MPG from 14 2014 ... - Fuelly\u2020www.fuelly.com\u3011\nBased on data from 14 vehicles, 639 fuel-ups and 260,822 miles of driving, the 2014 Volkswagen Transporter gets a combined Avg MPG of 23.76 with a 0.37 MPG margin of error. Below you can see a distribution of the fuel-ups with 24 outliers (3.62%) removed. Following shows the average MPG of each of the 14 vehicles in the system. T5.1 Transporter\n# \u30101\u2020Gas Mileage of 2014 Vehicles by Volkswagen - FuelEconomy.gov\u2020www.fueleconomy.gov\u3011\nFuel Economy of 2014 Volkswagen Vehicles Search by Manufacturer. Search by make for fuel efficient new and used cars and trucks\n# \u30102\u20202014 Volkswagen Transporter MPG - Actual MPG from 18 2014 ... - Fuelly\u2020www.fuelly.com\u3011\nAdded Feb 2015 \u2022 171 Fuel-ups. ... 2014 Volkswagen Transporter 2.0L L4 DIESEL Automatic Dual Clutch 7 Speed Standard Passenger Van Added Apr 2018 \u2022 134 Fuel-ups. Property of Elec61 . 25.4 Avg MPG. Transporter. 2014 Volkswagen Transporter 2.0L L4 DIESEL Manual 6 Speed Van Camper Added Jun 2021 \u2022 26 Fuel-ups. Property of damian1471 .\n# \u30103\u2020Volkswagen Transporter MPG - Actual MPG from 528 Volkswagen ... - Fuelly\u2020www.fuelly.com\u3011\n2019 27.1 Avg MPG 6 Vehicles 416 Fuel-ups 178,106 Miles Tracked View All 2019 Volkswagen Transporters 2018 26.5 Avg MPG 15 Vehicles 622 Fuel-ups 235,245 Miles Tracked View All 2018 Volkswagen Transporters 2017 28.2 Avg MPG 13 Vehicles 1,287 Fuel-ups 554,573 Miles Tracked View All 2017 Volkswagen Transporters 2016 26.5 Avg MPG 22 Vehicles\n# \u30104\u2020Volkswagen Transporter 2014 | CarsGuide\u2020www.carsguide.com.au\u3011\nFind all of our 2014 Volkswagen Transporter Reviews, Videos, FAQs & News in one place. Learn how it drives and what features set the 2014 Volkswagen Transporter apart from its rivals. Our comprehensive reviews include detailed ratings on Price and Features, Design, Practicality, Engine, Fuel Consumption, Ownership, Driving & Safety.\n# \u30105\u20202014 Volkswagen Transporter Review, Price and Specification\u2020www.carexpert.com.au\u3011\nPrice $12,400 - $29,500 About the Transporter The 2014 Volkswagen Transporter was available in one hundred and twenty-four variants, is classed as a Van and was built in Germany. It uses Diesel fuel. The 2014 Volkswagen Transporter was sold with an engine size of 2.0L and with turbocharged four-cylinder. Official Links\n# \u30106\u2020Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP Specs\u2020www.ultimatespecs.com\u3011\nVolkswagen Transporter T6.1 L2H1 2.0 TDI 150HP Technical Specs 2019,2020,2021: 150 PS (148 hp), Diesel, Fuel consumption:6.7 l/100km (35 MPG), Dimensions: Length: 208.82 in (530.4 cm), Width: 74.96 in (190.4 cm), Height: 78.35 in (199.0 cm) ... Volkswagen Transporter T6.1 L2H1 2.0 TDI 150HP Fuel Consumption (Economy), Emissions and Range. Fuel ...\n# \u30107\u2020Volkswagen T5 Transporter (2013-2015) van review | Auto Express\u2020www.autoexpress.co.uk\u3011\nOptional BlueMotion Technology delivers lower emissions and improved fuel consumption on 83bhp and 112bhp versions, while there\u2019s also a 112bhp Transporter BlueMotion promising nearly 45mpg ...\n# \u30108\u2020Volkswagen Transporter Review - Drive\u2020www.drive.com.au\u3011\nReview 4 doors, 2 seats 2.0DT, 4 cyl. 103kW, 340Nm Diesel 8.2L/100KM FWD Auto (DCT) 3 Yr, Unltd KMs NA See Pricing + Full Specs All Work Cars Best Vans All Volkswagen Volkswagen Transporter Review David Zalstein 12:44 12 May 2014 0 comments\n# \u30109\u2020Volkswagen Transporter van review (2010-2015) - Parkers\u2020www.parkers.co.uk\u3011\n4.5 out of 5 4.5 This Transporter was naturally powered by a new generation 2.0-litre turbodiesel engine, which is both smooth and refined. It was offered in four different power outputs. The 84 and 102hp versions come with a five-speed gearbox that is well-suited to the wide spread of power.\n# \u301010\u2020Fuel Economy Trip Calculator\u2020www.fueleconomy.gov\u3011\nYou will be able to modify the route by dragging the route line on the map. section above will be updated with the cost of fuel for the trip. This website is administered by Oak Ridge National Laboratory for the U.S. Department of Energy and the U.S. Environmental Protection Agency. My Trip Calculator. Plan your route, estimate fuel costs, and ...\n# \u301011\u2020Volkswagen | Technical Specs, Fuel consumption, Dimensions\u2020www.auto-data.net\u3011\nThe 1.8 T has 5 valves per cylinder - 3 intake and 2 exhaust. Dacia Ford GMC Haval Honda Hummer Jaguar Jeep Koenigsegg Lada Lamborghini Lancia Lexus Maserati. Volkswagen | Technical Specs, Fuel consumption, Dimensions, Power, Maximum speed, Torque, Acceleration 0 - 100 km/h, Engine displacement, Drive wheel, Tires size, Body type, Doors, Seats.\n# \u301012\u2020Volkswagen Transporter T4 MPG - Car Emissions\u2020www.car-emissions.com\u3011\nFuel Economy, Road Tax & Emissions. CO2 (carbon dioxide), mileage, fuel economy and other emissions data for Volkswagen Transporter T4 cars. average fuel consumption is 46.1 MPG or 6.6 litres/100km. and average CO2 output is 166.0 g/km. based on 6782 models.\n# \u301013\u20202014 Volkswagen Transporter TDI340 T5 LWB Auto MY14 - Carsales\u2020www.carsales.com.au\u3011\nFuel Consumption Combined. 8.2 L/100km . Fuel Consumption Extra Urban. 6.9 L/100km . Fuel Consumption Urban. 10.2 L/100km ... 2014 Volkswagen Transporter TDI340 T5 SWB Manual MY15 $18,600* Excl. Govt. Charges Volkswagen Transporter Car Reviews. View all. Review 21 ...\n# \u301014\u2020Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP Specs\u2020www.ultimatespecs.com\u3011\nVolkswagen Transporter T6.1 L2H1 2.0 TDI 110HP Technical Specs 2019,2020,2021: 110 PS (109 hp), Diesel, Fuel consumption:6.4 l/100km (37 MPG), Dimensions: Length: 208.82 in (530.4 cm), Width: 74.96 in (190.4 cm), Height: 78.35 in (199.0 cm) ... Volkswagen Transporter T6.1 L2H1 2.0 TDI 110HP Fuel Consumption (Economy), Emissions and Range. Fuel ...\n# \u301015\u2020Volkswagen T5 Transporter Combi 2.0 TDI (140 hp) 2009-2015 MPG, WLTP ...\u2020motoreu.com\u3011\nConsumption in city is 10.2 lt/100km, consumption in highway is 6.9 lt/100km and combined fuel consumption is 8.1 lt/100km according to official factory data. Estimated T5 Transporter Combi 2.0 TDI Short 4MOTION real World MPG/consumption is 12,4 lt/100km. It is expected to consume 48 percent more fuel than factory data in real conditions and ...\n# \u301016\u20202015 Volkswagen Transporter (T6) Kombi 2.0 TSI (150 Hp) L1H2\u2020www.auto-data.net\u3011\nWhat is the body type, Volkswagen Transporter (T6) Kombi? Van, 4-5 Doors, 4-9 Seats What is the fuel economy, Volkswagen Transporter (T6) Kombi 2.0 TSI (150 Hp) L1H2?\n# \u301017\u2020Volkswagen Type 2 - Wikipedia\u2020en.wikipedia.org\u3011\nThe Volkswagen Type 2 is a forward control light commercial vehicle introduced in 1950 by the German automaker Volkswagen as its second car model.Known officially (depending on body type) as the Transporter, Kombi or Microbus, or, informally, as the Volkswagen Station Wagon (US), Bus (also US), Camper (UK) or Bulli (Germany), it was given the factory designation Type 2 as it followed \u2013 and ...\n# \u301018\u2020Volkswagen MPG (Fuel Consumption) - Car Emissions\u2020www.car-emissions.com\u3011\n166.0 g/km What is the average MPG (fuel economy) of a Volkswagen ? Volkswagen average fuel consumption is 46.1 MPG or 6.6 litres/100km and average CO2 output is 166.0 g/km based on 6782 models. CO2 (carbon dioxide), mileage, fuel economy and other emissions data for Volkswagen cars. Data table - click on a title to order by column:\n# \u301019\u2020Rental Truck Fuel Calculator | U-Pack\u2020www.upack.com\u3011\nMiles \u00f7 MPG x Gas Price = Minimum Fuel Cost. ( Miles = total distance of the trip) ( MPG = Moving Truck average mile per gallon) ( Gas Price = average cost of gas per gallon) For example, if you\u2019re planning to drive 850 miles in a U-Haul \u00ae truck that gets 10 miles to the gallon, and gas averages $2.50, you should budget around $212.50 for ...\nVisible: 0% - 100%",
+                  "pub_date": null,
+                  "extra": null
+                }
+              ],
+              "original_query": null
+            },
+            "command": "search",
+            "args": ["2014 Volkswagen Transporter fuel consumption"],
+            "status": "finished",
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "bea0c246-0b82-4df0-88e3-e28c9c28b909",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "bea0c246-0b82-4df0-88e3-e28c9c28b909",
+        "children": ["bdad1960-d8ec-4bbb-b27f-437d54655069"]
+      },
+      "bdad1960-d8ec-4bbb-b27f-437d54655069": {
+        "id": "bdad1960-d8ec-4bbb-b27f-437d54655069",
+        "message": {
+          "id": "bdad1960-d8ec-4bbb-b27f-437d54655069",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1704629977.590843,
+          "update_time": null,
+          "content": {
+            "content_type": "code",
+            "language": "unknown",
+            "text": "mclick([0, 2, 13])"
+          },
+          "status": "finished_successfully",
+          "end_turn": false,
+          "weight": 1.0,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100265]
+            },
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "3db71263-feb6-445a-b60c-dddc8302fa52",
+            "timestamp_": "absolute"
+          },
+          "recipient": "browser"
+        },
+        "parent": "3db71263-feb6-445a-b60c-dddc8302fa52",
+        "children": ["adf6394d-b5a9-422a-bc85-e388a20b219b"]
+      },
+      "adf6394d-b5a9-422a-bc85-e388a20b219b": {
+        "id": "adf6394d-b5a9-422a-bc85-e388a20b219b",
+        "message": {
+          "id": "adf6394d-b5a9-422a-bc85-e388a20b219b",
+          "author": {
+            "role": "tool",
+            "name": "browser",
+            "metadata": {}
+          },
+          "create_time": 1704629977.598691,
+          "update_time": null,
+          "content": {
+            "content_type": "tether_quote",
+            "url": "https://www.carsales.com.au/volkswagen/transporter/price/2014/tdi340-381631/",
+            "domain": "www.carsales.com.au",
+            "text": "\nNumber of Airbags\n\n2 \n\n### Engine \n\nEngine Type\n\nPiston \n\nEngine Location\n\nFront \n\nEngine Size (cc)\n\n1968 cc \n\nEngine Size (L)\n\n2.0 L \n\nInduction\n\nTurbo Intercooled \n\nEngine Configuration\n\nIn-line \n\nCylinders\n\n4 \n\nCamshaft\n\nDouble Overhead Cam \n\nValves/Ports per Cylinder\n\n4 \n\nCompression ratio\n\n16.5 \n\nEngine Code\n\nCAAC \n\nGeneric Engine Type\n\nPiston \n\nPower\n\n103.0kW @ 3500rpm \n\nTorque\n\n340Nm @ 1750-2500rpm \n\nPower to Weight Ratio\n\n52.9 kW/t \n\n### Transmission & drivetrain \n\nGears\n\n7 \n\nGear Type\n\nDirect-Shift Gearbox (Sports Automatic Dual Clutch) \n\nGeneric Gear Type\n\nAutomatic \n\nGear Location\n\nDash \n\nDrive\n\nFront Wheel Drive \n\n### Fuel \n\nFuel Type\n\nDiesel \n\nFuel Capacity\n\n80 L \n\nFuel Delivery\n\nCommon-rail Direct Injection \n\nMethod of Delivery\n\nElectronic Sequential \n\nFuel Consumption Combined\n\n8.2 L/100km \n\nFuel Consumption Highway\n\n6.9 L/100km \n\nFuel Consumption City\n\n10.2 L/100km \n\nFuel Average Distance\n\n976 km \n\nFuel Maximum Distance\n\n1159 km \n\nFuel Minimum Distance\n\n784 km \n\nCO2 Emission Combined\n\n216 g/km \n\nCO2 Extra Urban\n\n182 g/km \n\nCO2 Urban\n\n274 g/km \n\nGreenhouse Rating\n\n6 \n\nAir Pollution Rating\n\n5 \n\nGreen Star Rating\n\n3 \n\n### Steering \n\nSteering\n\nRack and Pinion \n\n### Wheels & tyres \n\nRim Material\n\nSteel \n\nFront Rim Description\n\n16x6.5 \n\nRear Rim Description\n\n16x6.5 \n\nFront Tyre Description\n\n\u301092\u2020205/65 R16 C\u2020www.tyresales.com.au\u3011 \n\nRear Tyre Description\n\n\u301092\u2020205/65 R16 C\u2020www.tyresales.com.au\u3011 \n\n### Dimensions & weights \n\nLength\n\n5292 mm \n\nWidth\n\n1904 mm \n\nHeight\n\n1990 mm \n\nWheelbase\n\n3400 mm \n\nTrack Front\n\n1628 mm \n\nTrack Rear\n\n1628 mm \n\nKerb Weight\n\n1948 kg \n\nBoot / Load Space Max (L)\n\n6700 L \n\nGross Vehicle Mass\n\n3000 kg \n\nPayload\n\n1052 kg \n\nTowing Capacity (braked)\n\n2000 kg \n\nTowing Capacity (Unbraked)\n\n750 kg \n\nLoad Length\n\n2753 mm \n\nLoad Width\n\n1692 mm \n\nLoad Height\n\n1410 mm \n\nWidth Between Wheel Arches\n\n1244 mm \n\nRear Side Door Width\n\n1020 mm \n\nRear Side Door Height\n\n1284 mm \n\n### Warranty & service \n\nWarranty in Years from First Registration\n\n3 yr \n\nWarranty in Km\n\nUnlimited km \n\nWarranty Customer Assistance\n\n3Yrs Roadside \n\nWarranty Anti Corrosion in Years from First Registration\n\n12 yr \n\nRegular Service Interval in Km\n\n15000 km \n\nRegular Service Interval in Months\n\n12 mth \n\n### Other \n\nCountry of Origin\n\nGERMANY \n\nLaunch Year\n\n2013 \n\nLaunch Month\n\n9 \n\nGeneration Name\n\nT5 \n\nSeries\n\nT5 \n\nModel Year\n\nMY14 \n\nBadge\n\nTDI340 \n\nDoors\n\n4 \n\nSeat Capacity\n\n5 \n\nBody Style\n\nCrewvan (Van) \n\nOverview\n\nCovering all aspects utilitarian, from cab/chassis through the crew cab, the short and long wheel based front-wheel-drive vans, right up to the all-wheel-drive 4-Motion, the T5 Transporter remains VW's best selling commercial vehicle. That fact alone speaks volumes in this tough sector. Adopting car-like ambiance and feel, sporting a range of 2.0-litre turbodiesels and transmissions, you can then opt for any number of the bewildering array of options. Load volumes for the Crew vans runs from 5.8 m up to 7.8 m in the LWB medium-roof. Safety is very good for the class with four ANCAP stars. \n\n### P plate status \n\nNSW Probationary Status\n\nAllowed \n\n### Approximate Running Costs \n\nFuel cost per 1000km\n\n$159.00 \n\nFuel cost per fill\n\n$154.00 \n\n### Audio, visual & communication \n\nInputs\n\nMP3 decoder \n\nCD / DVD\n\nCD player \n\n### Safety & security \n\nAirbags\n\nDriver \n\nPassenger \n\nSeatbelts\n\nLap/sash for 2 seats \n\nPretensioners 1st row (front) \n\nAdjustable height 1st row \n\nEmergency\n\nBrake assist \n\nVehicle control\n\nABS (antilock brakes) \n\nTraction \n\nElectronic stability \n\nHill holder \n\nEBD (electronic brake force distribution) \n\nSecurity\n\nCentral locking - remote/keyless \n\nEngine immobiliser \n\n### Comfort & convenience \n\nAir conditioning\n\nAir conditioning \n\n### Lights & windows \n\nLights\n\nDaytime running lamps \n\nFog lamps - rear \n\nPower windows\n\nFront only \n\n### Interior \n\nCloth\n\nTrim \n\n### Instruments & controls \n\nDisplay\n\nClock - digital \n\nGauges\n\nTacho \n\n### Exterior \n\nMirrors\n\nElectric - heated \n\nMudflaps\n\nFront \n\nRear \n\n### Body \n\nDoors\n\nSide sliding lhs(passenger side) \n\n### Brakes \n\nFront\n\nVentilated \n\nRear\n\nSolid \n\n### Suspension \n\nType\n\nIndependent front suspension \n\n### Option pack \n\nOption pack\n\nComfort Pack \n\nAirbags - Front Side & Head \n\n- Airbags - Head for 1st Row Seats (Front)\n\n- Airbags - Side for 1st Row Occupants (Front)\n\nControl - Park Distance Front & Rear \n\n- Control - Park Distance Front\n\n- Control - Park Distance Rear\n\nControl - Park Distance Front & Rear with Camera \n\n- Control - Park Distance Front\n\n- Control - Park Distance Rear\n\n- Parking Assist - Graphical Display\n\n- Camera - Rear Vision\n\nLight & Sight Pack \n\n- Headlamps - See me home\n\n- Rain Sensor (Auto wipers)\n\n### Audio, visual & communication \n\nInputs\n\nMedia Device Interface - Aux Ipod/USB Socket \n\nBluetooth\n\nBluetooth Phone Preparation \n\nRadio\n\nRCD310 Radio with Media-In Interface \n\n### Safety & security \n\nDriver assistance\n\nControl - Park Distance Rear \n\nSecurity\n\nAlarm \n\n### Comfort & convenience \n\nAir conditioning\n\nAir Conditioning - Rear \n\nDriving\n\nCruise Control \n\nArmrests\n\nArmrest - Drivers Seat \n\nArmrest - Front (Driver & Passenger) \n\nCargo space\n\nFixed Partition with Fixed Window \n\n### Lights & windows \n\nLights\n\nFog Lamps - Front with Fixed Corner Function \n\nWindows\n\nWindow - Side Slide Centre Left \n\nWindow - Side Slide Centre Right \n\n### Interior \n\nOther\n\nRubber - Cargo Floor Covering \n\nLining material\n\nCargo Area - Fully Trimmed Sides \n\nWooden Cargo Floor \n\n### Seating \n\nFront row seats\n\nSeat - Drivers Height Adjust (includes lumbar) \n\nSeat - Double Bench \n\nSeat - Height Adjust Driver/Passen (incl. lumbar) \n\n### Instruments & controls \n\nDisplay\n\nMulti-functionTrip Comp w/- open door display \n\nTrip Computer - Basic \n\nNavigation\n\nGPS (Satellite Navigation) RNS510 inc MFD/Aux In \n\n### Exterior \n\nBody coloured\n\nBody Colour - Bumpers \n\nMirrors\n\nPower Door Mirrors - Folding \n\nPaint\n\nPaint - Metallic \n\nPaint - Pearl \n\nSunroof\n\nSunroof - Sliding/Tilting in Cab \n\n### Body \n\nDoors\n\nDoor - side sliding RHS(drivers side) \n\nDoors - Rear Wing 270 degree opening \n\nDoors - Rear Wing w/- Heated Windows \n\nPower Sliding Side Doors \n\nRoof\n\nHigh Roof in Body Colour \n\nHigh Roof in White \n\nMid Roof in Body Colour \n\nC-Rail Roof Rack Prep \n\n### Electrical \n\nBattery\n\nBattery - Dual (2nd) \n\nBattery - Stronger \n\n### Steering \n\nOperation\n\nMulti-function Steering Wheel \n\n### Suspension \n\nType\n\nReinforced Standard Dampers & Springs \n\nSuspension - Upgraded Shocks & Springs \n\n### Wheels & tyres \n\nFront rim\n\n17\" Alloy Wheels - Thunder \n\nOther\n\nChild lock on side slilding door \n\n## Currently listed for sale\n\n\u301087\u2020View all\u3011 \n\n \u301093\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY15 $23,000* Excl. Govt. Charges \u3011 \u301094\u2020 2014 Volkswagen Transporter TDI340 T5 LWB Manual MY14 $29,888 Drive Away \u3011 \u301095\u2020 2014 Volkswagen Transporter TDI340 T5 LWB Auto MY14 $20,000* Excl. Govt. Charges \u3011 \u301096\u2020 2014 Volkswagen Transporter TDI340 T5 LWB Auto MY15 $35,000* Excl. Govt. Charges \u3011 \u301097\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY14 $15,000* Excl. Govt. Charges \u3011 \u301098\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY15 $32,990 Drive Away \u3011 \u301099\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY15 $19,500* Excl. Govt. Charges \u3011 \u3010100\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Manual MY14 $16,900* Excl. Govt. Charges \u3011 \n\n## Volkswagen Transporter Car Reviews\n\n\u3010101\u2020View all\u3011 \n\n \u3010102\u2020 Review 21 Volkswagen Transporter 2016 Review April 2016 \u3011 \u3010103\u2020 Review 12 Volkswagen Transporter 2016 Review December 2015 \u3011 \u3010104\u2020 Review 16 Volkswagen Transporter and Multivan T6 2015 Review July 2015 \u3011 \n\n## Volkswagen Transporter Car News\n\n\u3010105\u2020View ",
+            "title": "Volkswagen Transporter TDI340 2014 - Pricing & Specifications | carsales.com.au"
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 0.0,
+          "metadata": {
+            "_cite_metadata": {
+              "citation_format": {
+                "name": "tether_og"
+              },
+              "metadata_list": [
+                {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter TDI340 2014 - Pricing & Specifications | carsales.com.au",
+                  "url": "https://www.carsales.com.au/volkswagen/transporter/price/2014/tdi340-381631/",
+                  "text": "\nNumber of Airbags\n\n2 \n\n### Engine \n\nEngine Type\n\nPiston \n\nEngine Location\n\nFront \n\nEngine Size (cc)\n\n1968 cc \n\nEngine Size (L)\n\n2.0 L \n\nInduction\n\nTurbo Intercooled \n\nEngine Configuration\n\nIn-line \n\nCylinders\n\n4 \n\nCamshaft\n\nDouble Overhead Cam \n\nValves/Ports per Cylinder\n\n4 \n\nCompression ratio\n\n16.5 \n\nEngine Code\n\nCAAC \n\nGeneric Engine Type\n\nPiston \n\nPower\n\n103.0kW @ 3500rpm \n\nTorque\n\n340Nm @ 1750-2500rpm \n\nPower to Weight Ratio\n\n52.9 kW/t \n\n### Transmission & drivetrain \n\nGears\n\n7 \n\nGear Type\n\nDirect-Shift Gearbox (Sports Automatic Dual Clutch) \n\nGeneric Gear Type\n\nAutomatic \n\nGear Location\n\nDash \n\nDrive\n\nFront Wheel Drive \n\n### Fuel \n\nFuel Type\n\nDiesel \n\nFuel Capacity\n\n80 L \n\nFuel Delivery\n\nCommon-rail Direct Injection \n\nMethod of Delivery\n\nElectronic Sequential \n\nFuel Consumption Combined\n\n8.2 L/100km \n\nFuel Consumption Highway\n\n6.9 L/100km \n\nFuel Consumption City\n\n10.2 L/100km \n\nFuel Average Distance\n\n976 km \n\nFuel Maximum Distance\n\n1159 km \n\nFuel Minimum Distance\n\n784 km \n\nCO2 Emission Combined\n\n216 g/km \n\nCO2 Extra Urban\n\n182 g/km \n\nCO2 Urban\n\n274 g/km \n\nGreenhouse Rating\n\n6 \n\nAir Pollution Rating\n\n5 \n\nGreen Star Rating\n\n3 \n\n### Steering \n\nSteering\n\nRack and Pinion \n\n### Wheels & tyres \n\nRim Material\n\nSteel \n\nFront Rim Description\n\n16x6.5 \n\nRear Rim Description\n\n16x6.5 \n\nFront Tyre Description\n\n\u301092\u2020205/65 R16 C\u2020www.tyresales.com.au\u3011 \n\nRear Tyre Description\n\n\u301092\u2020205/65 R16 C\u2020www.tyresales.com.au\u3011 \n\n### Dimensions & weights \n\nLength\n\n5292 mm \n\nWidth\n\n1904 mm \n\nHeight\n\n1990 mm \n\nWheelbase\n\n3400 mm \n\nTrack Front\n\n1628 mm \n\nTrack Rear\n\n1628 mm \n\nKerb Weight\n\n1948 kg \n\nBoot / Load Space Max (L)\n\n6700 L \n\nGross Vehicle Mass\n\n3000 kg \n\nPayload\n\n1052 kg \n\nTowing Capacity (braked)\n\n2000 kg \n\nTowing Capacity (Unbraked)\n\n750 kg \n\nLoad Length\n\n2753 mm \n\nLoad Width\n\n1692 mm \n\nLoad Height\n\n1410 mm \n\nWidth Between Wheel Arches\n\n1244 mm \n\nRear Side Door Width\n\n1020 mm \n\nRear Side Door Height\n\n1284 mm \n\n### Warranty & service \n\nWarranty in Years from First Registration\n\n3 yr \n\nWarranty in Km\n\nUnlimited km \n\nWarranty Customer Assistance\n\n3Yrs Roadside \n\nWarranty Anti Corrosion in Years from First Registration\n\n12 yr \n\nRegular Service Interval in Km\n\n15000 km \n\nRegular Service Interval in Months\n\n12 mth \n\n### Other \n\nCountry of Origin\n\nGERMANY \n\nLaunch Year\n\n2013 \n\nLaunch Month\n\n9 \n\nGeneration Name\n\nT5 \n\nSeries\n\nT5 \n\nModel Year\n\nMY14 \n\nBadge\n\nTDI340 \n\nDoors\n\n4 \n\nSeat Capacity\n\n5 \n\nBody Style\n\nCrewvan (Van) \n\nOverview\n\nCovering all aspects utilitarian, from cab/chassis through the crew cab, the short and long wheel based front-wheel-drive vans, right up to the all-wheel-drive 4-Motion, the T5 Transporter remains VW's best selling commercial vehicle. That fact alone speaks volumes in this tough sector. Adopting car-like ambiance and feel, sporting a range of 2.0-litre turbodiesels and transmissions, you can then opt for any number of the bewildering array of options. Load volumes for the Crew vans runs from 5.8 m up to 7.8 m in the LWB medium-roof. Safety is very good for the class with four ANCAP stars. \n\n### P plate status \n\nNSW Probationary Status\n\nAllowed \n\n### Approximate Running Costs \n\nFuel cost per 1000km\n\n$159.00 \n\nFuel cost per fill\n\n$154.00 \n\n### Audio, visual & communication \n\nInputs\n\nMP3 decoder \n\nCD / DVD\n\nCD player \n\n### Safety & security \n\nAirbags\n\nDriver \n\nPassenger \n\nSeatbelts\n\nLap/sash for 2 seats \n\nPretensioners 1st row (front) \n\nAdjustable height 1st row \n\nEmergency\n\nBrake assist \n\nVehicle control\n\nABS (antilock brakes) \n\nTraction \n\nElectronic stability \n\nHill holder \n\nEBD (electronic brake force distribution) \n\nSecurity\n\nCentral locking - remote/keyless \n\nEngine immobiliser \n\n### Comfort & convenience \n\nAir conditioning\n\nAir conditioning \n\n### Lights & windows \n\nLights\n\nDaytime running lamps \n\nFog lamps - rear \n\nPower windows\n\nFront only \n\n### Interior \n\nCloth\n\nTrim \n\n### Instruments & controls \n\nDisplay\n\nClock - digital \n\nGauges\n\nTacho \n\n### Exterior \n\nMirrors\n\nElectric - heated \n\nMudflaps\n\nFront \n\nRear \n\n### Body \n\nDoors\n\nSide sliding lhs(passenger side) \n\n### Brakes \n\nFront\n\nVentilated \n\nRear\n\nSolid \n\n### Suspension \n\nType\n\nIndependent front suspension \n\n### Option pack \n\nOption pack\n\nComfort Pack \n\nAirbags - Front Side & Head \n\n- Airbags - Head for 1st Row Seats (Front)\n\n- Airbags - Side for 1st Row Occupants (Front)\n\nControl - Park Distance Front & Rear \n\n- Control - Park Distance Front\n\n- Control - Park Distance Rear\n\nControl - Park Distance Front & Rear with Camera \n\n- Control - Park Distance Front\n\n- Control - Park Distance Rear\n\n- Parking Assist - Graphical Display\n\n- Camera - Rear Vision\n\nLight & Sight Pack \n\n- Headlamps - See me home\n\n- Rain Sensor (Auto wipers)\n\n### Audio, visual & communication \n\nInputs\n\nMedia Device Interface - Aux Ipod/USB Socket \n\nBluetooth\n\nBluetooth Phone Preparation \n\nRadio\n\nRCD310 Radio with Media-In Interface \n\n### Safety & security \n\nDriver assistance\n\nControl - Park Distance Rear \n\nSecurity\n\nAlarm \n\n### Comfort & convenience \n\nAir conditioning\n\nAir Conditioning - Rear \n\nDriving\n\nCruise Control \n\nArmrests\n\nArmrest - Drivers Seat \n\nArmrest - Front (Driver & Passenger) \n\nCargo space\n\nFixed Partition with Fixed Window \n\n### Lights & windows \n\nLights\n\nFog Lamps - Front with Fixed Corner Function \n\nWindows\n\nWindow - Side Slide Centre Left \n\nWindow - Side Slide Centre Right \n\n### Interior \n\nOther\n\nRubber - Cargo Floor Covering \n\nLining material\n\nCargo Area - Fully Trimmed Sides \n\nWooden Cargo Floor \n\n### Seating \n\nFront row seats\n\nSeat - Drivers Height Adjust (includes lumbar) \n\nSeat - Double Bench \n\nSeat - Height Adjust Driver/Passen (incl. lumbar) \n\n### Instruments & controls \n\nDisplay\n\nMulti-functionTrip Comp w/- open door display \n\nTrip Computer - Basic \n\nNavigation\n\nGPS (Satellite Navigation) RNS510 inc MFD/Aux In \n\n### Exterior \n\nBody coloured\n\nBody Colour - Bumpers \n\nMirrors\n\nPower Door Mirrors - Folding \n\nPaint\n\nPaint - Metallic \n\nPaint - Pearl \n\nSunroof\n\nSunroof - Sliding/Tilting in Cab \n\n### Body \n\nDoors\n\nDoor - side sliding RHS(drivers side) \n\nDoors - Rear Wing 270 degree opening \n\nDoors - Rear Wing w/- Heated Windows \n\nPower Sliding Side Doors \n\nRoof\n\nHigh Roof in Body Colour \n\nHigh Roof in White \n\nMid Roof in Body Colour \n\nC-Rail Roof Rack Prep \n\n### Electrical \n\nBattery\n\nBattery - Dual (2nd) \n\nBattery - Stronger \n\n### Steering \n\nOperation\n\nMulti-function Steering Wheel \n\n### Suspension \n\nType\n\nReinforced Standard Dampers & Springs \n\nSuspension - Upgraded Shocks & Springs \n\n### Wheels & tyres \n\nFront rim\n\n17\" Alloy Wheels - Thunder \n\nOther\n\nChild lock on side slilding door \n\n## Currently listed for sale\n\n\u301087\u2020View all\u3011 \n\n \u301093\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY15 $23,000* Excl. Govt. Charges \u3011 \u301094\u2020 2014 Volkswagen Transporter TDI340 T5 LWB Manual MY14 $29,888 Drive Away \u3011 \u301095\u2020 2014 Volkswagen Transporter TDI340 T5 LWB Auto MY14 $20,000* Excl. Govt. Charges \u3011 \u301096\u2020 2014 Volkswagen Transporter TDI340 T5 LWB Auto MY15 $35,000* Excl. Govt. Charges \u3011 \u301097\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY14 $15,000* Excl. Govt. Charges \u3011 \u301098\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY15 $32,990 Drive Away \u3011 \u301099\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY15 $19,500* Excl. Govt. Charges \u3011 \u3010100\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Manual MY14 $16,900* Excl. Govt. Charges \u3011 \n\n## Volkswagen Transporter Car Reviews\n\n\u3010101\u2020View all\u3011 \n\n \u3010102\u2020 Review 21 Volkswagen Transporter 2016 Review April 2016 \u3011 \u3010103\u2020 Review 12 Volkswagen Transporter 2016 Review December 2015 \u3011 \u3010104\u2020 Review 16 Volkswagen Transporter and Multivan T6 2015 Review July 2015 \u3011 \n\n## Volkswagen Transporter Car News\n\n\u3010105\u2020View ",
+                  "pub_date": null,
+                  "extra": null
+                }
+              ],
+              "original_query": null
+            },
+            "command": "mclick",
+            "args": ["[0, 2, 13]"],
+            "status": "finished",
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "bdad1960-d8ec-4bbb-b27f-437d54655069",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "bdad1960-d8ec-4bbb-b27f-437d54655069",
+        "children": ["9e0f92f9-9b23-464a-98ec-2b034164f2ec"]
+      },
+      "9e0f92f9-9b23-464a-98ec-2b034164f2ec": {
+        "id": "9e0f92f9-9b23-464a-98ec-2b034164f2ec",
+        "message": {
+          "id": "9e0f92f9-9b23-464a-98ec-2b034164f2ec",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1704629977.607185,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "The fuel consumption of a 2014 Volkswagen Transporter, specifically the TDI340 model with a 2.0 L engine, is reported as follows:\n- Combined: 8.2 L/100km\n- Highway: 6.9 L/100km\n- City: 10.2 L/100km\n\nThese figures can vary based on driving conditions and the vehicle's load. The actual consumption might be higher when carrying eight people due to the additional weight\u301013\u2020source\u3011."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100260]
+            },
+            "citations": [
+              {
+                "start_ix": 368,
+                "end_ix": 379,
+                "citation_format_type": "tether_og",
+                "metadata": {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter TDI340 2014 - Pricing & Specifications | carsales.com.au",
+                  "url": "https://www.carsales.com.au/volkswagen/transporter/price/2014/tdi340-381631/",
+                  "text": "\nNumber of Airbags\n\n2 \n\n### Engine \n\nEngine Type\n\nPiston \n\nEngine Location\n\nFront \n\nEngine Size (cc)\n\n1968 cc \n\nEngine Size (L)\n\n2.0 L \n\nInduction\n\nTurbo Intercooled \n\nEngine Configuration\n\nIn-line \n\nCylinders\n\n4 \n\nCamshaft\n\nDouble Overhead Cam \n\nValves/Ports per Cylinder\n\n4 \n\nCompression ratio\n\n16.5 \n\nEngine Code\n\nCAAC \n\nGeneric Engine Type\n\nPiston \n\nPower\n\n103.0kW @ 3500rpm \n\nTorque\n\n340Nm @ 1750-2500rpm \n\nPower to Weight Ratio\n\n52.9 kW/t \n\n### Transmission & drivetrain \n\nGears\n\n7 \n\nGear Type\n\nDirect-Shift Gearbox (Sports Automatic Dual Clutch) \n\nGeneric Gear Type\n\nAutomatic \n\nGear Location\n\nDash \n\nDrive\n\nFront Wheel Drive \n\n### Fuel \n\nFuel Type\n\nDiesel \n\nFuel Capacity\n\n80 L \n\nFuel Delivery\n\nCommon-rail Direct Injection \n\nMethod of Delivery\n\nElectronic Sequential \n\nFuel Consumption Combined\n\n8.2 L/100km \n\nFuel Consumption Highway\n\n6.9 L/100km \n\nFuel Consumption City\n\n10.2 L/100km \n\nFuel Average Distance\n\n976 km \n\nFuel Maximum Distance\n\n1159 km \n\nFuel Minimum Distance\n\n784 km \n\nCO2 Emission Combined\n\n216 g/km \n\nCO2 Extra Urban\n\n182 g/km \n\nCO2 Urban\n\n274 g/km \n\nGreenhouse Rating\n\n6 \n\nAir Pollution Rating\n\n5 \n\nGreen Star Rating\n\n3 \n\n### Steering \n\nSteering\n\nRack and Pinion \n\n### Wheels & tyres \n\nRim Material\n\nSteel \n\nFront Rim Description\n\n16x6.5 \n\nRear Rim Description\n\n16x6.5 \n\nFront Tyre Description\n\n\u301092\u2020205/65 R16 C\u2020www.tyresales.com.au\u3011 \n\nRear Tyre Description\n\n\u301092\u2020205/65 R16 C\u2020www.tyresales.com.au\u3011 \n\n### Dimensions & weights \n\nLength\n\n5292 mm \n\nWidth\n\n1904 mm \n\nHeight\n\n1990 mm \n\nWheelbase\n\n3400 mm \n\nTrack Front\n\n1628 mm \n\nTrack Rear\n\n1628 mm \n\nKerb Weight\n\n1948 kg \n\nBoot / Load Space Max (L)\n\n6700 L \n\nGross Vehicle Mass\n\n3000 kg \n\nPayload\n\n1052 kg \n\nTowing Capacity (braked)\n\n2000 kg \n\nTowing Capacity (Unbraked)\n\n750 kg \n\nLoad Length\n\n2753 mm \n\nLoad Width\n\n1692 mm \n\nLoad Height\n\n1410 mm \n\nWidth Between Wheel Arches\n\n1244 mm \n\nRear Side Door Width\n\n1020 mm \n\nRear Side Door Height\n\n1284 mm \n\n### Warranty & service \n\nWarranty in Years from First Registration\n\n3 yr \n\nWarranty in Km\n\nUnlimited km \n\nWarranty Customer Assistance\n\n3Yrs Roadside \n\nWarranty Anti Corrosion in Years from First Registration\n\n12 yr \n\nRegular Service Interval in Km\n\n15000 km \n\nRegular Service Interval in Months\n\n12 mth \n\n### Other \n\nCountry of Origin\n\nGERMANY \n\nLaunch Year\n\n2013 \n\nLaunch Month\n\n9 \n\nGeneration Name\n\nT5 \n\nSeries\n\nT5 \n\nModel Year\n\nMY14 \n\nBadge\n\nTDI340 \n\nDoors\n\n4 \n\nSeat Capacity\n\n5 \n\nBody Style\n\nCrewvan (Van) \n\nOverview\n\nCovering all aspects utilitarian, from cab/chassis through the crew cab, the short and long wheel based front-wheel-drive vans, right up to the all-wheel-drive 4-Motion, the T5 Transporter remains VW's best selling commercial vehicle. That fact alone speaks volumes in this tough sector. Adopting car-like ambiance and feel, sporting a range of 2.0-litre turbodiesels and transmissions, you can then opt for any number of the bewildering array of options. Load volumes for the Crew vans runs from 5.8 m up to 7.8 m in the LWB medium-roof. Safety is very good for the class with four ANCAP stars. \n\n### P plate status \n\nNSW Probationary Status\n\nAllowed \n\n### Approximate Running Costs \n\nFuel cost per 1000km\n\n$159.00 \n\nFuel cost per fill\n\n$154.00 \n\n### Audio, visual & communication \n\nInputs\n\nMP3 decoder \n\nCD / DVD\n\nCD player \n\n### Safety & security \n\nAirbags\n\nDriver \n\nPassenger \n\nSeatbelts\n\nLap/sash for 2 seats \n\nPretensioners 1st row (front) \n\nAdjustable height 1st row \n\nEmergency\n\nBrake assist \n\nVehicle control\n\nABS (antilock brakes) \n\nTraction \n\nElectronic stability \n\nHill holder \n\nEBD (electronic brake force distribution) \n\nSecurity\n\nCentral locking - remote/keyless \n\nEngine immobiliser \n\n### Comfort & convenience \n\nAir conditioning\n\nAir conditioning \n\n### Lights & windows \n\nLights\n\nDaytime running lamps \n\nFog lamps - rear \n\nPower windows\n\nFront only \n\n### Interior \n\nCloth\n\nTrim \n\n### Instruments & controls \n\nDisplay\n\nClock - digital \n\nGauges\n\nTacho \n\n### Exterior \n\nMirrors\n\nElectric - heated \n\nMudflaps\n\nFront \n\nRear \n\n### Body \n\nDoors\n\nSide sliding lhs(passenger side) \n\n### Brakes \n\nFront\n\nVentilated \n\nRear\n\nSolid \n\n### Suspension \n\nType\n\nIndependent front suspension \n\n### Option pack \n\nOption pack\n\nComfort Pack \n\nAirbags - Front Side & Head \n\n- Airbags - Head for 1st Row Seats (Front)\n\n- Airbags - Side for 1st Row Occupants (Front)\n\nControl - Park Distance Front & Rear \n\n- Control - Park Distance Front\n\n- Control - Park Distance Rear\n\nControl - Park Distance Front & Rear with Camera \n\n- Control - Park Distance Front\n\n- Control - Park Distance Rear\n\n- Parking Assist - Graphical Display\n\n- Camera - Rear Vision\n\nLight & Sight Pack \n\n- Headlamps - See me home\n\n- Rain Sensor (Auto wipers)\n\n### Audio, visual & communication \n\nInputs\n\nMedia Device Interface - Aux Ipod/USB Socket \n\nBluetooth\n\nBluetooth Phone Preparation \n\nRadio\n\nRCD310 Radio with Media-In Interface \n\n### Safety & security \n\nDriver assistance\n\nControl - Park Distance Rear \n\nSecurity\n\nAlarm \n\n### Comfort & convenience \n\nAir conditioning\n\nAir Conditioning - Rear \n\nDriving\n\nCruise Control \n\nArmrests\n\nArmrest - Drivers Seat \n\nArmrest - Front (Driver & Passenger) \n\nCargo space\n\nFixed Partition with Fixed Window \n\n### Lights & windows \n\nLights\n\nFog Lamps - Front with Fixed Corner Function \n\nWindows\n\nWindow - Side Slide Centre Left \n\nWindow - Side Slide Centre Right \n\n### Interior \n\nOther\n\nRubber - Cargo Floor Covering \n\nLining material\n\nCargo Area - Fully Trimmed Sides \n\nWooden Cargo Floor \n\n### Seating \n\nFront row seats\n\nSeat - Drivers Height Adjust (includes lumbar) \n\nSeat - Double Bench \n\nSeat - Height Adjust Driver/Passen (incl. lumbar) \n\n### Instruments & controls \n\nDisplay\n\nMulti-functionTrip Comp w/- open door display \n\nTrip Computer - Basic \n\nNavigation\n\nGPS (Satellite Navigation) RNS510 inc MFD/Aux In \n\n### Exterior \n\nBody coloured\n\nBody Colour - Bumpers \n\nMirrors\n\nPower Door Mirrors - Folding \n\nPaint\n\nPaint - Metallic \n\nPaint - Pearl \n\nSunroof\n\nSunroof - Sliding/Tilting in Cab \n\n### Body \n\nDoors\n\nDoor - side sliding RHS(drivers side) \n\nDoors - Rear Wing 270 degree opening \n\nDoors - Rear Wing w/- Heated Windows \n\nPower Sliding Side Doors \n\nRoof\n\nHigh Roof in Body Colour \n\nHigh Roof in White \n\nMid Roof in Body Colour \n\nC-Rail Roof Rack Prep \n\n### Electrical \n\nBattery\n\nBattery - Dual (2nd) \n\nBattery - Stronger \n\n### Steering \n\nOperation\n\nMulti-function Steering Wheel \n\n### Suspension \n\nType\n\nReinforced Standard Dampers & Springs \n\nSuspension - Upgraded Shocks & Springs \n\n### Wheels & tyres \n\nFront rim\n\n17\" Alloy Wheels - Thunder \n\nOther\n\nChild lock on side slilding door \n\n## Currently listed for sale\n\n\u301087\u2020View all\u3011 \n\n \u301093\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY15 $23,000* Excl. Govt. Charges \u3011 \u301094\u2020 2014 Volkswagen Transporter TDI340 T5 LWB Manual MY14 $29,888 Drive Away \u3011 \u301095\u2020 2014 Volkswagen Transporter TDI340 T5 LWB Auto MY14 $20,000* Excl. Govt. Charges \u3011 \u301096\u2020 2014 Volkswagen Transporter TDI340 T5 LWB Auto MY15 $35,000* Excl. Govt. Charges \u3011 \u301097\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY14 $15,000* Excl. Govt. Charges \u3011 \u301098\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY15 $32,990 Drive Away \u3011 \u301099\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY15 $19,500* Excl. Govt. Charges \u3011 \u3010100\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Manual MY14 $16,900* Excl. Govt. Charges \u3011 \n\n## Volkswagen Transporter Car Reviews\n\n\u3010101\u2020View all\u3011 \n\n \u3010102\u2020 Review 21 Volkswagen Transporter 2016 Review April 2016 \u3011 \u3010103\u2020 Review 12 Volkswagen Transporter 2016 Review December 2015 \u3011 \u3010104\u2020 Review 16 Volkswagen Transporter and Multivan T6 2015 Review July 2015 \u3011 \n\n## Volkswagen Transporter Car News\n\n\u3010105\u2020View ",
+                  "pub_date": null,
+                  "extra": {
+                    "cited_message_idx": 13,
+                    "evidence_text": "source"
+                  }
+                }
+              }
+            ],
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "adf6394d-b5a9-422a-bc85-e388a20b219b",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "adf6394d-b5a9-422a-bc85-e388a20b219b",
+        "children": ["bbb26113-6bb3-40ef-91a2-02b92f6fd1d0"]
+      },
+      "bbb26113-6bb3-40ef-91a2-02b92f6fd1d0": {
+        "id": "bbb26113-6bb3-40ef-91a2-02b92f6fd1d0",
+        "message": {
+          "id": "bbb26113-6bb3-40ef-91a2-02b92f6fd1d0",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1704630026.249975,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": ["Is it for fully loaded    car?"]
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 1.0,
+          "metadata": {
+            "finish_details": {
+              "type": "unknown"
+            },
+            "citations": [],
+            "voice_mode_message": false,
+            "timestamp_": "absolute",
+            "message_type": null
+          },
+          "recipient": "all"
+        },
+        "parent": "9e0f92f9-9b23-464a-98ec-2b034164f2ec",
+        "children": ["88a0cf9f-e860-4b34-8e7e-65f8346f4862"]
+      },
+      "88a0cf9f-e860-4b34-8e7e-65f8346f4862": {
+        "id": "88a0cf9f-e860-4b34-8e7e-65f8346f4862",
+        "message": {
+          "id": "88a0cf9f-e860-4b34-8e7e-65f8346f4862",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1704630034.629284,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "The fuel consumption figures for the 2014 Volkswagen Transporter TDI340, such as the combined 8.2 L/100km, are typically based on standardized tests. These tests don't necessarily reflect a fully loaded vehicle. The actual fuel consumption can vary and is likely to be higher when the vehicle is fully loaded with passengers or cargo, due to the increased weight and potential changes in driving conditions such as more frequent acceleration and deceleration\u301013\u2020source\u3011."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100260]
+            },
+            "citations": [
+              {
+                "start_ix": 458,
+                "end_ix": 469,
+                "citation_format_type": "tether_og",
+                "metadata": {
+                  "type": "webpage",
+                  "title": "Volkswagen Transporter TDI340 2014 - Pricing & Specifications | carsales.com.au",
+                  "url": "https://www.carsales.com.au/volkswagen/transporter/price/2014/tdi340-381631/",
+                  "text": "\nNumber of Airbags\n\n2 \n\n### Engine \n\nEngine Type\n\nPiston \n\nEngine Location\n\nFront \n\nEngine Size (cc)\n\n1968 cc \n\nEngine Size (L)\n\n2.0 L \n\nInduction\n\nTurbo Intercooled \n\nEngine Configuration\n\nIn-line \n\nCylinders\n\n4 \n\nCamshaft\n\nDouble Overhead Cam \n\nValves/Ports per Cylinder\n\n4 \n\nCompression ratio\n\n16.5 \n\nEngine Code\n\nCAAC \n\nGeneric Engine Type\n\nPiston \n\nPower\n\n103.0kW @ 3500rpm \n\nTorque\n\n340Nm @ 1750-2500rpm \n\nPower to Weight Ratio\n\n52.9 kW/t \n\n### Transmission & drivetrain \n\nGears\n\n7 \n\nGear Type\n\nDirect-Shift Gearbox (Sports Automatic Dual Clutch) \n\nGeneric Gear Type\n\nAutomatic \n\nGear Location\n\nDash \n\nDrive\n\nFront Wheel Drive \n\n### Fuel \n\nFuel Type\n\nDiesel \n\nFuel Capacity\n\n80 L \n\nFuel Delivery\n\nCommon-rail Direct Injection \n\nMethod of Delivery\n\nElectronic Sequential \n\nFuel Consumption Combined\n\n8.2 L/100km \n\nFuel Consumption Highway\n\n6.9 L/100km \n\nFuel Consumption City\n\n10.2 L/100km \n\nFuel Average Distance\n\n976 km \n\nFuel Maximum Distance\n\n1159 km \n\nFuel Minimum Distance\n\n784 km \n\nCO2 Emission Combined\n\n216 g/km \n\nCO2 Extra Urban\n\n182 g/km \n\nCO2 Urban\n\n274 g/km \n\nGreenhouse Rating\n\n6 \n\nAir Pollution Rating\n\n5 \n\nGreen Star Rating\n\n3 \n\n### Steering \n\nSteering\n\nRack and Pinion \n\n### Wheels & tyres \n\nRim Material\n\nSteel \n\nFront Rim Description\n\n16x6.5 \n\nRear Rim Description\n\n16x6.5 \n\nFront Tyre Description\n\n\u301092\u2020205/65 R16 C\u2020www.tyresales.com.au\u3011 \n\nRear Tyre Description\n\n\u301092\u2020205/65 R16 C\u2020www.tyresales.com.au\u3011 \n\n### Dimensions & weights \n\nLength\n\n5292 mm \n\nWidth\n\n1904 mm \n\nHeight\n\n1990 mm \n\nWheelbase\n\n3400 mm \n\nTrack Front\n\n1628 mm \n\nTrack Rear\n\n1628 mm \n\nKerb Weight\n\n1948 kg \n\nBoot / Load Space Max (L)\n\n6700 L \n\nGross Vehicle Mass\n\n3000 kg \n\nPayload\n\n1052 kg \n\nTowing Capacity (braked)\n\n2000 kg \n\nTowing Capacity (Unbraked)\n\n750 kg \n\nLoad Length\n\n2753 mm \n\nLoad Width\n\n1692 mm \n\nLoad Height\n\n1410 mm \n\nWidth Between Wheel Arches\n\n1244 mm \n\nRear Side Door Width\n\n1020 mm \n\nRear Side Door Height\n\n1284 mm \n\n### Warranty & service \n\nWarranty in Years from First Registration\n\n3 yr \n\nWarranty in Km\n\nUnlimited km \n\nWarranty Customer Assistance\n\n3Yrs Roadside \n\nWarranty Anti Corrosion in Years from First Registration\n\n12 yr \n\nRegular Service Interval in Km\n\n15000 km \n\nRegular Service Interval in Months\n\n12 mth \n\n### Other \n\nCountry of Origin\n\nGERMANY \n\nLaunch Year\n\n2013 \n\nLaunch Month\n\n9 \n\nGeneration Name\n\nT5 \n\nSeries\n\nT5 \n\nModel Year\n\nMY14 \n\nBadge\n\nTDI340 \n\nDoors\n\n4 \n\nSeat Capacity\n\n5 \n\nBody Style\n\nCrewvan (Van) \n\nOverview\n\nCovering all aspects utilitarian, from cab/chassis through the crew cab, the short and long wheel based front-wheel-drive vans, right up to the all-wheel-drive 4-Motion, the T5 Transporter remains VW's best selling commercial vehicle. That fact alone speaks volumes in this tough sector. Adopting car-like ambiance and feel, sporting a range of 2.0-litre turbodiesels and transmissions, you can then opt for any number of the bewildering array of options. Load volumes for the Crew vans runs from 5.8 m up to 7.8 m in the LWB medium-roof. Safety is very good for the class with four ANCAP stars. \n\n### P plate status \n\nNSW Probationary Status\n\nAllowed \n\n### Approximate Running Costs \n\nFuel cost per 1000km\n\n$159.00 \n\nFuel cost per fill\n\n$154.00 \n\n### Audio, visual & communication \n\nInputs\n\nMP3 decoder \n\nCD / DVD\n\nCD player \n\n### Safety & security \n\nAirbags\n\nDriver \n\nPassenger \n\nSeatbelts\n\nLap/sash for 2 seats \n\nPretensioners 1st row (front) \n\nAdjustable height 1st row \n\nEmergency\n\nBrake assist \n\nVehicle control\n\nABS (antilock brakes) \n\nTraction \n\nElectronic stability \n\nHill holder \n\nEBD (electronic brake force distribution) \n\nSecurity\n\nCentral locking - remote/keyless \n\nEngine immobiliser \n\n### Comfort & convenience \n\nAir conditioning\n\nAir conditioning \n\n### Lights & windows \n\nLights\n\nDaytime running lamps \n\nFog lamps - rear \n\nPower windows\n\nFront only \n\n### Interior \n\nCloth\n\nTrim \n\n### Instruments & controls \n\nDisplay\n\nClock - digital \n\nGauges\n\nTacho \n\n### Exterior \n\nMirrors\n\nElectric - heated \n\nMudflaps\n\nFront \n\nRear \n\n### Body \n\nDoors\n\nSide sliding lhs(passenger side) \n\n### Brakes \n\nFront\n\nVentilated \n\nRear\n\nSolid \n\n### Suspension \n\nType\n\nIndependent front suspension \n\n### Option pack \n\nOption pack\n\nComfort Pack \n\nAirbags - Front Side & Head \n\n- Airbags - Head for 1st Row Seats (Front)\n\n- Airbags - Side for 1st Row Occupants (Front)\n\nControl - Park Distance Front & Rear \n\n- Control - Park Distance Front\n\n- Control - Park Distance Rear\n\nControl - Park Distance Front & Rear with Camera \n\n- Control - Park Distance Front\n\n- Control - Park Distance Rear\n\n- Parking Assist - Graphical Display\n\n- Camera - Rear Vision\n\nLight & Sight Pack \n\n- Headlamps - See me home\n\n- Rain Sensor (Auto wipers)\n\n### Audio, visual & communication \n\nInputs\n\nMedia Device Interface - Aux Ipod/USB Socket \n\nBluetooth\n\nBluetooth Phone Preparation \n\nRadio\n\nRCD310 Radio with Media-In Interface \n\n### Safety & security \n\nDriver assistance\n\nControl - Park Distance Rear \n\nSecurity\n\nAlarm \n\n### Comfort & convenience \n\nAir conditioning\n\nAir Conditioning - Rear \n\nDriving\n\nCruise Control \n\nArmrests\n\nArmrest - Drivers Seat \n\nArmrest - Front (Driver & Passenger) \n\nCargo space\n\nFixed Partition with Fixed Window \n\n### Lights & windows \n\nLights\n\nFog Lamps - Front with Fixed Corner Function \n\nWindows\n\nWindow - Side Slide Centre Left \n\nWindow - Side Slide Centre Right \n\n### Interior \n\nOther\n\nRubber - Cargo Floor Covering \n\nLining material\n\nCargo Area - Fully Trimmed Sides \n\nWooden Cargo Floor \n\n### Seating \n\nFront row seats\n\nSeat - Drivers Height Adjust (includes lumbar) \n\nSeat - Double Bench \n\nSeat - Height Adjust Driver/Passen (incl. lumbar) \n\n### Instruments & controls \n\nDisplay\n\nMulti-functionTrip Comp w/- open door display \n\nTrip Computer - Basic \n\nNavigation\n\nGPS (Satellite Navigation) RNS510 inc MFD/Aux In \n\n### Exterior \n\nBody coloured\n\nBody Colour - Bumpers \n\nMirrors\n\nPower Door Mirrors - Folding \n\nPaint\n\nPaint - Metallic \n\nPaint - Pearl \n\nSunroof\n\nSunroof - Sliding/Tilting in Cab \n\n### Body \n\nDoors\n\nDoor - side sliding RHS(drivers side) \n\nDoors - Rear Wing 270 degree opening \n\nDoors - Rear Wing w/- Heated Windows \n\nPower Sliding Side Doors \n\nRoof\n\nHigh Roof in Body Colour \n\nHigh Roof in White \n\nMid Roof in Body Colour \n\nC-Rail Roof Rack Prep \n\n### Electrical \n\nBattery\n\nBattery - Dual (2nd) \n\nBattery - Stronger \n\n### Steering \n\nOperation\n\nMulti-function Steering Wheel \n\n### Suspension \n\nType\n\nReinforced Standard Dampers & Springs \n\nSuspension - Upgraded Shocks & Springs \n\n### Wheels & tyres \n\nFront rim\n\n17\" Alloy Wheels - Thunder \n\nOther\n\nChild lock on side slilding door \n\n## Currently listed for sale\n\n\u301087\u2020View all\u3011 \n\n \u301093\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY15 $23,000* Excl. Govt. Charges \u3011 \u301094\u2020 2014 Volkswagen Transporter TDI340 T5 LWB Manual MY14 $29,888 Drive Away \u3011 \u301095\u2020 2014 Volkswagen Transporter TDI340 T5 LWB Auto MY14 $20,000* Excl. Govt. Charges \u3011 \u301096\u2020 2014 Volkswagen Transporter TDI340 T5 LWB Auto MY15 $35,000* Excl. Govt. Charges \u3011 \u301097\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY14 $15,000* Excl. Govt. Charges \u3011 \u301098\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY15 $32,990 Drive Away \u3011 \u301099\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Auto MY15 $19,500* Excl. Govt. Charges \u3011 \u3010100\u2020 2014 Volkswagen Transporter TDI340 T5 SWB Manual MY14 $16,900* Excl. Govt. Charges \u3011 \n\n## Volkswagen Transporter Car Reviews\n\n\u3010101\u2020View all\u3011 \n\n \u3010102\u2020 Review 21 Volkswagen Transporter 2016 Review April 2016 \u3011 \u3010103\u2020 Review 12 Volkswagen Transporter 2016 Review December 2015 \u3011 \u3010104\u2020 Review 16 Volkswagen Transporter and Multivan T6 2015 Review July 2015 \u3011 \n\n## Volkswagen Transporter Car News\n\n\u3010105\u2020View ",
+                  "pub_date": null,
+                  "extra": {
+                    "cited_message_idx": 13,
+                    "evidence_text": "source"
+                  }
+                }
+              }
+            ],
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "gpt-4",
+            "parent_id": "bbb26113-6bb3-40ef-91a2-02b92f6fd1d0",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "bbb26113-6bb3-40ef-91a2-02b92f6fd1d0",
+        "children": []
+      }
+    },
+    "moderation_results": [],
+    "current_node": "88a0cf9f-e860-4b34-8e7e-65f8346f4862",
+    "plugin_ids": null,
+    "conversation_id": "d6523d1e-7ec3-474f-a363-0e9dffdb3d93",
+    "conversation_template_id": null,
+    "gizmo_id": null,
+    "is_archived": false,
+    "safe_urls": [
+      "https://www.carsales.com.au/volkswagen/transporter/price/2014/tdi340-381631/",
+      "https://www.drive.com.au/reviews/volkswagen-transporter-review/",
+      "https://www.ultimatespecs.com/car-specs/volkswagen/118424/2021-volkswagen-transporter-t61-l2h1-20-tdi-110hp.html"
+    ],
+    "default_model_slug": null,
+    "id": "d6523d1e-7ec3-474f-a363-0e9dffdb3d93"
+  },
+  {
+    "title": "Conversation 2",
+    "create_time": 1697373097.899566,
+    "update_time": 1697373123.975989,
+    "mapping": {
+      "35f71f31-2118-461f-9032-e019a94eb20e": {
+        "id": "35f71f31-2118-461f-9032-e019a94eb20e",
+        "message": {
+          "id": "35f71f31-2118-461f-9032-e019a94eb20e",
+          "author": {
+            "role": "system",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": null,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [""]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 0.0,
+          "metadata": {
+            "is_visually_hidden_from_conversation": true
+          },
+          "recipient": "all"
+        },
+        "parent": "aaa1f95f-dd59-4786-ac6e-37f463163896",
+        "children": ["aaa2e334-b386-4ed8-b33b-5d788c882f1d"]
+      },
+      "aaa1f95f-dd59-4786-ac6e-37f463163896": {
+        "id": "aaa1f95f-dd59-4786-ac6e-37f463163896",
+        "message": null,
+        "parent": null,
+        "children": ["35f71f31-2118-461f-9032-e019a94eb20e"]
+      },
+      "aaa2e334-b386-4ed8-b33b-5d788c882f1d": {
+        "id": "aaa2e334-b386-4ed8-b33b-5d788c882f1d",
+        "message": {
+          "id": "aaa2e334-b386-4ed8-b33b-5d788c882f1d",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1697373097.900124,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "In programming how to find if all intervals have the one point where they intersect. \nFor example in [2, 5] [4,5] [3,7] it will be 4."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 1.0,
+          "metadata": {
+            "timestamp_": "absolute",
+            "message_type": null
+          },
+          "recipient": "all"
+        },
+        "parent": "35f71f31-2118-461f-9032-e019a94eb20e",
+        "children": ["9f97ac83-7408-4872-9e3b-ee4272c94e10"]
+      },
+      "9f97ac83-7408-4872-9e3b-ee4272c94e10": {
+        "id": "9f97ac83-7408-4872-9e3b-ee4272c94e10",
+        "message": {
+          "id": "9f97ac83-7408-4872-9e3b-ee4272c94e10",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1697373107.211353,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "To find the point where all intervals intersect, you need to determine the common overlap region among all the intervals. Here's how you can do it in Python:\n\n```python\ndef find_intersection(intervals):\n    # Sort intervals based on the start point\n    intervals.sort(key=lambda x: x[0])\n\n    # Initialize the result with the first interval\n    result_start, result_end = intervals[0]\n\n    # Iterate through the sorted intervals and find the common overlap\n    for interval_start, interval_end in intervals[1:]:\n        # If the current interval is within the current result interval\n        if interval_start <= result_end:\n            result_start = max(result_start, interval_start)\n            result_end = min(result_end, interval_end)\n        else:\n            # No overlap found, return None\n            return None\n\n    # Return the common overlap region\n    return result_start, result_end\n\n# Example intervals\nintervals = [[2, 5], [4, 5], [3, 7]]\n\n# Find the intersection\nintersection = find_intersection(intervals)\n\nif intersection:\n    print(f\"The intersection point is: {intersection[0]}\")\nelse:\n    print(\"There is no common intersection point.\")\n```\n\nIn this code, the `find_intersection` function takes a list of intervals as input. It sorts the intervals based on their start points and then iterates through the sorted intervals to find the common overlap region. If there is a common overlap, it returns the start and end points of the overlap. If there is no common overlap, it returns `None`. In the given example, the output will be:\n\n```\nThe intersection point is: 4\n```"
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100260]
+            },
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "text-davinci-002-render-sha",
+            "parent_id": "aaa2e334-b386-4ed8-b33b-5d788c882f1d",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "aaa2e334-b386-4ed8-b33b-5d788c882f1d",
+        "children": ["aaa21d18-8c68-43b2-8939-86fadac2b861"]
+      },
+      "aaa21d18-8c68-43b2-8939-86fadac2b861": {
+        "id": "aaa21d18-8c68-43b2-8939-86fadac2b861",
+        "message": {
+          "id": "aaa21d18-8c68-43b2-8939-86fadac2b861",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1697373115.892485,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": ["give me code in C#"]
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 1.0,
+          "metadata": {
+            "timestamp_": "absolute",
+            "message_type": null
+          },
+          "recipient": "all"
+        },
+        "parent": "9f97ac83-7408-4872-9e3b-ee4272c94e10",
+        "children": ["73a2fe12-36bd-4cc2-8460-8108d16cc42d"]
+      },
+      "73a2fe12-36bd-4cc2-8460-8108d16cc42d": {
+        "id": "73a2fe12-36bd-4cc2-8460-8108d16cc42d",
+        "message": {
+          "id": "73a2fe12-36bd-4cc2-8460-8108d16cc42d",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1697373123.970743,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "Certainly! Here's the same logic written in the C# programming language:\n\n```csharp\nusing System;\nusing System.Collections.Generic;\n\nclass Program\n{\n    static void Main()\n    {\n        List<int[]> intervals = new List<int[]>\n        {\n            new int[] {2, 5},\n            new int[] {4, 5},\n            new int[] {3, 7}\n        };\n\n        var intersection = FindIntersection(intervals);\n\n        if (intersection != null)\n        {\n            Console.WriteLine($\"The intersection point is: {intersection[0]}\");\n        }\n        else\n        {\n            Console.WriteLine(\"There is no common intersection point.\");\n        }\n    }\n\n    static int[] FindIntersection(List<int[]> intervals)\n    {\n        intervals.Sort((x, y) => x[0].CompareTo(y[0]));\n\n        int[] result = intervals[0];\n        \n        foreach (var interval in intervals)\n        {\n            if (interval[0] <= result[1])\n            {\n                result[0] = Math.Max(result[0], interval[0]);\n                result[1] = Math.Min(result[1], interval[1]);\n            }\n            else\n            {\n                return null;\n            }\n        }\n\n        return result;\n    }\n}\n```\n\nThis C# code performs the same task as the Python code provided earlier. It finds the common intersection point among a list of intervals and outputs the result."
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100260]
+            },
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "text-davinci-002-render-sha",
+            "parent_id": "aaa21d18-8c68-43b2-8939-86fadac2b861",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "aaa21d18-8c68-43b2-8939-86fadac2b861",
+        "children": []
+      }
+    },
+    "moderation_results": [],
+    "current_node": "73a2fe12-36bd-4cc2-8460-8108d16cc42d",
+    "plugin_ids": null,
+    "conversation_id": "7c5ab593-dbab-43bd-862d-2c3c1eeebf6a",
+    "conversation_template_id": null,
+    "gizmo_id": null,
+    "is_archived": false,
+    "safe_urls": [],
+    "default_model_slug": null,
+    "id": "7c5ab593-dbab-43bd-862d-2c3c1eeebf6a"
+  }
+]

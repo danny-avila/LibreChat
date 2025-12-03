@@ -1,0 +1,24 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "WebPilot",
+  "name_for_model": "web_pilot",
+  "description_for_human": "Browse & QA Webpage/PDF/Data. Generate articles, from one or more URLs.",
+  "description_for_model": "This tool allows users to provide a URL(or URLs) and optionally requests for interacting with, extracting specific information or how to do with the content from the URL. Requests may include rewrite, translate, and others. If there any requests, when accessing the /api/visit-web endpoint, the parameter 'user_has_request' should be set to 'true. And if there's no any requests, 'user_has_request' should be set to 'false'.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://webreader.webpilotai.com/openapi.yaml",
+    "is_user_authenticated": false
+  },
+  "logo_url": "https://webreader.webpilotai.com/logo.png",
+  "contact_email": "dev@webpilot.ai",
+  "legal_info_url": "https://webreader.webpilotai.com/legal_info.html",
+  "headers": {
+    "id": "WebPilot-Friend-UID"
+  },
+  "params": {
+    "user_has_request": true
+  }
+}

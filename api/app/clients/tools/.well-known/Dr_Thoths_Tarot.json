@@ -1,0 +1,89 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "Dr. Thoth's Tarot",
+  "name_for_model": "Dr_Thoths_Tarot",
+  "description_for_human": "Tarot card novelty entertainment & analysis, by Mnemosyne Labs.",
+  "description_for_model": "Intelligent analysis program for tarot card entertaiment, data, & prompts, by Mnemosyne Labs, a division of AzothCorp.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://dr-thoth-tarot.herokuapp.com/openapi.yaml",
+    "is_user_authenticated": false
+  },
+  "logo_url": "https://dr-thoth-tarot.herokuapp.com/logo.png",
+  "contact_email": "legal@AzothCorp.com",
+  "legal_info_url": "http://AzothCorp.com/legal",
+  "endpoints": [
+    {
+      "name": "Draw Card",
+      "path": "/drawcard",
+      "method": "GET",
+      "description": "Generate a single tarot card from the deck of 78 cards."
+    },
+    {
+      "name": "Occult Card",
+      "path": "/occult_card",
+      "method": "GET",
+      "description": "Generate a tarot card using the specified planet's Kamea matrix.",
+      "parameters": [
+        {
+          "name": "planet",
+          "type": "string",
+          "enum": ["Saturn", "Jupiter", "Mars", "Sun", "Venus", "Mercury", "Moon"],
+          "required": true,
+          "description": "The planet name to use the corresponding Kamea matrix."
+        }
+      ]
+    },
+    {
+      "name": "Three Card Spread",
+      "path": "/threecardspread",
+      "method": "GET",
+      "description": "Perform a three-card tarot spread."
+    },
+    {
+      "name": "Celtic Cross Spread",
+      "path": "/celticcross",
+      "method": "GET",
+      "description": "Perform a Celtic Cross tarot spread with 10 cards."
+    },
+    {
+      "name": "Past, Present, Future Spread",
+      "path": "/pastpresentfuture",
+      "method": "GET",
+      "description": "Perform a Past, Present, Future tarot spread with 3 cards."
+    },
+    {
+      "name": "Horseshoe Spread",
+      "path": "/horseshoe",
+      "method": "GET",
+      "description": "Perform a Horseshoe tarot spread with 7 cards."
+    },
+    {
+      "name": "Relationship Spread",
+      "path": "/relationship",
+      "method": "GET",
+      "description": "Perform a Relationship tarot spread."
+    },
+    {
+      "name": "Career Spread",
+      "path": "/career",
+      "method": "GET",
+      "description": "Perform a Career tarot spread."
+    },
+    {
+      "name": "Yes/No Spread",
+      "path": "/yesno",
+      "method": "GET",
+      "description": "Perform a Yes/No tarot spread."
+    },
+    {
+      "name": "Chakra Spread",
+      "path": "/chakra",
+      "method": "GET",
+      "description": "Perform a Chakra tarot spread with 7 cards."
+    }
+  ]
+}

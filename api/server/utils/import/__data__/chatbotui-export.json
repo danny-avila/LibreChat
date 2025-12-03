@@ -1,0 +1,98 @@
+{
+  "version": 4,
+  "history": [
+    {
+      "id": "493cb218-9ebb-4d35-af8b-5aded3f351be",
+      "name": "Hello what are you able to do?",
+      "messages": [
+        {
+          "role": "user",
+          "type": "text",
+          "content": "Hello what are you able to do?"
+        },
+        {
+          "role": "assistant",
+          "type": "text",
+          "content": "Hello! As an AI developed by OpenAI, I'm designed to assist with a wide range of tasks, including but not limited to:\n\n1. **Answering Questions**: I can provide explanations on various topics from science to history, technology, and more.\n2. **Providing Information**: Whether you need the latest knowledge (up to my last training data), tips, statistics, or how-to guides, I can help.\n3. **Learning and Education**: I can assist with learning new skills, languages, or subjects.\n4. **Writing and Editing**: From composing texts to editing them, I can assist in creating content such as essays, emails, and creative writing.\n5. **Programming Help**: Guidance in understanding programming concepts, debugging code, or learning about algorithms.\n6. **Entertainment**: I can tell jokes, stories, or even generate ideas for games and activities.\n7. **Brainstorming**: Whether it's ideas for a birthday party or strategies for a marketing plan, I can help brainstorm.\n8. **Conversations**: I can have in-depth or casual discussions on a broad range of topics.\n9. **Mental Health Support**: While I'm not a substitute for professional help, I can lend an ear and offer some general advice and support.\n10. **Travel Information**: Advice on destinations, tips for travel, and information about different cultures.\n\nPlease note that my responses are based on patterns and knowledge from text up to my last update, so I might not be aware of the very latest data or events."
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "content": "I like Entertainment part. Go ahead. Entertain me."
+        },
+        {
+          "role": "assistant",
+          "type": "text",
+          "content": "Certainly! Let's begin with a light-hearted joke:\n\nWhy don't skeletons fight each other?\n\nThey don't have the guts.\n\nIf you're in the mood for a story instead, let's start with a short tale:\n\n---\n\n**Title: The Lost Key**\n\nIn a quiet town nestled between rolling green hills and a silver-sheened lake, there lived a locksmith named Eli. Eli had a peculiar ability; he could craft keys that didn't just unlock doors but also opened pathways to hidden places and secret realms. However, Eli never ventured through these magical doors; he was content knowing that he had the power to unveil them.\n\nOne day, Eli crafted his masterpiece—a key forged from an unknown, shimmering metal that seemed to hum with an inner light. The locksmith felt a deep connection to this key, as if it were calling to him to seek the door it was destined to open. Despite his usual reservations, curiosity got the better of him, and he embarked on a journey to find the matching lock.\n\nHe traveled through the town, greeting familiar faces and searching every nook and cranny, but to no avail. Eli was about to give up when he noticed a peculiar cat with a coat as dark as the night sky, its eyes glinting with a hint of stars. The cat seemed to beckon him to follow.\n\nLed by the cosmic feline through alleys and gardens, Eli arrived at a forgotten part of town where an old, vine-covered wall stood. To his astonishment, in the wall was a door that rippled like the surface of the lake when touched by a soft breeze. It was a door he had never seen before. Trembling with excitement, Eli took out the key. It fit perfectly into the lock, which turned with a satisfying click.\n\nAs the door creaked open, a brilliant light spilled forth. Eli shielded his eyes, and when he finally could see, he found himself not in another realm, but in the heart of his own town. However, everything appeared different—colors were more vibrant, sounds were clearer, and the air carried the sweet scent of blooming flowers.\n\nThe town's people approached him, smiling. \"We've been waiting for you,\" they said. \"The key wasn't meant to lead you to another world, but to allow you to see your own world differently. To show you that magic exists here, with all of us.\"\n\nEli's life transformed that day. He realized that every smile, every act of kindness, and every moment of connection was a door to a world just as magical as those he could unlock with his keys.\n\nAnd as for the mysterious cosmic cat, it would appear now and then, always at the edge of his vision, reminding him that the real magic was here all along, hidden in plain sight.\n\n---\n\nI hope you enjoyed the joke and the short story. If you'd like to continue the entertainment, feel free to guide me on what you'd like to hear or discuss next!"
+        }
+      ],
+      "model": {
+        "id": "gpt-4-1106-preview",
+        "name": "GPT-4 Turbo Preview",
+        "maxLength": 384000,
+        "tokenLimit": 128000
+      },
+      "prompt": "You are ChatGPT, a large language model trained by OpenAI. Follow the user's instructions carefully. Respond using markdown.",
+      "temperature": 1,
+      "folderId": null
+    },
+    {
+      "id": "f883fb40-6e5c-45fd-92d4-883a5595560f",
+      "name": "Give me the code that inverts ...",
+      "messages": [
+        {
+          "role": "user",
+          "type": "text",
+          "content": "Give me the code that inverts binary tree in COBOL"
+        },
+        {
+          "role": "assistant",
+          "type": "text",
+          "content": "COBOL is not a language that is commonly used for tasks like inverting a binary tree. It is more suited for business applications and mainframe programming. However, if you are looking for a general idea of how you might approach this in COBOL, here is a simplified example:\n\n```cobol\nIDENTIFICATION DIVISION.\nPROGRAM-ID. InvertBinaryTree.\n\nDATA DIVISION.\nWORKING-STORAGE SECTION.\n01 Node.\n   05 Left-Child    PIC 9.\n   05 Right-Child   PIC 9.\n\nPROCEDURE DIVISION.\nInvert-Binary-Tree.\n    MOVE 1 TO Left-Child\n    MOVE 2 TO Right-Child\n\n    DISPLAY \"Original Binary Tree:\"\n    DISPLAY \"Left Child: \" Left-Child\n    DISPLAY \"Right Child: \" Right-Child\n\n    PERFORM Swap-Children\n\n    DISPLAY \"Inverted Binary Tree:\"\n    DISPLAY \"Left Child: \" Left-Child\n    DISPLAY \"Right Child: \" Right-Child\n\n    STOP RUN.\n\nSwap-Children.\n    MOVE Left-Child TO Node\n    MOVE Right-Child TO Left-Child\n    MOVE Node TO Right-Child\n```\n\nThis is a very basic example and may not cover all the complexities of inverting a binary tree. You would need to adapt and expand this code significantly for a more complex binary tree structure."
+        }
+      ],
+      "model": {
+        "id": "gpt-3.5-turbo",
+        "name": "GPT-3.5"
+      },
+      "prompt": "You are ChatGPT, a large language model trained by OpenAI. Follow the user's instructions carefully. Respond using markdown.",
+      "temperature": 0.5,
+      "folderId": null
+    }
+  ],
+  "folders": [
+    {
+      "id": "cdc857de-e669-498d-8fac-edc4995c9d7a",
+      "name": "New folder",
+      "type": "prompt"
+    }
+  ],
+  "prompts": [
+    {
+      "id": "a61573d8-6686-487c-9c5d-cd79c6d201ee",
+      "name": "Prompt 1",
+      "description": "",
+      "content": "",
+      "model": {
+        "id": "gpt-4",
+        "name": "GPT-4",
+        "maxLength": 24000,
+        "tokenLimit": 8000
+      },
+      "folderId": null
+    },
+    {
+      "id": "9bf456e3-61fc-494d-b940-55ec934e7a04",
+      "name": "Prompt 2",
+      "description": "afgdfsg",
+      "content": "adfdsfsadf",
+      "model": {
+        "id": "gpt-4",
+        "name": "GPT-4",
+        "maxLength": 24000,
+        "tokenLimit": 8000
+      },
+      "folderId": null
+    }
+  ]
+}

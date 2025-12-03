@@ -1,0 +1,108 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: static-browser-server
+  labels:
+    app: static-browser-server
+    app.kubernetes.io/name: static-browser-server
+    app.kubernetes.io/part-of: librechat
+    app.kubernetes.io/component: artifacts
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: static-browser-server
+  template:
+    metadata:
+      labels:
+        app: static-browser-server
+        app.kubernetes.io/name: static-browser-server
+    spec:
+      containers:
+        - name: server
+          image: quay.io/wjackson/static-browser-server-fips:latest
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+              name: http
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "8080"
+            - name: HOST
+              value: "0.0.0.0"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: static-browser-server
+  labels:
+    app: static-browser-server
+    app.kubernetes.io/name: static-browser-server
+spec:
+  selector:
+    app: static-browser-server
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  type: ClusterIP
+---
+# Wildcard Route for Static Browser Server
+# NOTE: Requires wildcardPolicy: WildcardsAllowed on the ingress controller
+# Configure with: oc patch ingresscontroller default -n openshift-ingress-operator \
+#   --type=merge -p '{"spec":{"routeAdmission":{"wildcardPolicy":"WildcardsAllowed"}}}'
+#
+# This route serves *.preview.apps.<cluster-domain>
+# Note: The default TLS cert only covers *.apps.<cluster-domain>, so browsers will
+# show certificate warnings for the deeper wildcard. This is expected behavior
+# for self-hosted sandbox environments.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: static-browser-wildcard
+  labels:
+    app: static-browser-server
+  annotations:
+    # Enable wildcard routing
+    haproxy.router.openshift.io/wildcard: "true"
+spec:
+  host: wildcard.preview.apps.cluster-mqwwr.mqwwr.sandbox1259.opentlc.com
+  wildcardPolicy: Subdomain
+  to:
+    kind: Service
+    name: static-browser-server
+    weight: 100
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

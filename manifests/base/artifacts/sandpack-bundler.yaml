@@ -1,0 +1,72 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandpack-bundler
+  labels:
+    app: sandpack-bundler
+    app.kubernetes.io/name: sandpack-bundler
+    app.kubernetes.io/part-of: librechat
+    app.kubernetes.io/component: artifacts
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sandpack-bundler
+  template:
+    metadata:
+      labels:
+        app: sandpack-bundler
+        app.kubernetes.io/name: sandpack-bundler
+    spec:
+      containers:
+        - name: bundler
+          image: quay.io/wjackson/sandpack-bundler-fips:latest
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+              name: http
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sandpack-bundler
+  labels:
+    app: sandpack-bundler
+    app.kubernetes.io/name: sandpack-bundler
+spec:
+  selector:
+    app: sandpack-bundler
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  type: ClusterIP

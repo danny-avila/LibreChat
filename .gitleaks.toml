@@ -1,0 +1,61 @@
+[allowlist]
+  description = "LibreChat project-specific allowlist for false positives"
+
+  # Ignore based on file paths
+  paths = [
+    # Example files
+    '''\/example.*\.pem$''',
+    '''\/examples\/''',
+    '''\.env\.example$''',
+    '''\.env\.test\.example$''',
+
+    # Test fixtures
+    '''\/tests?\/fixtures\/''',
+    '''\/test\/.*\.key$''',
+    '''\.spec\.(js|ts)$''',
+    '''\.test\.(js|ts)$''',
+    '''__tests__\/''',
+
+    # Documentation
+    '''README\.md$''',
+    '''docs\/.*\.md$''',
+    '''\.github\/.*\.md$''',
+
+    # Build artifacts and dependencies
+    '''node_modules\/''',
+    '''dist\/''',
+    '''build\/''',
+
+    # Helm chart default values (contains example/default secrets)
+    '''helm\/librechat\/values\.yaml$''',
+
+    # Source files with default/fallback secret values
+    '''packages\/api\/src\/app\/checks\.ts$''',
+  ]
+
+  # Ignore based on line content
+  regexes = [
+    # Test/example passwords
+    '''password.*['"]\s*['"]\s*$''',
+    '''password.*Pass123''',
+    '''password.*example''',
+    '''password.*test''',
+
+    # Documentation placeholders
+    '''# Your (private key|certificate) here''',
+    '''<your-.*-here>''',
+    '''REPLACE_WITH_YOUR''',
+    '''YOUR_.*_HERE''',
+    '''INSERT_.*_HERE''',
+
+    # LibreChat specific redacted/placeholder values
+    '''JWT_REDACTED''',
+    '''JWT_REFRESH_REDACTED''',
+    '''REDACTED''',
+
+    # Common test/example values
+    '''sk_test_''',
+    '''pk_test_''',
+    '''test_api_key''',
+    '''example_token''',
+  ]

@@ -1,0 +1,28 @@
+---
+# Red Hat pre-commit configuration for LibreChat
+# This configures allowlists for the rh-gitleaks secret scanner
+
+gitleaks:
+  allowlist:
+    description: "LibreChat default/example secrets allowlist"
+
+    # Allow specific files that contain default/example secrets
+    paths:
+      - 'helm/librechat/values\.yaml'
+      - 'packages/api/src/app/checks\.ts'
+
+    # Allow specific secret patterns that are default/example values
+    regexes:
+      - '16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef'
+      - 'eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418'
+      - 'f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0'
+      - 'e2341419ec3dd3d19b13a1a87fafcbfb'
+      - '9e95d9894da7e68dd69c0046caf5343c8b1e80c89609b5a1e40e6568b5b23ce6'
+      - 'ac028c86ba23f4cd48165e0ca9f2c683'
+
+    # Stopwords for variable names that trigger false positives
+    stopwords:
+      - JWT_SECRET
+      - JWT_REFRESH_SECRET
+      - CREDS_KEY
+      - CREDS_IV
