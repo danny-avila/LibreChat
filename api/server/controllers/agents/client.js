@@ -567,15 +567,13 @@ class AgentClient extends BaseClient {
         },
       },
       {
+        getUserKey,
+        getUserKeyValues,
+        checkUserKeyExpiry,
+        getFiles,
+        getToolFilesByIds,
+        updateFilesUsage,
         getConvoFiles,
-        db: {
-          getUserKey,
-          getUserKeyValues,
-          checkUserKeyExpiry,
-          getFiles,
-          getToolFilesByIds,
-          updateFilesUsage,
-        },
       },
     );
 

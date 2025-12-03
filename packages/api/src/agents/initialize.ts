@@ -77,7 +77,8 @@ export interface InitializeAgentParams {
 
 /**
  * Database methods required for agent initialization
- * All methods come from data-schemas via createMethods()
+ * Most methods come from data-schemas via createMethods()
+ * getConvoFiles not yet in data-schemas but included here for consistency
  */
 export interface InitializeAgentDbMethods extends EndpointDbMethods {
   /** Update usage tracking for multiple files */
@@ -86,14 +87,6 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   getFiles: (filter: unknown, sort: unknown, select: unknown, opts?: unknown) => Promise<unknown[]>;
   /** Get tool files by IDs */
   getToolFilesByIds: (fileIds: string[], toolSet: Set<EToolResources>) => Promise<unknown[]>;
-}
-
-/**
- * Dependencies that can be injected (for testing) or will be loaded from context
- */
-export interface InitializeAgentDeps {
-  /** Database methods (all from data-schemas) */
-  db: InitializeAgentDbMethods;
   /** Get conversation file IDs */
   getConvoFiles: (conversationId: string) => Promise<string[] | null>;
 }
@@ -112,7 +105,7 @@ export interface InitializeAgentDeps {
  */
 export async function initializeAgent(
   params: InitializeAgentParams,
-  deps?: InitializeAgentDeps,
+  db?: InitializeAgentDbMethods,
 ): Promise<InitializedAgent> {
   const {
     req,
@@ -126,11 +119,9 @@ export async function initializeAgent(
     isInitialAgent = false,
   } = params;
 
-  if (!deps?.db || !deps?.getConvoFiles) {
-    throw new Error('initializeAgent requires dependencies (db, getConvoFiles) to be passed');
+  if (!db) {
+    throw new Error('initializeAgent requires db methods to be passed');
   }
-
-  const { db, getConvoFiles } = deps;
 
   if (
     isAgentsEndpoint(endpointOption?.endpoint) &&
@@ -160,7 +151,7 @@ export async function initializeAgent(
   agent.endpoint = provider;
 
   if (isInitialAgent && conversationId != null && resendFiles) {
-    const fileIds = (await getConvoFiles(conversationId)) ?? [];
+    const fileIds = (await db.getConvoFiles(conversationId)) ?? [];
     const toolResourceSet = new Set<EToolResources>();
     for (const tool of agent.tools ?? []) {
       if (EToolResources[tool as keyof typeof EToolResources]) {

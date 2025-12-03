@@ -131,15 +131,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       isInitialAgent: true,
     },
     {
+      getUserKey,
+      getUserKeyValues,
+      checkUserKeyExpiry,
+      getFiles,
+      getToolFilesByIds,
+      updateFilesUsage,
       getConvoFiles,
-      db: {
-        getUserKey,
-        getUserKeyValues,
-        checkUserKeyExpiry,
-        getFiles,
-        getToolFilesByIds,
-        updateFilesUsage,
-      },
     },
   );
 
@@ -176,15 +174,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         allowedProviders,
       },
       {
+        getUserKey,
+        getUserKeyValues,
+        checkUserKeyExpiry,
+        getFiles,
+        getToolFilesByIds,
+        updateFilesUsage,
         getConvoFiles,
-        db: {
-          getUserKey,
-          getUserKeyValues,
-          checkUserKeyExpiry,
-          getFiles,
-          getToolFilesByIds,
-          updateFilesUsage,
-        },
       },
     );
     if (userMCPAuthMap != null) {
