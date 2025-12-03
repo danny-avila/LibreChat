@@ -58,9 +58,10 @@ describe('File Methods', () => {
         bytes: 100,
       });
 
-      expect(file.file_id).toBe(fileId);
-      expect(file.filename).toBe('test.txt');
-      expect(file.expiresAt).toBeDefined();
+      expect(file).not.toBeNull();
+      expect(file?.file_id).toBe(fileId);
+      expect(file?.filename).toBe('test.txt');
+      expect(file?.expiresAt).toBeDefined();
     });
 
     it('should create a file without TTL when disableTTL is true', async () => {
@@ -79,8 +80,9 @@ describe('File Methods', () => {
         true,
       );
 
-      expect(file.file_id).toBe(fileId);
-      expect(file.expiresAt).toBeUndefined();
+      expect(file).not.toBeNull();
+      expect(file?.file_id).toBe(fileId);
+      expect(file?.expiresAt).toBeUndefined();
     });
   });
 
@@ -247,9 +249,10 @@ describe('File Methods', () => {
         bytes: 200,
       });
 
-      expect(updated.filename).toBe('updated.txt');
-      expect(updated.bytes).toBe(200);
-      expect(updated.expiresAt).toBeUndefined();
+      expect(updated).not.toBeNull();
+      expect(updated?.filename).toBe('updated.txt');
+      expect(updated?.bytes).toBe(200);
+      expect(updated?.expiresAt).toBeUndefined();
     });
   });
 
@@ -452,7 +455,7 @@ describe('File Methods', () => {
     });
 
     it('should delete all files for a user', async () => {
-      const userId = new mongoose.Types.ObjectId().toString();
+      const userId = new mongoose.Types.ObjectId();
       const otherUserId = new mongoose.Types.ObjectId();
 
       await fileMethods.createFile({
@@ -482,7 +485,7 @@ describe('File Methods', () => {
         bytes: 100,
       });
 
-      const result = await fileMethods.deleteFiles([], userId);
+      const result = await fileMethods.deleteFiles([], userId.toString());
       expect(result.deletedCount).toBe(2);
 
       const remaining = await fileMethods.getFiles({});

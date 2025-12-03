@@ -1,29 +1,12 @@
 import logger from '../config/winston';
 import { EToolResources, FileContext } from 'librechat-data-provider';
-import type { FilterQuery, QueryOptions, SortOrder } from 'mongoose';
-
-export interface IFile {
-  _id?: unknown;
-  file_id: string;
-  user: unknown;
-  filename: string;
-  filepath: string;
-  type: string;
-  bytes: number;
-  embedded?: boolean;
-  text?: string;
-  context?: string;
-  usage?: number;
-  metadata?: {
-    fileIdentifier?: string;
-  };
-  temp_file_id?: string;
-  updatedAt?: Date;
-  expiresAt?: Date;
-}
+import type { FilterQuery, Model, SortOrder } from 'mongoose';
+import type { IMongoFile } from '~/types/file';
 
 /** Factory function that takes mongoose instance and returns the file methods */
 export function createFileMethods(mongoose: typeof import('mongoose')) {
+  const File = mongoose.models.File as Model<IMongoFile>;
+
   /**
    * Finds a file by its file_id with additional query options.
    * @param file_id - The unique identifier of the file
@@ -33,10 +16,12 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   async function findFileById(
     file_id: string,
     options: Record<string, unknown> = {},
-  ): Promise<IFile | null> {
-    const File = mongoose.models.File;
-    return (await File.findOne({ file_id, ...options }).lean()) as IFile | null;
+  ): Promise<IMongoFile | null> {
+    return File.findOne({ file_id, ...options }).lean();
   }
+
+  /** Select fields for query projection - 0 to exclude, 1 to include */
+  type SelectProjection = Record<string, 0 | 1>;
 
   /**
    * Retrieves files matching a given filter, sorted by the most recently updated.
@@ -47,13 +32,18 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
    * @returns A promise that resolves to an array of file documents
    */
   async function getFiles(
-    filter: FilterQuery<IFile>,
+    filter: FilterQuery<IMongoFile>,
     _sortOptions?: Record<string, SortOrder> | null,
-    selectFields: QueryOptions<IFile> | string | null = { text: 0 },
-  ): Promise<IFile[]> {
-    const File = mongoose.models.File;
+    selectFields?: SelectProjection | string | null,
+  ): Promise<IMongoFile[]> {
     const sortOptions = { updatedAt: -1 as SortOrder, ..._sortOptions };
-    return (await File.find(filter).select(selectFields).sort(sortOptions).lean()) as IFile[];
+    const query = File.find(filter);
+    if (selectFields != null) {
+      query.select(selectFields);
+    } else {
+      query.select({ text: 0 });
+    }
+    return query.sort(sortOptions).lean();
   }
 
   /**
@@ -65,13 +55,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   async function getToolFilesByIds(
     fileIds: string[],
     toolResourceSet?: Set<EToolResources>,
-  ): Promise<IFile[]> {
+  ): Promise<IMongoFile[]> {
     if (!fileIds || !fileIds.length || !toolResourceSet?.size) {
       return [];
     }
 
     try {
-      const filter: FilterQuery<IFile> = {
+      const filter: FilterQuery<IMongoFile> = {
         file_id: { $in: fileIds },
         $or: [],
       };
@@ -86,10 +76,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
         filter.$or?.push({ 'metadata.fileIdentifier': { $exists: true } });
       }
 
-      const selectFields = { text: 0 };
+      const selectFields: SelectProjection = { text: 0 };
       const sortOptions = { updatedAt: -1 as SortOrder };
 
-      return await getFiles(filter, sortOptions, selectFields);
+      return getFiles(filter, sortOptions, selectFields);
     } catch (error) {
       logger.error('[getToolFilesByIds] Error retrieving tool files:', error);
       throw new Error('Error retrieving tool files');
@@ -102,9 +92,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
    * @param disableTTL - Whether to disable the TTL
    * @returns A promise that resolves to the created file document
    */
-  async function createFile(data: Partial<IFile>, disableTTL?: boolean): Promise<IFile> {
-    const File = mongoose.models.File;
-    const fileData: Partial<IFile> = {
+  async function createFile(
+    data: Partial<IMongoFile>,
+    disableTTL?: boolean,
+  ): Promise<IMongoFile | null> {
+    const fileData: Partial<IMongoFile> = {
       ...data,
       expiresAt: new Date(Date.now() + 3600 * 1000),
     };
@@ -113,10 +105,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
       delete fileData.expiresAt;
     }
 
-    return (await File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
+    return File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
       new: true,
       upsert: true,
-    }).lean()) as IFile;
+    }).lean();
   }
 
   /**
@@ -124,16 +116,17 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
    * @param data - The data to update, must contain file_id
    * @returns A promise that resolves to the updated file document
    */
-  async function updateFile(data: Partial<IFile> & { file_id: string }): Promise<IFile> {
-    const File = mongoose.models.File;
+  async function updateFile(
+    data: Partial<IMongoFile> & { file_id: string },
+  ): Promise<IMongoFile | null> {
     const { file_id, ...update } = data;
     const updateOperation = {
       $set: update,
       $unset: { expiresAt: '' },
     };
-    return (await File.findOneAndUpdate({ file_id }, updateOperation, {
+    return File.findOneAndUpdate({ file_id }, updateOperation, {
       new: true,
-    }).lean()) as IFile;
+    }).lean();
   }
 
   /**
@@ -141,16 +134,18 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
    * @param data - The data to update, must contain file_id and the increment value for usage
    * @returns A promise that resolves to the updated file document
    */
-  async function updateFileUsage(data: { file_id: string; inc?: number }): Promise<IFile | null> {
-    const File = mongoose.models.File;
+  async function updateFileUsage(data: {
+    file_id: string;
+    inc?: number;
+  }): Promise<IMongoFile | null> {
     const { file_id, inc = 1 } = data;
     const updateOperation = {
       $inc: { usage: inc },
       $unset: { expiresAt: '', temp_file_id: '' },
     };
-    return (await File.findOneAndUpdate({ file_id }, updateOperation, {
+    return File.findOneAndUpdate({ file_id }, updateOperation, {
       new: true,
-    }).lean()) as IFile | null;
+    }).lean();
   }
 
   /**
@@ -158,9 +153,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
    * @param file_id - The unique identifier of the file to delete
    * @returns A promise that resolves to the deleted file document or null
    */
-  async function deleteFile(file_id: string): Promise<IFile | null> {
-    const File = mongoose.models.File;
-    return (await File.findOneAndDelete({ file_id }).lean()) as IFile | null;
+  async function deleteFile(file_id: string): Promise<IMongoFile | null> {
+    return File.findOneAndDelete({ file_id }).lean();
   }
 
   /**
@@ -168,9 +162,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
    * @param filter - The filter criteria to apply
    * @returns A promise that resolves to the deleted file document or null
    */
-  async function deleteFileByFilter(filter: FilterQuery<IFile>): Promise<IFile | null> {
-    const File = mongoose.models.File;
-    return (await File.findOneAndDelete(filter).lean()) as IFile | null;
+  async function deleteFileByFilter(filter: FilterQuery<IMongoFile>): Promise<IMongoFile | null> {
+    return File.findOneAndDelete(filter).lean();
   }
 
   /**
@@ -183,12 +176,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     file_ids: string[],
     user?: string,
   ): Promise<{ deletedCount?: number }> {
-    const File = mongoose.models.File;
-    let deleteQuery: FilterQuery<IFile> = { file_id: { $in: file_ids } };
+    let deleteQuery: FilterQuery<IMongoFile> = { file_id: { $in: file_ids } };
     if (user) {
       deleteQuery = { user: user };
     }
-    return await File.deleteMany(deleteQuery);
+    return File.deleteMany(deleteQuery);
   }
 
   /**
@@ -202,7 +194,6 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
       return;
     }
 
-    const File = mongoose.models.File;
     const bulkOperations = updates.map((update) => ({
       updateOne: {
         filter: { file_id: update.file_id },
@@ -225,8 +216,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   async function updateFilesUsage(
     files: Array<{ file_id: string }>,
     fileIds?: string[],
-  ): Promise<IFile[]> {
-    const promises: Promise<IFile | null>[] = [];
+  ): Promise<IMongoFile[]> {
+    const promises: Promise<IMongoFile | null>[] = [];
     const seen = new Set<string>();
 
     for (const file of files) {
@@ -240,7 +231,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
 
     if (!fileIds) {
       const results = await Promise.all(promises);
-      return results.filter((result): result is IFile => result != null);
+      return results.filter((result): result is IMongoFile => result != null);
     }
 
     for (const file_id of fileIds) {
@@ -252,7 +243,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     }
 
     const results = await Promise.all(promises);
-    return results.filter((result): result is IFile => result != null);
+    return results.filter((result): result is IMongoFile => result != null);
   }
 
   return {
