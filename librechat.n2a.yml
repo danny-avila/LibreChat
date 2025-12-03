@@ -10,10 +10,9 @@ mcpServers:
     headers:
       Authorization: "Bearer ${TAVILY_API_KEY}"
 endpoints:
-    
   azureOpenAI:
     # Endpoint-level configuration
-    titleModel: "gpt-4o-mini"
+    titleModel: "gpt-4o"
     plugins: false
     assistants: false
     groups:
