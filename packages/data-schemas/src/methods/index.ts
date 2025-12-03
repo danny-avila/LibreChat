@@ -2,6 +2,8 @@ import { createSessionMethods, type SessionMethods } from './session';
 import { createTokenMethods, type TokenMethods } from './token';
 import { createRoleMethods, type RoleMethods } from './role';
 import { createUserMethods, type UserMethods } from './user';
+import { createKeyMethods, type KeyMethods } from './key';
+import { createFileMethods, type FileMethods } from './file';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
 /* Agent Categories */
@@ -18,6 +20,8 @@ export type AllMethods = UserMethods &
   SessionMethods &
   TokenMethods &
   RoleMethods &
+  KeyMethods &
+  FileMethods &
   MemoryMethods &
   AgentCategoryMethods &
   UserGroupMethods &
@@ -28,6 +32,7 @@ export type AllMethods = UserMethods &
 
 /**
  * Creates all database methods for all collections
+ * @param mongoose - Mongoose instance
  */
 export function createMethods(mongoose: typeof import('mongoose')): AllMethods {
   return {
@@ -35,6 +40,8 @@ export function createMethods(mongoose: typeof import('mongoose')): AllMethods {
     ...createSessionMethods(mongoose),
     ...createTokenMethods(mongoose),
     ...createRoleMethods(mongoose),
+    ...createKeyMethods(mongoose),
+    ...createFileMethods(mongoose),
     ...createMemoryMethods(mongoose),
     ...createAgentCategoryMethods(mongoose),
     ...createAccessRoleMethods(mongoose),
@@ -50,6 +57,8 @@ export type {
   SessionMethods,
   TokenMethods,
   RoleMethods,
+  KeyMethods,
+  FileMethods,
   MemoryMethods,
   AgentCategoryMethods,
   UserGroupMethods,

@@ -9,7 +9,7 @@ const { updateAssistantDoc, getAssistants } = require('~/models/Assistant');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
 const { getCachedTools } = require('~/server/services/Config');
 const { manifestToolMap } = require('~/app/clients/tools');
-const { deleteFileByFilter } = require('~/models/File');
+const { deleteFileByFilter } = require('~/models');
 
 /**
  * Create an assistant.

@@ -1,5 +1,18 @@
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
+import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
+import {
+  AuthType,
+  EModelEndpoint,
+  bedrockInputParser,
+  bedrockOutputParser,
+  removeNullishValues,
+} from 'librechat-data-provider';
+import type { BaseInitializeParams, InitializeResultBase, BedrockCredentials } from '~/types';
+import { checkUserKeyExpiry } from '~/utils';
+
 /**
- * Bedrock endpoint options configuration
+ * Initializes Bedrock endpoint configuration.
  *
  * This module handles configuration for AWS Bedrock endpoints, including support for
  * HTTP/HTTPS proxies and reverse proxies.
@@ -18,28 +31,17 @@
  * - Credentials and endpoint configuration are passed separately to ChatBedrockConverse,
  *   which creates its own BedrockRuntimeClient internally
  *
- * Environment Variables:
- * - PROXY: HTTP/HTTPS proxy URL (e.g., http://proxy.example.com:8080)
- * - BEDROCK_REVERSE_PROXY: Custom Bedrock API endpoint host
- * - BEDROCK_AWS_DEFAULT_REGION: AWS region for Bedrock service
- * - BEDROCK_AWS_ACCESS_KEY_ID: AWS access key (or set to 'user_provided')
- * - BEDROCK_AWS_SECRET_ACCESS_KEY: AWS secret key (or set to 'user_provided')
- * - BEDROCK_AWS_SESSION_TOKEN: Optional AWS session token
+ * @param params - Configuration parameters
+ * @returns Promise resolving to Bedrock configuration options
+ * @throws Error if credentials are not provided when required
  */
-
-const { HttpsProxyAgent } = require('https-proxy-agent');
-const { NodeHttpHandler } = require('@smithy/node-http-handler');
-const { BedrockRuntimeClient } = require('@aws-sdk/client-bedrock-runtime');
-const {
-  AuthType,
-  EModelEndpoint,
-  bedrockInputParser,
-  bedrockOutputParser,
-  removeNullishValues,
-} = require('librechat-data-provider');
-const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
-
-const getOptions = async ({ req, overrideModel, endpointOption }) => {
+export async function initializeBedrock({
+  req,
+  endpoint,
+  model_parameters,
+  db,
+}: BaseInitializeParams): Promise<InitializeResultBase> {
+  void endpoint;
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
@@ -48,11 +50,14 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
     BEDROCK_AWS_DEFAULT_REGION,
     PROXY,
   } = process.env;
-  const expiresAt = req.body.key;
+
+  const { key: expiresAt } = req.body;
   const isUserProvided = BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED;
 
-  let credentials = isUserProvided
-    ? await getUserKey({ userId: req.user.id, name: EModelEndpoint.bedrock })
+  let credentials: BedrockCredentials | undefined = isUserProvided
+    ? await db
+        .getUserKey({ userId: req.user?.id ?? '', name: EModelEndpoint.bedrock })
+        .then((key) => JSON.parse(key) as BedrockCredentials)
     : {
         accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
         secretAccessKey: BEDROCK_AWS_SECRET_ACCESS_KEY,
@@ -75,37 +80,31 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
     checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
   }
 
-  /*
-  Callback for stream rate no longer awaits and may end the stream prematurely
-  /** @type {number}
-  let streamRate = Constants.DEFAULT_STREAM_RATE;
-
-  /** @type {undefined | TBaseEndpoint}
-  const bedrockConfig = appConfig.endpoints?.[EModelEndpoint.bedrock];
-
-  if (bedrockConfig && bedrockConfig.streamRate) {
-    streamRate = bedrockConfig.streamRate;
-  }
-
-  const allConfig = appConfig.endpoints?.all;
-  if (allConfig && allConfig.streamRate) {
-    streamRate = allConfig.streamRate;
-  }
-  */
-
-  /** @type {BedrockClientOptions} */
-  const requestOptions = {
-    model: overrideModel ?? endpointOption?.model,
+  const requestOptions: Record<string, unknown> = {
+    model: model_parameters?.model as string | undefined,
     region: BEDROCK_AWS_DEFAULT_REGION,
   };
 
-  const configOptions = {};
+  const configOptions: Record<string, unknown> = {};
 
   const llmConfig = bedrockOutputParser(
     bedrockInputParser.parse(
-      removeNullishValues(Object.assign(requestOptions, endpointOption?.model_parameters ?? {})),
+      removeNullishValues({ ...requestOptions, ...(model_parameters ?? {}) }),
     ),
-  );
+  ) as InitializeResultBase['llmConfig'] & {
+    region?: string;
+    client?: BedrockRuntimeClient;
+    credentials?: BedrockCredentials;
+    endpointHost?: string;
+  };
+
+  /** Only include credentials if they're complete (accessKeyId and secretAccessKey are both set) */
+  const hasCompleteCredentials =
+    credentials &&
+    typeof credentials.accessKeyId === 'string' &&
+    credentials.accessKeyId !== '' &&
+    typeof credentials.secretAccessKey === 'string' &&
+    credentials.secretAccessKey !== '';
 
   if (PROXY) {
     const proxyAgent = new HttpsProxyAgent(PROXY);
@@ -116,8 +115,10 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
     // the AWS SDK's default credential provider chain is used (instance profiles,
     // AWS profiles, environment variables, etc.)
     const customClient = new BedrockRuntimeClient({
-      region: llmConfig.region ?? BEDROCK_AWS_DEFAULT_REGION,
-      ...(credentials && { credentials }),
+      region: (llmConfig.region as string) ?? BEDROCK_AWS_DEFAULT_REGION,
+      ...(hasCompleteCredentials && {
+        credentials: credentials as { accessKeyId: string; secretAccessKey: string },
+      }),
       requestHandler: new NodeHttpHandler({
         httpAgent: proxyAgent,
         httpsAgent: proxyAgent,
@@ -141,10 +142,7 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
   }
 
   return {
-    /** @type {BedrockClientOptions} */
     llmConfig,
     configOptions,
   };
-};
-
-module.exports = getOptions;
+}
