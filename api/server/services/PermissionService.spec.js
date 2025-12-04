@@ -1726,22 +1726,21 @@ describe('PermissionService', () => {
       expect(permissionsMap.size).toBe(0);
     });
 
-    test('should handle invalid resource type', async () => {
+    test('should throw on invalid resource type', async () => {
       const resource1 = new mongoose.Types.ObjectId();
 
       getUserPrincipals.mockResolvedValue([
         { principalType: PrincipalType.USER, principalId: userId },
       ]);
 
-      const permissionsMap = await getResourcePermissionsMap({
-        userId,
-        resourceType: 'invalid_type',
-        resourceIds: [resource1],
-      });
-
-      // Should return empty map on error
-      expect(permissionsMap).toBeInstanceOf(Map);
-      expect(permissionsMap.size).toBe(0);
+      // Validation errors should throw immediately
+      await expect(
+        getResourcePermissionsMap({
+          userId,
+          resourceType: 'invalid_type',
+          resourceIds: [resource1],
+        }),
+      ).rejects.toThrow('Invalid resourceType: invalid_type');
     });
 
     test('should include public permissions in batch query', async () => {
