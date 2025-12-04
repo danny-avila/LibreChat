@@ -1,6 +1,6 @@
 import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
-import { ChevronRight } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
@@ -216,10 +216,10 @@ const Conversations: FC<ConversationsProps> = ({
             type="button"
           >
             <span className="select-none">{localize('com_ui_chats')}</span>
-            <ChevronRight
+            <ChevronDown
               className={cn(
                 'h-3 w-3 transition-transform duration-200',
-                isChatsExpanded ? 'rotate-90' : '',
+                isChatsExpanded ? 'rotate-180' : '',
               )}
             />
           </button>
