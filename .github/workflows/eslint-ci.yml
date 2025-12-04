@@ -35,8 +35,6 @@ jobs:
 
       # Run ESLint on changed files within the api/ and client/ directories.
       - name: Run ESLint on changed files
-        env:
-          SARIF_ESLINT_IGNORE_SUPPRESSED: "true"
         run: |
           # Extract the base commit SHA from the pull_request event payload.
           BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
@@ -52,22 +50,10 @@ jobs:
           # Ensure there are files to lint before running ESLint
           if [[ -z "$CHANGED_FILES" ]]; then
             echo "No matching files changed. Skipping ESLint."
-            echo "UPLOAD_SARIF=false" >> $GITHUB_ENV
             exit 0
           fi
-
-          # Set variable to allow SARIF upload
-          echo "UPLOAD_SARIF=true" >> $GITHUB_ENV
 
           # Run ESLint
           npx eslint --no-error-on-unmatched-pattern \
             --config eslint.config.mjs \
-            --format @microsoft/eslint-formatter-sarif \
-            --output-file eslint-results.sarif $CHANGED_FILES || true
-
-      - name: Upload analysis results to GitHub
-        if: env.UPLOAD_SARIF == 'true'
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: eslint-results.sarif
-          wait-for-processing: true
+            $CHANGED_FILES

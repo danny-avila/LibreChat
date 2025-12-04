@@ -101,14 +101,14 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::395567831871:role/github-actions
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       # Resolve EC2 instance ID (hard-coded, but can be a variable)
       - name: Resolve EC2 Instance ID
         id: ec2
         run: |
-          INSTANCE_ID="i-060babef69922d8b4"
+          INSTANCE_ID="${{ secrets.EC2_INSTANCE_ID }}"
           echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
 
       # ------------------------------------------------------
