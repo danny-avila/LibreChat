@@ -622,15 +622,15 @@ describe('AccessControlService', () => {
         expect(permissionsMap.size).toBe(0);
       });
 
-      test('should return empty map for invalid resource type', async () => {
-        const permissionsMap = await service.getResourcePermissionsMap({
-          userId,
-          role: 'user',
-          resourceType: 'invalid' as ResourceType,
-          resourceIds: [resource1],
-        });
-
-        expect(permissionsMap.size).toBe(0);
+      test('should throw on invalid resource type', async () => {
+        await expect(
+          service.getResourcePermissionsMap({
+            userId,
+            role: 'user',
+            resourceType: 'invalid' as ResourceType,
+            resourceIds: [resource1],
+          }),
+        ).rejects.toThrow('Invalid resourceType: invalid');
       });
     });
 
