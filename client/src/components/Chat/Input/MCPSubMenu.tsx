@@ -112,7 +112,7 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
                 >
                   <div className="flex flex-grow items-center gap-2">
                     <Ariakit.MenuItemCheck checked={isSelected} />
-                    <span>{s.serverName}</span>
+                    <span>{s.config.title || s.serverName}</span>
                   </div>
                   {statusIcon && <div className="ml-2 flex items-center">{statusIcon}</div>}
                 </Ariakit.MenuItem>

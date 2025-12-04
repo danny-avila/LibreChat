@@ -1,8 +1,10 @@
 import React, { memo, useCallback } from 'react';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { MultiSelect, MCPIcon } from '@librechat/client';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { useBadgeRowContext } from '~/Providers';
+import { useHasAccess } from '~/hooks';
 
 function MCPSelectContent() {
   const { conversationId, mcpServerManager } = useBadgeRowContext();
@@ -19,12 +21,17 @@ function MCPSelectContent() {
   } = mcpServerManager;
 
   const renderSelectedValues = useCallback(
-    (values: string[], placeholder?: string) => {
+    (
+      values: string[],
+      placeholder?: string,
+      items?: (string | { label: string; value: string })[],
+    ) => {
       if (values.length === 0) {
         return placeholder || localize('com_ui_select_placeholder');
       }
       if (values.length === 1) {
-        return values[0];
+        const selectedItem = items?.find((i) => typeof i !== 'string' && i.value == values[0]);
+        return selectedItem && typeof selectedItem !== 'string' ? selectedItem.label : values[0];
       }
       return localize('com_ui_x_selected', { 0: values.length });
     },
@@ -74,11 +81,16 @@ function MCPSelectContent() {
   }
 
   const configDialogProps = getConfigDialogProps();
-
+  const chatMenuOnlyMCPServers = availableMCPServers.filter(
+    (s) => s.config.chatMenu !== false && s.consumeOnly !== true,
+  );
   return (
     <>
       <MultiSelect
-        items={availableMCPServers?.map((s) => s.serverName)}
+        items={chatMenuOnlyMCPServers.map((s) => ({
+          label: s.config.title || s.serverName,
+          value: s.serverName,
+        }))}
         selectedValues={mcpValues ?? []}
         setSelectedValues={batchToggleServers}
         renderSelectedValues={renderSelectedValues}
@@ -100,8 +112,15 @@ function MCPSelectContent() {
 function MCPSelect() {
   const { mcpServerManager } = useBadgeRowContext();
   const { availableMCPServers } = mcpServerManager;
+  const chatMenuOnlyMCPServers = availableMCPServers?.filter(
+    (s) => s.config.chatMenu !== false && s.consumeOnly !== true,
+  );
+  const canUseMcp = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
+  });
 
-  if (!availableMCPServers || availableMCPServers.length === 0) {
+  if (!canUseMcp || !chatMenuOnlyMCPServers || chatMenuOnlyMCPServers.length === 0) {
     return null;
   }
 

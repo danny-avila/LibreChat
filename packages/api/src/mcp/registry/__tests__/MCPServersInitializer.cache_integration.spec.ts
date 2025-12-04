@@ -8,6 +8,18 @@ jest.mock('~/cluster', () => ({
   isLeader: jest.fn().mockResolvedValue(true),
 }));
 
+// Mock ServerConfigsDB to avoid needing MongoDB for cache integration tests
+jest.mock('../db/ServerConfigsDB', () => ({
+  ServerConfigsDB: jest.fn().mockImplementation(() => ({
+    get: jest.fn().mockResolvedValue(undefined),
+    getAll: jest.fn().mockResolvedValue({}),
+    add: jest.fn().mockResolvedValue({ config: {}, isNew: true }),
+    update: jest.fn().mockResolvedValue(undefined),
+    remove: jest.fn().mockResolvedValue(undefined),
+    reset: jest.fn().mockResolvedValue(undefined),
+  })),
+}));
+
 describe('MCPServersInitializer Redis Integration Tests', () => {
   let MCPServersInitializer: typeof import('../MCPServersInitializer').MCPServersInitializer;
   let MCPServersRegistry: typeof import('../MCPServersRegistry').MCPServersRegistry;

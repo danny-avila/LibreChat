@@ -1,4 +1,3 @@
-import { PermissionBits } from '../accessPermissions';
 import type { MCPOptions, MCPServerUserInput } from '../mcp';
 
 /**
@@ -7,7 +6,7 @@ import type { MCPOptions, MCPServerUserInput } from '../mcp';
  */
 export interface IMCPServerDB {
   _id?: string; // MongoDB ObjectId (used for ACL/permissions)
-  mcp_id: string;
+  serverName: string;
   config: MCPOptions;
   author?: string | null;
   createdAt?: Date;
@@ -41,12 +40,10 @@ export type MCPServerUpdateParams = {
  * Response for MCP server list endpoint
  */
 export type MCPServerDBObjectResponse = {
-  _id?: string;
-  mcp_id?: string;
-  author?: string | null;
-  createdAt?: Date;
-  updatedAt?: Date;
-  effectivePermissions?: PermissionBits;
+  dbId?: string;
+  serverName: string;
+  /** True if access is only via agent (not directly shared with user) */
+  consumeOnly?: boolean;
 } & MCPOptions;
 
 export type MCPServersListResponse = Record<string, MCPServerDBObjectResponse>;

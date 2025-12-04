@@ -312,6 +312,7 @@ export default function AgentConfig() {
             setShowMCPToolDialog={setShowMCPToolDialog}
           />
         )}
+
         {/* Agent Tools & Actions */}
         <div className="mb-4">
           <label className={labelClass}>
