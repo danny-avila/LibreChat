@@ -665,7 +665,7 @@ describe('Meta Models Tests', () => {
 
     test('should match Deepseek model variations', () => {
       expect(getModelMaxTokens('deepseek-chat')).toBe(
-        maxTokensMap[EModelEndpoint.openAI]['deepseek'],
+        maxTokensMap[EModelEndpoint.openAI]['deepseek-chat'],
       );
       expect(getModelMaxTokens('deepseek-coder')).toBe(
         maxTokensMap[EModelEndpoint.openAI]['deepseek'],
@@ -676,6 +676,20 @@ describe('Meta Models Tests', () => {
       expect(getModelMaxTokens('deepseek.r1')).toBe(
         maxTokensMap[EModelEndpoint.openAI]['deepseek.r1'],
       );
+    });
+
+    test('should return 128000 context tokens for all DeepSeek models', () => {
+      expect(getModelMaxTokens('deepseek-chat')).toBe(128000);
+      expect(getModelMaxTokens('deepseek-reasoner')).toBe(128000);
+      expect(getModelMaxTokens('deepseek-r1')).toBe(128000);
+      expect(getModelMaxTokens('deepseek-v3')).toBe(128000);
+      expect(getModelMaxTokens('deepseek.r1')).toBe(128000);
+    });
+
+    test('should handle DeepSeek models with provider prefixes', () => {
+      expect(getModelMaxTokens('deepseek/deepseek-chat')).toBe(128000);
+      expect(getModelMaxTokens('openrouter/deepseek-reasoner')).toBe(128000);
+      expect(getModelMaxTokens('openai/deepseek-v3')).toBe(128000);
     });
   });
 
@@ -705,8 +719,39 @@ describe('Meta Models Tests', () => {
     });
 
     test('should match Deepseek model variations', () => {
-      expect(matchModelName('deepseek-chat')).toBe('deepseek');
+      expect(matchModelName('deepseek-chat')).toBe('deepseek-chat');
       expect(matchModelName('deepseek-coder')).toBe('deepseek');
+    });
+  });
+
+  describe('DeepSeek Max Output Tokens', () => {
+    const { getModelMaxOutputTokens } = require('@librechat/api');
+
+    test('should return correct max output tokens for deepseek-chat', () => {
+      expect(getModelMaxOutputTokens('deepseek-chat')).toBe(8000);
+      expect(getModelMaxOutputTokens('deepseek-chat', EModelEndpoint.openAI)).toBe(8000);
+      expect(getModelMaxOutputTokens('deepseek-chat', EModelEndpoint.custom)).toBe(8000);
+    });
+
+    test('should return correct max output tokens for deepseek-reasoner', () => {
+      expect(getModelMaxOutputTokens('deepseek-reasoner')).toBe(64000);
+      expect(getModelMaxOutputTokens('deepseek-reasoner', EModelEndpoint.openAI)).toBe(64000);
+      expect(getModelMaxOutputTokens('deepseek-reasoner', EModelEndpoint.custom)).toBe(64000);
+    });
+
+    test('should return correct max output tokens for deepseek-r1', () => {
+      expect(getModelMaxOutputTokens('deepseek-r1')).toBe(64000);
+      expect(getModelMaxOutputTokens('deepseek-r1', EModelEndpoint.openAI)).toBe(64000);
+    });
+
+    test('should return correct max output tokens for deepseek base pattern', () => {
+      expect(getModelMaxOutputTokens('deepseek')).toBe(8000);
+      expect(getModelMaxOutputTokens('deepseek-v3')).toBe(8000);
+    });
+
+    test('should handle DeepSeek models with provider prefixes for max output tokens', () => {
+      expect(getModelMaxOutputTokens('deepseek/deepseek-chat')).toBe(8000);
+      expect(getModelMaxOutputTokens('openrouter/deepseek-reasoner')).toBe(64000);
     });
   });
 

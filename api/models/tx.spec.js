@@ -766,6 +766,78 @@ describe('Deepseek Model Tests', () => {
     const result = tokenValues[valueKey].prompt && multiplier === tokenValues[valueKey].prompt;
     expect(result).toBe(true);
   });
+
+  it('should return correct pricing for deepseek-chat', () => {
+    expect(getMultiplier({ model: 'deepseek-chat', tokenType: 'prompt' })).toBe(
+      tokenValues['deepseek-chat'].prompt,
+    );
+    expect(getMultiplier({ model: 'deepseek-chat', tokenType: 'completion' })).toBe(
+      tokenValues['deepseek-chat'].completion,
+    );
+    expect(tokenValues['deepseek-chat'].prompt).toBe(0.28);
+    expect(tokenValues['deepseek-chat'].completion).toBe(0.42);
+  });
+
+  it('should return correct pricing for deepseek-reasoner', () => {
+    expect(getMultiplier({ model: 'deepseek-reasoner', tokenType: 'prompt' })).toBe(
+      tokenValues['deepseek-reasoner'].prompt,
+    );
+    expect(getMultiplier({ model: 'deepseek-reasoner', tokenType: 'completion' })).toBe(
+      tokenValues['deepseek-reasoner'].completion,
+    );
+    expect(tokenValues['deepseek-reasoner'].prompt).toBe(0.28);
+    expect(tokenValues['deepseek-reasoner'].completion).toBe(0.42);
+  });
+
+  it('should handle DeepSeek model name variations with provider prefixes', () => {
+    const modelVariations = [
+      'deepseek/deepseek-chat',
+      'openrouter/deepseek-chat',
+      'deepseek/deepseek-reasoner',
+    ];
+
+    modelVariations.forEach((model) => {
+      const promptMultiplier = getMultiplier({ model, tokenType: 'prompt' });
+      const completionMultiplier = getMultiplier({ model, tokenType: 'completion' });
+      expect(promptMultiplier).toBe(0.28);
+      expect(completionMultiplier).toBe(0.42);
+    });
+  });
+
+  it('should return correct cache multipliers for DeepSeek models', () => {
+    expect(getCacheMultiplier({ model: 'deepseek-chat', cacheType: 'write' })).toBe(
+      cacheTokenValues['deepseek-chat'].write,
+    );
+    expect(getCacheMultiplier({ model: 'deepseek-chat', cacheType: 'read' })).toBe(
+      cacheTokenValues['deepseek-chat'].read,
+    );
+    expect(getCacheMultiplier({ model: 'deepseek-reasoner', cacheType: 'write' })).toBe(
+      cacheTokenValues['deepseek-reasoner'].write,
+    );
+    expect(getCacheMultiplier({ model: 'deepseek-reasoner', cacheType: 'read' })).toBe(
+      cacheTokenValues['deepseek-reasoner'].read,
+    );
+  });
+
+  it('should return correct cache pricing values for DeepSeek models', () => {
+    expect(cacheTokenValues['deepseek-chat'].write).toBe(0.28);
+    expect(cacheTokenValues['deepseek-chat'].read).toBe(0.028);
+    expect(cacheTokenValues['deepseek-reasoner'].write).toBe(0.28);
+    expect(cacheTokenValues['deepseek-reasoner'].read).toBe(0.028);
+    expect(cacheTokenValues['deepseek'].write).toBe(0.28);
+    expect(cacheTokenValues['deepseek'].read).toBe(0.028);
+  });
+
+  it('should handle DeepSeek cache multipliers with model variations', () => {
+    const modelVariations = ['deepseek/deepseek-chat', 'openrouter/deepseek-reasoner'];
+
+    modelVariations.forEach((model) => {
+      const writeMultiplier = getCacheMultiplier({ model, cacheType: 'write' });
+      const readMultiplier = getCacheMultiplier({ model, cacheType: 'read' });
+      expect(writeMultiplier).toBe(0.28);
+      expect(readMultiplier).toBe(0.028);
+    });
+  });
 });
 
 describe('Qwen3 Model Tests', () => {
