@@ -1,28 +1,46 @@
 import { EModelEndpoint } from 'librechat-data-provider';
+import type { GoogleAIToolType } from '@langchain/google-common';
 import type { ClientOptions } from '@librechat/agents';
 import type * as t from '~/types';
 import { knownOpenAIParams } from './llm';
 
 const anthropicExcludeParams = new Set(['anthropicApiUrl']);
-const googleExcludeParams = new Set(['safetySettings', 'location', 'baseUrl', 'customHeaders']);
+const googleExcludeParams = new Set([
+  'safetySettings',
+  'location',
+  'baseUrl',
+  'customHeaders',
+  'thinkingConfig',
+  'thinkingBudget',
+  'includeThoughts',
+]);
+
+/** Google-specific tool types that have no OpenAI-compatible equivalent */
+const googleToolsToFilter = new Set(['googleSearch']);
+
+export type ConfigTools = Array<Record<string, unknown>> | Array<GoogleAIToolType>;
 
 /**
  * Transforms a Non-OpenAI LLM config to an OpenAI-conformant config.
  * Non-OpenAI parameters are moved to modelKwargs.
  * Also extracts configuration options that belong in configOptions.
  * Handles addParams and dropParams for parameter customization.
+ * Filters out provider-specific tools that have no OpenAI equivalent.
  */
 export function transformToOpenAIConfig({
+  tools,
   addParams,
   dropParams,
   llmConfig,
   fromEndpoint,
 }: {
+  tools?: ConfigTools;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
   llmConfig: ClientOptions;
   fromEndpoint: string;
 }): {
+  tools: ConfigTools;
   llmConfig: t.OAIClientOptions;
   configOptions: Partial<t.OpenAIConfiguration>;
 } {
@@ -58,16 +76,7 @@ export function transformToOpenAIConfig({
       hasModelKwargs = true;
       continue;
     } else if (isGoogle && key === 'authOptions') {
-      // Handle Google authOptions
       modelKwargs = Object.assign({}, modelKwargs, value as Record<string, unknown>);
-      hasModelKwargs = true;
-      continue;
-    } else if (
-      isGoogle &&
-      (key === 'thinkingConfig' || key === 'thinkingBudget' || key === 'includeThoughts')
-    ) {
-      // Handle Google thinking configuration
-      modelKwargs = Object.assign({}, modelKwargs, { [key]: value });
       hasModelKwargs = true;
       continue;
     }
@@ -121,7 +130,24 @@ export function transformToOpenAIConfig({
     }
   }
 
+  /** Filter out provider-specific tools that have no OpenAI equivalent */
+  /**
+   * Filter out provider-specific tools that have no OpenAI equivalent.
+   * Using a functional approach and early return for flatness.
+   * This passes through any tool for non-Google providers, or
+   * filters out tools present in the googleToolsToFilter set for Google.
+   */
+  const filterGoogleTool = (tool: unknown): boolean => {
+    if (!isGoogle) return true;
+    if (typeof tool !== 'object' || tool === null) return false;
+    const toolKeys = Object.keys(tool as Record<string, unknown>);
+    return !toolKeys.some((key) => googleToolsToFilter.has(key));
+  };
+
+  const filteredTools = Array.isArray(tools) ? tools.filter(filterGoogleTool) : [];
+
   return {
+    tools: filteredTools,
     llmConfig: openAIConfig as t.OAIClientOptions,
     configOptions,
   };
