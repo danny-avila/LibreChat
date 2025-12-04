@@ -1,8 +1,7 @@
 import React from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Trash2 } from 'lucide-react';
 import { Button, Spinner } from '@librechat/client';
 import { useLocalize, useMCPServerManager, useMCPConnectionStatus } from '~/hooks';
-import { useGetStartupConfig } from '~/data-provider';
 
 interface ServerInitializationSectionProps {
   sidePanel?: boolean;
@@ -22,12 +21,13 @@ export default function ServerInitializationSection({
   const localize = useLocalize();
 
   const {
+    getOAuthUrl,
+    isCancellable,
+    isInitializing,
+    cancelOAuthFlow,
     initializeServer,
     availableMCPServers,
-    cancelOAuthFlow,
-    isInitializing,
-    isCancellable,
-    getOAuthUrl,
+    revokeOAuthForServer,
   } = useMCPServerManager({ conversationId });
 
   const { connectionStatus } = useMCPConnectionStatus({
@@ -73,7 +73,6 @@ export default function ServerInitializationSection({
 
   // Unified button rendering
   const isReinit = shouldShowReinit;
-  const outerClass = isReinit ? 'flex justify-start' : 'flex justify-end';
   const buttonVariant = isReinit ? undefined : 'default';
 
   let buttonText = '';
@@ -94,17 +93,28 @@ export default function ServerInitializationSection({
   );
 
   return (
-    <div className={outerClass}>
+    <div className="flex items-center gap-2">
       <Button
         variant={buttonVariant}
         onClick={() => initializeServer(serverName, false)}
         disabled={isServerInitializing}
         size={sidePanel ? 'sm' : 'default'}
-        className="w-full"
+        className="flex-1"
       >
         {icon}
         {buttonText}
       </Button>
+      {requiresOAuth && revokeOAuthForServer && (
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={() => revokeOAuthForServer(serverName)}
+          aria-label={localize('com_ui_revoke')}
+        >
+          <Trash2 className="h-4 w-4" />
+          {localize('com_ui_revoke')}
+        </Button>
+      )}
     </div>
   );
 }

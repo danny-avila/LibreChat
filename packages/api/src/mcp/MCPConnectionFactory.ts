@@ -230,7 +230,7 @@ export class MCPConnectionFactory {
   }
 
   /**
-   * Cleans up invalid OAuth tokens from storage.
+   * Cleans up invalid OAuth tokens from storage and flow cache.
    * Called when we detect that stored tokens are definitively invalid/revoked.
    */
   protected async cleanupInvalidTokens(): Promise<void> {
@@ -242,6 +242,7 @@ export class MCPConnectionFactory {
     }
 
     try {
+      /** Delete tokens from database */
       await MCPTokenStorage.deleteUserTokens({
         userId: this.userId,
         serverName: this.serverName,
@@ -249,6 +250,14 @@ export class MCPConnectionFactory {
           await this.tokenMethods!.deleteTokens(filter);
         },
       });
+
+      /** Also clear the flow cache that may have cached the token fetch result */
+      if (this.flowManager) {
+        const flowId = MCPOAuthHandler.generateFlowId(this.userId, this.serverName);
+        await this.flowManager.deleteFlow(flowId, 'mcp_get_tokens');
+        logger.debug(`${this.logPrefix} Cleared token fetch flow cache`);
+      }
+
       logger.info(`${this.logPrefix} Successfully cleaned up invalid tokens`);
     } catch (error) {
       logger.error(`${this.logPrefix} Failed to clean up invalid tokens`, error);
@@ -261,6 +270,14 @@ export class MCPConnectionFactory {
   private isInvalidTokenError(error: unknown): boolean {
     if (!error || typeof error !== 'object') {
       return false;
+    }
+
+    /** Check for error code 401 (unauthorized) */
+    if ('code' in error) {
+      const code = (error as { code?: number }).code;
+      if (code === 401) {
+        return true;
+      }
     }
 
     if ('message' in error && typeof error.message === 'string') {
@@ -316,24 +333,51 @@ export class MCPConnectionFactory {
         attempts++;
 
         /**
-         * Check for invalid token errors first - if our stored token is invalid/revoked,
-         * clean it up so subsequent attempts can trigger fresh OAuth flow.
+         * Check for invalid token errors - if our stored token is invalid/revoked,
+         * clean it up. We only do this once, then let the OAuth flow handle re-auth.
          */
         if (this.useOAuth && !invalidTokensCleaned && this.isInvalidTokenError(error)) {
           logger.warn(`${this.logPrefix} Invalid token detected, cleaning up stored tokens`);
           await this.cleanupInvalidTokens();
           invalidTokensCleaned = true;
+          logger.info(`${this.logPrefix} Tokens cleaned up, will trigger OAuth flow`);
+          // Don't throw here - fall through to OAuth handling below
         }
 
         if (this.useOAuth && this.isOAuthError(error)) {
           // Only handle OAuth if this is a user connection (has oauthStart handler)
           if (this.oauthStart && !oauthHandled) {
-            const errorWithFlag = error as (Error & { isOAuthError?: boolean }) | undefined;
-            if (errorWithFlag?.isOAuthError) {
-              oauthHandled = true;
-              logger.info(`${this.logPrefix} Handling OAuth`);
-              await this.handleOAuthRequired();
+            oauthHandled = true;
+
+            // If returnOnOAuth is true, initiate OAuth and return early with the URL
+            if (this.returnOnOAuth) {
+              logger.info(`${this.logPrefix} Initiating OAuth flow (return on OAuth mode)`);
+              const serverUrl = (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url;
+              const { authorizationUrl, flowId, flowMetadata } =
+                await MCPOAuthHandler.initiateOAuthFlow(
+                  this.serverName,
+                  serverUrl || '',
+                  this.userId!,
+                  this.serverConfig.oauth_headers ?? {},
+                  this.serverConfig.oauth,
+                );
+
+              // Create flow state for callback to find
+              this.flowManager!.createFlow(flowId, 'mcp_oauth', flowMetadata).catch(() => {
+                // Expected to timeout - callback will resolve it
+              });
+
+              // Send the auth URL to the caller
+              await this.oauthStart(authorizationUrl);
+              logger.info(`${this.logPrefix} OAuth URL sent, returning early`);
+
+              // Throw to stop connection attempts - caller will handle oauthRequired
+              throw new Error('OAuth flow initiated - return early');
             }
+
+            // Normal flow - wait for OAuth to complete
+            logger.info(`${this.logPrefix} Handling OAuth`);
+            await this.handleOAuthRequired();
           }
           // Don't retry on OAuth errors - just throw
           logger.info(`${this.logPrefix} OAuth required, stopping connection attempts`);
@@ -355,15 +399,29 @@ export class MCPConnectionFactory {
       return false;
     }
 
-    // Check for SSE error with 401 status
-    if ('message' in error && typeof error.message === 'string') {
-      return error.message.includes('401') || error.message.includes('Non-200 status code (401)');
-    }
-
     // Check for error code
     if ('code' in error) {
       const code = (error as { code?: number }).code;
-      return code === 401 || code === 403;
+      if (code === 401 || code === 403) {
+        return true;
+      }
+    }
+
+    // Check message for various auth error indicators
+    if ('message' in error && typeof error.message === 'string') {
+      const message = error.message.toLowerCase();
+      // Check for 401 status
+      if (message.includes('401') || message.includes('non-200 status code (401)')) {
+        return true;
+      }
+      // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
+      if (message.includes('invalid_token')) {
+        return true;
+      }
+      // Check for authentication required
+      if (message.includes('authentication required') || message.includes('unauthorized')) {
+        return true;
+      }
     }
 
     return false;
