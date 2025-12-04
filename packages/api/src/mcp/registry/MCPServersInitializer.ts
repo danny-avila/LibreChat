@@ -59,12 +59,12 @@ export class MCPServersInitializer {
   /** Initializes a single server with all its metadata and adds it to appropriate collections */
   public static async initializeServer(serverName: string, rawConfig: t.MCPOptions): Promise<void> {
     try {
-      const config = await MCPServersRegistry.getInstance().addServer(
+      const result = await MCPServersRegistry.getInstance().addServer(
         serverName,
         rawConfig,
         'CACHE',
       );
-      MCPServersInitializer.logParsedConfig(serverName, config);
+      MCPServersInitializer.logParsedConfig(serverName, result.config);
     } catch (error) {
       logger.error(`${MCPServersInitializer.prefix(serverName)} Failed to initialize:`, error);
     }

@@ -231,6 +231,8 @@ export const mcp = {
   servers: `${BASE_URL}/api/mcp/servers`,
 };
 
+export const mcpServer = (serverName: string) => `${BASE_URL}/api/mcp/servers/${serverName}`;
+
 export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;
 
 export const files = () => `${BASE_URL}/api/files`;
@@ -319,6 +321,7 @@ export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
 export const updatePeoplePickerPermissions = (roleName: string) =>
   `${getRole(roleName)}/people-picker`;
+export const updateMCPServersPermissions = (roleName: string) => `${getRole(roleName)}/mcp-servers`;
 
 export const updateMarketplacePermissions = (roleName: string) =>
   `${getRole(roleName)}/marketplace`;
@@ -382,6 +385,9 @@ export const updateResourcePermissions = (resourceType: ResourceType, resourceId
 
 export const getEffectivePermissions = (resourceType: ResourceType, resourceId: string) =>
   `${BASE_URL}/api/permissions/${resourceType}/${resourceId}/effective`;
+
+export const getAllEffectivePermissions = (resourceType: ResourceType) =>
+  `${BASE_URL}/api/permissions/${resourceType}/effective/all`;
 
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>

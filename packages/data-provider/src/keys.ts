@@ -59,6 +59,7 @@ export enum QueryKeys {
   graphToken = 'graphToken',
   /* MCP Servers */
   mcpServers = 'mcpServers',
+  mcpServer = 'mcpServer',
 }
 
 // Dynamic query keys that require parameters

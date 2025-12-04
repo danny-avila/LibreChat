@@ -3,6 +3,13 @@ import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
 const BaseOptionsSchema = z.object({
+  /** Display name for the MCP server - only letters, numbers, and spaces allowed */
+  title: z
+    .string()
+    .regex(/^[a-zA-Z0-9 ]+$/, 'Title can only contain letters, numbers, and spaces')
+    .optional(),
+  /** Description of the MCP server */
+  description: z.string().optional(),
   /**
    * Controls whether the MCP server is initialized during application startup.
    * - true (default): Server is initialized during app startup and included in app-level connections

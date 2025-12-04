@@ -11,12 +11,26 @@ import {
 import './AnimatePopover.css';
 import { cn } from '~/utils';
 
+type MultiSelectItem<T extends string> = T | { label: string; value: T };
+
+function getItemValue<T extends string>(item: MultiSelectItem<T>): T {
+  return typeof item === 'string' ? item : item.value;
+}
+
+function getItemLabel<T extends string>(item: MultiSelectItem<T>): string {
+  return typeof item === 'string' ? item : item.label;
+}
+
 interface MultiSelectProps<T extends string> {
-  items: T[];
+  items: MultiSelectItem<T>[];
   label?: string;
   placeholder?: string;
   onSelectedValuesChange?: (values: T[]) => void;
-  renderSelectedValues?: (values: T[], placeholder?: string) => React.ReactNode;
+  renderSelectedValues?: (
+    values: T[],
+    placeholder?: string,
+    items?: MultiSelectItem<T>[],
+  ) => React.ReactNode;
   className?: string;
   itemClassName?: string;
   labelClassName?: string;
@@ -33,11 +47,22 @@ interface MultiSelectProps<T extends string> {
   ) => React.ReactNode;
 }
 
-function defaultRender<T extends string>(values: T[], placeholder?: string) {
+function defaultRender<T extends string>(
+  values: T[],
+  placeholder?: string,
+  items?: MultiSelectItem<T>[],
+) {
   if (values.length === 0) {
     return placeholder || 'Select...';
   }
   if (values.length === 1) {
+    // Find the item to get its label
+    if (items) {
+      const item = items.find((item) => getItemValue(item) === values[0]);
+      if (item) {
+        return getItemLabel(item);
+      }
+    }
     return values[0];
   }
   return `${values.length} items selected`;
@@ -90,7 +115,7 @@ export default function MultiSelect<T extends string>({
         >
           {selectIcon && <span>{selectIcon as React.JSX.Element}</span>}
           <span className="mr-auto hidden truncate md:block">
-            {renderSelectedValues(selectedValues, placeholder)}
+            {renderSelectedValues(selectedValues, placeholder, items)}
           </span>
           <SelectArrow className="ml-1 hidden stroke-1 text-base opacity-75 md:block" />
         </Select>
@@ -109,11 +134,13 @@ export default function MultiSelect<T extends string>({
             popoverClassName,
           )}
         >
-          {items.map((value) => {
+          {items.map((item) => {
+            const value = getItemValue(item);
+            const label = getItemLabel(item);
             const defaultContent = (
               <>
                 <SelectItemCheck className="mr-0.5 text-primary" />
-                <span className="truncate">{value}</span>
+                <span className="truncate">{label}</span>
               </>
             );
             const isCurrentItemSelected = selectedValues.includes(value);

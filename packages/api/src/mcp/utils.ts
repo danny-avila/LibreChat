@@ -45,3 +45,30 @@ export function sanitizeUrlForLogging(url: string | URL): string {
     return '[invalid URL]';
   }
 }
+
+/**
+ * Escapes special regex characters in a string so they are treated literally.
+ * @param str - The string to escape
+ * @returns The escaped string safe for use in a regex pattern
+ */
+export function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Generates a URL-friendly server name from a title.
+ * Converts to lowercase, replaces spaces with hyphens, removes special characters.
+ * @param title - The display title to convert
+ * @returns A slug suitable for use as serverName (e.g., "GitHub MCP Tool" → "github-mcp-tool")
+ */
+export function generateServerNameFromTitle(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '') // Remove special chars except spaces and hyphens
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Remove consecutive hyphens
+    .replace(/^-|-$/g, ''); // Trim leading/trailing hyphens
+
+  return slug || 'mcp-server'; // Fallback if empty
+}

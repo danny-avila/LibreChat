@@ -153,7 +153,6 @@ export enum Panel {
   actions = 'actions',
   model = 'model',
   version = 'version',
-  mcp = 'mcp',
 }
 
 export type FileSetter =
@@ -175,15 +174,6 @@ export type ActionAuthForm = {
   client_url: string;
   scope: string;
   token_exchange_method: t.TokenExchangeMethodEnum;
-};
-
-export type MCPForm = ActionAuthForm & {
-  name?: string;
-  description?: string;
-  url?: string;
-  tools?: string[];
-  icon?: string;
-  trust?: boolean;
 };
 
 export type ActionWithNullableMetadata = Omit<t.Action, 'metadata'> & {
@@ -226,6 +216,7 @@ export interface MCPServerInfo {
   tools: t.AgentToolType[];
   isConfigured: boolean;
   isConnected: boolean;
+  consumeOnly?: boolean;
   metadata: t.TPlugin;
 }
 

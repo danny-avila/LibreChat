@@ -1,7 +1,7 @@
 import type Keyv from 'keyv';
 import { fromPairs } from 'lodash';
 import { standardCache, keyvRedisClient } from '~/cache';
-import { ParsedServerConfig } from '~/mcp/types';
+import { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { BaseRegistryCache } from './BaseRegistryCache';
 import { IServerConfigsRepositoryInterface } from '../ServerConfigsRepositoryInterface';
 
@@ -25,15 +25,17 @@ export class ServerConfigsCacheRedis
     this.cache = standardCache(`${this.PREFIX}::Servers::${namespace}`);
   }
 
-  public async add(serverName: string, config: ParsedServerConfig): Promise<void> {
+  public async add(serverName: string, config: ParsedServerConfig): Promise<AddServerResult> {
     if (this.leaderOnly) await this.leaderCheck(`add ${this.namespace} MCP servers`);
     const exists = await this.cache.has(serverName);
     if (exists)
       throw new Error(
         `Server "${serverName}" already exists in cache. Use update() to modify existing configs.`,
       );
-    const success = await this.cache.set(serverName, { ...config, lastUpdatedAt: Date.now() });
+    const storedConfig = { ...config, updatedAt: Date.now() };
+    const success = await this.cache.set(serverName, storedConfig);
     this.successCheck(`add ${this.namespace} server "${serverName}"`, success);
+    return { serverName, config: storedConfig };
   }
 
   public async update(serverName: string, config: ParsedServerConfig): Promise<void> {
@@ -43,7 +45,7 @@ export class ServerConfigsCacheRedis
       throw new Error(
         `Server "${serverName}" does not exist in cache. Use add() to create new configs.`,
       );
-    const success = await this.cache.set(serverName, { ...config, lastUpdatedAt: Date.now() });
+    const success = await this.cache.set(serverName, { ...config, updatedAt: Date.now() });
     this.successCheck(`update ${this.namespace} server "${serverName}"`, success);
   }
 
