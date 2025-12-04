@@ -109,10 +109,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
   return (
     <div
       ref={ref}
-      className={cn(
-        'group relative mt-1 flex h-10 cursor-pointer items-center gap-3 rounded-lg border-2 border-transparent px-3 py-2 text-text-primary transition-all duration-200 focus-within:border-ring-primary focus-within:bg-surface-hover hover:bg-surface-hover',
-        isSmallScreen === true ? 'mb-2 h-14 rounded-xl' : '',
-      )}
+      className="group relative my-1 flex h-10 cursor-pointer items-center gap-3 rounded-lg border-2 border-transparent px-3 py-2 text-text-primary focus-within:border-ring-primary focus-within:bg-surface-hover hover:bg-surface-hover"
     >
       <Search
         aria-hidden="true"
