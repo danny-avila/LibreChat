@@ -726,10 +726,13 @@ describe('MCPServer Model Tests', () => {
   });
 
   describe('Edge Cases', () => {
-    test('should handle concurrent creation - race condition causes duplicate key errors', async () => {
+    test('should handle concurrent creation with retry logic for race conditions', async () => {
+      // Ensure indexes are created before concurrent test
+      await MCPServer.ensureIndexes();
+
       // Create multiple servers with same title concurrently
-      // Due to race condition (TOCTOU), multiple requests may get the same serverName
-      // from findNextAvailableServerName() before any of them creates the record
+      // The retry logic handles TOCTOU race conditions by retrying with
+      // exponential backoff when duplicate key errors occur
       const promises = Array.from({ length: 5 }, () =>
         methods.createMCPServer({
           config: createSSEConfig('Concurrent Test'),
@@ -744,22 +747,21 @@ describe('MCPServer Model Tests', () => {
       );
       const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
 
-      // At least one should succeed
-      expect(successes.length).toBeGreaterThanOrEqual(1);
+      // With retry logic, all concurrent requests should succeed
+      // Each will get a unique serverName (concurrent-test, concurrent-test-2, etc.)
+      expect(successes.length).toBe(5);
+      expect(failures.length).toBe(0);
 
-      // Due to race condition, we expect some failures with duplicate key errors
-      // (unless we got lucky with timing)
-      if (failures.length > 0) {
-        failures.forEach((f) => {
-          expect(f.reason.message).toMatch(/duplicate key|E11000/i);
-        });
-      }
+      // Verify all servers have unique names
+      const serverNames = successes.map((s) => s.value.serverName);
+      const uniqueNames = new Set(serverNames);
+      expect(uniqueNames.size).toBe(5);
 
-      // Verify the successful servers actually exist in the database
+      // Verify all servers exist in the database
       const dbServers = await MCPServer.find({
         serverName: { $regex: /^concurrent-test/ },
       }).lean();
-      expect(dbServers.length).toBe(successes.length);
+      expect(dbServers.length).toBe(5);
     });
 
     test('should handle sequential creation with same title - no race condition', async () => {

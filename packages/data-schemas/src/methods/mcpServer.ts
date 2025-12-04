@@ -5,6 +5,21 @@ import logger from '~/config/winston';
 import { nanoid } from 'nanoid';
 
 const NORMALIZED_LIMIT_DEFAULT = 20;
+const MAX_CREATE_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 10;
+
+/**
+ * Helper to check if an error is a MongoDB duplicate key error.
+ * Since serverName is the only unique index on MCPServer, any E11000 error
+ * during creation is necessarily a serverName collision.
+ */
+function isDuplicateKeyError(error: unknown): boolean {
+  if (error && typeof error === 'object' && 'code' in error) {
+    const mongoError = error as { code: number };
+    return mongoError.code === 11000;
+  }
+  return false;
+}
 
 /**
  * Escapes special regex characters in a string so they are treated literally.
@@ -60,7 +75,11 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
-   * Create a new MCP server
+   * Create a new MCP server with retry logic for handling race conditions.
+   * When multiple requests try to create servers with the same title simultaneously,
+   * they may get the same serverName from findNextAvailableServerName() before any
+   * creates the record (TOCTOU race condition). This is handled by retrying with
+   * exponential backoff when a duplicate key error occurs.
    * @param data - Object containing config (with title, description, url, etc.) and author
    * @returns The created MCP server document
    */
@@ -69,23 +88,48 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
     author: string | Types.ObjectId;
   }): Promise<MCPServerDocument> {
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
+    let lastError: unknown;
 
-    // Generate serverName from title, with fallback to nanoid if no title
-    let serverName: string;
-    if (data.config.title) {
-      const baseSlug = generateServerNameFromTitle(data.config.title);
-      serverName = await findNextAvailableServerName(baseSlug);
-    } else {
-      serverName = `mcp-${nanoid(16)}`;
+    for (let attempt = 0; attempt < MAX_CREATE_RETRIES; attempt++) {
+      try {
+        // Generate serverName from title, with fallback to nanoid if no title
+        // Important: regenerate on each attempt to get fresh available name
+        let serverName: string;
+        if (data.config.title) {
+          const baseSlug = generateServerNameFromTitle(data.config.title);
+          serverName = await findNextAvailableServerName(baseSlug);
+        } else {
+          serverName = `mcp-${nanoid(16)}`;
+        }
+
+        const newServer = await MCPServer.create({
+          serverName,
+          config: data.config,
+          author: data.author,
+        });
+
+        return newServer.toObject() as MCPServerDocument;
+      } catch (error) {
+        lastError = error;
+
+        // Only retry on duplicate key errors (serverName collision)
+        if (isDuplicateKeyError(error) && attempt < MAX_CREATE_RETRIES - 1) {
+          // Exponential backoff: 10ms, 20ms, 40ms
+          const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+          logger.debug(
+            `[createMCPServer] Duplicate serverName detected, retrying (attempt ${attempt + 2}/${MAX_CREATE_RETRIES}) after ${delay}ms`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+
+        // Not a duplicate key error or out of retries - throw immediately
+        throw error;
+      }
     }
 
-    const newServer = await MCPServer.create({
-      serverName,
-      config: data.config,
-      author: data.author,
-    });
-
-    return newServer.toObject() as MCPServerDocument;
+    // Should not reach here, but TypeScript requires a return
+    throw lastError;
   }
 
   /**
