@@ -79,7 +79,7 @@ export abstract class UserConnectionManager {
       }
       connection = undefined; // Force creation of a new connection
     } else if (connection) {
-      if (!config || (config.lastUpdatedAt && connection.isStale(config.lastUpdatedAt))) {
+      if (!config || (config.updatedAt && connection.isStale(config.updatedAt))) {
         if (config) {
           logger.info(
             `[MCP][User: ${userId}][${serverName}] Config was updated, disconnecting stale connection`,

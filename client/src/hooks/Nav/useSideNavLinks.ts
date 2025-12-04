@@ -10,6 +10,7 @@ import {
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider';
+import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
 import type { NavLink } from '~/common';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
@@ -18,7 +19,6 @@ import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
-import MCPPanel from '~/components/SidePanel/MCP/MCPPanel';
 import { useHasAccess, useMCPServerManager } from '~/hooks';
 
 export default function useSideNavLinks({
@@ -60,7 +60,10 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.CREATE,
   });
-
+  const hasAccessToUseMCPSettings = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
+  });
   const { availableMCPServers } = useMCPServerManager();
 
   const Links = useMemo(() => {
@@ -152,21 +155,13 @@ export default function useSideNavLinks({
       });
     }
 
-    if (
-      availableMCPServers &&
-      availableMCPServers.some(
-        (server: any) =>
-          (server.config.customUserVars && Object.keys(server.config.customUserVars).length > 0) ||
-          server.config.isOAuth ||
-          server.config.startup === false,
-      )
-    ) {
+    if (hasAccessToUseMCPSettings && availableMCPServers && availableMCPServers.length > 0) {
       links.push({
         title: 'com_nav_setting_mcp',
         label: '',
         icon: MCPIcon,
-        id: 'mcp-settings',
-        Component: MCPPanel,
+        id: 'mcp-builder',
+        Component: MCPBuilderPanel,
       });
     }
 
@@ -180,19 +175,20 @@ export default function useSideNavLinks({
 
     return links;
   }, [
-    endpointsConfig,
-    interfaceConfig.parameters,
-    keyProvided,
-    endpointType,
     endpoint,
+    endpointsConfig,
+    keyProvided,
     hasAccessToAgents,
+    hasAccessToCreateAgents,
     hasAccessToPrompts,
     hasAccessToMemories,
     hasAccessToReadMemories,
+    interfaceConfig.parameters,
+    endpointType,
     hasAccessToBookmarks,
-    hasAccessToCreateAgents,
-    hidePanel,
     availableMCPServers,
+    hasAccessToUseMCPSettings,
+    hidePanel,
   ]);
 
   return Links;

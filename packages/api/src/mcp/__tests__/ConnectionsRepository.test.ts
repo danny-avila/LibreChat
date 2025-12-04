@@ -145,10 +145,10 @@ describe('ConnectionsRepository', () => {
         isStale: jest.fn().mockReturnValue(true),
       } as unknown as jest.Mocked<MCPConnection>;
 
-      // Update server config with lastUpdatedAt timestamp
+      // Update server config with updatedAt timestamp
       const configWithCachedAt = {
         ...mockServerConfigs.server1,
-        lastUpdatedAt: configCachedAt,
+        updatedAt: configCachedAt,
       };
       mockRegistry.getServerConfig.mockResolvedValueOnce(configWithCachedAt);
 
@@ -156,7 +156,7 @@ describe('ConnectionsRepository', () => {
 
       const result = await repository.get('server1');
 
-      // Verify stale check was called with the config's lastUpdatedAt timestamp
+      // Verify stale check was called with the config's updatedAt timestamp
       expect(staleConnection.isStale).toHaveBeenCalledWith(configCachedAt);
 
       // Verify old connection was disconnected
@@ -190,10 +190,10 @@ describe('ConnectionsRepository', () => {
         isStale: jest.fn().mockReturnValue(false),
       } as unknown as jest.Mocked<MCPConnection>;
 
-      // Update server config with lastUpdatedAt timestamp
+      // Update server config with updatedAt timestamp
       const configWithCachedAt = {
         ...mockServerConfigs.server1,
-        lastUpdatedAt: configCachedAt,
+        updatedAt: configCachedAt,
       };
       mockRegistry.getServerConfig.mockResolvedValueOnce(configWithCachedAt);
 

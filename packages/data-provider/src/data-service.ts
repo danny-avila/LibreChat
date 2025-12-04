@@ -566,6 +566,39 @@ export const getMCPServers = async (): Promise<mcp.MCPServersListResponse> => {
 };
 
 /**
+ * Get a single MCP server by ID
+ */
+export const getMCPServer = async (serverName: string): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.get(endpoints.mcpServer(serverName));
+};
+
+/**
+ * Create a new MCP server
+ */
+export const createMCPServer = async (
+  data: mcp.MCPServerCreateParams,
+): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.post(endpoints.mcp.servers, data);
+};
+
+/**
+ * Update an existing MCP server
+ */
+export const updateMCPServer = async (
+  serverName: string,
+  data: mcp.MCPServerUpdateParams,
+): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.patch(endpoints.mcpServer(serverName), data);
+};
+
+/**
+ * Delete an MCP server
+ */
+export const deleteMCPServer = async (serverName: string): Promise<{ success: boolean }> => {
+  return request.delete(endpoints.mcpServer(serverName));
+};
+
+/**
  * Imports a conversations file.
  *
  * @param data - The FormData containing the file to import.
@@ -832,6 +865,12 @@ export function updatePeoplePickerPermissions(
   );
 }
 
+export function updateMCPServersPermissions(
+  variables: m.UpdateMCPServersPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateMCPServersPermissions(variables.roleName), variables.updates);
+}
+
 export function updateMarketplacePermissions(
   variables: m.UpdateMarketplacePermVars,
 ): Promise<m.UpdatePermResponse> {
@@ -982,6 +1021,12 @@ export function getEffectivePermissions(
   resourceId: string,
 ): Promise<permissions.TEffectivePermissionsResponse> {
   return request.get(endpoints.getEffectivePermissions(resourceType, resourceId));
+}
+
+export function getAllEffectivePermissions(
+  resourceType: permissions.ResourceType,
+): Promise<permissions.TAllEffectivePermissionsResponse> {
+  return request.get(endpoints.getAllEffectivePermissions(resourceType));
 }
 
 // SharePoint Graph API Token
