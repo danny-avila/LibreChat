@@ -1,6 +1,6 @@
 import React from 'react';
 import { Spinner, TooltipAnchor } from '@librechat/client';
-import { SettingsIcon, AlertTriangle, KeyRound, PlugZap, X } from 'lucide-react';
+import { SettingsIcon, AlertTriangle, KeyRound, PlugZap, X, CircleCheck } from 'lucide-react';
 import type { MCPServerStatus, TPlugin } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -213,7 +213,7 @@ function ConnectedStatusIcon({ serverName, requiresOAuth, onConfigClick }: Conne
         description={localize('com_nav_mcp_status_connected')}
         side="top"
       >
-        <PlugZap className="h-4 w-4 text-green-500" />
+        <CircleCheck className="h-4 w-4 text-green-500" />
       </TooltipAnchor>
     );
   }
@@ -224,7 +224,7 @@ function ConnectedStatusIcon({ serverName, requiresOAuth, onConfigClick }: Conne
       description={localize('com_nav_mcp_status_connected')}
       side="top"
     >
-      <PlugZap className="h-4 w-4 text-green-500" />
+      <CircleCheck className="h-4 w-4 text-green-500" />
     </TooltipAnchor>
   );
 }
