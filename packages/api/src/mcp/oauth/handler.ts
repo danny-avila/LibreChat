@@ -138,6 +138,8 @@ export class MCPOAuthHandler {
       response_types: ['code'] as string[],
       token_endpoint_auth_method: 'client_secret_basic',
       scope: undefined as string | undefined,
+      logo_uri: undefined as string | undefined,
+      tos_uri: undefined as string | undefined,
     };
 
     const supportedGrantTypes = metadata.grant_types_supported || ['authorization_code'];
