@@ -19,6 +19,7 @@ export default function MCPBuilderPanel() {
   });
   const [showDialog, setShowDialog] = useState(false);
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
+  const configDialogProps = getConfigDialogProps();
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
@@ -55,10 +56,7 @@ export default function MCPBuilderPanel() {
             getServerStatusIconProps={getServerStatusIconProps}
           />
         )}
-        {(() => {
-          const configDialogProps = getConfigDialogProps();
-          return configDialogProps && <MCPConfigDialog {...configDialogProps} />;
-        })()}
+        {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
       </div>
     </div>
   );
