@@ -1,0 +1,6 @@
+This commit adds a new env variable `COOKIE_DOMAIN`. This can be used to set the domain attribute of auth cookie.
+This useful when you want to share cookies with a root domain.
+
+## Motivation
+
+I've talked about motivation for this change in discussions section. [Enhancement]: Customizable cookie domain #10416
