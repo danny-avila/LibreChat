@@ -90,14 +90,10 @@ const getTermsStatusController = async (req, res) => {
 
 const acceptTermsController = async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(
-      req.user.id,
-      {
-        termsAccepted: true,
-        termsAcceptedAt: new Date(),
-      },
-      { new: true },
-    );
+    const user = await updateUser(req.user.id, {
+      termsAccepted: true,
+      termsAcceptedAt: new Date(),
+    });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
