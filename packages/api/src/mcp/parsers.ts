@@ -141,7 +141,10 @@ export function formatToolContent(
       const resourceText: string[] = [];
 
       if (isUiResource) {
-        const contentToHash = item.resource.text || item.resource.uri || '';
+        const contentToHash =
+          item.resource.text && typeof item.resource.text === 'string'
+            ? item.resource.text
+            : item.resource.uri;
         const resourceId = generateResourceId(contentToHash);
         const uiResource: UIResource = {
           ...item.resource,

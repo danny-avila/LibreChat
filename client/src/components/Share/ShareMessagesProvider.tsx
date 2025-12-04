@@ -19,7 +19,7 @@ interface ShareMessagesProviderProps {
 export function ShareMessagesProvider({ messages, children }: ShareMessagesProviderProps) {
   const contextValue = useMemo<MessagesViewContextValue>(
     () => ({
-      conversation: { conversationId: 'shared-conversation' },
+      conversation: null,
       conversationId: undefined,
       // These are required by the context but not used in share view
       ask: () => Promise.resolve(),

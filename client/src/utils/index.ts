@@ -1,4 +1,7 @@
 import React from 'react';
+import type { UIActionResult } from '@mcp-ui/client';
+import { TAskFunction } from '~/common';
+import logger from './logger';
 
 export * from './map';
 export * from './json';
@@ -125,7 +128,7 @@ export const normalizeLayout = (layout: number[]) => {
   return normalizedLayout;
 };
 
-export const handleUIAction = async (result: any, ask: any) => {
+export const handleUIAction = async (result: UIActionResult, ask: TAskFunction) => {
   const supportedTypes = ['intent', 'tool', 'prompt'];
 
   const { type, payload } = result;
@@ -171,12 +174,7 @@ Execute the intention of the prompt that is mentioned in the message using the t
     `;
   }
 
-  console.log('About to submit message:', messageText);
-
-  try {
-    await ask({ text: messageText });
-    console.log('Message submitted successfully');
-  } catch (error) {
-    console.error('Error submitting message:', error);
-  }
+  logger.debug('MCP-UI', 'About to submit message:', messageText);
+  ask({ text: messageText });
+  logger.debug('MCP-UI', 'Message submitted successfully');
 };
