@@ -219,15 +219,15 @@ export class AccessControlService {
     resourceType: ResourceType;
     resourceIds: (string | Types.ObjectId)[];
   }): Promise<Map<string, number>> {
+    // Validate resource type - throw on invalid type
+    this.validateResourceType(resourceType);
+
+    // Handle empty input
+    if (!Array.isArray(resourceIds) || resourceIds.length === 0) {
+      return new Map();
+    }
+
     try {
-      // Validate resource type
-      this.validateResourceType(resourceType);
-
-      // Handle empty input
-      if (!Array.isArray(resourceIds) || resourceIds.length === 0) {
-        return new Map();
-      }
-
       // Get user principals (user + groups + public)
       const principals = await this._dbMethods.getUserPrincipals({ userId, role });
 
@@ -250,7 +250,7 @@ export class AccessControlService {
           error,
         );
       }
-      return new Map();
+      throw error;
     }
   }
 

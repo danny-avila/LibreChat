@@ -198,15 +198,15 @@ const getEffectivePermissions = async ({ userId, role, resourceType, resourceId 
  * @throws {Error} If resourceType is invalid
  */
 const getResourcePermissionsMap = async ({ userId, role, resourceType, resourceIds }) => {
+  // Validate resource type - throw on invalid type
+  validateResourceType(resourceType);
+
+  // Handle empty input
+  if (!Array.isArray(resourceIds) || resourceIds.length === 0) {
+    return new Map();
+  }
+
   try {
-    // Validate resource type
-    validateResourceType(resourceType);
-
-    // Handle empty input
-    if (!Array.isArray(resourceIds) || resourceIds.length === 0) {
-      return new Map();
-    }
-
     // Get user principals (user + groups + public)
     const principals = await getUserPrincipals({ userId, role });
 
@@ -223,8 +223,8 @@ const getResourcePermissionsMap = async ({ userId, role, resourceType, resourceI
 
     return permissionsMap;
   } catch (error) {
-    logger.error(`[PermissionService.getResourcePermissionsMap] Error: ${error.message}`);
-    return new Map();
+    logger.error(`[PermissionService.getResourcePermissionsMap] Error: ${error.message}`, error);
+    throw error;
   }
 };
 

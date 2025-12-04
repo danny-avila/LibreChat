@@ -17,7 +17,7 @@ function MCPSelectContent() {
     batchToggleServers,
     getConfigDialogProps,
     getServerStatusIconProps,
-    availableMCPServers,
+    selectableServers,
   } = mcpServerManager;
 
   const renderSelectedValues = useCallback(
@@ -81,13 +81,10 @@ function MCPSelectContent() {
   }
 
   const configDialogProps = getConfigDialogProps();
-  const chatMenuOnlyMCPServers = availableMCPServers.filter(
-    (s) => s.config.chatMenu !== false && s.consumeOnly !== true,
-  );
   return (
     <>
       <MultiSelect
-        items={chatMenuOnlyMCPServers.map((s) => ({
+        items={selectableServers.map((s) => ({
           label: s.config.title || s.serverName,
           value: s.serverName,
         }))}
@@ -111,16 +108,13 @@ function MCPSelectContent() {
 
 function MCPSelect() {
   const { mcpServerManager } = useBadgeRowContext();
-  const { availableMCPServers } = mcpServerManager;
-  const chatMenuOnlyMCPServers = availableMCPServers?.filter(
-    (s) => s.config.chatMenu !== false && s.consumeOnly !== true,
-  );
+  const { selectableServers } = mcpServerManager;
   const canUseMcp = useHasAccess({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.USE,
   });
 
-  if (!canUseMcp || !chatMenuOnlyMCPServers || chatMenuOnlyMCPServers.length === 0) {
+  if (!canUseMcp || !selectableServers || selectableServers.length === 0) {
     return null;
   }
 

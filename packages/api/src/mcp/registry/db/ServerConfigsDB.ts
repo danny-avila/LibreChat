@@ -121,16 +121,21 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     }
 
     // Preserve sensitive fields (like oauth.client_secret) that may not be sent from the client
+    // Create a copy to avoid mutating the input parameter
+    let mergedConfig = config;
     const existingServer = await this._dbMethods.findMCPServerById(serverName);
     if (existingServer?.config?.oauth?.client_secret && !config.oauth?.client_secret) {
-      config.oauth = {
-        ...config.oauth,
-        client_secret: existingServer.config.oauth.client_secret,
+      mergedConfig = {
+        ...config,
+        oauth: {
+          ...config.oauth,
+          client_secret: existingServer.config.oauth.client_secret,
+        },
       };
     }
 
     // specific user permissions for action permission will be handled in the controller calling the  update method of the registry
-    await this._dbMethods.updateMCPServer(serverName, { config });
+    await this._dbMethods.updateMCPServer(serverName, { config: mergedConfig });
   }
 
   /**

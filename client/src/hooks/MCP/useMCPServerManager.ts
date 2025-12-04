@@ -652,6 +652,8 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
   return {
     availableMCPServers,
+    /** MCP servers filtered for chat menu selection (chatMenu !== false && !consumeOnly) */
+    selectableServers,
     availableMCPServersMap: loadedServers,
     isLoading,
     connectionStatus,
