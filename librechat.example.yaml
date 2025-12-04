@@ -222,6 +222,21 @@ endpoints:
   #   minRelevanceScore: 0.45
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
+  # anthropic:
+  #   # (optional) Configure Anthropic beta features
+  #   # All features default to true (auto-enabled). Set to false to disable specific features.
+  #   betaFeatures:
+  #     promptCaching: true        # Enables prompt caching for cost/latency reduction
+  #     extendedMaxTokens: true    # Extended max tokens for Claude 3.5 Sonnet
+  #     tokenEfficientTools: true  # Token efficient tools for Claude 3.7
+  #     output128k: true           # 128k output tokens for Claude 3.7
+  #     context1m: true            # 1M context window support
+  #     # (optional) Per-model overrides - use exact model names or wildcards
+  #     modelOverrides:
+  #       "claude-sonnet-4":
+  #         context1m: false       # Disable 1M context for Sonnet 4 specifically
+  #       "claude-3-7-sonnet-*":
+  #         output128k: false      # Disable 128k output for all 3.7 Sonnet variants
   custom:
     # Groq Example
     - name: 'groq'
