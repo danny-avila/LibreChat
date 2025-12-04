@@ -50,12 +50,12 @@ export class ConnectionsRepository {
     }
     if (existingConnection) {
       // Check if config was cached/updated since connection was created
-      if (serverConfig.lastUpdatedAt && existingConnection.isStale(serverConfig.lastUpdatedAt)) {
+      if (serverConfig.updatedAt && existingConnection.isStale(serverConfig.updatedAt)) {
         logger.info(
           `${this.prefix(serverName)} Existing connection for ${serverName} is outdated. Recreating a new connection.`,
           {
             connectionCreated: new Date(existingConnection.createdAt).toISOString(),
-            configCachedAt: new Date(serverConfig.lastUpdatedAt).toISOString(),
+            configCachedAt: new Date(serverConfig.updatedAt).toISOString(),
           },
         );
 

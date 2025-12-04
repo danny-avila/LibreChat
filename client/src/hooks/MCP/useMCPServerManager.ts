@@ -1,11 +1,12 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { Constants, QueryKeys, MCPOptions } from 'librechat-data-provider';
+import { Constants, QueryKeys, MCPOptions, ResourceType } from 'librechat-data-provider';
 import {
   useCancelMCPOAuthMutation,
   useUpdateUserPluginsMutation,
   useReinitializeMCPServerMutation,
+  useGetAllEffectivePermissionsQuery,
 } from 'librechat-data-provider/react-query';
 import type { TUpdateUserPlugins, TPlugin, MCPServersResponse } from 'librechat-data-provider';
 import type { ConfigFieldDetail } from '~/common';
@@ -15,9 +16,9 @@ import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
 export interface MCPServerDefinition {
   serverName: string;
   config: MCPOptions;
-  mcp_id?: string;
-  _id?: string; // MongoDB ObjectId for database servers (used for permissions)
+  dbId?: string; // MongoDB ObjectId for database servers (used for permissions)
   effectivePermissions: number; // Permission bits (VIEW=1, EDIT=2, DELETE=4, SHARE=8)
+  consumeOnly?: boolean;
 }
 
 interface ServerState {
@@ -36,35 +37,44 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
   const { data: loadedServers, isLoading } = useMCPServersQuery();
 
+  // Fetch effective permissions for all MCP servers
+  const { data: permissionsMap } = useGetAllEffectivePermissionsQuery(ResourceType.MCPSERVER);
+
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedToolForConfig, setSelectedToolForConfig] = useState<TPlugin | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-  const configuredServers = useMemo(() => {
-    if (!loadedServers) return [];
-    return Object.keys(loadedServers).filter((name) => loadedServers[name]?.chatMenu !== false);
-  }, [loadedServers]);
 
   const availableMCPServers: MCPServerDefinition[] = useMemo<MCPServerDefinition[]>(() => {
     const definitions: MCPServerDefinition[] = [];
     if (loadedServers) {
       for (const [serverName, metadata] of Object.entries(loadedServers)) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { _id, mcp_id, effectivePermissions, author, updatedAt, createdAt, ...config } =
-          metadata;
+        const { dbId, consumeOnly, ...config } = metadata;
+
+        // Get effective permissions from the permissions map using _id
+        // Fall back to 1 (VIEW) for YAML-based servers without _id
+        const effectivePermissions = dbId && permissionsMap?.[dbId] ? permissionsMap[dbId] : 1;
+
         definitions.push({
           serverName,
-          mcp_id,
-          effectivePermissions: effectivePermissions || 1,
+          dbId,
+          effectivePermissions,
+          consumeOnly,
           config,
         });
       }
     }
     return definitions;
-  }, [loadedServers]);
+  }, [loadedServers, permissionsMap]);
+
+  // Memoize filtered servers for useMCPSelect to prevent infinite loops
+  const selectableServers = useMemo(
+    () => availableMCPServers.filter((s) => s.config.chatMenu !== false && !s.consumeOnly),
+    [availableMCPServers],
+  );
 
   const { mcpValues, setMCPValues, isPinned, setIsPinned } = useMCPSelect({
     conversationId,
-    servers: availableMCPServers,
+    servers: selectableServers,
   });
   const mcpValuesRef = useRef(mcpValues);
 
@@ -72,6 +82,14 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   useEffect(() => {
     mcpValuesRef.current = mcpValues;
   }, [mcpValues]);
+
+  // Check if specific permission bit is set
+  const checkEffectivePermission = useCallback(
+    (effectivePermissions: number, permissionBit: number): boolean => {
+      return (effectivePermissions & permissionBit) !== 0;
+    },
+    [],
+  );
 
   const reinitializeMutation = useReinitializeMCPServerMutation();
   const cancelOAuthMutation = useCancelMCPOAuthMutation();
@@ -98,8 +116,8 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
   const [serverStates, setServerStates] = useState<Record<string, ServerState>>(() => {
     const initialStates: Record<string, ServerState> = {};
-    configuredServers.forEach((serverName) => {
-      initialStates[serverName] = {
+    availableMCPServers.forEach((server) => {
+      initialStates[server.serverName] = {
         isInitializing: false,
         oauthUrl: null,
         oauthStartTime: null,
@@ -111,7 +129,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   });
 
   const { connectionStatus } = useMCPConnectionStatus({
-    enabled: !isLoading && configuredServers.length > 0,
+    enabled: !isLoading && availableMCPServers.length > 0,
   });
 
   const updateServerState = useCallback((serverName: string, updates: Partial<ServerState>) => {
@@ -366,7 +384,12 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       cancelOAuthMutation.mutate(serverName, {
         onSuccess: () => {
           cleanupServerState(serverName);
-          queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
+          Promise.all([
+            queryClient.invalidateQueries([QueryKeys.mcpServers]),
+            queryClient.invalidateQueries([QueryKeys.mcpTools]),
+            queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
+            queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
+          ]);
 
           showToast({
             message: localize('com_ui_mcp_oauth_cancelled', { 0: serverName }),
@@ -655,5 +678,6 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     handleRevoke,
     getServerStatusIconProps,
     getConfigDialogProps,
+    checkEffectivePermission,
   };
 }

@@ -330,7 +330,7 @@ describe('tests for the new helper functions used by the MCP connection status e
   describe('getServerConnectionStatus', () => {
     const mockUserId = 'user-123';
     const mockServerName = 'test-server';
-    const mockConfig = { lastUpdatedAt: Date.now() };
+    const mockConfig = { updatedAt: Date.now() };
 
     it('should return app connection state when available', async () => {
       const appConnections = new Map([

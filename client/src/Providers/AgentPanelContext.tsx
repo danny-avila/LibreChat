@@ -66,10 +66,16 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
 
     if (mcpData?.servers) {
       for (const [serverName, serverData] of Object.entries(mcpData.servers)) {
+        // Get title and description from config with fallbacks
+        const serverConfig = availableMCPServersMap?.[serverName];
+        const displayName = serverConfig?.title || serverName;
+        const displayDescription =
+          serverConfig?.description || `${localize('com_ui_tool_collection_prefix')} ${serverName}`;
+
         const metadata = {
-          name: serverName,
+          name: displayName,
           pluginKey: serverName,
-          description: `${localize('com_ui_tool_collection_prefix')} ${serverName}`,
+          description: displayDescription,
           icon: serverData.icon || '',
           authConfig: serverData.authConfig,
           authenticated: serverData.authenticated,
@@ -91,6 +97,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
           isConfigured: configuredServers.has(serverName),
           isConnected: connectionStatus?.[serverName]?.connectionState === 'connected',
           metadata,
+          consumeOnly: serverConfig?.consumeOnly,
         });
       }
     }
@@ -100,11 +107,18 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
       if (serversMap.has(mcpServerName)) {
         continue;
       }
+      // Get title and description from config with fallbacks
+      const serverConfig = availableMCPServersMap?.[mcpServerName];
+      const displayName = serverConfig?.title || mcpServerName;
+      const displayDescription =
+        serverConfig?.description ||
+        `${localize('com_ui_tool_collection_prefix')} ${mcpServerName}`;
+
       const metadata = {
-        icon: '',
-        name: mcpServerName,
+        icon: serverConfig?.iconPath || '',
+        name: displayName,
         pluginKey: mcpServerName,
-        description: `${localize('com_ui_tool_collection_prefix')} ${mcpServerName}`,
+        description: displayDescription,
       } as TPlugin;
 
       serversMap.set(mcpServerName, {
@@ -113,11 +127,12 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
         isConfigured: true,
         serverName: mcpServerName,
         isConnected: connectionStatus?.[mcpServerName]?.connectionState === 'connected',
+        consumeOnly: serverConfig?.consumeOnly,
       });
     }
 
     return serversMap;
-  }, [mcpData, localize, mcpServerNames, connectionStatus]);
+  }, [mcpData, localize, mcpServerNames, connectionStatus, availableMCPServersMap]);
 
   const value: AgentPanelContextType = {
     mcp,

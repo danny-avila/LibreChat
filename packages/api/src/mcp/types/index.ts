@@ -153,8 +153,15 @@ export type ParsedServerConfig = MCPOptions & {
   tools?: string;
   toolFunctions?: LCAvailableTools;
   initDuration?: number;
-  lastUpdatedAt?: number;
+  updatedAt?: number;
   dbId?: string;
+  /** True if access is only via agent (not directly shared with user) */
+  consumeOnly?: boolean;
+};
+
+export type AddServerResult = {
+  serverName: string;
+  config: ParsedServerConfig;
 };
 
 export interface BasicConnectionOptions {

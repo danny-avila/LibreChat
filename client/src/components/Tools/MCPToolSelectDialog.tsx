@@ -207,7 +207,7 @@ function MCPToolSelectDialog({
   }, [mcpServerNames]);
 
   const mcpServers = useMemo(() => {
-    const servers = Array.from(mcpServersMap.values());
+    const servers = Array.from(mcpServersMap.values()).filter((s) => !s.consumeOnly);
     return servers.sort((a, b) => a.serverName.localeCompare(b.serverName));
   }, [mcpServersMap]);
 
@@ -340,7 +340,6 @@ function MCPToolSelectDialog({
                       tool_id: serverInfo.serverName,
                       metadata: {
                         ...serverInfo.metadata,
-                        description: `${localize('com_ui_tool_collection_prefix')} ${serverInfo.serverName}`,
                       },
                     };
 
