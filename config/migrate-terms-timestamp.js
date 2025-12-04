@@ -1,6 +1,7 @@
 const path = require('path');
 const mongoose = require('mongoose');
 const { User } = require('@librechat/data-schemas').createModels(mongoose);
+const { countUsers } = require('@librechat/data-schemas').createMethods(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
@@ -21,7 +22,7 @@ const connect = require('./connect');
   console.purple('--------------------------');
 
   // Count users that need migration
-  const usersToMigrate = await User.countDocuments({
+  const usersToMigrate = await countUsers({
     termsAccepted: true,
     $or: [{ termsAcceptedAt: null }, { termsAcceptedAt: { $exists: false } }],
   });
