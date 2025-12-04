@@ -19,7 +19,6 @@ import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
-import MCPPanel from '~/components/SidePanel/MCP/MCPPanel';
 import { useHasAccess, useMCPServerManager } from '~/hooks';
 
 export default function useSideNavLinks({
@@ -156,25 +155,7 @@ export default function useSideNavLinks({
       });
     }
 
-    if (
-      availableMCPServers &&
-      availableMCPServers.some(
-        (server: any) =>
-          (server.config.customUserVars && Object.keys(server.config.customUserVars).length > 0) ||
-          server.config.isOAuth ||
-          server.config.startup === false,
-      )
-    ) {
-      links.push({
-        title: 'com_nav_setting_mcp',
-        label: '',
-        icon: MCPIcon,
-        id: 'mcp-settings',
-        Component: MCPPanel,
-      });
-    }
-    //Todo we should hide if user has no create access and number of mcp servers is 0?
-    if (hasAccessToUseMCPSettings) {
+    if (hasAccessToUseMCPSettings && availableMCPServers && availableMCPServers.length > 0) {
       links.push({
         title: 'com_nav_setting_mcp',
         label: '',
@@ -208,7 +189,6 @@ export default function useSideNavLinks({
     availableMCPServers,
     hasAccessToUseMCPSettings,
     hidePanel,
-    availableMCPServers,
   ]);
 
   return Links;
