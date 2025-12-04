@@ -94,16 +94,6 @@ export default function ServerInitializationSection({
 
   return (
     <div className="flex items-center gap-2">
-      <Button
-        variant={buttonVariant}
-        onClick={() => initializeServer(serverName, false)}
-        disabled={isServerInitializing}
-        size={sidePanel ? 'sm' : 'default'}
-        className="flex-1"
-      >
-        {icon}
-        {buttonText}
-      </Button>
       {requiresOAuth && revokeOAuthForServer && (
         <Button
           size="sm"
@@ -115,6 +105,16 @@ export default function ServerInitializationSection({
           {localize('com_ui_revoke')}
         </Button>
       )}
+      <Button
+        variant={buttonVariant}
+        onClick={() => initializeServer(serverName, false)}
+        disabled={isServerInitializing}
+        size={sidePanel ? 'sm' : 'default'}
+        className="flex-1"
+      >
+        {icon}
+        {buttonText}
+      </Button>
     </div>
   );
 }
