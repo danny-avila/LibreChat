@@ -86,6 +86,7 @@ const AttachFileMenu = ({
       const items: MenuItemProps[] = [
         {
           label: localize('com_ui_upload_image_input'),
+          description: localize('com_ui_upload_image_input_desc'),
           onClick: () => {
             setToolResource(undefined);
             onAction(true);
@@ -97,6 +98,7 @@ const AttachFileMenu = ({
       if (capabilities.contextEnabled) {
         items.push({
           label: localize('com_ui_upload_ocr_text'),
+          description: localize('com_ui_upload_ocr_text_desc'),
           onClick: () => {
             setToolResource(EToolResources.context);
             onAction();
@@ -108,6 +110,7 @@ const AttachFileMenu = ({
       if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
         items.push({
           label: localize('com_ui_upload_file_search'),
+          description: localize('com_ui_upload_file_search_desc'),
           onClick: () => {
             setToolResource(EToolResources.file_search);
             setEphemeralAgent((prev) => ({
@@ -123,6 +126,7 @@ const AttachFileMenu = ({
       if (capabilities.codeEnabled && codeAllowedByAgent) {
         items.push({
           label: localize('com_ui_upload_code_files'),
+          description: localize('com_ui_upload_code_files_desc'),
           onClick: () => {
             setToolResource(EToolResources.execute_code);
             setEphemeralAgent((prev) => ({
@@ -147,6 +151,7 @@ const AttachFileMenu = ({
       });
       localItems.push({
         label: localize('com_files_upload_sharepoint'),
+          description: localize('com_files_upload_sharepoint_desc'),
         onClick: () => {},
         icon: <SharePointIcon className="icon-md" />,
         subItems: sharePointItems,
