@@ -19,6 +19,18 @@ export interface GenerationJob {
   metadata: GenerationJobMetadata;
   readyPromise: Promise<void>;
   resolveReady: () => void;
+  /** Buffered chunks for replay on reconnect */
+  chunks: ServerSentEvent[];
+  /** Final event when job completes */
+  finalEvent?: ServerSentEvent;
+  /** Aggregated content parts for saving partial response */
+  aggregatedContent?: ContentPart[];
+}
+
+export interface ContentPart {
+  type: string;
+  text?: string;
+  [key: string]: unknown;
 }
 
 export type ChunkHandler = (event: ServerSentEvent) => void;

@@ -7,7 +7,7 @@ import { Constants, buildTree } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
-import { useChatHelpers, useAddedResponse, useAdaptiveSSE } from '~/hooks';
+import { useChatHelpers, useAddedResponse, useAdaptiveSSE, useResumeOnLoad } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
@@ -53,6 +53,9 @@ function ChatView({ index = 0 }: { index?: number }) {
 
   useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
   useAdaptiveSSE(addedSubmission, addedChatHelpers, true, index + 1);
+
+  // Auto-resume if navigating back to conversation with active job
+  useResumeOnLoad(conversationId, chatHelpers, index);
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },
