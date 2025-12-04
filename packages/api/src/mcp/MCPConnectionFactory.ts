@@ -229,6 +229,62 @@ export class MCPConnectionFactory {
     };
   }
 
+  /**
+   * Cleans up invalid OAuth tokens from storage.
+   * Called when we detect that stored tokens are definitively invalid/revoked.
+   */
+  protected async cleanupInvalidTokens(): Promise<void> {
+    if (!this.tokenMethods?.deleteTokens || !this.userId) {
+      logger.warn(
+        `${this.logPrefix} Cannot clean up tokens: deleteTokens method or userId not available`,
+      );
+      return;
+    }
+
+    try {
+      await MCPTokenStorage.deleteUserTokens({
+        userId: this.userId,
+        serverName: this.serverName,
+        deleteToken: async (filter) => {
+          await this.tokenMethods!.deleteTokens(filter);
+        },
+      });
+      logger.info(`${this.logPrefix} Successfully cleaned up invalid tokens`);
+    } catch (error) {
+      logger.error(`${this.logPrefix} Failed to clean up invalid tokens`, error);
+    }
+  }
+
+  /**
+   * Checks if an error indicates the stored token is invalid/revoked and should be cleared.
+   */
+  private isInvalidTokenError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    if ('message' in error && typeof error.message === 'string') {
+      const message = error.message.toLowerCase();
+      /** Check for explicit invalid_token error from OAuth servers */
+      if (message.includes('invalid_token')) {
+        return true;
+      }
+      /** Check for token revoked/expired indicators */
+      if (
+        message.includes('token') &&
+        (message.includes('revoked') || message.includes('expired'))
+      ) {
+        return true;
+      }
+      /** Check for 401 with authentication required - indicates token is not working */
+      if (message.includes('401') && message.includes('authentication')) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   /** Attempts to establish connection with timeout handling */
   protected async attemptToConnect(connection: MCPConnection): Promise<void> {
     const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
@@ -247,6 +303,7 @@ export class MCPConnectionFactory {
     const maxAttempts = 3;
     let attempts = 0;
     let oauthHandled = false;
+    let invalidTokensCleaned = false;
 
     while (attempts < maxAttempts) {
       try {
@@ -257,6 +314,16 @@ export class MCPConnectionFactory {
         throw new Error('Connection attempt succeeded but status is not connected');
       } catch (error) {
         attempts++;
+
+        /**
+         * Check for invalid token errors first - if our stored token is invalid/revoked,
+         * clean it up so subsequent attempts can trigger fresh OAuth flow.
+         */
+        if (this.useOAuth && !invalidTokensCleaned && this.isInvalidTokenError(error)) {
+          logger.warn(`${this.logPrefix} Invalid token detected, cleaning up stored tokens`);
+          await this.cleanupInvalidTokens();
+          invalidTokensCleaned = true;
+        }
 
         if (this.useOAuth && this.isOAuthError(error)) {
           // Only handle OAuth if this is a user connection (has oauthStart handler)
