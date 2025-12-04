@@ -1,8 +1,8 @@
 import type { ClientOptions, OpenAIClientOptions } from '@librechat/agents';
-import type { TEndpoint } from 'librechat-data-provider';
+import type { TConfig } from 'librechat-data-provider';
 import type { EndpointTokenConfig, ServerRequest } from '~/types';
 
-export type TCustomEndpointsConfig = Partial<{ [key: string]: Omit<TEndpoint, 'order'> }>;
+export type TCustomEndpointsConfig = Partial<{ [key: string]: Omit<TConfig, 'order'> }>;
 
 /**
  * Interface for user key values retrieved from the database
