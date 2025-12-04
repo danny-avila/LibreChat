@@ -873,6 +873,7 @@
   "com_ui_delete_preset": "Delete Preset?",
   "com_ui_delete_prompt": "Delete Prompt?",
   "com_ui_delete_shared_link": "Delete Shared Link - {{title}}",
+  "com_ui_delete_shared_link_heading": "Delete Shared Link",
   "com_ui_delete_prompt_name": "Delete Prompt - {{name}}",
   "com_ui_delete_success": "Successfully deleted",
   "com_ui_delete_tool": "Delete Tool",
