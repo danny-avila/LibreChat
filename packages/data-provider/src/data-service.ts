@@ -25,6 +25,20 @@ export function deleteUser(): Promise<s.TPreset> {
   return request.delete(endpoints.deleteUser());
 }
 
+export type FavoriteItem = {
+  agentId?: string;
+  model?: string;
+  endpoint?: string;
+};
+
+export function getFavorites(): Promise<FavoriteItem[]> {
+  return request.get('/api/user/settings/favorites');
+}
+
+export function updateFavorites(favorites: FavoriteItem[]): Promise<FavoriteItem[]> {
+  return request.post('/api/user/settings/favorites', { favorites });
+}
+
 export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {
   return request.get(endpoints.shareMessages(shareId));
 }
