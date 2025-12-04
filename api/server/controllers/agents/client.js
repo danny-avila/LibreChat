@@ -483,13 +483,33 @@ class AgentClient extends BaseClient {
 
     const withoutKeys = await this.useMemory();
     if (withoutKeys) {
-      const memoryInstructions = `IMPORTANT: You have memories about this user from previous conversations. USE this information to personalize responses. If you know the user's name, USE IT naturally. Do NOT ask for information you already have.`;
-      systemContent += `\n\n${memoryInstructions}\n\n# What I remember about you:\n${withoutKeys}`;
+      systemContent += `\n\n[memory: ${withoutKeys}]\n\nCaution: Only use above memory if strictly needed by user's query.`;
       logger.info(`[buildMessages] Added memory to system content (${withoutKeys.length} chars)`);
     }
 
     if (systemContent) {
       this.options.agent.instructions = systemContent;
+      // Log final prompt going to Vicktoria
+      // try {
+      //   logger.info(`[buildMessages] ====== FINAL PROMPT TO VICKTORIA ======`);
+      //   logger.info(`[buildMessages] System Instructions:\n${systemContent}`);
+      //   logger.info(`[buildMessages] Messages count: ${messages?.length || 0}`);
+      //   if (messages?.length) {
+      //     messages.forEach((m, i) => {
+      //       let content = '';
+      //       if (typeof m.content === 'string') {
+      //         content = m.content;
+      //       } else if (m.content) {
+      //         content = JSON.stringify(m.content);
+      //       }
+      //       const preview = content ? content.substring(0, 200) : '(empty)';
+      //       logger.info(`[buildMessages] Message[${i}] (${m.role}): ${preview}${content.length > 200 ? '...' : ''}`);
+      //     });
+      //   }
+      //   logger.info(`[buildMessages] ====== END FINAL PROMPT ======`);
+      // } catch (logErr) {
+      //   logger.error(`[buildMessages] Error logging prompt: ${logErr.message}`);
+      // }
     }
 
     return result;

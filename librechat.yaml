@@ -44,8 +44,8 @@ endpoints:
 
 # Memory configuration
 memory:
-  disabled: false
-  personalize: true
+  disabled: true
+  personalize: false
   tokenLimit: 3000
   messageWindowSize: 5
   validKeys:
@@ -56,20 +56,6 @@ memory:
   agent:
     provider: "Vicktoria"
     model: "google/gemma-3-27b-it"
-    instructions: |
-      Automatically understand and save important user information using the set_memory tool.
-
-      ALWAYS save information when the user shares:
-      - Their name, age, location, or personal details
-      - Preferences (likes, dislikes, favorite things)
-      - Work info (job, company, projects)
-      - Important facts about themselves
-      - Conversing style, to resonate better
-      - Context that would be useful in future conversations
-
-      Use appropriate keys: user_preferences, personal_information, learned_facts, conversation_context
-
-      Be proactive - if the user mentions something about themselves, immediately save it.
-      Do NOT ask permission to save - just save automatically.
+    instructions: ${MEMORY_AGENT_INSTRUCTIONS}
 
 

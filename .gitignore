@@ -1,6 +1,9 @@
 ### node etc ###
 
+# Ignore development files and folders
 methodology/
+scripts\generate-rag-token.js
+
 
 # Logs
 data-node
