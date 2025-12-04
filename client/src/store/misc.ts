@@ -30,7 +30,7 @@ const conversationAttachmentsSelector = selectorFamily<
 
       // Filter to only include attachments for this conversation
       Object.entries(attachmentsMap).forEach(([messageId, attachments]) => {
-        if (!attachments) {
+        if (!attachments || attachments.length === 0) {
           return;
         }
 
