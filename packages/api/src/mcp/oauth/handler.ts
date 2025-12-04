@@ -88,9 +88,20 @@ export class MCPOAuthHandler {
     logger.debug(
       `[MCPOAuth] Discovering OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
     );
-    const rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl, {
+    let rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl, {
       fetchFn,
     });
+
+    // If discovery failed and we're using a path-based URL, try the base URL
+    if (!rawMetadata && authServerUrl.pathname !== '/') {
+      const baseUrl = new URL(authServerUrl.origin);
+      logger.debug(
+        `[MCPOAuth] Discovery failed with path, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
+      );
+      rawMetadata = await discoverAuthorizationServerMetadata(baseUrl, {
+        fetchFn,
+      });
+    }
 
     if (!rawMetadata) {
       logger.error(
