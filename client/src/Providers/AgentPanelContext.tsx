@@ -8,7 +8,12 @@ import {
   useGetStartupConfig,
   useMCPToolsQuery,
 } from '~/data-provider';
-import { useLocalize, useGetAgentsConfig, useMCPConnectionStatus } from '~/hooks';
+import {
+  useLocalize,
+  useGetAgentsConfig,
+  useMCPConnectionStatus,
+  useMCPServerManager,
+} from '~/hooks';
 import { Panel, isEphemeralAgent } from '~/common';
 
 const AgentPanelContext = createContext<AgentPanelContextType | undefined>(undefined);
@@ -29,7 +34,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   const [action, setAction] = useState<Action | undefined>(undefined);
   const [activePanel, setActivePanel] = useState<Panel>(Panel.builder);
   const [agent_id, setCurrentAgentId] = useState<string | undefined>(undefined);
-
+  const { availableMCPServers, isLoading, availableMCPServersMap } = useMCPServerManager();
   const { data: startupConfig } = useGetStartupConfig();
   const { data: actions } = useGetActionsQuery(EModelEndpoint.agents, {
     enabled: !isEphemeralAgent(agent_id),
@@ -38,19 +43,23 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   const { data: regularTools } = useAvailableToolsQuery(EModelEndpoint.agents);
 
   const { data: mcpData } = useMCPToolsQuery({
-    enabled: !isEphemeralAgent(agent_id) && startupConfig?.mcpServers != null,
+    enabled:
+      !isEphemeralAgent(agent_id) &&
+      !isLoading &&
+      availableMCPServers != null &&
+      availableMCPServers.length > 0,
   });
 
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const mcpServerNames = useMemo(
-    () => Object.keys(startupConfig?.mcpServers ?? {}),
-    [startupConfig],
+    () => availableMCPServers.map((s) => s.serverName),
+    [availableMCPServers],
   );
 
   const { connectionStatus } = useMCPConnectionStatus({
     enabled: !isEphemeralAgent(agent_id) && mcpServerNames.length > 0,
   });
-
+  //TODO to refactor when tools come from tool box
   const mcpServersMap = useMemo(() => {
     const configuredServers = new Set(mcpServerNames);
     const serversMap = new Map<string, MCPServerInfo>();
@@ -127,6 +136,8 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     setActivePanel,
     endpointsConfig,
     setCurrentAgentId,
+    availableMCPServers,
+    availableMCPServersMap,
   };
 
   return <AgentPanelContext.Provider value={value}>{children}</AgentPanelContext.Provider>;
