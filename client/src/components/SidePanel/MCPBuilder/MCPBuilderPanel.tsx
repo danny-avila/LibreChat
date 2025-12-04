@@ -5,11 +5,13 @@ import { Button, Spinner, OGDialogTrigger } from '@librechat/client';
 import { useLocalize, useMCPServerManager, useHasAccess } from '~/hooks';
 import MCPServerList from './MCPServerList';
 import MCPServerDialog from './MCPServerDialog';
+import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import MCPAdminSettings from './MCPAdminSettings';
 
 export default function MCPBuilderPanel() {
   const localize = useLocalize();
-  const { availableMCPServers, isLoading } = useMCPServerManager();
+  const { availableMCPServers, isLoading, getServerStatusIconProps, getConfigDialogProps } =
+    useMCPServerManager();
 
   const hasCreateAccess = useHasAccess({
     permissionType: PermissionTypes.MCP_SERVERS,
@@ -17,6 +19,7 @@ export default function MCPBuilderPanel() {
   });
   const [showDialog, setShowDialog] = useState(false);
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
+  const configDialogProps = getConfigDialogProps();
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
@@ -48,8 +51,12 @@ export default function MCPBuilderPanel() {
             <Spinner className="h-6 w-6" />
           </div>
         ) : (
-          <MCPServerList servers={availableMCPServers} />
+          <MCPServerList
+            servers={availableMCPServers}
+            getServerStatusIconProps={getServerStatusIconProps}
+          />
         )}
+        {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
       </div>
     </div>
   );

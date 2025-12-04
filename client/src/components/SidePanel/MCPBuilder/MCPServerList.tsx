@@ -7,10 +7,14 @@ import {
   hasPermissions,
 } from 'librechat-data-provider';
 import { useLocalize, useHasAccess, MCPServerDefinition } from '~/hooks';
+import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPServerDialog from './MCPServerDialog';
 
 interface MCPServerListProps {
   servers: MCPServerDefinition[];
+  getServerStatusIconProps: (
+    serverName: string,
+  ) => React.ComponentProps<typeof MCPServerStatusIcon>;
 }
 
 // Self-contained edit button component (follows MemoryViewer pattern)
@@ -35,7 +39,7 @@ const EditMCPServerButton = ({ server }: { server: MCPServerDefinition }) => {
   );
 };
 
-export default function MCPServerList({ servers }: MCPServerListProps) {
+export default function MCPServerList({ servers, getServerStatusIconProps }: MCPServerListProps) {
   const canCreateEditMCPs = useHasAccess({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.CREATE,
@@ -60,7 +64,7 @@ export default function MCPServerList({ servers }: MCPServerListProps) {
 
         return (
           <div key={serverKey} className="rounded-lg border border-border-light bg-transparent p-3">
-            <div className="flex items-start gap-3">
+            <div className="flex items-center gap-3">
               {/* Server Icon */}
               {server.config?.iconPath ? (
                 <img src={server.config.iconPath} className="h-5 w-5 rounded" alt={displayName} />
@@ -75,6 +79,9 @@ export default function MCPServerList({ servers }: MCPServerListProps) {
 
               {/* Edit Button - Only for DB servers and when user has CREATE access */}
               {canCreateEditMCPs && canEditThisServer && <EditMCPServerButton server={server} />}
+
+              {/* Connection Status Icon */}
+              <MCPServerStatusIcon {...getServerStatusIconProps(server.serverName)} />
             </div>
           </div>
         );
