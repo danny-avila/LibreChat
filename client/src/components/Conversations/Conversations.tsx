@@ -4,12 +4,22 @@ import { ChevronDown } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
-import { TConversation } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useFavorites, useShowMarketplace } from '~/hooks';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { groupConversationsByDate, cn } from '~/utils';
 import Convo from './Convo';
 import store from '~/store';
+
+export type CellPosition = {
+  columnIndex: number;
+  rowIndex: number;
+};
+
+export type MeasuredCellParent = {
+  invalidateCellSizeAfterRender?: ((cell: CellPosition) => void) | undefined;
+  recomputeGridSize?: ((cell: CellPosition) => void) | undefined;
+};
 
 interface ConversationsProps {
   conversations: Array<TConversation | null>;
@@ -23,6 +33,30 @@ interface ConversationsProps {
   setIsChatsExpanded: (expanded: boolean) => void;
 }
 
+interface MeasuredRowProps {
+  cache: CellMeasurerCache;
+  rowKey: string;
+  parent: MeasuredCellParent;
+  index: number;
+  style: React.CSSProperties;
+  children: React.ReactNode;
+}
+
+/** Reusable wrapper for virtualized row measurement */
+const MeasuredRow: FC<MeasuredRowProps> = memo(
+  ({ cache, rowKey, parent, index, style, children }) => (
+    <CellMeasurer cache={cache} columnIndex={0} key={rowKey} parent={parent} rowIndex={index}>
+      {({ registerChild }) => (
+        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style}>
+          {children}
+        </div>
+      )}
+    </CellMeasurer>
+  ),
+);
+
+MeasuredRow.displayName = 'MeasuredRow';
+
 const LoadingSpinner = memo(() => {
   const localize = useLocalize();
 
@@ -35,6 +69,30 @@ const LoadingSpinner = memo(() => {
 });
 
 LoadingSpinner.displayName = 'LoadingSpinner';
+
+interface ChatsHeaderProps {
+  isExpanded: boolean;
+  onToggle: () => void;
+}
+
+/** Collapsible header for the Chats section */
+const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
+  const localize = useLocalize();
+  return (
+    <button
+      onClick={onToggle}
+      className="group flex w-full items-center justify-between px-1 py-2 text-xs font-bold text-text-secondary"
+      type="button"
+    >
+      <span className="select-none">{localize('com_ui_chats')}</span>
+      <ChevronDown
+        className={cn('h-3 w-3 transition-transform duration-200', isExpanded ? 'rotate-180' : '')}
+      />
+    </button>
+  );
+});
+
+ChatsHeader.displayName = 'ChatsHeader';
 
 const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupName, isFirst }) => {
   const localize = useLocalize();
@@ -188,62 +246,60 @@ const Conversations: FC<ConversationsProps> = ({
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
       const item = flattenedItems[index];
+      const rowProps = { cache, rowKey: key, parent, index, style };
+
       if (item.type === 'loading') {
         return (
-          <CellMeasurer cache={cache} columnIndex={0} key={key} parent={parent} rowIndex={index}>
-            {({ registerChild }) => (
-              <div ref={registerChild} style={style}>
-                <LoadingSpinner />
-              </div>
-            )}
-          </CellMeasurer>
+          <MeasuredRow {...rowProps}>
+            <LoadingSpinner />
+          </MeasuredRow>
         );
       }
-      let rendering: JSX.Element;
+
       if (item.type === 'favorites') {
-        rendering = (
-          <FavoritesList
-            isSmallScreen={isSmallScreen}
-            toggleNav={toggleNav}
-            onHeightChange={clearFavoritesCache}
-          />
-        );
-      } else if (item.type === 'chats-header') {
-        rendering = (
-          <button
-            onClick={() => setIsChatsExpanded(!isChatsExpanded)}
-            className="group flex w-full items-center justify-between px-1 py-2 text-xs font-bold text-text-secondary"
-            type="button"
-          >
-            <span className="select-none">{localize('com_ui_chats')}</span>
-            <ChevronDown
-              className={cn(
-                'h-3 w-3 transition-transform duration-200',
-                isChatsExpanded ? 'rotate-180' : '',
-              )}
+        return (
+          <MeasuredRow {...rowProps}>
+            <FavoritesList
+              isSmallScreen={isSmallScreen}
+              toggleNav={toggleNav}
+              onHeightChange={clearFavoritesCache}
             />
-          </button>
+          </MeasuredRow>
         );
-      } else if (item.type === 'header') {
+      }
+
+      if (item.type === 'chats-header') {
+        return (
+          <MeasuredRow {...rowProps}>
+            <ChatsHeader
+              isExpanded={isChatsExpanded}
+              onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
+            />
+          </MeasuredRow>
+        );
+      }
+
+      if (item.type === 'header') {
         // First date header index depends on whether favorites row is included
         // With favorites: [favorites, chats-header, first-header] → index 2
         // Without favorites: [chats-header, first-header] → index 1
         const firstHeaderIndex = shouldShowFavorites ? 2 : 1;
-        rendering = <DateLabel groupName={item.groupName} isFirst={index === firstHeaderIndex} />;
-      } else if (item.type === 'convo') {
-        rendering = (
-          <MemoizedConvo conversation={item.convo} retainView={moveToTop} toggleNav={toggleNav} />
+        return (
+          <MeasuredRow {...rowProps}>
+            <DateLabel groupName={item.groupName} isFirst={index === firstHeaderIndex} />
+          </MeasuredRow>
         );
       }
-      return (
-        <CellMeasurer cache={cache} columnIndex={0} key={key} parent={parent} rowIndex={index}>
-          {({ registerChild }) => (
-            <div ref={registerChild} style={style} className="">
-              {rendering}
-            </div>
-          )}
-        </CellMeasurer>
-      );
+
+      if (item.type === 'convo') {
+        return (
+          <MeasuredRow {...rowProps}>
+            <MemoizedConvo conversation={item.convo} retainView={moveToTop} toggleNav={toggleNav} />
+          </MeasuredRow>
+        );
+      }
+
+      return null;
     },
     [
       cache,
@@ -253,7 +309,6 @@ const Conversations: FC<ConversationsProps> = ({
       clearFavoritesCache,
       isSmallScreen,
       isChatsExpanded,
-      localize,
       setIsChatsExpanded,
       shouldShowFavorites,
     ],
@@ -300,10 +355,10 @@ const Conversations: FC<ConversationsProps> = ({
                 overscanRowCount={10}
                 aria-readonly={false}
                 className="outline-none"
-                style={{ outline: 'none' }}
                 aria-label="Conversations"
                 onRowsRendered={handleRowsRendered}
                 tabIndex={-1}
+                style={{ outline: 'none', scrollbarGutter: 'stable' }}
               />
             )}
           </AutoSizer>
