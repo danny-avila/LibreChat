@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { Trans } from 'react-i18next';
 import { BookCopy } from 'lucide-react';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import {
@@ -105,7 +106,11 @@ const PresetsMenu: FC = () => {
               <OGDialogTitle>{localize('com_ui_delete_preset')}</OGDialogTitle>
             </OGDialogHeader>
             <div className="w-full truncate">
-              {localize('com_ui_delete_confirm')} <strong>{presetToDelete.title}</strong>?
+              <Trans
+                i18nKey="com_ui_delete_confirm_strong"
+                values={{ title: presetToDelete.title }}
+                components={{ strong: <strong /> }}
+              />
             </div>
             <div className="flex justify-end gap-4 pt-4">
               <Button
