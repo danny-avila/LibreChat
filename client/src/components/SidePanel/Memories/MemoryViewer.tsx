@@ -1,6 +1,7 @@
 /* Memories */
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { Plus } from 'lucide-react';
+import { Trans } from 'react-i18next';
 import { matchSorter } from 'match-sorter';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
@@ -120,7 +121,11 @@ const DeleteMemoryButton = ({ memory }: { memory: TUserMemory }) => {
         className="w-11/12 max-w-lg"
         main={
           <Label className="text-left text-sm font-medium">
-            {localize('com_ui_delete_confirm')} &quot;{memory.key}&quot;?
+            <Trans
+              i18nKey="com_ui_delete_confirm_strong"
+              values={{ title: memory.key }}
+              components={{ strong: <strong /> }}
+            />
           </Label>
         }
         selection={{
