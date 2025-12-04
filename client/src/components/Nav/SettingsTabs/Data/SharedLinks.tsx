@@ -1,4 +1,5 @@
 import { useCallback, useState, useMemo, useEffect } from 'react';
+import { Trans } from 'react-i18next';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
 import { Link } from 'react-router-dom';
@@ -326,7 +327,7 @@ export default function SharedLinks() {
       <OGDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
         <OGDialogTemplate
           showCloseButton={false}
-          title={localize('com_ui_delete_shared_link')}
+          title={localize('com_ui_delete_shared_link_heading')}
           className="max-w-[450px]"
           main={
             <>
@@ -336,7 +337,11 @@ export default function SharedLinks() {
               >
                 <div className="grid w-full items-center gap-2">
                   <Label htmlFor="dialog-confirm-delete" className="text-left text-sm font-medium">
-                    {localize('com_ui_delete_confirm')} <strong>{deleteRow?.title}</strong>
+                    <Trans
+                      i18nKey="com_ui_delete_confirm_strong"
+                      values={{ title: deleteRow?.title }}
+                      components={{ strong: <strong /> }}
+                    />
                   </Label>
                 </div>
               </div>

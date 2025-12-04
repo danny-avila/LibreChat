@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { Trans } from 'react-i18next';
 import { QrCode, RotateCw, Trash2 } from 'lucide-react';
 import {
   Button,
@@ -187,7 +188,7 @@ export default function SharedLinkButton({
         <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
           <OGDialogTemplate
             showCloseButton={false}
-            title={localize('com_ui_delete_shared_link')}
+            title={localize('com_ui_delete_shared_link_heading')}
             className="max-w-[450px]"
             main={
               <>
@@ -197,7 +198,11 @@ export default function SharedLinkButton({
                       htmlFor="dialog-confirm-delete"
                       className="text-left text-sm font-medium"
                     >
-                      {localize('com_ui_delete_confirm')} <strong>&quot;{shareId}&quot;</strong>
+                      <Trans
+                        i18nKey="com_ui_delete_confirm_strong"
+                        values={{ title: shareId }}
+                        components={{ strong: <strong /> }}
+                      />
                     </Label>
                   </div>
                 </div>
