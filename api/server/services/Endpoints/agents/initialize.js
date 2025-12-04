@@ -65,18 +65,21 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   }
   const appConfig = req.config;
 
-  // TODO: use endpointOption to determine options/modelOptions
+  /** @type {string | null} */
+  const streamId = req._resumableStreamId || null;
+
   /** @type {Array<UsageMetadata>} */
   const collectedUsage = [];
   /** @type {ArtifactPromises} */
   const artifactPromises = [];
   const { contentParts, aggregateContent } = createContentAggregator();
-  const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+  const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
   const eventHandlers = getDefaultHandlers({
     res,
     aggregateContent,
     toolEndCallback,
     collectedUsage,
+    streamId,
   });
 
   if (!endpointOption.agent) {

@@ -16,6 +16,7 @@ const {
   performStartupChecks,
   handleJsonParseError,
   initializeFileStorage,
+  GenerationJobManager,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -192,6 +193,7 @@ const startServer = async () => {
     await initializeMCPs();
     await initializeOAuthReconnectManager();
     await checkMigrations();
+    GenerationJobManager.initialize();
   });
 };
 

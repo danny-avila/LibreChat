@@ -2,6 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
 const {
   sendEvent,
+  GenerationJobManager,
   sanitizeFileForTransmit,
   sanitizeMessageForTransmit,
 } = require('@librechat/api');
@@ -31,7 +32,232 @@ function createCloseHandler(abortController) {
   };
 }
 
+/**
+ * Resumable Agent Controller - Generation runs independently of HTTP connection.
+ * Returns streamId immediately, client subscribes separately via SSE.
+ */
+const ResumableAgentController = async (req, res, next, initializeClient, addTitle) => {
+  const {
+    text,
+    isRegenerate,
+    endpointOption,
+    conversationId: reqConversationId,
+    isContinued = false,
+    editedContent = null,
+    parentMessageId = null,
+    overrideParentMessageId = null,
+    responseMessageId: editedResponseMessageId = null,
+  } = req.body;
+
+  const userId = req.user.id;
+  const streamId =
+    reqConversationId || `stream_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+  let client = null;
+
+  try {
+    const prelimAbortController = new AbortController();
+    res.on('close', () => {
+      if (!prelimAbortController.signal.aborted) {
+        prelimAbortController.abort();
+      }
+    });
+
+    const job = GenerationJobManager.createJob(streamId, userId, reqConversationId);
+    req._resumableStreamId = streamId;
+
+    /** @type {{ client: TAgentClient; userMCPAuthMap?: Record<string, Record<string, string>> }} */
+    const result = await initializeClient({
+      req,
+      res,
+      endpointOption,
+      signal: prelimAbortController.signal,
+    });
+
+    if (prelimAbortController.signal.aborted) {
+      GenerationJobManager.completeJob(streamId, 'Request aborted during initialization');
+      return res.status(400).json({ error: 'Request aborted during initialization' });
+    }
+
+    client = result.client;
+
+    res.json({ streamId, status: 'started' });
+
+    let conversationId = reqConversationId;
+    let userMessage;
+
+    const getReqData = (data = {}) => {
+      if (data.userMessage) {
+        userMessage = data.userMessage;
+      }
+      if (!conversationId && data.conversationId) {
+        conversationId = data.conversationId;
+      }
+    };
+
+    // Start background generation - wait for subscriber with timeout fallback
+    const startGeneration = async () => {
+      try {
+        await Promise.race([job.readyPromise, new Promise((resolve) => setTimeout(resolve, 5000))]);
+      } catch (waitError) {
+        logger.warn(
+          `[ResumableAgentController] Error waiting for subscriber: ${waitError.message}`,
+        );
+      }
+
+      try {
+        const onStart = (userMsg, _respMsgId, _isNewConvo) => {
+          userMessage = userMsg;
+
+          GenerationJobManager.emitChunk(streamId, {
+            created: true,
+            message: userMessage,
+            streamId,
+          });
+        };
+
+        const messageOptions = {
+          user: userId,
+          onStart,
+          getReqData,
+          isContinued,
+          isRegenerate,
+          editedContent,
+          conversationId,
+          parentMessageId,
+          abortController: job.abortController,
+          overrideParentMessageId,
+          isEdited: !!editedContent,
+          userMCPAuthMap: result.userMCPAuthMap,
+          responseMessageId: editedResponseMessageId,
+          progressOptions: {
+            res: {
+              write: () => true,
+              end: () => {},
+              headersSent: false,
+              writableEnded: false,
+            },
+          },
+        };
+
+        const response = await client.sendMessage(text, messageOptions);
+
+        const messageId = response.messageId;
+        const endpoint = endpointOption.endpoint;
+        response.endpoint = endpoint;
+
+        const databasePromise = response.databasePromise;
+        delete response.databasePromise;
+
+        const { conversation: convoData = {} } = await databasePromise;
+        const conversation = { ...convoData };
+        conversation.title =
+          conversation && !conversation.title ? null : conversation?.title || 'New Chat';
+
+        if (req.body.files && client.options?.attachments) {
+          userMessage.files = [];
+          const messageFiles = new Set(req.body.files.map((file) => file.file_id));
+          for (const attachment of client.options.attachments) {
+            if (messageFiles.has(attachment.file_id)) {
+              userMessage.files.push(sanitizeFileForTransmit(attachment));
+            }
+          }
+          delete userMessage.image_urls;
+        }
+
+        if (!job.abortController.signal.aborted) {
+          const finalEvent = {
+            final: true,
+            conversation,
+            title: conversation.title,
+            requestMessage: sanitizeMessageForTransmit(userMessage),
+            responseMessage: { ...response },
+          };
+
+          GenerationJobManager.emitDone(streamId, finalEvent);
+          GenerationJobManager.completeJob(streamId);
+
+          if (client.savedMessageIds && !client.savedMessageIds.has(messageId)) {
+            await saveMessage(
+              req,
+              { ...response, user: userId },
+              { context: 'api/server/controllers/agents/request.js - resumable response end' },
+            );
+          }
+        } else {
+          const finalEvent = {
+            final: true,
+            conversation,
+            title: conversation.title,
+            requestMessage: sanitizeMessageForTransmit(userMessage),
+            responseMessage: { ...response, error: true },
+            error: { message: 'Request was aborted' },
+          };
+          GenerationJobManager.emitDone(streamId, finalEvent);
+          GenerationJobManager.completeJob(streamId, 'Request aborted');
+        }
+
+        if (!client.skipSaveUserMessage && userMessage) {
+          await saveMessage(req, userMessage, {
+            context: 'api/server/controllers/agents/request.js - resumable user message',
+          });
+        }
+
+        const newConvo = !reqConversationId;
+        if (addTitle && parentMessageId === Constants.NO_PARENT && newConvo) {
+          addTitle(req, {
+            text,
+            response: { ...response },
+            client,
+          })
+            .catch((err) => {
+              logger.error('[ResumableAgentController] Error in title generation', err);
+            })
+            .finally(() => {
+              if (client) {
+                disposeClient(client);
+              }
+            });
+        } else {
+          if (client) {
+            disposeClient(client);
+          }
+        }
+      } catch (error) {
+        logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
+        GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
+        GenerationJobManager.completeJob(streamId, error.message);
+        if (client) {
+          disposeClient(client);
+        }
+      }
+    };
+
+    // Start generation and handle any unhandled errors
+    startGeneration().catch((err) => {
+      logger.error(
+        `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
+      );
+      GenerationJobManager.completeJob(streamId, err.message);
+    });
+  } catch (error) {
+    logger.error('[ResumableAgentController] Initialization error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message || 'Failed to start generation' });
+    }
+    GenerationJobManager.completeJob(streamId, error.message);
+    if (client) {
+      disposeClient(client);
+    }
+  }
+};
+
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
+  const isResumable = req.query.resumable === 'true';
+  if (isResumable) {
+    return ResumableAgentController(req, res, next, initializeClient, addTitle);
+  }
+
   let {
     text,
     isRegenerate,

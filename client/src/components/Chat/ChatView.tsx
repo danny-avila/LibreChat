@@ -7,7 +7,7 @@ import { Constants, buildTree } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
-import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
+import { useChatHelpers, useAddedResponse, useAdaptiveSSE } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
@@ -51,8 +51,8 @@ function ChatView({ index = 0 }: { index?: number }) {
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse({ rootIndex: index });
 
-  useSSE(rootSubmission, chatHelpers, false);
-  useSSE(addedSubmission, addedChatHelpers, true);
+  useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
+  useAdaptiveSSE(addedSubmission, addedChatHelpers, true, index + 1);
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },

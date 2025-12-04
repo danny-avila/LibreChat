@@ -1,4 +1,9 @@
 function setHeaders(req, res, next) {
+  // Skip SSE headers for resumable mode - it returns JSON first, then client subscribes separately
+  if (req.query.resumable === 'true') {
+    return next();
+  }
+
   res.writeHead(200, {
     Connection: 'keep-alive',
     'Content-Type': 'text/event-stream',
