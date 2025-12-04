@@ -93,6 +93,7 @@ export function getOpenAIConfig(
     const transformed = transformToOpenAIConfig({
       addParams,
       dropParams,
+      defaultParams,
       tools: googleResult.tools,
       llmConfig: googleResult.llmConfig,
       fromEndpoint: EModelEndpoint.google,

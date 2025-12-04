@@ -31,12 +31,14 @@ export function transformToOpenAIConfig({
   tools,
   addParams,
   dropParams,
+  defaultParams,
   llmConfig,
   fromEndpoint,
 }: {
   tools?: ConfigTools;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
+  defaultParams?: Record<string, unknown>;
   llmConfig: ClientOptions;
   fromEndpoint: string;
 }): {
@@ -130,18 +132,28 @@ export function transformToOpenAIConfig({
     }
   }
 
-  /** Filter out provider-specific tools that have no OpenAI equivalent */
   /**
    * Filter out provider-specific tools that have no OpenAI equivalent.
-   * Using a functional approach and early return for flatness.
-   * This passes through any tool for non-Google providers, or
-   * filters out tools present in the googleToolsToFilter set for Google.
+   * Exception: If web_search was explicitly enabled via addParams or defaultParams,
+   * preserve googleSearch tools (pass through in Google-native format).
    */
+  const webSearchExplicitlyEnabled =
+    addParams?.web_search === true || defaultParams?.web_search === true;
+
   const filterGoogleTool = (tool: unknown): boolean => {
-    if (!isGoogle) return true;
-    if (typeof tool !== 'object' || tool === null) return false;
+    if (!isGoogle) {
+      return true;
+    }
+    if (typeof tool !== 'object' || tool === null) {
+      return false;
+    }
     const toolKeys = Object.keys(tool as Record<string, unknown>);
-    return !toolKeys.some((key) => googleToolsToFilter.has(key));
+    const isGoogleSpecificTool = toolKeys.some((key) => googleToolsToFilter.has(key));
+    /** Preserve googleSearch if web_search was explicitly enabled */
+    if (isGoogleSpecificTool && webSearchExplicitlyEnabled) {
+      return true;
+    }
+    return !isGoogleSpecificTool;
   };
 
   const filteredTools = Array.isArray(tools) ? tools.filter(filterGoogleTool) : [];
