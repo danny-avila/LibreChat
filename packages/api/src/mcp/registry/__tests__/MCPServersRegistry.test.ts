@@ -49,7 +49,7 @@ describe('MCPServersRegistry', () => {
         },
       },
     },
-    lastUpdatedAt: FIXED_TIME,
+    updatedAt: FIXED_TIME,
   };
   beforeAll(() => {
     jest.useFakeTimers();

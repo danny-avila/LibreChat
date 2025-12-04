@@ -541,7 +541,7 @@ async function getServerConnectionStatus(
   oauthServers,
 ) {
   const connection = appConnections.get(serverName) || userConnections.get(serverName);
-  const isStaleOrDoNotExist = connection ? connection?.isStale(config.lastUpdatedAt) : true;
+  const isStaleOrDoNotExist = connection ? connection?.isStale(config.updatedAt) : true;
 
   const baseConnectionState = isStaleOrDoNotExist
     ? 'disconnected'

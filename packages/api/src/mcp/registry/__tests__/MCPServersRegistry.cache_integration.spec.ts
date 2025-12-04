@@ -1,7 +1,21 @@
 import { expect } from '@playwright/test';
-import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/mcp/types';
 import type { MCPServersRegistry as MCPServersRegistryType } from '../MCPServersRegistry';
+
+// Mock ServerConfigsDB to avoid needing MongoDB for cache integration tests
+jest.mock('../db/ServerConfigsDB', () => ({
+  ServerConfigsDB: jest.fn().mockImplementation(() => ({
+    get: jest.fn().mockResolvedValue(undefined),
+    getAll: jest.fn().mockResolvedValue({}),
+    add: jest.fn().mockResolvedValue({
+      serverName: 'mock-server',
+      config: {} as t.ParsedServerConfig,
+    }),
+    update: jest.fn().mockResolvedValue(undefined),
+    remove: jest.fn().mockResolvedValue(undefined),
+    reset: jest.fn().mockResolvedValue(undefined),
+  })),
+}));
 
 /**
  * Integration tests for MCPServersRegistry using Redis-backed cache.
@@ -18,7 +32,6 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
   let LeaderElection: typeof import('~/cluster/LeaderElection').LeaderElection;
   let leaderInstance: InstanceType<typeof import('~/cluster/LeaderElection').LeaderElection>;
   let MCPServerInspector: typeof import('../MCPServerInspector').MCPServerInspector;
-  let mongoServer: MongoMemoryServer;
 
   const testParsedConfig: t.ParsedServerConfig = {
     type: 'stdio',
@@ -60,20 +73,11 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
     const leaderElectionModule = await import('~/cluster/LeaderElection');
     const inspectorModule = await import('../MCPServerInspector');
     const mongoose = await import('mongoose');
-    const { userSchema } = await import('@librechat/data-schemas');
 
     MCPServersRegistry = registryModule.MCPServersRegistry;
     keyvRedisClient = redisClients.keyvRedisClient;
     LeaderElection = leaderElectionModule.LeaderElection;
     MCPServerInspector = inspectorModule.MCPServerInspector;
-
-    // Set up MongoDB with MongoMemoryServer for db methods
-    mongoServer = await MongoMemoryServer.create();
-    const mongoUri = mongoServer.getUri();
-    if (!mongoose.default.models.User) {
-      mongoose.default.model('User', userSchema);
-    }
-    await mongoose.default.connect(mongoUri);
 
     // Reset singleton and create new instance with mongoose
     (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
@@ -135,11 +139,6 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
 
     // Close Redis connection
     if (keyvRedisClient?.isOpen) await keyvRedisClient.disconnect();
-
-    // Close MongoDB connection and stop memory server
-    const mongoose = await import('mongoose');
-    await mongoose.default.disconnect();
-    if (mongoServer) await mongoServer.stop();
   });
 
   // Tests for the old privateServersCache API have been removed

@@ -15,14 +15,14 @@ describe('ServerConfigsCacheInMemory Integration Tests', () => {
     command: 'node',
     args: ['server1.js'],
     env: { TEST: 'value1' },
-    lastUpdatedAt: FIXED_TIME,
+    updatedAt: FIXED_TIME,
   };
 
   const mockConfig2: ParsedServerConfig = {
     command: 'python',
     args: ['server2.py'],
     env: { TEST: 'value2' },
-    lastUpdatedAt: FIXED_TIME,
+    updatedAt: FIXED_TIME,
   };
 
   const mockConfig3: ParsedServerConfig = {
@@ -30,7 +30,7 @@ describe('ServerConfigsCacheInMemory Integration Tests', () => {
     args: ['server3.js'],
     url: 'http://localhost:3000',
     requiresOAuth: true,
-    lastUpdatedAt: FIXED_TIME,
+    updatedAt: FIXED_TIME,
   };
 
   beforeAll(async () => {

@@ -7,6 +7,9 @@ const mockRegistryInstance = {
   getServerConfig: jest.fn(),
   getOAuthServers: jest.fn(),
   getAllServerConfigs: jest.fn(),
+  addServer: jest.fn(),
+  updateServer: jest.fn(),
+  removeServer: jest.fn(),
 };
 
 jest.mock('@librechat/api', () => ({
@@ -24,6 +27,7 @@ jest.mock('@librechat/api', () => ({
     deleteUserTokens: jest.fn(),
   },
   getUserMCPAuthMap: jest.fn(),
+  generateCheckAccess: jest.fn(() => (req, res, next) => next()),
   MCPServersRegistry: {
     getInstance: () => mockRegistryInstance,
   },
@@ -57,6 +61,7 @@ jest.mock('~/models', () => ({
   createToken: jest.fn(),
   deleteTokens: jest.fn(),
   findPluginAuthsByKeys: jest.fn(),
+  getRoleByName: jest.fn(),
 }));
 
 jest.mock('~/server/services/Config', () => ({
@@ -92,6 +97,7 @@ jest.mock('~/cache', () => ({
 
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, res, next) => next(),
+  canAccessMCPServerResource: () => (req, res, next) => next(),
 }));
 
 jest.mock('~/server/services/Tools/mcp', () => ({
@@ -1486,6 +1492,226 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ error: 'Database error' });
+    });
+  });
+
+  describe('POST /servers', () => {
+    it('should create MCP server with valid SSE config', async () => {
+      const validConfig = {
+        type: 'sse',
+        url: 'https://mcp-server.example.com/sse',
+        title: 'Test SSE Server',
+        description: 'A test SSE server',
+      };
+
+      mockRegistryInstance.addServer.mockResolvedValue({
+        serverName: 'test-sse-server',
+        config: validConfig,
+      });
+
+      const response = await request(app).post('/api/mcp/servers').send({ config: validConfig });
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({
+        serverName: 'test-sse-server',
+        ...validConfig,
+      });
+      expect(mockRegistryInstance.addServer).toHaveBeenCalledWith(
+        'temp_server_name',
+        expect.objectContaining({
+          type: 'sse',
+          url: 'https://mcp-server.example.com/sse',
+        }),
+        'DB',
+        'test-user-id',
+      );
+    });
+
+    it('should create MCP server with valid stdio config', async () => {
+      const validConfig = {
+        type: 'stdio',
+        command: 'node',
+        args: ['server.js'],
+        title: 'Test Stdio Server',
+      };
+
+      mockRegistryInstance.addServer.mockResolvedValue({
+        serverName: 'test-stdio-server',
+        config: validConfig,
+      });
+
+      const response = await request(app).post('/api/mcp/servers').send({ config: validConfig });
+
+      expect(response.status).toBe(201);
+      expect(response.body.serverName).toBe('test-stdio-server');
+    });
+
+    it('should return 400 for invalid configuration', async () => {
+      const invalidConfig = {
+        type: 'sse',
+        // Missing required 'url' field
+        title: 'Invalid Server',
+      };
+
+      const response = await request(app).post('/api/mcp/servers').send({ config: invalidConfig });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(response.body.errors).toBeDefined();
+    });
+
+    it('should return 400 for SSE config with invalid URL protocol', async () => {
+      const invalidConfig = {
+        type: 'sse',
+        url: 'ws://invalid-protocol.example.com/sse',
+        title: 'Invalid Protocol Server',
+      };
+
+      const response = await request(app).post('/api/mcp/servers').send({ config: invalidConfig });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+    });
+
+    it('should return 500 when registry throws error', async () => {
+      const validConfig = {
+        type: 'sse',
+        url: 'https://mcp-server.example.com/sse',
+        title: 'Test Server',
+      };
+
+      mockRegistryInstance.addServer.mockRejectedValue(new Error('Database connection failed'));
+
+      const response = await request(app).post('/api/mcp/servers').send({ config: validConfig });
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ message: 'Database connection failed' });
+    });
+  });
+
+  describe('GET /servers/:serverName', () => {
+    it('should return server config when found', async () => {
+      const mockConfig = {
+        type: 'sse',
+        url: 'https://mcp-server.example.com/sse',
+        title: 'Test Server',
+      };
+
+      mockRegistryInstance.getServerConfig.mockResolvedValue(mockConfig);
+
+      const response = await request(app).get('/api/mcp/servers/test-server');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(mockConfig);
+      expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
+        'test-server',
+        'test-user-id',
+      );
+    });
+
+    it('should return 404 when server not found', async () => {
+      mockRegistryInstance.getServerConfig.mockResolvedValue(null);
+
+      const response = await request(app).get('/api/mcp/servers/non-existent-server');
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ message: 'MCP server not found' });
+    });
+
+    it('should return 500 when registry throws error', async () => {
+      mockRegistryInstance.getServerConfig.mockRejectedValue(new Error('Database error'));
+
+      const response = await request(app).get('/api/mcp/servers/error-server');
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ message: 'Database error' });
+    });
+  });
+
+  describe('PATCH /servers/:serverName', () => {
+    it('should update server with valid config', async () => {
+      const updatedConfig = {
+        type: 'sse',
+        url: 'https://updated-mcp-server.example.com/sse',
+        title: 'Updated Server',
+        description: 'Updated description',
+      };
+
+      mockRegistryInstance.updateServer.mockResolvedValue(updatedConfig);
+
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({ config: updatedConfig });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(updatedConfig);
+      expect(mockRegistryInstance.updateServer).toHaveBeenCalledWith(
+        'test-server',
+        expect.objectContaining({
+          type: 'sse',
+          url: 'https://updated-mcp-server.example.com/sse',
+        }),
+        'DB',
+        'test-user-id',
+      );
+    });
+
+    it('should return 400 for invalid configuration', async () => {
+      const invalidConfig = {
+        type: 'sse',
+        // Missing required 'url' field
+        title: 'Invalid Update',
+      };
+
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({ config: invalidConfig });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
+      expect(response.body.errors).toBeDefined();
+    });
+
+    it('should return 500 when registry throws error', async () => {
+      const validConfig = {
+        type: 'sse',
+        url: 'https://mcp-server.example.com/sse',
+        title: 'Test Server',
+      };
+
+      mockRegistryInstance.updateServer.mockRejectedValue(new Error('Update failed'));
+
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({ config: validConfig });
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ message: 'Update failed' });
+    });
+  });
+
+  describe('DELETE /servers/:serverName', () => {
+    it('should delete server successfully', async () => {
+      mockRegistryInstance.removeServer.mockResolvedValue(undefined);
+
+      const response = await request(app).delete('/api/mcp/servers/test-server');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ message: 'MCP server deleted successfully' });
+      expect(mockRegistryInstance.removeServer).toHaveBeenCalledWith(
+        'test-server',
+        'DB',
+        'test-user-id',
+      );
+    });
+
+    it('should return 500 when registry throws error', async () => {
+      mockRegistryInstance.removeServer.mockRejectedValue(new Error('Deletion failed'));
+
+      const response = await request(app).delete('/api/mcp/servers/error-server');
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ message: 'Deletion failed' });
     });
   });
 });

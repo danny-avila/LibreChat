@@ -1,10 +1,10 @@
-import { ParsedServerConfig } from '~/mcp/types';
+import { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 
 /**
  * Interface for future DB implementation
  */
 export interface IServerConfigsRepositoryInterface {
-  add(serverName: string, config: ParsedServerConfig, userId?: string): Promise<void>;
+  add(serverName: string, config: ParsedServerConfig, userId?: string): Promise<AddServerResult>;
 
   //ACL Entry check if update is possible
   update(serverName: string, config: ParsedServerConfig, userId?: string): Promise<void>;
