@@ -187,7 +187,7 @@ const getMCPServerById = async (req, res) => {
     const userId = req.user?.id;
     const { serverName } = req.params;
     if (!serverName) {
-      return res.status(400).json({ message: 'MCP ID is required' });
+      return res.status(400).json({ message: 'Server name is required' });
     }
     const parsedConfig = await getMCPServersRegistry().getServerConfig(serverName, userId);
 
