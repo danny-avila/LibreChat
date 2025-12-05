@@ -175,7 +175,7 @@ const createMCPServerController = async (req, res) => {
     });
   } catch (error) {
     logger.error('[createMCPServer]', error);
-    if (error.message?.includes('MCP_INSPECTION_FAILED')) {
+    if (error.message?.startsWith('MCP_INSPECTION_FAILED')) {
       return res.status(400).json({
         error: 'MCP_INSPECTION_FAILED',
         message: error.message,
