@@ -22,7 +22,8 @@ import {
 } from '~/data-provider/MCP';
 import MCPAuth, { type AuthConfig, AuthTypeEnum, AuthorizationTypeEnum } from './MCPAuth';
 import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useLocalizedConfig } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 import { cn } from '~/utils';
 import {
   SystemRoles,
@@ -69,6 +70,8 @@ export default function MCPServerDialog({
 }: MCPServerDialogProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const { data: startupConfig } = useGetStartupConfig();
+  const getLocalizedValue = useLocalizedConfig();
 
   // Mutations
   const createMutation = useCreateMCPServerMutation();
@@ -575,13 +578,38 @@ export default function MCPServerDialog({
                   <Label
                     id="trust-this-mcp-label"
                     htmlFor="trust"
-                    className="flex cursor-pointer flex-col text-sm font-medium"
+                    className="flex cursor-pointer flex-col break-words text-sm font-medium"
                   >
                     <span>
-                      {localize('com_ui_trust_app')} <span className="text-red-500">*</span>
+                      {startupConfig?.interface?.mcpServers?.trustCheckbox?.label ? (
+                        <span
+                          /** No sanitization required. trusted admin-controlled source (yml)  */
+                          dangerouslySetInnerHTML={{
+                            __html: getLocalizedValue(
+                              startupConfig.interface.mcpServers.trustCheckbox.label,
+                              localize('com_ui_trust_app'),
+                            ),
+                          }}
+                        />
+                      ) : (
+                        localize('com_ui_trust_app')
+                      )}{' '}
+                      <span className="text-red-500">*</span>
                     </span>
                     <span className="text-xs font-normal text-text-secondary">
-                      {localize('com_agents_mcp_trust_subtext')}
+                      {startupConfig?.interface?.mcpServers?.trustCheckbox?.subLabel ? (
+                        <span
+                          /** No sanitization required. trusted admin-controlled source (yml)  */
+                          dangerouslySetInnerHTML={{
+                            __html: getLocalizedValue(
+                              startupConfig.interface.mcpServers.trustCheckbox.subLabel,
+                              localize('com_agents_mcp_trust_subtext'),
+                            ),
+                          }}
+                        />
+                      ) : (
+                        localize('com_agents_mcp_trust_subtext')
+                      )}
                     </span>
                   </Label>
                 </div>
