@@ -633,6 +633,7 @@
   "com_ui_add_first_mcp_server": "Create your first MCP server to get started",
   "com_ui_mcp_server_created": "MCP server created successfully",
   "com_ui_mcp_server_updated": "MCP server updated successfully",
+  "com_ui_mcp_server_connection_failed": "Connection attempt to the provided MCP server failed. Please make sure the URL, the server type, and any authentication configuration are correct, then try again. Also ensure the URL is reachable.",
   "com_ui_add_model_preset": "Add a model or preset for an additional response",
   "com_ui_add_multi_conversation": "Add multi-conversation",
   "com_ui_add_special_variables": "Add Special Variables",

@@ -78,7 +78,13 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const parsedConfig = await MCPServerInspector.inspect(serverName, config);
+    let parsedConfig: t.ParsedServerConfig;
+    try {
+      parsedConfig = await MCPServerInspector.inspect(serverName, config);
+    } catch (error) {
+      logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
+      throw new Error(`MCP_INSPECTION_FAILED: Failed to connect to MCP server "${serverName}"`);
+    }
     return await configRepo.add(serverName, parsedConfig, userId);
   }
 
@@ -89,7 +95,13 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const parsedConfig = await MCPServerInspector.inspect(serverName, config);
+    let parsedConfig: t.ParsedServerConfig;
+    try {
+      parsedConfig = await MCPServerInspector.inspect(serverName, config);
+    } catch (error) {
+      logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
+      throw new Error(`MCP_INSPECTION_FAILED: Failed to connect to MCP server "${serverName}"`);
+    }
     await configRepo.update(serverName, parsedConfig, userId);
     return parsedConfig;
   }

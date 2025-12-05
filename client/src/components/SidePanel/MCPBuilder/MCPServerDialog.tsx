@@ -283,7 +283,9 @@ export default function MCPServerDialog({
 
       if (error && typeof error === 'object' && 'response' in error) {
         const axiosError = error as any;
-        if (axiosError.response?.data?.error) {
+        if (axiosError.response?.data?.error === 'MCP_INSPECTION_FAILED') {
+          errorMessage = localize('com_ui_mcp_server_connection_failed');
+        } else if (axiosError.response?.data?.error) {
           errorMessage = axiosError.response.data.error;
         }
       } else if (error.message) {
