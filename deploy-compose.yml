@@ -91,19 +91,29 @@ services:
       - .env
     networks: [default]
 
-#  ollama:
-#    image: ollama/ollama:latest
-#    container_name: ollama
-#    restart: unless-stopped
-#    volumes:
-#      - ollama:/root/.ollama
-#    deploy:
-#      resources:
-#        limits:
-#          memory: 2g
-#        reservations:
-#          memory: 512m
-#    networks: [default]
+ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+        reservations:
+          memory: 512m
+    networks:
+      - default
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        /bin/ollama serve &
+        sleep 5
+        ollama pull nomic-embed-text
+        wait
 
 
 networks:
@@ -113,4 +123,4 @@ networks:
 
 volumes:
   pgdata2:
-#  ollama:
+  ollama:

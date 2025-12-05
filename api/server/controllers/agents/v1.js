@@ -149,6 +149,26 @@ const createAgentHandler = async (req, res) => {
       );
     }
 
+    // Automatically grant public access if is_public is true
+    if (agent.is_public === true) {
+      try {
+        await grantPermission({
+          principalType: PrincipalType.PUBLIC,
+          principalId: null,
+          resourceType: ResourceType.AGENT,
+          resourceId: agent._id,
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
+          grantedBy: userId,
+        });
+        logger.debug(`[createAgent] Granted public viewer permissions for agent ${agent.id}`);
+      } catch (permissionError) {
+        logger.error(
+          `[createAgent] Failed to grant public permissions for agent ${agent.id}:`,
+          permissionError,
+        );
+      }
+    }
+
     res.status(201).json(agent);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -444,6 +464,28 @@ const duplicateAgentHandler = async (req, res) => {
         `[duplicateAgent] Failed to grant owner permissions for duplicated agent ${newAgent.id}:`,
         permissionError,
       );
+    }
+
+    // Automatically grant public access if is_public is true
+    if (newAgent.is_public === true) {
+      try {
+        await grantPermission({
+          principalType: PrincipalType.PUBLIC,
+          principalId: null,
+          resourceType: ResourceType.AGENT,
+          resourceId: newAgent._id,
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
+          grantedBy: userId,
+        });
+        logger.debug(
+          `[duplicateAgent] Granted public viewer permissions for duplicated agent ${newAgent.id}`,
+        );
+      } catch (permissionError) {
+        logger.error(
+          `[duplicateAgent] Failed to grant public permissions for duplicated agent ${newAgent.id}:`,
+          permissionError,
+        );
+      }
     }
 
     return res.status(201).json({

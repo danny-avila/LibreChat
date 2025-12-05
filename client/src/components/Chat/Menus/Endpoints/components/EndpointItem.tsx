@@ -206,6 +206,9 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
 }
 
 export function renderEndpoints(mappedEndpoints: Endpoint[]) {
+  // Endpoints are controlled by ENDPOINTS env variable in .env
+  // Example: ENDPOINTS=agents (shows only agents)
+  // Example: ENDPOINTS=openAI,google,anthropic,agents (shows multiple)
   return mappedEndpoints.map((endpoint) => (
     <EndpointItem endpoint={endpoint} key={`endpoint-${endpoint.value}-item`} />
   ));

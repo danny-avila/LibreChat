@@ -84,7 +84,9 @@ export default function useSideNavLinks({
       });
     }
 
+    // Agent Builder - controlled by interface.agents in librechat.yaml
     if (
+      interfaceConfig.agents !== false &&
       endpointsConfig?.[EModelEndpoint.agents] &&
       hasAccessToAgents &&
       hasAccessToCreateAgents &&
@@ -99,7 +101,8 @@ export default function useSideNavLinks({
       });
     }
 
-    if (hasAccessToPrompts) {
+    // Prompts - controlled by interface.prompts in librechat.yaml
+    if (interfaceConfig.prompts !== false && hasAccessToPrompts) {
       links.push({
         title: 'com_ui_prompts',
         label: '',
@@ -182,6 +185,8 @@ export default function useSideNavLinks({
   }, [
     endpointsConfig,
     interfaceConfig.parameters,
+    interfaceConfig.agents,
+    interfaceConfig.prompts,
     keyProvided,
     endpointType,
     endpoint,

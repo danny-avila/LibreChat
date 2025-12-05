@@ -1,34 +1,34 @@
-services:
-  api:
-    networks:
-      - default
-      - npm-network
+# services:
+#   api:
+#     networks:
+#       - default
+#       - npm-network
 
-  client:
-    # disable host ports completely so NPM can proxy instead
-    ports: []
-    networks:
-      - default
-      - npm-network
+#   client:
+#     # disable host ports completely so NPM can proxy instead
+#     ports: []
+#     networks:
+#       - default
+#       - npm-network
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    restart: unless-stopped
-    networks:
-      - default
-    volumes:
-      - ollama:/root/.ollama
-    deploy:
-      resources:
-        limits:
-          memory: 2g
-        reservations:
-          memory: 512m
+#   ollama:
+#     image: ollama/ollama:latest
+#     container_name: ollama
+#     restart: unless-stopped
+#     networks:
+#       - default
+#     volumes:
+#       - ollama:/root/.ollama
+#     deploy:
+#       resources:
+#         limits:
+#           memory: 2g
+#         reservations:
+#           memory: 512m
 
-networks:
-  npm-network:
-    external: true
+# networks:
+#   npm-network:
+#     external: true
 
-volumes:
-  ollama:
+# volumes:
+#   ollama:
