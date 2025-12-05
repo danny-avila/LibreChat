@@ -239,7 +239,7 @@ export default function MemoryViewer() {
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden">
+    <div className="flex h-full w-full flex-col">
       <div role="region" aria-label={localize('com_ui_memories')} className="mt-2 space-y-2">
         <div className="relative">
           <Input

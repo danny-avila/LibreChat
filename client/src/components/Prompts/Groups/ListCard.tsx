@@ -50,7 +50,7 @@ export default function ListCard({
       </div>
       <div
         id={`card-snippet-${name}`}
-        className="ellipsis max-w-full select-none text-balance text-sm text-text-secondary"
+        className="ellipsis max-w-full select-none text-balance pt-1 text-sm text-text-secondary"
       >
         {snippet}
       </div>

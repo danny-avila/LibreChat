@@ -55,7 +55,7 @@ function ChatGroupItem({
 
   return (
     <>
-      <div className="relative my-2 items-stretch justify-between rounded-xl border border-border-light shadow-sm transition-all duration-300 ease-in-out hover:bg-surface-tertiary hover:shadow-lg">
+      <div className="relative my-2 items-stretch justify-between rounded-xl border border-border-light px-1 shadow-sm transition-all duration-300 ease-in-out hover:bg-surface-tertiary hover:shadow-lg">
         <ListCard
           name={group.name}
           category={group.category ?? ''}
@@ -65,13 +65,15 @@ function ChatGroupItem({
               ? group.oneliner
               : (group.productionPrompt?.prompt ?? '')
           }
-        >
-          <div className="flex flex-row items-center gap-2">
-            {groupIsGlobal === true && (
-              <EarthIcon className="icon-md text-green-400" aria-label="Global prompt group" />
-            )}
+        ></ListCard>
+        {groupIsGlobal === true && (
+          <div className="absolute right-14 top-[16px]">
+            <EarthIcon
+              className="icon-md text-green-400"
+              aria-label={localize('com_ui_sr_global_prompt')}
+            />
           </div>
-        </ListCard>
+        )}
         <div className="absolute right-0 top-0 mr-1 mt-2.5 items-start pl-2">
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
@@ -79,7 +81,7 @@ function ChatGroupItem({
                 ref={triggerButtonRef}
                 id={`prompt-actions-${group._id}`}
                 type="button"
-                aria-label={localize('com_ui_sr_actions_menu', { name: group.name })}
+                aria-label={localize('com_ui_sr_actions_menu', { 0: group.name })}
                 onClick={(e) => {
                   e.stopPropagation();
                 }}

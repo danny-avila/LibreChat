@@ -22,7 +22,7 @@ export default function MCPBuilderPanel() {
   const configDialogProps = getConfigDialogProps();
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden">
+    <div className="flex h-full w-full flex-col overflow-visible">
       <div role="region" aria-label="MCP Builder" className="mt-2 space-y-2">
         {/* Admin Settings Button */}
         <MCPAdminSettings />
