@@ -1,10 +1,19 @@
-version: 1.2.8
+version: 1.3.1
 #cache: true
 
+# Automatic Memory - AI remembers important info across chats
+
+
 interface:
-  modelSelect: true
+  modelSelect: false
+  agents: true                    # Keep agents enabled (needed for chat/memory)
+  prompts: false                  # Hide Prompts
+  memories: true                  # Show Memories in sidebar
+  endpointsMenu: false            # Hide endpoints menu
 
 endpoints:
+  agents:
+    disableBuilder: true          # Hide Agent Builder UI but keep agents functional
   custom:
     - name: "Vicktoria"
       type: "custom"
@@ -24,13 +33,32 @@ endpoints:
         stream: false  # enable (true) later once debugged
 
       models:
-        default: ["Vicktoria"]
+        default: ["google/gemma-3-27b-it"]
         fetch: true
 
       titleConvo: true
       titleModel: "current_model"
       titleMessageRole: "user"
+      
       summarize: false
       summaryModel: "current_model"
       modelDisplayLabel: "Vicktoria"
+
+
+# Memory configuration
+memory:
+  disabled: false
+  personalize: true
+  tokenLimit: 3000
+  messageWindowSize: 5
+  validKeys:
+    - "user_preferences"
+    - "conversation_context"
+    - "learned_facts"
+    - "personal_information"
+  agent:
+    provider: "Vicktoria"
+    model: "google/gemma-3-27b-it"
+    instructions: ${MEMORY_AGENT_INSTRUCTIONS}
+
 
