@@ -309,6 +309,12 @@ const fetchAnthropicModels = async (opts, _models = []) => {
 
 const getAnthropicModels = async (opts = {}) => {
   let models = defaultModels[EModelEndpoint.anthropic];
+
+  // Vertex AI models from YAML config take priority
+  if (opts.vertexModels && opts.vertexModels.length > 0) {
+    return opts.vertexModels;
+  }
+
   if (process.env.ANTHROPIC_MODELS) {
     models = splitAndTrim(process.env.ANTHROPIC_MODELS);
     return models;

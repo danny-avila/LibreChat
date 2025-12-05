@@ -209,9 +209,7 @@ class AgentClient extends BaseClient {
     return this.contentParts;
   }
 
-  setOptions(options) {
-    logger.info('[api/server/controllers/agents/client.js] setOptions', options);
-  }
+  setOptions(_options) {}
 
   /**
    * `AgentClient` is not opinionated about vision requests, so we don't do anything here
@@ -702,10 +700,16 @@ class AgentClient extends BaseClient {
     if (!collectedUsage || !collectedUsage.length) {
       return;
     }
+    // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
+    const firstUsage = collectedUsage[0];
     const input_tokens =
-      (collectedUsage[0]?.input_tokens || 0) +
-      (Number(collectedUsage[0]?.input_token_details?.cache_creation) || 0) +
-      (Number(collectedUsage[0]?.input_token_details?.cache_read) || 0);
+      (firstUsage?.input_tokens || 0) +
+      (Number(firstUsage?.input_token_details?.cache_creation) ||
+        Number(firstUsage?.cache_creation_input_tokens) ||
+        0) +
+      (Number(firstUsage?.input_token_details?.cache_read) ||
+        Number(firstUsage?.cache_read_input_tokens) ||
+        0);
 
     let output_tokens = 0;
     let previousTokens = input_tokens; // Start with original input
@@ -715,8 +719,13 @@ class AgentClient extends BaseClient {
         continue;
       }
 
-      const cache_creation = Number(usage.input_token_details?.cache_creation) || 0;
-      const cache_read = Number(usage.input_token_details?.cache_read) || 0;
+      // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
+      const cache_creation =
+        Number(usage.input_token_details?.cache_creation) ||
+        Number(usage.cache_creation_input_tokens) ||
+        0;
+      const cache_read =
+        Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
 
       const txMetadata = {
         context,
