@@ -1283,6 +1283,7 @@
   "com_ui_special_variables_more_info": "You can select special variables from the dropdown: `{{current_date}}` (today's date and day of week), `{{current_datetime}}` (local date and time), `{{utc_iso_datetime}}` (UTC ISO datetime), and `{{current_user}}` (your account name).",
   "com_ui_speech_while_submitting": "Can't submit speech while a response is being generated",
   "com_ui_sr_actions_menu": "Open actions menu for \"{{0}}\" prompt",
+  "com_ui_sr_global_prompt": "Global prompt group",
   "com_ui_stack_trace": "Stack Trace",
   "com_ui_status_prefix": "Status:",
   "com_ui_stop": "Stop",

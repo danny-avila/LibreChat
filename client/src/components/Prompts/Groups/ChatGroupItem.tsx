@@ -68,7 +68,10 @@ function ChatGroupItem({
         ></ListCard>
         {groupIsGlobal === true && (
           <div className="absolute right-14 top-[16px]">
-            <EarthIcon className="icon-md text-green-400" aria-label="Global prompt group" />
+            <EarthIcon
+              className="icon-md text-green-400"
+              aria-label={localize('com_ui_sr_global_prompt')}
+            />
           </div>
         )}
         <div className="absolute right-0 top-0 mr-1 mt-2.5 items-start pl-2">
