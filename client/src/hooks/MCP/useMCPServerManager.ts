@@ -517,6 +517,19 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     [selectedToolForConfig, updateUserPluginsMutation, mcpValues, setMCPValues],
   );
 
+  /** Standalone revoke function for OAuth servers - doesn't require selectedToolForConfig */
+  const revokeOAuthForServer = useCallback(
+    (serverName: string) => {
+      const payload: TUpdateUserPlugins = {
+        pluginKey: `${Constants.mcp_prefix}${serverName}`,
+        action: 'uninstall',
+        auth: {},
+      };
+      updateUserPluginsMutation.mutate(payload);
+    },
+    [updateUserPluginsMutation],
+  );
+
   const handleSave = useCallback(
     (authData: Record<string, string>) => {
       if (selectedToolForConfig) {
@@ -678,6 +691,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     setSelectedToolForConfig,
     handleSave,
     handleRevoke,
+    revokeOAuthForServer,
     getServerStatusIconProps,
     getConfigDialogProps,
     checkEffectivePermission,

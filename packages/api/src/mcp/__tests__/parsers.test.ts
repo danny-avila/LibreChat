@@ -170,8 +170,6 @@ describe('formatToolContent', () => {
               uri: 'ui://carousel',
               mimeType: 'application/json',
               text: '{"items": []}',
-              name: 'carousel',
-              description: 'A carousel component',
             },
           },
         ],
@@ -184,8 +182,6 @@ describe('formatToolContent', () => {
           text:
             'Resource Text: {"items": []}\n' +
             'Resource URI: ui://carousel\n' +
-            'Resource: carousel\n' +
-            'Resource Description: A carousel component\n' +
             'Resource MIME Type: application/json',
         },
       ]);
@@ -196,8 +192,6 @@ describe('formatToolContent', () => {
               uri: 'ui://carousel',
               mimeType: 'application/json',
               text: '{"items": []}',
-              name: 'carousel',
-              description: 'A carousel component',
             },
           ],
         },
@@ -211,8 +205,6 @@ describe('formatToolContent', () => {
             type: 'resource',
             resource: {
               uri: 'file://document.pdf',
-              name: 'Document',
-              description: 'Important document',
               mimeType: 'application/pdf',
               text: 'Document content',
             },
@@ -227,8 +219,6 @@ describe('formatToolContent', () => {
           text:
             'Resource Text: Document content\n' +
             'Resource URI: file://document.pdf\n' +
-            'Resource: Document\n' +
-            'Resource Description: Important document\n' +
             'Resource MIME Type: application/pdf',
         },
       ]);
@@ -242,7 +232,6 @@ describe('formatToolContent', () => {
             type: 'resource',
             resource: {
               uri: 'https://example.com/resource',
-              name: 'Example Resource',
               text: '',
             },
           },
@@ -253,7 +242,7 @@ describe('formatToolContent', () => {
       expect(content).toEqual([
         {
           type: 'text',
-          text: 'Resource URI: https://example.com/resource\n' + 'Resource: Example Resource',
+          text: 'Resource URI: https://example.com/resource',
         },
       ]);
       expect(artifacts).toBeUndefined();
@@ -275,7 +264,6 @@ describe('formatToolContent', () => {
             type: 'resource',
             resource: {
               uri: 'file://data.csv',
-              name: 'Data file',
               text: '',
             },
           },
@@ -291,8 +279,7 @@ describe('formatToolContent', () => {
             'Resource Text: {"label": "Click me"}\n' +
             'Resource URI: ui://button\n' +
             'Resource MIME Type: application/json\n\n' +
-            'Resource URI: file://data.csv\n' +
-            'Resource: Data file',
+            'Resource URI: file://data.csv',
         },
       ]);
       expect(artifacts).toEqual({
@@ -397,8 +384,6 @@ describe('formatToolContent', () => {
             type: 'resource',
             resource: {
               uri: 'https://api.example.com/data',
-              name: 'API Data',
-              description: 'External data source',
               text: '',
             },
           },
@@ -417,9 +402,7 @@ describe('formatToolContent', () => {
             'Resource Text: {"type": "bar"}\n' +
             'Resource URI: ui://chart\n' +
             'Resource MIME Type: application/json\n\n' +
-            'Resource URI: https://api.example.com/data\n' +
-            'Resource: API Data\n' +
-            'Resource Description: External data source',
+            'Resource URI: https://api.example.com/data',
         },
         { type: 'text', text: 'Conclusion' },
       ]);
