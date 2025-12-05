@@ -86,7 +86,7 @@
     "@langchain/core": "^0.3.79",
     "@librechat/agents": "^3.0.36",
     "@librechat/data-schemas": "*",
-    "@modelcontextprotocol/sdk": "^1.21.0",
+    "@modelcontextprotocol/sdk": "^1.24.3",
     "axios": "^1.12.1",
     "connect-redis": "^8.1.0",
     "diff": "^7.0.0",
