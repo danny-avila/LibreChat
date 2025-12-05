@@ -140,9 +140,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
   /**
    * Gets user profile data
    */
-  async function getUserProfile(
-    userId: string | Types.ObjectId,
-  ): Promise<IUserProfileLean | null> {
+  async function getUserProfile(userId: string | Types.ObjectId): Promise<IUserProfileLean | null> {
     try {
       const UserProfile = mongoose.models.UserProfile;
       if (!UserProfile) {
@@ -221,7 +219,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
       }
 
       // Format legacy memories (exclude conversation_context as it's no longer used)
-      const filteredMemories = memories?.filter(m => m.key !== 'conversation_context') || [];
+      const filteredMemories = memories?.filter((m) => m.key !== 'conversation_context') || [];
       const sortedMemories = filteredMemories.sort(
         (a, b) => new Date(a.updated_at!).getTime() - new Date(b.updated_at!).getTime(),
       );
@@ -261,9 +259,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
       }
 
       if (legacyWithKeys) {
-        withKeys = withKeys
-          ? `${withKeys}\n\nNotes:\n${legacyWithKeys}`
-          : legacyWithKeys;
+        withKeys = withKeys ? `${withKeys}\n\nNotes:\n${legacyWithKeys}` : legacyWithKeys;
         withoutKeys = withoutKeys
           ? `${withoutKeys}\n\nNotes:\n${legacyWithoutKeys}`
           : legacyWithoutKeys;

@@ -160,9 +160,7 @@ const createAgentHandler = async (req, res) => {
           accessRoleId: AccessRoleIds.AGENT_VIEWER,
           grantedBy: userId,
         });
-        logger.debug(
-          `[createAgent] Granted public viewer permissions for agent ${agent.id}`,
-        );
+        logger.debug(`[createAgent] Granted public viewer permissions for agent ${agent.id}`);
       } catch (permissionError) {
         logger.error(
           `[createAgent] Failed to grant public permissions for agent ${agent.id}:`,

@@ -20,10 +20,7 @@ export function createProfileMethods(mongoose: typeof import('mongoose')) {
    * Updates a user's profile with new data (sparse merge)
    * Only updates fields that are provided, preserving existing data
    */
-  async function updateProfile({
-    userId,
-    updates,
-  }: UpdateProfileParams): Promise<ProfileResult> {
+  async function updateProfile({ userId, updates }: UpdateProfileParams): Promise<ProfileResult> {
     try {
       const UserProfile = mongoose.models.UserProfile;
 

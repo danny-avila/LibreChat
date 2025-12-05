@@ -40,7 +40,9 @@ async function processCustomMemory({
       endpointConfig,
     });
 
-    logger.info(`[Memory] LLM returned summary: ${updatedSummary ? updatedSummary.length + ' chars' : 'null'}`);
+    logger.info(
+      `[Memory] LLM returned summary: ${updatedSummary ? updatedSummary.length + ' chars' : 'null'}`,
+    );
 
     if (!updatedSummary) {
       logger.info('[Memory] No updated summary from LLM, skipping save');
@@ -56,7 +58,6 @@ async function processCustomMemory({
     });
 
     logger.info(`[Memory] Updated user summary (${updatedSummary.length} chars)`);
-
   } catch (error) {
     logger.error('[Memory] Error processing memory:', error.message);
   }
@@ -68,7 +69,7 @@ async function processCustomMemory({
 async function getExistingSummary(userId, memoryMethods) {
   try {
     const memories = await memoryMethods.getAllUserMemories(userId);
-    const summary = memories?.find(m => m.key === USER_SUMMARY_KEY);
+    const summary = memories?.find((m) => m.key === USER_SUMMARY_KEY);
     return summary?.value || '';
   } catch (error) {
     return '';
@@ -105,7 +106,7 @@ Based on the new conversation below, update this summary. Add any new facts lear
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model,
@@ -136,7 +137,6 @@ Based on the new conversation below, update this summary. Add any new facts lear
 
     // Limit summary length
     return content.slice(0, 1500);
-
   } catch (error) {
     logger.error('[Memory] LLM error:', error.message);
     return null;
@@ -155,7 +155,7 @@ async function getMemoryContext({ userId, memoryMethods }) {
     }
 
     // Get the main user summary
-    const summary = memories.find(m => m.key === USER_SUMMARY_KEY);
+    const summary = memories.find((m) => m.key === USER_SUMMARY_KEY);
 
     if (summary?.value) {
       return summary.value;
@@ -163,11 +163,10 @@ async function getMemoryContext({ userId, memoryMethods }) {
 
     // Fallback: combine any other memories
     const parts = memories
-      .filter(m => m.key !== 'conversation_context' && m.value)
-      .map(m => m.value);
+      .filter((m) => m.key !== 'conversation_context' && m.value)
+      .map((m) => m.value);
 
     return parts.join(' ');
-
   } catch (error) {
     logger.error('[Memory] Error getting context:', error.message);
     return '';

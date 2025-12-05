@@ -617,7 +617,9 @@ class AgentClient extends BaseClient {
           userId,
           memoryMethods: { getFormattedMemories, getAllUserMemories, getProfileForRAG },
         });
-        logger.info(`[useMemory] Memory context for user ${userId}: ${memoryContext ? memoryContext.length + ' chars' : 'none'}`);
+        logger.info(
+          `[useMemory] Memory context for user ${userId}: ${memoryContext ? memoryContext.length + ' chars' : 'none'}`,
+        );
         return memoryContext;
       } catch (error) {
         logger.error('[useMemory] Error getting memory context:', error);

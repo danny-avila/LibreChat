@@ -16,11 +16,7 @@ import { useLocalize } from '~/hooks';
 
 const defaultInterface = getConfigDefaults().interface;
 
-function ModelSelectorContent({
-  showDropdown,
-}: {
-  showDropdown: boolean;
-}) {
+function ModelSelectorContent({ showDropdown }: { showDropdown: boolean }) {
   const localize = useLocalize();
 
   const {
@@ -68,9 +64,8 @@ function ModelSelectorContent({
   // When modelSelect is false in librechat.yaml, show static display instead of dropdown
   if (!showDropdown) {
     // Show "RunPod Methodology" as default when nothing is selected
-    const displayValue = selectedDisplayValue === localize('com_ui_select_model')
-      ? 'Victoria'
-      : selectedDisplayValue;
+    const displayValue =
+      selectedDisplayValue === localize('com_ui_select_model') ? 'Victoria' : selectedDisplayValue;
 
     return (
       <div className="relative flex w-full max-w-md flex-col items-center gap-2">
@@ -152,7 +147,8 @@ function ModelSelectorContent({
 export default function ModelSelector({ startupConfig }: ModelSelectorProps) {
   // Read modelSelect toggle from librechat.yaml interface config
   // Default to true if not specified
-  const showDropdown = startupConfig?.interface?.modelSelect ?? defaultInterface.modelSelect ?? true;
+  const showDropdown =
+    startupConfig?.interface?.modelSelect ?? defaultInterface.modelSelect ?? true;
 
   return (
     <ModelSelectorChatProvider>

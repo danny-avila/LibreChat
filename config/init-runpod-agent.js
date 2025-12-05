@@ -15,7 +15,7 @@ const crypto = require('crypto');
 moduleAlias.addAlias('~', path.resolve(__dirname, '..', 'api'));
 
 const { connectDb } = require('~/db');
-const { Agent } =require('~/db/models');
+const { Agent } = require('~/db/models');
 const { createAgent, updateAgent, getAgent } = require('~/models/Agent');
 const { grantPermission } = require('~/server/services/PermissionService');
 const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
@@ -31,7 +31,9 @@ const {
   RAG_API_URL = process.env.RAG_API_URL || 'http://localhost:8000',
   API_BASE = 'http://localhost:3080',
   ADMIN_JWT,
-  ADMIN_USER_ID = process.env.ADMIN_USER_ID || process.env.PRESET_USER_ID || process.env.DEFAULT_AGENT_OWNER,
+  ADMIN_USER_ID = process.env.ADMIN_USER_ID ||
+    process.env.PRESET_USER_ID ||
+    process.env.DEFAULT_AGENT_OWNER,
   RAG_UPLOAD_TIMEOUT_MS,
 } = process.env;
 
@@ -100,7 +102,10 @@ async function ensureAgent(fileIds) {
 
   const existing = await getAgent({ id: RUNPOD_AGENT_ID });
   if (existing) {
-    await updateAgent({ id: RUNPOD_AGENT_ID }, baseAgent, { forceVersion: true, skipVersioning: true });
+    await updateAgent({ id: RUNPOD_AGENT_ID }, baseAgent, {
+      forceVersion: true,
+      skipVersioning: true,
+    });
     console.log(`✓ Updated agent ${RUNPOD_AGENT_ID}`);
   } else {
     await createAgent(baseAgent);
@@ -139,7 +144,8 @@ async function ensureAgent(fileIds) {
 function generateFileId(filePath) {
   const content = fs.readFileSync(filePath);
   const hash = crypto.createHash('md5').update(content).digest('hex');
-  const basename = path.basename(filePath, path.extname(filePath))
+  const basename = path
+    .basename(filePath, path.extname(filePath))
     .replace(/[^a-zA-Z0-9-_]/g, '_')
     .substring(0, 50);
   return `${basename}_${hash.substring(0, 8)}`;
@@ -157,7 +163,7 @@ async function testRagConnection() {
 async function uploadFile(filePath) {
   const fileId = generateFileId(filePath);
   const form = new FormData();
-  
+
   form.append('file', fs.createReadStream(filePath), {
     filename: path.basename(filePath),
     contentType: getContentType(filePath),
@@ -169,7 +175,7 @@ async function uploadFile(filePath) {
     // Use the RAG_API_URL directly for the FastAPI service
     const url = `${RAG_API_URL}/embed`;
     console.log(`  Uploading to: ${url}`);
-    
+
     const res = await axios.post(url, form, {
       headers: {
         Authorization: `Bearer ${getAdminToken()}`,
@@ -189,19 +195,21 @@ async function uploadFile(filePath) {
       console.log(`  Response data:`, JSON.stringify(res.data, null, 2));
       throw new Error(`Upload succeeded but no file_id returned`);
     }
-    
+
     return returnedFileId;
   } catch (err) {
     if (err.response) {
       console.error(`  ✗ Upload failed`);
       console.error(`  Status: ${err.response.status}`);
       console.error(`  Data:`, err.response.data);
-      
+
       // Check if we got HTML instead of JSON (wrong endpoint)
       if (typeof err.response.data === 'string' && err.response.data.includes('<!DOCTYPE html>')) {
-        throw new Error('Received HTML instead of JSON - check RAG_API_URL is pointing to FastAPI service, not React frontend');
+        throw new Error(
+          'Received HTML instead of JSON - check RAG_API_URL is pointing to FastAPI service, not React frontend',
+        );
       }
-      
+
       throw new Error(`Upload failed: ${err.response.data?.detail || err.response.statusText}`);
     } else if (err.code === 'ECONNREFUSED') {
       throw new Error(`Cannot connect to RAG service at ${RAG_API_URL} - is it running?`);
@@ -227,7 +235,7 @@ function getContentType(filePath) {
 
 async function main() {
   console.log('\n🚀 Starting Victoria Agent Seed\n');
-  
+
   await connectDb();
   console.log('✓ Connected to MongoDB\n');
 
@@ -269,7 +277,7 @@ async function main() {
 
   const entries = walkFiles(folder);
   console.log(`Found ${entries.length} files to upload\n`);
-  
+
   const fileIds = [];
   let successCount = 0;
   let skipCount = 0;
@@ -279,14 +287,14 @@ async function main() {
     const { full, stat } = entries[i];
     const basename = path.basename(full);
     console.log(`[${i + 1}/${entries.length}] ${basename}`);
-    
+
     const sizeMb = stat.size / (1024 * 1024);
     if (sizeMb > 25) {
       console.warn(`  ⚠ Skipping - file size ${sizeMb.toFixed(2)} MB exceeds 25 MB limit\n`);
       skipCount++;
       continue;
     }
-    
+
     try {
       const fileId = await uploadFile(full);
       fileIds.push(fileId);
@@ -306,7 +314,7 @@ async function main() {
 
   await ensureAgent(fileIds);
   console.log(`\n✓ Agent ${RUNPOD_AGENT_ID} configured with ${fileIds.length} files\n`);
-  
+
   process.exit(0);
 }
 
