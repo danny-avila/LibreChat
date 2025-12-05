@@ -66,6 +66,24 @@ async function loadCustomConfig(printConfig = true) {
     }
   }
 
+  // Merge custom config overrides if CONFIG_OVERRIDE_PATH is set
+  const configOverridePath = process.env.CONFIG_OVERRIDE_PATH;
+  if (configOverridePath) {
+    const fs = require('fs');
+    const overridePath = path.isAbsolute(configOverridePath)
+      ? configOverridePath
+      : path.resolve(projectRoot, configOverridePath);
+
+    if (fs.existsSync(overridePath)) {
+      const overrideConfig = loadYaml(overridePath);
+      if (overrideConfig && !overrideConfig.reason && !overrideConfig.stack) {
+        const { mergeLibrechatConfig } = require('../../utils/mergeLibrechatConfig');
+        customConfig = mergeLibrechatConfig(customConfig, overrideConfig);
+        logger.info(`Custom config merged from ${configOverridePath}`);
+      }
+    }
+  }
+
   const result = configSchema.strict().safeParse(customConfig);
   if (result?.error?.errors?.some((err) => err?.path && err.path?.includes('imageOutputType'))) {
     throw new Error(
