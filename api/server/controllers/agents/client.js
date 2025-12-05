@@ -11,7 +11,6 @@ const {
   resolveHeaders,
   createSafeUser,
   getBalanceConfig,
-  memoryInstructions,
   getTransactionsConfig,
   createMemoryProcessor,
   filterMalformedContentParts,
@@ -37,10 +36,22 @@ const {
   AgentCapabilities,
   bedrockInputSchema,
   removeNullishValues,
+  extractEnvVariable,
 } = require('librechat-data-provider');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
+const {
+  getFormattedMemories,
+  getAllUserMemories,
+  deleteMemory,
+  setMemory,
+  updateProfile,
+  getProfileForRAG,
+} = require('~/models');
+const {
+  processCustomMemory,
+  getMemoryContext,
+} = require('~/server/services/Memory/customMemoryProcessor');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
 const { createContextHandlers } = require('~/app/clients/prompts');
@@ -326,8 +337,38 @@ class AgentClient extends BaseClient {
       this.options.attachments = files;
     }
 
-    /** Note: Bedrock uses legacy RAG API handling */
-    if (this.message_file_map && !isAgentsEndpoint(this.options.endpoint)) {
+    // Auto-inject agent methodology files from tool_resources for RAG
+    if (
+      isAgentsEndpoint(this.options.endpoint) &&
+      this.options.agent?.tool_resources?.file_search?.file_ids &&
+      this.options.agent.tool_resources.file_search.file_ids.length > 0
+    ) {
+      const latestMessage = orderedMessages[orderedMessages.length - 1];
+      const fileIds = this.options.agent.tool_resources.file_search.file_ids;
+
+      // Create virtual file attachments for RAG context retrieval
+      const ragFiles = fileIds.map((fileId) => ({
+        file_id: fileId,
+        embedded: true,
+        type: 'text/plain',
+        filename: `methodology-${fileId}`,
+      }));
+
+      if (this.message_file_map) {
+        this.message_file_map[latestMessage.messageId] = ragFiles;
+      } else {
+        this.message_file_map = {
+          [latestMessage.messageId]: ragFiles,
+        };
+      }
+
+      logger.debug(
+        `[AgentClient] Auto-injected ${fileIds.length} methodology file(s) for RAG context`,
+      );
+    }
+
+    /** Note: Bedrock uses legacy RAG API handling, agents now also use RAG */
+    if (this.message_file_map) {
       this.contextHandlers = createContextHandlers(
         this.options.req,
         orderedMessages[orderedMessages.length - 1].text,
@@ -451,11 +492,33 @@ class AgentClient extends BaseClient {
 
     const withoutKeys = await this.useMemory();
     if (withoutKeys) {
-      systemContent += `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
+      systemContent += `\n\n[memory: ${withoutKeys}]\n\nCaution: Only use above memory if strictly needed by user's query.`;
+      logger.info(`[buildMessages] Added memory to system content (${withoutKeys.length} chars)`);
     }
 
     if (systemContent) {
       this.options.agent.instructions = systemContent;
+      // Log final prompt going to Vicktoria
+      // try {
+      //   logger.info(`[buildMessages] ====== FINAL PROMPT TO VICKTORIA ======`);
+      //   logger.info(`[buildMessages] System Instructions:\n${systemContent}`);
+      //   logger.info(`[buildMessages] Messages count: ${messages?.length || 0}`);
+      //   if (messages?.length) {
+      //     messages.forEach((m, i) => {
+      //       let content = '';
+      //       if (typeof m.content === 'string') {
+      //         content = m.content;
+      //       } else if (m.content) {
+      //         content = JSON.stringify(m.content);
+      //       }
+      //       const preview = content ? content.substring(0, 200) : '(empty)';
+      //       logger.info(`[buildMessages] Message[${i}] (${m.role}): ${preview}${content.length > 200 ? '...' : ''}`);
+      //     });
+      //   }
+      //   logger.info(`[buildMessages] ====== END FINAL PROMPT ======`);
+      // } catch (logErr) {
+      //   logger.error(`[buildMessages] Error logging prompt: ${logErr.message}`);
+      // }
     }
 
     return result;
@@ -516,6 +579,55 @@ class AgentClient extends BaseClient {
       return;
     }
 
+    const userId = this.options.req.user.id + '';
+
+    // Check if using custom endpoint (Vicktoria) - use custom memory processor
+    const isCustomProvider = memoryConfig.agent?.provider === 'Vicktoria';
+
+    if (isCustomProvider) {
+      // Get custom endpoint config
+      const customEndpoints = appConfig.endpoints?.custom || [];
+      const vicktoriaConfig = customEndpoints.find((e) => e.name === 'Vicktoria');
+
+      if (!vicktoriaConfig) {
+        logger.warn('[useMemory] Vicktoria endpoint config not found');
+        return;
+      }
+
+      // Resolve environment variables in the config
+      const resolvedConfig = {
+        ...vicktoriaConfig,
+        baseURL: extractEnvVariable(vicktoriaConfig.baseURL),
+        apiKey: extractEnvVariable(vicktoriaConfig.apiKey),
+      };
+
+      logger.info(`[useMemory] Resolved baseURL: ${resolvedConfig.baseURL}`);
+
+      // Store config for later use in runMemory
+      this.customMemoryConfig = {
+        memoryConfig,
+        endpointConfig: resolvedConfig,
+        userId,
+      };
+      logger.info(`[useMemory] Set customMemoryConfig for user ${userId}`);
+
+      // Get existing memories to inject into context
+      try {
+        const memoryContext = await getMemoryContext({
+          userId,
+          memoryMethods: { getFormattedMemories, getAllUserMemories, getProfileForRAG },
+        });
+        logger.info(
+          `[useMemory] Memory context for user ${userId}: ${memoryContext ? memoryContext.length + ' chars' : 'none'}`,
+        );
+        return memoryContext;
+      } catch (error) {
+        logger.error('[useMemory] Error getting memory context:', error);
+        return;
+      }
+    }
+
+    // Default behavior for standard providers (OpenAI, Anthropic, etc.)
     /** @type {Agent} */
     let prelimAgent;
     const allowedProviders = new Set(
@@ -579,7 +691,6 @@ class AgentClient extends BaseClient {
       tokenLimit: memoryConfig.tokenLimit,
     };
 
-    const userId = this.options.req.user.id + '';
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
     const [withoutKeys, processMemory] = await createMemoryProcessor({
@@ -638,9 +749,9 @@ class AgentClient extends BaseClient {
    */
   async runMemory(messages) {
     try {
-      if (this.processMemory == null) {
-        return;
-      }
+      logger.info(`[runMemory] Called with ${messages?.length || 0} messages`);
+      logger.info(`[runMemory] customMemoryConfig set: ${!!this.customMemoryConfig}`);
+
       const appConfig = this.options.req.config;
       const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
@@ -662,6 +773,31 @@ class AgentClient extends BaseClient {
 
       const filteredMessages = messagesToProcess.map((msg) => this.filterImageUrls(msg));
       const bufferString = getBufferString(filteredMessages);
+
+      // Use custom memory processor for Vicktoria
+      if (this.customMemoryConfig) {
+        logger.debug('[runMemory] Processing with custom Vicktoria memory processor');
+        await processCustomMemory({
+          userId: this.customMemoryConfig.userId,
+          conversationText: bufferString,
+          memoryConfig: this.customMemoryConfig.memoryConfig,
+          endpointConfig: this.customMemoryConfig.endpointConfig,
+          memoryMethods: {
+            setMemory,
+            deleteMemory,
+            getFormattedMemories,
+            getAllUserMemories,
+            updateProfile,
+            getProfileForRAG,
+          },
+        });
+        return;
+      }
+
+      // Default memory processing for standard providers
+      if (this.processMemory == null) {
+        return;
+      }
       const bufferMessage = new HumanMessage(`# Current Chat:\n\n${bufferString}`);
       return await this.processMemory([bufferMessage]);
     } catch (error) {

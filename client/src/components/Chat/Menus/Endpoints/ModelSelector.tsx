@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { getConfigDefaults } from 'librechat-data-provider';
 import type { ModelSelectorProps } from '~/common';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
 import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
@@ -13,7 +14,9 @@ import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
 import { useLocalize } from '~/hooks';
 
-function ModelSelectorContent() {
+const defaultInterface = getConfigDefaults().interface;
+
+function ModelSelectorContent({ showDropdown }: { showDropdown: boolean }) {
   const localize = useLocalize();
 
   const {
@@ -58,6 +61,37 @@ function ModelSelectorContent() {
     [localize, agentsMap, modelSpecs, selectedValues, mappedEndpoints],
   );
 
+  // When modelSelect is false in librechat.yaml, show static display instead of dropdown
+  if (!showDropdown) {
+    // Show "RunPod Methodology" as default when nothing is selected
+    const displayValue =
+      selectedDisplayValue === localize('com_ui_select_model') ? 'Victoria' : selectedDisplayValue;
+
+    return (
+      <div className="relative flex w-full max-w-md flex-col items-center gap-2">
+        {/* Static display - no dropdown (controlled by interface.modelSelect in librechat.yaml) */}
+        <div
+          className="my-1 flex h-10 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary"
+          aria-label={localize('com_ui_select_model')}
+        >
+          {selectedIcon && React.isValidElement(selectedIcon) && (
+            <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
+              {selectedIcon}
+            </div>
+          )}
+          <span className="flex-grow truncate text-left">{displayValue}</span>
+        </div>
+        <DialogManager
+          keyDialogOpen={keyDialogOpen}
+          onOpenChange={onOpenChange}
+          endpointsConfig={endpointsConfig || {}}
+          keyDialogEndpoint={keyDialogEndpoint || undefined}
+        />
+      </div>
+    );
+  }
+
+  // Show full dropdown when modelSelect is true
   const trigger = (
     <button
       className="my-1 flex h-10 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary hover:bg-surface-tertiary"
@@ -91,14 +125,11 @@ function ModelSelectorContent() {
           renderSearchResults(searchResults, localize, searchValue)
         ) : (
           <>
-            {/* Render ungrouped modelSpecs (no group field) */}
             {renderModelSpecs(
               modelSpecs?.filter((spec) => !spec.group) || [],
               selectedValues.modelSpec || '',
             )}
-            {/* Render endpoints (will include grouped specs matching endpoint names) */}
             {renderEndpoints(mappedEndpoints ?? [])}
-            {/* Render custom groups (specs with group field not matching any endpoint) */}
             {renderCustomGroups(modelSpecs || [], mappedEndpoints ?? [])}
           </>
         )}
@@ -114,10 +145,15 @@ function ModelSelectorContent() {
 }
 
 export default function ModelSelector({ startupConfig }: ModelSelectorProps) {
+  // Read modelSelect toggle from librechat.yaml interface config
+  // Default to true if not specified
+  const showDropdown =
+    startupConfig?.interface?.modelSelect ?? defaultInterface.modelSelect ?? true;
+
   return (
     <ModelSelectorChatProvider>
       <ModelSelectorProvider startupConfig={startupConfig}>
-        <ModelSelectorContent />
+        <ModelSelectorContent showDropdown={showDropdown} />
       </ModelSelectorProvider>
     </ModelSelectorChatProvider>
   );

@@ -44,7 +44,7 @@ WORKDIR /app/packages/api
 COPY packages/api ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 COPY --from=data-schemas-build /app/packages/data-schemas/dist /app/packages/data-schemas/dist
-RUN npm run build
+RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
 # Build `client` package
 FROM base AS client-package-build
