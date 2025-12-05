@@ -120,7 +120,7 @@ function ImportConversations() {
         {isUploading ? (
           <Spinner className="mr-1 w-4" />
         ) : (
-          <Import className="mr-1 flex h-4 w-4 items-center stroke-1" />
+          <Import className="mr-1 flex h-4 w-4 items-center stroke-1" aria-hidden="true" />
         )}
         <span>{localize('com_ui_import')}</span>
       </Button>

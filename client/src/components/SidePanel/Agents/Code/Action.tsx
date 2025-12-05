@@ -87,7 +87,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
                 onClick={() => setIsDialogOpen(true)}
                 aria-label={localize('com_ui_add_api_key')}
               >
-                <KeyRoundIcon className="h-5 w-5 text-text-primary" />
+                <KeyRoundIcon className="h-5 w-5 text-text-primary" aria-hidden="true" />
               </button>
             )}
             <HoverCardTrigger>

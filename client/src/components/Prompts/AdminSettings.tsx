@@ -208,7 +208,7 @@ const AdminSettings = () => {
                             className="inline-flex items-center text-blue-500 underline"
                           >
                             {localize('com_ui_more_info')}
-                            <ExternalLink size={16} className="ml-1" />
+                            <ExternalLink size={16} className="ml-1" aria-hidden="true" />
                           </a>
                         </div>
                       </>

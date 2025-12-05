@@ -38,7 +38,7 @@ const TagPrimitiveRoot = React.forwardRef<HTMLDivElement, TagProps>(
               className="rounded-full bg-green-600/50"
               aria-label={`Remove ${label}`}
             >
-              <X className="m-[1.5px] p-1" />
+              <X className="m-[1.5px] p-1" aria-hidden="true" />
             </button>
           )}
     </div>

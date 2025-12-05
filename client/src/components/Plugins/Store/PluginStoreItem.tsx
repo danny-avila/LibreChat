@@ -45,7 +45,10 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
               >
                 <div className="flex w-full items-center justify-center gap-2">
                   {localize('com_nav_plugin_install')}
-                  <DownloadCloud className="flex h-4 w-4 items-center stroke-2" />
+                  <DownloadCloud
+                    className="flex h-4 w-4 items-center stroke-2"
+                    aria-hidden="true"
+                  />
                 </div>
               </button>
             ) : (
@@ -56,7 +59,7 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
               >
                 <div className="flex w-full items-center justify-center gap-2">
                   {localize('com_nav_plugin_uninstall')}
-                  <XCircle className="flex h-4 w-4 items-center stroke-2" />
+                  <XCircle className="flex h-4 w-4 items-center stroke-2" aria-hidden="true" />
                 </div>
               </button>
             )}

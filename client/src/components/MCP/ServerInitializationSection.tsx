@@ -85,7 +85,7 @@ export default function ServerInitializationSection({
   const icon = isServerInitializing ? (
     <Spinner className="h-4 w-4" />
   ) : (
-    <RefreshCw className="h-4 w-4" />
+    <RefreshCw className="h-4 w-4" aria-hidden="true" />
   );
 
   return (

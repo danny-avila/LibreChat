@@ -18,6 +18,7 @@ export default function CustomMinimalIcon({
       strokeLinecap="round"
       strokeLinejoin="round"
       className={cn('lucide lucide-bot', className)}
+      aria-hidden="true"
     >
       <path d="M12 8V4H8" />
       <rect width="16" height="12" x="4" y="8" rx="2" />

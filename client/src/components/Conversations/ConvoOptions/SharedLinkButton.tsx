@@ -139,7 +139,7 @@ export default function SharedLinkButton({
                   {isUpdateLoading ? (
                     <Spinner className="size-4" />
                   ) : (
-                    <RotateCw className="size-4" />
+                    <RotateCw className="size-4" aria-hidden="true" />
                   )}
                 </Button>
               )}
@@ -154,7 +154,7 @@ export default function SharedLinkButton({
                   variant="outline"
                   aria-label={qrCodeLabel}
                 >
-                  <QrCode className="size-4" />
+                  <QrCode className="size-4" aria-hidden="true" />
                 </Button>
               )}
             />
@@ -168,7 +168,7 @@ export default function SharedLinkButton({
                   variant="destructive"
                   aria-label={localize('com_ui_delete')}
                 >
-                  <Trash2 className="size-4" />
+                  <Trash2 className="size-4" aria-hidden="true" />
                 </Button>
               )}
             />

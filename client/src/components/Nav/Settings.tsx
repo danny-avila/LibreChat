@@ -80,17 +80,17 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
     },
     {
       value: SettingsTabValues.CHAT,
-      icon: <MessageSquare className="icon-sm" />,
+      icon: <MessageSquare className="icon-sm" aria-hidden="true" />,
       label: 'com_nav_setting_chat',
     },
     {
       value: SettingsTabValues.COMMANDS,
-      icon: <Command className="icon-sm" />,
+      icon: <Command className="icon-sm" aria-hidden="true" />,
       label: 'com_nav_commands',
     },
     {
       value: SettingsTabValues.SPEECH,
-      icon: <SpeechIcon className="icon-sm" />,
+      icon: <SpeechIcon className="icon-sm" aria-hidden="true" />,
       label: 'com_nav_setting_speech',
     },
     ...(hasAnyPersonalizationFeature

@@ -234,7 +234,7 @@ export default function ArchivedChatsTable({
                     {unarchiveMutation.isLoading ? (
                       <Spinner />
                     ) : (
-                      <ArchiveRestore className="size-4" />
+                      <ArchiveRestore className="size-4" aria-hidden="true" />
                     )}
                   </Button>
                 }
@@ -251,7 +251,7 @@ export default function ArchivedChatsTable({
                     }}
                     title={localize('com_ui_delete')}
                   >
-                    <TrashIcon className="size-4" />
+                    <TrashIcon className="size-4" aria-hidden="true" />
                   </Button>
                 }
               />

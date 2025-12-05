@@ -102,7 +102,11 @@ export default function ShareButton({
                     }}
                     className={cn('shrink-0', isCopying ? 'cursor-default' : '')}
                   >
-                    {isCopying ? <CopyCheck className="size-4" /> : <Copy className="size-4" />}
+                    {isCopying ? (
+                      <CopyCheck className="size-4" aria-hidden="true" />
+                    ) : (
+                      <Copy className="size-4" aria-hidden="true" />
+                    )}
                   </Button>
                 </div>
               )}
