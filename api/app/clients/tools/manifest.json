@@ -179,5 +179,19 @@
         "description": "Provide your Flux API key from your user profile."
       }
     ]
+  },
+  {
+    "name": "Gemini Image Tools",
+    "pluginKey": "gemini_image_gen",
+    "toolkit": true,
+    "description": "Generate high-quality images using Google's Gemini Image Models (supports gemini-2.0-flash-exp, gemini-3-pro-image-preview)",
+    "icon": "assets/gemini_image_gen.svg",
+    "authConfig": [
+      {
+        "authField": "GEMINI_API_KEY",
+        "label": "Gemini API Key",
+        "description": "Your Google Gemini API Key. Get one at <a href='https://aistudio.google.com/app/apikey' target='_blank'>Google AI Studio</a>"
+      }
+    ]
   }
 ]
