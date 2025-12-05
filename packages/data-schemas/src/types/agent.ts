@@ -6,6 +6,32 @@ export interface ISupportContact {
   email?: string;
 }
 
+/**
+ * Fallback model configuration for agents.
+ * Allows specifying alternative model/provider to use when the primary model fails (rate limits, timeouts, etc).
+ */
+export interface IFallbackModelConfig {
+  /** The fallback provider to use */
+  provider?: string;
+  /** The fallback model to use */
+  model?: string;
+  /** Model parameters for the fallback model */
+  model_parameters?: Record<string, unknown>;
+}
+
+/**
+ * Multimodal model configuration for agents.
+ * Allows specifying alternative model/provider to use when images, videos or audio are present in the conversation.
+ */
+export interface IMultimodalModelConfig {
+  /** The multimodal provider to use */
+  provider?: string;
+  /** The multimodal model to use */
+  model?: string;
+  /** Model parameters for the multimodal model */
+  model_parameters?: Record<string, unknown>;
+}
+
 export interface IAgent extends Omit<Document, 'model'> {
   id: string;
   name?: string;
@@ -18,6 +44,10 @@ export interface IAgent extends Omit<Document, 'model'> {
   provider: string;
   model: string;
   model_parameters?: Record<string, unknown>;
+  /** Fallback model configuration for rate limiting or errors */
+  fallback_config?: IFallbackModelConfig;
+  /** Multimodal model configuration for image, video or audio handling */
+  multimodal_config?: IMultimodalModelConfig;
   artifacts?: string;
   access_level?: number;
   recursion_limit?: number;
