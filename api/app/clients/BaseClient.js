@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
 const {
+  countTokens,
   getBalanceConfig,
   extractFileContext,
   encodeAndFormatAudios,
@@ -23,7 +24,6 @@ const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
-const countTokens = require('~/server/utils/countTokens');
 const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
 
