@@ -188,6 +188,39 @@ Keep up with the latest updates by visiting the releases page and notes:
 
 ---
 
+## 🔐 Azure Blob Storage: Private Containers
+
+LibreChat now supports keeping Azure Blob containers private while enabling upload, read, and delete operations.
+
+- New environment variable: `AZURE_SAS_TOKEN`
+  - Set to your SAS token string for signed URLs.
+  - Default: `none` (no SAS token; public access or account connection string only).
+- `AZURE_STORAGE_CONNECTION_STRING`
+  - You can provide a Connection String that includes SAS; this works for create/read/delete.
+
+Behavior notes:
+- When `AZURE_SAS_TOKEN !== 'none'`, deletion strips the SAS query from the blob URL to derive the correct blob path.
+- When `AZURE_SAS_TOKEN === 'none'`, behavior remains unchanged.
+
+Useful container locations (inside image):
+- `/app/uploads` – file upload volume
+- `/app/api/logs` – server logs
+- `/app/client/public/images` – static images
+
+Exposed ports:
+- `3080/tcp` – Node API server (`HOST=0.0.0.0`)
+
+Container parameters:
+- `HOST` – defaults to `0.0.0.0`
+- `AZURE_CONTAINER_NAME` – defaults to `files`
+- `AZURE_STORAGE_PUBLIC_ACCESS` – defaults to `true` (set to `false` for private)
+- `AZURE_SAS_TOKEN` – defaults to `none`
+
+Interface change summary:
+- Deletion logic in `api/server/services/Files/Azure/crud.js` now removes the SAS query string when present to compute the blob path reliably.
+
+---
+
 ## ✨ Contributions
 
 Contributions, suggestions, bug reports and fixes are welcome!

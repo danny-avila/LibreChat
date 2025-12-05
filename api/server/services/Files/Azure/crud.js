@@ -7,7 +7,11 @@ const { logger } = require('@librechat/data-schemas');
 const { getAzureContainerClient } = require('@librechat/api');
 
 const defaultBasePath = 'images';
-const { AZURE_STORAGE_PUBLIC_ACCESS = 'true', AZURE_CONTAINER_NAME = 'files' } = process.env;
+const {
+  AZURE_STORAGE_PUBLIC_ACCESS = 'true',
+  AZURE_CONTAINER_NAME = 'files',
+  AZURE_SAS_TOKEN = 'none',
+} = process.env;
 
 /**
  * Uploads a buffer to Azure Blob Storage.
@@ -104,7 +108,12 @@ async function getAzureURL({ fileName, basePath = defaultBasePath, userId, conta
 async function deleteFileFromAzure(req, file) {
   try {
     const containerClient = await getAzureContainerClient(AZURE_CONTAINER_NAME);
-    const blobPath = file.filepath.split(`${AZURE_CONTAINER_NAME}/`)[1];
+    const blobPath =
+      AZURE_SAS_TOKEN === 'none'
+        ? file.filepath.split(`${AZURE_CONTAINER_NAME}/`)[1]
+        : file.filepath
+            .split(`?${AZURE_SAS_TOKEN}`)[0]
+            .split(`${AZURE_CONTAINER_NAME}/`)[1];
     if (!blobPath.includes(req.user.id)) {
       throw new Error('User ID not found in blob path');
     }
