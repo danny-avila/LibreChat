@@ -55,7 +55,7 @@ function ChatGroupItem({
 
   return (
     <>
-      <div className="relative my-2 items-stretch justify-between rounded-xl border border-border-light shadow-sm transition-all duration-300 ease-in-out hover:bg-surface-tertiary hover:shadow-lg">
+      <div className="relative my-2 items-stretch justify-between rounded-xl border border-border-light px-1 shadow-sm transition-all duration-300 ease-in-out hover:bg-surface-tertiary hover:shadow-lg">
         <ListCard
           name={group.name}
           category={group.category ?? ''}
