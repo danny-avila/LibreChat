@@ -4,6 +4,8 @@ import { createRoleMethods, type RoleMethods } from './role';
 import { createUserMethods, type UserMethods } from './user';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
+/* User Profile */
+import { createProfileMethods, type ProfileMethods } from './userProfile';
 /* Agent Categories */
 import { createAgentCategoryMethods, type AgentCategoryMethods } from './agentCategory';
 /* Plugin Auth */
@@ -19,6 +21,7 @@ export type AllMethods = UserMethods &
   TokenMethods &
   RoleMethods &
   MemoryMethods &
+  ProfileMethods &
   AgentCategoryMethods &
   UserGroupMethods &
   AclEntryMethods &
@@ -36,6 +39,7 @@ export function createMethods(mongoose: typeof import('mongoose')): AllMethods {
     ...createTokenMethods(mongoose),
     ...createRoleMethods(mongoose),
     ...createMemoryMethods(mongoose),
+    ...createProfileMethods(mongoose),
     ...createAgentCategoryMethods(mongoose),
     ...createAccessRoleMethods(mongoose),
     ...createUserGroupMethods(mongoose),
@@ -51,6 +55,7 @@ export type {
   TokenMethods,
   RoleMethods,
   MemoryMethods,
+  ProfileMethods,
   AgentCategoryMethods,
   UserGroupMethods,
   AclEntryMethods,

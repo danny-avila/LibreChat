@@ -36,10 +36,18 @@ const {
   AgentCapabilities,
   bedrockInputSchema,
   removeNullishValues,
+  extractEnvVariable,
 } = require('librechat-data-provider');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getFormattedMemories, getAllUserMemories, deleteMemory, setMemory } = require('~/models');
+const {
+  getFormattedMemories,
+  getAllUserMemories,
+  deleteMemory,
+  setMemory,
+  updateProfile,
+  getProfileForRAG,
+} = require('~/models');
 const {
   processCustomMemory,
   getMemoryContext,
@@ -586,18 +594,28 @@ class AgentClient extends BaseClient {
         return;
       }
 
+      // Resolve environment variables in the config
+      const resolvedConfig = {
+        ...vicktoriaConfig,
+        baseURL: extractEnvVariable(vicktoriaConfig.baseURL),
+        apiKey: extractEnvVariable(vicktoriaConfig.apiKey),
+      };
+
+      logger.info(`[useMemory] Resolved baseURL: ${resolvedConfig.baseURL}`);
+
       // Store config for later use in runMemory
       this.customMemoryConfig = {
         memoryConfig,
-        endpointConfig: vicktoriaConfig,
+        endpointConfig: resolvedConfig,
         userId,
       };
+      logger.info(`[useMemory] Set customMemoryConfig for user ${userId}`);
 
       // Get existing memories to inject into context
       try {
         const memoryContext = await getMemoryContext({
           userId,
-          memoryMethods: { getFormattedMemories, getAllUserMemories },
+          memoryMethods: { getFormattedMemories, getAllUserMemories, getProfileForRAG },
         });
         logger.info(`[useMemory] Memory context for user ${userId}: ${memoryContext ? memoryContext.length + ' chars' : 'none'}`);
         return memoryContext;
@@ -729,6 +747,9 @@ class AgentClient extends BaseClient {
    */
   async runMemory(messages) {
     try {
+      logger.info(`[runMemory] Called with ${messages?.length || 0} messages`);
+      logger.info(`[runMemory] customMemoryConfig set: ${!!this.customMemoryConfig}`);
+
       const appConfig = this.options.req.config;
       const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
@@ -764,6 +785,8 @@ class AgentClient extends BaseClient {
             deleteMemory,
             getFormattedMemories,
             getAllUserMemories,
+            updateProfile,
+            getProfileForRAG,
           },
         });
         return;
