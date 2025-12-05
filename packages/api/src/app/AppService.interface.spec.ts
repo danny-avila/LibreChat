@@ -154,4 +154,27 @@ describe('AppService interface configuration', () => {
     // Verify that peoplePicker is undefined when not provided
     expect(result.interfaceConfig?.peoplePicker).toBeUndefined();
   });
+
+  it('should set fileSearchDefaultEnabled based on config with fallback to false', async () => {
+    // Test explicit true
+    let config = { interface: { fileSearchDefaultEnabled: true } };
+    let result = await AppService({ config });
+    expect(result.interfaceConfig).toEqual(
+      expect.objectContaining({ fileSearchDefaultEnabled: true }),
+    );
+
+    // Test explicit false
+    config = { interface: { fileSearchDefaultEnabled: false } };
+    result = await AppService({ config });
+    expect(result.interfaceConfig).toEqual(
+      expect.objectContaining({ fileSearchDefaultEnabled: false }),
+    );
+
+    // Test omitted (should default to false)
+    config = { interface: {} };
+    result = await AppService({ config });
+    expect(result.interfaceConfig).toEqual(
+      expect.objectContaining({ fileSearchDefaultEnabled: false }),
+    );
+  });
 });
