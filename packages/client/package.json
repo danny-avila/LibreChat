@@ -17,7 +17,9 @@
   ],
   "scripts": {
     "clean": "rimraf dist",
+    "b:clean": "bun run rimraf dist",
     "build": "npm run clean && rollup -c --bundleConfigAsCjs",
+    "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs",
     "build:watch": "rollup -c -w --bundleConfigAsCjs",
     "dev": "rollup -c -w --bundleConfigAsCjs"
   },
