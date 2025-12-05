@@ -56,17 +56,11 @@ function parseAsString(result: t.MCPToolCallResponse): string {
       }
       if (item.type === 'resource') {
         const resourceText = [];
-        if (item.resource.text != null && item.resource.text) {
+        if ('text' in item.resource && item.resource.text != null && item.resource.text) {
           resourceText.push(item.resource.text);
         }
         if (item.resource.uri) {
           resourceText.push(`Resource URI: ${item.resource.uri}`);
-        }
-        if (item.resource.name) {
-          resourceText.push(`Resource: ${item.resource.name}`);
-        }
-        if (item.resource.description) {
-          resourceText.push(`Description: ${item.resource.description}`);
         }
         if (item.resource.mimeType != null && item.resource.mimeType) {
           resourceText.push(`Type: ${item.resource.mimeType}`);
@@ -143,17 +137,11 @@ export function formatToolContent(
       }
 
       const resourceText = [];
-      if (item.resource.text != null && item.resource.text) {
+      if ('text' in item.resource && item.resource.text != null && item.resource.text) {
         resourceText.push(`Resource Text: ${item.resource.text}`);
       }
       if (item.resource.uri.length) {
         resourceText.push(`Resource URI: ${item.resource.uri}`);
-      }
-      if (item.resource.name) {
-        resourceText.push(`Resource: ${item.resource.name}`);
-      }
-      if (item.resource.description) {
-        resourceText.push(`Resource Description: ${item.resource.description}`);
       }
       if (item.resource.mimeType != null && item.resource.mimeType) {
         resourceText.push(`Resource MIME Type: ${item.resource.mimeType}`);

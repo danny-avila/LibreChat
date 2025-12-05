@@ -88,9 +88,20 @@ export class MCPOAuthHandler {
     logger.debug(
       `[MCPOAuth] Discovering OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
     );
-    const rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl, {
+    let rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl, {
       fetchFn,
     });
+
+    // If discovery failed and we're using a path-based URL, try the base URL
+    if (!rawMetadata && authServerUrl.pathname !== '/') {
+      const baseUrl = new URL(authServerUrl.origin);
+      logger.debug(
+        `[MCPOAuth] Discovery failed with path, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
+      );
+      rawMetadata = await discoverAuthorizationServerMetadata(baseUrl, {
+        fetchFn,
+      });
+    }
 
     if (!rawMetadata) {
       /**
@@ -165,6 +176,8 @@ export class MCPOAuthHandler {
       response_types: ['code'] as string[],
       token_endpoint_auth_method: 'client_secret_basic',
       scope: undefined as string | undefined,
+      logo_uri: undefined as string | undefined,
+      tos_uri: undefined as string | undefined,
     };
 
     const supportedGrantTypes = metadata.grant_types_supported || ['authorization_code'];
