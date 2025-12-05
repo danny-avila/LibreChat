@@ -7,6 +7,8 @@ version: 1.3.1
 interface:
   modelSelect: false
   agents: true
+  agentBuilder: false             # Hide Agent Builder panel
+  prompts: false                  # Hide Prompts from sidebar
   memories: true                  # Show Memories in sidebar
   endpointsMenu: false            # Hide endpoints menu since we only use agents
 
@@ -44,8 +46,8 @@ endpoints:
 
 # Memory configuration
 memory:
-  disabled: true
-  personalize: false
+  disabled: false
+  personalize: true
   tokenLimit: 3000
   messageWindowSize: 5
   validKeys:
