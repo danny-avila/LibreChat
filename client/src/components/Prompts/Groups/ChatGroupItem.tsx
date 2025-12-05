@@ -65,13 +65,12 @@ function ChatGroupItem({
               ? group.oneliner
               : (group.productionPrompt?.prompt ?? '')
           }
-        >
-          <div className="flex flex-row items-center gap-2">
-            {groupIsGlobal === true && (
-              <EarthIcon className="icon-md text-green-400" aria-label="Global prompt group" />
-            )}
+        ></ListCard>
+        {groupIsGlobal === true && (
+          <div className="absolute right-14 top-[16px]">
+            <EarthIcon className="icon-md text-green-400" aria-label="Global prompt group" />
           </div>
-        </ListCard>
+        )}
         <div className="absolute right-0 top-0 mr-1 mt-2.5 items-start pl-2">
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
