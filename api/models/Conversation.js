@@ -1,7 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { createTempChatExpirationDate } = require('@librechat/api');
 const { getMessages, deleteMessages } = require('./Message');
-const { Conversation } = require('~/db/models');
+const { Conversation, Message } = require('~/db/models');
 
 /**
  * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
@@ -174,10 +174,25 @@ module.exports = {
 
     if (search) {
       try {
-        const meiliResults = await Conversation.meiliSearch(search, { filter: `user = "${user}"` });
-        const matchingIds = Array.isArray(meiliResults.hits)
-          ? meiliResults.hits.map((result) => result.conversationId)
+        // Search both conversation titles and message content in parallel
+        const [convoResults, messageResults] = await Promise.all([
+          Conversation.meiliSearch(search, { filter: `user = "${user}"` }),
+          Message.meiliSearch(search, { filter: `user = "${user}"` }),
+        ]);
+
+        // Get conversation IDs from title matches
+        const convoMatchIds = Array.isArray(convoResults.hits)
+          ? convoResults.hits.map((result) => result.conversationId)
           : [];
+
+        // Get conversation IDs from message content matches
+        const messageMatchIds = Array.isArray(messageResults.hits)
+          ? messageResults.hits.map((result) => result.conversationId)
+          : [];
+
+        // Combine and deduplicate conversation IDs from both searches
+        const matchingIds = [...new Set([...convoMatchIds, ...messageMatchIds])];
+
         if (!matchingIds.length) {
           return { conversations: [], nextCursor: null };
         }
