@@ -3,7 +3,6 @@
   "outputDirectory": "client/dist",
   "installCommand": "npm install",
   "framework": null,
-  "functions": {},
   "rewrites": [
     {
       "source": "/(.*)",
