@@ -13,7 +13,7 @@
     }
   },
   "scripts": {
-    "clean": "rimraf dist",
+    "clean": "rm -rf dist",
     "build": "npm run clean && rollup -c --bundleConfigAsCjs",
     "build:dev": "npm run clean && NODE_ENV=development rollup -c --bundleConfigAsCjs",
     "build:watch": "NODE_ENV=development rollup -c -w --bundleConfigAsCjs",
