@@ -1,7 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { createTempChatExpirationDate } = require('@librechat/api');
 const { getMessages, deleteMessages } = require('./Message');
-const { Conversation } = require('~/db/models');
+const { Conversation, Message } = require('~/db/models');
 
 /**
  * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
@@ -75,9 +75,96 @@ const getConvoFiles = async (conversationId) => {
   }
 };
 
+/**
+ * Global search across conversation titles and message content.
+ * @param {string} user - The user's ID.
+ * @param {Object} options - Search options.
+ * @param {string} options.search - The search query.
+ * @param {string} [options.cursor] - Cursor for pagination.
+ * @param {number} [options.limit=25] - Number of results to return.
+ * @param {boolean} [options.isArchived=false] - Whether to search archived conversations.
+ * @param {string[]} [options.tags] - Tags to filter by.
+ * @param {string} [options.order='desc'] - Sort order.
+ * @returns {Promise<{conversations: TConversation[], nextCursor: string | null}>}
+ */
+const searchConversations = async (
+  user,
+  { search, cursor, limit = 25, isArchived = false, tags, order = 'desc' } = {},
+) => {
+  if (!search) {
+    return { conversations: [], nextCursor: null };
+  }
+
+  try {
+    // Search both conversation titles and message content in parallel
+    const [convoResults, messageResults] = await Promise.all([
+      Conversation.meiliSearch(search, { filter: `user = "${user}"` }),
+      Message.meiliSearch(search, { filter: `user = "${user}"` }),
+    ]);
+
+    // Get conversation IDs from title matches
+    const convoMatchIds = Array.isArray(convoResults.hits)
+      ? convoResults.hits.map((result) => result.conversationId)
+      : [];
+
+    // Get conversation IDs from message content matches
+    const messageMatchIds = Array.isArray(messageResults.hits)
+      ? messageResults.hits.map((result) => result.conversationId)
+      : [];
+
+    // Combine and deduplicate conversation IDs from both searches
+    const matchingIds = [...new Set([...convoMatchIds, ...messageMatchIds])];
+
+    if (!matchingIds.length) {
+      return { conversations: [], nextCursor: null };
+    }
+
+    // Build filters
+    const filters = [{ user }, { conversationId: { $in: matchingIds } }];
+
+    if (isArchived) {
+      filters.push({ isArchived: true });
+    } else {
+      filters.push({ $or: [{ isArchived: false }, { isArchived: { $exists: false } }] });
+    }
+
+    if (Array.isArray(tags) && tags.length > 0) {
+      filters.push({ tags: { $in: tags } });
+    }
+
+    filters.push({ $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }] });
+
+    if (cursor) {
+      filters.push({ updatedAt: { $lt: new Date(cursor) } });
+    }
+
+    const query = { $and: filters };
+
+    const convos = await Conversation.find(query)
+      .select(
+        'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL',
+      )
+      .sort({ updatedAt: order === 'asc' ? 1 : -1 })
+      .limit(limit + 1)
+      .lean();
+
+    let nextCursor = null;
+    if (convos.length > limit) {
+      const lastConvo = convos.pop();
+      nextCursor = lastConvo.updatedAt.toISOString();
+    }
+
+    return { conversations: convos, nextCursor };
+  } catch (error) {
+    logger.error('[searchConversations] Error during global search', error);
+    return { message: 'Error during global search' };
+  }
+};
+
 module.exports = {
   getConvoFiles,
   searchConversation,
+  searchConversations,
   deleteNullOrEmptyConversations,
   /**
    * Saves a conversation to the database.
