@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build:packages && cd client && npm run build",
+  "buildCommand": "cd /vercel/path0 && npm run build:packages && cd client && npm run build",
   "outputDirectory": "client/dist",
   "installCommand": "npm install",
   "framework": null,
