@@ -350,6 +350,9 @@ function disposeClient(client) {
     if (client.agentConfigs) {
       client.agentConfigs = null;
     }
+    if (client.agentIdMap) {
+      client.agentIdMap = null;
+    }
     if (client.artifactPromises) {
       client.artifactPromises = null;
     }
@@ -376,6 +379,8 @@ function disposeClient(client) {
     client.options = null;
   } catch {
     // Ignore errors during disposal
+  } finally {
+    logger.debug('[disposeClient] Client disposed');
   }
 }
 

@@ -1,5 +1,7 @@
 import { randomBytes } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
+import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
   registerClient,
   startAuthorization,
@@ -7,7 +9,6 @@ import {
   discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
-import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { FlowStateManager } from '~/flow/manager';
 import type {
@@ -18,7 +19,6 @@ import type {
   OAuthMetadata,
 } from './types';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
-import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 
 /** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
@@ -88,9 +88,20 @@ export class MCPOAuthHandler {
     logger.debug(
       `[MCPOAuth] Discovering OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
     );
-    const rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl, {
+    let rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl, {
       fetchFn,
     });
+
+    // If discovery failed and we're using a path-based URL, try the base URL
+    if (!rawMetadata && authServerUrl.pathname !== '/') {
+      const baseUrl = new URL(authServerUrl.origin);
+      logger.debug(
+        `[MCPOAuth] Discovery failed with path, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
+      );
+      rawMetadata = await discoverAuthorizationServerMetadata(baseUrl, {
+        fetchFn,
+      });
+    }
 
     if (!rawMetadata) {
       logger.error(
@@ -138,6 +149,8 @@ export class MCPOAuthHandler {
       response_types: ['code'] as string[],
       token_endpoint_auth_method: 'client_secret_basic',
       scope: undefined as string | undefined,
+      logo_uri: undefined as string | undefined,
+      tos_uri: undefined as string | undefined,
     };
 
     const supportedGrantTypes = metadata.grant_types_supported || ['authorization_code'];
@@ -223,6 +236,23 @@ export class MCPOAuthHandler {
       // Check if we have pre-configured OAuth settings
       if (config?.authorization_url && config?.token_url && config?.client_id) {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for ${serverName}`);
+
+        const skipCodeChallengeCheck =
+          config?.skip_code_challenge_check === true ||
+          process.env.MCP_SKIP_CODE_CHALLENGE_CHECK === 'true';
+        let codeChallengeMethodsSupported: string[];
+
+        if (config?.code_challenge_methods_supported !== undefined) {
+          codeChallengeMethodsSupported = config.code_challenge_methods_supported;
+        } else if (skipCodeChallengeCheck) {
+          codeChallengeMethodsSupported = ['S256', 'plain'];
+          logger.debug(
+            `[MCPOAuth] Code challenge check skip enabled, forcing S256 support for ${serverName}`,
+          );
+        } else {
+          codeChallengeMethodsSupported = ['S256', 'plain'];
+        }
+
         /** Metadata based on pre-configured settings */
         const metadata: OAuthMetadata = {
           authorization_endpoint: config.authorization_url,
@@ -238,10 +268,7 @@ export class MCPOAuthHandler {
             'client_secret_post',
           ],
           response_types_supported: config?.response_types_supported ?? ['code'],
-          code_challenge_methods_supported: config?.code_challenge_methods_supported ?? [
-            'S256',
-            'plain',
-          ],
+          code_challenge_methods_supported: codeChallengeMethodsSupported,
         };
         logger.debug(`[MCPOAuth] metadata for "${serverName}": ${JSON.stringify(metadata)}`);
         const clientInfo: OAuthClientInformation = {
@@ -439,9 +466,10 @@ export class MCPOAuthHandler {
         fetchFn: this.createOAuthFetch(oauthHeaders),
       });
 
-      logger.debug('[MCPOAuth] Raw tokens from exchange:', {
-        access_token: tokens.access_token ? '[REDACTED]' : undefined,
-        refresh_token: tokens.refresh_token ? '[REDACTED]' : undefined,
+      logger.debug('[MCPOAuth] Token exchange successful', {
+        flowId,
+        has_access_token: !!tokens.access_token,
+        has_refresh_token: !!tokens.refresh_token,
         expires_in: tokens.expires_in,
         token_type: tokens.token_type,
         scope: tokens.scope,

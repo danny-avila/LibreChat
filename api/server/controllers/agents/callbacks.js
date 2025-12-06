@@ -1,7 +1,7 @@
 const { nanoid } = require('nanoid');
 const { sendEvent } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { Tools, StepTypes, FileContext } = require('librechat-data-provider');
+const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
 const {
   EnvVar,
   Providers,
@@ -27,31 +27,64 @@ class ModelEndHandler {
     this.collectedUsage = collectedUsage;
   }
 
+  finalize(errorMessage) {
+    if (!errorMessage) {
+      return;
+    }
+    throw new Error(errorMessage);
+  }
+
   /**
    * @param {string} event
    * @param {ModelEndData | undefined} data
    * @param {Record<string, unknown> | undefined} metadata
    * @param {StandardGraph} graph
-   * @returns
+   * @returns {Promise<void>}
    */
-  handle(event, data, metadata, graph) {
+  async handle(event, data, metadata, graph) {
     if (!graph || !metadata) {
       console.warn(`Graph or metadata not found in ${event} event`);
       return;
     }
 
+    /** @type {string | undefined} */
+    let errorMessage;
     try {
       const agentContext = graph.getAgentContext(metadata);
-      if (
-        agentContext.provider === Providers.GOOGLE ||
-        agentContext.clientOptions?.disableStreaming
-      ) {
-        handleToolCalls(data?.output?.tool_calls, metadata, graph);
+      const isGoogle = agentContext.provider === Providers.GOOGLE;
+      const streamingDisabled = !!agentContext.clientOptions?.disableStreaming;
+      if (data?.output?.additional_kwargs?.stop_reason === 'refusal') {
+        const info = { ...data.output.additional_kwargs };
+        errorMessage = JSON.stringify({
+          type: ErrorTypes.REFUSAL,
+          info,
+        });
+        logger.debug(`[ModelEndHandler] Model refused to respond`, {
+          ...info,
+          userId: metadata.user_id,
+          messageId: metadata.run_id,
+          conversationId: metadata.thread_id,
+        });
+      }
+
+      const toolCalls = data?.output?.tool_calls;
+      let hasUnprocessedToolCalls = false;
+      if (Array.isArray(toolCalls) && toolCalls.length > 0 && graph?.toolCallStepIds?.has) {
+        try {
+          hasUnprocessedToolCalls = toolCalls.some(
+            (tc) => tc?.id && !graph.toolCallStepIds.has(tc.id),
+          );
+        } catch {
+          hasUnprocessedToolCalls = false;
+        }
+      }
+      if (isGoogle || streamingDisabled || hasUnprocessedToolCalls) {
+        await handleToolCalls(toolCalls, metadata, graph);
       }
 
       const usage = data?.output?.usage_metadata;
       if (!usage) {
-        return;
+        return this.finalize(errorMessage);
       }
       const modelName = metadata?.ls_model_name || agentContext.clientOptions?.model;
       if (modelName) {
@@ -59,17 +92,16 @@ class ModelEndHandler {
       }
 
       this.collectedUsage.push(usage);
-      const streamingDisabled = !!agentContext.clientOptions?.disableStreaming;
       if (!streamingDisabled) {
-        return;
+        return this.finalize(errorMessage);
       }
       if (!data.output.content) {
-        return;
+        return this.finalize(errorMessage);
       }
       const stepKey = graph.getStepKey(metadata);
       const message_id = getMessageId(stepKey, graph) ?? '';
       if (message_id) {
-        graph.dispatchRunStep(stepKey, {
+        await graph.dispatchRunStep(stepKey, {
           type: StepTypes.MESSAGE_CREATION,
           message_creation: {
             message_id,
@@ -79,7 +111,7 @@ class ModelEndHandler {
       const stepId = graph.getStepIdByKey(stepKey);
       const content = data.output.content;
       if (typeof content === 'string') {
-        graph.dispatchMessageDelta(stepId, {
+        await graph.dispatchMessageDelta(stepId, {
           content: [
             {
               type: 'text',
@@ -88,12 +120,13 @@ class ModelEndHandler {
           ],
         });
       } else if (content.every((c) => c.type?.startsWith('text'))) {
-        graph.dispatchMessageDelta(stepId, {
+        await graph.dispatchMessageDelta(stepId, {
           content,
         });
       }
     } catch (error) {
       logger.error('Error handling model end event:', error);
+      return this.finalize(errorMessage);
     }
   }
 }
@@ -129,7 +162,7 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
   }
   const handlers = {
     [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage),
-    [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback),
+    [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.CHAT_MODEL_STREAM]: new ChatModelStreamHandler(),
     [GraphEvents.ON_RUN_STEP]: {
       /**

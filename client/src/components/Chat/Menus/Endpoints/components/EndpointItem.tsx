@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { SettingsIcon } from 'lucide-react';
-import { TooltipAnchor, Spinner } from '@librechat/client';
+import { Spinner } from '@librechat/client';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
@@ -82,7 +82,10 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
   }, [modelSpecs, endpoint.value]);
 
   const searchValue = endpointSearchValues[endpoint.value] || '';
-  const isUserProvided = useMemo(() => endpointRequiresUserKey(endpoint.value), [endpoint.value]);
+  const isUserProvided = useMemo(
+    () => endpointRequiresUserKey(endpoint.value),
+    [endpointRequiresUserKey, endpoint.value],
+  );
 
   const renderIconLabel = () => (
     <div className="flex items-center gap-2">
@@ -99,18 +102,6 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
       >
         {endpoint.label}
       </span>
-      {/* TODO: remove this after deprecation */}
-      {endpoint.value === 'gptPlugins' && (
-        <TooltipAnchor
-          description={localize('com_endpoint_deprecated_info')}
-          aria-label={localize('com_endpoint_deprecated_info_a11y')}
-          render={
-            <span className="ml-2 rounded bg-amber-600/70 px-2 py-0.5 text-xs font-semibold text-white">
-              {localize('com_endpoint_deprecated')}
-            </span>
-          }
-        />
-      )}
     </div>
   );
 
@@ -136,7 +127,8 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         defaultOpen={endpoint.value === selectedEndpoint}
         searchValue={searchValue}
         onSearch={(value) => setEndpointSearchValue(endpoint.value, value)}
-        combobox={<input placeholder={placeholder} />}
+        combobox={<input placeholder=" " />}
+        comboboxLabel={placeholder}
         label={
           <div
             onClick={() => handleSelectEndpoint(endpoint)}

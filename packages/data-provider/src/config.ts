@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import type { ZodError } from 'zod';
-import type { TModelsConfig } from './types';
+import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
+import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
-import { apiBaseUrl } from './api-endpoints';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -324,7 +324,8 @@ export const endpointSchema = baseEndpointSchema.merge(
         defaultParamsEndpoint: z.string().default('custom'),
         paramDefinitions: z.array(z.record(z.any())).optional(),
       })
-      .strict(),
+      .strict()
+      .optional(),
     customOrder: z.number().optional(),
     directEndpoint: z.boolean().optional(),
     titleMessageRole: z.string().optional(),
@@ -515,9 +516,24 @@ const termsOfServiceSchema = z.object({
 
 export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;
 
-const mcpServersSchema = z.object({
-  placeholder: z.string().optional(),
-});
+// Schema for localized string (either simple string or language-keyed object)
+const localizedStringSchema = z.union([z.string(), z.record(z.string())]);
+export type LocalizedString = z.infer<typeof localizedStringSchema>;
+
+const mcpServersSchema = z
+  .object({
+    placeholder: z.string().optional(),
+    use: z.boolean().optional(),
+    create: z.boolean().optional(),
+    share: z.boolean().optional(),
+    trustCheckbox: z
+      .object({
+        label: localizedStringSchema.optional(),
+        subLabel: localizedStringSchema.optional(),
+      })
+      .optional(),
+  })
+  .optional();
 
 export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
 
@@ -582,6 +598,11 @@ export const interfaceSchema = z
     },
     marketplace: {
       use: false,
+    },
+    mcpServers: {
+      use: true,
+      create: true,
+      share: false,
     },
     fileSearch: true,
     fileCitations: true,
@@ -675,6 +696,7 @@ export type TStartupConfig = {
       chatMenu?: boolean;
       isOAuth?: boolean;
       startup?: boolean;
+      iconPath?: string;
     }
   >;
   mcpPlaceholder?: string;
@@ -860,7 +882,6 @@ export const configSchema = z.object({
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
       [EModelEndpoint.google]: baseEndpointSchema.optional(),
       [EModelEndpoint.anthropic]: baseEndpointSchema.optional(),
-      [EModelEndpoint.gptPlugins]: baseEndpointSchema.optional(),
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
@@ -911,6 +932,7 @@ export enum KnownEndpoints {
   fireworks = 'fireworks',
   deepseek = 'deepseek',
   groq = 'groq',
+  helicone = 'helicone',
   huggingface = 'huggingface',
   mistral = 'mistral',
   mlx = 'mlx',
@@ -926,6 +948,7 @@ export enum KnownEndpoints {
 
 export enum FetchTokenConfig {
   openrouter = KnownEndpoints.openrouter,
+  helicone = KnownEndpoints.helicone,
 }
 
 export const defaultEndpoints: EModelEndpoint[] = [
@@ -934,8 +957,6 @@ export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.azureAssistants,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.agents,
-  EModelEndpoint.chatGPTBrowser,
-  EModelEndpoint.gptPlugins,
   EModelEndpoint.google,
   EModelEndpoint.anthropic,
   EModelEndpoint.custom,
@@ -948,8 +969,6 @@ export const alternateName = {
   [EModelEndpoint.agents]: 'My Agents',
   [EModelEndpoint.azureAssistants]: 'Azure Assistants',
   [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
-  [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
-  [EModelEndpoint.gptPlugins]: 'Plugins',
   [EModelEndpoint.google]: 'Google',
   [EModelEndpoint.anthropic]: 'Anthropic',
   [EModelEndpoint.custom]: 'Custom',
@@ -958,9 +977,14 @@ export const alternateName = {
   [KnownEndpoints.deepseek]: 'DeepSeek',
   [KnownEndpoints.xai]: 'xAI',
   [KnownEndpoints.vercel]: 'Vercel',
+  [KnownEndpoints.helicone]: 'Helicone',
 };
 
 const sharedOpenAIModels = [
+  'gpt-5.1',
+  'gpt-5.1-chat-latest',
+  'gpt-5.1-codex',
+  'gpt-5.1-codex-mini',
   'gpt-5',
   'gpt-5-mini',
   'gpt-5-nano',
@@ -996,6 +1020,7 @@ const sharedAnthropicModels = [
   'claude-haiku-4-5-20251001',
   'claude-opus-4-1',
   'claude-opus-4-1-20250805',
+  'claude-opus-4-5',
   'claude-sonnet-4-20250514',
   'claude-sonnet-4-0',
   'claude-opus-4-20250514',
@@ -1090,9 +1115,7 @@ export const initialModelsConfig: TModelsConfig = {
   [EModelEndpoint.openAI]: openAIModels,
   [EModelEndpoint.assistants]: openAIModels.filter(fitlerAssistantModels),
   [EModelEndpoint.agents]: openAIModels, // TODO: Add agent models (agentsModels)
-  [EModelEndpoint.gptPlugins]: openAIModels,
   [EModelEndpoint.azureOpenAI]: openAIModels,
-  [EModelEndpoint.chatGPTBrowser]: ['text-davinci-002-render-sha'],
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
   [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
   [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
@@ -1105,7 +1128,6 @@ export const EndpointURLs = {
 } as const;
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
-  EModelEndpoint.gptPlugins,
   EModelEndpoint.anthropic,
   EModelEndpoint.google,
   EModelEndpoint.openAI,
@@ -1119,12 +1141,12 @@ export const supportsBalanceCheck = {
   [EModelEndpoint.custom]: true,
   [EModelEndpoint.openAI]: true,
   [EModelEndpoint.anthropic]: true,
-  [EModelEndpoint.gptPlugins]: true,
   [EModelEndpoint.assistants]: true,
   [EModelEndpoint.agents]: true,
   [EModelEndpoint.azureAssistants]: true,
   [EModelEndpoint.azureOpenAI]: true,
   [EModelEndpoint.bedrock]: true,
+  [EModelEndpoint.google]: true,
 };
 
 export const visionModels = [
@@ -1234,10 +1256,6 @@ export enum CacheKeys {
    * Key for the roles cache.
    */
   ROLES = 'ROLES',
-  /**
-   * Key for the plugins cache.
-   */
-  PLUGINS = 'PLUGINS',
   /**
    * Key for the title generation cache.
    */
@@ -1455,6 +1473,10 @@ export enum ErrorTypes {
    * Generic Authentication failure
    */
   AUTH_FAILED = 'auth_failed',
+  /**
+   * Model refused to respond (content policy violation)
+   */
+  REFUSAL = 'refusal',
 }
 
 /**
@@ -1573,7 +1595,7 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.8.1-rc1',
+  VERSION = 'v0.8.1-rc2',
   /** Key for the Custom Config's version (librechat.yaml). */
   CONFIG_VERSION = '1.3.1',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
@@ -1737,3 +1759,24 @@ export const specialVariables = {
 };
 
 export type TSpecialVarLabel = `com_ui_special_var_${keyof typeof specialVariables}`;
+
+/**
+ * Retrieves a specific field from the endpoints configuration for a given endpoint key.
+ * Does not infer or default any endpoint type when absent.
+ */
+export function getEndpointField<
+  K extends TConfig[keyof TConfig] extends never ? never : keyof TConfig,
+>(
+  endpointsConfig: TEndpointsConfig | undefined | null,
+  endpoint: EModelEndpoint | string | null | undefined,
+  property: K,
+): TConfig[K] | undefined {
+  if (!endpointsConfig || endpoint === null || endpoint === undefined) {
+    return undefined;
+  }
+  const config = endpointsConfig[endpoint];
+  if (!config) {
+    return undefined;
+  }
+  return config[property];
+}

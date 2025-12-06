@@ -9,16 +9,21 @@ const {
   logAxiosError,
   sanitizeTitle,
   resolveHeaders,
+  createSafeUser,
+  initializeAgent,
   getBalanceConfig,
+  getProviderConfig,
   memoryInstructions,
   getTransactionsConfig,
   createMemoryProcessor,
+  filterMalformedContentParts,
 } = require('@librechat/api');
 const {
   Callback,
   Providers,
   TitleMethod,
   formatMessage,
+  labelContentByAgent,
   formatAgentMessages,
   getTokenCountForMessage,
   createMetadataAggregator,
@@ -35,17 +40,16 @@ const {
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { getProviderConfig } = require('~/server/services/Endpoints');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { checkCapability } = require('~/server/services/Config');
+const { getConvoFiles } = require('~/models/Conversation');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
+const db = require('~/models');
 
 const omitTitleOptions = new Set([
   'stream',
@@ -89,6 +93,61 @@ function logToolError(graph, error, toolId) {
     error,
     message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
   });
+}
+
+/**
+ * Applies agent labeling to conversation history when multi-agent patterns are detected.
+ * Labels content parts by their originating agent to prevent identity confusion.
+ *
+ * @param {TMessage[]} orderedMessages - The ordered conversation messages
+ * @param {Agent} primaryAgent - The primary agent configuration
+ * @param {Map<string, Agent>} agentConfigs - Map of additional agent configurations
+ * @returns {TMessage[]} Messages with agent labels applied where appropriate
+ */
+function applyAgentLabelsToHistory(orderedMessages, primaryAgent, agentConfigs) {
+  const shouldLabelByAgent = (primaryAgent.edges?.length ?? 0) > 0 || (agentConfigs?.size ?? 0) > 0;
+
+  if (!shouldLabelByAgent) {
+    return orderedMessages;
+  }
+
+  const processedMessages = [];
+
+  for (let i = 0; i < orderedMessages.length; i++) {
+    const message = orderedMessages[i];
+
+    /** @type {Record<string, string>} */
+    const agentNames = { [primaryAgent.id]: primaryAgent.name || 'Assistant' };
+
+    if (agentConfigs) {
+      for (const [agentId, agentConfig] of agentConfigs.entries()) {
+        agentNames[agentId] = agentConfig.name || agentConfig.id;
+      }
+    }
+
+    if (
+      !message.isCreatedByUser &&
+      message.metadata?.agentIdMap &&
+      Array.isArray(message.content)
+    ) {
+      try {
+        const labeledContent = labelContentByAgent(
+          message.content,
+          message.metadata.agentIdMap,
+          agentNames,
+        );
+
+        processedMessages.push({ ...message, content: labeledContent });
+      } catch (error) {
+        logger.error('[AgentClient] Error applying agent labels to message:', error);
+        processedMessages.push(message);
+      }
+    } else {
+      processedMessages.push(message);
+    }
+  }
+
+  return processedMessages;
 }
 
 class AgentClient extends BaseClient {
@@ -140,6 +199,8 @@ class AgentClient extends BaseClient {
     this.indexTokenCountMap = {};
     /** @type {(messages: BaseMessage[]) => Promise<void>} */
     this.processMemory;
+    /** @type {Record<number, string> | null} */
+    this.agentIdMap = null;
   }
 
   /**
@@ -210,7 +271,10 @@ class AgentClient extends BaseClient {
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
-      this.options.agent.provider,
+      {
+        provider: this.options.agent.provider,
+        endpoint: this.options.endpoint,
+      },
       VisionModes.agents,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;
@@ -228,6 +292,12 @@ class AgentClient extends BaseClient {
       parentMessageId,
       summary: this.shouldSummarize,
     });
+
+    orderedMessages = applyAgentLabelsToHistory(
+      orderedMessages,
+      this.options.agent,
+      this.agentConfigs,
+    );
 
     let payload;
     /** @type {number | undefined} */
@@ -341,7 +411,7 @@ class AgentClient extends BaseClient {
 
     if (mcpServers.length > 0) {
       try {
-        const mcpInstructions = getMCPManager().formatInstructionsForContext(mcpServers);
+        const mcpInstructions = await getMCPManager().formatInstructionsForContext(mcpServers);
         if (mcpInstructions) {
           systemContent = [systemContent, mcpInstructions].filter(Boolean).join('\n\n');
           logger.debug('[AgentClient] Injected MCP instructions for servers:', mcpServers);
@@ -473,18 +543,28 @@ class AgentClient extends BaseClient {
       );
     }
 
-    const agent = await initializeAgent({
-      req: this.options.req,
-      res: this.options.res,
-      agent: prelimAgent,
-      allowedProviders,
-      endpointOption: {
-        endpoint:
-          prelimAgent.id !== Constants.EPHEMERAL_AGENT_ID
-            ? EModelEndpoint.agents
-            : memoryConfig.agent?.provider,
+    const agent = await initializeAgent(
+      {
+        req: this.options.req,
+        res: this.options.res,
+        agent: prelimAgent,
+        allowedProviders,
+        endpointOption: {
+          endpoint:
+            prelimAgent.id !== Constants.EPHEMERAL_AGENT_ID
+              ? EModelEndpoint.agents
+              : memoryConfig.agent?.provider,
+        },
       },
-    });
+      {
+        getConvoFiles,
+        getFiles: db.getFiles,
+        getUserKey: db.getUserKey,
+        updateFilesUsage: db.updateFilesUsage,
+        getUserKeyValues: db.getUserKeyValues,
+        getToolFilesByIds: db.getToolFilesByIds,
+      },
+    );
 
     if (!agent) {
       logger.warn(
@@ -519,9 +599,9 @@ class AgentClient extends BaseClient {
       messageId,
       conversationId,
       memoryMethods: {
-        setMemory,
-        deleteMemory,
-        getFormattedMemories,
+        setMemory: db.setMemory,
+        deleteMemory: db.deleteMemory,
+        getFormattedMemories: db.getFormattedMemories,
       },
       res: this.options.res,
     });
@@ -608,7 +688,11 @@ class AgentClient extends BaseClient {
       userMCPAuthMap: opts.userMCPAuthMap,
       abortController: opts.abortController,
     });
-    return this.contentParts;
+
+    const completion = filterMalformedContentParts(this.contentParts);
+    const metadata = this.agentIdMap ? { agentIdMap: this.agentIdMap } : undefined;
+
+    return { completion, metadata };
   }
 
   /**
@@ -761,12 +845,14 @@ class AgentClient extends BaseClient {
     let run;
     /** @type {Promise<(TAttachment | null)[] | undefined>} */
     let memoryPromise;
+    const appConfig = this.options.req.config;
+    const balanceConfig = getBalanceConfig(appConfig);
+    const transactionsConfig = getTransactionsConfig(appConfig);
     try {
       if (!abortController) {
         abortController = new AbortController();
       }
 
-      const appConfig = this.options.req.config;
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
@@ -782,7 +868,7 @@ class AgentClient extends BaseClient {
             conversationId: this.conversationId,
             parentMessageId: this.parentMessageId,
           },
-          user: this.options.req.user,
+          user: createSafeUser(this.options.req.user),
         },
         recursionLimit: agentsEConfig?.recursionLimit ?? 25,
         signal: abortController.signal,
@@ -858,6 +944,7 @@ class AgentClient extends BaseClient {
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
           requestBody: config.configurable.requestBody,
+          user: createSafeUser(this.options.req?.user),
           tokenCounter: createTokenCounter(this.getEncoding()),
         });
 
@@ -898,29 +985,23 @@ class AgentClient extends BaseClient {
       }
 
       try {
-        const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
-        if (attachments && attachments.length > 0) {
-          this.artifactPromises.push(...attachments);
+        /** Capture agent ID map if we have edges or multiple agents */
+        const shouldStoreAgentMap =
+          (this.options.agent.edges?.length ?? 0) > 0 || (this.agentConfigs?.size ?? 0) > 0;
+        if (shouldStoreAgentMap && run?.Graph) {
+          const contentPartAgentMap = run.Graph.getContentPartAgentMap();
+          if (contentPartAgentMap && contentPartAgentMap.size > 0) {
+            this.agentIdMap = Object.fromEntries(contentPartAgentMap);
+            logger.debug('[AgentClient] Captured agent ID map:', {
+              totalParts: this.contentParts.length,
+              mappedParts: Object.keys(this.agentIdMap).length,
+            });
+          }
         }
-
-        const balanceConfig = getBalanceConfig(appConfig);
-        const transactionsConfig = getTransactionsConfig(appConfig);
-        await this.recordCollectedUsage({
-          context: 'message',
-          balance: balanceConfig,
-          transactions: transactionsConfig,
-        });
-      } catch (err) {
-        logger.error(
-          '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
-          err,
-        );
+      } catch (error) {
+        logger.error('[AgentClient] Error capturing agent ID map:', error);
       }
     } catch (err) {
-      const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
-      if (attachments && attachments.length > 0) {
-        this.artifactPromises.push(...attachments);
-      }
       logger.error(
         '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
         err,
@@ -935,6 +1016,27 @@ class AgentClient extends BaseClient {
           [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
         });
       }
+    } finally {
+      try {
+        const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
+        if (attachments && attachments.length > 0) {
+          this.artifactPromises.push(...attachments);
+        }
+
+        await this.recordCollectedUsage({
+          context: 'message',
+          balance: balanceConfig,
+          transactions: transactionsConfig,
+        });
+      } catch (err) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #chatCompletion] Error in cleanup phase',
+          err,
+        );
+      }
+      run = null;
+      config = null;
+      memoryPromise = null;
     }
   }
 
@@ -949,7 +1051,7 @@ class AgentClient extends BaseClient {
       throw new Error('Run not initialized');
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
-    const { req, res, agent } = this.options;
+    const { req, agent } = this.options;
     const appConfig = req.config;
     let endpoint = agent.endpoint;
 
@@ -1006,11 +1108,12 @@ class AgentClient extends BaseClient {
 
     const options = await titleProviderConfig.getOptions({
       req,
-      res,
-      optionsOnly: true,
-      overrideEndpoint: endpoint,
-      overrideModel: clientOptions.model,
-      endpointOption: { model_parameters: clientOptions },
+      endpoint,
+      model_parameters: clientOptions,
+      db: {
+        getUserKey: db.getUserKey,
+        getUserKeyValues: db.getUserKeyValues,
+      },
     });
 
     let provider = options.provider ?? titleProviderConfig.overrideProvider ?? agent.provider;
@@ -1063,6 +1166,7 @@ class AgentClient extends BaseClient {
     if (clientOptions?.configuration?.defaultHeaders != null) {
       clientOptions.configuration.defaultHeaders = resolveHeaders({
         headers: clientOptions.configuration.defaultHeaders,
+        user: createSafeUser(this.options.req?.user),
         body: {
           messageId: this.responseMessageId,
           conversationId: this.conversationId,

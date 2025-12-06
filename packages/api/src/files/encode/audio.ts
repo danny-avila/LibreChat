@@ -9,16 +9,19 @@ import { validateAudio } from '~/files/validation';
  * Encodes and formats audio files for different providers
  * @param req - The request object
  * @param files - Array of audio files
- * @param provider - The provider to format for (currently only google is supported)
+ * @param params - Object containing provider and optional endpoint
+ * @param params.provider - The provider to format for (currently only google is supported)
+ * @param params.endpoint - Optional endpoint name for file config lookup
  * @param getStrategyFunctions - Function to get strategy functions
  * @returns Promise that resolves to audio and file metadata
  */
 export async function encodeAndFormatAudios(
   req: ServerRequest,
   files: IMongoFile[],
-  provider: Providers,
+  params: { provider: Providers; endpoint?: string },
   getStrategyFunctions: (source: string) => StrategyFunctions,
 ): Promise<AudioResult> {
+  const { provider, endpoint } = params;
   if (!files?.length) {
     return { audios: [], files: [] };
   }
@@ -54,7 +57,10 @@ export async function encodeAndFormatAudios(
     const audioBuffer = Buffer.from(content, 'base64');
 
     /** Extract configured file size limit from fileConfig for this endpoint */
-    const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, provider);
+    const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, {
+      provider,
+      endpoint,
+    });
 
     const validation = await validateAudio(
       audioBuffer,
@@ -69,7 +75,7 @@ export async function encodeAndFormatAudios(
 
     if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
       result.audios.push({
-        type: 'audio',
+        type: 'media',
         mimeType: file.type,
         data: content,
       });

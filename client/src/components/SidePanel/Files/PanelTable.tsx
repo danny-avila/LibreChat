@@ -30,6 +30,7 @@ import {
   mergeFileConfig,
   megabyte,
   isAssistantsEndpoint,
+  getEndpointFileConfig,
   type TFile,
 } from 'librechat-data-provider';
 import { useFileMapContext, useChatContext } from '~/Providers';
@@ -86,7 +87,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
   const { setFiles, conversation } = useChatContext();
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+  const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
   const { addFile } = useUpdateFiles(setFiles);
@@ -103,6 +104,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
       const fileData = fileMap[file.file_id];
       const endpoint = conversation.endpoint;
+      const endpointType = conversation.endpointType;
 
       if (!fileData.source) {
         return;
@@ -126,20 +128,31 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         });
       }
 
-      const { fileSizeLimit, supportedMimeTypes } =
-        fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
+      const endpointFileConfig = getEndpointFileConfig({
+        fileConfig,
+        endpoint,
+        endpointType,
+      });
 
-      if (fileData.bytes > fileSizeLimit) {
+      if (endpointFileConfig.disabled === true) {
+        showToast({
+          message: localize('com_ui_attach_error_disabled'),
+          status: 'error',
+        });
+        return;
+      }
+
+      if (fileData.bytes > (endpointFileConfig.fileSizeLimit ?? Number.MAX_SAFE_INTEGER)) {
         showToast({
           message: `${localize('com_ui_attach_error_size')} ${
-            fileSizeLimit / megabyte
+            (endpointFileConfig.fileSizeLimit ?? 0) / megabyte
           } MB (${endpoint})`,
           status: 'error',
         });
         return;
       }
 
-      if (!defaultFileConfig.checkType(file.type, supportedMimeTypes)) {
+      if (!defaultFileConfig.checkType(file.type, endpointFileConfig.supportedMimeTypes ?? [])) {
         showToast({
           message: `${localize('com_ui_attach_error_type')} ${file.type} (${endpoint})`,
           status: 'error',
@@ -162,20 +175,28 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         metadata: fileData.metadata,
       });
     },
-    [addFile, fileMap, conversation, localize, showToast, fileConfig.endpoints],
+    [addFile, fileMap, conversation, localize, showToast, fileConfig],
   );
 
   const filenameFilter = table.getColumn('filename')?.getFilterValue() as string;
 
   return (
     <div role="region" aria-label={localize('com_files_table')} className="mt-2 space-y-2">
-      <div className="flex items-center gap-4">
+      <div className="relative flex items-center gap-4">
         <Input
-          placeholder={localize('com_files_filter')}
+          id="filename-filter"
+          placeholder=" "
           value={filenameFilter ?? ''}
           onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
           aria-label={localize('com_files_filter')}
+          className="peer"
         />
+        <label
+          htmlFor="filename-filter"
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary transition-all duration-200 peer-focus:top-0 peer-focus:bg-background peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:bg-background peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs"
+        >
+          {localize('com_files_filter')}
+        </label>
       </div>
 
       <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">

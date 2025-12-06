@@ -11,6 +11,7 @@ const {
   mcpToolPattern,
   loadWebSearchAuth,
 } = require('@librechat/api');
+const { getMCPServersRegistry } = require('~/config');
 const {
   Tools,
   Constants,
@@ -339,7 +340,10 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         /** Placeholder used for UI purposes */
         continue;
       }
-      if (serverName && options.req?.config?.mcpConfig?.[serverName] == null) {
+      if (
+        serverName &&
+        (await getMCPServersRegistry().getServerConfig(serverName, user)) == undefined
+      ) {
         logger.warn(
           `MCP server "${serverName}" for "${toolName}" tool is not configured${agent?.id != null && agent.id ? ` but attached to "${agent.id}"` : ''}`,
         );

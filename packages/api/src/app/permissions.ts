@@ -41,6 +41,8 @@ function hasExplicitConfig(
       return interfaceConfig?.fileSearch !== undefined;
     case PermissionTypes.FILE_CITATIONS:
       return interfaceConfig?.fileCitations !== undefined;
+    case PermissionTypes.MCP_SERVERS:
+      return interfaceConfig?.mcpServers !== undefined;
     default:
       return false;
   }
@@ -254,6 +256,23 @@ export async function updateInterfacePermissions({
           loadedInterface.fileCitations,
           defaultPerms[PermissionTypes.FILE_CITATIONS]?.[Permissions.USE],
           defaults.fileCitations,
+        ),
+      },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: getPermissionValue(
+          loadedInterface.mcpServers?.use,
+          defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.USE],
+          defaults.mcpServers?.use,
+        ),
+        [Permissions.CREATE]: getPermissionValue(
+          loadedInterface.mcpServers?.create,
+          defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.CREATE],
+          defaults.mcpServers?.create,
+        ),
+        [Permissions.SHARE]: getPermissionValue(
+          loadedInterface.mcpServers?.share,
+          defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.SHARE],
+          defaults.mcpServers?.share,
         ),
       },
     };

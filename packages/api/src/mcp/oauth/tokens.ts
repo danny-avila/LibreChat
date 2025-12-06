@@ -1,8 +1,7 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods, IToken } from '@librechat/data-schemas';
 import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthMetadata } from './types';
-import { encryptV2, decryptV2 } from '~/crypto';
 import { isSystemUserId } from '~/mcp/enum';
 
 interface StoreTokensParams {
@@ -217,7 +216,11 @@ export class MCPTokenStorage {
         }
       }
 
-      logger.debug(`${logPrefix} Stored OAuth tokens`);
+      logger.debug(`${logPrefix} Stored OAuth tokens`, {
+        client_id: clientInfo?.client_id,
+        has_refresh_token: !!tokens.refresh_token,
+        expires_at: 'expires_at' in tokens ? tokens.expires_at : 'N/A',
+      });
     } catch (error) {
       const logPrefix = this.getLogPrefix(userId, serverName);
       logger.error(`${logPrefix} Failed to store tokens`, error);

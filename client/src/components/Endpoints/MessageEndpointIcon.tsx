@@ -25,7 +25,7 @@ type EndpointIcon = {
 
 function getOpenAIColor(_model: string | null | undefined) {
   const model = _model?.toLowerCase() ?? '';
-  if (model && (/\b(o\d)\b/i.test(model) || /\bgpt-[5-9]\b/i.test(model))) {
+  if (model && (/\b(o\d)\b/i.test(model) || /\bgpt-[5-9](?:\.\d+)?\b/i.test(model))) {
     return '#000000';
   }
   return model.includes('gpt-4') ? '#AB68FF' : '#19C37D';
@@ -57,16 +57,7 @@ function getGoogleModelName(model: string | null | undefined) {
 }
 
 const MessageEndpointIcon: React.FC<IconProps> = (props) => {
-  const {
-    error,
-    button,
-    iconURL = '',
-    endpoint,
-    size = 30,
-    model = '',
-    assistantName,
-    agentName,
-  } = props;
+  const { error, iconURL = '', endpoint, size = 30, model = '', assistantName, agentName } = props;
 
   const assistantsIcon = {
     icon: iconURL ? (
@@ -141,11 +132,6 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
       icon: <GPTIcon size={size * 0.5555555555555556} />,
       bg: getOpenAIColor(model),
       name: 'ChatGPT',
-    },
-    [EModelEndpoint.gptPlugins]: {
-      icon: <Plugin size={size * 0.7} />,
-      bg: `rgba(69, 89, 164, ${button === true ? 0.75 : 1})`,
-      name: 'Plugins',
     },
     [EModelEndpoint.google]: {
       icon: getGoogleIcon(model, size),

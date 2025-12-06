@@ -98,6 +98,12 @@ export class MCPConnection extends EventEmitter {
   timeout?: number;
   url?: string;
 
+  /**
+   * Timestamp when this connection was created.
+   * Used to detect if connection is stale compared to updated config.
+   */
+  public readonly createdAt: number;
+
   setRequestHeaders(headers: Record<string, string> | null): void {
     if (!headers) {
       return;
@@ -121,6 +127,7 @@ export class MCPConnection extends EventEmitter {
     this.iconPath = params.serverConfig.iconPath;
     this.timeout = params.serverConfig.timeout;
     this.lastPingTime = Date.now();
+    this.createdAt = Date.now(); // Record creation timestamp for staleness detection
     if (params.oauthTokens) {
       this.oauthTokens = params.oauthTokens;
     }
@@ -336,7 +343,7 @@ export class MCPConnection extends EventEmitter {
         }
       }
     } catch (error) {
-      this.emitError(error, 'Failed to construct transport:');
+      this.emitError(error, 'Failed to construct transport');
       throw error;
     }
   }
@@ -595,16 +602,26 @@ export class MCPConnection extends EventEmitter {
 
   private setupTransportErrorHandlers(transport: Transport): void {
     transport.onerror = (error) => {
-      logger.error(`${this.getLogPrefix()} Transport error:`, error);
-
-      // Check if it's an OAuth authentication error
       if (error && typeof error === 'object' && 'code' in error) {
         const errorCode = (error as unknown as { code?: number }).code;
+
+        // Ignore SSE 404 errors for servers that don't support SSE
+        if (
+          errorCode === 404 &&
+          String(error?.message).toLowerCase().includes('failed to open sse stream')
+        ) {
+          logger.warn(`${this.getLogPrefix()} SSE stream not available (404). Ignoring.`);
+          return;
+        }
+
+        // Check if it's an OAuth authentication error
         if (errorCode === 401 || errorCode === 403) {
           logger.warn(`${this.getLogPrefix()} OAuth authentication error detected`);
           this.emit('oauthError', error);
         }
       }
+
+      logger.error(`${this.getLogPrefix()} Transport error:`, error);
 
       this.emit('connectionChange', 'error');
     };
@@ -631,7 +648,7 @@ export class MCPConnection extends EventEmitter {
       const { resources } = await this.client.listResources();
       return resources;
     } catch (error) {
-      this.emitError(error, 'Failed to fetch resources:');
+      this.emitError(error, 'Failed to fetch resources');
       return [];
     }
   }
@@ -641,7 +658,7 @@ export class MCPConnection extends EventEmitter {
       const { tools } = await this.client.listTools();
       return tools;
     } catch (error) {
-      this.emitError(error, 'Failed to fetch tools:');
+      this.emitError(error, 'Failed to fetch tools');
       return [];
     }
   }
@@ -651,7 +668,7 @@ export class MCPConnection extends EventEmitter {
       const { prompts } = await this.client.listPrompts();
       return prompts;
     } catch (error) {
-      this.emitError(error, 'Failed to fetch prompts:');
+      this.emitError(error, 'Failed to fetch prompts');
       return [];
     }
   }
@@ -678,7 +695,9 @@ export class MCPConnection extends EventEmitter {
       const pingUnsupported =
         error instanceof Error &&
         ((error as Error)?.message.includes('-32601') ||
+          (error as Error)?.message.includes('-32602') ||
           (error as Error)?.message.includes('invalid method ping') ||
+          (error as Error)?.message.includes('Unsupported method: ping') ||
           (error as Error)?.message.includes('method not found'));
 
       if (!pingUnsupported) {
@@ -724,20 +743,45 @@ export class MCPConnection extends EventEmitter {
     this.oauthTokens = tokens;
   }
 
+  /**
+   * Check if this connection is stale compared to config update time.
+   * A connection is stale if it was created before the config was updated.
+   *
+   * @param configUpdatedAt - Unix timestamp (ms) when config was last updated
+   * @returns true if connection was created before config update, false otherwise
+   */
+  public isStale(configUpdatedAt: number): boolean {
+    return this.createdAt < configUpdatedAt;
+  }
+
   private isOAuthError(error: unknown): boolean {
     if (!error || typeof error !== 'object') {
       return false;
     }
 
-    // Check for SSE error with 401 status
-    if ('message' in error && typeof error.message === 'string') {
-      return error.message.includes('401') || error.message.includes('Non-200 status code (401)');
-    }
-
     // Check for error code
     if ('code' in error) {
       const code = (error as { code?: number }).code;
-      return code === 401 || code === 403;
+      if (code === 401 || code === 403) {
+        return true;
+      }
+    }
+
+    // Check message for various auth error indicators
+    if ('message' in error && typeof error.message === 'string') {
+      const message = error.message.toLowerCase();
+      // Check for 401 status
+      if (message.includes('401') || message.includes('non-200 status code (401)')) {
+        return true;
+      }
+      // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
+      if (message.includes('invalid_token')) {
+        return true;
+      }
+      // Check for authentication required
+      if (message.includes('authentication required') || message.includes('unauthorized')) {
+        return true;
+      }
     }
 
     return false;

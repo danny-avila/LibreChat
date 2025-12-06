@@ -64,7 +64,7 @@ export const messages = (params: q.MessagesListParams) => {
   return `${messagesRoot}${buildQuery(rest)}`;
 };
 
-export const messagesArtifacts = (messageId: string) => `${messagesRoot}/artifacts/${messageId}`;
+export const messagesArtifacts = (messageId: string) => `${messagesRoot}/artifact/${messageId}`;
 
 const shareRoot = `${BASE_URL}/api/share`;
 export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
@@ -149,6 +149,10 @@ export const resetPassword = () => `${BASE_URL}/api/auth/resetPassword`;
 
 export const verifyEmail = () => `${BASE_URL}/api/user/verify`;
 
+// Auth page URLs (for client-side navigation and redirects)
+export const loginPage = () => `${BASE_URL}/login`;
+export const registerPage = () => `${BASE_URL}/register`;
+
 export const resendVerificationEmail = () => `${BASE_URL}/api/user/verify/resend`;
 
 export const plugins = () => `${BASE_URL}/api/plugins`;
@@ -224,7 +228,10 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
 
 export const mcp = {
   tools: `${BASE_URL}/api/mcp/tools`,
+  servers: `${BASE_URL}/api/mcp/servers`,
 };
+
+export const mcpServer = (serverName: string) => `${BASE_URL}/api/mcp/servers/${serverName}`;
 
 export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;
 
@@ -314,6 +321,7 @@ export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
 export const updatePeoplePickerPermissions = (roleName: string) =>
   `${getRole(roleName)}/people-picker`;
+export const updateMCPServersPermissions = (roleName: string) => `${getRole(roleName)}/mcp-servers`;
 
 export const updateMarketplacePermissions = (roleName: string) =>
   `${getRole(roleName)}/marketplace`;
@@ -377,6 +385,9 @@ export const updateResourcePermissions = (resourceType: ResourceType, resourceId
 
 export const getEffectivePermissions = (resourceType: ResourceType, resourceId: string) =>
   `${BASE_URL}/api/permissions/${resourceType}/${resourceId}/effective`;
+
+export const getAllEffectivePermissions = (resourceType: ResourceType) =>
+  `${BASE_URL}/api/permissions/${resourceType}/effective/all`;
 
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>

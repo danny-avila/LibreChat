@@ -100,7 +100,7 @@ export default function ContextButton({
         </button>
       </DialogTrigger>
       <DialogTemplate
-        title={localize('com_ui_delete') + ' ' + localize('com_ui_assistant')}
+        title={localize('com_ui_delete_assistant')}
         className="max-w-[450px]"
         main={
           <>

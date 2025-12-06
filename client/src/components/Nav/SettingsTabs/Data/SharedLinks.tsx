@@ -1,6 +1,6 @@
 import { useCallback, useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { TrashIcon, MessageSquare } from 'lucide-react';
+import { TrashIcon, MessageSquare, ExternalLink } from 'lucide-react';
 import {
   OGDialog,
   useToastContext,
@@ -212,10 +212,14 @@ export default function SharedLinks() {
                 to={`/share/${shareId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center truncate text-blue-500 hover:underline"
+                className="group flex items-center gap-1 truncate rounded-sm text-blue-600 underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-ring"
                 aria-label={localize('com_ui_open_link', { 0: title })}
               >
-                {title}
+                <span className="truncate">{title}</span>
+                <ExternalLink
+                  className="size-3 flex-shrink-0 opacity-70 group-hover:opacity-100"
+                  aria-hidden="true"
+                />
               </Link>
             </div>
           );

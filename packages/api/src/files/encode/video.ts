@@ -9,16 +9,19 @@ import { validateVideo } from '~/files/validation';
  * Encodes and formats video files for different providers
  * @param req - The request object
  * @param files - Array of video files
- * @param provider - The provider to format for
+ * @param params - Object containing provider and optional endpoint
+ * @param params.provider - The provider to format for
+ * @param params.endpoint - Optional endpoint name for file config lookup
  * @param getStrategyFunctions - Function to get strategy functions
  * @returns Promise that resolves to videos and file metadata
  */
 export async function encodeAndFormatVideos(
   req: ServerRequest,
   files: IMongoFile[],
-  provider: Providers,
+  params: { provider: Providers; endpoint?: string },
   getStrategyFunctions: (source: string) => StrategyFunctions,
 ): Promise<VideoResult> {
+  const { provider, endpoint } = params;
   if (!files?.length) {
     return { videos: [], files: [] };
   }
@@ -54,7 +57,10 @@ export async function encodeAndFormatVideos(
     const videoBuffer = Buffer.from(content, 'base64');
 
     /** Extract configured file size limit from fileConfig for this endpoint */
-    const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, provider);
+    const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, {
+      provider,
+      endpoint,
+    });
 
     const validation = await validateVideo(
       videoBuffer,
@@ -69,7 +75,7 @@ export async function encodeAndFormatVideos(
 
     if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
       result.videos.push({
-        type: 'video',
+        type: 'media',
         mimeType: file.type,
         data: content,
       });

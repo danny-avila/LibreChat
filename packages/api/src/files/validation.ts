@@ -16,6 +16,11 @@ export interface AudioValidationResult {
   error?: string;
 }
 
+export interface ImageValidationResult {
+  isValid: boolean;
+  error?: string;
+}
+
 export async function validatePdf(
   pdfBuffer: Buffer,
   fileSize: number,
@@ -224,6 +229,56 @@ export async function validateAudio(
     return {
       isValid: false,
       error: 'Invalid audio file: too small or corrupted',
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validates image files for different providers
+ * @param imageBuffer - The image file as a buffer
+ * @param fileSize - The file size in bytes
+ * @param provider - The provider to validate for
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
+ * @returns Promise that resolves to validation result
+ */
+export async function validateImage(
+  imageBuffer: Buffer,
+  fileSize: number,
+  provider: Providers | string,
+  configuredFileSizeLimit?: number,
+): Promise<ImageValidationResult> {
+  if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
+    const providerLimit = mbToBytes(20);
+    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
+
+    if (fileSize > effectiveLimit) {
+      const limitMB = Math.round(effectiveLimit / (1024 * 1024));
+      return {
+        isValid: false,
+        error: `Image file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
+      };
+    }
+  }
+
+  if (provider === Providers.ANTHROPIC) {
+    const providerLimit = mbToBytes(5);
+    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
+
+    if (fileSize > effectiveLimit) {
+      const limitMB = Math.round(effectiveLimit / (1024 * 1024));
+      return {
+        isValid: false,
+        error: `Image file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
+      };
+    }
+  }
+
+  if (!imageBuffer || imageBuffer.length < 10) {
+    return {
+      isValid: false,
+      error: 'Invalid image file: too small or corrupted',
     };
   }
 
