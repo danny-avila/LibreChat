@@ -4,10 +4,18 @@ const { v4 } = require('uuid');
 const { tool } = require('@langchain/core/tools');
 const { FileContext, ContentTypes, FileSources } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
-const { geminiToolkit } = require('@librechat/api');
+const { geminiToolkit, loadServiceKey } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFiles } = require('~/models/File');
 const { GoogleGenAI } = require('@google/genai');
+
+/**
+ * Get the default service key file path (consistent with main Google endpoint)
+ * @returns {string} - The default path to the service key file
+ */
+function getDefaultServiceKeyPath() {
+  return process.env.GOOGLE_SERVICE_KEY_FILE || path.join(__dirname, '../../../..', 'data', 'auth.json');
+}
 
 const displayMessage =
   "Gemini displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
@@ -33,35 +41,62 @@ function getSafeFormat(format) {
 
 /**
  * Initialize Gemini client (supports both Gemini API and Vertex AI)
+ * Priority: User-provided key > Admin env vars (GEMINI_API_KEY > GOOGLE_KEY) > Vertex AI service account
+ * @param {Object} options - Initialization options
+ * @param {string} [options.GEMINI_API_KEY] - User-provided Gemini API key
+ * @param {string} [options.GOOGLE_KEY] - User-provided Google API key
  * @returns {Promise<GoogleGenAI>} - The initialized client
  */
-async function initializeGeminiClient() {
-  // Check for Gemini API key first (simpler setup, recommended for most users)
-  const geminiApiKey = process.env.GEMINI_API_KEY;
-  if (geminiApiKey) {
-    logger.debug('[GeminiImageGen] Using Gemini API with API key');
-    return new GoogleGenAI({ apiKey: geminiApiKey });
+async function initializeGeminiClient(options = {}) {
+  // Check for user-provided API keys first (passed from loadAuthValues)
+  const userGeminiKey = options.GEMINI_API_KEY;
+  if (userGeminiKey && userGeminiKey !== 'user_provided') {
+    logger.debug('[GeminiImageGen] Using Gemini API with user-provided GEMINI_API_KEY');
+    return new GoogleGenAI({ apiKey: userGeminiKey });
+  }
+
+  const userGoogleKey = options.GOOGLE_KEY;
+  if (userGoogleKey && userGoogleKey !== 'user_provided') {
+    logger.debug('[GeminiImageGen] Using Gemini API with user-provided GOOGLE_KEY');
+    return new GoogleGenAI({ apiKey: userGoogleKey });
+  }
+
+  // Check for admin-configured API keys from env vars
+  const adminGeminiKey = process.env.GEMINI_API_KEY;
+  if (adminGeminiKey && adminGeminiKey !== 'user_provided') {
+    logger.debug('[GeminiImageGen] Using Gemini API with admin GEMINI_API_KEY');
+    return new GoogleGenAI({ apiKey: adminGeminiKey });
+  }
+
+  const adminGoogleKey = process.env.GOOGLE_KEY;
+  if (adminGoogleKey && adminGoogleKey !== 'user_provided') {
+    logger.debug('[GeminiImageGen] Using Gemini API with admin GOOGLE_KEY');
+    return new GoogleGenAI({ apiKey: adminGoogleKey });
   }
 
   // Fall back to Vertex AI with service account
   logger.debug('[GeminiImageGen] Using Vertex AI with service account');
-  const credentialsPath =
-    process.env.GOOGLE_SERVICE_KEY_FILE || path.join(process.cwd(), 'api', 'data', 'auth.json');
+  const credentialsPath = getDefaultServiceKeyPath();
 
-  if (!fs.existsSync(credentialsPath)) {
+  // Use loadServiceKey for consistent loading (supports file paths, JSON strings, base64)
+  const serviceKey = await loadServiceKey(credentialsPath);
+
+  if (!serviceKey || !serviceKey.project_id) {
     throw new Error(
-      'Either GEMINI_API_KEY or Google service account credentials file is required. ' +
-        `Service account file not found at: ${credentialsPath}`,
+      'Gemini Image Generation requires one of: user-provided API key, GEMINI_API_KEY or GOOGLE_KEY env var, or a valid Google service account. ' +
+        `Service account file not found or invalid at: ${credentialsPath}`,
     );
   }
 
-  process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
-  const serviceKey = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+  // Set GOOGLE_APPLICATION_CREDENTIALS for any Google Cloud SDK dependencies
+  if (fs.existsSync(credentialsPath)) {
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
+  }
 
   return new GoogleGenAI({
     vertexai: true,
     project: serviceKey.project_id,
-    location: process.env.GOOGLE_CLOUD_LOCATION || 'global',
+    location: process.env.GOOGLE_LOC || process.env.GOOGLE_CLOUD_LOCATION || 'global',
   });
 }
 
@@ -251,21 +286,21 @@ function createGeminiImageTool(fields = {}) {
     throw new Error('This tool is only available for agents.');
   }
 
-  // Validate configuration
-  if (!override) {
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (!geminiApiKey) {
-      const credentialsPath =
-        process.env.GOOGLE_SERVICE_KEY_FILE || path.join(process.cwd(), 'api', 'data', 'auth.json');
-      if (!fs.existsSync(credentialsPath)) {
-        throw new Error(
-          'Either GEMINI_API_KEY or Google service account credentials file is required.',
-        );
-      }
-    }
-  }
+  // Skip validation during tool creation - validation happens at runtime in initializeGeminiClient
+  // This allows the tool to be added to agents when using Vertex AI without requiring API keys
+  // The actual credentials check happens when the tool is invoked
 
-  const { req, imageFiles = [], processFileURL, userId, fileStrategy } = fields;
+  const {
+    req,
+    imageFiles = [],
+    processFileURL,
+    userId,
+    fileStrategy,
+    GEMINI_API_KEY,
+    GOOGLE_KEY,
+    // GEMINI_VERTEX_ENABLED is used for auth validation only (not used in code)
+    // When set as env var, it signals Vertex AI is configured and bypasses API key requirement
+  } = fields;
 
   const geminiImageGenTool = tool(
     async ({ prompt, image_ids }, _runnableConfig) => {
@@ -275,10 +310,13 @@ function createGeminiImageTool(fields = {}) {
 
       logger.debug('[GeminiImageGen] Generating image with prompt:', prompt?.substring(0, 100));
 
-      // Initialize Gemini client
+      // Initialize Gemini client with user-provided credentials
       let ai;
       try {
-        ai = await initializeGeminiClient();
+        ai = await initializeGeminiClient({
+          GEMINI_API_KEY,
+          GOOGLE_KEY,
+        });
       } catch (error) {
         logger.error('[GeminiImageGen] Failed to initialize client:', error);
         return [
