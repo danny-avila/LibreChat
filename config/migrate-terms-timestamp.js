@@ -62,6 +62,9 @@ const connect = require('./connect');
       try {
         // Use createdAt as fallback for termsAcceptedAt
         const termsAcceptedAt = user.createdAt || new Date();
+        if (!user.createdAt) {
+          console.yellow(`Warning: User ${user._id} has no createdAt, using current date for termsAcceptedAt`);
+        }
         await User.updateOne({ _id: user._id }, { $set: { termsAcceptedAt } });
         migratedCount++;
 
