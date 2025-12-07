@@ -25,7 +25,7 @@ async function loadDefaultModels(req) {
           logger.error('Error fetching OpenAI models:', error);
           return [];
         }),
-        getAnthropicModels({ user: req.user.id, vertexModels: vertexConfig?.models }).catch(
+        getAnthropicModels({ user: req.user.id, vertexModels: vertexConfig?.modelNames }).catch(
           (error) => {
             logger.error('Error fetching Anthropic models:', error);
             return [];

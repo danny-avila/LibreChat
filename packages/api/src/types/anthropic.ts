@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Dispatcher } from 'undici';
-import { AuthKeys, anthropicSchema } from 'librechat-data-provider';
+import { AuthKeys, anthropicSchema, TVertexAISchema } from 'librechat-data-provider';
 import type { AnthropicClientOptions } from '@librechat/agents';
 import type { LLMConfigResult } from './openai';
 import type { GoogleServiceKey } from '../utils/key';
@@ -79,6 +79,8 @@ export interface AnthropicConfigOptions {
   dropParams?: string[];
   /** Vertex AI specific options for Google Cloud configuration */
   vertexOptions?: VertexAIClientOptions;
+  /** Full Vertex AI configuration including model mappings from YAML config */
+  vertexConfig?: TVertexAISchema;
 }
 
 /**

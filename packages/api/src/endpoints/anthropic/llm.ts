@@ -7,7 +7,11 @@ import type {
   AnthropicCredentials,
 } from '~/types/anthropic';
 import { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } from './helpers';
-import { createAnthropicVertexClient, isAnthropicVertexCredentials } from './vertex';
+import {
+  createAnthropicVertexClient,
+  isAnthropicVertexCredentials,
+  getVertexDeploymentName,
+} from './vertex';
 
 /**
  * Parses credentials from string or object format
@@ -119,6 +123,13 @@ function getLLMConfig(
 
   if (isAnthropicVertexCredentials(creds)) {
     // Vertex AI configuration - use custom client with optional YAML config
+    // Map the visible model name to the actual deployment name for Vertex AI
+    const deploymentName = getVertexDeploymentName(
+      requestOptions.model ?? '',
+      options.vertexConfig,
+    );
+    requestOptions.model = deploymentName;
+
     requestOptions.createClient = () =>
       createAnthropicVertexClient(creds, requestOptions.clientOptions, options.vertexOptions);
   } else if (apiKey) {

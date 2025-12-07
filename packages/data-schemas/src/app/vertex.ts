@@ -1,10 +1,16 @@
 import logger from '~/config/winston';
-import { EModelEndpoint, extractEnvVariable, envVarRegex } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  extractEnvVariable,
+  envVarRegex,
+  TVertexModelMap,
+} from 'librechat-data-provider';
 import type {
   TCustomConfig,
   TVertexAISchema,
   TVertexAIConfig,
   TAnthropicEndpoint,
+  TVertexModelConfig,
 } from 'librechat-data-provider';
 
 /**
@@ -20,6 +26,58 @@ export const defaultVertexModels = [
   'claude-3-opus@20240229',
   'claude-3-haiku@20240307',
 ];
+
+/**
+ * Processes models configuration and creates deployment name mapping
+ * Similar to Azure's model mapping logic
+ * @param models - The models configuration (can be array or object)
+ * @param defaultDeploymentName - Optional default deployment name
+ * @returns Object containing modelNames array and modelDeploymentMap
+ */
+function processVertexModels(
+  models: string[] | Record<string, TVertexModelConfig> | undefined,
+  defaultDeploymentName?: string,
+): { modelNames: string[]; modelDeploymentMap: TVertexModelMap } {
+  const modelNames: string[] = [];
+  const modelDeploymentMap: TVertexModelMap = {};
+
+  if (!models) {
+    // No models specified, use defaults
+    for (const model of defaultVertexModels) {
+      modelNames.push(model);
+      modelDeploymentMap[model] = model; // Default: model name = deployment name
+    }
+    return { modelNames, modelDeploymentMap };
+  }
+
+  if (Array.isArray(models)) {
+    // Legacy format: simple array of model names
+    for (const modelName of models) {
+      modelNames.push(modelName);
+      // If a default deployment name is provided, use it for all models
+      // Otherwise, model name is the deployment name
+      modelDeploymentMap[modelName] = defaultDeploymentName || modelName;
+    }
+  } else {
+    // New format: object with model names as keys and config as values
+    for (const [modelName, modelConfig] of Object.entries(models)) {
+      modelNames.push(modelName);
+
+      if (typeof modelConfig === 'boolean') {
+        // Model is set to true/false - use default deployment name or model name
+        modelDeploymentMap[modelName] = defaultDeploymentName || modelName;
+      } else if (modelConfig?.deploymentName) {
+        // Model has its own deployment name specified
+        modelDeploymentMap[modelName] = modelConfig.deploymentName;
+      } else {
+        // Model is an object but no deployment name - use default or model name
+        modelDeploymentMap[modelName] = defaultDeploymentName || modelName;
+      }
+    }
+  }
+
+  return { modelNames, modelDeploymentMap };
+}
 
 /**
  * Validates and processes Vertex AI configuration
@@ -42,6 +100,9 @@ export function validateVertexConfig(
   const serviceKeyFile = vertexConfig.serviceKeyFile
     ? extractEnvVariable(vertexConfig.serviceKeyFile)
     : undefined;
+  const defaultDeploymentName = vertexConfig.deploymentName
+    ? extractEnvVariable(vertexConfig.deploymentName)
+    : undefined;
 
   // Check for unresolved environment variables
   if (projectId && envVarRegex.test(projectId)) {
@@ -60,6 +121,18 @@ export function validateVertexConfig(
     );
   }
 
+  if (defaultDeploymentName && envVarRegex.test(defaultDeploymentName)) {
+    errors.push(
+      `Vertex AI deploymentName environment variable "${vertexConfig.deploymentName}" was not found.`,
+    );
+  }
+
+  // Process models and create deployment mapping
+  const { modelNames, modelDeploymentMap } = processVertexModels(
+    vertexConfig.models,
+    defaultDeploymentName,
+  );
+
   // Note: projectId is optional - if not provided, it will be auto-detected from the service key file
 
   const isValid = errors.length === 0;
@@ -69,7 +142,10 @@ export function validateVertexConfig(
     projectId,
     region,
     serviceKeyFile,
-    models: vertexConfig.models || defaultVertexModels,
+    deploymentName: defaultDeploymentName,
+    models: vertexConfig.models,
+    modelNames,
+    modelDeploymentMap,
     isValid,
     errors,
   };
@@ -113,7 +189,8 @@ export function vertexConfigSetup(config: Partial<TCustomConfig>): TVertexAIConf
   logger.info('Vertex AI configuration loaded successfully', {
     projectId: validatedConfig.projectId,
     region: validatedConfig.region,
-    models: validatedConfig.models?.length || 0,
+    modelCount: validatedConfig.modelNames?.length || 0,
+    models: validatedConfig.modelNames,
   });
 
   return validatedConfig;

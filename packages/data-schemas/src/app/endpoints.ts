@@ -51,6 +51,9 @@ export const loadEndpoints = (
 
     loadedEndpoints[EModelEndpoint.anthropic] = {
       ...anthropicConfig,
+      // If Vertex AI is enabled, use the visible model names from vertex config
+      // Otherwise, use the models array from anthropic config
+      ...(vertexConfig?.modelNames && { models: vertexConfig.modelNames }),
       // Attach validated Vertex AI config if present
       ...(vertexConfig && { vertexConfig }),
     };

@@ -359,6 +359,19 @@ export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, 'groups'> &
   TAzureConfigValidationResult;
 
 /**
+ * Vertex AI model configuration - similar to Azure model config
+ * Allows specifying deployment name for each model
+ */
+export const vertexModelConfigSchema = z
+  .object({
+    /** The actual model ID/deployment name used by Vertex AI API */
+    deploymentName: z.string().optional(),
+  })
+  .or(z.boolean());
+
+export type TVertexModelConfig = z.infer<typeof vertexModelConfigSchema>;
+
+/**
  * Vertex AI configuration schema for Anthropic models served via Google Cloud Vertex AI.
  * Similar to Azure configuration, this allows running Anthropic models through Google Cloud.
  */
@@ -371,11 +384,15 @@ export const vertexAISchema = z.object({
   region: z.string().default('us-east5'),
   /** Optional: Path to service account key file */
   serviceKeyFile: z.string().optional(),
-  /** Optional: Available models - if not specified, uses default Anthropic models */
-  models: z.array(z.string()).optional(),
+  /** Optional: Default deployment name for all models (can be overridden per model) */
+  deploymentName: z.string().optional(),
+  /** Optional: Available models - can be string array or object with deploymentName mapping */
+  models: z.union([z.array(z.string()), z.record(z.string(), vertexModelConfigSchema)]).optional(),
 });
 
 export type TVertexAISchema = z.infer<typeof vertexAISchema>;
+
+export type TVertexModelMap = Record<string, string>;
 
 /**
  * Validated Vertex AI configuration result
@@ -383,6 +400,8 @@ export type TVertexAISchema = z.infer<typeof vertexAISchema>;
 export type TVertexAIConfig = TVertexAISchema & {
   isValid: boolean;
   errors: string[];
+  modelNames?: string[];
+  modelDeploymentMap?: TVertexModelMap;
 };
 
 /**

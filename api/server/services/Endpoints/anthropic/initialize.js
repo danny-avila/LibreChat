@@ -74,6 +74,8 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
         modelOptions: endpointOption?.model_parameters ?? {},
         // Pass Vertex AI options if configured
         ...(vertexOptions && { vertexOptions }),
+        // Pass full Vertex AI config including model mappings
+        ...(vertexConfig && { vertexConfig }),
       },
       clientOptions,
     );
