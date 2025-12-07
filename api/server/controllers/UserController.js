@@ -97,7 +97,10 @@ const acceptTermsController = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    res.status(200).json({ message: 'Terms accepted successfully' });
+    res.status(200).json({
+      message: 'Terms accepted successfully',
+      termsAcceptedAt: user.termsAcceptedAt,
+    });
   } catch (error) {
     logger.error('Error accepting terms:', error);
     res.status(500).json({ message: 'Error accepting terms' });
