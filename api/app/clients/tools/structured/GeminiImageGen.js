@@ -14,7 +14,9 @@ const { GoogleGenAI } = require('@google/genai');
  * @returns {string} - The default path to the service key file
  */
 function getDefaultServiceKeyPath() {
-  return process.env.GOOGLE_SERVICE_KEY_FILE || path.join(__dirname, '../../../..', 'data', 'auth.json');
+  return (
+    process.env.GOOGLE_SERVICE_KEY_FILE || path.join(__dirname, '../../../..', 'data', 'auth.json')
+  );
 }
 
 const displayMessage =
