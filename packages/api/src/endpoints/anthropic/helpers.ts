@@ -1,7 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
-import { EModelEndpoint, anthropicSettings } from 'librechat-data-provider';
+import { EModelEndpoint, anthropicSettings, TBetaFeatureFlags } from 'librechat-data-provider';
 import { matchModelName } from '~/utils/tokens';
+
+export interface BetaFeaturesConfig extends TBetaFeatureFlags {
+  modelOverrides?: Record<string, TBetaFeatureFlags>;
+}
 
 /**
  * @param {string} modelName
@@ -26,46 +30,59 @@ function checkPromptCacheSupport(modelName: string): boolean {
   );
 }
 
-/**
- * Gets the appropriate headers for Claude models with cache control
- * @param {string} model The model name
- * @param {boolean} supportsCacheControl Whether the model supports cache control
- * @returns {AnthropicClientOptions['extendedOptions']['defaultHeaders']|undefined} The headers object or undefined if not applicable
- */
+function resolveFeatureFlag(
+  feature: keyof TBetaFeatureFlags,
+  model: string,
+  config: BetaFeaturesConfig,
+  defaultValue: boolean = true,
+): boolean {
+  const exactOverride = config.modelOverrides?.[model]?.[feature];
+  if (exactOverride !== undefined) {
+    return exactOverride;
+  }
+
+  for (const [pattern, flags] of Object.entries(config.modelOverrides ?? {})) {
+    if (pattern.includes('*')) {
+      const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+      const regex = new RegExp('^' + escaped + '$');
+      if (regex.test(model) && flags[feature] !== undefined) {
+        return flags[feature]!;
+      }
+    }
+  }
+
+  return config[feature] ?? defaultValue;
+}
+
 function getClaudeHeaders(
   model: string,
   supportsCacheControl: boolean,
+  betaConfig: BetaFeaturesConfig = {},
 ): Record<string, string> | undefined {
-  if (!supportsCacheControl) {
-    return undefined;
+  const features: string[] = [];
+
+  if (/claude-3[-.]5-sonnet/.test(model) && resolveFeatureFlag('extendedMaxTokens', model, betaConfig)) {
+    features.push('max-tokens-3-5-sonnet-2024-07-15');
   }
 
-  if (/claude-3[-.]5-sonnet/.test(model)) {
-    return {
-      'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15,prompt-caching-2024-07-31',
-    };
-  } else if (/claude-3[-.]7/.test(model)) {
-    return {
-      'anthropic-beta':
-        'token-efficient-tools-2025-02-19,output-128k-2025-02-19,prompt-caching-2024-07-31',
-    };
-  } else if (/claude-sonnet-4/.test(model)) {
-    return {
-      'anthropic-beta': 'prompt-caching-2024-07-31,context-1m-2025-08-07',
-    };
-  } else if (
-    /claude-(?:sonnet|opus|haiku)-[4-9]/.test(model) ||
-    /claude-[4-9]-(?:sonnet|opus|haiku)?/.test(model) ||
-    /claude-4(?:-(?:sonnet|opus|haiku))?/.test(model)
-  ) {
-    return {
-      'anthropic-beta': 'prompt-caching-2024-07-31',
-    };
-  } else {
-    return {
-      'anthropic-beta': 'prompt-caching-2024-07-31',
-    };
+  if (/claude-3[-.]7/.test(model)) {
+    if (resolveFeatureFlag('tokenEfficientTools', model, betaConfig)) {
+      features.push('token-efficient-tools-2025-02-19');
+    }
+    if (resolveFeatureFlag('output128k', model, betaConfig)) {
+      features.push('output-128k-2025-02-19');
+    }
   }
+
+  if (supportsCacheControl && resolveFeatureFlag('promptCaching', model, betaConfig)) {
+    features.push('prompt-caching-2024-07-31');
+  }
+
+  if (/claude-sonnet-4/.test(model) && resolveFeatureFlag('context1m', model, betaConfig)) {
+    features.push('context-1m-2025-08-07');
+  }
+
+  return features.length > 0 ? { 'anthropic-beta': features.join(',') } : undefined;
 }
 
 /**
@@ -129,4 +146,11 @@ function configureReasoning(
   return updatedOptions;
 }
 
-export { checkPromptCacheSupport, getClaudeHeaders, configureReasoning };
+export {
+  checkPromptCacheSupport,
+  getClaudeHeaders,
+  configureReasoning,
+  resolveFeatureFlag,
+};
+
+export type { BetaFeaturesConfig };

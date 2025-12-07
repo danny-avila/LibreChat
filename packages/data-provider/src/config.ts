@@ -214,6 +214,30 @@ export const bedrockEndpointSchema = baseEndpointSchema.merge(
   }),
 );
 
+export const betaFeatureFlagsSchema = z.object({
+  promptCaching: z.boolean().optional(),
+  extendedMaxTokens: z.boolean().optional(),
+  tokenEfficientTools: z.boolean().optional(),
+  output128k: z.boolean().optional(),
+  context1m: z.boolean().optional(),
+});
+
+export type TBetaFeatureFlags = z.infer<typeof betaFeatureFlagsSchema>;
+
+export const anthropicBetaFeaturesSchema = betaFeatureFlagsSchema
+  .extend({
+    modelOverrides: z.record(z.string(), betaFeatureFlagsSchema).optional(),
+  })
+  .optional();
+
+export type TAnthropicBetaFeatures = z.infer<typeof anthropicBetaFeaturesSchema>;
+
+export const anthropicEndpointSchema = baseEndpointSchema.merge(
+  z.object({
+    betaFeatures: anthropicBetaFeaturesSchema,
+  }),
+);
+
 const modelItemSchema = z.union([
   z.string(),
   z.object({
@@ -859,7 +883,7 @@ export const configSchema = z.object({
       all: baseEndpointSchema.optional(),
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
       [EModelEndpoint.google]: baseEndpointSchema.optional(),
-      [EModelEndpoint.anthropic]: baseEndpointSchema.optional(),
+      [EModelEndpoint.anthropic]: anthropicEndpointSchema.optional(),
       [EModelEndpoint.gptPlugins]: baseEndpointSchema.optional(),
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
