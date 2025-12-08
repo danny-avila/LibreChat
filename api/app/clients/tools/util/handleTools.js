@@ -334,7 +334,7 @@ After statements from search results, use invisible Unicode markers with the pat
 **CRITICAL CITATION RULES:**
 - Use ONLY the invisible Unicode character \\ue202 (U+E202) before each citation pattern
 - For grouped citations, wrap with \\ue200 (U+E200) at start and \\ue201 (U+E201) at end
-- Pattern format: turn{N}{type}{index} where:
+- Pattern format: turn{N}{type}{index} (e.g., turn0search0) where:
   * N = turn number (usually 0)
   * type = search, news, or ref
   * index = source index number (0, 1, 2, etc.)
