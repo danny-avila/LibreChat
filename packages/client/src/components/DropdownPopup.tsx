@@ -57,6 +57,21 @@ const DropdownPopup: React.FC<DropdownProps> = ({
   );
 };
 
+const MenuItemText = ({
+  label,
+  description,
+}: {
+  label?: React.ReactNode;
+  description?: React.ReactNode;
+}) => (
+  <div className="flex min-w-0 flex-1 flex-col text-left">
+    {label && <span className="text-sm font-medium text-text-primary">{label}</span>}
+    {description && (
+      <span className="mt-0.5 text-xs text-text-secondary">{description}</span>
+    )}
+  </div>
+);
+
 const Menu: React.FC<MenuProps> = ({
   items,
   menuId,

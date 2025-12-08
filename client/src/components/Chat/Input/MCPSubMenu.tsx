@@ -1,18 +1,18 @@
 import React from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronRight } from 'lucide-react';
-import { PinIcon, MCPIcon } from '@librechat/client';
+import { PinIcon } from '@librechat/client';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { useBadgeRowContext } from '~/Providers';
 import { cn } from '~/utils';
 
 interface MCPSubMenuProps {
-  placeholder?: string;
+  children?: React.ReactNode;
 }
 
 const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
-  ({ placeholder, ...props }, ref) => {
+  ({ children, ...props }, ref) => {
     const { mcpServerManager } = useBadgeRowContext();
     const {
       isPinned,
@@ -50,15 +50,11 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
                   e.stopPropagation();
                   menuStore.toggle();
                 }}
-                className="flex w-full cursor-pointer items-center justify-between rounded-lg p-2 hover:bg-surface-hover"
               />
             }
           >
-            <div className="flex items-center gap-2">
-              <MCPIcon className="icon-md" />
-              <span>{placeholder || placeholderText}</span>
-              <ChevronRight className="ml-auto h-3 w-3" />
-            </div>
+            {children}
+            <ChevronRight className="h-3 w-3 flex-shrink-0" />
             <button
               type="button"
               onClick={(e) => {
