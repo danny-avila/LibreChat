@@ -32,5 +32,6 @@ const buildAssistantJsonSchema = (schema, options) => {
 };
 
 module.exports = {
+  sanitizeSchemaMetadata,
   buildAssistantJsonSchema,
 };
