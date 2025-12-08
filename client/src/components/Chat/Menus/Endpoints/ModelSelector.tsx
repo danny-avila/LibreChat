@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import type { ModelSelectorProps } from '~/common';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
 import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
-import { renderModelSpecs, renderEndpoints, renderSearchResults } from './components';
+import { renderEndpoints, renderSearchResults } from './components';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
@@ -82,14 +82,9 @@ function ModelSelectorContent() {
         combobox={<input placeholder={localize('com_endpoint_search_models')} />}
         trigger={trigger}
       >
-        {searchResults ? (
-          renderSearchResults(searchResults, localize, searchValue)
-        ) : (
-          <>
-            {renderModelSpecs(modelSpecs, selectedValues.modelSpec || '')}
-            {renderEndpoints(mappedEndpoints ?? [])}
-          </>
-        )}
+        {searchResults
+          ? renderSearchResults(searchResults, localize, searchValue)
+          : renderEndpoints(mappedEndpoints ?? [])}
       </Menu>
       <DialogManager
         keyDialogOpen={keyDialogOpen}
