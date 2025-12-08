@@ -29,7 +29,6 @@ import {
   useMediaQuery,
 } from '@librechat/client';
 import type { TFile } from 'librechat-data-provider';
-import type { AugmentedColumnDef } from '~/common';
 import { ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { useDeleteFilesFromTable } from '~/hooks/Files';
 import { useLocalize, TranslationKeys } from '~/hooks';
@@ -140,7 +139,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           <TableHeader className="sticky top-0 z-50">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id} className="border-b border-border-light">
-                {headerGroup.headers.map((header, index) => {
+                {headerGroup.headers.map((header, _index) => {
                   const size = header.getSize();
                   const style: Style = {
                     width: size === Number.MAX_SAFE_INTEGER ? 'auto' : size,
@@ -169,7 +168,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                   data-state={row.getIsSelected() && 'selected'}
                   className="border-b border-border-light transition-colors hover:bg-surface-secondary [tr:last-child_&]:border-b-0"
                 >
-                  {row.getVisibleCells().map((cell, index) => {
+                  {row.getVisibleCells().map((cell, _index) => {
                     const size = cell.column.getSize();
                     const style: Style = {
                       width: size === Number.MAX_SAFE_INTEGER ? 'auto' : size,
