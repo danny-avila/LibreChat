@@ -130,3 +130,4 @@ function formatToOpenAIAssistantTool(tool) {
 module.exports = {
   loadAndFormatTools,
 };
+
