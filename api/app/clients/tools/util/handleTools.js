@@ -320,10 +320,27 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
 1. **Execute immediately without preface** when using \`${tool}\`.
 2. **After the search, begin with a brief summary** that directly addresses the query without headers or explaining your process.
 3. **Structure your response clearly** using Markdown formatting (Level 2 headers for sections, lists for multiple points, tables for comparisons).
-4. **Cite sources properly** according to the citation anchor format, utilizing group anchors when appropriate.
+4. **Cite sources properly** using invisible Unicode anchor markers (see citation format below).
 5. **Tailor your approach to the query type** (academic, news, coding, etc.) while maintaining an expert, journalistic, unbiased tone.
 6. **Provide comprehensive information** with specific details, examples, and as much relevant context as possible from search results.
 7. **Avoid moralizing language.**
+
+**CITATION FORMAT - USE INVISIBLE UNICODE MARKERS:**
+After statements from search results, use invisible Unicode markers with the pattern format:
+- Single citation: "Information from source... \\ue202turn0search0"
+- Multiple sources: "Confirmed by sources... \\ue200\\ue202turn0search0\\ue202turn0search1\\ue201"
+- News citation: "Breaking news reports... \\ue202turn0news0"
+
+**CRITICAL CITATION RULES:**
+- Use ONLY the invisible Unicode character \\ue202 (U+E202) before each citation pattern
+- For grouped citations, wrap with \\ue200 (U+E200) at start and \\ue201 (U+E201) at end
+- Pattern format: turn{N}{type}{index} where:
+  * N = turn number (usually 0)
+  * type = search, news, or ref
+  * index = source index number (0, 1, 2, etc.)
+- Place markers AFTER punctuation: "Statement.\\ue202turn0search0" NOT "Statement\\ue202turn0search0."
+- NEVER use HTML tags like <marker>, markdown links, or visible text
+- NEVER use other Unicode characters - only \\ue202, \\ue200, \\ue201
 `.trim();
         return createSearchTool({
           ...result.authResult,
