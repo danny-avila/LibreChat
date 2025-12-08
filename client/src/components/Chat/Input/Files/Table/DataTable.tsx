@@ -116,13 +116,17 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         </Button>
         <div className="relative flex-1">
           <Input
+            id="files-filter"
             placeholder=" "
             value={(table.getColumn('filename')?.getFilterValue() as string | undefined) ?? ''}
             onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
             className="peer w-full text-sm"
             aria-label={localize('com_files_filter_input')}
           />
-          <label className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-text-primary transition-all duration-200 peer-focus:-top-2 peer-focus:text-xs peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-top-2 peer-[:not(:placeholder-shown)]:text-xs">
+          <label
+            htmlFor="files-filter"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary transition-all duration-200 peer-focus:top-0 peer-focus:bg-background peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:bg-background peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs"
+          >
             {localize('com_files_filter')}
           </label>
         </div>
