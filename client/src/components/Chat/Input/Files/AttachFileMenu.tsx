@@ -86,7 +86,7 @@ const AttachFileMenu = ({
       const items: MenuItemProps[] = [
         {
           label: localize('com_ui_upload_image_input'),
-          description: localize('com_ui_upload_image_input_desc'),
+          description: localize('com_ui_upload_image_input_description'),
           onClick: () => {
             setToolResource(undefined);
             onAction(true);
@@ -98,7 +98,7 @@ const AttachFileMenu = ({
       if (capabilities.contextEnabled) {
         items.push({
           label: localize('com_ui_upload_ocr_text'),
-          description: localize('com_ui_upload_ocr_text_desc'),
+          description: localize('com_ui_upload_ocr_text_description'),
           onClick: () => {
             setToolResource(EToolResources.context);
             onAction();
@@ -110,7 +110,7 @@ const AttachFileMenu = ({
       if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
         items.push({
           label: localize('com_ui_upload_file_search'),
-          description: localize('com_ui_upload_file_search_desc'),
+          description: localize('com_ui_upload_file_search_description'),
           onClick: () => {
             setToolResource(EToolResources.file_search);
             setEphemeralAgent((prev) => ({
@@ -126,7 +126,7 @@ const AttachFileMenu = ({
       if (capabilities.codeEnabled && codeAllowedByAgent) {
         items.push({
           label: localize('com_ui_upload_code_files'),
-          description: localize('com_ui_upload_code_files_desc'),
+          description: localize('com_ui_upload_code_files_description'),
           onClick: () => {
             setToolResource(EToolResources.execute_code);
             setEphemeralAgent((prev) => ({

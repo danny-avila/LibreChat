@@ -61,13 +61,3 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
     </MenuItem>
   );
 }
-
-export function renderModelSpecs(specs: TModelSpec[], selectedSpec: string) {
-  if (!specs || specs.length === 0) {
-    return null;
-  }
-
-  return specs.map((spec) => (
-    <ModelSpecItem key={spec.name} spec={spec} isSelected={selectedSpec === spec.name} />
-  ));
-}

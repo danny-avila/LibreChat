@@ -8,7 +8,7 @@ export type RenderProp<
 export interface MenuItemProps {
   id?: string;
   label?: string;
-  description?: React.ReactNode;
+  description?: string;
   onClick?: (e: React.MouseEvent<HTMLButtonElement | HTMLDivElement>) => void;
   icon?: React.ReactNode;
   kbd?: string;
@@ -22,4 +22,5 @@ export interface MenuItemProps {
     | RenderProp<React.HTMLAttributes<any> & { ref?: React.Ref<any> | undefined }>
     | React.ReactElement<any, string | React.JSXElementConstructor<any>>
     | undefined;
+  subItems?: MenuItemProps[];
 }

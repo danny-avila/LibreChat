@@ -34,6 +34,9 @@ properties:
       - name: maas-api-key
         keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-MAAS-API-KEY
         identity: system
+      - name: tavily-api-key
+        keyVaultUrl: https://kv-pyxplayai-prod-001.vault.azure.net/secrets/PROD-TAVILY-API-KEY
+        identity: system
     activeRevisionsMode: single
     registries:
       - server: conpaychexaiprod001.azurecr.io
@@ -92,6 +95,8 @@ properties:
           value: https://service-internal.paychex.com/is/librechat  
         - name: GCP_VERTEXAI_API_KEY
           secretRef: maas-api-key
+        - name: TAVILY_API_KEY
+          secretRef: tavily-api-key
         - name: ALLOW_REGISTRATION
           value: FALSE
         - name: ALLOW_EMAIL_LOGIN
