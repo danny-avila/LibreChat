@@ -4,6 +4,7 @@ import type {
   MultiAgentGraphConfig,
   OpenAIClientOptions,
   StandardGraphConfig,
+  LCToolRegistry,
   AgentInputs,
   GenericTool,
   RunConfig,
@@ -48,6 +49,7 @@ type RunAgent = Omit<Agent, 'tools'> & {
   maxContextTokens?: number;
   useLegacyContent?: boolean;
   toolContextMap?: Record<string, string>;
+  toolRegistry?: LCToolRegistry;
 };
 
 /**
@@ -143,6 +145,7 @@ export async function createRun({
       tools: agent.tools,
       clientOptions: llmConfig,
       instructions: systemContent,
+      toolRegistry: agent.toolRegistry,
       maxContextTokens: agent.maxContextTokens,
       useLegacyContent: agent.useLegacyContent ?? false,
     };

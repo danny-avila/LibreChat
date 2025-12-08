@@ -429,6 +429,7 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
   });
   toolInstance.mcp = true;
   toolInstance.mcpRawServerName = serverName;
+  toolInstance.mcpJsonSchema = parameters;
   return toolInstance;
 }
 

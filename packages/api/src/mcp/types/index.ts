@@ -17,7 +17,8 @@ import type {
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
-import type { TokenMethods, JsonSchemaType, IUser } from '@librechat/data-schemas';
+import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import type { LCTool } from '@librechat/agents';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
@@ -41,11 +42,6 @@ export interface MCPResource {
   name: string;
   description?: string;
   mimeType?: string;
-}
-export interface LCTool {
-  name: string;
-  description?: string;
-  parameters: JsonSchemaType;
 }
 
 export interface LCFunctionTool {
