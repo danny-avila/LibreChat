@@ -3,11 +3,11 @@ import { Search } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import {
   flexRender,
+  useReactTable,
   getCoreRowModel,
+  getSortedRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
 } from '@tanstack/react-table';
 import type {
   ColumnDef,
@@ -17,16 +17,16 @@ import type {
 } from '@tanstack/react-table';
 import { FileContext } from 'librechat-data-provider';
 import {
-  Button,
   Input,
   Table,
+  Button,
+  Spinner,
+  TableRow,
   TableBody,
   TableCell,
   TableHead,
-  TableHeader,
-  TableRow,
   TrashIcon,
-  Spinner,
+  TableHeader,
   useMediaQuery,
 } from '@librechat/client';
 import type { TFile } from 'librechat-data-provider';
@@ -127,7 +127,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           />
           <label
             htmlFor="files-filter"
-            className="pointer-events-none absolute left-10 top-1/2 -translate-y-1/2 text-sm text-text-secondary transition-all duration-200 peer-focus:left-3 peer-focus:top-0 peer-focus:bg-background peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:left-3 peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:bg-background peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs"
+            className="pointer-events-none absolute left-10 top-1/2 -translate-y-1/2 text-sm text-text-secondary transition-all duration-200 peer-focus:top-0 peer-focus:bg-background peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:bg-background peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs"
           >
             {localize('com_files_filter')}
           </label>

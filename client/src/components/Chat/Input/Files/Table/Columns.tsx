@@ -4,10 +4,10 @@ import { FileSources, FileContext } from 'librechat-data-provider';
 import {
   Button,
   Checkbox,
-  OpenAIMinimalIcon,
-  AzureMinimalIcon,
   useMediaQuery,
   TooltipAnchor,
+  AzureMinimalIcon,
+  OpenAIMinimalIcon,
 } from '@librechat/client';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
