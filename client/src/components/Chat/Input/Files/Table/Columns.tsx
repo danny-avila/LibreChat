@@ -22,6 +22,7 @@ const contextMap: Record<any, TranslationKeys> = {
 export const columns: ColumnDef<TFile>[] = [
   {
     id: 'select',
+    size: 40,
     header: ({ table }) => {
       return (
         <Checkbox

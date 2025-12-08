@@ -71,6 +71,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
   const table = useReactTable({
     data,
     columns,
+    defaultColumn: {
+      minSize: 0,
+      size: Number.MAX_SAFE_INTEGER,
+      maxSize: Number.MAX_SAFE_INTEGER,
+    },
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -136,15 +141,10 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id} className="border-b border-border-light">
                 {headerGroup.headers.map((header, index) => {
-                  const style: Style = {};
-                  if (index === 0 && header.id === 'select') {
-                    style.width = '36px';
-                    style.minWidth = '36px';
-                  } else if (header.id === 'filename') {
-                    style.width = isSmallScreen ? '60%' : '40%';
-                  } else {
-                    style.width = isSmallScreen ? '20%' : '15%';
-                  }
+                  const size = header.getSize();
+                  const style: Style = {
+                    width: size === Number.MAX_SAFE_INTEGER ? 'auto' : size,
+                  };
 
                   return (
                     <TableHead
@@ -170,16 +170,10 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                   className="border-b border-border-light transition-colors hover:bg-surface-secondary [tr:last-child_&]:border-b-0"
                 >
                   {row.getVisibleCells().map((cell, index) => {
-                    const maxWidth =
-                      (cell.column.columnDef as AugmentedColumnDef<TData, TValue>).meta?.size ??
-                      'auto';
-
-                    const style: Style = {};
-                    if (cell.column.id === 'filename') {
-                      style.maxWidth = maxWidth;
-                    } else if (index === 0) {
-                      style.maxWidth = '20px';
-                    }
+                    const size = cell.column.getSize();
+                    const style: Style = {
+                      width: size === Number.MAX_SAFE_INTEGER ? 'auto' : size,
+                    };
 
                     return (
                       <TableCell
