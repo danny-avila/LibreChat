@@ -1,7 +1,14 @@
 /* eslint-disable react-hooks/rules-of-hooks */
 import { ArrowUpDown, ArrowUp, ArrowDown, Database } from 'lucide-react';
 import { FileSources, FileContext } from 'librechat-data-provider';
-import { Checkbox, OpenAIMinimalIcon, AzureMinimalIcon, useMediaQuery } from '@librechat/client';
+import {
+  Button,
+  Checkbox,
+  OpenAIMinimalIcon,
+  AzureMinimalIcon,
+  useMediaQuery,
+  TooltipAnchor,
+} from '@librechat/client';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
@@ -26,14 +33,21 @@ export const columns: ColumnDef<TFile>[] = [
     header: ({ table }) => {
       const localize = useLocalize();
       return (
-        <Checkbox
-          checked={
-            table.getIsAllPageRowsSelected() ||
-            (table.getIsSomePageRowsSelected() && 'indeterminate')
+        <TooltipAnchor
+          description={localize('com_ui_select_all')}
+          side="top"
+          role="checkbox"
+          render={
+            <Checkbox
+              checked={
+                table.getIsAllPageRowsSelected() ||
+                (table.getIsSomePageRowsSelected() && 'indeterminate')
+              }
+              onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+              aria-label={localize('com_ui_select_all')}
+              className="flex"
+            />
           }
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label={localize('com_ui_select_all')}
-          className="flex"
         />
       );
     },
