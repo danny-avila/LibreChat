@@ -117,12 +117,17 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
  * @returns {FunctionTool} The OpenAI Assistant Tool.
  */
 function formatToOpenAIAssistantTool(tool) {
+  const parameters = zodToJsonSchema(tool.schema);
+  if (parameters && typeof parameters === 'object' && '$schema' in parameters) {
+    // Google function declarations reject the optional $schema metadata.
+    delete parameters.$schema;
+  }
   return {
     type: Tools.function,
     [Tools.function]: {
       name: tool.name,
       description: tool.description,
-      parameters: zodToJsonSchema(tool.schema),
+      parameters,
     },
   };
 }
@@ -130,4 +135,3 @@ function formatToOpenAIAssistantTool(tool) {
 module.exports = {
   loadAndFormatTools,
 };
-
