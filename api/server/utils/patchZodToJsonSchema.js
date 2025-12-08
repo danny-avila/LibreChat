@@ -3,7 +3,7 @@ const { sanitizeSchemaMetadata } = require('./toAssistantSchema');
 const modulePath = (() => {
   try {
     return require.resolve('zod-to-json-schema');
-  } catch (error) {
+  } catch (_error) {
     return null;
   }
 })();
