@@ -282,8 +282,10 @@ export interface BuildToolClassificationResult {
 
 /**
  * Checks if an agent is allowed to have classification features based on TOOL_CLASSIFICATION_AGENT_IDS.
+ * If TOOL_CLASSIFICATION_AGENT_IDS is not set, all agents are allowed (including when no agentId).
+ * If set, requires agentId to be in the list.
  * @param agentId - The agent ID to check
- * @returns Whether the agent is allowed (true if no restriction set, or agent is in the list)
+ * @returns Whether the agent is allowed
  */
 export function isAgentAllowedForClassification(agentId?: string): boolean {
   const allowedAgentIds = parseToolList(process.env.TOOL_CLASSIFICATION_AGENT_IDS);
@@ -344,6 +346,14 @@ export async function buildToolClassification(
   const { loadedTools, userId, agentId, loadAuthValues } = params;
   const additionalTools: GenericTool[] = [];
 
+  /** Check if this agent is allowed to have classification features (requires agentId) */
+  if (!isAgentAllowedForClassification(agentId)) {
+    logger.debug(
+      `[buildToolClassification] Agent ${agentId ?? 'undefined'} not allowed for classification, skipping`,
+    );
+    return { toolRegistry: undefined, additionalTools };
+  }
+
   const mcpTools = loadedTools.filter(isMCPTool);
   if (mcpTools.length === 0) {
     return { toolRegistry: undefined, additionalTools };
@@ -354,14 +364,6 @@ export async function buildToolClassification(
 
   /** Clean up temporary mcpJsonSchema property from tools now that registry is populated */
   cleanupMCPToolSchemas(mcpTools);
-
-  /** Check if this agent is allowed to have classification features */
-  if (!isAgentAllowedForClassification(agentId)) {
-    logger.debug(
-      `[buildToolClassification] Agent ${agentId} not in TOOL_CLASSIFICATION_AGENT_IDS, skipping PTC/ToolSearch`,
-    );
-    return { toolRegistry, additionalTools };
-  }
 
   /**
    * Check if this agent actually has tools that match the patterns.

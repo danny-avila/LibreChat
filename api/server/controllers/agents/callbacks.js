@@ -1,5 +1,6 @@
 const { nanoid } = require('nanoid');
 const { sendEvent } = require('@librechat/api');
+const { Constants } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
 const {
@@ -406,9 +407,11 @@ function createToolEndCallback({ req, res, artifactPromises }) {
       }
       return;
     }
-
+    // Constants.PROGRAMMATIC_TOOL_CALLING
     {
-      if (output.name !== Tools.execute_code) {
+      const isCodeTool =
+        output.name === Tools.execute_code || output.name === Constants.PROGRAMMATIC_TOOL_CALLING;
+      if (!isCodeTool) {
         return;
       }
     }
