@@ -1361,6 +1361,8 @@
   "com_ui_versions": "Versions",
   "com_ui_view_memory": "View Memory",
   "com_ui_view_source": "View source chat - {{title}}",
+  "com_ui_open_source_chat_new_tab_title": "Open Source Chat in New Tab - {{title}}",
+  "com_ui_open_source_chat_new_tab": "Open Source Chat in New Tab",
   "com_ui_web_search": "Web Search",
   "com_ui_web_search_cohere_key": "Enter Cohere API Key",
   "com_ui_web_search_firecrawl_url": "Firecrawl API URL (optional)",
