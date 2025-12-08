@@ -18,6 +18,7 @@ const contextMap: Record<any, TranslationKeys> = {
   [FileContext.assistants_output]: 'com_ui_assistants_output',
   [FileContext.message_attachment]: 'com_ui_attachment',
 };
+const localize = useLocalize();
 
 export const columns: ColumnDef<TFile>[] = [
   {
@@ -31,7 +32,7 @@ export const columns: ColumnDef<TFile>[] = [
             (table.getIsSomePageRowsSelected() && 'indeterminate')
           }
           onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="Select all"
+          aria-label={localize('com_ui_select_all')}
           className="flex"
         />
       );
@@ -41,7 +42,7 @@ export const columns: ColumnDef<TFile>[] = [
         <Checkbox
           checked={row.getIsSelected()}
           onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="Select row"
+          aria-label={localize('com_ui_select_row')}
           className="flex"
         />
       );
