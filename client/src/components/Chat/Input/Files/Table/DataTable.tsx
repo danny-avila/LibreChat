@@ -251,7 +251,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           <span className="hidden sm:inline">{localize('com_ui_page')}</span>
           <span>{table.getState().pagination.pageIndex + 1}</span>
           <span>/</span>
-          <span>{table.getPageCount()}</span>
+          <span>{Math.max(table.getPageCount(), 1)}</span>
         </div>
         <Button
           className="select-none"
