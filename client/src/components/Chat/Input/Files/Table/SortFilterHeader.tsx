@@ -84,7 +84,13 @@ export function SortFilterHeader<TData, TValue>({
         isOpen={isOpen}
         setIsOpen={setIsOpen}
         trigger={
-          <Menu.MenuButton className="inline-flex items-center gap-2 rounded-lg px-2 py-0 text-xs transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[open]:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm">
+          <Menu.MenuButton
+            className={cn(
+              'inline-flex items-center gap-2 rounded-lg px-2 py-0 text-xs transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[open]:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm',
+              column.getIsFiltered() && 'border-b-2 border-b-border-xheavy',
+            )}
+          >
+            {' '}
             <span>{title}</span>
             {column.getIsFiltered() ? (
               <ListFilter className="icon-sm text-muted-foreground/70" />
