@@ -8,12 +8,11 @@ import { useBadgeRowContext } from '~/Providers';
 import { cn } from '~/utils';
 
 interface MCPSubMenuProps {
-  placeholder?: string;
   children?: React.ReactNode;
 }
 
 const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
-  ({ placeholder, children, ...props }, ref) => {
+  ({ children, ...props }, ref) => {
     const { mcpServerManager } = useBadgeRowContext();
     const {
       isPinned,
