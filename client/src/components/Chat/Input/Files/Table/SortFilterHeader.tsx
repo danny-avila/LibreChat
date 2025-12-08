@@ -1,9 +1,10 @@
-import { Column } from '@tanstack/react-table';
-import { ListFilter, FilterX } from 'lucide-react';
-import { ArrowDownIcon, ArrowUpIcon, CaretSortIcon } from '@radix-ui/react-icons';
 import { useState, useId, useMemo } from 'react';
 import * as Menu from '@ariakit/react/menu';
+import { Column } from '@tanstack/react-table';
 import { DropdownPopup } from '@librechat/client';
+import { ListFilter, FilterX } from 'lucide-react';
+import { ArrowDownIcon, ArrowUpIcon, CaretSortIcon } from '@radix-ui/react-icons';
+import type { MenuItemProps } from '~/common';
 import { useLocalize, TranslationKeys } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -26,7 +27,7 @@ export function SortFilterHeader<TData, TValue>({
   const [isOpen, setIsOpen] = useState(false);
 
   const dropdownItems = useMemo(() => {
-    const items = [
+    const items: MenuItemProps[] = [
       {
         label: localize('com_ui_ascending'),
         onClick: () => column.toggleSorting(false),
