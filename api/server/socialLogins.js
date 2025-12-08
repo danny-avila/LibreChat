@@ -15,6 +15,8 @@ const {
 } = require('~/strategies');
 const { getLogStores } = require('~/cache');
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 /**
  * Configures OpenID Connect for the application.
  * @param {Express.Application} app - The Express application instance.
@@ -27,6 +29,11 @@ async function configureOpenId(app) {
     resave: false,
     saveUninitialized: false,
     store: getLogStores(CacheKeys.OPENID_SESSION),
+    cookie: {
+      secure: isProduction,
+      httpOnly: true,
+      sameSite: 'strict'
+    }
   };
   app.use(session(sessionOptions));
   app.use(passport.session());
