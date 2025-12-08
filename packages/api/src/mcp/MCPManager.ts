@@ -239,6 +239,11 @@ Please follow these instructions when using tools from the respective MCP server
         {
           timeout: connection.timeout,
           resetTimeoutOnProgress: true,
+          onprogress: (progress) => {
+            logger.debug(
+              `${logPrefix}[${toolName}] Progress: ${progress.progress}/${progress.total}${progress.message ? ` - ${progress.message}` : ''}`,
+            );
+          },
           ...options,
         },
       );
