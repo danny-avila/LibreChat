@@ -6,6 +6,7 @@ const {
   hasCustomUserVars,
   getUserMCPAuthMap,
   isActionDomainAllowed,
+  buildToolClassification,
 } = require('@librechat/api');
 const {
   Tools,
@@ -36,6 +37,7 @@ const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
 const { findPluginAuthsByKeys } = require('~/models');
+const { loadAuthValues } = require('~/server/services/Tools/credentials');
 /**
  * Processes the required actions by calling the appropriate tools and returning the outputs.
  * @param {OpenAIClient} client - OpenAI or StreamRunManager Client.
@@ -367,7 +369,12 @@ async function processRequiredActions(client, requiredActions) {
  * @param {AbortSignal} params.signal
  * @param {Pick<Agent, 'id' | 'provider' | 'model' | 'tools'} params.agent - The agent to load tools for.
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
- * @returns {Promise<{ tools?: StructuredTool[]; userMCPAuthMap?: Record<string, Record<string, string>> }>} The agent tools.
+ * @returns {Promise<{
+ *   tools?: StructuredTool[];
+ *   toolContextMap?: Record<string, unknown>;
+ *   userMCPAuthMap?: Record<string, Record<string, string>>;
+ *   toolRegistry?: Map<string, import('~/utils/toolClassification').LCTool>;
+ * }>} The agent tools and registry.
  */
 async function loadAgentTools({
   req,
@@ -510,11 +517,21 @@ async function loadAgentTools({
     return map;
   }, {});
 
+  /** Build tool registry from MCP tools and create PTC/tool search tools if configured */
+  const { toolRegistry, additionalTools } = await buildToolClassification({
+    loadedTools,
+    userId: req.user.id,
+    agentId: agent.id,
+    loadAuthValues,
+  });
+  agentTools.push(...additionalTools);
+
   if (!checkCapability(AgentCapabilities.actions)) {
     return {
       tools: agentTools,
       userMCPAuthMap,
       toolContextMap,
+      toolRegistry,
     };
   }
 
@@ -527,6 +544,7 @@ async function loadAgentTools({
       tools: agentTools,
       userMCPAuthMap,
       toolContextMap,
+      toolRegistry,
     };
   }
 
@@ -654,6 +672,7 @@ async function loadAgentTools({
     tools: agentTools,
     toolContextMap,
     userMCPAuthMap,
+    toolRegistry,
   };
 }
 
