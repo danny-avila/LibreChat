@@ -1,6 +1,10 @@
-const { sendEvent } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
+const {
+  sendEvent,
+  sanitizeFileForTransmit,
+  sanitizeMessageForTransmit,
+} = require('@librechat/api');
 const {
   handleAbortError,
   createAbortController,
@@ -224,13 +228,13 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
-    // Process files if needed
+    // Process files if needed (sanitize to remove large text fields before transmission)
     if (req.body.files && client.options?.attachments) {
       userMessage.files = [];
       const messageFiles = new Set(req.body.files.map((file) => file.file_id));
-      for (let attachment of client.options.attachments) {
+      for (const attachment of client.options.attachments) {
         if (messageFiles.has(attachment.file_id)) {
-          userMessage.files.push({ ...attachment });
+          userMessage.files.push(sanitizeFileForTransmit(attachment));
         }
       }
       delete userMessage.image_urls;
@@ -245,7 +249,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
         final: true,
         conversation,
         title: conversation.title,
-        requestMessage: userMessage,
+        requestMessage: sanitizeMessageForTransmit(userMessage),
         responseMessage: finalResponse,
       });
       res.end();
@@ -273,7 +277,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
         final: true,
         conversation,
         title: conversation.title,
-        requestMessage: userMessage,
+        requestMessage: sanitizeMessageForTransmit(userMessage),
         responseMessage: finalResponse,
         error: { message: 'Request was aborted during completion' },
       });
