@@ -1,7 +1,7 @@
 import { useState, useId, useMemo } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { Column } from '@tanstack/react-table';
-import { DropdownPopup } from '@librechat/client';
+import { DropdownPopup, TooltipAnchor } from '@librechat/client';
 import { ListFilter, FilterX } from 'lucide-react';
 import { ArrowDownIcon, ArrowUpIcon, CaretSortIcon } from '@radix-ui/react-icons';
 import type { MenuItemProps } from '~/common';
@@ -95,31 +95,37 @@ export function SortFilterHeader<TData, TValue>({
         isOpen={isOpen}
         setIsOpen={setIsOpen}
         trigger={
-          <Menu.MenuButton
-            aria-sort={ariaSort}
-            aria-label={ariaLabel}
-            className={cn(
-              'inline-flex items-center gap-2 rounded-lg px-2 py-0 text-xs transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[open]:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm',
-              column.getIsFiltered() && 'border-b-2 border-b-border-xheavy',
-            )}
-          >
-            <span>{title}</span>
-            {column.getIsFiltered() ? (
-              <ListFilter className="icon-sm text-muted-foreground/70" />
-            ) : (
-              <ListFilter className="icon-sm opacity-30" />
-            )}
-            {(() => {
-              const sortState = column.getIsSorted();
-              if (sortState === 'desc') {
-                return <ArrowDownIcon className="icon-sm" />;
-              }
-              if (sortState === 'asc') {
-                return <ArrowUpIcon className="icon-sm" />;
-              }
-              return <CaretSortIcon className="icon-sm" />;
-            })()}
-          </Menu.MenuButton>
+          <TooltipAnchor
+            description={ariaLabel || title}
+            side="top"
+            render={
+              <Menu.MenuButton
+                aria-sort={ariaSort}
+                aria-label={ariaLabel}
+                className={cn(
+                  'inline-flex items-center gap-2 rounded-lg px-2 py-0 text-xs transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[open]:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm',
+                  column.getIsFiltered() && 'border-b-2 border-b-border-xheavy',
+                )}
+              >
+                <span>{title}</span>
+                {column.getIsFiltered() ? (
+                  <ListFilter className="icon-sm text-muted-foreground/70" />
+                ) : (
+                  <ListFilter className="icon-sm opacity-30" />
+                )}
+                {(() => {
+                  const sortState = column.getIsSorted();
+                  if (sortState === 'desc') {
+                    return <ArrowDownIcon className="icon-sm" />;
+                  }
+                  if (sortState === 'asc') {
+                    return <ArrowUpIcon className="icon-sm" />;
+                  }
+                  return <CaretSortIcon className="icon-sm" />;
+                })()}
+              </Menu.MenuButton>
+            }
+          />
         }
         items={dropdownItems}
         menuId={menuId}

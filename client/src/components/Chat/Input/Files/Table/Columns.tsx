@@ -83,16 +83,22 @@ export const columns: ColumnDef<TFile>[] = [
         ariaSort = 'ascending';
       }
       return (
-        <Button
-          variant="ghost"
-          className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          aria-sort={ariaSort}
-          aria-label={localize('com_ui_name_sort')}
-        >
-          {localize('com_ui_name')}
-          <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-        </Button>
+        <TooltipAnchor
+          description={localize('com_ui_name_sort')}
+          side="top"
+          render={
+            <Button
+              variant="ghost"
+              className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+              aria-sort={ariaSort}
+              aria-label={localize('com_ui_name_sort')}
+            >
+              {localize('com_ui_name')}
+              <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+            </Button>
+          }
+        />
       );
     },
     cell: ({ row }) => {
@@ -134,16 +140,22 @@ export const columns: ColumnDef<TFile>[] = [
         ariaSort = 'ascending';
       }
       return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-          aria-sort={ariaSort}
-          aria-label={localize('com_ui_date_sort')}
-        >
-          {localize('com_ui_date')}
-          <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-        </Button>
+        <TooltipAnchor
+          description={localize('com_ui_date_sort')}
+          side="top"
+          render={
+            <Button
+              variant="ghost"
+              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+              className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+              aria-sort={ariaSort}
+              aria-label={localize('com_ui_date_sort')}
+            >
+              {localize('com_ui_date')}
+              <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+            </Button>
+          }
+        />
       );
     },
     cell: ({ row }) => {
@@ -245,16 +257,22 @@ export const columns: ColumnDef<TFile>[] = [
         ariaSort = 'ascending';
       }
       return (
-        <Button
-          variant="ghost"
-          className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          aria-sort={ariaSort}
-          aria-label={localize('com_ui_size_sort')}
-        >
-          {localize('com_ui_size')}
-          <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-        </Button>
+        <TooltipAnchor
+          description={localize('com_ui_size_sort')}
+          side="top"
+          render={
+            <Button
+              variant="ghost"
+              className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+              aria-sort={ariaSort}
+              aria-label={localize('com_ui_size_sort')}
+            >
+              {localize('com_ui_size')}
+              <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+            </Button>
+          }
+        />
       );
     },
     cell: ({ row }) => {
