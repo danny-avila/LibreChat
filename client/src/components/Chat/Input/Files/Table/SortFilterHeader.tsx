@@ -78,6 +78,14 @@ export function SortFilterHeader<TData, TValue>({
     return <div className={cn(className)}>{title}</div>;
   }
 
+  const sortState = column.getIsSorted();
+  let ariaSort: 'ascending' | 'descending' | 'none' = 'none';
+  if (sortState === 'desc') {
+    ariaSort = 'descending';
+  } else if (sortState === 'asc') {
+    ariaSort = 'ascending';
+  }
+
   return (
     <div className={cn('flex items-center space-x-2', className)}>
       <DropdownPopup
@@ -86,6 +94,7 @@ export function SortFilterHeader<TData, TValue>({
         setIsOpen={setIsOpen}
         trigger={
           <Menu.MenuButton
+            aria-sort={ariaSort}
             className={cn(
               'inline-flex items-center gap-2 rounded-lg px-2 py-0 text-xs transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[open]:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm',
               column.getIsFiltered() && 'border-b-2 border-b-border-xheavy',

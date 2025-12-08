@@ -74,16 +74,20 @@ export const columns: ColumnDef<TFile>[] = [
       const localize = useLocalize();
       const sortState = column.getIsSorted();
       let SortIcon = ArrowUpDown;
+      let ariaSort: 'ascending' | 'descending' | 'none' = 'none';
       if (sortState === 'desc') {
         SortIcon = ArrowDown;
+        ariaSort = 'descending';
       } else if (sortState === 'asc') {
         SortIcon = ArrowUp;
+        ariaSort = 'ascending';
       }
       return (
         <Button
           variant="ghost"
           className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          aria-sort={ariaSort}
         >
           {localize('com_ui_name')}
           <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
@@ -120,16 +124,20 @@ export const columns: ColumnDef<TFile>[] = [
       const localize = useLocalize();
       const sortState = column.getIsSorted();
       let SortIcon = ArrowUpDown;
+      let ariaSort: 'ascending' | 'descending' | 'none' = 'none';
       if (sortState === 'desc') {
         SortIcon = ArrowDown;
+        ariaSort = 'descending';
       } else if (sortState === 'asc') {
         SortIcon = ArrowUp;
+        ariaSort = 'ascending';
       }
       return (
         <Button
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+          aria-sort={ariaSort}
         >
           {localize('com_ui_date')}
           <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
@@ -224,16 +232,20 @@ export const columns: ColumnDef<TFile>[] = [
       const localize = useLocalize();
       const sortState = column.getIsSorted();
       let SortIcon = ArrowUpDown;
+      let ariaSort: 'ascending' | 'descending' | 'none' = 'none';
       if (sortState === 'desc') {
         SortIcon = ArrowDown;
+        ariaSort = 'descending';
       } else if (sortState === 'asc') {
         SortIcon = ArrowUp;
+        ariaSort = 'ascending';
       }
       return (
         <Button
           variant="ghost"
           className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          aria-sort={ariaSort}
         >
           {localize('com_ui_size')}
           <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
