@@ -2,11 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const { Tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
-const { zodToJsonSchema } = require('zod-to-json-schema');
 const { Tools, ImageVisionTool } = require('librechat-data-provider');
 const { Calculator } = require('@langchain/community/tools/calculator');
 const { getToolkitKey, oaiToolkit, ytToolkit } = require('@librechat/api');
 const { toolkits } = require('~/app/clients/tools/manifest');
+const { toAssistantJsonSchema } = require('~/server/utils/toAssistantSchema');
 
 /**
  * Loads and formats tools from the specified tool directory.
@@ -117,11 +117,7 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
  * @returns {FunctionTool} The OpenAI Assistant Tool.
  */
 function formatToOpenAIAssistantTool(tool) {
-  const parameters = zodToJsonSchema(tool.schema);
-  if (parameters && typeof parameters === 'object' && '$schema' in parameters) {
-    // Google function declarations reject the optional $schema metadata.
-    delete parameters.$schema;
-  }
+  const parameters = toAssistantJsonSchema(tool.schema);
   return {
     type: Tools.function,
     [Tools.function]: {
