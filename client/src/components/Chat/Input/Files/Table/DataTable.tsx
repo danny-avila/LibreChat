@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { ListFilter } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import {
   flexRender,
@@ -25,18 +24,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
   TrashIcon,
   Spinner,
   useMediaQuery,
 } from '@librechat/client';
 import type { TFile } from 'librechat-data-provider';
 import type { AugmentedColumnDef } from '~/common';
+import { ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { useDeleteFilesFromTable } from '~/hooks/Files';
-import { useLocalize } from '~/hooks';
+import { useLocalize, TranslationKeys } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -45,7 +41,7 @@ interface DataTableProps<TData, TValue> {
   data: TData[];
 }
 
-const contextMap = {
+const contextMap: Record<string, TranslationKeys> = {
   [FileContext.filename]: 'com_ui_name',
   [FileContext.updatedAt]: 'com_ui_date',
   [FileContext.filterSource]: 'com_ui_storage',
@@ -126,35 +122,13 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             {localize('com_files_filter')}
           </label>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              aria-label={localize('com_files_filter_by')}
-              className={cn('min-w-[40px]', isSmallScreen && 'px-2 py-1')}
-            >
-              <ListFilter className="size-3.5 sm:size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="max-h-[300px] overflow-y-auto dark:border-gray-700 dark:bg-gray-850"
-          >
-            {table
-              .getAllColumns()
-              .filter((column) => column.getCanHide())
-              .map((column) => (
-                <DropdownMenuCheckboxItem
-                  key={column.id}
-                  className="cursor-pointer text-sm capitalize dark:text-white dark:hover:bg-gray-800"
-                  checked={column.getIsVisible()}
-                  onCheckedChange={(value) => column.toggleVisibility(Boolean(value))}
-                >
-                  {localize(contextMap[column.id])}
-                </DropdownMenuCheckboxItem>
-              ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="relative focus-within:z-[100]">
+          <ColumnVisibilityDropdown
+            table={table}
+            contextMap={contextMap}
+            isSmallScreen={isSmallScreen}
+          />
+        </div>
       </div>
       <div className="relative grid h-full max-h-[calc(100vh-20rem)] min-h-[calc(100vh-20rem)] w-full flex-1 overflow-hidden overflow-x-auto overflow-y-auto rounded-md border border-black/10 dark:border-white/10">
         <Table className="w-full min-w-[300px] border-separate border-spacing-0">
