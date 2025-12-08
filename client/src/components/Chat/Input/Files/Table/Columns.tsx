@@ -18,13 +18,13 @@ const contextMap: Record<any, TranslationKeys> = {
   [FileContext.assistants_output]: 'com_ui_assistants_output',
   [FileContext.message_attachment]: 'com_ui_attachment',
 };
-const localize = useLocalize();
 
 export const columns: ColumnDef<TFile>[] = [
   {
     id: 'select',
     size: 40,
     header: ({ table }) => {
+      const localize = useLocalize();
       return (
         <Checkbox
           checked={
@@ -38,6 +38,7 @@ export const columns: ColumnDef<TFile>[] = [
       );
     },
     cell: ({ row }) => {
+      const localize = useLocalize();
       return (
         <Checkbox
           checked={row.getIsSelected()}
