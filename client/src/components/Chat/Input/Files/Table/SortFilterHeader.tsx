@@ -90,7 +90,6 @@ export function SortFilterHeader<TData, TValue>({
               column.getIsFiltered() && 'border-b-2 border-b-border-xheavy',
             )}
           >
-            {' '}
             <span>{title}</span>
             {column.getIsFiltered() ? (
               <ListFilter className="icon-sm text-muted-foreground/70" />
@@ -111,7 +110,7 @@ export function SortFilterHeader<TData, TValue>({
         }
         items={dropdownItems}
         menuId={menuId}
-        className="z-[1001] !border-4 !border-purple-500"
+        className="z-[1001]"
       />
     </div>
   );
