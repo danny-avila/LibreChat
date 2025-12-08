@@ -13,6 +13,7 @@ interface SortFilterHeaderProps<TData, TValue> extends React.HTMLAttributes<HTML
   column: Column<TData, TValue>;
   filters?: Record<string, string[] | number[]>;
   valueMap?: Record<any, TranslationKeys>;
+  ariaLabel?: string;
 }
 
 export function SortFilterHeader<TData, TValue>({
@@ -21,6 +22,7 @@ export function SortFilterHeader<TData, TValue>({
   className = '',
   filters,
   valueMap,
+  ariaLabel,
 }: SortFilterHeaderProps<TData, TValue>) {
   const localize = useLocalize();
   const menuId = useId();
@@ -95,6 +97,7 @@ export function SortFilterHeader<TData, TValue>({
         trigger={
           <Menu.MenuButton
             aria-sort={ariaSort}
+            aria-label={ariaLabel}
             className={cn(
               'inline-flex items-center gap-2 rounded-lg px-2 py-0 text-xs transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[open]:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm',
               column.getIsFiltered() && 'border-b-2 border-b-border-xheavy',

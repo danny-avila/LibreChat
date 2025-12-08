@@ -88,6 +88,7 @@ export const columns: ColumnDef<TFile>[] = [
           className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           aria-sort={ariaSort}
+          aria-label={localize('com_ui_name_sort')}
         >
           {localize('com_ui_name')}
           <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
@@ -138,6 +139,7 @@ export const columns: ColumnDef<TFile>[] = [
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
           aria-sort={ariaSort}
+          aria-label={localize('com_ui_date_sort')}
         >
           {localize('com_ui_date')}
           <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
@@ -157,6 +159,7 @@ export const columns: ColumnDef<TFile>[] = [
         <SortFilterHeader
           column={column}
           title={localize('com_ui_storage')}
+          ariaLabel={localize('com_ui_storage_filter_sort')}
           filters={{
             Storage: Object.values(FileSources).filter(
               (value) =>
@@ -207,6 +210,7 @@ export const columns: ColumnDef<TFile>[] = [
         <SortFilterHeader
           column={column}
           title={localize('com_ui_context')}
+          ariaLabel={localize('com_ui_context_filter_sort')}
           filters={{
             Context: Object.values(FileContext).filter(
               (value) => value === FileContext[value ?? ''],
@@ -246,6 +250,7 @@ export const columns: ColumnDef<TFile>[] = [
           className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           aria-sort={ariaSort}
+          aria-label={localize('com_ui_size_sort')}
         >
           {localize('com_ui_size')}
           <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
