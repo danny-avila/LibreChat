@@ -120,7 +120,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             placeholder=" "
             value={(table.getColumn('filename')?.getFilterValue() as string | undefined) ?? ''}
             onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-            className="peer w-full text-sm"
+            className="peer w-full text-sm focus-visible:ring-2 focus-visible:ring-ring"
             aria-label={localize('com_files_filter_input')}
           />
           <label
