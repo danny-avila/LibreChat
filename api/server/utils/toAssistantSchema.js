@@ -1,33 +1,36 @@
 const { zodToJsonSchema } = require('zod-to-json-schema');
 
-const stripSchemaFields = (value) => {
-  if (!value || typeof value !== 'object') {
-    return value;
-  }
-
+const sanitizeSchemaMetadata = (value) => {
   if (Array.isArray(value)) {
-    for (const item of value) {
-      stripSchemaFields(item);
-    }
-    return value;
+    return value.map(sanitizeSchemaMetadata);
   }
 
-  if (Object.prototype.hasOwnProperty.call(value, '$schema')) {
-    delete value.$schema;
-  }
-
-  for (const key of Object.keys(value)) {
-    stripSchemaFields(value[key]);
+  if (value && typeof value === 'object') {
+    return Object.keys(value).reduce((acc, key) => {
+      if (key === '$schema') {
+        return acc;
+      }
+      acc[key] = sanitizeSchemaMetadata(value[key]);
+      return acc;
+    }, {});
   }
 
   return value;
 };
 
-const toAssistantJsonSchema = (schema, options) => {
+/**
+ * Converts a Zod schema to JSON Schema and removes metadata that providers
+ * like Google Gemini reject (e.g., the optional `$schema` field).
+ *
+ * @param {import('zod').ZodTypeAny} schema - Source schema definition.
+ * @param {import('zod-to-json-schema').Options} [options] - Conversion options.
+ * @returns {ReturnType<typeof zodToJsonSchema>} Assistant-safe JSON Schema.
+ */
+const buildAssistantJsonSchema = (schema, options) => {
   const jsonSchema = zodToJsonSchema(schema, options);
-  return stripSchemaFields(jsonSchema);
+  return sanitizeSchemaMetadata(jsonSchema);
 };
 
 module.exports = {
-  toAssistantJsonSchema,
+  buildAssistantJsonSchema,
 };
