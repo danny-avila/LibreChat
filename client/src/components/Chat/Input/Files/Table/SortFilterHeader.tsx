@@ -102,6 +102,8 @@ export function SortFilterHeader<TData, TValue>({
               <Menu.MenuButton
                 aria-sort={ariaSort}
                 aria-label={ariaLabel}
+                aria-pressed={column.getIsFiltered() ? 'true' : 'false'}
+                aria-current={sortState ? 'true' : 'false'}
                 className={cn(
                   'inline-flex items-center gap-2 rounded-lg px-2 py-0 text-xs transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[open]:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm',
                   column.getIsFiltered() && 'border-b-2 border-b-border-xheavy',
