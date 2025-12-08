@@ -3,6 +3,63 @@ cache: true
 interface:
   agents: false
   runCode: false
+  modelSelect: true
+modelSpecs:
+  addedEndpoints:
+    - azureOpenAI
+    - "Gemini 2.5 Pro"
+    - "Gemini 2.5 Flash"
+    - "Claude Sonnet 4.5"
+  list:
+    - name: azure-gpt-4o
+      label: GPT-4o
+      default: true
+      description: Everyday broad questions (What is…, How do I…, Explain this in simple terms)
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-4o
+    - name: azure-gpt-4o-mini
+      label: GPT-4o Mini
+      description: Quick simple answers (Summarize in one line, define this term)
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-4o-mini
+    - name: azure-gpt-41
+      label: GPT-4.1
+      description: Detailed complex tasks (multi-step, create a plan, analyze data trends)
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-41
+    - name: azure-gpt-41-mini
+      label: GPT-4.1 Mini
+      description: Fast routine tasks (Repetitive, straightforward, Summarize, rewrite, quick list)
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-41-mini
+    - name: azure-gpt-5
+      label: GPT-5
+      description: Creative technical tasks (Design new workflow, draft technical documentation, brainstorm solutions)
+      preset:
+        endpoint: azureOpenAI
+        model: gpt-5
+    - name: google-gemini-25-pro
+      label: Gemini 2.5 Pro
+      description: Google's flagship multimodal reasoning (long context, structured analysis, polished summaries)
+      preset:
+        endpoint: "Gemini 2.5 Pro"
+        model: gemini-2.5-pro
+    - name: google-gemini-25-flash
+      label: Gemini 2.5 Flash
+      description: Fast lightweight responses for quick drafts, short answers, and iterative edits
+      preset:
+        endpoint: "Gemini 2.5 Flash"
+        model: gemini-2.5-flash
+    - name: anthropic-claude-sonnet-45
+      label: Claude Sonnet 4.5
+      description: Anthropic's balanced model for compliant reasoning, careful analysis, and enterprise-safe writing
+      preset:
+        endpoint: "Claude Sonnet 4.5"
+        model: claude-sonnet-4-5
 mcpServers:
   tavily:
     type: streamable-http

@@ -75,6 +75,21 @@ const Menu: React.FC<MenuProps> = ({
 }) => {
   const menuStore = Ariakit.useMenuStore();
   const menu = Ariakit.useMenuContext();
+  const renderItemBody = (item: t.MenuItemProps) => (
+    <div className="flex flex-1 items-start gap-3">
+      {item.icon != null && (
+        <span className={cn('mt-0.5 size-4 flex-shrink-0', iconClassName)} aria-hidden="true">
+          {item.icon}
+        </span>
+      )}
+      <div className="flex flex-1 flex-col text-left">
+        <span className="text-sm font-medium text-text-primary">{item.label}</span>
+        {item.description && (
+          <span className="text-xs leading-tight text-text-tertiary">{item.description}</span>
+        )}
+      </div>
+    </div>
+  );
   return (
     <Ariakit.Menu
       id={menuId}
@@ -103,7 +118,7 @@ const Menu: React.FC<MenuProps> = ({
               >
                 <Ariakit.MenuButton
                   className={cn(
-                    'group flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-none transition-colors duration-200 hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',
+                    'group flex w-full cursor-pointer items-start justify-between gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-none transition-colors duration-200 hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',
                     itemClassName,
                   )}
                   disabled={item.disabled}
@@ -112,15 +127,8 @@ const Menu: React.FC<MenuProps> = ({
                   ref={item.ref}
                   // hideOnClick={item.hideOnClick}
                 >
-                  <span className="flex items-center gap-2">
-                    {item.icon != null && (
-                      <span className={cn('mr-2 size-4', iconClassName)} aria-hidden="true">
-                        {item.icon}
-                      </span>
-                    )}
-                    {item.label}
-                  </span>
-                  <Ariakit.MenuButtonArrow className="stroke-1 text-base opacity-75" />
+                  {renderItemBody(item)}
+                  <Ariakit.MenuButtonArrow className="stroke-1 text-base opacity-75 self-center" />
                 </Ariakit.MenuButton>
                 <Menu
                   items={subItems}
@@ -138,7 +146,7 @@ const Menu: React.FC<MenuProps> = ({
               key={`${keyPrefix ?? ''}${index}-${item.id ?? ''}`}
               id={item.id}
               className={cn(
-                'group flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-none transition-colors duration-200 hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',
+                'group flex w-full cursor-pointer items-start gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-none transition-colors duration-200 hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',
                 itemClassName,
               )}
               disabled={item.disabled}
@@ -156,12 +164,7 @@ const Menu: React.FC<MenuProps> = ({
                 menu?.hide();
               }}
             >
-              {item.icon != null && (
-                <span className={cn('mr-2 size-4', iconClassName)} aria-hidden="true">
-                  {item.icon}
-                </span>
-              )}
-              {item.label}
+              {renderItemBody(item)}
               {item.kbd != null && (
                 <kbd className="ml-auto hidden font-sans text-xs text-black/50 group-hover:inline group-focus:inline dark:text-white/50">
                   ⌘{item.kbd}
