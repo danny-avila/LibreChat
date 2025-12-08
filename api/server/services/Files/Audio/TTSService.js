@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const { logger } = require('@librechat/data-schemas');
 const { genAzureEndpoint } = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
@@ -265,6 +266,10 @@ class TTSService {
     [data, headers].forEach(this.removeUndefined.bind(this));
 
     const options = { headers, responseType: stream ? 'stream' : 'arraybuffer' };
+
+    if (process.env.PROXY) {
+      options.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+    }
 
     try {
       return await axios.post(url, data, options);

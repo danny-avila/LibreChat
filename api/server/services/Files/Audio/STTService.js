@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const fs = require('fs').promises;
 const FormData = require('form-data');
 const { Readable } = require('stream');
@@ -266,8 +267,14 @@ class STTService {
       language,
     );
 
+    const options = { headers };
+
+    if (process.env.PROXY) {
+      options.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+    }
+
     try {
-      const response = await axios.post(url, data, { headers });
+      const response = await axios.post(url, data, options);
 
       if (response.status !== 200) {
         throw new Error('Invalid response from the STT API');
