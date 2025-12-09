@@ -1,4 +1,8 @@
-import { EModelEndpoint, isDocumentSupportedProvider } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  isDocumentSupportedProvider,
+  inferMimeType,
+} from 'librechat-data-provider';
 
 describe('DragDropModal - Provider Detection', () => {
   describe('endpointType priority over currentProvider', () => {
@@ -116,6 +120,61 @@ describe('DragDropModal - Provider Detection', () => {
         isDocumentSupportedProvider(scenario.endpointType) ||
           isDocumentSupportedProvider(scenario.currentProvider),
       ).toBe(true);
+    });
+  });
+
+  describe('HEIC/HEIF file type inference', () => {
+    it('should infer image/heic for .heic files when browser returns empty type', () => {
+      const fileName = 'photo.heic';
+      const browserType = '';
+
+      const inferredType = inferMimeType(fileName, browserType);
+      expect(inferredType).toBe('image/heic');
+    });
+
+    it('should infer image/heif for .heif files when browser returns empty type', () => {
+      const fileName = 'photo.heif';
+      const browserType = '';
+
+      const inferredType = inferMimeType(fileName, browserType);
+      expect(inferredType).toBe('image/heif');
+    });
+
+    it('should handle uppercase .HEIC extension', () => {
+      const fileName = 'IMG_1234.HEIC';
+      const browserType = '';
+
+      const inferredType = inferMimeType(fileName, browserType);
+      expect(inferredType).toBe('image/heic');
+    });
+
+    it('should preserve browser-provided type when available', () => {
+      const fileName = 'photo.jpg';
+      const browserType = 'image/jpeg';
+
+      const inferredType = inferMimeType(fileName, browserType);
+      expect(inferredType).toBe('image/jpeg');
+    });
+
+    it('should not override browser type even if extension differs', () => {
+      const fileName = 'renamed.heic';
+      const browserType = 'image/png';
+
+      const inferredType = inferMimeType(fileName, browserType);
+      expect(inferredType).toBe('image/png');
+    });
+
+    it('should correctly identify HEIC as image type for upload options', () => {
+      const heicType = inferMimeType('photo.heic', '');
+      expect(heicType.startsWith('image/')).toBe(true);
+    });
+
+    it('should return empty string for unknown extension with no browser type', () => {
+      const fileName = 'file.xyz';
+      const browserType = '';
+
+      const inferredType = inferMimeType(fileName, browserType);
+      expect(inferredType).toBe('');
     });
   });
 });
