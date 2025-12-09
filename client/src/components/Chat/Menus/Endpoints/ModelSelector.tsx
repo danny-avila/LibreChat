@@ -65,7 +65,7 @@ function ModelSelectorContent({ showDropdown }: { showDropdown: boolean }) {
   if (!showDropdown) {
     // Show "RunPod Methodology" as default when nothing is selected
     const displayValue =
-      selectedDisplayValue === localize('com_ui_select_model') ? 'Victoria' : selectedDisplayValue;
+      selectedDisplayValue === localize('com_ui_select_model') ? 'Vicktoria' : selectedDisplayValue;
 
     return (
       <div className="relative flex w-full max-w-md flex-col items-center gap-2">
