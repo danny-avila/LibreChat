@@ -25,6 +25,7 @@ import {
   getModelSpecPreset,
   getDefaultModelSpec,
   updateLastSelectedModel,
+  getLocalStorageItems,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useAssistantListMap from './Assistants/useAssistantListMap';
@@ -75,28 +76,36 @@ const useNewConvo = (index = 0) => {
       ) => {
         const modelsConfig = modelsData ?? modelsQuery.data;
         const { endpoint = null } = conversation;
+        const { lastConversationSetup: storedSetup } = getLocalStorageItems();
+        const storedConversation =
+          storedSetup && typeof storedSetup === 'object' && Object.keys(storedSetup).length > 0
+            ? (storedSetup as TConversation)
+            : null;
+        const hasStoredModelSelection = Boolean(
+          storedConversation?.model ?? storedConversation?.agentOptions?.model,
+        );
         const buildDefaultConversation = (endpoint === null || buildDefault) ?? false;
-        const activePreset =
-          // use default preset only when it's defined,
-          // preset is not provided,
-          // endpoint matches or is null (to allow endpoint change),
-          // and buildDefaultConversation is true
+        const shouldUseDefaultPreset = Boolean(
           defaultPreset &&
-          !preset &&
-          (defaultPreset.endpoint === endpoint || !endpoint) &&
-          buildDefaultConversation
-            ? defaultPreset
-            : preset;
+            !preset &&
+            (defaultPreset.endpoint === endpoint || !endpoint) &&
+            buildDefaultConversation &&
+            !hasStoredModelSelection,
+        );
+        const appliedPreset: Partial<TPreset> | null = shouldUseDefaultPreset
+          ? defaultPreset
+          : preset ?? null;
+        const conversationSetup = appliedPreset ?? storedConversation ?? null;
 
         const disableParams =
           _disableParams ??
-          (activePreset?.presetId != null &&
-            activePreset.presetId &&
-            activePreset.presetId === defaultPreset?.presetId);
+          (appliedPreset?.presetId != null &&
+            appliedPreset.presetId &&
+            appliedPreset.presetId === defaultPreset?.presetId);
 
         if (buildDefaultConversation) {
           let defaultEndpoint = getDefaultEndpoint({
-            convoSetup: activePreset ?? conversation,
+            convoSetup: conversationSetup ?? conversation,
             endpointsConfig,
           });
 
@@ -149,7 +158,7 @@ const useNewConvo = (index = 0) => {
           const models = modelsConfig?.[defaultEndpoint] ?? [];
           conversation = buildDefaultConvo({
             conversation,
-            lastConversationSetup: activePreset as TConversation,
+            lastConversationSetup: (conversationSetup ?? conversation) as TConversation,
             endpoint: defaultEndpoint,
             models,
           });
