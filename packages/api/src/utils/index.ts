@@ -21,3 +21,4 @@ export { default as Tokenizer, countTokens } from './tokenizer';
 export * from './yaml';
 export * from './http';
 export * from './tokens';
+export * from './message';
