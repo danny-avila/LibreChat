@@ -21,7 +21,10 @@ import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { LCTool } from '@librechat/agents';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
+import type { GraphTokenResolver } from '~/utils/graph';
 import type * as o from '~/mcp/oauth/types';
+
+export type { GraphTokenResolver } from '~/utils/graph';
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
