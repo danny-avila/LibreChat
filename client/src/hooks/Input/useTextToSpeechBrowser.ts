@@ -11,6 +11,7 @@ function useTextToSpeechBrowser({
   const voiceName = useRecoilValue(store.voice);
   const [voices, setVoices] = useState<VoiceOption[]>([]);
   const cloudBrowserVoices = useRecoilValue(store.cloudBrowserVoices);
+  const languageTTS = useRecoilValue(store.languageTTS);
   const [isSpeechSynthesisSupported, setIsSpeechSynthesisSupported] = useState(true);
 
   const updateVoices = useCallback(() => {
@@ -27,9 +28,15 @@ function useTextToSpeechBrowser({
         return;
       }
 
-      const filteredVoices = availableVoices.filter(
-        (v) => cloudBrowserVoices || v.localService === true,
-      );
+      const filteredVoices = availableVoices.filter((v) => {
+        if (cloudBrowserVoices) {
+          return true;
+        }
+        if (languageTTS && languageTTS !== '') {
+          return v.lang.toLowerCase().startsWith(languageTTS.toLowerCase()) && v.localService === true;
+        }
+        return v.localService === true;
+      });
       const voiceOptions: VoiceOption[] = filteredVoices.map((v) => ({
         value: v.name,
         label: v.name,
@@ -40,7 +47,7 @@ function useTextToSpeechBrowser({
       console.error('Error updating voices:', error);
       setIsSpeechSynthesisSupported(false);
     }
-  }, [cloudBrowserVoices]);
+  }, [cloudBrowserVoices, languageTTS]);
 
   useEffect(() => {
     const synth = window.speechSynthesis as SpeechSynthesis | undefined;

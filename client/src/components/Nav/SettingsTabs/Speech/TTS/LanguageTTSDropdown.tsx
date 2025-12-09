@@ -4,10 +4,11 @@ import { Dropdown } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
-export default function LanguageSTTDropdown() {
+export default function LanguageTTSDropdown() {
   const localize = useLocalize();
-  const [languageSTT, setLanguageSTT] = useRecoilState<string>(store.languageSTT);
+  const [languageTTS, setLanguageTTS] = useRecoilState<string>(store.languageTTS);
   const lang = useRecoilValue(store.lang);
+  const engineTTS = useRecoilValue(store.engineTTS);
 
   const languageOptions = useMemo(
     () => [
@@ -97,34 +98,38 @@ export default function LanguageSTTDropdown() {
   );
 
   useEffect(() => {
-    if (languageSTT === '' && lang) {
+    if (languageTTS === '' && lang) {
       const exactMatch = languageOptions.find((option) => option.value === lang);
       if (exactMatch) {
-        setLanguageSTT(lang);
+        setLanguageTTS(lang);
         return;
       }
       const partialMatch = languageOptions.find((option) => option.value === lang.split('-')[0]);
       if (partialMatch) {
-        setLanguageSTT(partialMatch.value);
+        setLanguageTTS(partialMatch.value);
       }
     }
-  }, [languageSTT, lang, setLanguageSTT, languageOptions]);
+  }, [languageTTS, lang, setLanguageTTS, languageOptions]);
 
   const handleSelect = (value: string) => {
-    setLanguageSTT(value);
+    setLanguageTTS(value);
   };
 
-  const labelId = 'language-stt-dropdown-label';
+  if (engineTTS !== 'browser') {
+    return null;
+  }
+
+  const labelId = 'language-tts-dropdown-label';
 
   return (
     <div className="flex items-center justify-between">
       <div id={labelId}>{localize('com_nav_language')}</div>
       <Dropdown
-        value={languageSTT}
+        value={languageTTS}
         onChange={handleSelect}
         options={languageOptions}
         sizeClasses="[--anchor-max-height:256px]"
-        testId="LanguageSTTDropdown"
+        testId="LanguageTTSDropdown"
         className="z-50"
         aria-labelledby={labelId}
       />

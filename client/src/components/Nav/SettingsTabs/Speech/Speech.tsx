@@ -12,6 +12,7 @@ import {
   CacheTTSSwitch,
   VoiceDropdown,
   PlaybackRate,
+  LanguageTTSDropdown,
 } from './TTS';
 import {
   AutoTranscribeAudioSwitch,
@@ -194,6 +195,7 @@ function Speech() {
           <div className="h-px bg-border-medium" role="none" />
           <TextToSpeechSwitch />
           <EngineTTSDropdown external={ttsExternal} />
+          <LanguageTTSDropdown />
           <VoiceDropdown />
         </div>
       </Tabs.Content>
@@ -224,6 +226,7 @@ function Speech() {
           </div>
           <AutomaticPlaybackSwitch />
           <EngineTTSDropdown external={ttsExternal} />
+          <LanguageTTSDropdown />
           <VoiceDropdown />
           {engineTTS === 'browser' && (
             <div className="pb-2">
