@@ -10,6 +10,14 @@ export type TableColumn<TData, TValue> = ColumnDef<TData, TValue> & {
   meta?: {
     /** Column width as a percentage (1-100). Used for proportional column sizing. */
     width?: number;
+    /** Fixed column size in pixels (e.g., '150px'). Takes precedence over width percentage. */
+    size?: string | number;
+    /** Fixed column size for mobile screens. Falls back to size if not specified. */
+    mobileSize?: string | number;
+    /** Minimum width for the column (e.g., '80px'). */
+    minWidth?: string | number;
+    /** Priority for flexible column width distribution. Higher priority = more space. Default is 1. */
+    priority?: number;
     /** Additional CSS classes to apply to the column cells and header. */
     className?: string;
     /**
