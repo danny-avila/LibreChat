@@ -174,12 +174,6 @@ export class OAuthReconnectionManager {
       return false;
     }
 
-    // if the token has expired, don't attempt to reconnect
-    const now = new Date();
-    if (accessToken.expiresAt && accessToken.expiresAt < now) {
-      return false;
-    }
-
     // …otherwise, we're good to go with the reconnect attempt
     return true;
   }

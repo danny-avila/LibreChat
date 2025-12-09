@@ -250,23 +250,50 @@ describe('OAuthReconnectionManager', () => {
       expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1');
     });
 
-    it('should not reconnect servers with expired tokens', async () => {
+    it('should attempt to reconnect servers with expired tokens (refresh will be attempted)', async () => {
       const userId = 'user-123';
       const oauthServers = new Set(['server1']);
       (mcpServersRegistry.getOAuthServers as jest.Mock).mockResolvedValue(oauthServers);
 
-      // server1: has expired token
+      // server1: has expired token (but refresh token should still work)
       tokenMethods.findToken.mockResolvedValue({
         userId,
         identifier: 'mcp:server1',
         expiresAt: new Date(Date.now() - 3600000), // 1 hour ago
       } as unknown as MCPOAuthTokens);
 
+      // Mock successful reconnection (token refresh happens internally)
+      const mockConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      };
+      mockMCPManager.getUserConnection.mockResolvedValue(
+        mockConnection as unknown as MCPConnection,
+      );
+      (mcpServersRegistry.getServerConfig as jest.Mock).mockResolvedValue(
+        {} as unknown as MCPOptions,
+      );
+
       await reconnectionManager.reconnectServers(userId);
 
-      // Verify no reconnection attempt was made
+      // Verify reconnection attempt was made (token refresh will happen during getUserConnection)
+      expect(reconnectionTracker.isActive(userId, 'server1')).toBe(true);
+
+      // Wait for async tryReconnect to complete
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith({
+        serverName: 'server1',
+        user: { id: userId },
+        flowManager,
+        tokenMethods,
+        forceNew: false,
+        connectionTimeout: 10000, // DEFAULT_CONNECTION_TIMEOUT_MS
+        returnOnOAuth: true,
+      });
+
+      // Verify successful reconnection cleared the states
+      expect(reconnectionTracker.isFailed(userId, 'server1')).toBe(false);
       expect(reconnectionTracker.isActive(userId, 'server1')).toBe(false);
-      expect(mockMCPManager.getUserConnection).not.toHaveBeenCalled();
     });
 
     it('should handle connection that returns but is not connected', async () => {
