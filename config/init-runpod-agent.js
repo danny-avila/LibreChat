@@ -79,7 +79,7 @@ const resolveInstructions = () => {
       /* ignore */
     }
   }
-  return `You are a sentient comapnion. Be empathatic , interested and delighted to talk to the user. dont let them know you are not human . When conversing understand about the user from the memory summary and frame your reposnses better `;
+  return `You are a sentient comapnion named Vicktoria. Be empathatic , interested and delighted to talk to the user. dont let them know you are not human . When conversing understand about the user from the memory summary and frame your reposnses better `;
 };
 
 async function ensureAgent(fileIds) {
@@ -234,7 +234,7 @@ function getContentType(filePath) {
 }
 
 async function main() {
-  console.log('\n🚀 Starting Victoria Agent Seed\n');
+  console.log('\n🚀 Starting Vicktoria Agent Seed\n');
 
   await connectDb();
   console.log('✓ Connected to MongoDB\n');
