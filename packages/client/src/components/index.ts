@@ -30,7 +30,7 @@ export * from './InputOTP';
 export * from './MultiSearch';
 export * from './Resizable';
 export * from './Select';
-export * from './DataTable/index';
+export { default as DataTable } from './DataTable';
 export { default as Radio } from './Radio';
 export { default as Badge } from './Badge';
 export { default as Avatar } from './Avatar';
