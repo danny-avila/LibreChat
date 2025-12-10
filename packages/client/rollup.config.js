@@ -1,7 +1,6 @@
 // ESM bundler config for React components
 import { fileURLToPath } from 'url';
 import alias from '@rollup/plugin-alias';
-import terser from '@rollup/plugin-terser';
 import postcss from 'rollup-plugin-postcss';
 import replace from '@rollup/plugin-replace';
 import commonjs from '@rollup/plugin-commonjs';
@@ -45,11 +44,6 @@ const plugins = [
     useTsconfigDeclarationDir: true,
     clean: true,
     check: false,
-  }),
-  terser({
-    compress: {
-      directives: false,
-    },
   }),
 ];
 
