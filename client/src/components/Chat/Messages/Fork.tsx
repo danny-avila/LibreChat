@@ -75,6 +75,21 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
                   setActiveSetting(optionLabels[ForkOptions.DEFAULT]);
                 }, 175);
               }}
+              onFocus={() => {
+                if (timeoutRef.current) {
+                  clearTimeout(timeoutRef.current);
+                  timeoutRef.current = null;
+                }
+                setActiveSetting(optionLabels[setting]);
+              }}
+              onBlur={() => {
+                if (timeoutRef.current) {
+                  clearTimeout(timeoutRef.current);
+                }
+                timeoutRef.current = setTimeout(() => {
+                  setActiveSetting(optionLabels[ForkOptions.DEFAULT]);
+                }, 175);
+              }}
               className="mx-0.5 w-14 flex-1 rounded-xl border-2 border-border-medium bg-surface-secondary text-text-secondary transition duration-200 ease-in-out hover:bg-surface-hover hover:text-text-primary"
               aria-label={label}
             >
