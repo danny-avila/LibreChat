@@ -169,11 +169,12 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
           ? `
 
 **CITE FILE SEARCH RESULTS:**
-Use anchor markers immediately after statements derived from file content. Reference the filename in your text:
+Use the EXACT anchor markers shown below (copy them verbatim) immediately after statements derived from file content. Reference the filename in your text:
 - File citation: "The document.pdf states that... \\ue202turn0file0"  
 - Page reference: "According to report.docx... \\ue202turn0file1"
 - Multi-file: "Multiple sources confirm... \\ue200\\ue202turn0file0\\ue202turn0file1\\ue201"
 
+**CRITICAL:** Output these escape sequences EXACTLY as shown (e.g., \\ue202turn0file0). Do NOT substitute with other characters like † or similar symbols.
 **ALWAYS mention the filename in your text before the citation marker. NEVER use markdown links or footnotes.**`
           : ''
       }`,

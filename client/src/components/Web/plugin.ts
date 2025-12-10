@@ -8,8 +8,14 @@ import { SPAN_REGEX, STANDALONE_PATTERN, CLEANUP_REGEX, COMPOSITE_REGEX } from '
  */
 function isStandaloneMarker(text: string, position: number): boolean {
   const beforeText = text.substring(0, position);
-  const lastUe200 = beforeText.lastIndexOf('\\ue200');
-  const lastUe201 = beforeText.lastIndexOf('\\ue201');
+  // Check for both literal text and actual Unicode character
+  const lastUe200Literal = beforeText.lastIndexOf('\\ue200');
+  const lastUe200Char = beforeText.lastIndexOf('\ue200');
+  const lastUe200 = Math.max(lastUe200Literal, lastUe200Char);
+
+  const lastUe201Literal = beforeText.lastIndexOf('\\ue201');
+  const lastUe201Char = beforeText.lastIndexOf('\ue201');
+  const lastUe201 = Math.max(lastUe201Literal, lastUe201Char);
 
   return lastUe200 === -1 || (lastUe201 !== -1 && lastUe201 > lastUe200);
 }
