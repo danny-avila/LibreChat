@@ -41,21 +41,26 @@ const MIME_TO_EXTENSION_MAP = {
  * @returns {string|null} The ISO-639-1 language code (e.g., "en") or null if invalid
  */
 function getValidatedLanguageCode(language) {
-  if (!language) {
+  try {
+    if (!language) {
+      return null;
+    }
+
+    const normalizedLanguage = language.toLowerCase();
+    const isValidLocaleCode = /^[a-z]{2}(-[a-z]{2})?$/.test(normalizedLanguage);
+
+    if (isValidLocaleCode) {
+      return normalizedLanguage.split('-')[0];
+    }
+
+    logger.warn(
+      `[STT] Invalid language format "${language}". Expected ISO-639-1 locale code like "en-US" or "en". Skipping language parameter.`,
+    );
+    return null;
+  } catch (error) {
+    logger.error(`[STT] Error validating language code "${language}":`, error);
     return null;
   }
-
-  const normalizedLanguage = language.toLowerCase();
-  const isValidLocaleCode = /^[a-z]{2}(-[a-z]{2})?$/.test(normalizedLanguage);
-
-  if (isValidLocaleCode) {
-    return normalizedLanguage.split('-')[0];
-  }
-
-  logger.warn(
-    `[STT] Invalid language format "${language}". Expected ISO-639-1 locale code like "en-US" or "en". Skipping language parameter.`,
-  );
-  return null;
 }
 
 /**
