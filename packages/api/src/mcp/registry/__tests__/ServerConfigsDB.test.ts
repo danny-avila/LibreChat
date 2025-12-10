@@ -7,23 +7,20 @@ import {
   PrincipalModel,
   ResourceType,
 } from 'librechat-data-provider';
-import { createModels, createMethods, RoleBits } from '@librechat/data-schemas';
-import { ServerConfigsDB } from '../db/ServerConfigsDB';
 import type { ParsedServerConfig } from '~/mcp/types';
 
-// Mock the logger
-jest.mock('@librechat/data-schemas', () => ({
-  ...jest.requireActual('@librechat/data-schemas'),
-  logger: {
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-    info: jest.fn(),
-  },
-}));
+// Types for dynamically imported modules
+type ServerConfigsDBType = import('../db/ServerConfigsDB').ServerConfigsDB;
+type CreateMethodsType = typeof import('@librechat/data-schemas').createMethods;
+type CreateModelsType = typeof import('@librechat/data-schemas').createModels;
+type RoleBitsType = typeof import('@librechat/data-schemas').RoleBits;
 
 let mongoServer: MongoMemoryServer;
-let serverConfigsDB: ServerConfigsDB;
+let serverConfigsDB: ServerConfigsDBType;
+let ServerConfigsDB: new (mongoose: typeof import('mongoose')) => ServerConfigsDBType;
+let createModels: CreateModelsType;
+let createMethods: CreateMethodsType;
+let RoleBits: RoleBitsType;
 
 // Test data helpers
 const createSSEConfig = (
@@ -38,9 +35,31 @@ const createSSEConfig = (
   ...(oauth && { oauth }),
 });
 
-let dbMethods: ReturnType<typeof createMethods>;
+let dbMethods: ReturnType<CreateMethodsType>;
 
 beforeAll(async () => {
+  // Set encryption keys BEFORE importing modules that use crypto
+  process.env.CREDS_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  process.env.CREDS_IV = '0123456789abcdef0123456789abcdef';
+
+  // Clear module cache so crypto module loads with new env vars
+  jest.resetModules();
+
+  // Dynamic imports after setting env vars
+  const dataSchemas = await import('@librechat/data-schemas');
+  createModels = dataSchemas.createModels;
+  createMethods = dataSchemas.createMethods;
+  RoleBits = dataSchemas.RoleBits;
+
+  // Mock logger after import (suppress logs during tests)
+  jest.spyOn(dataSchemas.logger, 'error').mockReturnValue(dataSchemas.logger);
+  jest.spyOn(dataSchemas.logger, 'warn').mockReturnValue(dataSchemas.logger);
+  jest.spyOn(dataSchemas.logger, 'debug').mockReturnValue(dataSchemas.logger);
+  jest.spyOn(dataSchemas.logger, 'info').mockReturnValue(dataSchemas.logger);
+
+  const serverConfigsModule = await import('../db/ServerConfigsDB');
+  ServerConfigsDB = serverConfigsModule.ServerConfigsDB;
+
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
   await mongoose.connect(mongoUri);
@@ -159,6 +178,11 @@ describe('ServerConfigsDB', () => {
       });
       const created = await serverConfigsDB.add('temp-name', config, userId);
 
+      // Verify the secret is encrypted in DB after add (not plaintext)
+      const MCPServer = mongoose.models.MCPServer;
+      let server = await MCPServer.findOne({ serverName: created.serverName });
+      expect(server?.config?.oauth?.client_secret).not.toBe('super-secret-key');
+
       // Update without client_secret
       const updatedConfig = createSSEConfig('OAuth Server', 'Updated description', {
         client_id: 'my-client-id',
@@ -166,10 +190,13 @@ describe('ServerConfigsDB', () => {
       });
       await serverConfigsDB.update(created.serverName, updatedConfig, userId);
 
-      // Verify the secret is preserved
-      const MCPServer = mongoose.models.MCPServer;
-      const server = await MCPServer.findOne({ serverName: created.serverName });
-      expect(server?.config?.oauth?.client_secret).toBe('super-secret-key');
+      // Verify the secret is still encrypted in DB (preserved, not plaintext)
+      server = await MCPServer.findOne({ serverName: created.serverName });
+      expect(server?.config?.oauth?.client_secret).not.toBe('super-secret-key');
+
+      // Verify the secret is decrypted when accessed via get()
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.oauth?.client_secret).toBe('super-secret-key');
     });
 
     it('should allow updating oauth.client_secret when explicitly provided', async () => {
@@ -186,10 +213,57 @@ describe('ServerConfigsDB', () => {
       });
       await serverConfigsDB.update(created.serverName, updatedConfig, userId);
 
-      // Verify the secret is updated
+      // Verify the secret is encrypted in DB (not plaintext)
       const MCPServer = mongoose.models.MCPServer;
       const server = await MCPServer.findOne({ serverName: created.serverName });
-      expect(server?.config?.oauth?.client_secret).toBe('new-secret');
+      expect(server?.config?.oauth?.client_secret).not.toBe('new-secret');
+
+      // Verify the secret is decrypted to the new value when accessed via get()
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.oauth?.client_secret).toBe('new-secret');
+    });
+
+    it('should encrypt oauth.client_secret when saving to database', async () => {
+      const config = createSSEConfig('Encryption Test', 'Test', {
+        client_id: 'test-client-id',
+        client_secret: 'plaintext-secret',
+      });
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      // Verify the secret is encrypted in DB (not plaintext)
+      const MCPServer = mongoose.models.MCPServer;
+      const server = await MCPServer.findOne({ serverName: created.serverName });
+      expect(server?.config?.oauth?.client_secret).not.toBe('plaintext-secret');
+
+      // Verify the secret is decrypted when accessed via get()
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.oauth?.client_secret).toBe('plaintext-secret');
+    });
+
+    it('should pass through config without oauth field unchanged', async () => {
+      const config = createSSEConfig('No OAuth Server', 'Test without oauth');
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.oauth).toBeUndefined();
+      expect(retrieved?.title).toBe('No OAuth Server');
+    });
+
+    it('should pass through config with oauth but no client_secret unchanged', async () => {
+      const config: ParsedServerConfig = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'OAuth No Secret',
+        oauth: {
+          client_id: 'my-client-id',
+          // No client_secret
+        },
+      };
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.oauth?.client_id).toBe('my-client-id');
+      expect(retrieved?.oauth?.client_secret).toBeUndefined();
     });
   });
 
@@ -626,6 +700,31 @@ describe('ServerConfigsDB', () => {
         expect(result['agent1-server']?.consumeOnly).toBe(true);
         expect(result['agent2-server']?.consumeOnly).toBe(true);
       });
+
+      it('should decrypt oauth.client_secret for multiple servers', async () => {
+        const config1 = createSSEConfig('Secret Server 1', 'First', {
+          client_id: 'client-1',
+          client_secret: 'secret-one',
+        });
+        const config2 = createSSEConfig('Secret Server 2', 'Second', {
+          client_id: 'client-2',
+          client_secret: 'secret-two',
+        });
+        const config3 = createSSEConfig('No Secret Server', 'Third');
+
+        await serverConfigsDB.add('temp1', config1, userId);
+        await serverConfigsDB.add('temp2', config2, userId);
+        await serverConfigsDB.add('temp3', config3, userId);
+
+        const result = await serverConfigsDB.getAll(userId);
+
+        expect(Object.keys(result)).toHaveLength(3);
+        // Verify secrets are decrypted
+        expect(result['secret-server-1']?.oauth?.client_secret).toBe('secret-one');
+        expect(result['secret-server-2']?.oauth?.client_secret).toBe('secret-two');
+        // Verify server without secret is unaffected
+        expect(result['no-secret-server']?.oauth).toBeUndefined();
+      });
     });
   });
 
@@ -839,6 +938,64 @@ describe('ServerConfigsDB', () => {
       // Should not find the server via agent
       const result = await serverConfigsDB.get(created.serverName, userId2);
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe('encryption/decryption error handling', () => {
+    it('should return config without secret when decryption fails (graceful degradation)', async () => {
+      // Create a server normally first
+      const config = createSSEConfig('Decryption Failure Test', 'Test', {
+        client_id: 'test-client',
+        client_secret: 'test-secret',
+      });
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      // Directly corrupt the encrypted secret in the database to simulate decryption failure
+      const MCPServer = mongoose.models.MCPServer;
+      await MCPServer.updateOne(
+        { serverName: created.serverName },
+        { $set: { 'config.oauth.client_secret': 'invalid:corrupted:encrypted:value' } },
+      );
+
+      // Get should return config without the secret (graceful degradation)
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+
+      expect(retrieved).toBeDefined();
+      expect(retrieved?.title).toBe('Decryption Failure Test');
+      expect(retrieved?.oauth?.client_id).toBe('test-client');
+      // Secret should be removed due to decryption failure
+      expect(retrieved?.oauth?.client_secret).toBeUndefined();
+    });
+
+    it('should handle getAll with mixed valid and corrupted secrets', async () => {
+      // Create servers with valid secrets
+      const config1 = createSSEConfig('Valid Secret Server', 'Test', {
+        client_id: 'client-1',
+        client_secret: 'valid-secret',
+      });
+      const config2 = createSSEConfig('Corrupted Secret Server', 'Test', {
+        client_id: 'client-2',
+        client_secret: 'will-be-corrupted',
+      });
+      const created1 = await serverConfigsDB.add('temp1', config1, userId);
+      const created2 = await serverConfigsDB.add('temp2', config2, userId);
+
+      // Corrupt the second server's secret
+      const MCPServer = mongoose.models.MCPServer;
+      await MCPServer.updateOne(
+        { serverName: created2.serverName },
+        { $set: { 'config.oauth.client_secret': 'invalid:corrupted:data' } },
+      );
+
+      // GetAll should still return both servers
+      const result = await serverConfigsDB.getAll(userId);
+
+      expect(Object.keys(result)).toHaveLength(2);
+      // First server should have decrypted secret
+      expect(result[created1.serverName]?.oauth?.client_secret).toBe('valid-secret');
+      // Second server should have secret removed due to decryption failure
+      expect(result[created2.serverName]?.oauth?.client_id).toBe('client-2');
+      expect(result[created2.serverName]?.oauth?.client_secret).toBeUndefined();
     });
   });
 });
