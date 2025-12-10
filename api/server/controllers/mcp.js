@@ -175,6 +175,12 @@ const createMCPServerController = async (req, res) => {
     });
   } catch (error) {
     logger.error('[createMCPServer]', error);
+    if (error.message?.startsWith('MCP_INSPECTION_FAILED')) {
+      return res.status(400).json({
+        error: 'MCP_INSPECTION_FAILED',
+        message: error.message,
+      });
+    }
     res.status(500).json({ message: error.message });
   }
 };
@@ -229,6 +235,12 @@ const updateMCPServerController = async (req, res) => {
     res.status(200).json(parsedConfig);
   } catch (error) {
     logger.error('[updateMCPServer]', error);
+    if (error.message?.startsWith('MCP_INSPECTION_FAILED:')) {
+      return res.status(400).json({
+        error: 'MCP_INSPECTION_FAILED',
+        message: error.message,
+      });
+    }
     res.status(500).json({ message: error.message });
   }
 };
