@@ -5,7 +5,14 @@ import {
   PrincipalType,
   ResourceType,
 } from 'librechat-data-provider';
-import { AllMethods, MCPServerDocument, createMethods, logger } from '@librechat/data-schemas';
+import {
+  AllMethods,
+  MCPServerDocument,
+  createMethods,
+  logger,
+  encryptV2,
+  decryptV2,
+} from '@librechat/data-schemas';
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import { AccessControlService } from '~/acl/accessControlService';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
@@ -88,7 +95,12 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
         '[ServerConfigsDB.add] User ID is required to create a database-stored MCP server.',
       );
     }
-    const createdServer = await this._dbMethods.createMCPServer({ config: config, author: userId });
+    // Encrypt sensitive fields before storing in database
+    const encryptedConfig = await this.encryptConfig(config);
+    const createdServer = await this._dbMethods.createMCPServer({
+      config: encryptedConfig,
+      author: userId,
+    });
     await this._aclService.grantPermission({
       principalType: PrincipalType.USER,
       principalId: userId,
@@ -99,7 +111,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     });
     return {
       serverName: createdServer.serverName,
-      config: this.mapDBServerToParsedConfig(createdServer),
+      config: await this.mapDBServerToParsedConfig(createdServer),
     };
   }
 
@@ -120,22 +132,29 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       );
     }
 
-    // Preserve sensitive fields (like oauth.client_secret) that may not be sent from the client
-    // Create a copy to avoid mutating the input parameter
-    let mergedConfig = config;
+    // Handle secret preservation and encryption
     const existingServer = await this._dbMethods.findMCPServerById(serverName);
-    if (existingServer?.config?.oauth?.client_secret && !config.oauth?.client_secret) {
-      mergedConfig = {
+    let configToSave: ParsedServerConfig;
+
+    if (!config.oauth?.client_secret && existingServer?.config?.oauth?.client_secret) {
+      // No new secret provided - preserve the existing encrypted secret from DB (don't re-encrypt)
+      configToSave = {
         ...config,
         oauth: {
           ...config.oauth,
           client_secret: existingServer.config.oauth.client_secret,
         },
       };
+    } else if (config.oauth?.client_secret) {
+      // New secret provided - encrypt it
+      configToSave = await this.encryptConfig(config);
+    } else {
+      // No secret in config or DB - nothing to encrypt
+      configToSave = config;
     }
 
     // specific user permissions for action permission will be handled in the controller calling the  update method of the registry
-    await this._dbMethods.updateMCPServer(serverName, { config: mergedConfig });
+    await this._dbMethods.updateMCPServer(serverName, { config: configToSave });
   }
 
   /**
@@ -176,7 +195,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
         })
       ).map((id) => id.toString());
       if (directlyAccessibleMCPIds.indexOf(server._id.toString()) > -1) {
-        return this.mapDBServerToParsedConfig(server);
+        return await this.mapDBServerToParsedConfig(server);
       }
 
       // Check access via publicly accessible agents
@@ -186,7 +205,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           `[ServerConfigsDB.get] accessing ${serverName} via public agent (consumeOnly)`,
         );
         return {
-          ...this.mapDBServerToParsedConfig(server),
+          ...(await this.mapDBServerToParsedConfig(server)),
           consumeOnly: true,
         };
       }
@@ -206,7 +225,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       logger.debug(
         `[ServerConfigsDB.get] getting ${serverName} for user with the UserId: ${userId}`,
       );
-      return this.mapDBServerToParsedConfig(server);
+      return await this.mapDBServerToParsedConfig(server);
     }
 
     // Check agent access (user can VIEW an agent that has this MCP server)
@@ -216,7 +235,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
         `[ServerConfigsDB.get] user ${userId} accessing ${serverName} via agent (consumeOnly)`,
       );
       return {
-        ...this.mapDBServerToParsedConfig(server),
+        ...(await this.mapDBServerToParsedConfig(server)),
         consumeOnly: true,
       };
     }
@@ -293,14 +312,17 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       ids: directlyAccessibleMCPIds,
     });
 
-    // 4. Build result with direct access servers
+    // 4. Build result with direct access servers (parallel decryption)
     const parsedConfigs: Record<string, ParsedServerConfig> = {};
-    const directServerNames = new Set<string>();
+    const directData = directResults.data || [];
+    const directServerNames = new Set(directData.map((s) => s.serverName));
 
-    for (const s of directResults.data || []) {
-      parsedConfigs[s.serverName] = this.mapDBServerToParsedConfig(s);
-      directServerNames.add(s.serverName);
-    }
+    const directParsed = await Promise.all(
+      directData.map((s) => this.mapDBServerToParsedConfig(s)),
+    );
+    directData.forEach((s, i) => {
+      parsedConfigs[s.serverName] = directParsed[i];
+    });
 
     // 5. Fetch agent-accessible servers (excluding already direct)
     const agentOnlyServerNames = agentMCPServerNames.filter((name) => !directServerNames.has(name));
@@ -310,12 +332,13 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
         names: agentOnlyServerNames,
       });
 
-      for (const s of agentServers.data || []) {
-        parsedConfigs[s.serverName] = {
-          ...this.mapDBServerToParsedConfig(s),
-          consumeOnly: true,
-        };
-      }
+      const agentData = agentServers.data || [];
+      const agentParsed = await Promise.all(
+        agentData.map((s) => this.mapDBServerToParsedConfig(s)),
+      );
+      agentData.forEach((s, i) => {
+        parsedConfigs[s.serverName] = { ...agentParsed[i], consumeOnly: true };
+      });
     }
 
     return parsedConfigs;
@@ -327,12 +350,72 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     return;
   }
 
-  /** Maps a MongoDB server document to the ParsedServerConfig format. */
-  private mapDBServerToParsedConfig(serverDBDoc: MCPServerDocument): ParsedServerConfig {
-    return {
+  /**
+   * Maps a MongoDB server document to the ParsedServerConfig format.
+   * Decrypts sensitive fields (oauth.client_secret) after retrieval.
+   */
+  private async mapDBServerToParsedConfig(
+    serverDBDoc: MCPServerDocument,
+  ): Promise<ParsedServerConfig> {
+    const config: ParsedServerConfig = {
       ...serverDBDoc.config,
       dbId: (serverDBDoc._id as Types.ObjectId).toString(),
       updatedAt: serverDBDoc.updatedAt?.getTime(),
     };
+    // Decrypt sensitive fields after retrieval from database
+    return await this.decryptConfig(config);
+  }
+
+  /**
+   * Encrypts sensitive fields in config before database storage.
+   * Currently encrypts only oauth.client_secret.
+   * Throws on failure to prevent storing plaintext secrets.
+   */
+  private async encryptConfig(config: ParsedServerConfig): Promise<ParsedServerConfig> {
+    if (!config.oauth?.client_secret) {
+      return config;
+    }
+    try {
+      return {
+        ...config,
+        oauth: {
+          ...config.oauth,
+          client_secret: await encryptV2(config.oauth.client_secret),
+        },
+      };
+    } catch (error) {
+      logger.error('[ServerConfigsDB.encryptConfig] Failed to encrypt client_secret', error);
+      throw new Error('Failed to encrypt MCP server configuration');
+    }
+  }
+
+  /**
+   * Decrypts sensitive fields in config after database retrieval.
+   * Returns config without secret on failure (graceful degradation).
+   */
+  private async decryptConfig(config: ParsedServerConfig): Promise<ParsedServerConfig> {
+    if (!config.oauth?.client_secret) {
+      return config;
+    }
+    try {
+      return {
+        ...config,
+        oauth: {
+          ...config.oauth,
+          client_secret: await decryptV2(config.oauth.client_secret),
+        },
+      };
+    } catch (error) {
+      logger.warn(
+        '[ServerConfigsDB.decryptConfig] Failed to decrypt client_secret, returning config without secret',
+        error,
+      );
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { client_secret: _removed, ...oauthWithoutSecret } = config.oauth;
+      return {
+        ...config,
+        oauth: oauthWithoutSecret,
+      };
+    }
   }
 }
