@@ -21,6 +21,7 @@ import {
   useMediaQuery,
   OGDialogHeader,
   OGDialogTitle,
+  TooltipAnchor,
   DataTable,
   Spinner,
   Button,
@@ -259,30 +260,42 @@ export default function SharedLinks() {
         },
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
-            <a
-              href={`/c/${row.original.conversationId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex h-8 w-8 items-center justify-center rounded-md p-0 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-ring"
-              aria-label={`${localize('com_ui_view_source')} - ${row.original.title || localize('com_ui_untitled')}`}
-            >
-              <MessageSquare className="size-4" aria-hidden="true" />
-            </a>
-            <Button
-              variant="ghost"
-              className="h-8 w-8 p-0 hover:bg-surface-hover"
-              onClick={() => {
-                setDeleteRow(row.original);
-                setIsDeleteOpen(true);
-              }}
-              aria-label={localize('com_ui_delete_shared_link', {
-                title: row.original.title || localize('com_ui_untitled'),
-              })}
-              aria-haspopup="dialog"
-              aria-controls="delete-shared-link-dialog"
-            >
-              <TrashIcon className="size-4" aria-hidden="true" />
-            </Button>
+            <TooltipAnchor
+              description={localize('com_ui_open_source_chat_new_tab')}
+              render={
+                <a
+                  href={`/c/${row.original.conversationId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex h-8 w-8 items-center justify-center rounded-md p-0 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-ring"
+                  aria-label={localize('com_ui_open_source_chat_new_tab_title', {
+                    title: row.original.title || localize('com_ui_untitled'),
+                  })}
+                >
+                  <MessageSquare className="size-4" aria-hidden="true" />
+                </a>
+              }
+            />
+            <TooltipAnchor
+              description={localize('com_ui_delete_shared_link_heading')}
+              render={
+                <Button
+                  variant="ghost"
+                  className="h-8 w-8 p-0 hover:bg-surface-hover"
+                  onClick={() => {
+                    setDeleteRow(row.original);
+                    setIsDeleteOpen(true);
+                  }}
+                  aria-label={localize('com_ui_delete_shared_link', {
+                    title: row.original.title || localize('com_ui_untitled'),
+                  })}
+                  aria-haspopup="dialog"
+                  aria-controls="delete-shared-link-dialog"
+                >
+                  <TrashIcon className="size-4" aria-hidden="true" />
+                </Button>
+              }
+            />
           </div>
         ),
       },
