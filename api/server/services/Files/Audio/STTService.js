@@ -167,16 +167,27 @@ class STTService {
   openAIProvider(sttSchema, audioReadStream, audioFile, language) {
     const url = sttSchema?.url || 'https://api.openai.com/v1/audio/transcriptions';
     const apiKey = extractEnvVariable(sttSchema.apiKey) || '';
+    const model = sttSchema.model;
 
     const data = {
       file: audioReadStream,
-      model: sttSchema.model,
+      model,
     };
 
-    if (language) {
-      /** Converted locale code (e.g., "en-US") to ISO-639-1 format (e.g., "en") */
-      const isoLanguage = language.split('-')[0];
-      data.language = isoLanguage;
+    /**
+     * Only add language parameter if language is provided and looks like a valid locale code (e.g., "en-US", "en", "zh-CN")
+     * OpenAI API expects ISO-639-1 format (2-letter language codes like "en", "zh")
+     */
+    const normalizedLanguage = language?.toLowerCase();
+    const isValidLocaleCode =
+      normalizedLanguage && /^[a-z]{2}(-[a-z]{2})?$/.test(normalizedLanguage);
+    if (isValidLocaleCode) {
+      /** Extract ISO-639-1 language code (e.g., "en-US" -> "en") */
+      data.language = normalizedLanguage.split('-')[0];
+    } else if (language) {
+      logger.warn(
+        `[STT] Invalid language format "${language}". Expected ISO-639-1 locale code like "en-US" or "en". Skipping language parameter.`,
+      );
     }
 
     const headers = {
