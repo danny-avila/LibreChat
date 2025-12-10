@@ -1,0 +1,1860 @@
+{
+ "Resources": {
+  "ExistingVpcEcrDockerEndpointE1B9043F": {
+   "Type": "AWS::EC2::VPCEndpoint",
+   "Properties": {
+    "PrivateDnsEnabled": true,
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "VpcEndpointsSgB7473DD6",
+       "GroupId"
+      ]
+     }
+    ],
+    "ServiceName": "com.amazonaws.us-east-1.ecr.dkr",
+    "SubnetIds": [
+     "subnet-0184fa96237d9873f",
+     "subnet-02e553a6971550663"
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "VpcEndpointType": "Interface",
+    "VpcId": "***REMOVED***"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/ExistingVpc/EcrDockerEndpoint/Resource"
+   }
+  },
+  "ExistingVpcEcrApiEndpoint0C0BA48D": {
+   "Type": "AWS::EC2::VPCEndpoint",
+   "Properties": {
+    "PrivateDnsEnabled": true,
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "VpcEndpointsSgB7473DD6",
+       "GroupId"
+      ]
+     }
+    ],
+    "ServiceName": "com.amazonaws.us-east-1.ecr.api",
+    "SubnetIds": [
+     "subnet-0184fa96237d9873f",
+     "subnet-02e553a6971550663"
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "VpcEndpointType": "Interface",
+    "VpcId": "***REMOVED***"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/ExistingVpc/EcrApiEndpoint/Resource"
+   }
+  },
+  "ExistingVpcCloudWatchLogsEndpoint524E9CAB": {
+   "Type": "AWS::EC2::VPCEndpoint",
+   "Properties": {
+    "PrivateDnsEnabled": true,
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "VpcEndpointsSgB7473DD6",
+       "GroupId"
+      ]
+     }
+    ],
+    "ServiceName": "com.amazonaws.us-east-1.logs",
+    "SubnetIds": [
+     "subnet-0184fa96237d9873f",
+     "subnet-02e553a6971550663"
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "VpcEndpointType": "Interface",
+    "VpcId": "***REMOVED***"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/ExistingVpc/CloudWatchLogsEndpoint/Resource"
+   }
+  },
+  "ExistingVpcBedrockRuntimeEndpoint76059A08": {
+   "Type": "AWS::EC2::VPCEndpoint",
+   "Properties": {
+    "PrivateDnsEnabled": true,
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "VpcEndpointsSgB7473DD6",
+       "GroupId"
+      ]
+     }
+    ],
+    "ServiceName": "com.amazonaws.us-east-1.bedrock-runtime",
+    "SubnetIds": [
+     "subnet-0184fa96237d9873f",
+     "subnet-02e553a6971550663"
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "VpcEndpointType": "Interface",
+    "VpcId": "***REMOVED***"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/ExistingVpc/BedrockRuntimeEndpoint/Resource"
+   }
+  },
+  "ExistingVpcS3GatewayEndpoint2571A524": {
+   "Type": "AWS::EC2::VPCEndpoint",
+   "Properties": {
+    "RouteTableIds": [
+     "rtb-07b4c8c744c04d403"
+    ],
+    "ServiceName": {
+     "Fn::Join": [
+      "",
+      [
+       "com.amazonaws.",
+       {
+        "Ref": "AWS::Region"
+       },
+       ".s3"
+      ]
+     ]
+    },
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "VpcEndpointType": "Gateway",
+    "VpcId": "***REMOVED***"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/ExistingVpc/S3GatewayEndpoint/Resource"
+   }
+  },
+  "VpcEndpointsSgB7473DD6": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "EcsStack/VpcEndpointsSg",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "SecurityGroupIngress": [
+     {
+      "CidrIp": "10.43.78.0/24",
+      "Description": "from 10.43.78.0/24:443",
+      "FromPort": 443,
+      "IpProtocol": "tcp",
+      "ToPort": 443
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "VpcId": "***REMOVED***"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/VpcEndpointsSg/Resource"
+   }
+  },
+  "AIAssistantClusterBEDDE7C3": {
+   "Type": "AWS::ECS::Cluster",
+   "Properties": {
+    "ClusterName": "ai-assistant-cluster",
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/AIAssistantCluster/Resource"
+   }
+  },
+  "AIAssistantClusterDefaultServiceDiscoveryNamespaceF8A4154E": {
+   "Type": "AWS::ServiceDiscovery::PrivateDnsNamespace",
+   "Properties": {
+    "Name": "internal",
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "Vpc": "***REMOVED***"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/AIAssistantCluster/DefaultServiceDiscoveryNamespace/Resource"
+   }
+  },
+  "CommonTaskExecutionRole35A7E9C0": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Description": "Execution role for pulling ECR images and writing logs",
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+       ]
+      ]
+     },
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/AmazonS3ReadOnlyAccess"
+       ]
+      ]
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/CommonTaskExecutionRole/Resource"
+   }
+  },
+  "CommonTaskExecutionRoleDefaultPolicyE1F73401": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "LibreChatTaskDeflibrechatLogGroup0EEBFD56",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "MongoTaskDefmongodbLogGroupD3FC433A",
+         "Arn"
+        ]
+       }
+      },
+      {
+       "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::GetAtt": [
+         "VectorDbTaskDefvectordbLogGroup62D4A81C",
+         "Arn"
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "CommonTaskExecutionRoleDefaultPolicyE1F73401",
+    "Roles": [
+     {
+      "Ref": "CommonTaskExecutionRole35A7E9C0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/CommonTaskExecutionRole/DefaultPolicy/Resource"
+   }
+  },
+  "LibreChatTaskDefTaskRole5B06068B": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/LibreChatTaskDef/TaskRole/Resource"
+   }
+  },
+  "LibreChatTaskDefEE9CCC48": {
+   "Type": "AWS::ECS::TaskDefinition",
+   "Properties": {
+    "ContainerDefinitions": [
+     {
+      "Command": [
+       "npm",
+       "run",
+       "backend"
+      ],
+      "Environment": [
+       {
+        "Name": "NODE_ENV",
+        "Value": "production"
+       },
+       {
+        "Name": "PORT",
+        "Value": "3080"
+       },
+       {
+        "Name": "HOST",
+        "Value": "0.0.0.0"
+       },
+       {
+        "Name": "LOG_LEVEL",
+        "Value": "info"
+       },
+       {
+        "Name": "MONGO_URI",
+        "Value": "mongodb://mongodb.internal:27017/LibreChat"
+       },
+       {
+        "Name": "MEILI_HOST",
+        "Value": "http://rag_api.internal:7700"
+       },
+       {
+        "Name": "RAG_API_URL",
+        "Value": "http://rag_api.internal:8000"
+       },
+       {
+        "Name": "CONFIG_PATH",
+        "Value": "/app/nj/nj-librechat.yaml"
+       }
+      ],
+      "EnvironmentFiles": [
+       {
+        "Type": "s3",
+        "Value": {
+         "Fn::Join": [
+          "",
+          [
+           "arn:",
+           {
+            "Ref": "AWS::Partition"
+           },
+           ":s3:::nj-librechat-env-files/dev.env"
+          ]
+         ]
+        }
+       }
+      ],
+      "Essential": true,
+      "Image": "***REMOVED***.dkr.ecr.us-east-1.amazonaws.com/newjersey/librechat:latest",
+      "LogConfiguration": {
+       "LogDriver": "awslogs",
+       "Options": {
+        "awslogs-group": {
+         "Ref": "LibreChatTaskDeflibrechatLogGroup0EEBFD56"
+        },
+        "awslogs-stream-prefix": "librechat",
+        "awslogs-region": "us-east-1"
+       }
+      },
+      "Name": "librechat",
+      "PortMappings": [
+       {
+        "ContainerPort": 3080,
+        "Protocol": "tcp"
+       }
+      ]
+     }
+    ],
+    "Cpu": "256",
+    "ExecutionRoleArn": {
+     "Fn::GetAtt": [
+      "CommonTaskExecutionRole35A7E9C0",
+      "Arn"
+     ]
+    },
+    "Family": "EcsStackLibreChatTaskDef1AD83E81",
+    "Memory": "512",
+    "NetworkMode": "awsvpc",
+    "RequiresCompatibilities": [
+     "FARGATE"
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "TaskRoleArn": {
+     "Fn::GetAtt": [
+      "LibreChatTaskDefTaskRole5B06068B",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/LibreChatTaskDef/Resource"
+   }
+  },
+  "LibreChatTaskDeflibrechatLogGroup0EEBFD56": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/LibreChatTaskDef/librechat/LogGroup/Resource"
+   }
+  },
+  "LibreChatFargateServiceLB87F581BB": {
+   "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+   "Properties": {
+    "LoadBalancerAttributes": [
+     {
+      "Key": "deletion_protection.enabled",
+      "Value": "false"
+     }
+    ],
+    "Scheme": "internal",
+    "SecurityGroups": [
+     {
+      "Fn::GetAtt": [
+       "LibreChatFargateServiceLBSecurityGroup2D1C8350",
+       "GroupId"
+      ]
+     }
+    ],
+    "Subnets": [
+     "subnet-0184fa96237d9873f",
+     "subnet-02e553a6971550663"
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "Type": "application"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/LibreChatFargateService/LB/Resource"
+   }
+  },
+  "LibreChatFargateServiceLBSecurityGroup2D1C8350": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Automatically created Security Group for ELB EcsStackLibreChatFargateServiceLBC392DC30",
+    "SecurityGroupIngress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow from anyone on port 80",
+      "FromPort": 80,
+      "IpProtocol": "tcp",
+      "ToPort": 80
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "VpcId": "***REMOVED***"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/LibreChatFargateService/LB/SecurityGroup/Resource"
+   }
+  },
+  "LibreChatFargateServiceLBSecurityGrouptoEcsStackLibreChatFargateServiceSecurityGroupDEF120B930803C524655": {
+   "Type": "AWS::EC2::SecurityGroupEgress",
+   "Properties": {
+    "Description": "Load balancer to target",
+    "DestinationSecurityGroupId": {
+     "Fn::GetAtt": [
+      "LibreChatFargateServiceSecurityGroup42A8A300",
+      "GroupId"
+     ]
+    },
+    "FromPort": 3080,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "LibreChatFargateServiceLBSecurityGroup2D1C8350",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "ToPort": 3080
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/LibreChatFargateService/LB/SecurityGroup/to EcsStackLibreChatFargateServiceSecurityGroupDEF120B9:3080"
+   }
+  },
+  "LibreChatFargateServiceLBPublicListener62003EAC": {
+   "Type": "AWS::ElasticLoadBalancingV2::Listener",
+   "Properties": {
+    "DefaultActions": [
+     {
+      "TargetGroupArn": {
+       "Ref": "LibreChatFargateServiceLBPublicListenerECSPrivateGroup2E6CBA37"
+      },
+      "Type": "forward"
+     }
+    ],
+    "LoadBalancerArn": {
+     "Ref": "LibreChatFargateServiceLB87F581BB"
+    },
+    "Port": 80,
+    "Protocol": "HTTP"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/LibreChatFargateService/LB/PublicListener/Resource"
+   }
+  },
+  "LibreChatFargateServiceLBPublicListenerECSPrivateGroup2E6CBA37": {
+   "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+   "Properties": {
+    "Port": 80,
+    "Protocol": "HTTP",
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "TargetGroupAttributes": [
+     {
+      "Key": "stickiness.enabled",
+      "Value": "false"
+     }
+    ],
+    "TargetType": "ip",
+    "VpcId": "***REMOVED***"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/LibreChatFargateService/LB/PublicListener/ECSPrivateGroup/Resource"
+   }
+  },
+  "LibreChatFargateService9DC5C8E3": {
+   "Type": "AWS::ECS::Service",
+   "Properties": {
+    "Cluster": {
+     "Ref": "AIAssistantClusterBEDDE7C3"
+    },
+    "DeploymentConfiguration": {
+     "Alarms": {
+      "AlarmNames": [],
+      "Enable": false,
+      "Rollback": false
+     },
+     "MaximumPercent": 200,
+     "MinimumHealthyPercent": 50
+    },
+    "DesiredCount": 1,
+    "EnableECSManagedTags": false,
+    "HealthCheckGracePeriodSeconds": 60,
+    "LaunchType": "FARGATE",
+    "LoadBalancers": [
+     {
+      "ContainerName": "librechat",
+      "ContainerPort": 3080,
+      "TargetGroupArn": {
+       "Ref": "LibreChatFargateServiceLBPublicListenerECSPrivateGroup2E6CBA37"
+      }
+     }
+    ],
+    "NetworkConfiguration": {
+     "AwsvpcConfiguration": {
+      "AssignPublicIp": "DISABLED",
+      "SecurityGroups": [
+       {
+        "Fn::GetAtt": [
+         "LibreChatFargateServiceSecurityGroup42A8A300",
+         "GroupId"
+        ]
+       }
+      ],
+      "Subnets": [
+       "subnet-0184fa96237d9873f",
+       "subnet-02e553a6971550663"
+      ]
+     }
+    },
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "TaskDefinition": {
+     "Ref": "LibreChatTaskDefEE9CCC48"
+    }
+   },
+   "DependsOn": [
+    "LibreChatFargateServiceLBPublicListenerECSPrivateGroup2E6CBA37",
+    "LibreChatFargateServiceLBPublicListener62003EAC",
+    "LibreChatTaskDefTaskRole5B06068B"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/LibreChatFargateService/Service/Service"
+   }
+  },
+  "LibreChatFargateServiceSecurityGroup42A8A300": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "EcsStack/LibreChatFargateService/Service/SecurityGroup",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "VpcId": "***REMOVED***"
+   },
+   "DependsOn": [
+    "LibreChatTaskDefTaskRole5B06068B"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/LibreChatFargateService/Service/SecurityGroup/Resource"
+   }
+  },
+  "LibreChatFargateServiceSecurityGroupfromEcsStackLibreChatFargateServiceLBSecurityGroup1FF69EB7308072D7EC06": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "Load balancer to target",
+    "FromPort": 3080,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "LibreChatFargateServiceSecurityGroup42A8A300",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "LibreChatFargateServiceLBSecurityGroup2D1C8350",
+      "GroupId"
+     ]
+    },
+    "ToPort": 3080
+   },
+   "DependsOn": [
+    "LibreChatTaskDefTaskRole5B06068B"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/LibreChatFargateService/Service/SecurityGroup/from EcsStackLibreChatFargateServiceLBSecurityGroup1FF69EB7:3080"
+   }
+  },
+  "MongoFs8A4E3AFE": {
+   "Type": "AWS::EFS::FileSystem",
+   "Properties": {
+    "Encrypted": true,
+    "FileSystemTags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "EcsStack/MongoFs"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/MongoFs/Resource"
+   }
+  },
+  "MongoFsEfsSecurityGroup4A7F79CB": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "EcsStack/MongoFs/EfsSecurityGroup",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "EcsStack/MongoFs"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "VpcId": "***REMOVED***"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/MongoFs/EfsSecurityGroup/Resource"
+   }
+  },
+  "MongoFsEfsSecurityGroupfromEcsStackMongoSgE07DE0012049B5E07750": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "from EcsStackMongoSgE07DE001:2049",
+    "FromPort": 2049,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "MongoFsEfsSecurityGroup4A7F79CB",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "MongoSg6E7F6C0F",
+      "GroupId"
+     ]
+    },
+    "ToPort": 2049
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/MongoFs/EfsSecurityGroup/from EcsStackMongoSgE07DE001:2049"
+   }
+  },
+  "MongoFsEfsMountTarget19DC7C1A0": {
+   "Type": "AWS::EFS::MountTarget",
+   "Properties": {
+    "FileSystemId": {
+     "Ref": "MongoFs8A4E3AFE"
+    },
+    "SecurityGroups": [
+     {
+      "Fn::GetAtt": [
+       "MongoFsEfsSecurityGroup4A7F79CB",
+       "GroupId"
+      ]
+     }
+    ],
+    "SubnetId": "subnet-0184fa96237d9873f"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/MongoFs/EfsMountTarget1"
+   }
+  },
+  "MongoFsEfsMountTarget27F3FA57E": {
+   "Type": "AWS::EFS::MountTarget",
+   "Properties": {
+    "FileSystemId": {
+     "Ref": "MongoFs8A4E3AFE"
+    },
+    "SecurityGroups": [
+     {
+      "Fn::GetAtt": [
+       "MongoFsEfsSecurityGroup4A7F79CB",
+       "GroupId"
+      ]
+     }
+    ],
+    "SubnetId": "subnet-02e553a6971550663"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/MongoFs/EfsMountTarget2"
+   }
+  },
+  "MongoTaskDefTaskRole1EB44A24": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/MongoTaskDef/TaskRole/Resource"
+   }
+  },
+  "MongoTaskDefF67392AF": {
+   "Type": "AWS::ECS::TaskDefinition",
+   "Properties": {
+    "ContainerDefinitions": [
+     {
+      "Command": [
+       "mongod",
+       "--noauth"
+      ],
+      "Essential": true,
+      "Image": "***REMOVED***.dkr.ecr.us-east-1.amazonaws.com/newjersey/mongo:latest",
+      "LogConfiguration": {
+       "LogDriver": "awslogs",
+       "Options": {
+        "awslogs-group": {
+         "Ref": "MongoTaskDefmongodbLogGroupD3FC433A"
+        },
+        "awslogs-stream-prefix": "mongodb",
+        "awslogs-region": "us-east-1"
+       }
+      },
+      "MountPoints": [
+       {
+        "ContainerPath": "/data/db",
+        "ReadOnly": false,
+        "SourceVolume": "mongoData"
+       }
+      ],
+      "Name": "mongodb",
+      "PortMappings": [
+       {
+        "ContainerPort": 27017,
+        "Protocol": "tcp"
+       }
+      ]
+     }
+    ],
+    "Cpu": "256",
+    "ExecutionRoleArn": {
+     "Fn::GetAtt": [
+      "CommonTaskExecutionRole35A7E9C0",
+      "Arn"
+     ]
+    },
+    "Family": "EcsStackMongoTaskDefF61B82B8",
+    "Memory": "1024",
+    "NetworkMode": "awsvpc",
+    "RequiresCompatibilities": [
+     "FARGATE"
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "TaskRoleArn": {
+     "Fn::GetAtt": [
+      "MongoTaskDefTaskRole1EB44A24",
+      "Arn"
+     ]
+    },
+    "Volumes": [
+     {
+      "EFSVolumeConfiguration": {
+       "FilesystemId": {
+        "Ref": "MongoFs8A4E3AFE"
+       },
+       "TransitEncryption": "ENABLED"
+      },
+      "Name": "mongoData"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/MongoTaskDef/Resource"
+   }
+  },
+  "MongoTaskDefmongodbLogGroupD3FC433A": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/MongoTaskDef/mongodb/LogGroup/Resource"
+   }
+  },
+  "MongoSg6E7F6C0F": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "EcsStack/MongoSg",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "VpcId": "***REMOVED***"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/MongoSg/Resource"
+   }
+  },
+  "MongoSgfromEcsStackLibreChatFargateServiceSecurityGroupDEF120B9270179DE620A9": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "App to MongoDB",
+    "FromPort": 27017,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "MongoSg6E7F6C0F",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "LibreChatFargateServiceSecurityGroup42A8A300",
+      "GroupId"
+     ]
+    },
+    "ToPort": 27017
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/MongoSg/from EcsStackLibreChatFargateServiceSecurityGroupDEF120B9:27017"
+   }
+  },
+  "MongoService512C0C67": {
+   "Type": "AWS::ECS::Service",
+   "Properties": {
+    "Cluster": {
+     "Ref": "AIAssistantClusterBEDDE7C3"
+    },
+    "DeploymentConfiguration": {
+     "Alarms": {
+      "AlarmNames": [],
+      "Enable": false,
+      "Rollback": false
+     },
+     "MaximumPercent": 200,
+     "MinimumHealthyPercent": 50
+    },
+    "DesiredCount": 1,
+    "EnableECSManagedTags": false,
+    "LaunchType": "FARGATE",
+    "NetworkConfiguration": {
+     "AwsvpcConfiguration": {
+      "AssignPublicIp": "DISABLED",
+      "SecurityGroups": [
+       {
+        "Fn::GetAtt": [
+         "MongoSg6E7F6C0F",
+         "GroupId"
+        ]
+       }
+      ],
+      "Subnets": [
+       "subnet-0184fa96237d9873f",
+       "subnet-02e553a6971550663"
+      ]
+     }
+    },
+    "ServiceRegistries": [
+     {
+      "RegistryArn": {
+       "Fn::GetAtt": [
+        "MongoServiceCloudmapService4A14DF4A",
+        "Arn"
+       ]
+      }
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "TaskDefinition": {
+     "Ref": "MongoTaskDefF67392AF"
+    }
+   },
+   "DependsOn": [
+    "MongoTaskDefTaskRole1EB44A24"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/MongoService/Service"
+   }
+  },
+  "MongoServiceCloudmapService4A14DF4A": {
+   "Type": "AWS::ServiceDiscovery::Service",
+   "Properties": {
+    "DnsConfig": {
+     "DnsRecords": [
+      {
+       "TTL": 60,
+       "Type": "A"
+      }
+     ],
+     "NamespaceId": {
+      "Fn::GetAtt": [
+       "AIAssistantClusterDefaultServiceDiscoveryNamespaceF8A4154E",
+       "Id"
+      ]
+     },
+     "RoutingPolicy": "MULTIVALUE"
+    },
+    "HealthCheckCustomConfig": {
+     "FailureThreshold": 1
+    },
+    "Name": "mongodb",
+    "NamespaceId": {
+     "Fn::GetAtt": [
+      "AIAssistantClusterDefaultServiceDiscoveryNamespaceF8A4154E",
+      "Id"
+     ]
+    },
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ]
+   },
+   "DependsOn": [
+    "MongoTaskDefTaskRole1EB44A24"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/MongoService/CloudmapService/Resource"
+   }
+  },
+  "PgFs81E498A5": {
+   "Type": "AWS::EFS::FileSystem",
+   "Properties": {
+    "Encrypted": true,
+    "FileSystemTags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "EcsStack/PgFs"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/PgFs/Resource"
+   }
+  },
+  "PgFsEfsSecurityGroup16B704DD": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "EcsStack/PgFs/EfsSecurityGroup",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "EcsStack/PgFs"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "VpcId": "***REMOVED***"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/PgFs/EfsSecurityGroup/Resource"
+   }
+  },
+  "PgFsEfsSecurityGroupfromEcsStackPgSgDC875A29204916C8C498": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "from EcsStackPgSgDC875A29:2049",
+    "FromPort": 2049,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "PgFsEfsSecurityGroup16B704DD",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "PgSg80293D65",
+      "GroupId"
+     ]
+    },
+    "ToPort": 2049
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/PgFs/EfsSecurityGroup/from EcsStackPgSgDC875A29:2049"
+   }
+  },
+  "PgFsEfsMountTarget18D409FAD": {
+   "Type": "AWS::EFS::MountTarget",
+   "Properties": {
+    "FileSystemId": {
+     "Ref": "PgFs81E498A5"
+    },
+    "SecurityGroups": [
+     {
+      "Fn::GetAtt": [
+       "PgFsEfsSecurityGroup16B704DD",
+       "GroupId"
+      ]
+     }
+    ],
+    "SubnetId": "subnet-0184fa96237d9873f"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/PgFs/EfsMountTarget1"
+   }
+  },
+  "PgFsEfsMountTarget23DA435F5": {
+   "Type": "AWS::EFS::MountTarget",
+   "Properties": {
+    "FileSystemId": {
+     "Ref": "PgFs81E498A5"
+    },
+    "SecurityGroups": [
+     {
+      "Fn::GetAtt": [
+       "PgFsEfsSecurityGroup16B704DD",
+       "GroupId"
+      ]
+     }
+    ],
+    "SubnetId": "subnet-02e553a6971550663"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/PgFs/EfsMountTarget2"
+   }
+  },
+  "VectorDbTaskDefTaskRoleDCE52280": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/VectorDbTaskDef/TaskRole/Resource"
+   }
+  },
+  "VectorDbTaskDefF2254F08": {
+   "Type": "AWS::ECS::TaskDefinition",
+   "Properties": {
+    "ContainerDefinitions": [
+     {
+      "Environment": [
+       {
+        "Name": "POSTGRES_DB",
+        "Value": "mydatabase"
+       },
+       {
+        "Name": "POSTGRES_USER",
+        "Value": "myuser"
+       },
+       {
+        "Name": "POSTGRES_PASSWORD",
+        "Value": "mypassword"
+       }
+      ],
+      "Essential": true,
+      "Image": "***REMOVED***.dkr.ecr.us-east-1.amazonaws.com/newjersey/pgvector:0.8.0-pg15-trixie",
+      "LogConfiguration": {
+       "LogDriver": "awslogs",
+       "Options": {
+        "awslogs-group": {
+         "Ref": "VectorDbTaskDefvectordbLogGroup62D4A81C"
+        },
+        "awslogs-stream-prefix": "vectordb",
+        "awslogs-region": "us-east-1"
+       }
+      },
+      "MountPoints": [
+       {
+        "ContainerPath": "/var/lib/postgresql/data",
+        "ReadOnly": false,
+        "SourceVolume": "pgData"
+       }
+      ],
+      "Name": "vectordb",
+      "PortMappings": [
+       {
+        "ContainerPort": 5432,
+        "Protocol": "tcp"
+       }
+      ]
+     }
+    ],
+    "Cpu": "256",
+    "ExecutionRoleArn": {
+     "Fn::GetAtt": [
+      "CommonTaskExecutionRole35A7E9C0",
+      "Arn"
+     ]
+    },
+    "Family": "EcsStackVectorDbTaskDef02A9C275",
+    "Memory": "1024",
+    "NetworkMode": "awsvpc",
+    "RequiresCompatibilities": [
+     "FARGATE"
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "TaskRoleArn": {
+     "Fn::GetAtt": [
+      "VectorDbTaskDefTaskRoleDCE52280",
+      "Arn"
+     ]
+    },
+    "Volumes": [
+     {
+      "EFSVolumeConfiguration": {
+       "FilesystemId": {
+        "Ref": "PgFs81E498A5"
+       },
+       "TransitEncryption": "ENABLED"
+      },
+      "Name": "pgData"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/VectorDbTaskDef/Resource"
+   }
+  },
+  "VectorDbTaskDefvectordbLogGroup62D4A81C": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/VectorDbTaskDef/vectordb/LogGroup/Resource"
+   }
+  },
+  "PgSg80293D65": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "EcsStack/PgSg",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "VpcId": "***REMOVED***"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/PgSg/Resource"
+   }
+  },
+  "PgSgfromEcsStackLibreChatFargateServiceSecurityGroupDEF120B9543255CE8972": {
+   "Type": "AWS::EC2::SecurityGroupIngress",
+   "Properties": {
+    "Description": "App to Postgres",
+    "FromPort": 5432,
+    "GroupId": {
+     "Fn::GetAtt": [
+      "PgSg80293D65",
+      "GroupId"
+     ]
+    },
+    "IpProtocol": "tcp",
+    "SourceSecurityGroupId": {
+     "Fn::GetAtt": [
+      "LibreChatFargateServiceSecurityGroup42A8A300",
+      "GroupId"
+     ]
+    },
+    "ToPort": 5432
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/PgSg/from EcsStackLibreChatFargateServiceSecurityGroupDEF120B9:5432"
+   }
+  },
+  "VectorDbService3974DEC9": {
+   "Type": "AWS::ECS::Service",
+   "Properties": {
+    "Cluster": {
+     "Ref": "AIAssistantClusterBEDDE7C3"
+    },
+    "DeploymentConfiguration": {
+     "Alarms": {
+      "AlarmNames": [],
+      "Enable": false,
+      "Rollback": false
+     },
+     "MaximumPercent": 200,
+     "MinimumHealthyPercent": 50
+    },
+    "DesiredCount": 1,
+    "EnableECSManagedTags": false,
+    "LaunchType": "FARGATE",
+    "NetworkConfiguration": {
+     "AwsvpcConfiguration": {
+      "AssignPublicIp": "DISABLED",
+      "SecurityGroups": [
+       {
+        "Fn::GetAtt": [
+         "PgSg80293D65",
+         "GroupId"
+        ]
+       }
+      ],
+      "Subnets": [
+       "subnet-0184fa96237d9873f",
+       "subnet-02e553a6971550663"
+      ]
+     }
+    },
+    "ServiceRegistries": [
+     {
+      "RegistryArn": {
+       "Fn::GetAtt": [
+        "VectorDbServiceCloudmapService218F4291",
+        "Arn"
+       ]
+      }
+     }
+    ],
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "TaskDefinition": {
+     "Ref": "VectorDbTaskDefF2254F08"
+    }
+   },
+   "DependsOn": [
+    "VectorDbTaskDefTaskRoleDCE52280"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/VectorDbService/Service"
+   }
+  },
+  "VectorDbServiceCloudmapService218F4291": {
+   "Type": "AWS::ServiceDiscovery::Service",
+   "Properties": {
+    "DnsConfig": {
+     "DnsRecords": [
+      {
+       "TTL": 60,
+       "Type": "A"
+      }
+     ],
+     "NamespaceId": {
+      "Fn::GetAtt": [
+       "AIAssistantClusterDefaultServiceDiscoveryNamespaceF8A4154E",
+       "Id"
+      ]
+     },
+     "RoutingPolicy": "MULTIVALUE"
+    },
+    "HealthCheckCustomConfig": {
+     "FailureThreshold": 1
+    },
+    "Name": "vectordb",
+    "NamespaceId": {
+     "Fn::GetAtt": [
+      "AIAssistantClusterDefaultServiceDiscoveryNamespaceF8A4154E",
+      "Id"
+     ]
+    },
+    "Tags": [
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ]
+   },
+   "DependsOn": [
+    "VectorDbTaskDefTaskRoleDCE52280"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/VectorDbService/CloudmapService/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/31QXWvjQAz8LX3fbHs+KH29pB8E0ruQlL4Wda0YNRutWWkdzOL/fthugq8N96SZ0YyEVNiiuLU3V3CUmSv3M0/vNm8V3N5sUEKKDg0c5S2jK2xesmLcgcPX2j1wWQdiNYsdv64XZ/oEikdop44tuhRJ26cYUt37/y88VBFFvslLHvTOoBObFz6JYuxdJ/gIsQLFF5D9Pe6ISSlwb/iqBFYgxjjRPrNbjA05HHcPsDMygpLEhQZja/M6UgOK9yy/4YBSw5i4JF8aSHCweRP8oA51HTy5dpgxoM74UInNq1CdX3TCnZGfdp7cHnUOgv033mpQxchif9W1Jwf9SasA5Rw8sMPyy3XoQZScD1C+Dw7iqilsvpyO4/YJn/pIFPnTc8KT/gvECvV8xIR2Bndi8yN53LaieOj7/7LnkFjHSNf1wp+kddLOcCjRfsh1UxT2x529ufoQollMrHRAuxnrX/9QHFPbAgAA"
+   },
+   "Metadata": {
+    "aws:cdk:path": "EcsStack/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "LibreChatFargateServiceLoadBalancerDNSB692C49E": {
+   "Value": {
+    "Fn::GetAtt": [
+     "LibreChatFargateServiceLB87F581BB",
+     "DNSName"
+    ]
+   }
+  },
+  "LibreChatFargateServiceServiceURL1BBC6E26": {
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "http://",
+      {
+       "Fn::GetAtt": [
+        "LibreChatFargateServiceLB87F581BB",
+        "DNSName"
+       ]
+      }
+     ]
+    ]
+   }
+  },
+  "LibrechatImageUri": {
+   "Value": "***REMOVED***.dkr.ecr.us-east-1.amazonaws.com/newjersey/librechat:latest"
+  },
+  "RagApiImageUri": {
+   "Value": "***REMOVED***.dkr.ecr.us-east-1.amazonaws.com/newjersey/librechat-rag-api:latest"
+  },
+  "MeiliImageUri": {
+   "Value": "***REMOVED***.dkr.ecr.us-east-1.amazonaws.com/newjersey/meilisearch:v1.12.3"
+  },
+  "MongoImageUri": {
+   "Value": "***REMOVED***.dkr.ecr.us-east-1.amazonaws.com/newjersey/mongo:latest"
+  },
+  "PostgresImageUri": {
+   "Value": "***REMOVED***.dkr.ecr.us-east-1.amazonaws.com/newjersey/pgvector:0.8.0-pg15-trixie"
+  },
+  "ExportsOutputRefLibreChatFargateServiceLBPublicListener62003EAC303ACE62": {
+   "Value": {
+    "Ref": "LibreChatFargateServiceLBPublicListener62003EAC"
+   },
+   "Export": {
+    "Name": "EcsStack:ExportsOutputRefLibreChatFargateServiceLBPublicListener62003EAC303ACE62"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

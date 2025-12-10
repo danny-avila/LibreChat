@@ -58,7 +58,7 @@ endpoints:
   bedrock:
     availableRegions:
       - "us-east-1"
-    titleModel: "global.anthropic.claude-opus-4-5-20250929-v1:0"
+    titleModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
   # Workaround: we have to explicitly disable all agent capabilities (otherwise the agents UI won't go away)
   agents:
@@ -78,4 +78,4 @@ modelSpecs:
       default: true
       preset:
         endpoint: "bedrock"
-        model: "global.anthropic.claude-opus-4-5-20250929-v1:0"
+        model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"

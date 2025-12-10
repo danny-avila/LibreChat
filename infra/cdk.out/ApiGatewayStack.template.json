@@ -1,0 +1,313 @@
+{
+ "Resources": {
+  "ServiceVpcLink9E1A08C8": {
+   "Type": "AWS::ApiGatewayV2::VpcLink",
+   "Properties": {
+    "Name": "service-vpc-link",
+    "SecurityGroupIds": [],
+    "SubnetIds": [
+     "subnet-0184fa96237d9873f",
+     "subnet-02e553a6971550663"
+    ],
+    "Tags": {
+     "Component": "ApiGateway",
+     "Environment": "development",
+     "ManagedBy": "CDK",
+     "Project": "AIAssistantService"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "ApiGatewayStack/ServiceVpcLink/Resource"
+   }
+  },
+  "ServiceCertificate36118B18": {
+   "Type": "AWS::CertificateManager::Certificate",
+   "Properties": {
+    "DomainName": "dev.ai-assistant.nj.gov",
+    "Tags": [
+     {
+      "Key": "Component",
+      "Value": "ApiGateway"
+     },
+     {
+      "Key": "Environment",
+      "Value": "development"
+     },
+     {
+      "Key": "ManagedBy",
+      "Value": "CDK"
+     },
+     {
+      "Key": "Name",
+      "Value": "ApiGatewayStack/ServiceCertificate"
+     },
+     {
+      "Key": "Project",
+      "Value": "AIAssistantService"
+     }
+    ],
+    "ValidationMethod": "DNS"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ApiGatewayStack/ServiceCertificate/Resource"
+   }
+  },
+  "ServiceDomain1F896CC4": {
+   "Type": "AWS::ApiGatewayV2::DomainName",
+   "Properties": {
+    "DomainName": "dev.ai-assistant.nj.gov",
+    "DomainNameConfigurations": [
+     {
+      "CertificateArn": {
+       "Ref": "ServiceCertificate36118B18"
+      },
+      "EndpointType": "REGIONAL"
+     }
+    ],
+    "Tags": {
+     "Component": "ApiGateway",
+     "Environment": "development",
+     "ManagedBy": "CDK",
+     "Project": "AIAssistantService"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "ApiGatewayStack/ServiceDomain/Resource"
+   }
+  },
+  "ServiceHttpApiA914263C": {
+   "Type": "AWS::ApiGatewayV2::Api",
+   "Properties": {
+    "CorsConfiguration": {
+     "AllowHeaders": [
+      "*"
+     ],
+     "AllowMethods": [
+      "*"
+     ],
+     "AllowOrigins": [
+      "*"
+     ]
+    },
+    "Description": "HTTP API for internal ALB via VPC Link",
+    "DisableExecuteApiEndpoint": true,
+    "Name": "ServiceHttpApi",
+    "ProtocolType": "HTTP",
+    "Tags": {
+     "Component": "ApiGateway",
+     "Environment": "development",
+     "ManagedBy": "CDK",
+     "Project": "AIAssistantService"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "ApiGatewayStack/ServiceHttpApi/Resource"
+   }
+  },
+  "ServiceHttpApiDefaultStage79D73CC2": {
+   "Type": "AWS::ApiGatewayV2::Stage",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ServiceHttpApiA914263C"
+    },
+    "AutoDeploy": true,
+    "StageName": "$default",
+    "Tags": {
+     "Component": "ApiGateway",
+     "Environment": "development",
+     "ManagedBy": "CDK",
+     "Project": "AIAssistantService"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "ApiGatewayStack/ServiceHttpApi/DefaultStage/Resource"
+   }
+  },
+  "ServiceHttpApiANYAlbIntegrationFCC584DC": {
+   "Type": "AWS::ApiGatewayV2::Integration",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ServiceHttpApiA914263C"
+    },
+    "ConnectionId": {
+     "Ref": "ServiceVpcLink9E1A08C8"
+    },
+    "ConnectionType": "VPC_LINK",
+    "IntegrationMethod": "ANY",
+    "IntegrationType": "HTTP_PROXY",
+    "IntegrationUri": {
+     "Fn::ImportValue": "EcsStack:ExportsOutputRefLibreChatFargateServiceLBPublicListener62003EAC303ACE62"
+    },
+    "PayloadFormatVersion": "1.0"
+   },
+   "Metadata": {
+    "aws:cdk:path": "ApiGatewayStack/ServiceHttpApi/ANY--/AlbIntegration/Resource"
+   }
+  },
+  "ServiceHttpApiANY0A53727A": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ServiceHttpApiA914263C"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "ANY /",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ServiceHttpApiANYAlbIntegrationFCC584DC"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "ApiGatewayStack/ServiceHttpApi/ANY--/Resource"
+   }
+  },
+  "ServiceHttpApiANYproxy8A09C03A": {
+   "Type": "AWS::ApiGatewayV2::Route",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ServiceHttpApiA914263C"
+    },
+    "AuthorizationType": "NONE",
+    "RouteKey": "ANY /{proxy+}",
+    "Target": {
+     "Fn::Join": [
+      "",
+      [
+       "integrations/",
+       {
+        "Ref": "ServiceHttpApiANYAlbIntegrationFCC584DC"
+       }
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "ApiGatewayStack/ServiceHttpApi/ANY--{proxy+}/Resource"
+   }
+  },
+  "ServiceApiMapping93830EAD": {
+   "Type": "AWS::ApiGatewayV2::ApiMapping",
+   "Properties": {
+    "ApiId": {
+     "Ref": "ServiceHttpApiA914263C"
+    },
+    "DomainName": {
+     "Ref": "ServiceDomain1F896CC4"
+    },
+    "Stage": "$default"
+   },
+   "DependsOn": [
+    "ServiceHttpApiDefaultStage79D73CC2"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "ApiGatewayStack/ServiceApiMapping/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/12MQWvDMAxGf0vvjtb5MHYt7WGDboMUdh2aqxo1i2xsuWGE/PfipqNlJ33v8ZAFa59gucAhN27fNT/8DeNO0XWmpRxKcmRwyF8jRvaoNODvycL4Gd2WpTPrg/zNTeiR5R17qvaOXlTjKnK19VTcKfpLNo+q2lB0Xq+i5BMqB6nJP5y7VeQ3jJHFX99eaTKOkvKBHSr1KOgpwbi+uZrf4TRV8VE0Fp2MhD3BMT+crIXHZ1gujpm5SUWUe4J2vmewxdStMgEAAA=="
+   },
+   "Metadata": {
+    "aws:cdk:path": "ApiGatewayStack/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "ApiGatewayUrl": {
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "https://",
+      {
+       "Ref": "ServiceDomain1F896CC4"
+      }
+     ]
+    ]
+   },
+   "Export": {
+    "Name": "ServiceApiGatewayUrl"
+   }
+  },
+  "CustomDomainName": {
+   "Value": {
+    "Ref": "ServiceDomain1F896CC4"
+   },
+   "Export": {
+    "Name": "ServiceCustomDomainName"
+   }
+  },
+  "DomainNameTarget": {
+   "Value": {
+    "Fn::GetAtt": [
+     "ServiceDomain1F896CC4",
+     "RegionalDomainName"
+    ]
+   },
+   "Export": {
+    "Name": "ServiceDomainNameTarget"
+   }
+  },
+  "DomainNameHostedZoneId": {
+   "Value": {
+    "Fn::GetAtt": [
+     "ServiceDomain1F896CC4",
+     "RegionalHostedZoneId"
+    ]
+   },
+   "Export": {
+    "Name": "ServiceDomainNameHostedZoneId"
+   }
+  },
+  "CertificateArn": {
+   "Value": {
+    "Ref": "ServiceCertificate36118B18"
+   },
+   "Export": {
+    "Name": "ServiceCertificateArn"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}
