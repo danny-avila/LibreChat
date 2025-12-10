@@ -167,11 +167,10 @@ class STTService {
   openAIProvider(sttSchema, audioReadStream, audioFile, language) {
     const url = sttSchema?.url || 'https://api.openai.com/v1/audio/transcriptions';
     const apiKey = extractEnvVariable(sttSchema.apiKey) || '';
-    const model = sttSchema.model;
 
     const data = {
       file: audioReadStream,
-      model,
+      model: sttSchema.model,
     };
 
     /**
