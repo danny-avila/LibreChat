@@ -4,6 +4,7 @@ const FormData = require('form-data');
 const { Readable } = require('stream');
 const { logger } = require('@librechat/data-schemas');
 const { genAzureEndpoint } = require('@librechat/api');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const { getAppConfig } = require('~/server/services/Config');
 
@@ -266,8 +267,14 @@ class STTService {
       language,
     );
 
+    const options = { headers };
+
+    if (process.env.PROXY) {
+      options.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+    }
+
     try {
-      const response = await axios.post(url, data, { headers });
+      const response = await axios.post(url, data, options);
 
       if (response.status !== 200) {
         throw new Error('Invalid response from the STT API');
