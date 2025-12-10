@@ -191,4 +191,278 @@ describe('Citation Regex Patterns', () => {
       expect(match).not.toBeNull();
     });
   });
+
+  describe('Integration: Full Citation Processing Flow', () => {
+    /**
+     * Simulates the citation processing flow used in the markdown plugin and copy-to-clipboard
+     */
+    const processFullCitationFlow = (text: string) => {
+      // Step 1: Extract highlighted spans
+      const spans: Array<{ content: string; position: number }> = [];
+      let spanMatch;
+      const spanRegex = new RegExp(SPAN_REGEX.source, 'g');
+      while ((spanMatch = spanRegex.exec(text)) !== null) {
+        const content = spanMatch[0].replace(/\\ue203|\\ue204|\ue203|\ue204/g, '');
+        spans.push({ content, position: spanMatch.index });
+      }
+
+      // Step 2: Extract composite blocks
+      const composites: Array<{ citations: string[]; position: number }> = [];
+      let compMatch;
+      const compRegex = new RegExp(COMPOSITE_REGEX.source, 'g');
+      while ((compMatch = compRegex.exec(text)) !== null) {
+        const block = compMatch[0];
+        const citations: string[] = [];
+        let citMatch;
+        const citRegex = new RegExp(STANDALONE_PATTERN.source, 'g');
+        while ((citMatch = citRegex.exec(block)) !== null) {
+          citations.push(`turn${citMatch[1]}${citMatch[2]}${citMatch[3]}`);
+        }
+        composites.push({ citations, position: compMatch.index });
+      }
+
+      // Step 3: Extract standalone citations (not in composites)
+      const standalones: Array<{ citation: string; position: number }> = [];
+      let standMatch;
+      const standRegex = new RegExp(STANDALONE_PATTERN.source, 'g');
+      while ((standMatch = standRegex.exec(text)) !== null) {
+        // Check if this position is inside a composite
+        const isInComposite = composites.some(
+          (c) => standMatch && standMatch.index >= c.position && standMatch.index < c.position + 50,
+        );
+        if (!isInComposite) {
+          standalones.push({
+            citation: `turn${standMatch[1]}${standMatch[2]}${standMatch[3]}`,
+            position: standMatch.index,
+          });
+        }
+      }
+
+      // Step 4: Clean up text
+      const cleanedText = text.replace(INVALID_CITATION_REGEX, '').replace(CLEANUP_REGEX, '');
+
+      return { spans, composites, standalones, cleanedText };
+    };
+
+    describe('literal text format integration', () => {
+      it('should process complex LLM response with multiple citation types', () => {
+        const llmResponse = `Here's what I found about the topic.
+
+\\ue203This is an important quote from the source.\\ue204 \\ue202turn0search0
+
+The data shows several key findings \\ue202turn0search1 including:
+- First finding \\ue202turn0news0
+- Second finding \\ue200\\ue202turn0search2\\ue202turn0file0\\ue201
+
+For more details, see the attached document \\ue202turn0file1.`;
+
+        const result = processFullCitationFlow(llmResponse);
+
+        expect(result.spans).toHaveLength(1);
+        expect(result.spans[0].content).toBe('This is an important quote from the source.');
+
+        expect(result.composites).toHaveLength(1);
+        expect(result.composites[0].citations).toEqual(['turn0search2', 'turn0file0']);
+
+        expect(result.standalones.length).toBeGreaterThanOrEqual(3);
+
+        expect(result.cleanedText).not.toContain('\\ue202');
+        expect(result.cleanedText).not.toContain('\\ue200');
+      });
+
+      it('should handle file citations from document search', () => {
+        const fileSearchResponse = `Based on the document medical-anthem-blue-cross.pdf:
+
+- **Annual deductible:** $3,300 per person \\ue202turn0file0
+- **Out-of-pocket maximum:** $4,000 per person \\ue202turn0file0
+- **Network:** Prudent Buyer PPO \\ue202turn0file1
+
+Multiple sources confirm these details. \\ue200\\ue202turn0file0\\ue202turn0file1\\ue202turn0file2\\ue201`;
+
+        const result = processFullCitationFlow(fileSearchResponse);
+
+        expect(result.composites).toHaveLength(1);
+        expect(result.composites[0].citations).toHaveLength(3);
+
+        // Should find standalone file citations
+        const fileCitations = result.standalones.filter((s) => s.citation.includes('file'));
+        expect(fileCitations.length).toBeGreaterThanOrEqual(2);
+      });
+    });
+
+    describe('actual Unicode format integration', () => {
+      it('should process response with actual Unicode characters', () => {
+        const llmResponse = `Research findings indicate the following:
+
+\ue203Key insight from the study.\ue204 \ue202turn0search0
+
+Additional context \ue202turn0news0 supports this conclusion \ue200\ue202turn0search1\ue202turn0ref0\ue201.`;
+
+        const result = processFullCitationFlow(llmResponse);
+
+        expect(result.spans).toHaveLength(1);
+        expect(result.composites).toHaveLength(1);
+        expect(result.standalones.length).toBeGreaterThanOrEqual(1);
+        expect(result.cleanedText).not.toContain('\ue202');
+      });
+    });
+
+    describe('mixed format integration', () => {
+      it('should handle mixed literal and Unicode formats in same response', () => {
+        const mixedResponse = `First citation uses literal \\ue202turn0search0 format.
+Second citation uses Unicode \ue202turn0search1 format.
+Composite with mixed: \\ue200\\ue202turn0file0\ue202turn0file1\\ue201`;
+
+        const result = processFullCitationFlow(mixedResponse);
+
+        // Should find citations from both formats
+        expect(result.standalones.length).toBeGreaterThanOrEqual(2);
+        expect(result.composites).toHaveLength(1);
+        expect(result.composites[0].citations).toHaveLength(2);
+      });
+    });
+  });
+
+  describe('Performance: Regex Benchmarks', () => {
+    /**
+     * Generates a realistic citation-heavy text with specified number of citations
+     */
+    const generateCitationHeavyText = (citationCount: number, format: 'literal' | 'unicode') => {
+      const marker = format === 'literal' ? '\\ue202' : '\ue202';
+      const spanStart = format === 'literal' ? '\\ue203' : '\ue203';
+      const spanEnd = format === 'literal' ? '\\ue204' : '\ue204';
+      const compStart = format === 'literal' ? '\\ue200' : '\ue200';
+      const compEnd = format === 'literal' ? '\\ue201' : '\ue201';
+
+      const types = ['search', 'news', 'file', 'ref', 'image', 'video'];
+      let text = '';
+
+      for (let i = 0; i < citationCount; i++) {
+        const type = types[i % types.length];
+        const turn = Math.floor(i / 10);
+        const index = i % 10;
+
+        if (i % 5 === 0) {
+          // Add highlighted text every 5th citation
+          text += `${spanStart}Important fact number ${i}.${spanEnd} ${marker}turn${turn}${type}${index} `;
+        } else if (i % 7 === 0) {
+          // Add composite every 7th citation
+          text += `Multiple sources ${compStart}${marker}turn${turn}${type}${index}${marker}turn${turn}${types[(i + 1) % types.length]}${(index + 1) % 10}${compEnd} confirm this. `;
+        } else {
+          text += `This is fact ${i} ${marker}turn${turn}${type}${index} from the research. `;
+        }
+      }
+
+      return text;
+    };
+
+    it('should process 100 literal citations in reasonable time (<100ms)', () => {
+      const text = generateCitationHeavyText(100, 'literal');
+
+      const start = performance.now();
+
+      // Run all regex operations
+      let match;
+      const results = { spans: 0, composites: 0, standalones: 0, cleaned: '' };
+
+      SPAN_REGEX.lastIndex = 0;
+      while ((match = SPAN_REGEX.exec(text)) !== null) {
+        results.spans++;
+      }
+
+      COMPOSITE_REGEX.lastIndex = 0;
+      while ((match = COMPOSITE_REGEX.exec(text)) !== null) {
+        results.composites++;
+      }
+
+      STANDALONE_PATTERN.lastIndex = 0;
+      while ((match = STANDALONE_PATTERN.exec(text)) !== null) {
+        results.standalones++;
+      }
+
+      results.cleaned = text.replace(CLEANUP_REGEX, '');
+
+      const duration = performance.now() - start;
+
+      expect(duration).toBeLessThan(100);
+      expect(results.standalones).toBeGreaterThan(80); // Most should be standalone
+      expect(results.spans).toBeGreaterThan(10); // Some highlighted
+      expect(results.composites).toBeGreaterThan(5); // Some composites
+    });
+
+    it('should process 100 Unicode citations in reasonable time (<100ms)', () => {
+      const text = generateCitationHeavyText(100, 'unicode');
+
+      const start = performance.now();
+
+      let match;
+      const results = { spans: 0, composites: 0, standalones: 0, cleaned: '' };
+
+      SPAN_REGEX.lastIndex = 0;
+      while ((match = SPAN_REGEX.exec(text)) !== null) {
+        results.spans++;
+      }
+
+      COMPOSITE_REGEX.lastIndex = 0;
+      while ((match = COMPOSITE_REGEX.exec(text)) !== null) {
+        results.composites++;
+      }
+
+      STANDALONE_PATTERN.lastIndex = 0;
+      while ((match = STANDALONE_PATTERN.exec(text)) !== null) {
+        results.standalones++;
+      }
+
+      results.cleaned = text.replace(CLEANUP_REGEX, '');
+
+      const duration = performance.now() - start;
+
+      expect(duration).toBeLessThan(100);
+      expect(results.standalones).toBeGreaterThan(80);
+    });
+
+    it('should process 500 citations without timeout (<500ms)', () => {
+      const text = generateCitationHeavyText(500, 'literal');
+
+      const start = performance.now();
+
+      let match;
+      let count = 0;
+
+      STANDALONE_PATTERN.lastIndex = 0;
+      while ((match = STANDALONE_PATTERN.exec(text)) !== null) {
+        count++;
+      }
+
+      const cleaned = text.replace(CLEANUP_REGEX, '');
+
+      const duration = performance.now() - start;
+
+      expect(duration).toBeLessThan(500);
+      expect(count).toBeGreaterThan(400);
+      expect(cleaned.length).toBeLessThan(text.length);
+    });
+
+    it('should handle mixed formats efficiently (<100ms for 100 citations)', () => {
+      // Generate text with alternating formats
+      const literalText = generateCitationHeavyText(50, 'literal');
+      const unicodeText = generateCitationHeavyText(50, 'unicode');
+      const mixedText = literalText + '\n\n' + unicodeText;
+
+      const start = performance.now();
+
+      let match;
+      let count = 0;
+
+      STANDALONE_PATTERN.lastIndex = 0;
+      while ((match = STANDALONE_PATTERN.exec(mixedText)) !== null) {
+        count++;
+      }
+
+      const duration = performance.now() - start;
+
+      expect(duration).toBeLessThan(100);
+      expect(count).toBeGreaterThan(80); // Should find citations from both halves
+    });
+  });
 });
