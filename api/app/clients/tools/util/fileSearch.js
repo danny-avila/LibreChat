@@ -87,13 +87,12 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
 
       /**
        * @param {import('librechat-data-provider').TFile} file
-       * @param {string} searchQuery
        * @returns {{ file_id: string, query: string, k: number, entity_id?: string }}
        */
-      const createQueryBody = (file, searchQuery) => {
+      const createQueryBody = (file) => {
         const body = {
           file_id: file.file_id,
-          query: searchQuery,
+          query,
           k: 5,
         };
         if (!entity_id) {
@@ -104,49 +103,39 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
         return body;
       };
 
-      /** @param {string} searchQuery */
-      const executeSearch = async (searchQuery) => {
-        const queryPromises = files.map((file) =>
-          axios
-            .post(`${process.env.RAG_API_URL}/query`, createQueryBody(file, searchQuery), {
-              headers: {
-                Authorization: `Bearer ${jwtToken}`,
-                'Content-Type': 'application/json',
-              },
-            })
-            .catch((error) => {
-              logger.error('Error encountered in `file_search` while querying file:', error);
-              return null;
-            }),
-        );
+      const queryPromises = files.map((file) =>
+        axios
+          .post(`${process.env.RAG_API_URL}/query`, createQueryBody(file), {
+            headers: {
+              Authorization: `Bearer ${jwtToken}`,
+              'Content-Type': 'application/json',
+            },
+          })
+          .catch((error) => {
+            logger.error('Error encountered in `file_search` while querying file:', error);
+            return null;
+          }),
+      );
 
-        const results = await Promise.all(queryPromises);
-        const validResults = results.filter((result) => result !== null);
+      const results = await Promise.all(queryPromises);
+      const validResults = results.filter((result) => result !== null);
 
-        // Return null if all requests failed (distinct from empty results)
-        if (validResults.length === 0) {
-          return null;
-        }
-
-        return validResults
-          .flatMap((result, fileIndex) =>
-            result.data.map(([docInfo, distance]) => ({
-              filename: docInfo.metadata.source.split('/').pop(),
-              content: docInfo.page_content,
-              distance,
-              file_id: files[fileIndex]?.file_id,
-              page: docInfo.metadata.page || null,
-            })),
-          )
-          .sort((a, b) => a.distance - b.distance)
-          .slice(0, 10);
-      };
-
-      let formattedResults = await executeSearch(query);
-
-      if (formattedResults === null) {
+      if (validResults.length === 0) {
         return ['No results found or errors occurred while searching the files.', undefined];
       }
+
+      const formattedResults = validResults
+        .flatMap((result, fileIndex) =>
+          result.data.map(([docInfo, distance]) => ({
+            filename: docInfo.metadata.source.split('/').pop(),
+            content: docInfo.page_content,
+            distance,
+            file_id: files[fileIndex]?.file_id,
+            page: docInfo.metadata.page || null,
+          })),
+        )
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, 10);
 
       if (formattedResults.length === 0) {
         return [
