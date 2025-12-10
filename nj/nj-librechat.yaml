@@ -55,6 +55,10 @@ endpoints:
         baseURL: https://${INSTANCE_NAME}.openai.azure.com
         models:
           gpt-4o-dev: true
+  bedrock:
+    availableRegions:
+      - "us-east-1"
+    titleModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
   # Workaround: we have to explicitly disable all agent capabilities (otherwise the agents UI won't go away)
   agents:
@@ -65,7 +69,13 @@ modelSpecs:
   list:
     - name: "gpt-4o"
       label: "ChatGPT"
-      default: true
+      default: false
       preset:
         endpoint: "azureOpenAI"
         model: "gpt-4o-dev"
+    - name: "Claude Sonnet 4.5"
+      label: "Claude Sonnet 4.5"
+      default: true
+      preset:
+        endpoint: "bedrock"
+        model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
