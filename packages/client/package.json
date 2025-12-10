@@ -18,6 +18,7 @@
   "scripts": {
     "clean": "rimraf dist",
     "build": "npm run clean && rollup -c --bundleConfigAsCjs",
+    "build:dev": "npm run clean && NODE_ENV=development rollup -c --bundleConfigAsCjs",
     "build:watch": "rollup -c -w --bundleConfigAsCjs",
     "dev": "rollup -c -w --bundleConfigAsCjs"
   },

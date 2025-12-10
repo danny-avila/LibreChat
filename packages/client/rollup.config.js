@@ -47,19 +47,21 @@ const plugins = [
   }),
 ];
 
+const isDev = process.env.NODE_ENV !== 'production';
+
 export default {
   input: 'src/index.ts',
   output: [
     {
       file: pkg.main,
       format: 'cjs',
-      sourcemap: true,
+      sourcemap: isDev ? 'inline' : true,
       exports: 'named',
     },
     {
       file: pkg.module,
       format: 'esm',
-      sourcemap: true,
+      sourcemap: isDev ? 'inline' : true,
       exports: 'named',
     },
   ],
