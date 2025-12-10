@@ -134,35 +134,36 @@ const CheckboxOption: React.FC<CheckboxOptionProps> = ({
   const { showToast } = useToastContext();
   return (
     <Ariakit.HovercardProvider placement="right-start">
-      <div className="flex items-center">
-        <div className="flex h-6 w-full select-none items-center justify-start rounded-md text-sm text-text-secondary hover:text-text-primary">
-          <Ariakit.HovercardAnchor
-            render={
-              <div>
-                <Ariakit.Checkbox
-                  id={id}
-                  checked={checked}
-                  onChange={(e) => {
-                    const value = e.target.checked;
-                    if (value && showToastOnCheck) {
-                      showToast({
-                        message: localize('com_ui_fork_remember_checked'),
-                        status: 'info',
-                      });
-                    }
-                    onToggle(value);
-                  }}
-                  className="h-4 w-4 rounded-sm border border-primary ring-offset-background transition duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                  aria-label={localize(labelKey)}
-                />
-                <label htmlFor={id} className="ml-2 cursor-pointer">
-                  {localize(labelKey)}
-                </label>
-              </div>
-            }
-          />
-        </div>
-        <Ariakit.HovercardDisclosure className="rounded-full text-text-secondary focus:outline-none focus:ring-2 focus:ring-ring">
+      <div className="flex items-center justify-between">
+        <Ariakit.HovercardAnchor
+          render={
+            <div className="flex items-center">
+              <Ariakit.Checkbox
+                id={id}
+                checked={checked}
+                onChange={(e) => {
+                  const value = e.target.checked;
+                  if (value && showToastOnCheck) {
+                    showToast({
+                      message: localize('com_ui_fork_remember_checked'),
+                      status: 'info',
+                    });
+                  }
+                  onToggle(value);
+                }}
+                className="h-4 w-4 rounded-sm border border-primary ring-offset-background transition duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                aria-label={localize(labelKey)}
+              />
+              <label
+                htmlFor={id}
+                className="ml-2 cursor-pointer select-none text-sm text-text-secondary hover:text-text-primary"
+              >
+                {localize(labelKey)}
+              </label>
+            </div>
+          }
+        />
+        <Ariakit.HovercardDisclosure className="ml-1 rounded-full text-text-secondary focus:outline-none focus:ring-2 focus:ring-ring">
           <VisuallyHidden>{localize(infoKey)}</VisuallyHidden>
           {chevronDown}
         </Ariakit.HovercardDisclosure>
