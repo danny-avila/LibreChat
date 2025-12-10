@@ -241,6 +241,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
                           }}
+                          className={
+                            isFilenameCell
+                              ? 'focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-text-primary'
+                              : ''
+                          }
                           data-skip-refocus="true"
                           key={cell.id}
                           role={isFilenameCell ? 'button' : undefined}
