@@ -5,6 +5,7 @@ on:
       - main
       - dev
       - release/*
+      - prod # NJ: our primary branch
     paths:
       - 'api/**'
       - 'packages/**'
