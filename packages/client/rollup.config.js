@@ -26,6 +26,8 @@ const plugins = [
   }),
   replace({
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
+    'process.env.VITE_ENABLE_LOGGER': JSON.stringify(process.env.VITE_ENABLE_LOGGER || 'false'),
+    'process.env.VITE_LOGGER_FILTER': JSON.stringify(process.env.VITE_LOGGER_FILTER || ''),
     preventAssignment: true,
   }),
   commonjs(),
