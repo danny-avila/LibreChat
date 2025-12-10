@@ -1,10 +1,10 @@
 const axios = require('axios');
-const { HttpsProxyAgent } = require('https-proxy-agent');
 const fs = require('fs').promises;
 const FormData = require('form-data');
 const { Readable } = require('stream');
 const { logger } = require('@librechat/data-schemas');
 const { genAzureEndpoint } = require('@librechat/api');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const { getAppConfig } = require('~/server/services/Config');
 
