@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
-import { List } from 'react-virtualized';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Skeleton, useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
@@ -244,7 +243,7 @@ const Nav = memo(
                         />
                       </div>
                     </div>
-                    <Suspense fallback={null}>
+                    <Suspense fallback={<Skeleton className="mt-1 h-12 w-full rounded-xl" />}>
                       <AccountSettings />
                     </Suspense>
                   </nav>
