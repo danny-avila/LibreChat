@@ -15,6 +15,7 @@ interface MCPServerListProps {
   getServerStatusIconProps: (
     serverName: string,
   ) => React.ComponentProps<typeof MCPServerStatusIcon>;
+  isFiltered?: boolean;
 }
 
 // Self-contained edit button component (follows MemoryViewer pattern)
@@ -39,7 +40,11 @@ const EditMCPServerButton = ({ server }: { server: MCPServerDefinition }) => {
   );
 };
 
-export default function MCPServerList({ servers, getServerStatusIconProps }: MCPServerListProps) {
+export default function MCPServerList({
+  servers,
+  getServerStatusIconProps,
+  isFiltered = false,
+}: MCPServerListProps) {
   const canCreateEditMCPs = useHasAccess({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.CREATE,
@@ -49,8 +54,16 @@ export default function MCPServerList({ servers, getServerStatusIconProps }: MCP
   if (servers.length === 0) {
     return (
       <div className="rounded-lg border border-border-light bg-transparent p-8 text-center shadow-sm">
-        <p className="text-sm text-text-secondary">{localize('com_ui_no_mcp_servers')}</p>
-        <p className="mt-1 text-xs text-text-tertiary">{localize('com_ui_add_first_mcp_server')}</p>
+        {isFiltered ? (
+          <p className="text-sm text-text-secondary">{localize('com_ui_no_mcp_servers_match')}</p>
+        ) : (
+          <>
+            <p className="text-sm text-text-secondary">{localize('com_ui_no_mcp_servers')}</p>
+            <p className="mt-1 text-xs text-text-tertiary">
+              {localize('com_ui_add_first_mcp_server')}
+            </p>
+          </>
+        )}
       </div>
     );
   }
