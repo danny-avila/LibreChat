@@ -50,8 +50,8 @@ describe('Citation Regex Patterns', () => {
 
       it('should match multiple literal text citations', () => {
         const text = 'Fact one \\ue202turn0search0 and fact two \\ue202turn0file1';
-        const matches = [];
-        let match;
+        const matches: RegExpExecArray[] = [];
+        let match: RegExpExecArray | null;
         STANDALONE_PATTERN.lastIndex = 0;
         while ((match = STANDALONE_PATTERN.exec(text)) !== null) {
           matches.push(match);
@@ -109,8 +109,8 @@ describe('Citation Regex Patterns', () => {
     describe('mixed format handling', () => {
       it('should match both formats in the same text', () => {
         const text = 'Literal \\ue202turn0search0 and Unicode \ue202turn0file1';
-        const matches = [];
-        let match;
+        const matches: RegExpExecArray[] = [];
+        let match: RegExpExecArray | null;
         STANDALONE_PATTERN.lastIndex = 0;
         while ((match = STANDALONE_PATTERN.exec(text)) !== null) {
           matches.push(match);
@@ -362,21 +362,20 @@ Composite with mixed: \\ue200\\ue202turn0file0\ue202turn0file1\\ue201`;
       const start = performance.now();
 
       // Run all regex operations
-      let match;
       const results = { spans: 0, composites: 0, standalones: 0, cleaned: '' };
 
       SPAN_REGEX.lastIndex = 0;
-      while ((match = SPAN_REGEX.exec(text)) !== null) {
+      while (SPAN_REGEX.exec(text) !== null) {
         results.spans++;
       }
 
       COMPOSITE_REGEX.lastIndex = 0;
-      while ((match = COMPOSITE_REGEX.exec(text)) !== null) {
+      while (COMPOSITE_REGEX.exec(text) !== null) {
         results.composites++;
       }
 
       STANDALONE_PATTERN.lastIndex = 0;
-      while ((match = STANDALONE_PATTERN.exec(text)) !== null) {
+      while (STANDALONE_PATTERN.exec(text) !== null) {
         results.standalones++;
       }
 
@@ -395,21 +394,20 @@ Composite with mixed: \\ue200\\ue202turn0file0\ue202turn0file1\\ue201`;
 
       const start = performance.now();
 
-      let match;
       const results = { spans: 0, composites: 0, standalones: 0, cleaned: '' };
 
       SPAN_REGEX.lastIndex = 0;
-      while ((match = SPAN_REGEX.exec(text)) !== null) {
+      while (SPAN_REGEX.exec(text) !== null) {
         results.spans++;
       }
 
       COMPOSITE_REGEX.lastIndex = 0;
-      while ((match = COMPOSITE_REGEX.exec(text)) !== null) {
+      while (COMPOSITE_REGEX.exec(text) !== null) {
         results.composites++;
       }
 
       STANDALONE_PATTERN.lastIndex = 0;
-      while ((match = STANDALONE_PATTERN.exec(text)) !== null) {
+      while (STANDALONE_PATTERN.exec(text) !== null) {
         results.standalones++;
       }
 
@@ -426,11 +424,10 @@ Composite with mixed: \\ue200\\ue202turn0file0\ue202turn0file1\\ue201`;
 
       const start = performance.now();
 
-      let match;
       let count = 0;
 
       STANDALONE_PATTERN.lastIndex = 0;
-      while ((match = STANDALONE_PATTERN.exec(text)) !== null) {
+      while (STANDALONE_PATTERN.exec(text) !== null) {
         count++;
       }
 
@@ -451,11 +448,10 @@ Composite with mixed: \\ue200\\ue202turn0file0\ue202turn0file1\\ue201`;
 
       const start = performance.now();
 
-      let match;
       let count = 0;
 
       STANDALONE_PATTERN.lastIndex = 0;
-      while ((match = STANDALONE_PATTERN.exec(mixedText)) !== null) {
+      while (STANDALONE_PATTERN.exec(mixedText) !== null) {
         count++;
       }
 
@@ -463,6 +459,100 @@ Composite with mixed: \\ue200\\ue202turn0file0\ue202turn0file1\\ue201`;
 
       expect(duration).toBeLessThan(100);
       expect(count).toBeGreaterThan(80); // Should find citations from both halves
+    });
+
+    it('should handle repeated execution during streaming simulation (<1000ms cumulative)', () => {
+      /**
+       * Simulates the markdown plugin running repeatedly during LLM streaming.
+       * Each "token" adds ~10 characters, plugin runs on every update.
+       */
+      const fullText = generateCitationHeavyText(50, 'literal');
+      const tokens: string[] = [];
+
+      // Simulate streaming: break text into ~100 incremental chunks
+      const chunkSize = Math.ceil(fullText.length / 100);
+      for (let i = 0; i < fullText.length; i += chunkSize) {
+        tokens.push(fullText.slice(0, i + chunkSize));
+      }
+
+      const start = performance.now();
+      let totalMatches = 0;
+      let spanCount = 0;
+      let compositeCount = 0;
+
+      // Simulate plugin running on each streaming update
+      for (const partialText of tokens) {
+        // Run all regex operations (simulating unicodeCitation plugin)
+        SPAN_REGEX.lastIndex = 0;
+        while (SPAN_REGEX.exec(partialText) !== null) {
+          spanCount++;
+        }
+
+        COMPOSITE_REGEX.lastIndex = 0;
+        while (COMPOSITE_REGEX.exec(partialText) !== null) {
+          compositeCount++;
+        }
+
+        STANDALONE_PATTERN.lastIndex = 0;
+        while (STANDALONE_PATTERN.exec(partialText) !== null) {
+          totalMatches++;
+        }
+
+        // Cleanup would also run
+        void partialText.replace(CLEANUP_REGEX, '');
+      }
+
+      const duration = performance.now() - start;
+
+      // 100 streaming updates processing up to 50 citations each
+      // Should complete in under 1 second cumulative
+      expect(duration).toBeLessThan(1000);
+      expect(totalMatches).toBeGreaterThan(1000); // Many matches across all iterations
+      expect(spanCount).toBeGreaterThan(0);
+      expect(compositeCount).toBeGreaterThan(0);
+    });
+
+    it('should handle rapid repeated execution (300 renders with 20 citations)', () => {
+      /**
+       * Realistic streaming scenario: 300 token updates, final text has ~20 citations
+       */
+      const fullText = generateCitationHeavyText(20, 'literal');
+      const renderCount = 300;
+
+      const start = performance.now();
+      let totalOps = 0;
+
+      // Simulate 300 renders, each processing progressively more text
+      for (let i = 0; i < renderCount; i++) {
+        const progress = Math.min(1, (i + 1) / renderCount);
+        const partialText = fullText.slice(0, Math.floor(fullText.length * progress));
+
+        SPAN_REGEX.lastIndex = 0;
+        while (SPAN_REGEX.exec(partialText) !== null) {
+          totalOps++;
+        }
+
+        COMPOSITE_REGEX.lastIndex = 0;
+        while (COMPOSITE_REGEX.exec(partialText) !== null) {
+          totalOps++;
+        }
+
+        STANDALONE_PATTERN.lastIndex = 0;
+        while (STANDALONE_PATTERN.exec(partialText) !== null) {
+          totalOps++;
+        }
+
+        void partialText.replace(CLEANUP_REGEX, '');
+      }
+
+      const duration = performance.now() - start;
+      const avgPerRender = duration / renderCount;
+
+      // Should complete all 300 renders in under 500ms total
+      // Average per render should be under 2ms
+      expect(duration).toBeLessThan(500);
+      expect(avgPerRender).toBeLessThan(2);
+      expect(totalOps).toBeGreaterThan(0);
     });
   });
 });
