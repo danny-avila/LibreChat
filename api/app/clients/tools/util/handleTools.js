@@ -317,31 +317,22 @@ const loadTools = async ({
       requestedTools[tool] = async () => {
         toolContextMap[tool] = `# \`${tool}\`:
 Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
-1. **Execute immediately without preface** when using \`${tool}\`.
-2. **After the search, begin with a brief summary** that directly addresses the query without headers or explaining your process.
-3. **Structure your response clearly** using Markdown formatting (Level 2 headers for sections, lists for multiple points, tables for comparisons).
-4. **Cite sources properly** using invisible Unicode anchor markers (see citation format below).
-5. **Tailor your approach to the query type** (academic, news, coding, etc.) while maintaining an expert, journalistic, unbiased tone.
-6. **Provide comprehensive information** with specific details, examples, and as much relevant context as possible from search results.
-7. **Avoid moralizing language.**
 
-**CITATION FORMAT - USE INVISIBLE UNICODE MARKERS:**
-After statements from search results, use invisible Unicode markers with the pattern format:
-- Single citation: "Information from source... \\ue202turn0search0"
-- Multiple sources: "Confirmed by sources... \\ue200\\ue202turn0search0\\ue202turn0search1\\ue201"
-- News citation: "Breaking news reports... \\ue202turn0news0"
+**Execute immediately without preface.** After search, provide a brief summary addressing the query directly, then structure your response with clear Markdown formatting (## headers, lists, tables). Cite sources properly, tailor tone to query type, and provide comprehensive details.
 
-**CRITICAL CITATION RULES:**
-- Use ONLY the invisible Unicode character \\ue202 (U+E202) before each citation pattern
-- For grouped citations, wrap with \\ue200 (U+E200) at start and \\ue201 (U+E201) at end
-- Pattern format: turn{N}{type}{index} (e.g., turn0search0) where:
-  * N = turn number (usually 0)
-  * type = search, news, or ref
-  * index = source index number (0, 1, 2, etc.)
-- Place markers AFTER punctuation: "Statement.\\ue202turn0search0" NOT "Statement\\ue202turn0search0."
-- NEVER use HTML tags like <marker>, markdown links, or visible text
-- NEVER use other Unicode characters - only \\ue202, \\ue200, \\ue201
-`.trim();
+**CITATION FORMAT - INVISIBLE UNICODE ANCHORS ONLY:**
+Use these Unicode characters: \\ue202 (before each anchor), \\ue200 (group start), \\ue201 (group end), \\ue203 (highlight start), \\ue204 (highlight end)
+
+Anchor pattern: turn{N}{type}{index} where N=turn number, type=search|news|image|ref, index=0,1,2...
+
+**Examples:**
+- Single: "Statement.\\ue202turn0search0"
+- Multiple: "Statement.\\ue202turn0search0\\ue202turn0news1"
+- Group: "Statement. \\ue200\\ue202turn0search0\\ue202turn0news1\\ue201"
+- Highlight: "\\ue203Cited text.\\ue204\\ue202turn0search0"
+- Image: "See photo\\ue202turn0image0."
+
+**CRITICAL:** Place anchors AFTER punctuation. Cite every non-obvious fact/quote. NEVER use markdown links, [1], footnotes, or HTML tags.`.trim();
         return createSearchTool({
           ...result.authResult,
           onSearchResults,
