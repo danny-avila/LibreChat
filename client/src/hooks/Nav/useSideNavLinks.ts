@@ -64,6 +64,10 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.USE,
   });
+  const hasAccessToCreateMCP = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.CREATE,
+  });
   const { availableMCPServers } = useMCPServerManager();
 
   const Links = useMemo(() => {
@@ -155,7 +159,10 @@ export default function useSideNavLinks({
       });
     }
 
-    if (hasAccessToUseMCPSettings && availableMCPServers && availableMCPServers.length > 0) {
+    if (
+      (hasAccessToUseMCPSettings && availableMCPServers && availableMCPServers.length > 0) ||
+      hasAccessToCreateMCP
+    ) {
       links.push({
         title: 'com_nav_setting_mcp',
         label: '',
@@ -188,6 +195,7 @@ export default function useSideNavLinks({
     hasAccessToBookmarks,
     availableMCPServers,
     hasAccessToUseMCPSettings,
+    hasAccessToCreateMCP,
     hidePanel,
   ]);
 
