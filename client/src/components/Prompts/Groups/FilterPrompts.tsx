@@ -1,11 +1,10 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { ListFilter, User, Share2 } from 'lucide-react';
 import { SystemCategories } from 'librechat-data-provider';
 import { Dropdown, AnimatedSearchInput } from '@librechat/client';
 import type { Option } from '~/common';
-import type { TranslationKeys } from '~/hooks';
-import { useLocalize, useCategories } from '~/hooks';
+import { useLocalize, useCategories, useDebounce } from '~/hooks';
 import { usePromptGroupsContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -14,10 +13,10 @@ export default function FilterPrompts({ className = '' }: { className?: string }
   const localize = useLocalize();
   const { name, setName, hasAccess, promptGroups } = usePromptGroupsContext();
   const { categories } = useCategories({ className: 'h-4 w-4', hasAccess });
-  const [displayName, setDisplayName] = useState(name || '');
-  const [isSearching, setIsSearching] = useState(false);
+  const [searchTerm, setSearchTerm] = useState(name || '');
   const [categoryFilter, setCategory] = useRecoilState(store.promptsCategory);
-  const [searchResultsAnnouncement, setSearchResultsAnnouncement] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 500);
+  const prevNameRef = useRef(name);
 
   const filterOptions = useMemo(() => {
     const baseOptions: Option[] = [
@@ -62,53 +61,35 @@ export default function FilterPrompts({ className = '' }: { className?: string }
     [setCategory],
   );
 
-  // Sync displayName with name prop when it changes externally
+  // Sync searchTerm with name prop when it changes externally
   useEffect(() => {
-    setDisplayName(name || '');
+    if (prevNameRef.current !== name) {
+      prevNameRef.current = name;
+      setSearchTerm(name || '');
+    }
   }, [name]);
 
   useEffect(() => {
-    if (displayName === '') {
-      // Clear immediately when empty
-      setName('');
-      setIsSearching(false);
-      return;
+    setName(debouncedSearchTerm);
+  }, [debouncedSearchTerm, setName]);
+
+  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+  }, []);
+
+  const isSearching = searchTerm !== debouncedSearchTerm;
+
+  const resultCount = promptGroups?.length ?? 0;
+  const searchResultsAnnouncement = useMemo(() => {
+    if (!debouncedSearchTerm.trim()) {
+      return '';
     }
-
-    setIsSearching(true);
-    const timeout = setTimeout(() => {
-      setIsSearching(false);
-      setName(displayName); // Debounced setName call
-    }, 500);
-    return () => clearTimeout(timeout);
-  }, [displayName, setName]);
-
-  useEffect(() => {
-    if (!displayName.trim() || isSearching) {
-      setSearchResultsAnnouncement('');
-      return;
-    }
-
-    const resultCount = promptGroups?.length ?? 0;
-    const announcement =
-      resultCount === 1
-        ? localize('com_ui_result_found' as TranslationKeys, {
-            count: resultCount,
-          })
-        : localize('com_ui_results_found' as TranslationKeys, {
-            count: resultCount,
-          });
-
-    const timeout = setTimeout(() => {
-      setSearchResultsAnnouncement(announcement);
-    }, 300);
-
-    return () => clearTimeout(timeout);
-  }, [promptGroups?.length, displayName, isSearching, localize]);
+    return resultCount === 1 ? `${resultCount} result found` : `${resultCount} results found`;
+  }, [debouncedSearchTerm, resultCount]);
 
   return (
-    <div className={cn('flex w-full gap-2 text-text-primary', className)}>
-      <div aria-live="polite" className="sr-only">
+    <div role="search" className={cn('flex w-full gap-2 text-text-primary', className)}>
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
         {searchResultsAnnouncement}
       </div>
       <Dropdown
@@ -122,10 +103,8 @@ export default function FilterPrompts({ className = '' }: { className?: string }
         iconOnly
       />
       <AnimatedSearchInput
-        value={displayName}
-        onChange={(e) => {
-          setDisplayName(e.target.value);
-        }}
+        value={searchTerm}
+        onChange={handleSearchChange}
         isSearching={isSearching}
         placeholder={localize('com_ui_filter_prompts_name')}
       />
