@@ -21,7 +21,7 @@ interface:
 
   # Since we only have limited endpoints, we disable the more elaborate model selector
   # (Instead, we define the model selection using `modelSpecs` below)
-  modelSelect: true
+  modelSelect: false
 
   # We're purposefully disabling most LibreChat features (for now)
   agents: false
