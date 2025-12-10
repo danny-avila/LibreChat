@@ -331,7 +331,7 @@ export default function Fork({
               }
             }}
             type="button"
-            aria-label={localize('com_ui_fork')}
+            aria-label={localize('com_ui_fork_open_menu')}
           >
             <GitFork size="19" />
           </button>
