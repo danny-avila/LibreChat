@@ -1,0 +1,20 @@
+{
+  "name": "librechat-infra",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "synth": "npx cdk synth",
+    "deploy": "npx cdk deploy",
+    "diff": "npx cdk diff",
+    "destroy": "npx cdk destroy",
+    "doctor": "npx cdk doctor"
+  },
+  "devDependencies": {
+    "aws-cdk-lib": "^2.131.0",
+    "constructs": "^10.3.0",
+    "typescript": "^5.4.0",
+    "ts-node": "^10.9.1"
+  }
+}
