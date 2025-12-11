@@ -1,0 +1,31 @@
+{
+  "vpc-provider:account=***REMOVED***:filter.vpc-id=***REMOVED***:region=us-east-1:returnAsymmetricSubnets=true": {
+    "vpcId": "***REMOVED***",
+    "vpcCidrBlock": "10.43.78.0/24",
+    "ownerAccountId": "***REMOVED***",
+    "availabilityZones": [],
+    "subnetGroups": [
+      {
+        "name": "Private",
+        "type": "Private",
+        "subnets": [
+          {
+            "subnetId": "subnet-0184fa96237d9873f",
+            "cidr": "10.43.78.0/26",
+            "availabilityZone": "us-east-1a",
+            "routeTableId": "rtb-07b4c8c744c04d403"
+          },
+          {
+            "subnetId": "subnet-02e553a6971550663",
+            "cidr": "10.43.78.64/26",
+            "availabilityZone": "us-east-1b",
+            "routeTableId": "rtb-07b4c8c744c04d403"
+          }
+        ]
+      }
+    ]
+  },
+  "acknowledged-issue-numbers": [
+    34892
+  ]
+}

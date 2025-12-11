@@ -139,6 +139,7 @@ helm/**/.values.yaml
 /.codeium
 *.local.md
 
+cdk.out/
 
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
