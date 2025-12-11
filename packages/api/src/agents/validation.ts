@@ -40,6 +40,24 @@ export const agentSupportContactSchema = z
   })
   .optional();
 
+/** Fallback model configuration schema */
+export const agentFallbackConfigSchema = z
+  .object({
+    provider: z.string().optional(),
+    model: z.string().nullable().optional(),
+    model_parameters: z.record(z.unknown()).optional(),
+  })
+  .optional();
+
+/** Multimodal model configuration schema */
+export const agentMultimodalConfigSchema = z
+  .object({
+    provider: z.string().optional(),
+    model: z.string().nullable().optional(),
+    model_parameters: z.record(z.unknown()).optional(),
+  })
+  .optional();
+
 /** Graph edge schema for agent handoffs */
 export const graphEdgeSchema = z.object({
   from: z.union([z.string(), z.array(z.string())]),
@@ -69,6 +87,8 @@ export const agentBaseSchema = z.object({
   conversation_starters: z.array(z.string()).optional(),
   tool_resources: agentToolResourcesSchema,
   support_contact: agentSupportContactSchema,
+  fallback_config: agentFallbackConfigSchema,
+  multimodal_config: agentMultimodalConfigSchema,
   category: z.string().optional(),
 });
 

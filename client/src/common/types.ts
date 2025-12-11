@@ -153,6 +153,8 @@ export enum Panel {
   model = 'model',
   version = 'version',
   mcp = 'mcp',
+  fallback = 'fallback',
+  multimodal = 'multimodal',
 }
 
 export type FileSetter =

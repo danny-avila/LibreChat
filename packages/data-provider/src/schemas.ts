@@ -241,6 +241,16 @@ export const defaultAgentFormValues = {
     name: '',
     email: '',
   },
+  fallback_config: {
+    provider: undefined,
+    model: undefined,
+    model_parameters: {},
+  },
+  multimodal_config: {
+    provider: undefined,
+    model: undefined,
+    model_parameters: {},
+  },
 };
 
 export const ImageVisionTool: FunctionTool = {

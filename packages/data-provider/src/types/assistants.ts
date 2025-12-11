@@ -205,6 +205,32 @@ export type SupportContact = {
   email?: string;
 };
 
+/**
+ * Fallback model configuration for agents.
+ * Allows specifying alternative model/provider to use when the primary model fails (rate limits, timeouts, etc).
+ */
+export type FallbackModelConfig = {
+  /** The fallback provider to use */
+  provider?: AgentProvider;
+  /** The fallback model to use */
+  model?: string | null;
+  /** Model parameters for the fallback model */
+  model_parameters?: AgentModelParameters;
+};
+
+/**
+ * Multimodal model configuration for agents.
+ * Allows specifying alternative model/provider to use when images, videos or audio are present in the conversation.
+ */
+export type MultimodalModelConfig = {
+  /** The multimodal provider to use */
+  provider?: AgentProvider;
+  /** The multimodal model to use */
+  model?: string | null;
+  /** Model parameters for the multimodal model */
+  model_parameters?: AgentModelParameters;
+};
+
 export type Agent = {
   _id?: string;
   id: string;
@@ -225,6 +251,10 @@ export type Agent = {
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
+  /** Fallback model configuration for rate limiting or errors */
+  fallback_config?: FallbackModelConfig;
+  /** Multimodal model configuration for image, video or audio handling */
+  multimodal_config?: MultimodalModelConfig;
   conversation_starters?: string[];
   /** @deprecated Use ACL permissions instead */
   isCollaborative?: boolean;
@@ -264,6 +294,8 @@ export type AgentCreateParams = {
   | 'recursion_limit'
   | 'category'
   | 'support_contact'
+  | 'fallback_config'
+  | 'multimodal_config'
 >;
 
 export type AgentUpdateParams = {
@@ -290,6 +322,8 @@ export type AgentUpdateParams = {
   | 'recursion_limit'
   | 'category'
   | 'support_contact'
+  | 'fallback_config'
+  | 'multimodal_config'
 >;
 
 export type AgentListParams = {
