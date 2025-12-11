@@ -1,19 +1,21 @@
-import React, { memo, useMemo, useCallback, useRef } from 'react';
+import React, { memo, useMemo, useCallback, useRef, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Search, X } from 'lucide-react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { TooltipAnchor } from '@librechat/client';
 import MCPServerMenuItem from '~/components/MCP/MCPServerMenuItem';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import StackedMCPIcons from '~/components/MCP/StackedMCPIcons';
 import { useBadgeRowContext } from '~/Providers';
-import { useHasAccess } from '~/hooks';
+import { useHasAccess, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
+const SEARCH_THRESHOLD = 5;
+
 function MCPSelectContent() {
+  const localize = useLocalize();
   const { conversationId, mcpServerManager } = useBadgeRowContext();
   const {
-    localize,
     isPinned,
     mcpValues,
     placeholderText,
@@ -29,7 +31,32 @@ function MCPSelectContent() {
   const isOpen = menuStore.useState('open');
   const focusedElementRef = useRef<HTMLElement | null>(null);
 
+  const [searchValue, setSearchValue] = useState('');
+
   const selectedCount = mcpValues?.length ?? 0;
+
+  const showSearch = selectableServers && selectableServers.length > SEARCH_THRESHOLD;
+
+  const filteredServers = useMemo(() => {
+    if (!selectableServers) {
+      return [];
+    }
+    if (!searchValue.trim()) {
+      return selectableServers;
+    }
+    const lowerSearch = searchValue.toLowerCase();
+    return selectableServers.filter((server) =>
+      (server.config?.title || server.serverName).toLowerCase().includes(lowerSearch),
+    );
+  }, [selectableServers, searchValue]);
+
+  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchValue(e.target.value);
+  }, []);
+
+  const clearSearch = useCallback(() => {
+    setSearchValue('');
+  }, []);
 
   // Wrap toggleServerSelection to preserve focus after state update
   const handleToggle = useCallback(
@@ -106,24 +133,61 @@ function MCPSelectContent() {
           aria-label={localize('com_ui_mcp_servers')}
           className={cn(
             'z-50 flex min-w-[260px] max-w-[320px] flex-col rounded-xl',
-            'border border-border-light bg-presentation p-1.5 shadow-lg',
+            'border border-border-light bg-presentation shadow-lg',
             'origin-top opacity-0 transition-[opacity,transform] duration-200 ease-out',
             'data-[enter]:scale-100 data-[enter]:opacity-100',
             'scale-95 data-[leave]:scale-95 data-[leave]:opacity-0',
+            showSearch ? 'p-0' : 'p-1.5',
           )}
         >
-          <div className="flex max-h-[320px] flex-col gap-1 overflow-y-auto">
-            {selectableServers.map((server) => (
-              <MCPServerMenuItem
-                key={server.serverName}
-                server={server}
-                isSelected={mcpValues?.includes(server.serverName) ?? false}
-                connectionStatus={connectionStatus}
-                isInitializing={isInitializing}
-                statusIconProps={getServerStatusIconProps(server.serverName)}
-                onToggle={handleToggle}
-              />
-            ))}
+          {showSearch && (
+            <div className="sticky top-0 z-10 border-b border-border-light bg-presentation p-1.5">
+              <div className="flex items-center gap-2 rounded-lg bg-surface-tertiary px-2 py-1">
+                <Search className="h-3.5 w-3.5 text-text-secondary" aria-hidden="true" />
+                <input
+                  type="text"
+                  value={searchValue}
+                  onChange={handleSearchChange}
+                  placeholder={localize('com_ui_search') + '...'}
+                  className="flex-1 border-none bg-transparent text-sm text-text-primary placeholder-text-secondary focus:outline-none"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  aria-label={localize('com_ui_search')}
+                />
+                {searchValue && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      clearSearch();
+                    }}
+                    className="flex h-4 w-4 items-center justify-center rounded text-text-secondary hover:text-text-primary"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          <div className={cn('flex flex-col gap-1', showSearch ? 'max-h-[320px] overflow-y-auto p-1.5' : 'max-h-[320px] overflow-y-auto')}>
+            {filteredServers.length === 0 ? (
+              <div className="px-2 py-3 text-center text-sm text-text-secondary">
+                {localize('com_ui_no_results_found')}
+              </div>
+            ) : (
+              filteredServers.map((server) => (
+                <MCPServerMenuItem
+                  key={server.serverName}
+                  server={server}
+                  isSelected={mcpValues?.includes(server.serverName) ?? false}
+                  connectionStatus={connectionStatus}
+                  isInitializing={isInitializing}
+                  statusIconProps={getServerStatusIconProps(server.serverName)}
+                  onToggle={handleToggle}
+                />
+              ))
+            )}
           </div>
         </Ariakit.Menu>
       </Ariakit.MenuProvider>
