@@ -171,6 +171,30 @@ export namespace Agents {
     stepDetails: StepDetails;
     usage: null | object;
   };
+
+  /** Content part for aggregated message content */
+  export interface ContentPart {
+    type: string;
+    text?: string;
+    [key: string]: unknown;
+  }
+
+  /** User message metadata for rebuilding submission on reconnect */
+  export interface UserMessageMeta {
+    messageId: string;
+    parentMessageId?: string;
+    conversationId?: string;
+    text?: string;
+  }
+
+  /** State data sent to reconnecting clients */
+  export interface ResumeState {
+    runSteps: RunStep[];
+    aggregatedContent?: ContentPart[];
+    userMessage?: UserMessageMeta;
+    responseMessageId?: string;
+    conversationId?: string;
+  }
   /**
    * Represents a run step delta i.e. any changed fields on a run step during
    * streaming.

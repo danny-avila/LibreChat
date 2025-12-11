@@ -1,6 +1,5 @@
 const express = require('express');
-const { generateCheckAccess, skipAgentCheck, GenerationJobManager } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { generateCheckAccess, skipAgentCheck } = require('@librechat/api');
 const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
 const {
   setHeaders,
@@ -34,25 +33,6 @@ router.use(checkAgentResourceAccess);
 router.use(validateConvoAccess);
 router.use(buildEndpointOption);
 router.use(setHeaders);
-
-/**
- * @route POST /abort
- * @desc Abort an ongoing generation job
- * @access Private
- */
-router.post('/abort', (req, res) => {
-  const { streamId, abortKey } = req.body;
-
-  const jobStreamId = streamId || abortKey?.split(':')?.[0];
-
-  if (jobStreamId && GenerationJobManager.hasJob(jobStreamId)) {
-    GenerationJobManager.abortJob(jobStreamId);
-    logger.debug(`[AgentStream] Job aborted: ${jobStreamId}`);
-    return res.json({ success: true, aborted: jobStreamId });
-  }
-
-  res.status(404).json({ error: 'Job not found' });
-});
 
 const controller = async (req, res, next) => {
   await AgentController(req, res, next, initializeClient, addTitle);

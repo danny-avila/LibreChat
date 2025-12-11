@@ -55,7 +55,7 @@ function ChatView({ index = 0 }: { index?: number }) {
   useAdaptiveSSE(addedSubmission, addedChatHelpers, true, index + 1);
 
   // Auto-resume if navigating back to conversation with active job
-  useResumeOnLoad(conversationId, chatHelpers, index);
+  useResumeOnLoad(conversationId, chatHelpers.getMessages, index);
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },

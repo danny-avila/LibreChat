@@ -32,10 +32,12 @@ router.use('/', v1);
  * @route GET /chat/stream/:streamId
  * @desc Subscribe to an ongoing generation job's SSE stream with replay support
  * @access Private
- * @description Replays any chunks missed during disconnect, then streams live
+ * @description Sends sync event with resume state, replays missed chunks, then streams live
+ * @query resume=true - Indicates this is a reconnection (sends sync event)
  */
 router.get('/chat/stream/:streamId', (req, res) => {
   const { streamId } = req.params;
+  const isResume = req.query.resume === 'true';
 
   const job = GenerationJobManager.getJob(streamId);
   if (!job) {
@@ -52,7 +54,22 @@ router.get('/chat/stream/:streamId', (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
-  logger.debug(`[AgentStream] Client subscribed to ${streamId}`);
+  logger.debug(`[AgentStream] Client subscribed to ${streamId}, resume: ${isResume}`);
+
+  // Send sync event with resume state for reconnecting clients
+  if (isResume && !GenerationJobManager.wasSyncSent(streamId)) {
+    const resumeState = GenerationJobManager.getResumeState(streamId);
+    if (resumeState && !res.writableEnded) {
+      res.write(`event: message\ndata: ${JSON.stringify({ sync: true, resumeState })}\n\n`);
+      if (typeof res.flush === 'function') {
+        res.flush();
+      }
+      GenerationJobManager.markSyncSent(streamId);
+      logger.debug(
+        `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps`,
+      );
+    }
+  }
 
   const result = GenerationJobManager.subscribe(
     streamId,
@@ -98,7 +115,7 @@ router.get('/chat/stream/:streamId', (req, res) => {
  * @route GET /chat/status/:conversationId
  * @desc Check if there's an active generation job for a conversation
  * @access Private
- * @returns { active, streamId, status, chunkCount, aggregatedContent, createdAt }
+ * @returns { active, streamId, status, chunkCount, aggregatedContent, createdAt, resumeState }
  */
 router.get('/chat/status/:conversationId', (req, res) => {
   const { conversationId } = req.params;
@@ -114,15 +131,45 @@ router.get('/chat/status/:conversationId', (req, res) => {
   }
 
   const info = GenerationJobManager.getStreamInfo(job.streamId);
+  const resumeState = GenerationJobManager.getResumeState(job.streamId);
 
   res.json({
     active: info?.active ?? false,
     streamId: job.streamId,
     status: info?.status ?? job.status,
     chunkCount: info?.chunkCount ?? 0,
+    runStepCount: info?.runStepCount ?? 0,
     aggregatedContent: info?.aggregatedContent,
     createdAt: info?.createdAt ?? job.createdAt,
+    resumeState,
   });
+});
+
+/**
+ * @route POST /chat/abort
+ * @desc Abort an ongoing generation job
+ * @access Private
+ * @description Mounted before chatRouter to bypass buildEndpointOption middleware
+ */
+router.post('/chat/abort', (req, res) => {
+  logger.debug(`[AgentStream] ========== ABORT ENDPOINT HIT ==========`);
+  logger.debug(`[AgentStream] Method: ${req.method}, Path: ${req.path}`);
+  logger.debug(`[AgentStream] Body:`, req.body);
+
+  const { streamId, abortKey } = req.body;
+
+  const jobStreamId = streamId || abortKey?.split(':')?.[0];
+  logger.debug(`[AgentStream] Computed jobStreamId: ${jobStreamId}`);
+
+  if (jobStreamId && GenerationJobManager.hasJob(jobStreamId)) {
+    logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
+    GenerationJobManager.abortJob(jobStreamId);
+    logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`);
+    return res.json({ success: true, aborted: jobStreamId });
+  }
+
+  logger.warn(`[AgentStream] Job not found for streamId: ${jobStreamId}`);
+  return res.status(404).json({ error: 'Job not found', streamId: jobStreamId });
 });
 
 const chatRouter = express.Router();

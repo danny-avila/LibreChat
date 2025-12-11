@@ -66,6 +66,65 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const job = GenerationJobManager.createJob(streamId, userId, reqConversationId);
     req._resumableStreamId = streamId;
 
+    // Track if partial response was already saved to avoid duplicates
+    let partialResponseSaved = false;
+
+    /**
+     * Listen for all subscribers leaving to save partial response.
+     * This ensures the response is saved to DB even if all clients disconnect
+     * while generation continues.
+     *
+     * Note: The messageId used here falls back to `${userMessage.messageId}_` if the
+     * actual response messageId isn't available yet. The final response save will
+     * overwrite this with the complete response using the same messageId pattern.
+     */
+    job.emitter.on('allSubscribersLeft', async (aggregatedContent) => {
+      if (partialResponseSaved || !aggregatedContent || aggregatedContent.length === 0) {
+        return;
+      }
+
+      const resumeState = GenerationJobManager.getResumeState(streamId);
+      if (!resumeState?.userMessage) {
+        logger.debug('[ResumableAgentController] No user message to save partial response for');
+        return;
+      }
+
+      partialResponseSaved = true;
+      const responseConversationId = resumeState.conversationId || reqConversationId;
+
+      try {
+        const partialMessage = {
+          messageId: resumeState.responseMessageId || `${resumeState.userMessage.messageId}_`,
+          conversationId: responseConversationId,
+          parentMessageId: resumeState.userMessage.messageId,
+          sender: client?.sender ?? 'AI',
+          content: aggregatedContent,
+          unfinished: true,
+          error: false,
+          isCreatedByUser: false,
+          user: userId,
+          endpoint: endpointOption.endpoint,
+          model: endpointOption.modelOptions?.model || endpointOption.model_parameters?.model,
+        };
+
+        if (req.body?.agent_id) {
+          partialMessage.agent_id = req.body.agent_id;
+        }
+
+        await saveMessage(req, partialMessage, {
+          context: 'api/server/controllers/agents/request.js - partial response on disconnect',
+        });
+
+        logger.debug(
+          `[ResumableAgentController] Saved partial response for ${streamId}, content parts: ${aggregatedContent.length}`,
+        );
+      } catch (error) {
+        logger.error('[ResumableAgentController] Error saving partial response:', error);
+        // Reset flag so we can try again if subscribers reconnect and leave again
+        partialResponseSaved = false;
+      }
+    });
+
     /** @type {{ client: TAgentClient; userMCPAuthMap?: Record<string, Record<string, string>> }} */
     const result = await initializeClient({
       req,
@@ -106,8 +165,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       }
 
       try {
-        const onStart = (userMsg, _respMsgId, _isNewConvo) => {
+        const onStart = (userMsg, respMsgId, _isNewConvo) => {
           userMessage = userMsg;
+
+          // Store the response messageId upfront so partial saves use the same ID
+          if (respMsgId) {
+            GenerationJobManager.updateMetadata(streamId, { responseMessageId: respMsgId });
+          }
 
           GenerationJobManager.emitChunk(streamId, {
             created: true,
@@ -203,8 +267,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           });
         }
 
+        // Skip title generation if job was aborted
         const newConvo = !reqConversationId;
-        if (addTitle && parentMessageId === Constants.NO_PARENT && newConvo) {
+        const shouldGenerateTitle =
+          addTitle &&
+          parentMessageId === Constants.NO_PARENT &&
+          newConvo &&
+          !job.abortController.signal.aborted;
+
+        if (shouldGenerateTitle) {
           addTitle(req, {
             text,
             response: { ...response },
@@ -224,12 +295,24 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           }
         }
       } catch (error) {
-        logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
-        GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
-        GenerationJobManager.completeJob(streamId, error.message);
+        // Check if this was an abort (not a real error)
+        const wasAborted = job.abortController.signal.aborted || error.message?.includes('abort');
+
+        if (wasAborted) {
+          logger.debug(`[ResumableAgentController] Generation aborted for ${streamId}`);
+          // abortJob already handled emitDone and completeJob
+        } else {
+          logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
+          GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
+          GenerationJobManager.completeJob(streamId, error.message);
+        }
+
         if (client) {
           disposeClient(client);
         }
+
+        // Don't continue to title generation after error/abort
+        return;
       }
     };
 

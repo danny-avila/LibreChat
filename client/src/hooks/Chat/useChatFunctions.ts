@@ -283,14 +283,25 @@ export default function useChatFunctions({
           }
         }
       } else {
-        initialResponse.content = [
-          {
-            type: ContentTypes.TEXT,
-            [ContentTypes.TEXT]: {
-              value: '',
+        // Assistants endpoint uses nested format: { type: 'text', text: { value: 'content' } }
+        // Agents and other endpoints use flat format: { type: 'text', text: 'content' }
+        if (isAssistantsEndpoint(endpoint)) {
+          initialResponse.content = [
+            {
+              type: ContentTypes.TEXT,
+              [ContentTypes.TEXT]: {
+                value: '',
+              },
             },
-          },
-        ];
+          ];
+        } else {
+          initialResponse.content = [
+            {
+              type: ContentTypes.TEXT,
+              text: '',
+            },
+          ];
+        }
       }
       setShowStopButton(true);
     }

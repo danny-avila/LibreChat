@@ -21,7 +21,8 @@ type TUseStepHandler = {
   announcePolite: (options: AnnounceOptions) => void;
   setMessages: (messages: TMessage[]) => void;
   getMessages: () => TMessage[] | undefined;
-  setIsSubmitting: SetterOrUpdater<boolean>;
+  /** @deprecated - isSubmitting should be derived from submission state */
+  setIsSubmitting?: SetterOrUpdater<boolean>;
   lastAnnouncementTimeRef: React.MutableRefObject<number>;
 };
 
@@ -50,10 +51,12 @@ type AllContentTypes =
   | ContentTypes.IMAGE_URL
   | ContentTypes.ERROR;
 
+const noop = () => {};
+
 export default function useStepHandler({
   setMessages,
   getMessages,
-  setIsSubmitting,
+  setIsSubmitting = noop,
   announcePolite,
   lastAnnouncementTimeRef,
 }: TUseStepHandler) {
@@ -198,7 +201,6 @@ export default function useStepHandler({
     ({ event, data }: TStepEvent, submission: EventSubmission) => {
       const messages = getMessages() || [];
       const { userMessage } = submission;
-      setIsSubmitting(true);
       let parentMessageId = userMessage.messageId;
 
       const currentTime = Date.now();
@@ -230,12 +232,17 @@ export default function useStepHandler({
         if (!response) {
           const responseMessage = messages[messages.length - 1] as TMessage;
 
+          // Preserve existing content from DB (partial response) and prepend initialContent if provided
+          const existingContent = responseMessage?.content ?? [];
+          const mergedContent =
+            initialContent.length > 0 ? [...initialContent, ...existingContent] : existingContent;
+
           response = {
             ...responseMessage,
             parentMessageId,
             conversationId: userMessage.conversationId,
             messageId: responseMessageId,
-            content: initialContent,
+            content: mergedContent,
           };
 
           messageMap.current.set(responseMessageId, response);

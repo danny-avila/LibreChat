@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
+import type { Agents } from 'librechat-data-provider';
 import type { ServerSentEvent } from '~/types';
 import type {
   GenerationJob,
@@ -9,6 +10,8 @@ import type {
   ErrorHandler,
   UnsubscribeFn,
   ContentPart,
+  ResumeState,
+  GenerationJobMetadata,
 } from './types';
 
 /**
@@ -71,6 +74,7 @@ class GenerationJobManagerClass {
       resolveReady: resolveReady!,
       chunks: [],
       aggregatedContent: [],
+      runSteps: new Map(),
     };
 
     job.emitter.setMaxListeners(100);
@@ -152,18 +156,55 @@ class GenerationJobManagerClass {
 
   /**
    * Abort a job (user-initiated).
+   * Emits both error event and a final done event with aborted flag.
    * @param streamId - The stream identifier
    */
   abortJob(streamId: string): void {
     const job = this.jobs.get(streamId);
     if (!job) {
+      logger.warn(`[GenerationJobManager] Cannot abort - job not found: ${streamId}`);
       return;
     }
 
+    logger.debug(
+      `[GenerationJobManager] Aborting job ${streamId}, signal already aborted: ${job.abortController.signal.aborted}`,
+    );
     job.abortController.abort();
     job.status = 'aborted';
     job.completedAt = Date.now();
-    job.emitter.emit('error', 'Request aborted by user');
+    logger.debug(
+      `[GenerationJobManager] AbortController.abort() called for ${streamId}, signal.aborted: ${job.abortController.signal.aborted}`,
+    );
+
+    // Create a final event for abort so clients can properly handle UI cleanup
+    const abortFinalEvent = {
+      final: true,
+      conversation: {
+        conversationId: job.metadata.conversationId,
+      },
+      title: 'New Chat',
+      requestMessage: job.metadata.userMessage
+        ? {
+            messageId: job.metadata.userMessage.messageId,
+            conversationId: job.metadata.conversationId,
+            text: job.metadata.userMessage.text ?? '',
+          }
+        : null,
+      responseMessage: {
+        messageId:
+          job.metadata.responseMessageId ?? `${job.metadata.userMessage?.messageId ?? 'aborted'}_`,
+        conversationId: job.metadata.conversationId,
+        content: job.aggregatedContent ?? [],
+        unfinished: true,
+        error: true,
+      },
+      aborted: true,
+    } as unknown as ServerSentEvent;
+
+    job.finalEvent = abortFinalEvent;
+    job.emitter.emit('done', abortFinalEvent);
+    // Don't emit error event - it causes unhandled error warnings
+    // The done event with error:true and aborted:true is sufficient
 
     logger.debug(`[GenerationJobManager] Job aborted: ${streamId}`);
   }
@@ -249,6 +290,7 @@ class GenerationJobManagerClass {
   /**
    * Emit a chunk event to all subscribers.
    * Only buffers chunks when no subscribers are listening (for reconnect replay).
+   * Also tracks run steps and user message for reconnection state.
    * @param streamId - The stream identifier
    * @param event - The event data to emit
    */
@@ -264,6 +306,12 @@ class GenerationJobManagerClass {
       job.chunks.push(event);
     }
 
+    // Track run steps for reconnection
+    this.trackRunStep(job, event);
+
+    // Track user message from created event
+    this.trackUserMessage(job, event);
+
     // Always aggregate content (for partial response saving)
     this.aggregateContent(job, event);
 
@@ -271,8 +319,108 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Track run step events for reconnection state.
+   * This allows reconnecting clients to rebuild their stepMap.
+   */
+  private trackRunStep(job: GenerationJob, event: ServerSentEvent): void {
+    const data = event as Record<string, unknown>;
+    if (data.event !== 'on_run_step') {
+      return;
+    }
+
+    const runStep = data.data as Agents.RunStep;
+    if (!runStep?.id) {
+      return;
+    }
+
+    job.runSteps.set(runStep.id, runStep);
+    logger.debug(`[GenerationJobManager] Tracked run step: ${runStep.id} for ${job.streamId}`);
+  }
+
+  /**
+   * Track user message from created event for reconnection.
+   */
+  private trackUserMessage(job: GenerationJob, event: ServerSentEvent): void {
+    const data = event as Record<string, unknown>;
+    if (!data.created || !data.message) {
+      return;
+    }
+
+    const message = data.message as Record<string, unknown>;
+    job.metadata.userMessage = {
+      messageId: message.messageId as string,
+      parentMessageId: message.parentMessageId as string | undefined,
+      conversationId: message.conversationId as string | undefined,
+      text: message.text as string | undefined,
+    };
+
+    // Update conversationId in metadata if not set
+    if (!job.metadata.conversationId && message.conversationId) {
+      job.metadata.conversationId = message.conversationId as string;
+    }
+
+    logger.debug(`[GenerationJobManager] Tracked user message for ${job.streamId}`);
+  }
+
+  /**
+   * Update job metadata with additional information.
+   * Called when more information becomes available during generation.
+   * @param streamId - The stream identifier
+   * @param metadata - Partial metadata to merge
+   */
+  updateMetadata(streamId: string, metadata: Partial<GenerationJobMetadata>): void {
+    const job = this.jobs.get(streamId);
+    if (!job) {
+      return;
+    }
+    job.metadata = { ...job.metadata, ...metadata };
+    logger.debug(`[GenerationJobManager] Updated metadata for ${streamId}`);
+  }
+
+  /**
+   * Get resume state for reconnecting clients.
+   * Includes run steps, aggregated content, and user message data.
+   * @param streamId - The stream identifier
+   * @returns Resume state or null if job not found
+   */
+  getResumeState(streamId: string): ResumeState | null {
+    const job = this.jobs.get(streamId);
+    if (!job) {
+      return null;
+    }
+
+    return {
+      runSteps: Array.from(job.runSteps.values()),
+      aggregatedContent: job.aggregatedContent,
+      userMessage: job.metadata.userMessage,
+      responseMessageId: job.metadata.responseMessageId,
+      conversationId: job.metadata.conversationId,
+    };
+  }
+
+  /**
+   * Mark that sync has been sent for this job to prevent duplicate replays.
+   * @param streamId - The stream identifier
+   */
+  markSyncSent(streamId: string): void {
+    const job = this.jobs.get(streamId);
+    if (job) {
+      job.syncSent = true;
+    }
+  }
+
+  /**
+   * Check if sync has been sent for this job.
+   * @param streamId - The stream identifier
+   */
+  wasSyncSent(streamId: string): boolean {
+    return this.jobs.get(streamId)?.syncSent ?? false;
+  }
+
+  /**
    * Aggregate content parts from message delta events.
    * Used to save partial response when subscribers disconnect.
+   * Uses flat format: { type: 'text', text: 'content' }
    */
   private aggregateContent(job: GenerationJob, event: ServerSentEvent): void {
     // Check for on_message_delta events which contain content
@@ -283,7 +431,7 @@ class GenerationJobManagerClass {
       if (delta?.content && Array.isArray(delta.content)) {
         for (const part of delta.content) {
           if (part.type === 'text' && part.text) {
-            // Find or create text content part
+            // Find or create text content part in flat format
             let textPart = job.aggregatedContent?.find((p) => p.type === 'text');
             if (!textPart) {
               textPart = { type: 'text', text: '' };
@@ -354,6 +502,7 @@ class GenerationJobManagerClass {
     const job = this.jobs.get(streamId);
     if (job) {
       job.emitter.removeAllListeners();
+      job.runSteps.clear();
       this.jobs.delete(streamId);
     }
   }
@@ -380,12 +529,13 @@ class GenerationJobManagerClass {
 
   /**
    * Get stream info for status endpoint.
-   * Returns chunk count, status, and aggregated content.
+   * Returns chunk count, status, aggregated content, and run step count.
    */
   getStreamInfo(streamId: string): {
     active: boolean;
     status: GenerationJobStatus;
     chunkCount: number;
+    runStepCount: number;
     aggregatedContent?: ContentPart[];
     createdAt: number;
   } | null {
@@ -398,6 +548,7 @@ class GenerationJobManagerClass {
       active: job.status === 'running',
       status: job.status,
       chunkCount: job.chunks.length,
+      runStepCount: job.runSteps.size,
       aggregatedContent: job.aggregatedContent,
       createdAt: job.createdAt,
     };
