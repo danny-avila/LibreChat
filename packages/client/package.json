@@ -1,7 +1,11 @@
 {
   "name": "@librechat/client",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "React components for LibreChat",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/danny-avila/LibreChat"
+  },
   "main": "dist/index.js",
   "module": "dist/index.es.js",
   "types": "dist/types/index.d.ts",
@@ -17,7 +21,9 @@
   ],
   "scripts": {
     "clean": "rimraf dist",
+    "b:clean": "bun run rimraf dist",
     "build": "npm run clean && rollup -c --bundleConfigAsCjs",
+    "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs",
     "build:watch": "rollup -c -w --bundleConfigAsCjs",
     "dev": "rollup -c -w --bundleConfigAsCjs"
   },
