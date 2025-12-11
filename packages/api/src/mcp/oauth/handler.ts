@@ -88,9 +88,25 @@ export class MCPOAuthHandler {
     logger.debug(
       `[MCPOAuth] Discovering OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
     );
-    const rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl, {
+    let rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl, {
       fetchFn,
     });
+
+    // If discovery failed and URL has a path, try with just the origin
+    // Some servers (like Atlassian) serve OAuth metadata at the root rather than path-based URLs
+    if (!rawMetadata && authServerUrl.pathname !== '/') {
+      const originUrl = new URL(authServerUrl.origin);
+      logger.debug(
+        `[MCPOAuth] Path-based discovery failed, trying origin URL: ${sanitizeUrlForLogging(originUrl)}`,
+      );
+      rawMetadata = await discoverAuthorizationServerMetadata(originUrl, {
+        fetchFn,
+      });
+      if (rawMetadata) {
+        authServerUrl = originUrl;
+        logger.debug(`[MCPOAuth] OAuth metadata discovered from origin URL`);
+      }
+    }
 
     if (!rawMetadata) {
       /**
