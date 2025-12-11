@@ -65,6 +65,7 @@ export const ThinkingButton = memo(
         <button
           type="button"
           onClick={onClick}
+          aria-expanded={isExpanded}
           className={cn(
             'group/button flex flex-1 items-center justify-start rounded-lg leading-[18px]',
             fontSize,
