@@ -12,7 +12,7 @@ export function normalizeServerName(serverName: string): string {
   }
 
   /** Replace non-matching characters with underscores.
-    This preserves the general structure while ensuring compatibility. 
+    This preserves the general structure while ensuring compatibility.
     Trims leading/trailing underscores
     */
   const normalized = serverName.replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/^_+|_+$/g, '');
