@@ -842,3 +842,33 @@ describe('mapGroupToAzureConfig', () => {
     }).toThrow(`Group named "${groupName}" not found in configuration.`);
   });
 });
+
+describe('Entra ID Authentication', () => {
+  it('should handle Entra ID placeholder in Azure configuration', () => {
+    const configs = [
+      {
+        group: 'entra-id-group',
+        apiKey: 'entra-id-placeholder',
+        instanceName: 'entra-instance',
+        deploymentName: 'entra-deployment',
+        version: '2024-12-01-preview',
+        models: {
+          'gpt-4': {
+            deploymentName: 'gpt-4-deployment',
+            version: '2024-12-01-preview',
+          },
+        },
+      },
+    ];
+    const { isValid, modelNames, modelGroupMap, groupMap } = validateAzureGroups(configs);
+    expect(isValid).toBe(true);
+    expect(modelNames).toEqual(['gpt-4']);
+
+    const { azureOptions } = mapModelToAzureConfig({
+      modelName: 'gpt-4',
+      modelGroupMap,
+      groupMap,
+    });
+    expect(azureOptions.azureOpenAIApiKey).toBe('entra-id-placeholder');
+  });
+});
