@@ -1,5 +1,5 @@
 import { useRecoilState } from 'recoil';
-import { Dropdown } from '~/components/ui';
+import { Dropdown } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -94,9 +94,11 @@ export default function LanguageSTTDropdown() {
     setLanguageSTT(value);
   };
 
+  const labelId = 'language-stt-dropdown-label';
+
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_language')}</div>
+      <div id={labelId}>{localize('com_nav_language')}</div>
       <Dropdown
         value={languageSTT}
         onChange={handleSelect}
@@ -104,6 +106,7 @@ export default function LanguageSTTDropdown() {
         sizeClasses="[--anchor-max-height:256px]"
         testId="LanguageSTTDropdown"
         className="z-50"
+        aria-labelledby={labelId}
       />
     </div>
   );

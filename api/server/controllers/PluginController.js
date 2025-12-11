@@ -1,54 +1,10 @@
 const { logger } = require('@librechat/data-schemas');
-const { CacheKeys, AuthType } = require('librechat-data-provider');
-const { getCustomConfig, getCachedTools } = require('~/server/services/Config');
-const { getToolkitKey } = require('~/server/services/ToolService');
-const { getMCPManager, getFlowStateManager } = require('~/config');
-const { availableTools } = require('~/app/clients/tools');
+const { CacheKeys } = require('librechat-data-provider');
+const { getToolkitKey, checkPluginAuth, filterUniquePlugins } = require('@librechat/api');
+const { getCachedTools, setCachedTools } = require('~/server/services/Config');
+const { availableTools, toolkits } = require('~/app/clients/tools');
+const { getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
-const { Constants } = require('librechat-data-provider');
-
-/**
- * Filters out duplicate plugins from the list of plugins.
- *
- * @param {TPlugin[]} plugins The list of plugins to filter.
- * @returns {TPlugin[]} The list of plugins with duplicates removed.
- */
-const filterUniquePlugins = (plugins) => {
-  const seen = new Set();
-  return plugins.filter((plugin) => {
-    const duplicate = seen.has(plugin.pluginKey);
-    seen.add(plugin.pluginKey);
-    return !duplicate;
-  });
-};
-
-/**
- * Determines if a plugin is authenticated by checking if all required authentication fields have non-empty values.
- * Supports alternate authentication fields, allowing validation against multiple possible environment variables.
- *
- * @param {TPlugin} plugin The plugin object containing the authentication configuration.
- * @returns {boolean} True if the plugin is authenticated for all required fields, false otherwise.
- */
-const checkPluginAuth = (plugin) => {
-  if (!plugin.authConfig || plugin.authConfig.length === 0) {
-    return false;
-  }
-
-  return plugin.authConfig.every((authFieldObj) => {
-    const authFieldOptions = authFieldObj.authField.split('||');
-    let isFieldAuthenticated = false;
-
-    for (const fieldOption of authFieldOptions) {
-      const envValue = process.env[fieldOption];
-      if (envValue && envValue.trim() !== '' && envValue !== AuthType.USER_PROVIDED) {
-        isFieldAuthenticated = true;
-        break;
-      }
-    }
-
-    return isFieldAuthenticated;
-  });
-};
 
 const getAvailablePluginsController = async (req, res) => {
   try {
@@ -59,8 +15,10 @@ const getAvailablePluginsController = async (req, res) => {
       return;
     }
 
+    const appConfig = await getAppConfig({ role: req.user?.role });
     /** @type {{ filteredTools: string[], includedTools: string[] }} */
-    const { filteredTools = [], includedTools = [] } = req.app.locals;
+    const { filteredTools = [], includedTools = [] } = appConfig;
+    /** @type {import('@librechat/api').LCManifestTool[]} */
     const pluginManifest = availableTools;
 
     const uniquePlugins = filterUniquePlugins(pluginManifest);
@@ -86,45 +44,6 @@ const getAvailablePluginsController = async (req, res) => {
   }
 };
 
-function createServerToolsCallback() {
-  /**
-   * @param {string} serverName
-   * @param {TPlugin[] | null} serverTools
-   */
-  return async function (serverName, serverTools) {
-    try {
-      const mcpToolsCache = getLogStores(CacheKeys.MCP_TOOLS);
-      if (!serverName || !mcpToolsCache) {
-        return;
-      }
-      await mcpToolsCache.set(serverName, serverTools);
-      logger.debug(`MCP tools for ${serverName} added to cache.`);
-    } catch (error) {
-      logger.error('Error retrieving MCP tools from cache:', error);
-    }
-  };
-}
-
-function createGetServerTools() {
-  /**
-   * Retrieves cached server tools
-   * @param {string} serverName
-   * @returns {Promise<TPlugin[] | null>}
-   */
-  return async function (serverName) {
-    try {
-      const mcpToolsCache = getLogStores(CacheKeys.MCP_TOOLS);
-      if (!mcpToolsCache) {
-        return null;
-      }
-      return await mcpToolsCache.get(serverName);
-    } catch (error) {
-      logger.error('Error retrieving MCP tools from cache:', error);
-      return null;
-    }
-  };
-}
-
 /**
  * Retrieves and returns a list of available tools, either from a cache or by reading a plugin manifest file.
  *
@@ -139,32 +58,36 @@ function createGetServerTools() {
  */
 const getAvailableTools = async (req, res) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      logger.warn('[getAvailableTools] User ID not found in request');
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
-    const cachedTools = await cache.get(CacheKeys.TOOLS);
-    if (cachedTools) {
-      res.status(200).json(cachedTools);
+    const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
+
+    const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
+
+    // Return early if we have cached tools
+    if (cachedToolsArray != null) {
+      res.status(200).json(cachedToolsArray);
       return;
     }
 
-    let pluginManifest = availableTools;
-    const customConfig = await getCustomConfig();
-    if (customConfig?.mcpServers != null) {
-      const mcpManager = getMCPManager();
-      const flowsCache = getLogStores(CacheKeys.FLOWS);
-      const flowManager = flowsCache ? getFlowStateManager(flowsCache) : null;
-      const serverToolsCallback = createServerToolsCallback();
-      const getServerTools = createGetServerTools();
-      const mcpTools = await mcpManager.loadManifestTools({
-        flowManager,
-        serverToolsCallback,
-        getServerTools,
-      });
-      pluginManifest = [...mcpTools, ...pluginManifest];
+    /** @type {Record<string, FunctionTool> | null} Get tool definitions to filter which tools are actually available */
+    let toolDefinitions = await getCachedTools();
+
+    if (toolDefinitions == null && appConfig?.availableTools != null) {
+      logger.warn('[getAvailableTools] Tool cache was empty, re-initializing from app config');
+      await setCachedTools(appConfig.availableTools);
+      toolDefinitions = appConfig.availableTools;
     }
 
-    /** @type {TPlugin[]} */
-    const uniquePlugins = filterUniquePlugins(pluginManifest);
+    /** @type {import('@librechat/api').LCManifestTool[]} */
+    let pluginManifest = availableTools;
 
+    /** @type {TPlugin[]} Deduplicate and authenticate plugins */
+    const uniquePlugins = filterUniquePlugins(pluginManifest);
     const authenticatedPlugins = uniquePlugins.map((plugin) => {
       if (checkPluginAuth(plugin)) {
         return { ...plugin, authenticated: true };
@@ -173,54 +96,26 @@ const getAvailableTools = async (req, res) => {
       }
     });
 
-    const toolDefinitions = await getCachedTools({ includeGlobal: true });
-
+    /** Filter plugins based on availability */
     const toolsOutput = [];
     for (const plugin of authenticatedPlugins) {
-      const isToolDefined = toolDefinitions[plugin.pluginKey] !== undefined;
+      const isToolDefined = toolDefinitions?.[plugin.pluginKey] !== undefined;
       const isToolkit =
         plugin.toolkit === true &&
-        Object.keys(toolDefinitions).some((key) => getToolkitKey(key) === plugin.pluginKey);
+        Object.keys(toolDefinitions ?? {}).some(
+          (key) => getToolkitKey({ toolkits, toolName: key }) === plugin.pluginKey,
+        );
 
       if (!isToolDefined && !isToolkit) {
         continue;
       }
 
-      const toolToAdd = { ...plugin };
-
-      if (!plugin.pluginKey.includes(Constants.mcp_delimiter)) {
-        toolsOutput.push(toolToAdd);
-        continue;
-      }
-
-      const parts = plugin.pluginKey.split(Constants.mcp_delimiter);
-      const serverName = parts[parts.length - 1];
-      const serverConfig = customConfig?.mcpServers?.[serverName];
-
-      if (!serverConfig?.customUserVars) {
-        toolsOutput.push(toolToAdd);
-        continue;
-      }
-
-      const customVarKeys = Object.keys(serverConfig.customUserVars);
-
-      if (customVarKeys.length === 0) {
-        toolToAdd.authConfig = [];
-        toolToAdd.authenticated = true;
-      } else {
-        toolToAdd.authConfig = Object.entries(serverConfig.customUserVars).map(([key, value]) => ({
-          authField: key,
-          label: value.title || key,
-          description: value.description || '',
-        }));
-        toolToAdd.authenticated = false;
-      }
-
-      toolsOutput.push(toolToAdd);
+      toolsOutput.push(plugin);
     }
 
     const finalTools = filterUniquePlugins(toolsOutput);
     await cache.set(CacheKeys.TOOLS, finalTools);
+
     res.status(200).json(finalTools);
   } catch (error) {
     logger.error('[getAvailableTools]', error);

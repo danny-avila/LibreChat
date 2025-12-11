@@ -1,8 +1,8 @@
+const { isEnabled } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
-const { isEnabled } = require('~/server/utils');
 const { saveConvo } = require('~/models');
-const { logger } = require('~/config');
 
 /**
  * Add title to conversation in a way that avoids memory retention
@@ -23,7 +23,7 @@ const addTitle = async (req, { text, response, client }) => {
   let timeoutId;
   try {
     const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error('Title generation timeout')), 25000);
+      timeoutId = setTimeout(() => reject(new Error('Title generation timeout')), 45000);
     }).catch((error) => {
       logger.error('Title error:', error);
     });
@@ -52,6 +52,11 @@ const addTitle = async (req, { text, response, client }) => {
     }
     if (timeoutId) {
       clearTimeout(timeoutId);
+    }
+
+    if (!title) {
+      logger.debug(`[${key}] No title generated`);
+      return;
     }
 
     await titleCache.set(key, title, 120000);

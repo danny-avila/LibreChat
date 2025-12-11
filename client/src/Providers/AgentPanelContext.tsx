@@ -1,10 +1,15 @@
-import React, { createContext, useContext, useState } from 'react';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
-import type { TPlugin, AgentToolType, Action, MCP } from 'librechat-data-provider';
-import type { AgentPanelContextType } from '~/common';
-import { useAvailableToolsQuery, useGetActionsQuery } from '~/data-provider';
-import { useLocalize } from '~/hooks';
-import { Panel } from '~/common';
+import React, { createContext, useContext, useState, useMemo } from 'react';
+import { EModelEndpoint } from 'librechat-data-provider';
+import type { MCP, Action, TPlugin } from 'librechat-data-provider';
+import type { AgentPanelContextType, MCPServerInfo } from '~/common';
+import {
+  useAvailableToolsQuery,
+  useGetActionsQuery,
+  useGetStartupConfig,
+  useMCPToolsQuery,
+} from '~/data-provider';
+import { useLocalize, useGetAgentsConfig, useMCPConnectionStatus } from '~/hooks';
+import { Panel, isEphemeralAgent } from '~/common';
 
 const AgentPanelContext = createContext<AgentPanelContextType | undefined>(undefined);
 
@@ -25,72 +30,103 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   const [activePanel, setActivePanel] = useState<Panel>(Panel.builder);
   const [agent_id, setCurrentAgentId] = useState<string | undefined>(undefined);
 
+  const { data: startupConfig } = useGetStartupConfig();
   const { data: actions } = useGetActionsQuery(EModelEndpoint.agents, {
-    enabled: !!agent_id,
+    enabled: !isEphemeralAgent(agent_id),
   });
 
-  const { data: pluginTools } = useAvailableToolsQuery(EModelEndpoint.agents, {
-    enabled: !!agent_id,
+  const { data: regularTools } = useAvailableToolsQuery(EModelEndpoint.agents);
+
+  const { data: mcpData } = useMCPToolsQuery({
+    enabled: !isEphemeralAgent(agent_id) && startupConfig?.mcpServers != null,
   });
 
-  const tools =
-    pluginTools?.map((tool) => ({
-      tool_id: tool.pluginKey,
-      metadata: tool as TPlugin,
-      agent_id: agent_id || '',
-    })) || [];
+  const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
+  const mcpServerNames = useMemo(
+    () => Object.keys(startupConfig?.mcpServers ?? {}),
+    [startupConfig],
+  );
 
-  const groupedTools =
-    tools?.reduce(
-      (acc, tool) => {
-        if (tool.tool_id.includes(Constants.mcp_delimiter)) {
-          const [_toolName, serverName] = tool.tool_id.split(Constants.mcp_delimiter);
-          const groupKey = `${serverName.toLowerCase()}`;
-          if (!acc[groupKey]) {
-            acc[groupKey] = {
-              tool_id: groupKey,
-              metadata: {
-                name: `${serverName}`,
-                pluginKey: groupKey,
-                description: `${localize('com_ui_tool_collection_prefix')} ${serverName}`,
-                icon: tool.metadata.icon || '',
-              } as TPlugin,
-              agent_id: agent_id || '',
-              tools: [],
-            };
-          }
-          acc[groupKey].tools?.push({
-            tool_id: tool.tool_id,
-            metadata: tool.metadata,
-            agent_id: agent_id || '',
-          });
-        } else {
-          acc[tool.tool_id] = {
-            tool_id: tool.tool_id,
-            metadata: tool.metadata,
-            agent_id: agent_id || '',
-          };
-        }
-        return acc;
-      },
-      {} as Record<string, AgentToolType & { tools?: AgentToolType[] }>,
-    ) || {};
+  const { connectionStatus } = useMCPConnectionStatus({
+    enabled: !isEphemeralAgent(agent_id) && mcpServerNames.length > 0,
+  });
 
-  const value = {
-    action,
-    setAction,
+  const mcpServersMap = useMemo(() => {
+    const configuredServers = new Set(mcpServerNames);
+    const serversMap = new Map<string, MCPServerInfo>();
+
+    if (mcpData?.servers) {
+      for (const [serverName, serverData] of Object.entries(mcpData.servers)) {
+        const metadata = {
+          name: serverName,
+          pluginKey: serverName,
+          description: `${localize('com_ui_tool_collection_prefix')} ${serverName}`,
+          icon: serverData.icon || '',
+          authConfig: serverData.authConfig,
+          authenticated: serverData.authenticated,
+        } as TPlugin;
+
+        const tools = serverData.tools.map((tool) => ({
+          tool_id: tool.pluginKey,
+          metadata: {
+            ...tool,
+            icon: serverData.icon,
+            authConfig: serverData.authConfig,
+            authenticated: serverData.authenticated,
+          } as TPlugin,
+        }));
+
+        serversMap.set(serverName, {
+          serverName,
+          tools,
+          isConfigured: configuredServers.has(serverName),
+          isConnected: connectionStatus?.[serverName]?.connectionState === 'connected',
+          metadata,
+        });
+      }
+    }
+
+    // Add configured servers that don't have tools yet
+    for (const mcpServerName of mcpServerNames) {
+      if (serversMap.has(mcpServerName)) {
+        continue;
+      }
+      const metadata = {
+        icon: '',
+        name: mcpServerName,
+        pluginKey: mcpServerName,
+        description: `${localize('com_ui_tool_collection_prefix')} ${mcpServerName}`,
+      } as TPlugin;
+
+      serversMap.set(mcpServerName, {
+        tools: [],
+        metadata,
+        isConfigured: true,
+        serverName: mcpServerName,
+        isConnected: connectionStatus?.[mcpServerName]?.connectionState === 'connected',
+      });
+    }
+
+    return serversMap;
+  }, [mcpData, localize, mcpServerNames, connectionStatus]);
+
+  const value: AgentPanelContextType = {
     mcp,
-    setMcp,
     mcps,
-    setMcps,
-    activePanel,
-    setActivePanel,
-    setCurrentAgentId,
-    agent_id,
-    groupedTools,
-    /** Query data for actions and tools */
+    action,
+    setMcp,
     actions,
-    tools,
+    setMcps,
+    agent_id,
+    setAction,
+    activePanel,
+    regularTools,
+    agentsConfig,
+    startupConfig,
+    mcpServersMap,
+    setActivePanel,
+    endpointsConfig,
+    setCurrentAgentId,
   };
 
   return <AgentPanelContext.Provider value={value}>{children}</AgentPanelContext.Provider>;

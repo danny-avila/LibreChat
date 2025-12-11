@@ -2,6 +2,14 @@ import { useRecoilState } from 'recoil';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, isAgentsEndpoint } from 'librechat-data-provider';
+import {
+  Input,
+  Label,
+  OGDialog,
+  OGDialogTitle,
+  SelectDropDown,
+  OGDialogContent,
+} from '@librechat/client';
 import type { TModelsConfig, TEndpointsConfig } from 'librechat-data-provider';
 import {
   cn,
@@ -10,14 +18,6 @@ import {
   mapEndpoints,
   getConvoSwitchLogic,
 } from '~/utils';
-import {
-  Input,
-  Label,
-  OGDialog,
-  OGDialogTitle,
-  SelectDropDown,
-  OGDialogContent,
-} from '~/components';
 import { useSetIndexOptions, useLocalize, useDebouncedInput } from '~/hooks';
 import PopoverButtons from '~/components/Chat/Input/PopoverButtons';
 import { EndpointSettings } from '~/components/Endpoints';

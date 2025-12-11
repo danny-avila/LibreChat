@@ -16,8 +16,6 @@ import type {
   ColumnFiltersState,
 } from '@tanstack/react-table';
 import { FileContext } from 'librechat-data-provider';
-import type { AugmentedColumnDef } from '~/common';
-import type { TFile } from 'librechat-data-provider';
 import {
   Button,
   Input,
@@ -31,11 +29,14 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from '~/components/ui';
+  TrashIcon,
+  Spinner,
+  useMediaQuery,
+} from '@librechat/client';
+import type { TFile } from 'librechat-data-provider';
+import type { AugmentedColumnDef } from '~/common';
 import { useDeleteFilesFromTable } from '~/hooks/Files';
-import { TrashIcon, Spinner } from '~/components/svg';
-import useLocalize from '~/hooks/useLocalize';
-import { useMediaQuery } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -121,7 +122,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className={cn('min-w-[40px]', isSmallScreen && 'px-2 py-1')}>
+            <Button
+              variant="outline"
+              aria-label={localize('com_files_filter_by')}
+              className={cn('min-w-[40px]', isSmallScreen && 'px-2 py-1')}
+            >
               <ListFilter className="size-3.5 sm:size-4" />
             </Button>
           </DropdownMenuTrigger>

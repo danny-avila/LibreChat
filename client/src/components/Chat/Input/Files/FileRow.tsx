@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
+import { useToastContext } from '@librechat/client';
 import { EToolResources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { useFileDeletion } from '~/hooks/Files';
 import FileContainer from './FileContainer';
+import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
 import Image from './Image';
 
@@ -30,6 +32,8 @@ export default function FileRow({
   isRTL?: boolean;
   Wrapper?: React.FC<{ children: React.ReactNode }>;
 }) {
+  const localize = useLocalize();
+  const { showToast } = useToastContext();
   const files = Array.from(_files?.values() ?? []).filter((file) =>
     fileFilter ? fileFilter(file) : true,
   );
@@ -55,10 +59,12 @@ export default function FileRow({
 
   useEffect(() => {
     if (files.length === 0) {
+      setFilesLoading(false);
       return;
     }
 
     if (files.some((file) => file.progress < 1)) {
+      setFilesLoading(true);
       return;
     }
 
@@ -105,6 +111,10 @@ export default function FileRow({
           )
           .uniqueFiles.map((file: ExtendedFile, index: number) => {
             const handleDelete = () => {
+              showToast({
+                message: localize('com_ui_deleting_file'),
+                status: 'info',
+              });
               if (abortUpload && file.progress < 1) {
                 abortUpload();
               }
@@ -123,7 +133,7 @@ export default function FileRow({
               >
                 {isImage ? (
                   <Image
-                    url={file.preview ?? file.filepath}
+                    url={file.progress === 1 ? file.filepath : (file.preview ?? file.filepath)}
                     onDelete={handleDelete}
                     progress={file.progress}
                     source={file.source}

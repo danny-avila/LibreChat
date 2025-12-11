@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { Button } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
 import { actionDelimiter, actionDomainSeparator, Constants } from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
@@ -6,11 +7,11 @@ import { useLocalize, useProgress } from '~/hooks';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
-import { Button } from '~/components';
 import { logger, cn } from '~/utils';
 
 export default function ToolCall({
   initialProgress = 0.1,
+  isLast = false,
   isSubmitting,
   name,
   args: _args = '',
@@ -19,6 +20,7 @@ export default function ToolCall({
   auth,
 }: {
   initialProgress: number;
+  isLast?: boolean;
   isSubmitting: boolean;
   name: string;
   args: string | Record<string, unknown>;
@@ -88,6 +90,10 @@ export default function ToolCall({
       const url = new URL(authURL);
       return url.hostname;
     } catch (e) {
+      logger.error(
+        'client/src/components/Chat/Messages/Content/ToolCall.tsx - Failed to parse auth URL',
+        e,
+      );
       return '';
     }
   }, [auth]);
@@ -151,6 +157,10 @@ export default function ToolCall({
     };
   }, [showInfo, isAnimating]);
 
+  if (!isLast && (!function_name || function_name.length === 0) && !output) {
+    return null;
+  }
+
   return (
     <>
       <div className="relative my-2.5 flex h-5 shrink-0 items-center gap-2.5">
@@ -207,6 +217,7 @@ export default function ToolCall({
                 domain={authDomain || (domain ?? '')}
                 function_name={function_name}
                 pendingAuth={authDomain.length > 0 && !cancelled && progress < 1}
+                attachments={attachments}
               />
             )}
           </div>

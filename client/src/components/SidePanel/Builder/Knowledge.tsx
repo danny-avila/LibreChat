@@ -2,15 +2,15 @@ import { useState, useRef, useEffect } from 'react';
 import {
   mergeFileConfig,
   retrievalMimeTypes,
-  fileConfig as defaultFileConfig,
+  getEndpointFileConfig,
 } from 'librechat-data-provider';
-import type { AssistantsEndpoint, EndpointFileConfig } from 'librechat-data-provider';
+import type { AssistantsEndpoint } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
 import { useFileHandling } from '~/hooks/Files';
-import useLocalize from '~/hooks/useLocalize';
 import { useChatContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 
 const CodeInterpreterFiles = ({ children }: { children: React.ReactNode }) => {
   const localize = useLocalize();
@@ -38,11 +38,10 @@ export default function Knowledge({
   const { setFilesLoading } = useChatContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
-  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+  const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
   const { handleFileChange } = useFileHandling({
-    overrideEndpoint: endpoint,
     additionalMetadata: { assistant_id },
     fileSetter: setFiles,
   });
@@ -53,7 +52,11 @@ export default function Knowledge({
     }
   }, [_files]);
 
-  const endpointFileConfig = fileConfig.endpoints[endpoint] as EndpointFileConfig | undefined;
+  const endpointFileConfig = getEndpointFileConfig({
+    fileConfig,
+    endpoint,
+    endpointType: endpoint,
+  });
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
   if (isUploadDisabled) {

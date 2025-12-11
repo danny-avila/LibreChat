@@ -1,3 +1,5 @@
+import { AuthType } from 'librechat-data-provider';
+
 /**
  * Checks if the given value is truthy by being either the boolean `true` or a string
  * that case-insensitively matches 'true'.
@@ -31,7 +33,7 @@ export function isEnabled(value?: string | boolean | null | undefined): boolean 
  * @param value - The value to check.
  * @returns - Returns true if the value is 'user_provided', otherwise false.
  */
-export const isUserProvided = (value?: string): boolean => value === 'user_provided';
+export const isUserProvided = (value?: string): boolean => value === AuthType.USER_PROVIDED;
 
 /**
  * @param values
@@ -45,4 +47,13 @@ export function optionalChainWithEmptyCheck(
     }
   }
   return values[values.length - 1];
+}
+
+/**
+ * Escapes special characters in a string for use in a regular expression.
+ * @param str - The string to escape.
+ * @returns The escaped string safe for use in RegExp.
+ */
+export function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

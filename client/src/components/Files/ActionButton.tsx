@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from '~/components/ui';
+import { Button } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 type ActionButtonProps = {

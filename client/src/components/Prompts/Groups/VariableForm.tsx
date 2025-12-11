@@ -6,11 +6,11 @@ import rehypeKatex from 'rehype-katex';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import { replaceSpecialVars } from 'librechat-data-provider';
+import { TextareaAutosize, InputCombobox, Button } from '@librechat/client';
 import { useForm, useFieldArray, Controller, useWatch } from 'react-hook-form';
 import type { TPromptGroup } from 'librechat-data-provider';
+import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import { cn, wrapVariable, defaultTextProps, extractVariableInfo } from '~/utils';
-import { codeNoExecution } from '~/components/Chat/Messages/Content/Markdown';
-import { TextareaAutosize, InputCombobox, Button } from '~/components/ui';
 import { useAuthContext, useLocalize, useSubmitMessage } from '~/hooks';
 import { PromptVariableGfm } from '../Markdown';
 
@@ -193,6 +193,7 @@ export default function VariableForm({
                       )}
                       placeholder={field.config.variable}
                       maxRows={8}
+                      aria-label={field.config.variable}
                     />
                   );
                 }}
@@ -201,7 +202,7 @@ export default function VariableForm({
           ))}
         </div>
         <div className="flex justify-end">
-          <Button type="submit" variant="submit">
+          <Button type="submit" variant="submit" aria-label={localize('com_ui_submit')}>
             {localize('com_ui_submit')}
           </Button>
         </div>

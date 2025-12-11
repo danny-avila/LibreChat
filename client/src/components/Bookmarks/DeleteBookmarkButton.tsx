@@ -1,10 +1,17 @@
 import { useCallback, useState } from 'react';
+import {
+  Button,
+  TrashIcon,
+  Label,
+  OGDialog,
+  OGDialogTrigger,
+  TooltipAnchor,
+  OGDialogTemplate,
+  useToastContext,
+} from '@librechat/client';
 import type { FC } from 'react';
-import { Button, TrashIcon, Label, OGDialog, OGDialogTrigger, TooltipAnchor } from '~/components';
 import { useDeleteConversationTagMutation } from '~/data-provider';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { NotificationSeverity } from '~/common';
-import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 const DeleteBookmarkButton: FC<{

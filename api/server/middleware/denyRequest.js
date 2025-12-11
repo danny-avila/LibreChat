@@ -1,6 +1,7 @@
 const crypto = require('crypto');
+const { sendEvent } = require('@librechat/api');
 const { getResponseSender, Constants } = require('librechat-data-provider');
-const { sendMessage, sendError } = require('~/server/utils');
+const { sendError } = require('~/server/middleware/error');
 const { saveMessage } = require('~/models');
 
 /**
@@ -36,7 +37,7 @@ const denyRequest = async (req, res, errorMessage) => {
     isCreatedByUser: true,
     text,
   };
-  sendMessage(res, { message: userMessage, created: true });
+  sendEvent(res, { message: userMessage, created: true });
 
   const shouldSaveMessage = _convoId && parentMessageId && parentMessageId !== Constants.NO_PARENT;
 

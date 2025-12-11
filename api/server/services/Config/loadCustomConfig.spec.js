@@ -1,6 +1,9 @@
 jest.mock('axios');
 jest.mock('~/cache/getLogStores');
-jest.mock('~/utils/loadYaml');
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  loadYaml: jest.fn(),
+}));
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
   return {
@@ -30,20 +33,26 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
+jest.mock('@librechat/data-schemas', () => {
+  return {
+    logger: {
+      info: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+      error: jest.fn(),
+    },
+  };
+});
+
 const axios = require('axios');
+const { loadYaml } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const loadCustomConfig = require('./loadCustomConfig');
-const getLogStores = require('~/cache/getLogStores');
-const loadYaml = require('~/utils/loadYaml');
-const { logger } = require('~/config');
 
 describe('loadCustomConfig', () => {
-  const mockSet = jest.fn();
-  const mockCache = { set: mockSet };
-
   beforeEach(() => {
     jest.resetAllMocks();
     delete process.env.CONFIG_PATH;
-    getLogStores.mockReturnValue(mockCache);
   });
 
   it('should return null and log error if remote config fetch fails', async () => {
@@ -80,7 +89,6 @@ describe('loadCustomConfig', () => {
     const result = await loadCustomConfig();
 
     expect(result).toEqual(mockConfig);
-    expect(mockSet).toHaveBeenCalledWith(expect.anything(), mockConfig);
   });
 
   it('should return null and log if config schema validation fails', async () => {
@@ -120,7 +128,6 @@ describe('loadCustomConfig', () => {
     axios.get.mockResolvedValue({ data: mockConfig });
     const result = await loadCustomConfig();
     expect(result).toEqual(mockConfig);
-    expect(mockSet).toHaveBeenCalledWith(expect.anything(), mockConfig);
   });
 
   it('should return null if the remote config file is not found', async () => {
@@ -154,7 +161,6 @@ describe('loadCustomConfig', () => {
     process.env.CONFIG_PATH = 'validConfig.yaml';
     loadYaml.mockReturnValueOnce(mockConfig);
     await loadCustomConfig();
-    expect(mockSet).not.toHaveBeenCalled();
   });
 
   it('should log the loaded custom config', async () => {

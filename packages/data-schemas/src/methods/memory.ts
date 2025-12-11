@@ -11,8 +11,6 @@ const formatDate = (date: Date): string => {
 
 // Factory function that takes mongoose instance and returns the methods
 export function createMemoryMethods(mongoose: typeof import('mongoose')) {
-  const MemoryEntry = mongoose.models.MemoryEntry;
-
   /**
    * Creates a new memory entry for a user
    * Throws an error if a memory with the same key already exists
@@ -28,6 +26,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
         return { ok: false };
       }
 
+      const MemoryEntry = mongoose.models.MemoryEntry;
       const existingMemory = await MemoryEntry.findOne({ userId, key });
       if (existingMemory) {
         throw new Error('Memory with this key already exists');
@@ -63,6 +62,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
         return { ok: false };
       }
 
+      const MemoryEntry = mongoose.models.MemoryEntry;
       await MemoryEntry.findOneAndUpdate(
         { userId, key },
         {
@@ -89,6 +89,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
    */
   async function deleteMemory({ userId, key }: t.DeleteMemoryParams): Promise<t.MemoryResult> {
     try {
+      const MemoryEntry = mongoose.models.MemoryEntry;
       const result = await MemoryEntry.findOneAndDelete({ userId, key });
       return { ok: !!result };
     } catch (error) {
@@ -105,6 +106,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
     userId: string | Types.ObjectId,
   ): Promise<t.IMemoryEntryLean[]> {
     try {
+      const MemoryEntry = mongoose.models.MemoryEntry;
       return (await MemoryEntry.find({ userId }).lean()) as t.IMemoryEntryLean[];
     } catch (error) {
       throw new Error(

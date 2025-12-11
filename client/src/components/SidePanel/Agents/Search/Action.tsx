@@ -1,16 +1,16 @@
 import { KeyRoundIcon } from 'lucide-react';
 import { AuthType, AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller, useWatch } from 'react-hook-form';
-import type { AgentForm } from '~/common';
 import {
+  CircleHelpIcon,
   Checkbox,
   HoverCard,
   HoverCardContent,
   HoverCardPortal,
   HoverCardTrigger,
-} from '~/components/ui';
+} from '@librechat/client';
+import type { AgentForm } from '~/common';
 import { useLocalize, useSearchApiKeyForm } from '~/hooks';
-import { CircleHelpIcon } from '~/components/svg';
 import ApiKeyDialog from './ApiKeyDialog';
 import { ESide } from '~/common';
 
@@ -69,6 +69,7 @@ export default function Action({
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
                 disabled={webSearchIsEnabled ? false : !isToolAuthenticated}
+                aria-label={localize('com_ui_web_search')}
               />
             )}
           />

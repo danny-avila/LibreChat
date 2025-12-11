@@ -12,9 +12,7 @@ function isUUID(uuid: string) {
 }
 
 const waitForServerStream = async (response: Response) => {
-  const endpointCheck =
-    response.url().includes(`/api/ask/${endpoint}`) ||
-    response.url().includes(`/api/edit/${endpoint}`);
+  const endpointCheck = response.url().includes(`/api/agents`);
   return endpointCheck && response.status() === 200;
 };
 

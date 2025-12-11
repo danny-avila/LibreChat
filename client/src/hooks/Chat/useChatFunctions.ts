@@ -6,6 +6,8 @@ import {
   QueryKeys,
   ContentTypes,
   EModelEndpoint,
+  getEndpointField,
+  isAgentsEndpoint,
   parseCompactConvo,
   replaceSpecialVars,
   isAssistantsEndpoint,
@@ -24,25 +26,15 @@ import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
-import { getArtifactsMode } from '~/utils/artifacts';
-import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '~/hooks';
+import { logger } from '~/utils';
 
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
   logger.dir(request);
   logger.log('=====================================');
-};
-
-const usesContentStream = (endpoint: EModelEndpoint | undefined, endpointType?: string) => {
-  if (endpointType === EModelEndpoint.custom) {
-    return true;
-  }
-  if (endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI) {
-    return true;
-  }
 };
 
 export default function useChatFunctions({
@@ -76,9 +68,6 @@ export default function useChatFunctions({
   const setFilesToDelete = useSetFilesToDelete();
   const getEphemeralAgent = useGetEphemeralAgent();
   const isTemporary = useRecoilValue(store.isTemporary);
-  const codeArtifacts = useRecoilValue(store.codeArtifacts);
-  const includeShadcnui = useRecoilValue(store.includeShadcnui);
-  const customPromptMode = useRecoilValue(store.customPromptMode);
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
@@ -93,9 +82,8 @@ export default function useChatFunctions({
       messageId = null,
     },
     {
-      editedText = null,
+      editedContent = null,
       editedMessageId = null,
-      isResubmission = false,
       isRegenerate = false,
       isContinued = false,
       isEdited = false,
@@ -180,6 +168,7 @@ export default function useChatFunctions({
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
+    const iconURL = conversation?.iconURL;
 
     /** This becomes part of the `endpointOption` */
     const convo = parseCompactConvo({
@@ -195,10 +184,6 @@ export default function useChatFunctions({
         endpointType,
         overrideConvoId,
         overrideUserMessageId,
-        artifacts:
-          endpoint !== EModelEndpoint.agents
-            ? getArtifactsMode({ codeArtifacts, includeShadcnui, customPromptMode })
-            : undefined,
       },
       convo,
     ) as TEndpointOption;
@@ -245,24 +230,28 @@ export default function useChatFunctions({
       setFilesToDelete({});
     }
 
-    const generation = editedText ?? latestMessage?.text ?? '';
-    const responseText = isEditOrContinue ? generation : '';
-
     const responseMessageId =
-      editedMessageId ?? (latestMessage?.messageId ? latestMessage?.messageId + '_' : null) ?? null;
+      editedMessageId ??
+      (latestMessage?.messageId && isRegenerate
+        ? latestMessage.messageId.replace(/_+$/, '') + '_'
+        : null) ??
+      null;
+    const initialResponseId =
+      responseMessageId ?? `${isRegenerate ? messageId : intermediateId}`.replace(/_+$/, '') + '_';
+
     const initialResponse: TMessage = {
       sender: responseSender,
-      text: responseText,
+      text: '',
       endpoint: endpoint ?? '',
       parentMessageId: isRegenerate ? messageId : intermediateId,
-      messageId: responseMessageId ?? `${isRegenerate ? messageId : intermediateId}_`,
+      messageId: initialResponseId,
       thread_id,
       conversationId,
       unfinished: false,
       isCreatedByUser: false,
-      iconURL: convo?.iconURL,
       model: convo?.model,
       error: false,
+      iconURL,
     };
 
     if (isAssistantsEndpoint(endpoint)) {
@@ -272,34 +261,37 @@ export default function useChatFunctions({
         {
           type: ContentTypes.TEXT,
           [ContentTypes.TEXT]: {
-            value: responseText,
+            value: '',
           },
         },
       ];
-    } else if (endpoint === EModelEndpoint.agents) {
-      initialResponse.model = conversation?.agent_id ?? '';
+    } else if (endpoint != null) {
+      initialResponse.model = isAgentsEndpoint(endpoint)
+        ? (conversation?.agent_id ?? '')
+        : (conversation?.model ?? '');
       initialResponse.text = '';
-      initialResponse.content = [
-        {
-          type: ContentTypes.TEXT,
-          [ContentTypes.TEXT]: {
-            value: responseText,
+
+      if (editedContent && latestMessage?.content) {
+        initialResponse.content = cloneDeep(latestMessage.content);
+        const { index, type, ...part } = editedContent;
+        if (initialResponse.content && index >= 0 && index < initialResponse.content.length) {
+          const contentPart = initialResponse.content[index];
+          if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
+            contentPart[ContentTypes.THINK] = part[ContentTypes.THINK];
+          } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
+            contentPart[ContentTypes.TEXT] = part[ContentTypes.TEXT];
+          }
+        }
+      } else {
+        initialResponse.content = [
+          {
+            type: ContentTypes.TEXT,
+            [ContentTypes.TEXT]: {
+              value: '',
+            },
           },
-        },
-      ];
-      setShowStopButton(true);
-    } else if (usesContentStream(endpoint, endpointType)) {
-      initialResponse.text = '';
-      initialResponse.content = [
-        {
-          type: ContentTypes.TEXT,
-          [ContentTypes.TEXT]: {
-            value: responseText,
-          },
-        },
-      ];
-      setShowStopButton(true);
-    } else {
+        ];
+      }
       setShowStopButton(true);
     }
 
@@ -316,7 +308,6 @@ export default function useChatFunctions({
       endpointOption,
       userMessage: {
         ...currentMsg,
-        generation,
         responseMessageId,
         overrideParentMessageId: isRegenerate ? messageId : null,
       },
@@ -324,10 +315,10 @@ export default function useChatFunctions({
       isEdited: isEditOrContinue,
       isContinued,
       isRegenerate,
-      isResubmission,
       initialResponse,
       isTemporary,
       ephemeralAgent,
+      editedContent,
     };
 
     if (isRegenerate) {

@@ -245,7 +245,7 @@ describe('AnthropicClient', () => {
     });
 
     describe('Claude 4 model headers', () => {
-      it('should add "prompt-caching" beta header for claude-sonnet-4 model', () => {
+      it('should add "prompt-caching" and "context-1m" beta headers for claude-sonnet-4 model', () => {
         const client = new AnthropicClient('test-api-key');
         const modelOptions = {
           model: 'claude-sonnet-4-20250514',
@@ -255,28 +255,34 @@ describe('AnthropicClient', () => {
         expect(anthropicClient._options.defaultHeaders).toBeDefined();
         expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
         expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
-          'prompt-caching-2024-07-31',
+          'prompt-caching-2024-07-31,context-1m-2025-08-07',
         );
+      });
+
+      it('should add "prompt-caching" and "context-1m" beta headers for claude-sonnet-4 model formats', () => {
+        const client = new AnthropicClient('test-api-key');
+        const modelVariations = [
+          'claude-sonnet-4-20250514',
+          'claude-sonnet-4-latest',
+          'anthropic/claude-sonnet-4-20250514',
+        ];
+
+        modelVariations.forEach((model) => {
+          const modelOptions = { model };
+          client.setOptions({ modelOptions, promptCache: true });
+          const anthropicClient = client.getClient(modelOptions);
+          expect(anthropicClient._options.defaultHeaders).toBeDefined();
+          expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
+          expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
+            'prompt-caching-2024-07-31,context-1m-2025-08-07',
+          );
+        });
       });
 
       it('should add "prompt-caching" beta header for claude-opus-4 model', () => {
         const client = new AnthropicClient('test-api-key');
         const modelOptions = {
           model: 'claude-opus-4-20250514',
-        };
-        client.setOptions({ modelOptions, promptCache: true });
-        const anthropicClient = client.getClient(modelOptions);
-        expect(anthropicClient._options.defaultHeaders).toBeDefined();
-        expect(anthropicClient._options.defaultHeaders).toHaveProperty('anthropic-beta');
-        expect(anthropicClient._options.defaultHeaders['anthropic-beta']).toBe(
-          'prompt-caching-2024-07-31',
-        );
-      });
-
-      it('should add "prompt-caching" beta header for claude-4-sonnet model', () => {
-        const client = new AnthropicClient('test-api-key');
-        const modelOptions = {
-          model: 'claude-4-sonnet-20250514',
         };
         client.setOptions({ modelOptions, promptCache: true });
         const anthropicClient = client.getClient(modelOptions);

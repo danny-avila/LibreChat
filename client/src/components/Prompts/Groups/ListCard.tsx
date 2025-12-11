@@ -1,6 +1,7 @@
 import React from 'react';
+import { Label } from '@librechat/client';
 import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
-import { Label } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 
 export default function ListCard({
   category,
@@ -15,6 +16,7 @@ export default function ListCard({
   onClick?: React.MouseEventHandler<HTMLDivElement | HTMLButtonElement>;
   children?: React.ReactNode;
 }) {
+  const localize = useLocalize();
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement | HTMLButtonElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -26,13 +28,12 @@ export default function ListCard({
     <div
       onClick={onClick}
       onKeyDown={handleKeyDown}
-      className="relative my-2 flex w-full cursor-pointer flex-col gap-2 rounded-xl border border-border-light px-3 pb-4 pt-3 text-start
-          align-top text-[15px] shadow-sm transition-all duration-300 ease-in-out hover:bg-surface-tertiary hover:shadow-lg"
+      className="relative my-2 flex w-full cursor-pointer flex-col gap-2 rounded-xl border border-border-light px-3 pb-4 pt-3 text-start align-top text-[15px] shadow-sm transition-all duration-300 ease-in-out hover:bg-surface-tertiary hover:shadow-lg"
       role="button"
       tabIndex={0}
       aria-labelledby={`card-title-${name}`}
       aria-describedby={`card-snippet-${name}`}
-      aria-label={`Card for ${name}`}
+      aria-label={`${name} Prompt, ${category ? `${localize('com_ui_category')}: ${category}` : ''}`}
     >
       <div className="flex w-full justify-between gap-2">
         <div className="flex flex-row gap-2">

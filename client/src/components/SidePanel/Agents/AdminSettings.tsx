@@ -1,14 +1,21 @@
-import * as Ariakit from '@ariakit/react';
 import { useMemo, useEffect, useState } from 'react';
+import * as Ariakit from '@ariakit/react';
 import { ShieldEllipsis } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'librechat-data-provider';
+import {
+  Button,
+  Switch,
+  OGDialog,
+  DropdownPopup,
+  OGDialogTitle,
+  OGDialogContent,
+  OGDialogTrigger,
+  useToastContext,
+} from '@librechat/client';
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
-import { OGDialog, OGDialogTitle, OGDialogContent, OGDialogTrigger } from '~/components/ui';
 import { useUpdateAgentPermissionsMutation } from '~/data-provider';
-import { Button, Switch, DropdownPopup } from '~/components/ui';
 import { useLocalize, useAuthContext } from '~/hooks';
-import { useToastContext } from '~/Providers';
 
 type FormValues = Record<Permissions, boolean>;
 
@@ -49,6 +56,7 @@ const LabelController: React.FC<LabelControllerProps> = ({
           checked={field.value}
           onCheckedChange={field.onChange}
           value={field.value.toString()}
+          aria-label={label}
         />
       )}
     />
@@ -57,8 +65,8 @@ const LabelController: React.FC<LabelControllerProps> = ({
 
 const AdminSettings = () => {
   const localize = useLocalize();
-  const { user, roles } = useAuthContext();
   const { showToast } = useToastContext();
+  const { user, roles } = useAuthContext();
   const { mutate, isLoading } = useUpdateAgentPermissionsMutation({
     onSuccess: () => {
       showToast({ status: 'success', message: localize('com_ui_saved') });
@@ -72,8 +80,9 @@ const AdminSettings = () => {
   const [selectedRole, setSelectedRole] = useState<SystemRoles>(SystemRoles.USER);
 
   const defaultValues = useMemo(() => {
-    if (roles?.[selectedRole]?.permissions) {
-      return roles[selectedRole].permissions[PermissionTypes.AGENTS];
+    const rolePerms = roles?.[selectedRole]?.permissions;
+    if (rolePerms) {
+      return rolePerms[PermissionTypes.AGENTS];
     }
     return roleDefaults[selectedRole].permissions[PermissionTypes.AGENTS];
   }, [roles, selectedRole]);
@@ -91,8 +100,9 @@ const AdminSettings = () => {
   });
 
   useEffect(() => {
-    if (roles?.[selectedRole]?.permissions?.[PermissionTypes.AGENTS]) {
-      reset(roles[selectedRole].permissions[PermissionTypes.AGENTS]);
+    const value = roles?.[selectedRole]?.permissions?.[PermissionTypes.AGENTS];
+    if (value) {
+      reset(value);
     } else {
       reset(roleDefaults[selectedRole].permissions[PermissionTypes.AGENTS]);
     }
@@ -105,7 +115,7 @@ const AdminSettings = () => {
   const labelControllerData = [
     {
       agentPerm: Permissions.SHARED_GLOBAL,
-      label: localize('com_ui_agents_allow_share_global'),
+      label: localize('com_ui_agents_allow_share'),
     },
     {
       agentPerm: Permissions.CREATE,
@@ -143,12 +153,13 @@ const AdminSettings = () => {
           size={'sm'}
           variant={'outline'}
           className="btn btn-neutral border-token-border-light relative h-9 w-full gap-1 rounded-lg font-medium"
+          aria-label={localize('com_ui_admin_settings')}
         >
           <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
           {localize('com_ui_admin_settings')}
         </Button>
       </OGDialogTrigger>
-      <OGDialogContent className="w-1/4 border-border-light bg-surface-primary text-text-primary">
+      <OGDialogContent className="border-border-light bg-surface-primary text-text-primary lg:w-1/4">
         <OGDialogTitle>{`${localize('com_ui_admin_settings')} - ${localize(
           'com_ui_agents',
         )}`}</OGDialogTitle>
@@ -204,7 +215,8 @@ const AdminSettings = () => {
             </div>
             <div className="flex justify-end">
               <button
-                type="submit"
+                type="button"
+                onClick={handleSubmit(onSubmit)}
                 disabled={isSubmitting || isLoading}
                 className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
               >

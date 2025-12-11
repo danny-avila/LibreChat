@@ -1,10 +1,8 @@
 const rateLimit = require('express-rate-limit');
-const { RedisStore } = require('rate-limit-redis');
+const { limiterCache } = require('@librechat/api');
 const { ViolationTypes } = require('librechat-data-provider');
-const { removePorts, isEnabled } = require('~/server/utils');
-const ioredisClient = require('~/cache/ioredisClient');
+const { removePorts } = require('~/server/utils');
 const { logViolation } = require('~/cache');
-const { logger } = require('~/config');
 
 const {
   VERIFY_EMAIL_WINDOW = 2,
@@ -33,16 +31,8 @@ const limiterOptions = {
   max,
   handler,
   keyGenerator: removePorts,
+  store: limiterCache('verify_email_limiter'),
 };
-
-if (isEnabled(process.env.USE_REDIS) && ioredisClient) {
-  logger.debug('Using Redis for verify email rate limiter.');
-  const store = new RedisStore({
-    sendCommand: (...args) => ioredisClient.call(...args),
-    prefix: 'verify_email_limiter:',
-  });
-  limiterOptions.store = store;
-}
 
 const verifyEmailLimiter = rateLimit(limiterOptions);
 

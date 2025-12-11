@@ -18,7 +18,7 @@ export function mapAttachments(attachments: Array<t.TAttachment | null | undefin
       attachmentMap[key] = [];
     }
 
-    attachmentMap[key].push(attachment);
+    attachmentMap[key]?.push(attachment);
   }
 
   return attachmentMap;

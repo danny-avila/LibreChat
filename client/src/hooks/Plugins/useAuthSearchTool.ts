@@ -4,10 +4,18 @@ import { AuthType, Tools, QueryKeys } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 
 export type SearchApiKeyFormData = {
+  // Selected options
+  selectedProvider: string;
+  selectedReranker: string;
+  selectedScraper: string;
+  // API keys and URLs
   serperApiKey: string;
+  searxngInstanceUrl: string;
+  searxngApiKey: string;
   firecrawlApiKey: string;
   firecrawlApiUrl: string;
   jinaApiKey: string;
+  jinaApiUrl: string;
   cohereApiKey: string;
 };
 
@@ -42,9 +50,12 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
     (data: SearchApiKeyFormData) => {
       const auth = Object.entries({
         serperApiKey: data.serperApiKey,
+        searxngInstanceUrl: data.searxngInstanceUrl,
+        searxngApiKey: data.searxngApiKey,
         firecrawlApiKey: data.firecrawlApiKey,
         firecrawlApiUrl: data.firecrawlApiUrl,
         jinaApiKey: data.jinaApiKey,
+        jinaApiUrl: data.jinaApiUrl,
         cohereApiKey: data.cohereApiKey,
       }).reduce(
         (acc, [key, value]) => {

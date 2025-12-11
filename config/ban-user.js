@@ -1,6 +1,7 @@
 const path = require('path');
-const mongoose = require(path.resolve(__dirname, '..', 'api', 'node_modules', 'mongoose'));
+const mongoose = require('mongoose');
 const { User } = require('@librechat/data-schemas').createModels(mongoose);
+const { ViolationTypes } = require('librechat-data-provider');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const banViolation = require('~/cache/banViolation');
@@ -65,7 +66,7 @@ const connect = require('./connect');
   };
 
   const errorMessage = {
-    type: 'concurrent',
+    type: ViolationTypes.CONCURRENT,
     violation_count: 20,
     user_id: user._id,
     prev_count: 0,

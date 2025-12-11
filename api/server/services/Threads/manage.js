@@ -1,5 +1,6 @@
 const path = require('path');
 const { v4 } = require('uuid');
+const { countTokens, escapeRegExp } = require('@librechat/api');
 const {
   Constants,
   ContentTypes,
@@ -8,7 +9,6 @@ const {
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { recordMessage, getMessages } = require('~/models/Message');
-const { countTokens, escapeRegExp } = require('~/server/utils');
 const { spendTokens } = require('~/models/spendTokens');
 const { saveConvo } = require('~/models/Conversation');
 
@@ -192,7 +192,8 @@ async function addThreadMetadata({ openai, thread_id, messageId, messages }) {
   const promises = [];
   for (const message of messages) {
     promises.push(
-      openai.beta.threads.messages.update(thread_id, message.id, {
+      openai.beta.threads.messages.update(message.id, {
+        thread_id,
         metadata: {
           messageId,
         },
@@ -263,7 +264,8 @@ async function syncMessages({
     }
 
     modifyPromises.push(
-      openai.beta.threads.messages.update(thread_id, apiMessage.id, {
+      openai.beta.threads.messages.update(apiMessage.id, {
+        thread_id,
         metadata: {
           messageId: dbMessage.messageId,
         },
@@ -413,7 +415,7 @@ async function checkMessageGaps({
 }) {
   const promises = [];
   promises.push(openai.beta.threads.messages.list(thread_id, defaultOrderQuery));
-  promises.push(openai.beta.threads.runs.steps.list(thread_id, run_id));
+  promises.push(openai.beta.threads.runs.steps.list(run_id, { thread_id }));
   /** @type {[{ data: ThreadMessage[] }, { data: RunStep[] }]} */
   const [response, stepsResponse] = await Promise.all(promises);
 

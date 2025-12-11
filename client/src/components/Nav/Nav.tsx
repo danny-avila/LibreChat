@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import {
   useLocalize,
   useHasAccess,
-  useMediaQuery,
   useAuthContext,
   useLocalStorage,
   useNavScrolling,
@@ -20,6 +21,7 @@ import store from '~/store';
 
 const BookmarkNav = lazy(() => import('./Bookmarks/BookmarkNav'));
 const AccountSettings = lazy(() => import('./AccountSettings'));
+const AgentMarketplaceButton = lazy(() => import('./AgentMarketplaceButton'));
 
 const NAV_WIDTH_DESKTOP = '260px';
 const NAV_WIDTH_MOBILE = '320px';
@@ -155,16 +157,22 @@ const Nav = memo(
     );
 
     const headerButtons = useMemo(
-      () =>
-        hasAccessToBookmarks && (
-          <>
-            <div className="mt-1.5" />
-            <Suspense fallback={null}>
-              <BookmarkNav tags={tags} setTags={setTags} isSmallScreen={isSmallScreen} />
-            </Suspense>
-          </>
-        ),
-      [hasAccessToBookmarks, tags, isSmallScreen],
+      () => (
+        <>
+          <Suspense fallback={null}>
+            <AgentMarketplaceButton isSmallScreen={isSmallScreen} toggleNav={toggleNavVisible} />
+          </Suspense>
+          {hasAccessToBookmarks && (
+            <>
+              <div className="mt-1.5" />
+              <Suspense fallback={null}>
+                <BookmarkNav tags={tags} setTags={setTags} isSmallScreen={isSmallScreen} />
+              </Suspense>
+            </>
+          )}
+        </>
+      ),
+      [hasAccessToBookmarks, tags, isSmallScreen, toggleNavVisible],
     );
 
     const [isSearchLoading, setIsSearchLoading] = useState(
@@ -183,22 +191,21 @@ const Nav = memo(
 
     return (
       <>
-        <div
-          data-testid="nav"
-          className={cn(
-            'nav active max-w-[320px] flex-shrink-0 transform overflow-x-hidden bg-surface-primary-alt transition-all duration-200 ease-in-out',
-            'md:max-w-[260px]',
-          )}
-          style={{
-            width: navVisible ? navWidth : '0px',
-            transform: navVisible ? 'translateX(0)' : 'translateX(-100%)',
-          }}
-        >
-          <div className="h-full w-[320px] md:w-[260px]">
-            <div className="flex h-full flex-col">
-              <div
-                className={`flex h-full flex-col transition-opacity duration-200 ease-in-out ${navVisible ? 'opacity-100' : 'opacity-0'}`}
-              >
+        <AnimatePresence initial={false}>
+          {navVisible && (
+            <motion.div
+              data-testid="nav"
+              className={cn(
+                'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-surface-primary-alt',
+                'md:max-w-[260px]',
+              )}
+              initial={{ width: 0 }}
+              animate={{ width: navWidth }}
+              exit={{ width: 0 }}
+              transition={{ duration: 0.2 }}
+              key="nav"
+            >
+              <div className="h-full w-[320px] md:w-[260px]">
                 <div className="flex h-full flex-col">
                   <nav
                     id="chat-history-nav"
@@ -228,9 +235,9 @@ const Nav = memo(
                   </nav>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         {isSmallScreen && <NavMask navVisible={navVisible} toggleNavVisible={toggleNavVisible} />}
       </>
     );

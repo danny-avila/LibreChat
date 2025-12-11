@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { PixelCard } from '@librechat/client';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import Image from '~/components/Chat/Messages/Content/Image';
 import ProgressText from './ProgressText';
-import { PixelCard } from '~/components';
 import { scaleImage } from '~/utils';
 
 export default function OpenAIImageGen({
@@ -145,8 +145,7 @@ export default function OpenAIImageGen({
         clearInterval(intervalRef.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialProgress, quality]);
+  }, [isSubmitting, initialProgress, quality]);
 
   useEffect(() => {
     if (initialProgress >= 1 || cancelled) {

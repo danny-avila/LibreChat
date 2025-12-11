@@ -1,29 +1,61 @@
 import { Run, Providers } from '@librechat/agents';
 import { providerEndpointMap, KnownEndpoints } from 'librechat-data-provider';
 import type {
+  MultiAgentGraphConfig,
+  OpenAIClientOptions,
   StandardGraphConfig,
-  EventHandler,
+  AgentInputs,
   GenericTool,
-  GraphEvents,
+  RunConfig,
   IState,
 } from '@librechat/agents';
+import type { IUser } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
 import type * as t from '~/types';
+import { resolveHeaders, createSafeUser } from '~/utils/env';
 
 const customProviders = new Set([
   Providers.XAI,
-  Providers.OLLAMA,
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
+  KnownEndpoints.ollama,
 ]);
+
+export function getReasoningKey(
+  provider: Providers,
+  llmConfig: t.RunLLMConfig,
+  agentEndpoint?: string | null,
+): 'reasoning_content' | 'reasoning' {
+  let reasoningKey: 'reasoning_content' | 'reasoning' = 'reasoning_content';
+  if (provider === Providers.GOOGLE) {
+    reasoningKey = 'reasoning';
+  } else if (
+    llmConfig.configuration?.baseURL?.includes(KnownEndpoints.openrouter) ||
+    (agentEndpoint && agentEndpoint.toLowerCase().includes(KnownEndpoints.openrouter))
+  ) {
+    reasoningKey = 'reasoning';
+  } else if (
+    (llmConfig as OpenAIClientOptions).useResponsesApi === true &&
+    (provider === Providers.OPENAI || provider === Providers.AZURE)
+  ) {
+    reasoningKey = 'reasoning';
+  }
+  return reasoningKey;
+}
+
+type RunAgent = Omit<Agent, 'tools'> & {
+  tools?: GenericTool[];
+  maxContextTokens?: number;
+  useLegacyContent?: boolean;
+  toolContextMap?: Record<string, string>;
+};
 
 /**
  * Creates a new Run instance with custom handlers and configuration.
  *
  * @param options - The options for creating the Run instance.
- * @param options.agent - The agent for this run.
+ * @param options.agents - The agents for this run.
  * @param options.signal - The signal for this run.
- * @param options.req - The server request.
  * @param options.runId - Optional run ID; otherwise, a new run ID will be generated.
  * @param options.customHandlers - Custom event handlers.
  * @param options.streaming - Whether to use streaming.
@@ -32,65 +64,112 @@ const customProviders = new Set([
  */
 export async function createRun({
   runId,
-  agent,
   signal,
+  agents,
+  requestBody,
+  user,
+  tokenCounter,
   customHandlers,
+  indexTokenCountMap,
   streaming = true,
   streamUsage = true,
 }: {
-  agent: Omit<Agent, 'tools'> & { tools?: GenericTool[] };
+  agents: RunAgent[];
   signal: AbortSignal;
   runId?: string;
   streaming?: boolean;
   streamUsage?: boolean;
-  customHandlers?: Record<GraphEvents, EventHandler>;
-}): Promise<Run<IState>> {
-  const provider =
-    providerEndpointMap[agent.provider as keyof typeof providerEndpointMap] ?? agent.provider;
-  const llmConfig: t.RunLLMConfig = Object.assign(
-    {
+  requestBody?: t.RequestBody;
+  user?: IUser;
+} & Pick<RunConfig, 'tokenCounter' | 'customHandlers' | 'indexTokenCountMap'>): Promise<
+  Run<IState>
+> {
+  const agentInputs: AgentInputs[] = [];
+  const buildAgentContext = (agent: RunAgent) => {
+    const provider =
+      (providerEndpointMap[
+        agent.provider as keyof typeof providerEndpointMap
+      ] as unknown as Providers) ?? agent.provider;
+
+    const llmConfig: t.RunLLMConfig = Object.assign(
+      {
+        provider,
+        streaming,
+        streamUsage,
+      },
+      agent.model_parameters,
+    );
+
+    const systemMessage = Object.values(agent.toolContextMap ?? {})
+      .join('\n')
+      .trim();
+
+    const systemContent = [
+      systemMessage,
+      agent.instructions ?? '',
+      agent.additional_instructions ?? '',
+    ]
+      .join('\n')
+      .trim();
+
+    /**
+     * Resolve request-based headers for Custom Endpoints. Note: if this is added to
+     *  non-custom endpoints, needs consideration of varying provider header configs.
+     *  This is done at this step because the request body may contain dynamic values
+     *  that need to be resolved after agent initialization.
+     */
+    if (llmConfig?.configuration?.defaultHeaders != null) {
+      llmConfig.configuration.defaultHeaders = resolveHeaders({
+        headers: llmConfig.configuration.defaultHeaders as Record<string, string>,
+        user: createSafeUser(user),
+        body: requestBody,
+      });
+    }
+
+    /** Resolves issues with new OpenAI usage field */
+    if (
+      customProviders.has(agent.provider) ||
+      (agent.provider === Providers.OPENAI && agent.endpoint !== agent.provider)
+    ) {
+      llmConfig.streamUsage = false;
+      llmConfig.usage = true;
+    }
+
+    const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
+    const agentInput: AgentInputs = {
       provider,
-      streaming,
-      streamUsage,
-    },
-    agent.model_parameters,
-  );
-
-  /** Resolves issues with new OpenAI usage field */
-  if (
-    customProviders.has(agent.provider) ||
-    (agent.provider === Providers.OPENAI && agent.endpoint !== agent.provider)
-  ) {
-    llmConfig.streamUsage = false;
-    llmConfig.usage = true;
-  }
-
-  let reasoningKey: 'reasoning_content' | 'reasoning' | undefined;
-  if (
-    llmConfig.configuration?.baseURL?.includes(KnownEndpoints.openrouter) ||
-    (agent.endpoint && agent.endpoint.toLowerCase().includes(KnownEndpoints.openrouter))
-  ) {
-    reasoningKey = 'reasoning';
-  }
-
-  const graphConfig: StandardGraphConfig = {
-    signal,
-    llmConfig,
-    reasoningKey,
-    tools: agent.tools,
-    instructions: agent.instructions,
-    additional_instructions: agent.additional_instructions,
-    // toolEnd: agent.end_after_tools,
+      reasoningKey,
+      agentId: agent.id,
+      tools: agent.tools,
+      clientOptions: llmConfig,
+      instructions: systemContent,
+      maxContextTokens: agent.maxContextTokens,
+      useLegacyContent: agent.useLegacyContent ?? false,
+    };
+    agentInputs.push(agentInput);
   };
 
-  // TEMPORARY FOR TESTING
-  if (agent.provider === Providers.ANTHROPIC || agent.provider === Providers.BEDROCK) {
-    graphConfig.streamBuffer = 2000;
+  for (const agent of agents) {
+    buildAgentContext(agent);
+  }
+
+  const graphConfig: RunConfig['graphConfig'] = {
+    signal,
+    agents: agentInputs,
+    edges: agents[0].edges,
+  };
+
+  if (agentInputs.length > 1 || ((graphConfig as MultiAgentGraphConfig).edges?.length ?? 0) > 0) {
+    (graphConfig as unknown as MultiAgentGraphConfig).type = 'multi-agent';
+  } else {
+    (graphConfig as StandardGraphConfig).type = 'standard';
   }
 
   return Run.create({
     runId,
     graphConfig,
+    tokenCounter,
     customHandlers,
+    indexTokenCountMap,
   });
 }

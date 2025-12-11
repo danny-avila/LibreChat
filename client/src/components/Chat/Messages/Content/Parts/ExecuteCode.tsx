@@ -10,23 +10,23 @@ import { cn } from '~/utils';
 import store from '~/store';
 
 interface ParsedArgs {
-  lang: string;
-  code: string;
+  lang?: string;
+  code?: string;
 }
 
-export function useParseArgs(args: string): ParsedArgs {
+export function useParseArgs(args?: string): ParsedArgs | null {
   return useMemo(() => {
-    let parsedArgs: ParsedArgs | string = args;
+    let parsedArgs: ParsedArgs | string | undefined | null = args;
     try {
-      parsedArgs = JSON.parse(args);
+      parsedArgs = JSON.parse(args || '');
     } catch {
       // console.error('Failed to parse args:', e);
     }
     if (typeof parsedArgs === 'object') {
       return parsedArgs;
     }
-    const langMatch = args.match(/"lang"\s*:\s*"(\w+)"/);
-    const codeMatch = args.match(/"code"\s*:\s*"(.+?)(?="\s*,\s*"(session_id|args)"|"\s*})/s);
+    const langMatch = args?.match(/"lang"\s*:\s*"(\w+)"/);
+    const codeMatch = args?.match(/"code"\s*:\s*"(.+?)(?="\s*,\s*"(session_id|args)"|"\s*})/s);
 
     let code = '';
     if (codeMatch) {
@@ -45,27 +45,29 @@ export function useParseArgs(args: string): ParsedArgs {
 }
 
 export default function ExecuteCode({
+  isSubmitting,
   initialProgress = 0.1,
   args,
   output = '',
   attachments,
 }: {
   initialProgress: number;
-  args: string;
+  isSubmitting: boolean;
+  args?: string;
   output?: string;
   attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
-  const showAnalysisCode = useRecoilValue(store.showCode);
-  const [showCode, setShowCode] = useState(showAnalysisCode);
-  const codeContentRef = useRef<HTMLDivElement>(null);
-  const [contentHeight, setContentHeight] = useState<number | undefined>(0);
-  const [isAnimating, setIsAnimating] = useState(false);
   const hasOutput = output.length > 0;
   const outputRef = useRef<string>(output);
-  const prevShowCodeRef = useRef<boolean>(showCode);
+  const codeContentRef = useRef<HTMLDivElement>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const showAnalysisCode = useRecoilValue(store.showCode);
+  const [showCode, setShowCode] = useState(showAnalysisCode);
+  const [contentHeight, setContentHeight] = useState<number | undefined>(0);
 
-  const { lang, code } = useParseArgs(args);
+  const prevShowCodeRef = useRef<boolean>(showCode);
+  const { lang, code } = useParseArgs(args) ?? ({} as ParsedArgs);
   const progress = useProgress(initialProgress);
 
   useEffect(() => {
@@ -136,6 +138,8 @@ export default function ExecuteCode({
     };
   }, [showCode, isAnimating]);
 
+  const cancelled = !isSubmitting && progress < 1;
+
   return (
     <>
       <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
@@ -143,9 +147,12 @@ export default function ExecuteCode({
           progress={progress}
           onClick={() => setShowCode((prev) => !prev)}
           inProgressText={localize('com_ui_analyzing')}
-          finishedText={localize('com_ui_analyzing_finished')}
-          hasInput={!!code.length}
+          finishedText={
+            cancelled ? localize('com_ui_cancelled') : localize('com_ui_analyzing_finished')
+          }
+          hasInput={!!code?.length}
           isExpanded={showCode}
+          error={cancelled}
         />
       </div>
       <div

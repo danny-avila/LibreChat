@@ -22,22 +22,31 @@ import translationJa from './ja/translation.json';
 import translationKa from './ka/translation.json';
 import translationSv from './sv/translation.json';
 import translationKo from './ko/translation.json';
+import translationLv from './lv/translation.json';
 import translationTh from './th/translation.json';
 import translationTr from './tr/translation.json';
+import translationUg from './ug/translation.json';
 import translationVi from './vi/translation.json';
 import translationNl from './nl/translation.json';
 import translationId from './id/translation.json';
 import translationHe from './he/translation.json';
 import translationHu from './hu/translation.json';
+import translationHy from './hy/translation.json';
 import translationFi from './fi/translation.json';
 import translationZh_Hans from './zh-Hans/translation.json';
 import translationZh_Hant from './zh-Hant/translation.json';
+import translationBo from './bo/translation.json';
+import translationUk from './uk/translation.json';
+import translationBs from './bs/translation.json';
+import translationNb from './nb/translation.json';
+import translationSl from './sl/translation.json';
 
 export const defaultNS = 'translation';
 
 export const resources = {
   en: { translation: translationEn },
   ar: { translation: translationAr },
+  bs: { translation: translationBs },
   ca: { translation: translationCa },
   cs: { translation: translationCs },
   'zh-Hans': { translation: translationZh_Hans },
@@ -49,6 +58,7 @@ export const resources = {
   fa: { translation: translationFa },
   fr: { translation: translationFr },
   it: { translation: translationIt },
+  nb: { translation: translationNb },
   pl: { translation: translationPl },
   'pt-BR': { translation: translationPt_BR },
   'pt-PT': { translation: translationPt_PT },
@@ -57,14 +67,20 @@ export const resources = {
   ka: { translation: translationKa },
   sv: { translation: translationSv },
   ko: { translation: translationKo },
+  lv: { translation: translationLv },
   th: { translation: translationTh },
   tr: { translation: translationTr },
+  ug: { translation: translationUg },
   vi: { translation: translationVi },
   nl: { translation: translationNl },
   id: { translation: translationId },
   he: { translation: translationHe },
   hu: { translation: translationHu },
+  hy: { translation: translationHy },
   fi: { translation: translationFi },
+  bo: { translation: translationBo },
+  sl: { translation: translationSl },
+  uk: { translation: translationUk },
 } as const;
 
 i18n

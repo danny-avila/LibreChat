@@ -3,11 +3,11 @@ import { useRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { VisuallyHidden } from '@ariakit/react';
 import { GitFork, InfoIcon } from 'lucide-react';
+import { useToastContext } from '@librechat/client';
 import { ForkOptions } from 'librechat-data-provider';
 import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
 import { TranslationKeys, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useForkConvoMutation } from '~/data-provider';
-import { useToastContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -233,9 +233,17 @@ export default function Fork({
         status: 'info',
       });
     },
-    onError: () => {
+    onError: (error) => {
+      /** Rate limit error (429 status code) */
+      const isRateLimitError =
+        (error as any)?.response?.status === 429 ||
+        (error as any)?.status === 429 ||
+        (error as any)?.statusCode === 429;
+
       showToast({
-        message: localize('com_ui_fork_error'),
+        message: isRateLimitError
+          ? localize('com_ui_fork_error_rate_limit')
+          : localize('com_ui_fork_error'),
         status: 'error',
       });
     },

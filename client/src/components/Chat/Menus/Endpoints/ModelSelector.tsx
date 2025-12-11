@@ -1,7 +1,13 @@
 import React, { useMemo } from 'react';
 import type { ModelSelectorProps } from '~/common';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
-import { renderModelSpecs, renderEndpoints, renderSearchResults } from './components';
+import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
+import {
+  renderModelSpecs,
+  renderEndpoints,
+  renderSearchResults,
+  renderCustomGroups,
+} from './components';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
@@ -12,6 +18,7 @@ function ModelSelectorContent() {
 
   const {
     // LibreChat
+    agentsMap,
     modelSpecs,
     mappedEndpoints,
     endpointsConfig,
@@ -43,11 +50,12 @@ function ModelSelectorContent() {
     () =>
       getDisplayValue({
         localize,
+        agentsMap,
         modelSpecs,
         selectedValues,
         mappedEndpoints,
       }),
-    [localize, modelSpecs, selectedValues, mappedEndpoints],
+    [localize, agentsMap, modelSpecs, selectedValues, mappedEndpoints],
   );
 
   const trigger = (
@@ -83,8 +91,15 @@ function ModelSelectorContent() {
           renderSearchResults(searchResults, localize, searchValue)
         ) : (
           <>
-            {renderModelSpecs(modelSpecs, selectedValues.modelSpec || '')}
+            {/* Render ungrouped modelSpecs (no group field) */}
+            {renderModelSpecs(
+              modelSpecs?.filter((spec) => !spec.group) || [],
+              selectedValues.modelSpec || '',
+            )}
+            {/* Render endpoints (will include grouped specs matching endpoint names) */}
             {renderEndpoints(mappedEndpoints ?? [])}
+            {/* Render custom groups (specs with group field not matching any endpoint) */}
+            {renderCustomGroups(modelSpecs || [], mappedEndpoints ?? [])}
           </>
         )}
       </Menu>
@@ -100,8 +115,10 @@ function ModelSelectorContent() {
 
 export default function ModelSelector({ startupConfig }: ModelSelectorProps) {
   return (
-    <ModelSelectorProvider startupConfig={startupConfig}>
-      <ModelSelectorContent />
-    </ModelSelectorProvider>
+    <ModelSelectorChatProvider>
+      <ModelSelectorProvider startupConfig={startupConfig}>
+        <ModelSelectorContent />
+      </ModelSelectorProvider>
+    </ModelSelectorChatProvider>
   );
 }

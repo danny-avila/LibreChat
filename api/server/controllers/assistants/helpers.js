@@ -11,7 +11,7 @@ const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getEndpointsConfig } = require('~/server/services/Config');
 
 /**
- * @param {Express.Request} req
+ * @param {ServerRequest} req
  * @param {string} [endpoint]
  * @returns {Promise<string>}
  */
@@ -173,6 +173,16 @@ const listAssistantsForAzure = async ({ req, res, version, azureConfig = {}, que
   };
 };
 
+/**
+ * Initializes the OpenAI client.
+ * @param {object} params - The parameters object.
+ * @param {ServerRequest} params.req - The request object.
+ * @param {ServerResponse} params.res - The response object.
+ * @param {TEndpointOption} params.endpointOption - The endpoint options.
+ * @param {boolean} params.initAppClient - Whether to initialize the app client.
+ * @param {string} params.overrideEndpoint - The endpoint to override.
+ * @returns {Promise<{ openai: OpenAIClient, openAIApiKey: string; client: import('~/app/clients/OpenAIClient') }>} - The initialized OpenAI client.
+ */
 async function getOpenAIClient({ req, res, endpointOption, initAppClient, overrideEndpoint }) {
   let endpoint = overrideEndpoint ?? req.body.endpoint ?? req.query.endpoint;
   const version = await getCurrentVersion(req, endpoint);
@@ -200,6 +210,7 @@ async function getOpenAIClient({ req, res, endpointOption, initAppClient, overri
  * @returns {Promise<AssistantListResponse>} 200 - success response - application/json
  */
 const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
+  const appConfig = req.config;
   const {
     limit = 100,
     order = 'desc',
@@ -220,20 +231,20 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
   if (endpoint === EModelEndpoint.assistants) {
     ({ body } = await listAllAssistants({ req, res, version, query }));
   } else if (endpoint === EModelEndpoint.azureAssistants) {
-    const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
+    const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   }
 
   if (req.user.role === SystemRoles.ADMIN) {
     return body;
-  } else if (!req.app.locals[endpoint]) {
+  } else if (!appConfig.endpoints?.[endpoint]) {
     return body;
   }
 
   body.data = filterAssistants({
     userId: req.user.id,
     assistants: body.data,
-    assistantsConfig: req.app.locals[endpoint],
+    assistantsConfig: appConfig.endpoints?.[endpoint],
   });
   return body;
 };

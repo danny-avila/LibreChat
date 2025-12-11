@@ -1,16 +1,14 @@
-import { useRecoilState } from 'recoil';
-import { Dropdown } from '~/components/ui';
-import { applyFontSize } from '~/utils';
+import { useAtom } from 'jotai';
+import { Dropdown } from '@librechat/client';
+import { fontSizeAtom } from '~/store/fontSize';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 
 export default function FontSizeSelector() {
-  const [fontSize, setFontSize] = useRecoilState(store.fontSize);
   const localize = useLocalize();
+  const [fontSize, setFontSize] = useAtom(fontSizeAtom);
 
   const handleChange = (val: string) => {
     setFontSize(val);
-    applyFontSize(val);
   };
 
   const options = [
@@ -21,9 +19,11 @@ export default function FontSizeSelector() {
     { value: 'text-xl', label: localize('com_nav_font_size_xl') },
   ];
 
+  const labelId = 'font-size-selector-label';
+
   return (
     <div className="flex w-full items-center justify-between">
-      <div>{localize('com_nav_font_size')}</div>
+      <div id={labelId}>{localize('com_nav_font_size')}</div>
       <Dropdown
         value={fontSize}
         options={options}
@@ -31,6 +31,7 @@ export default function FontSizeSelector() {
         testId="font-size-selector"
         sizeClasses="w-[150px]"
         className="z-50"
+        aria-labelledby={labelId}
       />
     </div>
   );

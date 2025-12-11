@@ -1,5 +1,5 @@
+import { Button } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
-import { Button } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 export default function NoPromptGroup() {
@@ -17,6 +17,7 @@ export default function NoPromptGroup() {
             onClick={() => {
               navigate('/d/prompts');
             }}
+            aria-label={localize('com_ui_back_to_prompts')}
           >
             {localize('com_ui_back_to_prompts')}
           </Button>

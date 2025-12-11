@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
+import { useToastContext } from '@librechat/client';
 import { useSpeechToTextMutation } from '~/data-provider';
 import useGetAudioSettings from './useGetAudioSettings';
-import { useToastContext } from '~/Providers';
 import store from '~/store';
 
 const useSpeechToTextExternal = (
@@ -25,6 +25,7 @@ const useSpeechToTextExternal = (
 
   const [minDecibels] = useRecoilState(store.decibelValue);
   const [autoSendText] = useRecoilState(store.autoSendText);
+  const [languageSTT] = useRecoilState<string>(store.languageSTT);
   const [speechToText] = useRecoilState<boolean>(store.speechToText);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
 
@@ -107,7 +108,7 @@ const useSpeechToTextExternal = (
       });
       setPermission(true);
       audioStream.current = streamData ?? null;
-    } catch (err) {
+    } catch {
       setPermission(false);
     }
   };
@@ -121,6 +122,9 @@ const useSpeechToTextExternal = (
 
       const formData = new FormData();
       formData.append('audio', audioBlob, `audio.${fileExtension}`);
+      if (languageSTT) {
+        formData.append('language', languageSTT);
+      }
       setIsRequestBeingMade(true);
       cleanup();
       processAudio(formData);
@@ -268,6 +272,7 @@ const useSpeechToTextExternal = (
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isListening]);
 
   return {

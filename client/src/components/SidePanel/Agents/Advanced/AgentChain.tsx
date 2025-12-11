@@ -1,13 +1,18 @@
 import { X, Link2, PlusCircle } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import {
+  ControlCombobox,
+  HoverCard,
+  HoverCardPortal,
+  HoverCardContent,
+  HoverCardTrigger,
+  CircleHelpIcon,
+} from '@librechat/client';
 import type { ControllerRenderProps } from 'react-hook-form';
 import type { TMessage } from 'librechat-data-provider';
 import type { AgentForm, OptionWithIcon } from '~/common';
-import ControlCombobox from '~/components/ui/ControlCombobox';
-import { HoverCard, HoverCardPortal, HoverCardContent, HoverCardTrigger } from '~/components/ui';
 import MessageIcon from '~/components/Share/MessageIcon';
-import { CircleHelpIcon } from '~/components/svg';
 import { useAgentsMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
@@ -141,6 +146,9 @@ const AgentChain: React.FC<AgentChainProps> = ({ field, currentAgentId }) => {
               <button
                 className="rounded-xl p-1 transition hover:bg-surface-hover"
                 onClick={() => removeAgentAt(idx)}
+                aria-label={localize('com_ui_remove_agent_from_chain', {
+                  0: getAgentDetails(agentId)?.name || localize('com_ui_agent'),
+                })}
               >
                 <X size={18} className="text-text-secondary" />
               </button>

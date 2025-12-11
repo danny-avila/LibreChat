@@ -1,12 +1,12 @@
 import { Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Button, Skeleton } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup, TStartupConfig } from 'librechat-data-provider';
 import DashGroupItem from '~/components/Prompts/Groups/DashGroupItem';
 import ChatGroupItem from '~/components/Prompts/Groups/ChatGroupItem';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
-import { Button, Skeleton } from '~/components/ui';
 
 export default function List({
   groups = [],
@@ -34,13 +34,14 @@ export default function List({
             variant="outline"
             className={`w-full bg-transparent ${isChatRoute ? '' : 'mx-2'}`}
             onClick={() => navigate('/d/prompts/new')}
+            aria-label={localize('com_ui_create_prompt')}
           >
             <Plus className="size-4" aria-hidden />
             {localize('com_ui_create_prompt')}
           </Button>
         </div>
       )}
-      <div className="flex-grow overflow-y-auto">
+      <div className="flex-grow overflow-y-auto" aria-label={localize('com_ui_prompt_groups')}>
         <div className="overflow-y-auto overflow-x-hidden">
           {isLoading && isChatRoute && (
             <Skeleton className="my-2 flex h-[84px] w-full rounded-2xl border-0 px-3 pb-4 pt-3" />

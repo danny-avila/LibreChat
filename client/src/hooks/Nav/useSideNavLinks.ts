@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
-import { MessageSquareQuote, ArrowRightToLine, Settings2, Database, Bookmark } from 'lucide-react';
+import { Blocks, MCPIcon, AttachmentIcon } from '@librechat/client';
+import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote } from 'lucide-react';
 import {
-  isAssistantsEndpoint,
-  isAgentsEndpoint,
+  Permissions,
+  EModelEndpoint,
   PermissionTypes,
   isParamEndpoint,
-  EModelEndpoint,
-  Permissions,
+  isAgentsEndpoint,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
@@ -18,9 +19,7 @@ import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import MCPPanel from '~/components/SidePanel/MCP/MCPPanel';
-import { Blocks, AttachmentIcon } from '~/components/svg';
 import { useGetStartupConfig } from '~/data-provider';
-import MCPIcon from '~/components/ui/MCPIcon';
 import { useHasAccess } from '~/hooks';
 
 export default function useSideNavLinks({
@@ -80,7 +79,7 @@ export default function useSideNavLinks({
         title: 'com_sidepanel_assistant_builder',
         label: '',
         icon: Blocks,
-        id: 'assistants',
+        id: EModelEndpoint.assistants,
         Component: PanelSwitch,
       });
     }
@@ -95,7 +94,7 @@ export default function useSideNavLinks({
         title: 'com_sidepanel_agent_builder',
         label: '',
         icon: Blocks,
-        id: 'agents',
+        id: EModelEndpoint.agents,
         Component: AgentPanelSwitch,
       });
     }
@@ -156,7 +155,10 @@ export default function useSideNavLinks({
     if (
       startupConfig?.mcpServers &&
       Object.values(startupConfig.mcpServers).some(
-        (server) => server.customUserVars && Object.keys(server.customUserVars).length > 0,
+        (server: any) =>
+          (server.customUserVars && Object.keys(server.customUserVars).length > 0) ||
+          server.isOAuth ||
+          server.startup === false,
       )
     ) {
       links.push({

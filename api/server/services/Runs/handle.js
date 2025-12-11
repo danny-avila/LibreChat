@@ -1,9 +1,9 @@
+const { sleep } = require('@librechat/agents');
+const { logger } = require('@librechat/data-schemas');
 const { RunStatus, defaultOrderQuery, CacheKeys } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const { retrieveRun } = require('./methods');
-const { sleep } = require('~/server/utils');
 const RunManager = require('./RunManager');
-const { logger } = require('~/config');
 
 async function withTimeout(promise, timeoutMs, timeoutMessage) {
   let timeoutHandle;
@@ -33,7 +33,7 @@ async function withTimeout(promise, timeoutMs, timeoutMessage) {
  * @param {string} [params.body.model] - Optional. The ID of the model to be used for this run.
  * @param {string} [params.body.instructions] - Optional. Override the default system message of the assistant.
  * @param {string} [params.body.additional_instructions] - Optional. Appends additional instructions
- * at theend of the instructions for the run. This is useful for modifying
+ * at the end of the instructions for the run. This is useful for modifying
  * the behavior on a per-run basis without overriding other instructions.
  * @param {Object[]} [params.body.tools] - Optional. Override the tools the assistant can use for this run.
  * @param {string[]} [params.body.file_ids] - Optional.
@@ -179,7 +179,7 @@ async function waitForRun({
  * @return {Promise<RunStep[]>} A promise that resolves to an array of RunStep objects.
  */
 async function _retrieveRunSteps({ openai, thread_id, run_id }) {
-  const runSteps = await openai.beta.threads.runs.steps.list(thread_id, run_id);
+  const runSteps = await openai.beta.threads.runs.steps.list(run_id, { thread_id });
   return runSteps;
 }
 

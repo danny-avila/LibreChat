@@ -1,8 +1,6 @@
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { createHandleLLMNewToken } = require('@librechat/api');
 const {
   AuthType,
-  Constants,
   EModelEndpoint,
   bedrockInputParser,
   bedrockOutputParser,
@@ -46,25 +44,27 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
     checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
   }
 
-  /** @type {number} */
+  /*
+  Callback for stream rate no longer awaits and may end the stream prematurely
+  /** @type {number}
   let streamRate = Constants.DEFAULT_STREAM_RATE;
 
-  /** @type {undefined | TBaseEndpoint} */
-  const bedrockConfig = req.app.locals[EModelEndpoint.bedrock];
+  /** @type {undefined | TBaseEndpoint}
+  const bedrockConfig = appConfig.endpoints?.[EModelEndpoint.bedrock];
 
   if (bedrockConfig && bedrockConfig.streamRate) {
     streamRate = bedrockConfig.streamRate;
   }
 
-  /** @type {undefined | TBaseEndpoint} */
-  const allConfig = req.app.locals.all;
+  const allConfig = appConfig.endpoints?.all;
   if (allConfig && allConfig.streamRate) {
     streamRate = allConfig.streamRate;
   }
+  */
 
   /** @type {BedrockClientOptions} */
   const requestOptions = {
-    model: overrideModel ?? endpointOption.model,
+    model: overrideModel ?? endpointOption?.model,
     region: BEDROCK_AWS_DEFAULT_REGION,
   };
 
@@ -76,7 +76,7 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
 
   const llmConfig = bedrockOutputParser(
     bedrockInputParser.parse(
-      removeNullishValues(Object.assign(requestOptions, endpointOption.model_parameters)),
+      removeNullishValues(Object.assign(requestOptions, endpointOption?.model_parameters ?? {})),
     ),
   );
 
@@ -87,12 +87,6 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
   if (BEDROCK_REVERSE_PROXY) {
     llmConfig.endpointHost = BEDROCK_REVERSE_PROXY;
   }
-
-  llmConfig.callbacks = [
-    {
-      handleLLMNewToken: createHandleLLMNewToken(streamRate),
-    },
-  ];
 
   return {
     /** @type {BedrockClientOptions} */

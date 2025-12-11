@@ -2,11 +2,11 @@ import { useState, useId, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { Upload, Share2 } from 'lucide-react';
+import { DropdownPopup, TooltipAnchor, useMediaQuery } from '@librechat/client';
 import type * as t from '~/common';
 import ExportModal from '~/components/Nav/ExportConversation/ExportModal';
 import { ShareButton } from '~/components/Conversations/ConvoOptions';
-import { DropdownPopup, TooltipAnchor } from '~/components/ui';
-import { useMediaQuery, useLocalize } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 export default function ExportAndShareMenu({
@@ -68,6 +68,7 @@ export default function ExportAndShareMenu({
   return (
     <>
       <DropdownPopup
+        portal={true}
         menuId={menuId}
         focusLoop={true}
         unmountOnHide={true}

@@ -6,17 +6,21 @@ import {
   AuthorizationTypeEnum,
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
+import {
+  Label,
+  OGDialog,
+  TrashIcon,
+  OGDialogTrigger,
+  useToastContext,
+  OGDialogTemplate,
+} from '@librechat/client';
+import type { ActionAuthForm } from '~/common';
 import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
-import { OGDialog, OGDialogTrigger, Label } from '~/components/ui';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useDeleteAgentAction } from '~/data-provider';
-import type { ActionAuthForm } from '~/common';
-import useLocalize from '~/hooks/useLocalize';
-import { useToastContext } from '~/Providers';
-import { TrashIcon } from '~/components/svg';
+import { Panel, isEphemeralAgent } from '~/common';
 import ActionsInput from './ActionsInput';
-import { Panel } from '~/common';
+import { useLocalize } from '~/hooks';
 
 export default function ActionsPanel() {
   const localize = useLocalize();
@@ -104,7 +108,7 @@ export default function ActionsPanel() {
                   <div className="absolute right-0 top-6">
                     <button
                       type="button"
-                      disabled={!agent_id || !action.action_id}
+                      disabled={isEphemeralAgent(agent_id) || !action.action_id}
                       className="btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium"
                     >
                       <TrashIcon className="text-red-500" />
@@ -122,7 +126,7 @@ export default function ActionsPanel() {
                   }
                   selection={{
                     selectHandler: () => {
-                      if (!agent_id) {
+                      if (isEphemeralAgent(agent_id)) {
                         return showToast({
                           message: localize('com_agents_no_agent_id_error'),
                           status: 'error',
@@ -130,7 +134,7 @@ export default function ActionsPanel() {
                       }
                       deleteAgentAction.mutate({
                         action_id: action.action_id,
-                        agent_id,
+                        agent_id: agent_id || '',
                       });
                     },
                     selectClasses:

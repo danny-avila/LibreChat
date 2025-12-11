@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { BookmarkPlusIcon } from 'lucide-react';
-import type { ConversationTagsResponse, TConversationTag } from 'librechat-data-provider';
 import {
   Table,
   Input,
@@ -11,7 +10,8 @@ import {
   TableCell,
   TableHeader,
   OGDialogTrigger,
-} from '~/components/ui';
+} from '@librechat/client';
+import type { ConversationTagsResponse, TConversationTag } from 'librechat-data-provider';
 import { BookmarkContext, useBookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import BookmarkTableRow from './BookmarkTableRow';
@@ -112,6 +112,7 @@ const BookmarkTable = () => {
                   variant="outline"
                   size="sm"
                   className="w-full gap-2 text-sm"
+                  aria-label={localize('com_ui_bookmarks_new')}
                   onClick={() => setOpen(!open)}
                 >
                   <BookmarkPlusIcon className="size-4" />

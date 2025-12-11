@@ -1,7 +1,10 @@
 const { google } = require('googleapis');
-const { Tokenizer } = require('@librechat/api');
+const { sleep } = require('@librechat/agents');
+const { logger } = require('@librechat/data-schemas');
+const { getModelMaxTokens } = require('@librechat/api');
 const { concat } = require('@langchain/core/utils/stream');
 const { ChatVertexAI } = require('@langchain/google-vertexai');
+const { Tokenizer, getSafetySettings } = require('@librechat/api');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
 const { HumanMessage, SystemMessage } = require('@langchain/core/messages');
@@ -12,18 +15,15 @@ const {
   endpointSettings,
   parseTextParts,
   EModelEndpoint,
+  googleSettings,
   ContentTypes,
   VisionModes,
   ErrorTypes,
   Constants,
   AuthKeys,
 } = require('librechat-data-provider');
-const { getSafetySettings } = require('~/server/services/Endpoints/google/llm');
 const { encodeAndFormat } = require('~/server/services/Files/images');
 const { spendTokens } = require('~/models/spendTokens');
-const { getModelMaxTokens } = require('~/utils');
-const { sleep } = require('~/server/utils');
-const { logger } = require('~/config');
 const {
   formatMessage,
   createContextHandlers,
@@ -166,6 +166,16 @@ class GoogleClient extends BaseClient {
       );
     }
 
+    // Add thinking configuration
+    this.modelOptions.thinkingConfig = {
+      thinkingBudget:
+        (this.modelOptions.thinking ?? googleSettings.thinking.default)
+          ? this.modelOptions.thinkingBudget
+          : 0,
+    };
+    delete this.modelOptions.thinking;
+    delete this.modelOptions.thinkingBudget;
+
     this.sender =
       this.options.sender ??
       getResponseSender({
@@ -295,7 +305,9 @@ class GoogleClient extends BaseClient {
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
-      EModelEndpoint.google,
+      {
+        endpoint: EModelEndpoint.google,
+      },
       mode,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;

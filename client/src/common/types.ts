@@ -1,5 +1,5 @@
 import { RefObject } from 'react';
-import { FileSources, EModelEndpoint } from 'librechat-data-provider';
+import { Constants, FileSources, EModelEndpoint } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { SetterOrUpdater, RecoilState } from 'recoil';
@@ -7,6 +7,15 @@ import type { ColumnDef } from '@tanstack/react-table';
 import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks';
+
+export function isEphemeralAgent(agentId: string | null | undefined): boolean {
+  return agentId == null || agentId === '' || agentId === Constants.EPHEMERAL_AGENT_ID;
+}
+
+export interface ConfigFieldDetail {
+  title: string;
+  description: string;
+}
 
 export type CodeBarProps = {
   lang: string;
@@ -211,6 +220,14 @@ export type AgentPanelProps = {
   agentsConfig?: t.TAgentsEndpoint | null;
 };
 
+export interface MCPServerInfo {
+  serverName: string;
+  tools: t.AgentToolType[];
+  isConfigured: boolean;
+  isConnected: boolean;
+  metadata: t.TPlugin;
+}
+
 export type AgentPanelContextType = {
   action?: t.Action;
   actions?: t.Action[];
@@ -219,12 +236,16 @@ export type AgentPanelContextType = {
   mcps?: t.MCP[];
   setMcp: React.Dispatch<React.SetStateAction<t.MCP | undefined>>;
   setMcps: React.Dispatch<React.SetStateAction<t.MCP[] | undefined>>;
-  groupedTools: Record<string, t.AgentToolType & { tools?: t.AgentToolType[] }>;
-  tools: t.AgentToolType[];
   activePanel?: string;
+  regularTools?: t.TPlugin[];
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   agent_id?: string;
+  startupConfig?: t.TStartupConfig | null;
+  agentsConfig?: t.TAgentsEndpoint | null;
+  endpointsConfig?: t.TEndpointsConfig | null;
+  /** Pre-computed MCP server information indexed by server key */
+  mcpServersMap: Map<string, MCPServerInfo>;
 };
 
 export type AgentModelPanelProps = {
@@ -335,6 +356,7 @@ export type TAskProps = {
 
 export type TOptions = {
   editedMessageId?: string | null;
+  editedContent?: t.TEditedContent;
   editedText?: string | null;
   isRegenerate?: boolean;
   isContinued?: boolean;

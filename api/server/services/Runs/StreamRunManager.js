@@ -1,3 +1,6 @@
+const { sleep } = require('@librechat/agents');
+const { sendEvent } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const {
   Constants,
   StepTypes,
@@ -8,9 +11,8 @@ const {
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { processRequiredActions } = require('~/server/services/ToolService');
-const { createOnProgress, sendMessage, sleep } = require('~/server/utils');
 const { processMessages } = require('~/server/services/Threads');
-const { logger } = require('~/config');
+const { createOnProgress } = require('~/server/utils');
 
 /**
  * Implements the StreamRunManager functionality for managing the streaming
@@ -34,7 +36,7 @@ class StreamRunManager {
     /** @type {Run | null} */
     this.run = null;
 
-    /** @type {Express.Request} */
+    /** @type {ServerRequest} */
     this.req = fields.req;
     /** @type {Express.Response} */
     this.res = fields.res;
@@ -126,7 +128,7 @@ class StreamRunManager {
       conversationId: this.finalMessage.conversationId,
     };
 
-    sendMessage(this.res, contentData);
+    sendEvent(this.res, contentData);
   }
 
   /* <------------------ Misc. Helpers ------------------> */
@@ -302,7 +304,7 @@ class StreamRunManager {
 
           for (const d of delta[key]) {
             if (typeof d === 'object' && !Object.prototype.hasOwnProperty.call(d, 'index')) {
-              logger.warn('Expected an object with an \'index\' for array updates but got:', d);
+              logger.warn("Expected an object with an 'index' for array updates but got:", d);
               continue;
             }
 
@@ -571,9 +573,9 @@ class StreamRunManager {
     let toolRun;
     try {
       toolRun = this.openai.beta.threads.runs.submitToolOutputsStream(
-        run.thread_id,
         run.id,
         {
+          thread_id: run.thread_id,
           tool_outputs,
           stream: true,
         },

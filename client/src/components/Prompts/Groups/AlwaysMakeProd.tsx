@@ -1,5 +1,5 @@
 import { useRecoilState } from 'recoil';
-import { Switch } from '~/components/ui';
+import { Switch } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -28,7 +28,7 @@ export default function AlwaysMakeProd({
         checked={alwaysMakeProd}
         onCheckedChange={handleCheckedChange}
         data-testid="alwaysMakeProd"
-        aria-label="Always make prompt production"
+        aria-label={localize('com_nav_always_make_prod')}
       />
       <div>{localize('com_nav_always_make_prod')} </div>
     </div>

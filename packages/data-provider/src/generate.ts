@@ -467,7 +467,11 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
     }
 
     /* Default value checks */
-    if (setting.type === SettingTypes.Number && isNaN(setting.default as number)  && setting.default != null) {
+    if (
+      setting.type === SettingTypes.Number &&
+      isNaN(setting.default as number) &&
+      setting.default != null
+    ) {
       errors.push({
         code: ZodIssueCode.custom,
         message: `Invalid default value for setting ${setting.key}. Must be a number.`,
@@ -475,7 +479,11 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
       });
     }
 
-    if (setting.type === SettingTypes.Boolean && typeof setting.default !== 'boolean' && setting.default != null) {
+    if (
+      setting.type === SettingTypes.Boolean &&
+      typeof setting.default !== 'boolean' &&
+      setting.default != null
+    ) {
       errors.push({
         code: ZodIssueCode.custom,
         message: `Invalid default value for setting ${setting.key}. Must be a boolean.`,
@@ -485,7 +493,8 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
 
     if (
       (setting.type === SettingTypes.String || setting.type === SettingTypes.Enum) &&
-      typeof setting.default !== 'string' && setting.default != null
+      typeof setting.default !== 'string' &&
+      setting.default != null
     ) {
       errors.push({
         code: ZodIssueCode.custom,
@@ -519,6 +528,19 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
         message: `Invalid default value for setting ${setting.key}. Must be within the range [${setting.range.min}, ${setting.range.max}].`,
         path: ['default'],
       });
+    }
+
+    // Validate enumMappings
+    if (setting.enumMappings && setting.type === SettingTypes.Enum && setting.options) {
+      for (const option of setting.options) {
+        if (!(option in setting.enumMappings)) {
+          errors.push({
+            code: ZodIssueCode.custom,
+            message: `Missing enumMapping for option "${option}" in setting ${setting.key}.`,
+            path: ['enumMappings'],
+          });
+        }
+      }
     }
   }
 

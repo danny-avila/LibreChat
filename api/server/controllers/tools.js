@@ -1,21 +1,21 @@
 const { nanoid } = require('nanoid');
 const { EnvVar } = require('@librechat/agents');
+const { logger } = require('@librechat/data-schemas');
+const { checkAccess, loadWebSearchAuth } = require('@librechat/api');
 const {
   Tools,
   AuthType,
   Permissions,
   ToolCallTypes,
   PermissionTypes,
-  loadWebSearchAuth,
 } = require('librechat-data-provider');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
 const { createToolCall, getToolCallsByConvo } = require('~/models/ToolCall');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { loadTools } = require('~/app/clients/tools/util');
-const { checkAccess } = require('~/server/middleware');
+const { getRoleByName } = require('~/models/Role');
 const { getMessage } = require('~/models/Message');
-const { logger } = require('~/config');
 
 const fieldsMap = {
   [Tools.execute_code]: [EnvVar.CODE_API_KEY],
@@ -35,9 +35,10 @@ const toolAccessPermType = {
  */
 const verifyWebSearchAuth = async (req, res) => {
   try {
+    const appConfig = req.config;
     const userId = req.user.id;
     /** @type {TCustomConfig['webSearch']} */
-    const webSearchConfig = req.app.locals?.webSearch || {};
+    const webSearchConfig = appConfig?.webSearch || {};
     const result = await loadWebSearchAuth({
       userId,
       loadAuthValues,
@@ -79,6 +80,7 @@ const verifyToolAuth = async (req, res) => {
         throwError: false,
       });
     } catch (error) {
+      logger.error('Error loading auth values', error);
       res.status(200).json({ authenticated: false, message: AuthType.USER_PROVIDED });
       return;
     }
@@ -109,6 +111,7 @@ const verifyToolAuth = async (req, res) => {
  */
 const callTool = async (req, res) => {
   try {
+    const appConfig = req.config;
     const { toolId = '' } = req.params;
     if (!fieldsMap[toolId]) {
       logger.warn(`[${toolId}/call] User ${req.user.id} attempted call to invalid tool`);
@@ -132,7 +135,12 @@ const callTool = async (req, res) => {
     logger.debug(`[${toolId}/call] User: ${req.user.id}`);
     let hasAccess = true;
     if (toolAccessPermType[toolId]) {
-      hasAccess = await checkAccess(req.user, toolAccessPermType[toolId], [Permissions.USE]);
+      hasAccess = await checkAccess({
+        user: req.user,
+        permissionType: toolAccessPermType[toolId],
+        permissions: [Permissions.USE],
+        getRoleByName,
+      });
     }
     if (!hasAccess) {
       logger.warn(
@@ -149,8 +157,10 @@ const callTool = async (req, res) => {
         returnMetadata: true,
         processFileURL,
         uploadImageBuffer,
-        fileStrategy: req.app.locals.fileStrategy,
       },
+      webSearch: appConfig.webSearch,
+      fileStrategy: appConfig.fileStrategy,
+      imageOutputType: appConfig.imageOutputType,
     });
 
     const tool = loadedTools[0];

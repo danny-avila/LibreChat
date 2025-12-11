@@ -1,9 +1,15 @@
 import { z } from 'zod';
-import type { TUser } from './types';
-import { extractEnvVariable } from './utils';
 import { TokenExchangeMethodEnum } from './types/agents';
+import { extractEnvVariable } from './utils';
 
 const BaseOptionsSchema = z.object({
+  /**
+   * Controls whether the MCP server is initialized during application startup.
+   * - true (default): Server is initialized during app startup and included in app-level connections
+   * - false: Skips initialization at startup and excludes from app-level connections - useful for servers
+   *   requiring manual authentication (e.g., GitHub PAT tokens) that need to be configured through the UI after startup
+   */
+  startup: z.boolean().optional(),
   iconPath: z.string().optional(),
   timeout: z.number().optional(),
   initTimeout: z.number().optional(),
@@ -16,6 +22,11 @@ const BaseOptionsSchema = z.object({
    * - string: Use custom instructions (overrides server-provided)
    */
   serverInstructions: z.union([z.boolean(), z.string()]).optional(),
+  /**
+   * Whether this server requires OAuth authentication
+   * If not specified, will be auto-detected during construction
+   */
+  requiresOAuth: z.boolean().optional(),
   /**
    * OAuth configuration for SSE and Streamable HTTP transports
    * - Optional: OAuth can be auto-discovered on 401 responses
@@ -37,8 +48,24 @@ const BaseOptionsSchema = z.object({
       redirect_uri: z.string().url().optional(),
       /** Token exchange method */
       token_exchange_method: z.nativeEnum(TokenExchangeMethodEnum).optional(),
+      /** Supported grant types (defaults to ['authorization_code', 'refresh_token']) */
+      grant_types_supported: z.array(z.string()).optional(),
+      /** Supported token endpoint authentication methods (defaults to ['client_secret_basic', 'client_secret_post']) */
+      token_endpoint_auth_methods_supported: z.array(z.string()).optional(),
+      /** Supported response types (defaults to ['code']) */
+      response_types_supported: z.array(z.string()).optional(),
+      /** Supported code challenge methods (defaults to ['S256', 'plain']) */
+      code_challenge_methods_supported: z.array(z.string()).optional(),
+      /** Skip code challenge validation and force S256 (useful for providers like AWS Cognito that support S256 but don't advertise it) */
+      skip_code_challenge_check: z.boolean().optional(),
+      /** OAuth revocation endpoint (optional - can be auto-discovered) */
+      revocation_endpoint: z.string().url().optional(),
+      /** OAuth revocation endpoint authentication methods supported (optional - can be auto-discovered) */
+      revocation_endpoint_auth_methods_supported: z.array(z.string()).optional(),
     })
     .optional(),
+  /** Custom headers to send with OAuth requests (registration, discovery, token exchange, etc.) */
+  oauth_headers: z.record(z.string(), z.string()).optional(),
   customUserVars: z
     .record(
       z.string(),
@@ -126,7 +153,7 @@ export const SSEOptionsSchema = BaseOptionsSchema.extend({
 });
 
 export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
-  type: z.literal('streamable-http'),
+  type: z.union([z.literal('streamable-http'), z.literal('http')]),
   headers: z.record(z.string(), z.string()).optional(),
   url: z
     .string()
@@ -153,130 +180,3 @@ export const MCPOptionsSchema = z.union([
 export const MCPServersSchema = z.record(z.string(), MCPOptionsSchema);
 
 export type MCPOptions = z.infer<typeof MCPOptionsSchema>;
-
-/**
- * List of allowed user fields that can be used in MCP environment variables.
- * These are non-sensitive string/boolean fields from the IUser interface.
- */
-const ALLOWED_USER_FIELDS = [
-  'name',
-  'username',
-  'email',
-  'provider',
-  'role',
-  'googleId',
-  'facebookId',
-  'openidId',
-  'samlId',
-  'ldapId',
-  'githubId',
-  'discordId',
-  'appleId',
-  'emailVerified',
-  'twoFactorEnabled',
-  'termsAccepted',
-] as const;
-
-/**
- * Processes a string value to replace user field placeholders
- * @param value - The string value to process
- * @param user - The user object
- * @returns The processed string with placeholders replaced
- */
-function processUserPlaceholders(value: string, user?: TUser): string {
-  if (!user || typeof value !== 'string') {
-    return value;
-  }
-
-  for (const field of ALLOWED_USER_FIELDS) {
-    const placeholder = `{{LIBRECHAT_USER_${field.toUpperCase()}}}`;
-    if (value.includes(placeholder)) {
-      const fieldValue = user[field as keyof TUser];
-      const replacementValue = fieldValue != null ? String(fieldValue) : '';
-      value = value.replace(new RegExp(placeholder, 'g'), replacementValue);
-    }
-  }
-
-  return value;
-}
-
-function processSingleValue({
-  originalValue,
-  customUserVars,
-  user,
-}: {
-  originalValue: string;
-  customUserVars?: Record<string, string>;
-  user?: TUser;
-}): string {
-  let value = originalValue;
-
-  // 1. Replace custom user variables
-  if (customUserVars) {
-    for (const [varName, varVal] of Object.entries(customUserVars)) {
-      /** Escaped varName for use in regex to avoid issues with special characters */
-      const escapedVarName = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const placeholderRegex = new RegExp(`\\{\\{${escapedVarName}\\}\\}`, 'g');
-      value = value.replace(placeholderRegex, varVal);
-    }
-  }
-
-  // 2.A. Special handling for LIBRECHAT_USER_ID placeholder
-  // This ensures {{LIBRECHAT_USER_ID}} is replaced only if user.id is available.
-  // If user.id is null/undefined, the placeholder remains
-  if (user && user.id != null && value.includes('{{LIBRECHAT_USER_ID}}')) {
-    value = value.replace(/\{\{LIBRECHAT_USER_ID\}\}/g, String(user.id));
-  }
-
-  // 2.B. Replace other standard user field placeholders (e.g., {{LIBRECHAT_USER_EMAIL}})
-  value = processUserPlaceholders(value, user);
-
-  // 3. Replace system environment variables
-  value = extractEnvVariable(value);
-
-  return value;
-}
-
-/**
- * Recursively processes an object to replace environment variables in string values
- * @param obj - The object to process
- * @param user - The user object containing all user fields
- * @param customUserVars - vars that user set in settings
- * @returns - The processed object with environment variables replaced
- */
-export function processMCPEnv(
-  obj: Readonly<MCPOptions>,
-  user?: TUser,
-  customUserVars?: Record<string, string>,
-): MCPOptions {
-  if (obj === null || obj === undefined) {
-    return obj;
-  }
-
-  const newObj: MCPOptions = structuredClone(obj);
-
-  if ('env' in newObj && newObj.env) {
-    const processedEnv: Record<string, string> = {};
-    for (const [key, originalValue] of Object.entries(newObj.env)) {
-      processedEnv[key] = processSingleValue({ originalValue, customUserVars, user });
-    }
-    newObj.env = processedEnv;
-  }
-
-  // Process headers if they exist (for WebSocket, SSE, StreamableHTTP types)
-  // Note: `env` and `headers` are on different branches of the MCPOptions union type.
-  if ('headers' in newObj && newObj.headers) {
-    const processedHeaders: Record<string, string> = {};
-    for (const [key, originalValue] of Object.entries(newObj.headers)) {
-      processedHeaders[key] = processSingleValue({ originalValue, customUserVars, user });
-    }
-    newObj.headers = processedHeaders;
-  }
-
-  // Process URL if it exists (for WebSocket, SSE, StreamableHTTP types)
-  if ('url' in newObj && newObj.url) {
-    newObj.url = processSingleValue({ originalValue: newObj.url, customUserVars, user });
-  }
-
-  return newObj;
-}

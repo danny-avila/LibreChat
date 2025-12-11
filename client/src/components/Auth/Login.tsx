@@ -1,16 +1,18 @@
-import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { useAuthContext } from '~/hooks/AuthContext';
+import { ErrorTypes, registerPage } from 'librechat-data-provider';
+import { OpenIDIcon, useToastContext } from '@librechat/client';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
-import { OpenIDIcon } from '~/components';
+import { useAuthContext } from '~/hooks/AuthContext';
 import { getLoginError } from '~/utils';
 import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
 
 function Login() {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const { error, setError, login } = useAuthContext();
   const { startupConfig } = useOutletContext<TLoginLayoutContext>();
 
@@ -20,6 +22,19 @@ function Login() {
 
   // Persist the disable flag locally so that once detected, auto-redirect stays disabled.
   const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
+
+  useEffect(() => {
+    const oauthError = searchParams?.get('error');
+    if (oauthError && oauthError === ErrorTypes.AUTH_FAILED) {
+      showToast({
+        message: localize('com_auth_error_oauth_failed'),
+        status: 'error',
+      });
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('error');
+      setSearchParams(newParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams, showToast, localize]);
 
   // Once the disable flag is detected, update local state and remove the parameter from the URL.
   useEffect(() => {
@@ -89,7 +104,7 @@ function Login() {
           {' '}
           {localize('com_auth_no_account')}{' '}
           <a
-            href="/register"
+            href={registerPage()}
             className="inline-flex p-1 text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
           >
             {localize('com_auth_sign_up')}

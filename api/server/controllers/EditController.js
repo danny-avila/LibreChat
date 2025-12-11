@@ -1,3 +1,5 @@
+const { sendEvent } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { getResponseSender } = require('librechat-data-provider');
 const {
   handleAbortError,
@@ -10,9 +12,8 @@ const {
   clientRegistry,
   requestDataMap,
 } = require('~/server/cleanup');
-const { sendMessage, createOnProgress } = require('~/server/utils');
+const { createOnProgress } = require('~/server/utils');
 const { saveMessage } = require('~/models');
-const { logger } = require('~/config');
 
 const EditController = async (req, res, next, initializeClient) => {
   let {
@@ -84,7 +85,7 @@ const EditController = async (req, res, next, initializeClient) => {
     }
 
     if (abortKey) {
-      logger.debug('[AskController] Cleaning up abort controller');
+      logger.debug('[EditController] Cleaning up abort controller');
       cleanupAbortController(abortKey);
       abortKey = null;
     }
@@ -198,7 +199,7 @@ const EditController = async (req, res, next, initializeClient) => {
       const finalUserMessage = reqDataContext.userMessage;
       const finalResponseMessage = { ...response };
 
-      sendMessage(res, {
+      sendEvent(res, {
         final: true,
         conversation,
         title: conversation.title,

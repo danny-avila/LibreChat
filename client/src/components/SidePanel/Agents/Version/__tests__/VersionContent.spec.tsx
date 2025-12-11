@@ -32,7 +32,7 @@ jest.mock('~/hooks', () => ({
   }),
 }));
 
-jest.mock('~/components/svg', () => ({
+jest.mock('@librechat/client', () => ({
   Spinner: () => <div data-testid="spinner" />,
 }));
 

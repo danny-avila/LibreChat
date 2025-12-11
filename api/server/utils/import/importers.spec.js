@@ -99,6 +99,404 @@ describe('importChatGptConvo', () => {
 
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });
+
+  it('should handle system messages without breaking parent-child relationships', async () => {
+    /**
+     * Test data that reproduces message graph "breaking" when it encounters a system message
+     */
+    const testData = [
+      {
+        title: 'System Message Parent Test',
+        create_time: 1714585031.148505,
+        update_time: 1714585060.879308,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['user-msg-1'],
+          },
+          'user-msg-1': {
+            id: 'user-msg-1',
+            message: {
+              id: 'user-msg-1',
+              author: { role: 'user' },
+              create_time: 1714585031.150442,
+              content: { content_type: 'text', parts: ['First user message'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'root-node',
+            children: ['assistant-msg-1'],
+          },
+          'assistant-msg-1': {
+            id: 'assistant-msg-1',
+            message: {
+              id: 'assistant-msg-1',
+              author: { role: 'assistant' },
+              create_time: 1714585032.150442,
+              content: { content_type: 'text', parts: ['First assistant response'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'user-msg-1',
+            children: ['system-msg'],
+          },
+          'system-msg': {
+            id: 'system-msg',
+            message: {
+              id: 'system-msg',
+              author: { role: 'system' },
+              create_time: 1714585033.150442,
+              content: { content_type: 'text', parts: ['System message in middle'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'assistant-msg-1',
+            children: ['user-msg-2'],
+          },
+          'user-msg-2': {
+            id: 'user-msg-2',
+            message: {
+              id: 'user-msg-2',
+              author: { role: 'user' },
+              create_time: 1714585034.150442,
+              content: { content_type: 'text', parts: ['Second user message'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'system-msg',
+            children: ['assistant-msg-2'],
+          },
+          'assistant-msg-2': {
+            id: 'assistant-msg-2',
+            message: {
+              id: 'assistant-msg-2',
+              author: { role: 'assistant' },
+              create_time: 1714585035.150442,
+              content: { content_type: 'text', parts: ['Second assistant response'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'user-msg-2',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    /** 2 user messages + 2 assistant messages (system message should be skipped) */
+    const expectedMessages = 4;
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(expectedMessages);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    const messageMap = new Map();
+    savedMessages.forEach((msg) => {
+      messageMap.set(msg.text, msg);
+    });
+
+    const firstUser = messageMap.get('First user message');
+    const firstAssistant = messageMap.get('First assistant response');
+    const secondUser = messageMap.get('Second user message');
+    const secondAssistant = messageMap.get('Second assistant response');
+
+    expect(firstUser).toBeDefined();
+    expect(firstAssistant).toBeDefined();
+    expect(secondUser).toBeDefined();
+    expect(secondAssistant).toBeDefined();
+    expect(firstUser.parentMessageId).toBe(Constants.NO_PARENT);
+    expect(firstAssistant.parentMessageId).toBe(firstUser.messageId);
+
+    // This is the key test: second user message should have first assistant as parent
+    // (not NO_PARENT which would indicate the system message broke the chain)
+    expect(secondUser.parentMessageId).toBe(firstAssistant.messageId);
+    expect(secondAssistant.parentMessageId).toBe(secondUser.messageId);
+  });
+
+  it('should maintain correct sender for user messages regardless of GPT-4 model', async () => {
+    /**
+     * Test data with GPT-4 model to ensure user messages keep 'user' sender
+     */
+    const testData = [
+      {
+        title: 'GPT-4 Sender Test',
+        create_time: 1714585031.148505,
+        update_time: 1714585060.879308,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['user-msg-1'],
+          },
+          'user-msg-1': {
+            id: 'user-msg-1',
+            message: {
+              id: 'user-msg-1',
+              author: { role: 'user' },
+              create_time: 1714585031.150442,
+              content: { content_type: 'text', parts: ['User message with GPT-4'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'root-node',
+            children: ['assistant-msg-1'],
+          },
+          'assistant-msg-1': {
+            id: 'assistant-msg-1',
+            message: {
+              id: 'assistant-msg-1',
+              author: { role: 'assistant' },
+              create_time: 1714585032.150442,
+              content: { content_type: 'text', parts: ['Assistant response with GPT-4'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'user-msg-1',
+            children: ['user-msg-2'],
+          },
+          'user-msg-2': {
+            id: 'user-msg-2',
+            message: {
+              id: 'user-msg-2',
+              author: { role: 'user' },
+              create_time: 1714585033.150442,
+              content: { content_type: 'text', parts: ['Another user message with GPT-4o-mini'] },
+              metadata: { model_slug: 'gpt-4o-mini' },
+            },
+            parent: 'assistant-msg-1',
+            children: ['assistant-msg-2'],
+          },
+          'assistant-msg-2': {
+            id: 'assistant-msg-2',
+            message: {
+              id: 'assistant-msg-2',
+              author: { role: 'assistant' },
+              create_time: 1714585034.150442,
+              content: { content_type: 'text', parts: ['Assistant response with GPT-3.5'] },
+              metadata: { model_slug: 'gpt-3.5-turbo' },
+            },
+            parent: 'user-msg-2',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    const userMsg1 = savedMessages.find((msg) => msg.text === 'User message with GPT-4');
+    const assistantMsg1 = savedMessages.find((msg) => msg.text === 'Assistant response with GPT-4');
+    const userMsg2 = savedMessages.find(
+      (msg) => msg.text === 'Another user message with GPT-4o-mini',
+    );
+    const assistantMsg2 = savedMessages.find(
+      (msg) => msg.text === 'Assistant response with GPT-3.5',
+    );
+
+    expect(userMsg1.sender).toBe('user');
+    expect(userMsg1.isCreatedByUser).toBe(true);
+    expect(userMsg1.model).toBe('gpt-4');
+
+    expect(userMsg2.sender).toBe('user');
+    expect(userMsg2.isCreatedByUser).toBe(true);
+    expect(userMsg2.model).toBe('gpt-4o-mini');
+
+    expect(assistantMsg1.sender).toBe('GPT-4');
+    expect(assistantMsg1.isCreatedByUser).toBe(false);
+    expect(assistantMsg1.model).toBe('gpt-4');
+
+    expect(assistantMsg2.sender).toBe('GPT-3.5-turbo');
+    expect(assistantMsg2.isCreatedByUser).toBe(false);
+    expect(assistantMsg2.model).toBe('gpt-3.5-turbo');
+  });
+
+  it('should correctly extract and format model names from various model slugs', async () => {
+    /**
+     * Test data with various model slugs to test dynamic model identifier extraction
+     */
+    const testData = [
+      {
+        title: 'Dynamic Model Identifier Test',
+        create_time: 1714585031.148505,
+        update_time: 1714585060.879308,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['msg-1'],
+          },
+          'msg-1': {
+            id: 'msg-1',
+            message: {
+              id: 'msg-1',
+              author: { role: 'user' },
+              create_time: 1714585031.150442,
+              content: { content_type: 'text', parts: ['Test message'] },
+              metadata: {},
+            },
+            parent: 'root-node',
+            children: ['msg-2', 'msg-3', 'msg-4', 'msg-5', 'msg-6', 'msg-7', 'msg-8', 'msg-9'],
+          },
+          'msg-2': {
+            id: 'msg-2',
+            message: {
+              id: 'msg-2',
+              author: { role: 'assistant' },
+              create_time: 1714585032.150442,
+              content: { content_type: 'text', parts: ['GPT-4 response'] },
+              metadata: { model_slug: 'gpt-4' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-3': {
+            id: 'msg-3',
+            message: {
+              id: 'msg-3',
+              author: { role: 'assistant' },
+              create_time: 1714585033.150442,
+              content: { content_type: 'text', parts: ['GPT-4o response'] },
+              metadata: { model_slug: 'gpt-4o' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-4': {
+            id: 'msg-4',
+            message: {
+              id: 'msg-4',
+              author: { role: 'assistant' },
+              create_time: 1714585034.150442,
+              content: { content_type: 'text', parts: ['GPT-4o-mini response'] },
+              metadata: { model_slug: 'gpt-4o-mini' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-5': {
+            id: 'msg-5',
+            message: {
+              id: 'msg-5',
+              author: { role: 'assistant' },
+              create_time: 1714585035.150442,
+              content: { content_type: 'text', parts: ['GPT-3.5-turbo response'] },
+              metadata: { model_slug: 'gpt-3.5-turbo' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-6': {
+            id: 'msg-6',
+            message: {
+              id: 'msg-6',
+              author: { role: 'assistant' },
+              create_time: 1714585036.150442,
+              content: { content_type: 'text', parts: ['GPT-4-turbo response'] },
+              metadata: { model_slug: 'gpt-4-turbo' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-7': {
+            id: 'msg-7',
+            message: {
+              id: 'msg-7',
+              author: { role: 'assistant' },
+              create_time: 1714585037.150442,
+              content: { content_type: 'text', parts: ['GPT-4-1106-preview response'] },
+              metadata: { model_slug: 'gpt-4-1106-preview' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-8': {
+            id: 'msg-8',
+            message: {
+              id: 'msg-8',
+              author: { role: 'assistant' },
+              create_time: 1714585038.150442,
+              content: { content_type: 'text', parts: ['Claude response'] },
+              metadata: { model_slug: 'claude-3-opus' },
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+          'msg-9': {
+            id: 'msg-9',
+            message: {
+              id: 'msg-9',
+              author: { role: 'assistant' },
+              create_time: 1714585039.150442,
+              content: { content_type: 'text', parts: ['No model slug response'] },
+              metadata: {},
+            },
+            parent: 'msg-1',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    // Test various GPT model slug formats
+    const gpt4 = savedMessages.find((msg) => msg.text === 'GPT-4 response');
+    expect(gpt4.sender).toBe('GPT-4');
+    expect(gpt4.model).toBe('gpt-4');
+
+    const gpt4o = savedMessages.find((msg) => msg.text === 'GPT-4o response');
+    expect(gpt4o.sender).toBe('GPT-4o');
+    expect(gpt4o.model).toBe('gpt-4o');
+
+    const gpt4oMini = savedMessages.find((msg) => msg.text === 'GPT-4o-mini response');
+    expect(gpt4oMini.sender).toBe('GPT-4o-mini');
+    expect(gpt4oMini.model).toBe('gpt-4o-mini');
+
+    const gpt35Turbo = savedMessages.find((msg) => msg.text === 'GPT-3.5-turbo response');
+    expect(gpt35Turbo.sender).toBe('GPT-3.5-turbo');
+    expect(gpt35Turbo.model).toBe('gpt-3.5-turbo');
+
+    const gpt4Turbo = savedMessages.find((msg) => msg.text === 'GPT-4-turbo response');
+    expect(gpt4Turbo.sender).toBe('GPT-4-turbo');
+    expect(gpt4Turbo.model).toBe('gpt-4-turbo');
+
+    const gpt4Preview = savedMessages.find((msg) => msg.text === 'GPT-4-1106-preview response');
+    expect(gpt4Preview.sender).toBe('GPT-4-1106-preview');
+    expect(gpt4Preview.model).toBe('gpt-4-1106-preview');
+
+    // Test non-GPT model (should use the model slug as sender)
+    const claude = savedMessages.find((msg) => msg.text === 'Claude response');
+    expect(claude.sender).toBe('claude-3-opus');
+    expect(claude.model).toBe('claude-3-opus');
+
+    // Test missing model slug (should default to openAISettings.model.default)
+    const noModel = savedMessages.find((msg) => msg.text === 'No model slug response');
+    // When no model slug is provided, it defaults to gpt-4o-mini which gets formatted to GPT-4o-mini
+    expect(noModel.sender).toBe('GPT-4o-mini');
+    expect(noModel.model).toBe(openAISettings.model.default);
+
+    // Verify user message is unaffected
+    const userMsg = savedMessages.find((msg) => msg.text === 'Test message');
+    expect(userMsg.sender).toBe('user');
+    expect(userMsg.isCreatedByUser).toBe(true);
+  });
 });
 
 describe('importLibreChatConvo', () => {
@@ -175,36 +573,60 @@ describe('importLibreChatConvo', () => {
     jest.spyOn(importBatchBuilder, 'saveMessage');
     jest.spyOn(importBatchBuilder, 'saveBatch');
 
-    // When
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    // Create a map to track original message IDs to new UUIDs
-    const idToUUIDMap = new Map();
-    importBatchBuilder.saveMessage.mock.calls.forEach((call) => {
-      const message = call[0];
-      idToUUIDMap.set(message.originalMessageId, message.messageId);
+    // Get the imported messages
+    const messages = importBatchBuilder.messages;
+    expect(messages.length).toBeGreaterThan(0);
+
+    // Build maps for verification
+    const textToMessageMap = new Map();
+    const messageIdToMessage = new Map();
+    messages.forEach((msg) => {
+      if (msg.text) {
+        // For recursive imports, text might be very long, so just use the first 100 chars as key
+        const textKey = msg.text.substring(0, 100);
+        textToMessageMap.set(textKey, msg);
+      }
+      messageIdToMessage.set(msg.messageId, msg);
     });
 
-    const checkChildren = (children, parentId) => {
-      children.forEach((child) => {
-        const childUUID = idToUUIDMap.get(child.messageId);
-        const expectedParentId = idToUUIDMap.get(parentId) ?? null;
-        const messageCall = importBatchBuilder.saveMessage.mock.calls.find(
-          (call) => call[0].messageId === childUUID,
-        );
-
-        const actualParentId = messageCall[0].parentMessageId;
-        expect(actualParentId).toBe(expectedParentId);
-
-        if (child.children && child.children.length > 0) {
-          checkChildren(child.children, child.messageId);
+    // Count expected messages from the tree
+    const countMessagesInTree = (nodes) => {
+      let count = 0;
+      nodes.forEach((node) => {
+        if (node.text || node.content) {
+          count++;
+        }
+        if (node.children && node.children.length > 0) {
+          count += countMessagesInTree(node.children);
         }
       });
+      return count;
     };
 
-    // Start hierarchy validation from root messages
-    checkChildren(jsonData.messages, null);
+    const expectedMessageCount = countMessagesInTree(jsonData.messages);
+    expect(messages.length).toBe(expectedMessageCount);
+
+    // Verify all messages have valid parent relationships
+    messages.forEach((msg) => {
+      if (msg.parentMessageId !== Constants.NO_PARENT) {
+        const parent = messageIdToMessage.get(msg.parentMessageId);
+        expect(parent).toBeDefined();
+
+        // Verify timestamp ordering
+        if (msg.createdAt && parent.createdAt) {
+          expect(new Date(msg.createdAt).getTime()).toBeGreaterThanOrEqual(
+            new Date(parent.createdAt).getTime(),
+          );
+        }
+      }
+    });
+
+    // Verify at least one root message exists
+    const rootMessages = messages.filter((msg) => msg.parentMessageId === Constants.NO_PARENT);
+    expect(rootMessages.length).toBeGreaterThan(0);
 
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });

@@ -1,6 +1,6 @@
 // const OpenAI = require('openai');
-const { HttpsProxyAgent } = require('https-proxy-agent');
-const { ErrorTypes } = require('librechat-data-provider');
+const { ProxyAgent } = require('undici');
+const { ErrorTypes, EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey, getUserKeyExpiry, getUserKeyValues } = require('~/server/services/UserService');
 const initializeClient = require('./initialize');
 // const { OpenAIClient } = require('~/app');
@@ -11,6 +11,8 @@ jest.mock('~/server/services/UserService', () => ({
   getUserKeyValues: jest.fn(),
   checkUserKeyExpiry: jest.requireActual('~/server/services/UserService').checkUserKeyExpiry,
 }));
+
+// Config is now passed via req.config, not getAppConfig
 
 const today = new Date();
 const tenDaysFromToday = new Date(today.setDate(today.getDate() + 10));
@@ -41,7 +43,11 @@ describe('initializeClient', () => {
       isUserProvided: jest.fn().mockReturnValueOnce(false),
     }));
 
-    const req = { user: { id: 'user123' }, app };
+    const req = {
+      user: { id: 'user123' },
+      app,
+      config: { endpoints: { [EModelEndpoint.azureOpenAI]: {} } },
+    };
     const res = {};
 
     const { openai, openAIApiKey } = await initializeClient({ req, res });
@@ -57,7 +63,11 @@ describe('initializeClient', () => {
     getUserKeyValues.mockResolvedValue({ apiKey: 'user-api-key', baseURL: 'https://user.api.url' });
     getUserKeyExpiry.mockResolvedValue(isoString);
 
-    const req = { user: { id: 'user123' }, app };
+    const req = {
+      user: { id: 'user123' },
+      app,
+      config: { endpoints: { [EModelEndpoint.azureOpenAI]: {} } },
+    };
     const res = {};
 
     const { openai, openAIApiKey } = await initializeClient({ req, res });
@@ -74,7 +84,7 @@ describe('initializeClient', () => {
       let userValues = getUserKey();
       try {
         userValues = JSON.parse(userValues);
-      } catch (e) {
+      } catch {
         throw new Error(
           JSON.stringify({
             type: ErrorTypes.INVALID_USER_KEY,
@@ -84,7 +94,10 @@ describe('initializeClient', () => {
       return userValues;
     });
 
-    const req = { user: { id: 'user123' } };
+    const req = {
+      user: { id: 'user123' },
+      config: { endpoints: { [EModelEndpoint.azureOpenAI]: {} } },
+    };
     const res = {};
 
     await expect(initializeClient({ req, res })).rejects.toThrow(/invalid_user_key/);
@@ -93,7 +106,11 @@ describe('initializeClient', () => {
   test('throws error if API key is not provided', async () => {
     delete process.env.AZURE_ASSISTANTS_API_KEY; // Simulate missing API key
 
-    const req = { user: { id: 'user123' }, app };
+    const req = {
+      user: { id: 'user123' },
+      app,
+      config: { endpoints: { [EModelEndpoint.azureOpenAI]: {} } },
+    };
     const res = {};
 
     await expect(initializeClient({ req, res })).rejects.toThrow(/Assistants API key not/);
@@ -103,10 +120,15 @@ describe('initializeClient', () => {
     process.env.AZURE_ASSISTANTS_API_KEY = 'test-key';
     process.env.PROXY = 'http://proxy.server';
 
-    const req = { user: { id: 'user123' }, app };
+    const req = {
+      user: { id: 'user123' },
+      app,
+      config: { endpoints: { [EModelEndpoint.azureOpenAI]: {} } },
+    };
     const res = {};
 
     const { openai } = await initializeClient({ req, res });
-    expect(openai.httpAgent).toBeInstanceOf(HttpsProxyAgent);
+    expect(openai.fetchOptions).toBeDefined();
+    expect(openai.fetchOptions.dispatcher).toBeInstanceOf(ProxyAgent);
   });
 });

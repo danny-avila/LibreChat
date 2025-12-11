@@ -1,12 +1,18 @@
 import debounce from 'lodash/debounce';
 import React, { createContext, useContext, useState, useMemo } from 'react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
-import { useAgentsMapContext, useAssistantsMapContext, useChatContext } from '~/Providers';
-import { useEndpoints, useSelectorEffects, useKeyDialog } from '~/hooks';
+import {
+  useAgentDefaultPermissionLevel,
+  useSelectorEffects,
+  useKeyDialog,
+  useEndpoints,
+} from '~/hooks';
+import { useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
+import { useGetEndpointsQuery, useListAgentsQuery } from '~/data-provider';
+import { useModelSelectorChatContext } from './ModelSelectorChatContext';
 import useSelectMention from '~/hooks/Input/useSelectMention';
-import { useGetEndpointsQuery } from '~/data-provider';
 import { filterItems } from './utils';
 
 type ModelSelectorContextType = {
@@ -51,17 +57,46 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const agentsMap = useAgentsMapContext();
   const assistantsMap = useAssistantsMapContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const { conversation, newConversation } = useChatContext();
-  const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
+  const { endpoint, model, spec, agent_id, assistant_id, conversation, newConversation } =
+    useModelSelectorChatContext();
+  const modelSpecs = useMemo(() => {
+    const specs = startupConfig?.modelSpecs?.list ?? [];
+    if (!agentsMap) {
+      return specs;
+    }
+
+    /**
+     * Filter modelSpecs to only include agents the user has access to.
+     * Use agentsMap which already contains permission-filtered agents (consistent with other components).
+     */
+    return specs.filter((spec) => {
+      if (spec.preset?.endpoint === EModelEndpoint.agents && spec.preset?.agent_id) {
+        return spec.preset.agent_id in agentsMap;
+      }
+      /** Keep non-agent modelSpecs */
+      return true;
+    });
+  }, [startupConfig, agentsMap]);
+
+  const permissionLevel = useAgentDefaultPermissionLevel();
+  const { data: agents = null } = useListAgentsQuery(
+    { requiredPermission: permissionLevel },
+    {
+      select: (data) => data?.data,
+    },
+  );
+
   const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
-    agentsMap,
+    agents,
     assistantsMap,
     startupConfig,
     endpointsConfig,
   });
+
   const { onSelectEndpoint, onSelectSpec } = useSelectMention({
     // presets,
     modelSpecs,
+    conversation,
     assistantsMap,
     endpointsConfig,
     newConversation,
@@ -70,13 +105,21 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
 
   // State
   const [selectedValues, setSelectedValues] = useState<SelectedValues>({
-    endpoint: conversation?.endpoint || '',
-    model: conversation?.model || '',
-    modelSpec: conversation?.spec || '',
+    endpoint: endpoint || '',
+    model: model || '',
+    modelSpec: spec || '',
   });
   useSelectorEffects({
     agentsMap,
-    conversation,
+    conversation: endpoint
+      ? ({
+          endpoint: endpoint ?? null,
+          model: model ?? null,
+          spec: spec ?? null,
+          agent_id: agent_id ?? null,
+          assistant_id: assistant_id ?? null,
+        } as any)
+      : null,
     assistantsMap,
     setSelectedValues,
   });
@@ -86,7 +129,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
 
   const keyProps = useKeyDialog();
 
-  // Memoized search results
+  /** Memoized search results */
   const searchResults = useMemo(() => {
     if (!searchValue) {
       return null;
@@ -95,7 +138,6 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     return filterItems(allItems, searchValue, agentsMap, assistantsMap || {});
   }, [searchValue, modelSpecs, mappedEndpoints, agentsMap, assistantsMap]);
 
-  // Functions
   const setDebouncedSearchValue = useMemo(
     () =>
       debounce((value: string) => {

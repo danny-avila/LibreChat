@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
+import { Switch, useToastContext } from '@librechat/client';
 import { useGetUserQuery, useUpdateMemoryPreferencesMutation } from '~/data-provider';
-import { useToastContext } from '~/Providers';
-import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 interface PersonalizationProps {
@@ -66,10 +65,13 @@ export default function Personalization({
 
           <div className="flex items-center justify-between">
             <div>
-              <div className="flex items-center gap-2">
+              <div id="reference-saved-memories-label" className="flex items-center gap-2">
                 {localize('com_ui_reference_saved_memories')}
               </div>
-              <div className="mt-1 text-xs text-text-secondary">
+              <div
+                id="reference-saved-memories-description"
+                className="mt-1 text-xs text-text-secondary"
+              >
                 {localize('com_ui_reference_saved_memories_description')}
               </div>
             </div>
@@ -77,7 +79,8 @@ export default function Personalization({
               checked={referenceSavedMemories}
               onCheckedChange={handleMemoryToggle}
               disabled={updateMemoryPreferencesMutation.isLoading}
-              aria-label={localize('com_ui_reference_saved_memories')}
+              aria-labelledby="reference-saved-memories-label"
+              aria-describedby="reference-saved-memories-description"
             />
           </div>
         </>

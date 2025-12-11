@@ -1,18 +1,16 @@
 const path = require('path');
-const {
-  CacheKeys,
-  configSchema,
-  EImageOutputType,
-  validateSettingDefinitions,
-  agentParamSettings,
-  paramSettings,
-} = require('librechat-data-provider');
-const getLogStores = require('~/cache/getLogStores');
-const loadYaml = require('~/utils/loadYaml');
-const { logger } = require('~/config');
 const axios = require('axios');
 const yaml = require('js-yaml');
 const keyBy = require('lodash/keyBy');
+const { loadYaml } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
+const {
+  configSchema,
+  paramSettings,
+  EImageOutputType,
+  agentParamSettings,
+  validateSettingDefinitions,
+} = require('librechat-data-provider');
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const defaultConfigPath = path.resolve(projectRoot, 'librechat.yaml');
@@ -25,7 +23,7 @@ let i = 0;
  * @function loadCustomConfig
  * @returns {Promise<TCustomConfig | null>} A promise that resolves to null or the custom config object.
  * */
-async function loadCustomConfig() {
+async function loadCustomConfig(printConfig = true) {
   // Use CONFIG_PATH if set, otherwise fallback to defaultConfigPath
   const configPath = process.env.CONFIG_PATH || defaultConfigPath;
 
@@ -108,19 +106,16 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
 
     return null;
   } else {
-    logger.info('Custom config file loaded:');
-    logger.info(JSON.stringify(customConfig, null, 2));
-    logger.debug('Custom config:', customConfig);
+    if (printConfig) {
+      logger.info('Custom config file loaded:');
+      logger.info(JSON.stringify(customConfig, null, 2));
+      logger.debug('Custom config:', customConfig);
+    }
   }
 
   (customConfig.endpoints?.custom ?? [])
     .filter((endpoint) => endpoint.customParams)
     .forEach((endpoint) => parseCustomParams(endpoint.name, endpoint.customParams));
-
-  if (customConfig.cache) {
-    const cache = getLogStores(CacheKeys.CONFIG_STORE);
-    await cache.set(CacheKeys.CUSTOM_CONFIG, customConfig);
-  }
 
   if (result.data.modelSpecs) {
     customConfig.modelSpecs = result.data.modelSpecs;

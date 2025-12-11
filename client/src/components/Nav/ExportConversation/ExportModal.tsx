@@ -1,8 +1,15 @@
 import filenamify from 'filenamify';
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import {
+  OGDialogTemplate,
+  OGDialog,
+  Button,
+  Input,
+  Label,
+  Checkbox,
+  Dropdown,
+} from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
-import { OGDialog, Button, Input, Label, Checkbox, Dropdown } from '~/components/ui';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
 import { useLocalize, useExportConversation } from '~/hooks';
 
 const TYPE_OPTIONS = [
@@ -65,7 +72,7 @@ export default function ExportModal({
 
   const { exportConversation } = useExportConversation({
     conversation,
-    filename,
+    filename: filenamify(filename),
     type,
     includeOptions,
     exportBranches,
@@ -88,7 +95,7 @@ export default function ExportModal({
                 <Input
                   id="filename"
                   value={filename}
-                  onChange={(e) => setFileName(filenamify(e.target.value || ''))}
+                  onChange={(e) => setFileName(e.target.value || '')}
                   placeholder={localize('com_nav_export_filename_placeholder')}
                 />
               </div>
@@ -117,13 +124,15 @@ export default function ExportModal({
                       disabled={!exportOptionsSupport}
                       checked={includeOptions}
                       onCheckedChange={setIncludeOptions}
+                      aria-labelledby="includeOptions-label"
                     />
                     <label
+                      id="includeOptions-label"
                       htmlFor="includeOptions"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                     >
                       {exportOptionsSupport
-                        ? localize('com_nav_enabled')
+                        ? localize('com_nav_export_include_endpoint_options')
                         : localize('com_nav_not_supported')}
                     </label>
                   </div>
@@ -139,13 +148,15 @@ export default function ExportModal({
                     disabled={!exportBranchesSupport}
                     checked={exportBranches}
                     onCheckedChange={setExportBranches}
+                    aria-labelledby="exportBranches-label"
                   />
                   <label
+                    id="exportBranches-label"
                     htmlFor="exportBranches"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                   >
                     {exportBranchesSupport
-                      ? localize('com_nav_enabled')
+                      ? localize('com_nav_export_all_message_branches')
                       : localize('com_nav_not_supported')}
                   </label>
                 </div>
@@ -156,8 +167,14 @@ export default function ExportModal({
                     {localize('com_nav_export_recursive_or_sequential')}
                   </Label>
                   <div className="flex h-[40px] w-full items-center space-x-3">
-                    <Checkbox id="recursive" checked={recursive} onCheckedChange={setRecursive} />
+                    <Checkbox
+                      id="recursive"
+                      checked={recursive}
+                      onCheckedChange={setRecursive}
+                      aria-labelledby="recursive-label"
+                    />
                     <label
+                      id="recursive-label"
                       htmlFor="recursive"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
                     >

@@ -14,6 +14,7 @@ image:
   # Overrides the image tag whose default is the chart appVersion.
   tag: latest
 
+# See https://github.com/bitnami/charts/blob/main/bitnami/postgresql/values.yaml for more details.
 postgresql:
   enabled: true
   # nameOverride: vectordb
@@ -27,7 +28,10 @@ postgresql:
     # define a secret with values for "postgres-password", "password" (user Password)  and "replication-password" or add values directly
     existingSecret: librechat-vectordb
     # postgres-password is needed to enable pgvector extension. If you enable it manually you can use "password" and user "librechat"
-    existingSecretKey: postgres-password
+    secretKeys:
+      userPasswordKey: postgres-password
+      adminPasswordKey: postgres-password
+      replicationPasswordKey: postgres-password
 
 imagePullSecrets: []
 nameOverride: ''

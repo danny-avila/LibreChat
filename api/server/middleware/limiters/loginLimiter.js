@@ -1,9 +1,8 @@
 const rateLimit = require('express-rate-limit');
-const { RedisStore } = require('rate-limit-redis');
-const { removePorts, isEnabled } = require('~/server/utils');
-const ioredisClient = require('~/cache/ioredisClient');
+const { limiterCache } = require('@librechat/api');
+const { ViolationTypes } = require('librechat-data-provider');
+const { removePorts } = require('~/server/utils');
 const { logViolation } = require('~/cache');
-const { logger } = require('~/config');
 
 const { LOGIN_WINDOW = 5, LOGIN_MAX = 7, LOGIN_VIOLATION_SCORE: score } = process.env;
 const windowMs = LOGIN_WINDOW * 60 * 1000;
@@ -12,7 +11,7 @@ const windowInMinutes = windowMs / 60000;
 const message = `Too many login attempts, please try again after ${windowInMinutes} minutes.`;
 
 const handler = async (req, res) => {
-  const type = 'logins';
+  const type = ViolationTypes.LOGINS;
   const errorMessage = {
     type,
     max,
@@ -28,16 +27,8 @@ const limiterOptions = {
   max,
   handler,
   keyGenerator: removePorts,
+  store: limiterCache('login_limiter'),
 };
-
-if (isEnabled(process.env.USE_REDIS) && ioredisClient) {
-  logger.debug('Using Redis for login rate limiter.');
-  const store = new RedisStore({
-    sendCommand: (...args) => ioredisClient.call(...args),
-    prefix: 'login_limiter:',
-  });
-  limiterOptions.store = store;
-}
 
 const loginLimiter = rateLimit(limiterOptions);
 

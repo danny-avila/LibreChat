@@ -11,6 +11,7 @@ export enum FileSources {
   execute_code = 'execute_code',
   mistral_ocr = 'mistral_ocr',
   azure_mistral_ocr = 'azure_mistral_ocr',
+  vertexai_mistral_ocr = 'vertexai_mistral_ocr',
   text = 'text',
 }
 
@@ -46,8 +47,48 @@ export type FileConfig = {
   endpoints: {
     [key: string]: EndpointFileConfig;
   };
+  fileTokenLimit?: number;
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
+  clientImageResize?: {
+    enabled?: boolean;
+    maxWidth?: number;
+    maxHeight?: number;
+    quality?: number;
+  };
+  ocr?: {
+    supportedMimeTypes?: RegExp[];
+  };
+  text?: {
+    supportedMimeTypes?: RegExp[];
+  };
+  stt?: {
+    supportedMimeTypes?: RegExp[];
+  };
+  checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
+};
+
+export type FileConfigInput = {
+  endpoints?: {
+    [key: string]: EndpointFileConfig;
+  };
+  serverFileSizeLimit?: number;
+  avatarSizeLimit?: number;
+  clientImageResize?: {
+    enabled?: boolean;
+    maxWidth?: number;
+    maxHeight?: number;
+    quality?: number;
+  };
+  ocr?: {
+    supportedMimeTypes?: string[];
+  };
+  text?: {
+    supportedMimeTypes?: string[];
+  };
+  stt?: {
+    supportedMimeTypes?: string[];
+  };
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
 };
 

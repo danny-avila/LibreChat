@@ -2,8 +2,6 @@ import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
-import type { TPlugin } from 'librechat-data-provider';
-import type { TModelSelectProps, OnInputNumberChange } from '~/common';
 import {
   Input,
   Label,
@@ -12,8 +10,9 @@ import {
   InputNumber,
   SelectDropDown,
   HoverCardTrigger,
-  MultiSelectDropDown,
-} from '~/components/ui';
+} from '@librechat/client';
+import type { TModelSelectProps, OnInputNumberChange } from '~/common';
+import type { TPlugin } from 'librechat-data-provider';
 import {
   removeFocusOutlines,
   defaultTextProps,
@@ -24,6 +23,7 @@ import {
   cn,
 } from '~/utils';
 import OptionHoverAlt from '~/components/SidePanel/Parameters/OptionHover';
+import MultiSelectDropDown from '~/components/Input/ModelSelect/MultiSelectDropDown';
 import { useLocalize, useDebouncedInput } from '~/hooks';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
@@ -165,7 +165,7 @@ export default function Settings({
               )}
               className={cn(
                 defaultTextProps,
-                'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
+                'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2',
               )}
             />
           </div>
@@ -256,6 +256,7 @@ export default function Settings({
               min={0}
               step={0.01}
               className="flex h-4 w-full"
+              aria-labelledby="temp-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={conversation.endpoint ?? ''} type="temp" side={ESide.Left} />
@@ -296,6 +297,7 @@ export default function Settings({
               min={0}
               step={0.01}
               className="flex h-4 w-full"
+              aria-labelledby="top-p-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={conversation.endpoint ?? ''} type="topp" side={ESide.Left} />
@@ -337,6 +339,7 @@ export default function Settings({
               min={-2}
               step={0.01}
               className="flex h-4 w-full"
+              aria-labelledby="freq-penalty-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={conversation.endpoint ?? ''} type="freq" side={ESide.Left} />
@@ -378,6 +381,7 @@ export default function Settings({
               min={-2}
               step={0.01}
               className="flex h-4 w-full"
+              aria-labelledby="pres-penalty-int"
             />
           </HoverCardTrigger>
           <OptionHover endpoint={conversation.endpoint ?? ''} type="pres" side={ESide.Left} />

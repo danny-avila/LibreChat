@@ -1,7 +1,14 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Label, Button, OGDialog, OGDialogTrigger, Spinner } from '~/components';
-import OGDialogTemplate from '~/components/ui/OGDialogTemplate';
-import { useOnClickOutside, useLocalize } from '~/hooks';
+import {
+  OGDialogTemplate,
+  Label,
+  Button,
+  OGDialog,
+  OGDialogTrigger,
+  Spinner,
+  useOnClickOutside,
+} from '@librechat/client';
+import { useLocalize } from '~/hooks';
 
 export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
   const localize = useLocalize();
@@ -31,14 +38,14 @@ export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
 
   return (
     <div className="flex items-center justify-between">
-      <Label className="font-light">{localize('com_nav_delete_cache_storage')}</Label>
+      <Label id="delete-cache-label">{localize('com_nav_delete_cache_storage')}</Label>
       <OGDialog open={open} onOpenChange={setOpen}>
         <OGDialogTrigger asChild>
           <Button
             variant="destructive"
-            className="flex items-center justify-center rounded-lg transition-colors duration-200"
             onClick={() => setOpen(true)}
             disabled={disabled || isCacheEmpty}
+            aria-labelledby="delete-cache-label"
           >
             {localize('com_ui_delete')}
           </Button>

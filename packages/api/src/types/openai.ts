@@ -1,39 +1,51 @@
 import { z } from 'zod';
 import { openAISchema, EModelEndpoint } from 'librechat-data-provider';
-import type { TEndpointOption, TAzureConfig, TEndpoint } from 'librechat-data-provider';
-import type { OpenAIClientOptions } from '@librechat/agents';
+import type { TEndpointOption, TAzureConfig, TEndpoint, TConfig } from 'librechat-data-provider';
+import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
+import type { OpenAIClientOptions, Providers } from '@librechat/agents';
+import type { AppConfig } from '@librechat/data-schemas';
 import type { AzureOptions } from './azure';
 
 export type OpenAIParameters = z.infer<typeof openAISchema>;
 
+export type OpenAIModelOptions = Partial<OpenAIParameters>;
+
 /**
  * Configuration options for the getLLMConfig function
  */
-export interface LLMConfigOptions {
-  modelOptions?: Partial<OpenAIParameters>;
-  reverseProxyUrl?: string;
+export interface OpenAIConfigOptions {
+  modelOptions?: OpenAIModelOptions;
+  directEndpoint?: boolean;
+  reverseProxyUrl?: string | null;
   defaultQuery?: Record<string, string | undefined>;
   headers?: Record<string, string>;
-  proxy?: string;
-  azure?: AzureOptions;
+  proxy?: string | null;
+  azure?: false | AzureOptions;
   streaming?: boolean;
   addParams?: Record<string, unknown>;
   dropParams?: string[];
+  customParams?: Partial<TConfig['customParams']>;
 }
 
 export type OpenAIConfiguration = OpenAIClientOptions['configuration'];
 
-export type ClientOptions = OpenAIClientOptions & {
+export type OAIClientOptions = OpenAIClientOptions & {
   include_reasoning?: boolean;
+  _lc_stream_delay?: number;
 };
 
 /**
  * Return type for getLLMConfig function
  */
-export interface LLMConfigResult {
-  llmConfig: ClientOptions;
-  configOptions: OpenAIConfiguration;
+export interface LLMConfigResult<T = OAIClientOptions> {
+  llmConfig: T;
+  provider?: Providers;
+  tools?: BindToolsInput[];
 }
+
+export type OpenAIConfigResult = LLMConfigResult<OAIClientOptions> & {
+  configOptions?: OpenAIConfiguration;
+};
 
 /**
  * Interface for user values retrieved from the database
@@ -82,16 +94,10 @@ export type CheckUserKeyExpiryFunction = (expiresAt: string, endpoint: string) =
  */
 export interface InitializeOpenAIOptionsParams {
   req: RequestData;
+  appConfig: AppConfig;
   overrideModel?: string;
   overrideEndpoint?: string;
   endpointOption: Partial<TEndpointOption>;
   getUserKeyValues: GetUserKeyValuesFunction;
   checkUserKeyExpiry: CheckUserKeyExpiryFunction;
-}
-
-/**
- * Extended LLM config result with stream rate handling
- */
-export interface OpenAIOptionsResult extends LLMConfigResult {
-  streamRate?: number;
 }

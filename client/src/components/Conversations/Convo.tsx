@@ -2,32 +2,26 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
+import { useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
-import { useNavigateToConvo, useMediaQuery, useLocalize } from '~/hooks';
 import { useUpdateConversationMutation } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
+import { useNavigateToConvo, useLocalize } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { ConvoOptions } from './ConvoOptions';
-import { useToastContext } from '~/Providers';
 import RenameForm from './RenameForm';
+import { cn, logger } from '~/utils';
 import ConvoLink from './ConvoLink';
-import { cn } from '~/utils';
 import store from '~/store';
 
 interface ConversationProps {
   conversation: TConversation;
   retainView: () => void;
   toggleNav: () => void;
-  isLatestConvo: boolean;
 }
 
-export default function Conversation({
-  conversation,
-  retainView,
-  toggleNav,
-  isLatestConvo,
-}: ConversationProps) {
+export default function Conversation({ conversation, retainView, toggleNav }: ConversationProps) {
   const params = useParams();
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -84,6 +78,7 @@ export default function Conversation({
       });
       setRenaming(false);
     } catch (error) {
+      logger.error('Error renaming conversation', error);
       setTitleInput(title as string);
       showToast({
         message: localize('com_ui_rename_failed'),
@@ -140,8 +135,9 @@ export default function Conversation({
         'group relative flex h-12 w-full items-center rounded-lg transition-colors duration-200 md:h-9',
         isActiveConvo ? 'bg-surface-active-alt' : 'hover:bg-surface-active-alt',
       )}
-      role="listitem"
-      tabIndex={0}
+      role="button"
+      tabIndex={renaming ? -1 : 0}
+      aria-label={`${title || localize('com_ui_untitled')} conversation`}
       onClick={(e) => {
         if (renaming) {
           return;
@@ -154,7 +150,8 @@ export default function Conversation({
         if (renaming) {
           return;
         }
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
           handleNavigation(false);
         }
       }}

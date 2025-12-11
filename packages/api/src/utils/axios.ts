@@ -9,12 +9,25 @@ import type { AxiosInstance, AxiosProxyConfig, AxiosError } from 'axios';
  * @param options.error - The Axios error object.
  * @returns The log message.
  */
-export const logAxiosError = ({ message, error }: { message: string; error: AxiosError }) => {
+export const logAxiosError = ({
+  message,
+  error,
+}: {
+  message: string;
+  error: AxiosError | Error | unknown;
+}) => {
   let logMessage = message;
   try {
-    const stack = error.stack || 'No stack trace available';
+    const stack =
+      error != null
+        ? (error as Error | AxiosError)?.stack || 'No stack trace available'
+        : 'No stack trace available';
+    const errorMessage =
+      error != null
+        ? (error as Error | AxiosError)?.message || 'No error message available'
+        : 'No error message available';
 
-    if (error.response?.status) {
+    if (axios.isAxiosError(error) && error.response && error.response?.status) {
       const { status, headers, data } = error.response;
       logMessage = `${message} The server responded with status ${status}: ${error.message}`;
       logger.error(logMessage, {
@@ -23,18 +36,18 @@ export const logAxiosError = ({ message, error }: { message: string; error: Axio
         data,
         stack,
       });
-    } else if (error.request) {
+    } else if (axios.isAxiosError(error) && error.request) {
       const { method, url } = error.config || {};
       logMessage = `${message} No response received for ${method ? method.toUpperCase() : ''} ${url || ''}: ${error.message}`;
       logger.error(logMessage, {
         requestInfo: { method, url },
         stack,
       });
-    } else if (error?.message?.includes("Cannot read properties of undefined (reading 'status')")) {
-      logMessage = `${message} It appears the request timed out or was unsuccessful: ${error.message}`;
+    } else if (errorMessage?.includes("Cannot read properties of undefined (reading 'status')")) {
+      logMessage = `${message} It appears the request timed out or was unsuccessful: ${errorMessage}`;
       logger.error(logMessage, { stack });
     } else {
-      logMessage = `${message} An error occurred while setting up the request: ${error.message}`;
+      logMessage = `${message} An error occurred while setting up the request: ${errorMessage}`;
       logger.error(logMessage, { stack });
     }
   } catch (err: unknown) {
