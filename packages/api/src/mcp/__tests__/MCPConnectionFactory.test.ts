@@ -320,7 +320,7 @@ describe('MCPConnectionFactory', () => {
   });
 
   describe('isOAuthError method', () => {
-    it('should identify OAuth errors by message content', async () => {
+    it('should identify OAuth errors by message content with 401', async () => {
       const basicOptions = {
         serverName: 'test-server',
         serverConfig: mockServerConfig,
@@ -345,6 +345,101 @@ describe('MCPConnectionFactory', () => {
 
       await expect(MCPConnectionFactory.create(basicOptions, oauthOptions)).rejects.toThrow('401');
       expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('OAuth required, stopping connection attempts'),
+      );
+    });
+
+    it('should identify OAuth errors with "Unauthorized" message (like Google MCP)', async () => {
+      // This test simulates Google MCP's behavior where the error message is
+      // "Error POSTing to endpoint: Unauthorized" without containing "401"
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const unauthorizedError = new Error('Streamable HTTP error: Error POSTing to endpoint: Unauthorized');
+
+      mockConnectionInstance.connect.mockRejectedValue(unauthorizedError);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      await expect(MCPConnectionFactory.create(basicOptions, oauthOptions)).rejects.toThrow('Unauthorized');
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('OAuth required, stopping connection attempts'),
+      );
+    });
+
+    it('should identify OAuth errors with "Non-200 status code (401)" message', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const sseError = new Error('SSE error: Non-200 status code (401)');
+
+      mockConnectionInstance.connect.mockRejectedValue(sseError);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      await expect(MCPConnectionFactory.create(basicOptions, oauthOptions)).rejects.toThrow('Non-200 status code (401)');
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('OAuth required, stopping connection attempts'),
+      );
+    });
+
+    it('should not identify non-OAuth errors as OAuth errors', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      // An error that is NOT OAuth-related (e.g., network timeout)
+      const networkError = new Error('Connection timeout after 30000ms');
+
+      mockConnectionInstance.connect
+        .mockRejectedValueOnce(networkError)
+        .mockRejectedValueOnce(networkError)
+        .mockRejectedValueOnce(networkError);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      await expect(MCPConnectionFactory.create(basicOptions, oauthOptions)).rejects.toThrow('Connection timeout');
+
+      // Should NOT log "OAuth required" for non-OAuth errors
+      expect(mockLogger.info).not.toHaveBeenCalledWith(
         expect.stringContaining('OAuth required, stopping connection attempts'),
       );
     });
