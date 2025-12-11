@@ -415,6 +415,24 @@ export class MCPConnection extends EventEmitter {
         } catch (error) {
           logger.error(`${this.getLogPrefix()} Reconnection attempt failed:`, error);
 
+          // Stop immediately if rate limited - retrying will only make it worse
+          if (this.isRateLimitError(error)) {
+            /**
+             * Rate limiting sets shouldStopReconnecting to prevent hammering the server.
+             * Silent return here (vs throw in connectClient) because we're already in
+             * error recovery mode - throwing would just add noise. The connection
+             * must be recreated to retry after rate limit lifts.
+             */
+            logger.warn(
+              `${this.getLogPrefix()} Rate limited (429), stopping reconnection attempts`,
+            );
+            logger.debug(
+              `${this.getLogPrefix()} Rate limit block is permanent for this connection instance`,
+            );
+            this.shouldStopReconnecting = true;
+            return;
+          }
+
           if (
             this.reconnectAttempts === this.MAX_RECONNECT_ATTEMPTS ||
             (this.shouldStopReconnecting as boolean)
@@ -475,6 +493,25 @@ export class MCPConnection extends EventEmitter {
         this.emit('connectionChange', 'connected');
         this.reconnectAttempts = 0;
       } catch (error) {
+        // Check if it's a rate limit error - stop immediately to avoid making it worse
+        if (this.isRateLimitError(error)) {
+          /**
+           * Rate limiting sets shouldStopReconnecting to prevent hammering the server.
+           * This is a permanent block for this connection instance - the connection
+           * must be recreated (e.g., by user re-initiating) to retry after rate limit lifts.
+           *
+           * We throw here (unlike handleReconnection which returns silently) because:
+           * - connectClient() is a public API - callers expect async errors to throw
+           * - Other errors in this catch block also throw for consistency
+           * - handleReconnection is private/internal error recovery, different context
+           */
+          logger.warn(`${this.getLogPrefix()} Rate limited (429), stopping connection attempts`);
+          this.shouldStopReconnecting = true;
+          this.connectionState = 'error';
+          this.emit('connectionChange', 'error');
+          throw error;
+        }
+
         // Check if it's an OAuth authentication error
         if (this.isOAuthError(error)) {
           logger.warn(`${this.getLogPrefix()} OAuth authentication required`);
@@ -780,6 +817,38 @@ export class MCPConnection extends EventEmitter {
       }
       // Check for authentication required
       if (message.includes('authentication required') || message.includes('unauthorized')) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Checks if an error indicates rate limiting (HTTP 429).
+   * Rate limited requests should stop reconnection attempts to avoid making the situation worse.
+   */
+  private isRateLimitError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    // Check for error code
+    if ('code' in error) {
+      const code = (error as { code?: number }).code;
+      if (code === 429) {
+        return true;
+      }
+    }
+
+    // Check message for rate limit indicators
+    if ('message' in error && typeof error.message === 'string') {
+      const message = error.message.toLowerCase();
+      if (
+        message.includes('429') ||
+        message.includes('rate limit') ||
+        message.includes('too many requests')
+      ) {
         return true;
       }
     }
