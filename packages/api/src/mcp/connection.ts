@@ -417,8 +417,17 @@ export class MCPConnection extends EventEmitter {
 
           // Stop immediately if rate limited - retrying will only make it worse
           if (this.isRateLimitError(error)) {
+            /**
+             * Rate limiting sets shouldStopReconnecting to prevent hammering the server.
+             * Silent return here (vs throw in connectClient) because we're already in
+             * error recovery mode - throwing would just add noise. The connection
+             * must be recreated to retry after rate limit lifts.
+             */
             logger.warn(
               `${this.getLogPrefix()} Rate limited (429), stopping reconnection attempts`,
+            );
+            logger.debug(
+              `${this.getLogPrefix()} Rate limit block is permanent for this connection instance`,
             );
             this.shouldStopReconnecting = true;
             return;
@@ -486,6 +495,12 @@ export class MCPConnection extends EventEmitter {
       } catch (error) {
         // Check if it's a rate limit error - stop immediately to avoid making it worse
         if (this.isRateLimitError(error)) {
+          /**
+           * Rate limiting sets shouldStopReconnecting to prevent hammering the server.
+           * This is a permanent block for this connection instance - the connection
+           * must be recreated (e.g., by user re-initiating) to retry after rate limit lifts.
+           * This is intentional: automatic retry after rate limit could cause repeated blocks.
+           */
           logger.warn(`${this.getLogPrefix()} Rate limited (429), stopping connection attempts`);
           this.shouldStopReconnecting = true;
           this.connectionState = 'error';

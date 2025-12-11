@@ -1,17 +1,28 @@
 /**
  * Tests for MCPConnection error detection methods.
- * These test the logic for detecting rate limit and OAuth errors.
+ *
+ * These tests use standalone implementations that mirror the private methods in MCPConnection.
+ * This approach was chosen because MCPConnection requires complex dependencies (Client, transport)
+ * that are difficult to mock properly. The standalone implementations are kept in sync with
+ * the actual implementation in connection.ts.
+ *
+ * Alternative approaches considered:
+ * 1. Reflection/type casting - fragile and breaks with refactoring
+ * 2. Protected methods with test subclass - changes public API for testing
+ * 3. Integration tests - tested separately in the full MCP test suite
  */
 describe('MCPConnection Error Detection', () => {
   /**
    * Standalone implementation of isRateLimitError for testing.
-   * This mirrors the private method in MCPConnection.
+   * This mirrors the private method in MCPConnection (connection.ts).
+   * Keep in sync with the actual implementation.
    */
   function isRateLimitError(error: unknown): boolean {
     if (!error || typeof error !== 'object') {
       return false;
     }
 
+    // Check for error code
     if ('code' in error) {
       const code = (error as { code?: number }).code;
       if (code === 429) {
@@ -19,8 +30,9 @@ describe('MCPConnection Error Detection', () => {
       }
     }
 
-    if ('message' in error && typeof (error as { message?: string }).message === 'string') {
-      const message = (error as { message: string }).message.toLowerCase();
+    // Check message for rate limit indicators
+    if ('message' in error && typeof error.message === 'string') {
+      const message = error.message.toLowerCase();
       if (
         message.includes('429') ||
         message.includes('rate limit') ||
@@ -35,13 +47,15 @@ describe('MCPConnection Error Detection', () => {
 
   /**
    * Standalone implementation of isOAuthError for testing.
-   * This mirrors the private method in MCPConnection.
+   * This mirrors the private method in MCPConnection (connection.ts).
+   * Keep in sync with the actual implementation.
    */
   function isOAuthError(error: unknown): boolean {
     if (!error || typeof error !== 'object') {
       return false;
     }
 
+    // Check for error code
     if ('code' in error) {
       const code = (error as { code?: number }).code;
       if (code === 401 || code === 403) {
@@ -49,14 +63,18 @@ describe('MCPConnection Error Detection', () => {
       }
     }
 
-    if ('message' in error && typeof (error as { message?: string }).message === 'string') {
-      const message = (error as { message: string }).message.toLowerCase();
+    // Check message for various auth error indicators
+    if ('message' in error && typeof error.message === 'string') {
+      const message = error.message.toLowerCase();
+      // Check for 401 status
       if (message.includes('401') || message.includes('non-200 status code (401)')) {
         return true;
       }
+      // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
       if (message.includes('invalid_token')) {
         return true;
       }
+      // Check for authentication required
       if (message.includes('authentication required') || message.includes('unauthorized')) {
         return true;
       }
