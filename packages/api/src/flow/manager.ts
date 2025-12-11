@@ -272,16 +272,28 @@ export class FlowStateManager<T = unknown> {
   ): Promise<T> {
     const flowKey = this.getFlowKey(flowId, type);
     let existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
-    if (existingState) {
-      logger.debug(`[${flowKey}] Flow already exists`);
+    const hasAccessTokenExpired =
+      existingState?.result &&
+      typeof existingState.result === 'object' &&
+      'expires_at' in existingState.result &&
+      typeof existingState.result.expires_at === 'number' &&
+      existingState.result.expires_at < Date.now();
+    if (existingState && !hasAccessTokenExpired) {
+      logger.debug(`[${flowKey}] Flow already exists with valid token`);
       return this.monitorFlow(flowKey, type, signal);
     }
 
     await new Promise((resolve) => setTimeout(resolve, 250));
 
     existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
-    if (existingState) {
-      logger.debug(`[${flowKey}] Flow exists on 2nd check`);
+    const hasAccessTokenExpiredRecheck =
+      existingState?.result &&
+      typeof existingState.result === 'object' &&
+      'expires_at' in existingState.result &&
+      typeof existingState.result.expires_at === 'number' &&
+      existingState.result.expires_at < Date.now();
+    if (existingState && !hasAccessTokenExpiredRecheck) {
+      logger.debug(`[${flowKey}] Flow exists on 2nd check with valid token`);
       return this.monitorFlow(flowKey, type, signal);
     }
 

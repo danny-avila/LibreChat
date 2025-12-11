@@ -652,7 +652,7 @@ export class MCPConnection extends EventEmitter {
         }
 
         // Check if it's an OAuth authentication error
-        if (errorCode === 401 || errorCode === 403) {
+        if (this.isOAuthError(error)) {
           logger.warn(`${this.getLogPrefix()} OAuth authentication error detected`);
           this.emit('oauthError', error);
         }
@@ -813,6 +813,10 @@ export class MCPConnection extends EventEmitter {
       }
       // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
       if (message.includes('invalid_token')) {
+        return true;
+      }
+      // Check for invalid_grant (OAuth servers return this for expired/revoked grants)
+      if (message.includes('invalid_grant')) {
         return true;
       }
       // Check for authentication required

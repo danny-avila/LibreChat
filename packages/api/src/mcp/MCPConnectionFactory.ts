@@ -167,6 +167,10 @@ export class MCPConnectionFactory {
               config?.oauth,
             );
 
+          // Delete any existing flow state to ensure we start fresh
+          // This prevents stale codeVerifier issues when re-authenticating
+          await this.flowManager!.deleteFlow(flowId, 'mcp_oauth');
+
           // Create the flow state so the OAuth callback can find it
           // We spawn this in the background without waiting for it
           this.flowManager!.createFlow(flowId, 'mcp_oauth', flowMetadata).catch(() => {
