@@ -35,7 +35,7 @@ librechat:
     DOMAIN_CLIENT: https://chat.internal.node.energy
     DOMAIN_SERVER: https://chat.internal.node.energy
 
-    ANTHROPIC_MODELS: claude-3-7-sonnet-20250219,claude-3-5-haiku-20241022,claude-sonnet-4-5-20250929,claude-haiku-4-5-20251001
+    ANTHROPIC_MODELS: claude-sonnet-4-5-20250929,claude-haiku-4-5-20251001
     OPENAI_MODELS: gpt-5,gpt-5-mini
     AZURE_USE_MODEL_AS_DEPLOYMENT_NAME: "false"
 
@@ -87,6 +87,24 @@ librechat:
                 deploymentName: gpt-5-mini-deploy
               gpt-5-nano:
                 deploymentName: gpt-5-nano-deploy
+
+    mcpServers:
+      wikipedia:
+        type: stdio
+        command: uvx
+        args:
+          - -y
+          - "wikipedia-mcp"
+        serverInstructions: "Use only public resources; do not access local files or internal networks."
+
+      duckduckgo:
+        type: stdio
+        command: uvx
+        args:
+          - -y
+          - "duckduckgo-mcp-server"
+        serverInstructions: "Use only public resources; do not access local files or internal networks."
+
 
   # name of existing Yaml configmap, key must be librechat.yaml
   existingConfigYaml: ""
