@@ -41,9 +41,9 @@ export function SortFilterHeader<TData, TValue>({
           >
             <span>{title}</span>
             {column.getIsFiltered() ? (
-              <ListFilter className="icon-sm ml-2 text-muted-foreground/70" />
+              <ListFilter className="icon-sm ml-2 text-muted-foreground/70" aria-hidden="true" />
             ) : (
-              <ListFilter className="icon-sm ml-2 opacity-30" />
+              <ListFilter className="icon-sm ml-2 opacity-30" aria-hidden="true" />
             )}
             {(() => {
               const sortState = column.getIsSorted();
@@ -95,7 +95,10 @@ export function SortFilterHeader<TData, TValue>({
                       column.setFilterValue(value);
                     }}
                   >
-                    <ListFilter className="mr-2 h-3.5 w-3.5 text-muted-foreground/70" />
+                    <ListFilter
+                      className="mr-2 h-3.5 w-3.5 text-muted-foreground/70"
+                      aria-hidden="true"
+                    />
                     {filterValue}
                   </DropdownMenuItem>
                 );
@@ -112,7 +115,7 @@ export function SortFilterHeader<TData, TValue>({
                 column.setFilterValue(undefined);
               }}
             >
-              <FilterX className="mr-2 h-3.5 w-3.5 text-muted-foreground/70" />
+              <FilterX className="mr-2 h-3.5 w-3.5 text-muted-foreground/70" aria-hidden="true" />
               {localize('com_ui_show_all')}
             </DropdownMenuItem>
           )}
