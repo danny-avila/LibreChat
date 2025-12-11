@@ -78,7 +78,8 @@ async function reinitMCPServer({
       const isOAuthError =
         err.message?.includes('OAuth') ||
         err.message?.includes('authentication') ||
-        err.message?.includes('401');
+        err.message?.includes('401') ||
+        err.message?.includes('Unauthorized');
 
       const isOAuthFlowInitiated = err.message === 'OAuth flow initiated - return early';
 
