@@ -340,6 +340,9 @@ endpoints:
 # - If 'group' is a custom name (doesn't match any endpoint), it creates a separate collapsible section
 # - If 'group' is omitted, the spec appears as a standalone item at the top level
 # modelSpecs:
+#   enforce: false # If true, only model specs can be used, not base models
+#   prioritize: true # If true, model specs are shown before base models
+#   hideBaseModels: false # If true, hides base models when specs exist for an endpoint
 #   list:
 #     # Example 1: Nested under an endpoint (grouped with openAI endpoint)
 #     - name: "gpt-4o"
