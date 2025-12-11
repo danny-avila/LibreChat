@@ -179,5 +179,12 @@
         "description": "Provide your Flux API key from your user profile."
       }
     ]
+  },
+  {
+    "name": "Gemini Image Tools",
+    "pluginKey": "gemini_image_gen",
+    "description": "Generate high-quality images using Google's Gemini Image Models. Supports both Gemini API (GEMINI_API_KEY) and Vertex AI (service account).",
+    "icon": "/assets/gemini_image_gen.svg",
+    "authConfig": []
   }
 ]

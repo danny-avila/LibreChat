@@ -10,6 +10,8 @@ const {
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
+  createImageToolContext,
+  GeminiImageGen,
 } = require('@librechat/api');
 const {
   Tools,
@@ -38,11 +40,13 @@ const {
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { createMCPTool, createMCPTools } = require('~/server/services/MCP');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getRoleByName } = require('~/models/Role');
+const { getFiles } = require('~/models/File');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -179,6 +183,7 @@ const loadTools = async ({
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
+    gemini_image_gen: GeminiImageGen,
   };
 
   const customConstructors = {
@@ -191,24 +196,10 @@ const loadTools = async ({
       const authFields = getAuthFields('image_gen_oai');
       const authValues = await loadAuthValues({ userId: user, authFields });
       const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
-      let toolContext = '';
-      for (let i = 0; i < imageFiles.length; i++) {
-        const file = imageFiles[i];
-        if (!file) {
-          continue;
-        }
-        if (i === 0) {
-          toolContext =
-            'Image files provided in this request (their image IDs listed in order of appearance) available for image editing:';
-        }
-        toolContext += `\n\t- ${file.file_id}`;
-        if (i === imageFiles.length - 1) {
-          toolContext += `\n\nInclude any you need in the \`image_ids\` array when calling \`${EToolResources.image_edit}_oai\`. You may also include previously referenced or generated image IDs.`;
-        }
-      }
-      if (toolContext) {
-        toolContextMap.image_edit_oai = toolContext;
-      }
+      createImageToolContext(imageFiles, toolContextMap, {
+        toolKey: 'image_edit_oai',
+        purpose: 'image editing',
+      });
       return createOpenAIImageTools({
         ...authValues,
         isAgent: !!agent,
@@ -216,6 +207,26 @@ const loadTools = async ({
         imageOutputType,
         fileStrategy,
         imageFiles,
+      });
+    },
+    gemini_image_gen: async (toolContextMap) => {
+      const authFields = getAuthFields('gemini_image_gen');
+      const authValues = await loadAuthValues({ userId: user, authFields });
+      const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
+      createImageToolContext(imageFiles, toolContextMap, {
+        toolKey: 'gemini_image_gen',
+        purpose: 'image context',
+      });
+      return new GeminiImageGen({
+        ...authValues,
+        isAgent: !!agent,
+        req: options.req,
+        imageFiles,
+        processFileURL: options.processFileURL,
+        userId: user,
+        fileStrategy: options.fileStrategy,
+        getFiles,
+        getStrategyFunctions,
       });
     },
   };
@@ -240,6 +251,7 @@ const loadTools = async ({
     flux: imageGenOptions,
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
+    gemini_image_gen: imageGenOptions,
   };
 
   /** @type {Record<string, string>} */
