@@ -5,6 +5,26 @@ const { Message } = require('~/db/models');
 
 const idSchema = z.string().uuid();
 
+function containsError(object) {
+  if (object.error === true) return true;
+  if (!Array.isArray(object.content)) return false;
+
+  for (const contentItem of object.content) {
+    switch (contentItem.type) {
+      case 'error':
+        return true;
+      case 'tool_call':
+        if (
+          contentItem.tool_call?.output &&
+          contentItem.tool_call.output.toLowerCase().includes('error processing tool')
+        ) {
+          return true;
+        }
+    }
+  }
+  return false;
+}
+
 /**
  * Saves a message in the database.
  *
@@ -52,6 +72,7 @@ async function saveMessage(req, params, metadata) {
       ...params,
       user: req.user.id,
       messageId: params.newMessageId || params.messageId,
+      error: containsError(params),
     };
 
     if (req?.body?.isTemporary) {
@@ -187,6 +208,9 @@ async function recordMessage({
       ...rest,
     };
 
+    const errorFlag = containsError(message);
+    message.error = errorFlag;
+
     return await Message.findOneAndUpdate({ user, messageId }, message, {
       upsert: true,
       new: true,
@@ -239,6 +263,7 @@ async function updateMessageText(req, { messageId, text }) {
 async function updateMessage(req, message, metadata) {
   try {
     const { messageId, ...update } = message;
+    update.error = containsError(message);
     const updatedMessage = await Message.findOneAndUpdate(
       { messageId, user: req.user.id },
       update,
