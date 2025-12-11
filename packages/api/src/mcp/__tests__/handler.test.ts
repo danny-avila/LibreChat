@@ -993,6 +993,170 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
     });
   });
 
+  describe('Origin URL Fallback for OAuth Discovery', () => {
+    const originalFetch = global.fetch;
+    const mockFetch = jest.fn();
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.fetch = mockFetch as unknown as typeof fetch;
+    });
+
+    afterAll(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('should try origin URL when path-based discovery fails (like Atlassian)', async () => {
+      // This test simulates Atlassian's behavior where:
+      // - Server URL is https://mcp.atlassian.com/v1/sse (has path)
+      // - OAuth metadata is at https://mcp.atlassian.com/.well-known/oauth-authorization-server (root)
+
+      // Mock resource metadata discovery to fail
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+
+      // First call with full URL (path-based) returns undefined
+      // Second call with origin URL returns valid metadata
+      mockDiscoverAuthorizationServerMetadata
+        .mockResolvedValueOnce(undefined) // First call: path-based URL fails
+        .mockResolvedValueOnce({
+          issuer: 'https://mcp.atlassian.com',
+          authorization_endpoint: 'https://mcp.atlassian.com/v1/authorize',
+          token_endpoint: 'https://mcp.atlassian.com/v1/token',
+          registration_endpoint: 'https://mcp.atlassian.com/v1/register',
+          response_types_supported: ['code'],
+          grant_types_supported: ['authorization_code', 'refresh_token'],
+          code_challenge_methods_supported: ['S256', 'plain'],
+          token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+        } as AuthorizationServerMetadata);
+
+      // Mock client registration to succeed
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'dynamic-client-id',
+        client_secret: 'dynamic-client-secret',
+        redirect_uris: ['http://localhost:3080/api/mcp/atlassian/oauth/callback'],
+      });
+
+      // Mock startAuthorization to succeed
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://mcp.atlassian.com/v1/authorize?client_id=dynamic-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'atlassian',
+        'https://mcp.atlassian.com/v1/sse', // URL with path
+        'user-123',
+        {},
+        undefined,
+      );
+
+      // Verify discoverAuthorizationServerMetadata was called twice:
+      // 1. First with the full URL (with path)
+      // 2. Then with just the origin
+      expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenCalledTimes(2);
+
+      // First call should be with URL containing path
+      const firstCallUrl = mockDiscoverAuthorizationServerMetadata.mock.calls[0][0];
+      expect(firstCallUrl.toString()).toContain('/v1/sse');
+
+      // Second call should be with just the origin (no path)
+      const secondCallUrl = mockDiscoverAuthorizationServerMetadata.mock.calls[1][0];
+      expect(secondCallUrl.pathname).toBe('/');
+      expect(secondCallUrl.origin).toBe('https://mcp.atlassian.com');
+
+      // Verify registerClient was called with the discovered metadata
+      expect(mockRegisterClient).toHaveBeenCalledWith(
+        'https://mcp.atlassian.com/',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            authorization_endpoint: 'https://mcp.atlassian.com/v1/authorize',
+            token_endpoint: 'https://mcp.atlassian.com/v1/token',
+          }),
+        }),
+      );
+    });
+
+    it('should not try origin fallback when URL has no path', async () => {
+      // Mock resource metadata discovery to fail
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+
+      // Discovery returns undefined (no metadata found)
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce(undefined);
+
+      // Mock client registration for fallback flow
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'dynamic-client-id',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+      });
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://example.com/authorize'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://example.com', // URL without path - origin fallback should not be needed
+        'user-123',
+        {},
+        undefined,
+      );
+
+      // Should only be called once since URL has no path (origin === full URL)
+      expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenCalledTimes(1);
+    });
+
+    it('should use fallback metadata when both path-based and origin discovery fail', async () => {
+      // Mock resource metadata discovery to fail
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+
+      // Both discovery attempts return undefined
+      mockDiscoverAuthorizationServerMetadata
+        .mockResolvedValueOnce(undefined) // Path-based fails
+        .mockResolvedValueOnce(undefined); // Origin-based also fails
+
+      // Mock client registration for fallback flow
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'dynamic-client-id',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+      });
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://example.com/authorize'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        'https://example.com/mcp/v1', // URL with path
+        'user-123',
+        {},
+        undefined,
+      );
+
+      // Should be called twice (path-based, then origin)
+      expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenCalledTimes(2);
+
+      // Should fall back to legacy endpoints
+      expect(mockRegisterClient).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            authorization_endpoint: expect.stringContaining('/authorize'),
+            token_endpoint: expect.stringContaining('/token'),
+            registration_endpoint: expect.stringContaining('/register'),
+          }),
+        }),
+      );
+    });
+  });
+
   describe('Fallback OAuth Metadata (Legacy Server Support)', () => {
     const originalFetch = global.fetch;
     const mockFetch = jest.fn();
