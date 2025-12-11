@@ -53,6 +53,7 @@ export const tModelSpecSchema = z.object({
 export const specsConfigSchema = z.object({
   enforce: z.boolean().default(false),
   prioritize: z.boolean().default(true),
+  hideBaseModels: z.boolean().default(false),
   list: z.array(tModelSpecSchema).min(1),
   addedEndpoints: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
 });
