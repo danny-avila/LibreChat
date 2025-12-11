@@ -288,9 +288,13 @@ export class MCPConnectionFactory {
       return false;
     }
 
-    // Check for SSE error with 401 status
+    // Check for SSE/HTTP error messages indicating auth failure
     if ('message' in error && typeof error.message === 'string') {
-      return error.message.includes('401') || error.message.includes('Non-200 status code (401)');
+      return (
+        error.message.includes('401') ||
+        error.message.includes('Non-200 status code (401)') ||
+        error.message.includes('Unauthorized')
+      );
     }
 
     // Check for error code
