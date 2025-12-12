@@ -16,5 +16,3 @@ process.env.ALLOW_EMAIL_LOGIN = 'true';
 // This can be overridden in individual tests if needed
 jest.setTimeout(30000);
 process.env.OPENAI_API_KEY = 'test';
-
-process.env.NODE_MAX_OLD_SPACE_SIZE = '6144';
