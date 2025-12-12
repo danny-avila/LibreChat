@@ -1,11 +1,14 @@
 # v0.8.1
 
 # Base node image
-FROM node:20-alpine AS node
+FROM node:22-alpine AS node
 
 # Install jemalloc
 RUN apk add --no-cache jemalloc
 RUN apk add --no-cache python3 py3-pip uv
+
+# Upgrade npm to fix CVE-2025-64756 (glob command injection)
+RUN npm install -g npm@latest
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
