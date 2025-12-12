@@ -259,7 +259,7 @@ function filterAssistantDocs({ documents, userId, assistantsConfig = {} }) {
 const getAssistantDocuments = async (req, res) => {
   try {
     const appConfig = req.config;
-    const endpoint = req.query;
+    const endpoint = req.query?.endpoint;
     const assistantsConfig = appConfig.endpoints?.[endpoint];
     const documents = await getAssistants(
       {},

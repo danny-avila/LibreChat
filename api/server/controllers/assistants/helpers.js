@@ -185,7 +185,7 @@ const listAssistantsForAzure = async ({ req, res, version, azureConfig = {}, que
  * @returns {Promise<{ openai: OpenAI, openAIApiKey: string }>} - The initialized OpenAI SDK client.
  */
 async function getOpenAIClient({ req, res, endpointOption, initAppClient, overrideEndpoint }) {
-  let endpoint = overrideEndpoint ?? req.body.endpoint ?? req.query.endpoint;
+  let endpoint = overrideEndpoint ?? req.body?.endpoint ?? req.query?.endpoint;
   const version = await getCurrentVersion(req, endpoint);
   if (!endpoint) {
     throw new Error(`[${req.baseUrl}] Endpoint is required`);
