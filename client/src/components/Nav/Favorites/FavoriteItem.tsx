@@ -1,24 +1,29 @@
 import React, { useState } from 'react';
 import * as Menu from '@ariakit/react/menu';
-import { useNavigate } from 'react-router-dom';
 import { Ellipsis, PinOff } from 'lucide-react';
 import { DropdownPopup } from '@librechat/client';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { FavoriteModel } from '~/store/favorites';
 import type t from 'librechat-data-provider';
-import EndpointIcon from '~/components/Endpoints/EndpointIcon';
-import { useNewConvo, useFavorites, useLocalize } from '~/hooks';
+import MinimalIcon from '~/components/Endpoints/MinimalIcon';
+import { useFavorites, useLocalize } from '~/hooks';
 import { renderAgentAvatar, cn } from '~/utils';
+
+type Kwargs = {
+  model?: string;
+  agent_id?: string;
+  assistant_id?: string;
+  spec?: string | null;
+};
 
 type FavoriteItemProps = {
   item: t.Agent | FavoriteModel;
   type: 'agent' | 'model';
+  onSelectEndpoint?: (endpoint?: EModelEndpoint | string | null, kwargs?: Kwargs) => void;
 };
 
-export default function FavoriteItem({ item, type }: FavoriteItemProps) {
-  const navigate = useNavigate();
+export default function FavoriteItem({ item, type, onSelectEndpoint }: FavoriteItemProps) {
   const localize = useLocalize();
-  const { newConversation } = useNewConvo();
   const { removeFavoriteAgent, removeFavoriteModel } = useFavorites();
   const [isPopoverActive, setIsPopoverActive] = useState(false);
 
@@ -29,32 +34,10 @@ export default function FavoriteItem({ item, type }: FavoriteItemProps) {
 
     if (type === 'agent') {
       const agent = item as t.Agent;
-      newConversation({
-        template: {
-          ...agent,
-          endpoint: EModelEndpoint.agents,
-          agent_id: agent.id,
-        },
-        preset: {
-          ...agent,
-          endpoint: EModelEndpoint.agents,
-          agent_id: agent.id,
-        },
-      });
-      navigate(`/c/new`);
+      onSelectEndpoint?.(EModelEndpoint.agents, { agent_id: agent.id });
     } else {
       const model = item as FavoriteModel;
-      newConversation({
-        template: {
-          endpoint: model.endpoint,
-          model: model.model,
-        },
-        preset: {
-          endpoint: model.endpoint,
-          model: model.model,
-        },
-      });
-      navigate(`/c/new`);
+      onSelectEndpoint?.(model.endpoint, { model: model.model });
     }
   };
 
@@ -76,12 +59,7 @@ export default function FavoriteItem({ item, type }: FavoriteItemProps) {
     const model = item as FavoriteModel;
     return (
       <div className="mr-2 h-5 w-5">
-        <EndpointIcon
-          conversation={{ endpoint: model.endpoint, model: model.model } as t.TConversation}
-          endpoint={model.endpoint}
-          model={model.model}
-          size={20}
-        />
+        <MinimalIcon endpoint={model.endpoint} size={20} isCreatedByUser={false} />
       </div>
     );
   };
@@ -135,7 +113,7 @@ export default function FavoriteItem({ item, type }: FavoriteItemProps) {
                 'flex h-7 w-7 items-center justify-center rounded-md',
                 isPopoverActive ? 'bg-surface-active-alt' : '',
               )}
-              aria-label={localize('com_ui_options')}
+              aria-label={localize('com_nav_convo_menu_options')}
               data-testid="favorite-options-button"
             >
               <Ellipsis className="h-4 w-4 text-text-secondary" />
