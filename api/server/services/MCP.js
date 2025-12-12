@@ -387,6 +387,11 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
       if (isGoogle && Array.isArray(result[0]) && result[0][0]?.type === ContentTypes.TEXT) {
         return [result[0][0].text, result[1]];
       }
+      // For custom endpoints (vLLM/Mistral), extract text from MCP content array
+      // MCP returns [{type: "text", text: "..."}] but vLLM expects plain string for tool content
+      if (Array.isArray(result) && Array.isArray(result[0]) && result[0][0]?.type === ContentTypes.TEXT) {
+        return [result[0][0].text, result[1]];
+      }
       return result;
     } catch (error) {
       logger.error(
