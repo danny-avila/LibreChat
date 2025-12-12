@@ -24,11 +24,13 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   const { conversation, setConversation } = useCreateConversationAtom(index);
   const { conversationId, endpoint, endpointType } = conversation ?? {};
 
-  const queryParam = paramId === 'new' ? paramId : (conversationId ?? paramId ?? '');
+  /** Use paramId (from URL) as primary source for query key - this must match what ChatView uses
+  Falling back to conversationId (Recoil) only if paramId is not available */
+  const queryParam = paramId === 'new' ? paramId : (paramId ?? conversationId ?? '');
 
   /* Messages: here simply to fetch, don't export and use `getMessages()` instead */
 
-  const { data: _messages } = useGetMessagesByConvoId(conversationId ?? '', {
+  const { data: _messages } = useGetMessagesByConvoId(queryParam, {
     enabled: isAuthenticated,
   });
 
