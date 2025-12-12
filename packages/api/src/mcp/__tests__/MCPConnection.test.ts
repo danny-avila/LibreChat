@@ -70,6 +70,10 @@ describe('MCPConnection Error Detection', () => {
       if (message.includes('401') || message.includes('non-200 status code (401)')) {
         return true;
       }
+      // Check for invalid_grant (OAuth servers return this for expired/revoked grants)
+      if (message.includes('invalid_grant')) {
+        return true;
+      }
       // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
       if (message.includes('invalid_token')) {
         return true;
@@ -157,6 +161,14 @@ describe('MCPConnection Error Detection', () => {
 
     it('should detect OAuth error for invalid_token', () => {
       const error = { message: 'The access token is invalid_token or expired' };
+      expect(isOAuthError(error)).toBe(true);
+    });
+
+    it('should detect OAuth error for invalid_grant', () => {
+      const error = {
+        message:
+          'Streamable HTTP error: Error POSTing to endpoint: {"error":"invalid_grant","error_description":"The provided authorization grant is invalid, expired, or revoked"}',
+      };
       expect(isOAuthError(error)).toBe(true);
     });
   });

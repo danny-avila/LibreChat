@@ -559,6 +559,39 @@ export class MCPOAuthHandler {
   }
 
   /**
+   * Processes and logs a token refresh response from an OAuth server.
+   * Normalizes the response to MCPOAuthTokens format and logs debug info about refresh token rotation.
+   */
+  private static processRefreshResponse(
+    tokens: Record<string, unknown>,
+    serverName: string,
+    source: string,
+  ): MCPOAuthTokens {
+    const hasNewRefreshToken = !!tokens.refresh_token;
+
+    logger.debug(`[MCPOAuth] Token refresh response (${source})`, {
+      serverName,
+      has_new_access_token: !!tokens.access_token,
+      has_new_refresh_token: hasNewRefreshToken,
+      refresh_token_rotated: hasNewRefreshToken,
+      expires_in: tokens.expires_in,
+    });
+
+    if (!hasNewRefreshToken) {
+      logger.debug(
+        `[MCPOAuth] OAuth server did not return new refresh_token for ${serverName} - existing refresh token remains valid (normal for non-rotating providers)`,
+      );
+    }
+
+    return {
+      ...tokens,
+      obtained_at: Date.now(),
+      expires_at:
+        typeof tokens.expires_in === 'number' ? Date.now() + tokens.expires_in * 1000 : undefined,
+    } as MCPOAuthTokens;
+  }
+
+  /**
    * Refreshes OAuth tokens using a refresh token
    */
   static async refreshOAuthTokens(
@@ -687,12 +720,7 @@ export class MCPOAuthHandler {
         }
 
         const tokens = await response.json();
-
-        return {
-          ...tokens,
-          obtained_at: Date.now(),
-          expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
-        };
+        return this.processRefreshResponse(tokens, metadata.serverName, 'stored client info');
       }
 
       // Fallback: If we have pre-configured OAuth settings, use them
@@ -771,12 +799,7 @@ export class MCPOAuthHandler {
         }
 
         const tokens = await response.json();
-
-        return {
-          ...tokens,
-          obtained_at: Date.now(),
-          expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
-        };
+        return this.processRefreshResponse(tokens, metadata.serverName, 'pre-configured OAuth');
       }
 
       /** For auto-discovered OAuth, we need the server URL */
@@ -828,12 +851,7 @@ export class MCPOAuthHandler {
       }
 
       const tokens = await response.json();
-
-      return {
-        ...tokens,
-        obtained_at: Date.now(),
-        expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
-      };
+      return this.processRefreshResponse(tokens, metadata.serverName, 'auto-discovered OAuth');
     } catch (error) {
       logger.error(`[MCPOAuth] Failed to refresh tokens for ${metadata.serverName}`, error);
       throw error;
