@@ -253,10 +253,21 @@ export default function useStepHandler({
           };
 
           messageMap.current.set(responseMessageId, response);
-          // If last message was user message, append response; otherwise replace last
-          const baseMessages =
-            lastMessage && !lastMessage.isCreatedByUser ? messages.slice(0, -1) : messages;
-          setMessages([...baseMessages, response]);
+
+          // Get fresh messages to handle multi-tab scenarios where messages may have loaded
+          // after this handler started (Tab 2 may have more complete history now)
+          const freshMessages = getMessages() || [];
+          const currentMessages = freshMessages.length > messages.length ? freshMessages : messages;
+
+          // Remove any existing response placeholder
+          let updatedMessages = currentMessages.filter((m) => m.messageId !== responseMessageId);
+
+          // Ensure userMessage is present (multi-tab: Tab 2 may not have it yet)
+          if (!updatedMessages.some((m) => m.messageId === userMessage.messageId)) {
+            updatedMessages = [...updatedMessages, userMessage as TMessage];
+          }
+
+          setMessages([...updatedMessages, response]);
         }
 
         // Store tool call IDs if present
