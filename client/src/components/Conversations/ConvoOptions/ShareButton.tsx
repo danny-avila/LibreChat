@@ -51,7 +51,6 @@ export default function ShareButton({
         share={share}
         conversationId={conversationId}
         targetMessageId={latestMessage?.messageId}
-        setShareDialogOpen={onOpenChange}
         showQR={showQR}
         setShowQR={setShowQR}
         setSharedLink={setSharedLink}
