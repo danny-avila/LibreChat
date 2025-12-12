@@ -43,6 +43,10 @@ export class InMemoryEventTransport implements IEventTransport {
     state.emitter.on('done', doneHandler);
     state.emitter.on('error', errorHandler);
 
+    logger.debug(
+      `[InMemoryEventTransport] subscribe ${streamId}: listeners=${state.emitter.listenerCount('chunk')}`,
+    );
+
     return {
       unsubscribe: () => {
         const currentState = this.streams.get(streamId);
@@ -90,7 +94,9 @@ export class InMemoryEventTransport implements IEventTransport {
    */
   isFirstSubscriber(streamId: string): boolean {
     const state = this.streams.get(streamId);
-    return state?.emitter.listenerCount('chunk') === 1;
+    const count = state?.emitter.listenerCount('chunk') ?? 0;
+    logger.debug(`[InMemoryEventTransport] isFirstSubscriber ${streamId}: count=${count}`);
+    return count === 1;
   }
 
   /**

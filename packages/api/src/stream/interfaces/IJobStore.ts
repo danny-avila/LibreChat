@@ -112,6 +112,9 @@ export interface IEventTransport {
   /** Get subscriber count for a stream */
   getSubscriberCount(streamId: string): number;
 
+  /** Check if this is the first subscriber (for ready signaling) */
+  isFirstSubscriber(streamId: string): boolean;
+
   /** Listen for all subscribers leaving */
   onAllSubscribersLeft(streamId: string, callback: () => void): void;
 }
