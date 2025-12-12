@@ -75,6 +75,7 @@ export type Provider =
   | 'openai'
   | 'azureopenai'
   | 'openrouter'
+  | 'poe'
   | 'xai'
   | 'deepseek'
   | 'ollama'
