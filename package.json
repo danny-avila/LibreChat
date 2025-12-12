@@ -144,7 +144,8 @@
       "micromark-extension-math": {
         "katex": "^0.16.21"
       }
-    }
+    },
+    "body-parser": "^2.2.1"
   },
   "nodemonConfig": {
     "ignore": [
