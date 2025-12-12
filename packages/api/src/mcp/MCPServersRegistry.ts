@@ -9,7 +9,7 @@ import type * as t from '~/mcp/types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { detectOAuthRequirement } from '~/mcp/oauth';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
-import { processMCPEnv, isEnabled } from '~/utils';
+import { processMCPEnv, isEnabled, sanitizeToolSchema } from '~/utils';
 
 /**
  * Manages MCP server configurations and metadata discovery.
@@ -133,7 +133,7 @@ export class MCPServersRegistry {
         ['function']: {
           name,
           description: tool.description,
-          parameters: tool.inputSchema as JsonSchemaType,
+          parameters: sanitizeToolSchema(tool.inputSchema as JsonSchemaType),
         },
       };
     });

@@ -1,6 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getCachedTools, setCachedTools } = require('./getCachedTools');
+const { sanitizeSchemaMetadata } = require('~/server/utils/toAssistantSchema');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -22,7 +23,7 @@ async function updateMCPServerTools({ serverName, tools }) {
         ['function']: {
           name,
           description: tool.description,
-          parameters: tool.inputSchema,
+          parameters: sanitizeSchemaMetadata(tool.inputSchema),
         },
       };
     }
