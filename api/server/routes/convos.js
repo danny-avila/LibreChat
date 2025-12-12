@@ -9,7 +9,13 @@ const {
   createForkLimiters,
   configMiddleware,
 } = require('~/server/middleware');
-const { getConvosByCursor, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
+const {
+  getConvosByCursor,
+  searchConversations,
+  deleteConvos,
+  getConvo,
+  saveConvo,
+} = require('~/models/Conversation');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
@@ -39,14 +45,12 @@ router.get('/', async (req, res) => {
   }
 
   try {
-    const result = await getConvosByCursor(req.user.id, {
-      cursor,
-      limit,
-      isArchived,
-      tags,
-      search,
-      order,
-    });
+    // Use dedicated search method for global search (titles + message content)
+    // Use getConvosByCursor for regular listing (titles only)
+    const result = search
+      ? await searchConversations(req.user.id, { search, cursor, limit, isArchived, tags, order })
+      : await getConvosByCursor(req.user.id, { cursor, limit, isArchived, tags, order });
+
     res.status(200).json(result);
   } catch (error) {
     logger.error('Error fetching conversations', error);
