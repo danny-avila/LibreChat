@@ -355,6 +355,104 @@ describe('ServerConfigsDB', () => {
       expect(retrieved?.apiKey?.key).toBe('new-api-key');
     });
 
+    it('should preserve apiKey.key when authorization_type changes (bearer to custom)', async () => {
+      const config: ParsedServerConfig = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'API Key Auth Type Change Test',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          key: 'my-api-key',
+        },
+      };
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      // Update: change from bearer to custom header, without providing key
+      const updatedConfig: ParsedServerConfig = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'API Key Auth Type Change Test',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'custom',
+          custom_header: 'X-My-Api-Key',
+          // key not provided - should be preserved
+        },
+      };
+      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+
+      // Verify the key is preserved and authorization_type/custom_header updated
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.apiKey?.key).toBe('my-api-key');
+      expect(retrieved?.apiKey?.authorization_type).toBe('custom');
+      expect(retrieved?.apiKey?.custom_header).toBe('X-My-Api-Key');
+    });
+
+    it('should NOT preserve apiKey.key when switching from admin to user source', async () => {
+      // Create server with admin-provided API key
+      const config: ParsedServerConfig = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'Source Switch Test',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          key: 'admin-secret-key',
+        },
+      };
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      // Update to user-provided mode (no key should be preserved)
+      const updatedConfig: ParsedServerConfig = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'Source Switch Test',
+        apiKey: {
+          source: 'user',
+          authorization_type: 'bearer',
+        },
+      };
+      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+
+      // Verify the old admin key is NOT preserved (would be a security issue)
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.apiKey?.source).toBe('user');
+      expect(retrieved?.apiKey?.key).toBeUndefined();
+    });
+
+    it('should NOT preserve apiKey.key when switching from user to admin without providing key', async () => {
+      // Create server with user-provided API key mode
+      const config: ParsedServerConfig = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'User to Admin Switch Test',
+        apiKey: {
+          source: 'user',
+          authorization_type: 'bearer',
+        },
+      };
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      // Update to admin mode without providing a key
+      const updatedConfig: ParsedServerConfig = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'User to Admin Switch Test',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          // key not provided - should NOT try to preserve from user mode
+        },
+      };
+      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+
+      // Verify no key is present (user mode doesn't store keys)
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.apiKey?.source).toBe('admin');
+      expect(retrieved?.apiKey?.key).toBeUndefined();
+    });
+
     it('should transform user-provided API key config with customUserVars and headers', async () => {
       const config: ParsedServerConfig = {
         type: 'sse',
@@ -368,6 +466,10 @@ describe('ServerConfigsDB', () => {
       const created = await serverConfigsDB.add('temp-name', config, userId);
 
       const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      // Cast to access headers (SSE config has headers)
+      const retrievedWithHeaders = retrieved as ParsedServerConfig & {
+        headers?: Record<string, string>;
+      };
 
       // Should have customUserVars with MCP_API_KEY
       expect(retrieved?.customUserVars).toBeDefined();
@@ -377,8 +479,8 @@ describe('ServerConfigsDB', () => {
       });
 
       // Should have headers with placeholder
-      expect(retrieved?.headers).toBeDefined();
-      expect(retrieved?.headers?.Authorization).toBe('Bearer {{MCP_API_KEY}}');
+      expect(retrievedWithHeaders?.headers).toBeDefined();
+      expect(retrievedWithHeaders?.headers?.Authorization).toBe('Bearer {{MCP_API_KEY}}');
 
       // Key should be undefined (user provides it)
       expect(retrieved?.apiKey?.key).toBeUndefined();
@@ -398,10 +500,14 @@ describe('ServerConfigsDB', () => {
       const created = await serverConfigsDB.add('temp-name', config, userId);
 
       const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      // Cast to access headers (SSE config has headers)
+      const retrievedWithHeaders = retrieved as ParsedServerConfig & {
+        headers?: Record<string, string>;
+      };
 
       // Should have headers with custom header name
-      expect(retrieved?.headers?.['X-My-Api-Key']).toBe('{{MCP_API_KEY}}');
-      expect(retrieved?.headers?.Authorization).toBeUndefined();
+      expect(retrievedWithHeaders?.headers?.['X-My-Api-Key']).toBe('{{MCP_API_KEY}}');
+      expect(retrievedWithHeaders?.headers?.Authorization).toBeUndefined();
     });
   });
 

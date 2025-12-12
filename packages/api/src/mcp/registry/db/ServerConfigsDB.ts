@@ -156,9 +156,11 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     }
 
     // Preserve existing API key if not provided in update (already encrypted)
+    // Only preserve if both old and new configs use admin mode to avoid cross-mode key leakage
     if (
       config.apiKey?.source === 'admin' &&
       !config.apiKey?.key &&
+      existingServer?.config?.apiKey?.source === 'admin' &&
       existingServer?.config?.apiKey?.key
     ) {
       configToSave = {
@@ -428,8 +430,10 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       [headerName]: headerValue,
     };
 
-    // Remove key field since it's user-provided
-    result.apiKey = { ...result.apiKey!, key: undefined };
+    // Remove key field since it's user-provided (destructure to omit, not set to undefined)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { key: _removed, ...apiKeyWithoutKey } = result.apiKey!;
+    result.apiKey = apiKeyWithoutKey;
 
     return result;
   }
@@ -494,7 +498,9 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           '[ServerConfigsDB.decryptConfig] Failed to decrypt apiKey.key, returning config without key',
           error,
         );
-        result.apiKey = { ...result.apiKey, key: undefined };
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { key: _removedKey, ...apiKeyWithoutKey } = result.apiKey;
+        result.apiKey = apiKeyWithoutKey;
       }
     }
 
