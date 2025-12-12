@@ -166,7 +166,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // Start background generation - wait for subscriber with timeout fallback
     const startGeneration = async () => {
       try {
-        await Promise.race([job.readyPromise, new Promise((resolve) => setTimeout(resolve, 5000))]);
+        await Promise.race([job.readyPromise, new Promise((resolve) => setTimeout(resolve, 2500))]);
       } catch (waitError) {
         logger.warn(
           `[ResumableAgentController] Error waiting for subscriber: ${waitError.message}`,
