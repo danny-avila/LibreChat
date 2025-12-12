@@ -1,6 +1,7 @@
-import { getEndpointField, isAssistantsEndpoint } from 'librechat-data-provider';
+import { getEndpointField, isAssistantsEndpoint, EModelEndpoint } from 'librechat-data-provider';
 import type {
   TPreset,
+  TAgentsMap,
   TConversation,
   TAssistantsMap,
   TEndpointsConfig,
@@ -14,6 +15,7 @@ export default function EndpointIcon({
   endpointsConfig,
   className = 'mr-0',
   assistantMap,
+  agentsMap,
   context,
 }: {
   conversation: TConversation | TPreset | null;
@@ -21,6 +23,7 @@ export default function EndpointIcon({
   containerClassName?: string;
   context?: 'message' | 'nav' | 'landing' | 'menu-item';
   assistantMap?: TAssistantsMap;
+  agentsMap?: TAgentsMap;
   className?: string;
   size?: number;
 }) {
@@ -37,7 +40,11 @@ export default function EndpointIcon({
   const assistantAvatar = (assistant && (assistant.metadata?.avatar as string)) || '';
   const assistantName = assistant && (assistant.name ?? '');
 
-  const iconURL = assistantAvatar || convoIconURL;
+  const agent =
+    endpoint === EModelEndpoint.agents ? agentsMap?.[conversation?.agent_id ?? ''] : null;
+  const agentAvatar = agent?.avatar?.filepath ?? '';
+
+  const iconURL = assistantAvatar || agentAvatar || convoIconURL;
 
   if (iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'))) {
     return (

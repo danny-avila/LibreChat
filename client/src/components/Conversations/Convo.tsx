@@ -6,6 +6,7 @@ import { useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import { useUpdateConversationMutation } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
+import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import { useNavigateToConvo, useLocalize } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
@@ -31,6 +32,7 @@ export default function Conversation({
   const params = useParams();
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const agentsMap = useAgentsMapContext();
   const { navigateToConvo } = useNavigateToConvo();
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const currentConvoId = useMemo(() => params.conversationId, [params.conversationId]);
@@ -213,6 +215,7 @@ export default function Conversation({
             <EndpointIcon
               conversation={conversation}
               endpointsConfig={endpointsConfig}
+              agentsMap={agentsMap}
               size={20}
               context="menu-item"
             />
