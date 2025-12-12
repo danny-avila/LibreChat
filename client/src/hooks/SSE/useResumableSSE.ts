@@ -151,6 +151,8 @@ export default function useResumableSSE(
               setIsSubmitting(false);
               setShowStopButton(false);
             }
+            // Clear handler maps on stream completion to prevent memory leaks
+            clearStepMaps();
             (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
             sse.close();
             setStreamId(null);
@@ -369,6 +371,7 @@ export default function useResumableSSE(
       contentHandler,
       resetContentHandler,
       syncStepMessage,
+      clearStepMaps,
       messageHandler,
       errorHandler,
       setIsSubmitting,
@@ -476,6 +479,8 @@ export default function useResumableSSE(
         sseRef.current.close();
         sseRef.current = null;
       }
+      // Clear handler maps to prevent memory leaks and stale state
+      clearStepMaps();
       // Reset UI state on cleanup - useResumeOnLoad will restore if needed
       setIsSubmitting(false);
       setShowStopButton(false);
