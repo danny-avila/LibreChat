@@ -55,7 +55,7 @@ class GoogleClient extends BaseClient {
     this.serviceKey =
       serviceKey && typeof serviceKey === 'string' ? JSON.parse(serviceKey) : (serviceKey ?? {});
     /** @type {string | null | undefined} */
-    this.project_id = this.serviceKey.project_id;
+    this.project_id = process.env.GOOGLE_CLOUD_PROJECT || this.serviceKey.project_id;
     this.client_email = this.serviceKey.client_email;
     this.private_key = this.serviceKey.private_key;
     this.access_token = null;
