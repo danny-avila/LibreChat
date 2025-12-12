@@ -43,6 +43,49 @@ export class FlowStateManager<T = unknown> {
   }
 
   /**
+   * Normalizes an expiration timestamp to milliseconds.
+   * Detects whether the input is in seconds or milliseconds based on magnitude.
+   * Timestamps below 10 billion are assumed to be in seconds (valid until ~2286).
+   * @param timestamp - The expiration timestamp (in seconds or milliseconds)
+   * @returns The timestamp normalized to milliseconds
+   */
+  private normalizeExpirationTimestamp(timestamp: number): number {
+    const SECONDS_THRESHOLD = 1e10;
+    if (timestamp < SECONDS_THRESHOLD) {
+      return timestamp * 1000;
+    }
+    return timestamp;
+  }
+
+  /**
+   * Checks if a flow's token has expired based on its expires_at field
+   * @param flowState - The flow state to check
+   * @returns true if the token has expired, false otherwise (including if no expires_at exists)
+   */
+  private isTokenExpired(flowState: FlowState<T> | undefined): boolean {
+    if (!flowState?.result) {
+      return false;
+    }
+
+    if (typeof flowState.result !== 'object') {
+      return false;
+    }
+
+    if (!('expires_at' in flowState.result)) {
+      return false;
+    }
+
+    const expiresAt = (flowState.result as { expires_at: unknown }).expires_at;
+
+    if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
+      return false;
+    }
+
+    const normalizedExpiresAt = this.normalizeExpirationTimestamp(expiresAt);
+    return normalizedExpiresAt < Date.now();
+  }
+
+  /**
    * Creates a new flow and waits for its completion
    */
   async createFlow(
@@ -272,13 +315,7 @@ export class FlowStateManager<T = unknown> {
   ): Promise<T> {
     const flowKey = this.getFlowKey(flowId, type);
     let existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
-    const hasAccessTokenExpired =
-      existingState?.result &&
-      typeof existingState.result === 'object' &&
-      'expires_at' in existingState.result &&
-      typeof existingState.result.expires_at === 'number' &&
-      existingState.result.expires_at < Date.now();
-    if (existingState && !hasAccessTokenExpired) {
+    if (existingState && !this.isTokenExpired(existingState)) {
       logger.debug(`[${flowKey}] Flow already exists with valid token`);
       return this.monitorFlow(flowKey, type, signal);
     }
@@ -286,13 +323,7 @@ export class FlowStateManager<T = unknown> {
     await new Promise((resolve) => setTimeout(resolve, 250));
 
     existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
-    const hasAccessTokenExpiredRecheck =
-      existingState?.result &&
-      typeof existingState.result === 'object' &&
-      'expires_at' in existingState.result &&
-      typeof existingState.result.expires_at === 'number' &&
-      existingState.result.expires_at < Date.now();
-    if (existingState && !hasAccessTokenExpiredRecheck) {
+    if (existingState && !this.isTokenExpired(existingState)) {
       logger.debug(`[${flowKey}] Flow exists on 2nd check with valid token`);
       return this.monitorFlow(flowKey, type, signal);
     }
