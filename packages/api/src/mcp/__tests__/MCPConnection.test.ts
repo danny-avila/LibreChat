@@ -163,6 +163,14 @@ describe('MCPConnection Error Detection', () => {
       const error = { message: 'The access token is invalid_token or expired' };
       expect(isOAuthError(error)).toBe(true);
     });
+
+    it('should detect OAuth error for invalid_grant', () => {
+      const error = {
+        message:
+          'Streamable HTTP error: Error POSTing to endpoint: {"error":"invalid_grant","error_description":"The provided authorization grant is invalid, expired, or revoked"}',
+      };
+      expect(isOAuthError(error)).toBe(true);
+    });
   });
 
   describe('error type differentiation', () => {
