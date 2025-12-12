@@ -70,6 +70,10 @@ describe('MCPConnection Error Detection', () => {
       if (message.includes('401') || message.includes('non-200 status code (401)')) {
         return true;
       }
+      // Check for invalid_grant (OAuth servers return this for expired/revoked grants)
+      if (message.includes('invalid_grant')) {
+        return true;
+      }
       // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
       if (message.includes('invalid_token')) {
         return true;
