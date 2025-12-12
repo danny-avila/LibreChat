@@ -21,7 +21,10 @@ export class FlowStateManager<T = unknown> {
     this.ttl = ttl;
     this.keyv = store;
     this.intervals = new Set();
-    this.setupCleanupHandlers();
+
+    if (!ci) {
+      this.setupCleanupHandlers();
+    }
   }
 
   private setupCleanupHandlers() {
