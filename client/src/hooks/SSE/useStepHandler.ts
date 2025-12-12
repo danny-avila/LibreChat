@@ -239,10 +239,10 @@ export default function useStepHandler({
               ? lastMessage
               : (submission?.initialResponse as TMessage);
 
-          // Preserve existing content from DB (partial response) and prepend initialContent if provided
+          // For edit scenarios, initialContent IS the complete starting content (not to be merged)
+          // For resume scenarios (no editedContent), initialContent is empty and we use existingContent
           const existingContent = responseMessage?.content ?? [];
-          const mergedContent =
-            initialContent.length > 0 ? [...initialContent, ...existingContent] : existingContent;
+          const mergedContent = initialContent.length > 0 ? initialContent : existingContent;
 
           response = {
             ...responseMessage,
