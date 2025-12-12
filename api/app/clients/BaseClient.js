@@ -243,6 +243,7 @@ class BaseClient {
       sender: 'User',
       text,
       isCreatedByUser: true,
+      model: this.options?.assistant_id || this.model,
     };
   }
 
