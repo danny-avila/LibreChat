@@ -1,5 +1,5 @@
 import { useState, useId, useRef, memo, useCallback, useMemo } from 'react';
-import * as Menu from '@ariakit/react/menu';
+import * as Ariakit from '@ariakit/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
@@ -49,6 +49,7 @@ function ConvoOptions({
   const { conversationId: currentConvoId } = useParams();
   const { newConversation } = useNewConvo();
 
+  const menuId = useId();
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
@@ -106,11 +107,11 @@ function ConvoOptions({
   const isArchiveLoading = archiveConvoMutation.isLoading;
   const isDeleteLoading = deleteMutation.isLoading;
 
-  const handleShareClick = useCallback(() => {
+  const shareHandler = useCallback(() => {
     setShowShareDialog(true);
   }, []);
 
-  const handleDeleteClick = useCallback(() => {
+  const deleteHandler = useCallback(() => {
     setShowDeleteDialog(true);
   }, []);
 
@@ -189,13 +190,15 @@ function ConvoOptions({
     () => [
       {
         label: localize('com_ui_share'),
-        onClick: handleShareClick,
+        onClick: shareHandler,
         icon: <Share2 className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
         show: startupConfig && startupConfig.sharedLinksEnabled,
-        hideOnClick: false,
-        ref: shareButtonRef,
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'share-conversation-dialog',
+        /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
+        hideOnClick: false,
+        ref: shareButtonRef,
+        render: (props) => <button {...props} />,
       },
       {
         label: localize('com_ui_rename'),
@@ -224,28 +227,28 @@ function ConvoOptions({
       },
       {
         label: localize('com_ui_delete'),
-        onClick: handleDeleteClick,
+        onClick: deleteHandler,
         icon: <Trash className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
-        hideOnClick: false,
-        ref: deleteButtonRef,
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'delete-conversation-dialog',
+        /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
+        hideOnClick: false,
+        ref: deleteButtonRef,
+        render: (props) => <button {...props} />,
       },
     ],
     [
       localize,
-      handleShareClick,
+      shareHandler,
       startupConfig,
       renameHandler,
-      handleDuplicateClick,
+      deleteHandler,
+      isArchiveLoading,
       isDuplicateLoading,
       handleArchiveClick,
-      isArchiveLoading,
-      handleDeleteClick,
+      handleDuplicateClick,
     ],
   );
-
-  const menuId = useId();
 
   const buttonClassName = cn(
     'inline-flex h-7 w-7 items-center justify-center rounded-md border-none p-0 text-sm font-medium ring-ring-primary transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50',
@@ -292,13 +295,13 @@ function ConvoOptions({
       </span>
       <DropdownPopup
         portal={true}
-        mountByState={true}
+        menuId={menuId}
+        focusLoop={true}
         unmountOnHide={true}
-        preserveTabOrder={true}
         isOpen={isPopoverActive}
         setIsOpen={setIsPopoverActive}
         trigger={
-          <Menu.MenuButton
+          <Ariakit.MenuButton
             id={`conversation-menu-${conversationId}`}
             aria-label={localize('com_nav_convo_menu_options')}
             aria-readonly={undefined}
@@ -318,10 +321,9 @@ function ConvoOptions({
             }}
           >
             <Ellipsis className="icon-md text-text-secondary" aria-hidden={true} />
-          </Menu.MenuButton>
+          </Ariakit.MenuButton>
         }
         items={dropdownItems}
-        menuId={menuId}
         className="z-30"
       />
       {showShareDialog && (

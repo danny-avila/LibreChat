@@ -155,6 +155,9 @@ export default function Conversation({ conversation, retainView, toggleNav }: Co
         if (renaming) {
           return;
         }
+        if (e.target !== e.currentTarget) {
+          return;
+        }
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           handleNavigation(false);

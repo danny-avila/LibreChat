@@ -7,6 +7,7 @@ import {
   Button,
   Spinner,
   OGDialog,
+  OGDialogClose,
   OGDialogTitle,
   OGDialogHeader,
   OGDialogContent,
@@ -81,14 +82,14 @@ export function DeleteConversationDialog({
 
   return (
     <OGDialogContent
-      title={localize('com_ui_delete_confirm', { title })}
       className="w-11/12 max-w-md"
       showCloseButton={false}
+      aria-describedby="delete-conversation-description"
     >
       <OGDialogHeader>
         <OGDialogTitle>{localize('com_ui_delete_conversation')}</OGDialogTitle>
       </OGDialogHeader>
-      <div id="delete-conversation-dialog" className="w-full truncate">
+      <div id="delete-conversation-description" className="w-full truncate">
         <Trans
           i18nKey="com_ui_delete_confirm_strong"
           values={{ title }}
@@ -96,9 +97,11 @@ export function DeleteConversationDialog({
         />
       </div>
       <div className="flex justify-end gap-4 pt-4">
-        <Button aria-label="cancel" variant="outline" onClick={() => setShowDeleteDialog(false)}>
-          {localize('com_ui_cancel')}
-        </Button>
+        <OGDialogClose asChild>
+          <Button aria-label="cancel" variant="outline">
+            {localize('com_ui_cancel')}
+          </Button>
+        </OGDialogClose>
         <Button variant="destructive" onClick={confirmDelete} disabled={deleteMutation.isLoading}>
           {deleteMutation.isLoading ? <Spinner /> : localize('com_ui_delete')}
         </Button>
