@@ -84,39 +84,18 @@ const DialogContent = React.forwardRef<
     const handleEscapeKeyDown = React.useCallback(
       (event: KeyboardEvent) => {
         const tooltips = document.querySelectorAll('.tooltip');
-
-        for (const tooltip of Array.from(tooltips)) {
-          const computedStyle = window.getComputedStyle(tooltip);
-          const opacity = parseFloat(computedStyle.opacity);
-
-          if (
-            tooltip.parentElement &&
-            computedStyle.display !== 'none' &&
-            computedStyle.visibility !== 'hidden' &&
-            opacity > 0
-          ) {
-            event.preventDefault();
-            return;
-          }
-        }
-
-        // Check if a dropdown menu is open
         const dropdownMenus = document.querySelectorAll('[role="menu"]');
-        for (const dropdown of Array.from(dropdownMenus)) {
-          const computedStyle = window.getComputedStyle(dropdown);
-          const opacity = parseFloat(computedStyle.opacity);
 
-          if (
-            computedStyle.display !== 'none' &&
-            computedStyle.visibility !== 'hidden' &&
-            opacity > 0
-          ) {
-            event.preventDefault();
-            return;
-          }
+        if (tooltips.length > 0) {
+          event.preventDefault();
+          return;
         }
 
-        // Call the original handler if it exists
+        if (dropdownMenus.length > 0) {
+          event.preventDefault();
+          return;
+        }
+
         propsOnEscapeKeyDown?.(event);
       },
       [propsOnEscapeKeyDown],
