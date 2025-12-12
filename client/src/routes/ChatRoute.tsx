@@ -6,7 +6,7 @@ import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset } from 'librechat-data-provider';
 import { useGetConvoIdQuery, useGetStartupConfig, useGetEndpointsQuery } from '~/data-provider';
 import { useNewConvo, useAppStartup, useAssistantListMap, useIdChangeEffect } from '~/hooks';
-import { getDefaultModelSpec, getModelSpecPreset, logger } from '~/utils';
+import { getDefaultModelSpec, getModelSpecPreset, getLocalStorageItems, logger } from '~/utils';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
@@ -65,13 +65,24 @@ export default function ChatRoute() {
       return;
     }
 
+    // Check if user has a stored model selection from a previous session
+    const { lastConversationSetup: storedSetup } = getLocalStorageItems();
+    const storedConversation =
+      storedSetup && typeof storedSetup === 'object' && Object.keys(storedSetup).length > 0
+        ? storedSetup
+        : null;
+    const hasStoredModelSelection = Boolean(
+      storedConversation?.model ?? storedConversation?.agentOptions?.model,
+    );
+
     if (conversationId === Constants.NEW_CONVO && endpointsQuery.data && modelsQuery.data) {
       const spec = getDefaultModelSpec(startupConfig);
       logger.log('conversation', 'ChatRoute, new convo effect', conversation);
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
-        ...(spec ? { preset: getModelSpecPreset(spec) } : {}),
+        // Only apply default spec preset if user doesn't have a stored model selection
+        ...(spec && !hasStoredModelSelection ? { preset: getModelSpecPreset(spec) } : {}),
       });
 
       hasSetConversation.current = true;
@@ -95,7 +106,8 @@ export default function ChatRoute() {
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
-        ...(spec ? { preset: getModelSpecPreset(spec) } : {}),
+        // Only apply default spec preset if user doesn't have a stored model selection
+        ...(spec && !hasStoredModelSelection ? { preset: getModelSpecPreset(spec) } : {}),
       });
       hasSetConversation.current = true;
     } else if (
