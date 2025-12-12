@@ -6,7 +6,6 @@ export interface StreamStatusResponse {
   active: boolean;
   streamId?: string;
   status?: 'running' | 'complete' | 'error' | 'aborted';
-  chunkCount?: number;
   aggregatedContent?: Array<{ type: string; text?: string }>;
   createdAt?: number;
   resumeState?: Agents.ResumeState;

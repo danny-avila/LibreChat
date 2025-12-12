@@ -177,10 +177,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const onStart = (userMsg, respMsgId, _isNewConvo) => {
           userMessage = userMsg;
 
-          // Store the response messageId upfront so partial saves use the same ID
-          if (respMsgId) {
-            GenerationJobManager.updateMetadata(streamId, { responseMessageId: respMsgId });
-          }
+          // Store userMessage and responseMessageId upfront for resume capability
+          GenerationJobManager.updateMetadata(streamId, {
+            responseMessageId: respMsgId,
+            userMessage: {
+              messageId: userMsg.messageId,
+              parentMessageId: userMsg.parentMessageId,
+              conversationId: userMsg.conversationId,
+              text: userMsg.text,
+            },
+          });
 
           GenerationJobManager.emitChunk(streamId, {
             created: true,

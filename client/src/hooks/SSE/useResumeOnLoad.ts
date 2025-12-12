@@ -62,7 +62,7 @@ function buildSubmissionFromResumeState(
     content: (resumeState.aggregatedContent as TMessage['content']) ?? [],
     isCreatedByUser: false,
     role: 'assistant',
-    sender: existingResponseMessage?.sender,
+    sender: existingResponseMessage?.sender ?? resumeState.sender,
     model: existingResponseMessage?.model,
   } as TMessage;
 

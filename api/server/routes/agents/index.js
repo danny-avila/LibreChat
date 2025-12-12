@@ -118,7 +118,7 @@ router.get('/chat/stream/:streamId', (req, res) => {
  * @route GET /chat/status/:conversationId
  * @desc Check if there's an active generation job for a conversation
  * @access Private
- * @returns { active, streamId, status, chunkCount, aggregatedContent, createdAt, resumeState }
+ * @returns { active, streamId, status, aggregatedContent, createdAt, resumeState }
  */
 router.get('/chat/status/:conversationId', (req, res) => {
   const { conversationId } = req.params;
@@ -140,8 +140,6 @@ router.get('/chat/status/:conversationId', (req, res) => {
     active: info?.active ?? false,
     streamId: job.streamId,
     status: info?.status ?? job.status,
-    chunkCount: info?.chunkCount ?? 0,
-    runStepCount: info?.runStepCount ?? 0,
     aggregatedContent: info?.aggregatedContent,
     createdAt: info?.createdAt ?? job.createdAt,
     resumeState,

@@ -195,6 +195,7 @@ export namespace Agents {
     userMessage?: UserMessageMeta;
     responseMessageId?: string;
     conversationId?: string;
+    sender?: string;
   }
   /**
    * Represents a run step delta i.e. any changed fields on a run step during

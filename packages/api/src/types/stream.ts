@@ -1,6 +1,5 @@
 import type { EventEmitter } from 'events';
 import type { Agents } from 'librechat-data-provider';
-import type { StandardGraph } from '@librechat/agents';
 import type { ServerSentEvent } from '~/types';
 
 export interface GenerationJobMetadata {
@@ -27,14 +26,8 @@ export interface GenerationJob {
   metadata: GenerationJobMetadata;
   readyPromise: Promise<void>;
   resolveReady: () => void;
-  /** Buffered chunks for replay on reconnect */
-  chunks: ServerSentEvent[];
   /** Final event when job completes */
   finalEvent?: ServerSentEvent;
-  /** Reference to graph's contentParts - the authoritative content source */
-  contentPartsRef?: Agents.MessageContentComplex[];
-  /** Reference to the graph instance for accessing run steps (contentData) */
-  graphRef?: StandardGraph;
   /** Flag to indicate if a sync event was already sent (prevent duplicate replays) */
   syncSent?: boolean;
 }
