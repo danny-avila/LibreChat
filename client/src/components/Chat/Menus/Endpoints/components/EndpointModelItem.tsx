@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { EarthIcon, Pin, PinOff } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useModelSelectorContext } from '../ModelSelectorContext';
@@ -18,6 +18,26 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
   const { handleSelectModel } = useModelSelectorContext();
   const { isFavoriteModel, toggleFavoriteModel, isFavoriteAgent, toggleFavoriteAgent } =
     useFavorites();
+
+  const itemRef = useRef<HTMLDivElement>(null);
+  const [isActive, setIsActive] = useState(false);
+
+  useEffect(() => {
+    const element = itemRef.current;
+    if (!element) {
+      return;
+    }
+
+    const observer = new MutationObserver(() => {
+      setIsActive(element.hasAttribute('data-active-item'));
+    });
+
+    observer.observe(element, { attributes: true, attributeFilter: ['data-active-item'] });
+    setIsActive(element.hasAttribute('data-active-item'));
+
+    return () => observer.disconnect();
+  }, []);
+
   let isGlobal = false;
   let modelName = modelId;
   const avatarUrl = endpoint?.modelIcons?.[modelId ?? ''] || null;
@@ -42,8 +62,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
     ? isFavoriteAgent(modelId ?? '')
     : isFavoriteModel(modelId ?? '', endpoint.value);
 
-  const handleFavoriteClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleFavoriteToggle = () => {
     if (!modelId) {
       return;
     }
@@ -53,6 +72,11 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
     } else {
       toggleFavoriteModel({ model: modelId, endpoint: endpoint.value });
     }
+  };
+
+  const handleFavoriteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    handleFavoriteToggle();
   };
 
   const renderAvatar = () => {
@@ -84,6 +108,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
 
   return (
     <MenuItem
+      ref={itemRef}
       key={modelId}
       onClick={() => handleSelectModel(endpoint, modelId ?? '')}
       className="group flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm"
@@ -94,20 +119,18 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
         {isGlobal && <EarthIcon className="ml-1 size-4 text-surface-submit" />}
       </div>
       <button
+        tabIndex={isActive ? 0 : -1}
         onClick={handleFavoriteClick}
         aria-label={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
         className={cn(
           'rounded-md p-1 hover:bg-surface-hover',
-          isFavorite ? 'visible' : 'invisible group-hover:visible',
+          isFavorite ? 'visible' : 'invisible group-hover:visible group-data-[active-item]:visible',
         )}
       >
         {isFavorite ? (
           <PinOff className="h-4 w-4 text-text-secondary" />
         ) : (
-          <Pin
-            className="h-4 w-4 text-text-secondary"
-            aria-hidden="true"
-          />
+          <Pin className="h-4 w-4 text-text-secondary" aria-hidden="true" />
         )}
       </button>
       {isSelected && (
