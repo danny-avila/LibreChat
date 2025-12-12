@@ -35,11 +35,11 @@ router.use('/', v1);
  * @description Sends sync event with resume state, replays missed chunks, then streams live
  * @query resume=true - Indicates this is a reconnection (sends sync event)
  */
-router.get('/chat/stream/:streamId', (req, res) => {
+router.get('/chat/stream/:streamId', async (req, res) => {
   const { streamId } = req.params;
   const isResume = req.query.resume === 'true';
 
-  const job = GenerationJobManager.getJob(streamId);
+  const job = await GenerationJobManager.getJob(streamId);
   if (!job) {
     return res.status(404).json({
       error: 'Stream not found',
@@ -59,7 +59,7 @@ router.get('/chat/stream/:streamId', (req, res) => {
   // Send sync event with resume state for ALL reconnecting clients
   // This supports multi-tab scenarios where each tab needs run step data
   if (isResume) {
-    const resumeState = GenerationJobManager.getResumeState(streamId);
+    const resumeState = await GenerationJobManager.getResumeState(streamId);
     if (resumeState && !res.writableEnded) {
       // Send sync event with run steps AND aggregatedContent
       // Client will use aggregatedContent to initialize message state
@@ -74,7 +74,7 @@ router.get('/chat/stream/:streamId', (req, res) => {
     }
   }
 
-  const result = GenerationJobManager.subscribe(
+  const result = await GenerationJobManager.subscribe(
     streamId,
     (event) => {
       if (!res.writableEnded) {
@@ -120,10 +120,10 @@ router.get('/chat/stream/:streamId', (req, res) => {
  * @access Private
  * @returns { active, streamId, status, aggregatedContent, createdAt, resumeState }
  */
-router.get('/chat/status/:conversationId', (req, res) => {
+router.get('/chat/status/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
 
-  const job = GenerationJobManager.getJobByConversation(conversationId);
+  const job = await GenerationJobManager.getJobByConversation(conversationId);
 
   if (!job) {
     return res.json({ active: false });
@@ -133,8 +133,8 @@ router.get('/chat/status/:conversationId', (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
-  const info = GenerationJobManager.getStreamInfo(job.streamId);
-  const resumeState = GenerationJobManager.getResumeState(job.streamId);
+  const info = await GenerationJobManager.getStreamInfo(job.streamId);
+  const resumeState = await GenerationJobManager.getResumeState(job.streamId);
 
   res.json({
     active: info?.active ?? false,
@@ -152,7 +152,7 @@ router.get('/chat/status/:conversationId', (req, res) => {
  * @access Private
  * @description Mounted before chatRouter to bypass buildEndpointOption middleware
  */
-router.post('/chat/abort', (req, res) => {
+router.post('/chat/abort', async (req, res) => {
   logger.debug(`[AgentStream] ========== ABORT ENDPOINT HIT ==========`);
   logger.debug(`[AgentStream] Method: ${req.method}, Path: ${req.path}`);
   logger.debug(`[AgentStream] Body:`, req.body);
@@ -161,10 +161,10 @@ router.post('/chat/abort', (req, res) => {
 
   // Try to find job by streamId first, then by conversationId, then by abortKey
   let jobStreamId = streamId;
-  let job = jobStreamId ? GenerationJobManager.getJob(jobStreamId) : null;
+  let job = jobStreamId ? await GenerationJobManager.getJob(jobStreamId) : null;
 
   if (!job && conversationId) {
-    job = GenerationJobManager.getJobByConversation(conversationId);
+    job = await GenerationJobManager.getJobByConversation(conversationId);
     if (job) {
       jobStreamId = job.streamId;
     }
@@ -172,14 +172,14 @@ router.post('/chat/abort', (req, res) => {
 
   if (!job && abortKey) {
     jobStreamId = abortKey.split(':')[0];
-    job = GenerationJobManager.getJob(jobStreamId);
+    job = await GenerationJobManager.getJob(jobStreamId);
   }
 
   logger.debug(`[AgentStream] Computed jobStreamId: ${jobStreamId}`);
 
   if (job && jobStreamId) {
     logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
-    GenerationJobManager.abortJob(jobStreamId);
+    await GenerationJobManager.abortJob(jobStreamId);
     logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`);
     return res.json({ success: true, aborted: jobStreamId });
   }

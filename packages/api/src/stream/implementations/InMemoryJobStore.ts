@@ -10,7 +10,7 @@ export class InMemoryJobStore implements IJobStore {
   private jobs = new Map<string, SerializableJobData>();
   private cleanupInterval: NodeJS.Timeout | null = null;
 
-  /** Time to keep completed jobs before cleanup (5 minutes - reduced from 1 hour) */
+  /** Time to keep completed jobs before cleanup (5 minutes) */
   private ttlAfterComplete = 300000;
 
   /** Maximum number of concurrent jobs */
@@ -25,7 +25,7 @@ export class InMemoryJobStore implements IJobStore {
     }
   }
 
-  initialize(): void {
+  async initialize(): Promise<void> {
     if (this.cleanupInterval) {
       return;
     }
@@ -46,13 +46,8 @@ export class InMemoryJobStore implements IJobStore {
     userId: string,
     conversationId?: string,
   ): Promise<SerializableJobData> {
-    return this.createJobSync(streamId, userId, conversationId);
-  }
-
-  /** Synchronous version for in-memory use */
-  createJobSync(streamId: string, userId: string, conversationId?: string): SerializableJobData {
     if (this.jobs.size >= this.maxJobs) {
-      this.evictOldestSync();
+      await this.evictOldest();
     }
 
     const job: SerializableJobData = {
@@ -71,20 +66,10 @@ export class InMemoryJobStore implements IJobStore {
   }
 
   async getJob(streamId: string): Promise<SerializableJobData | null> {
-    return this.getJobSync(streamId);
-  }
-
-  /** Synchronous version for in-memory use */
-  getJobSync(streamId: string): SerializableJobData | null {
     return this.jobs.get(streamId) ?? null;
   }
 
   async getJobByConversation(conversationId: string): Promise<SerializableJobData | null> {
-    return this.getJobByConversationSync(conversationId);
-  }
-
-  /** Synchronous version for in-memory use */
-  getJobByConversationSync(conversationId: string): SerializableJobData | null {
     // Direct match first (streamId === conversationId for existing conversations)
     const directMatch = this.jobs.get(conversationId);
     if (directMatch && directMatch.status === 'running') {
@@ -102,11 +87,6 @@ export class InMemoryJobStore implements IJobStore {
   }
 
   async updateJob(streamId: string, updates: Partial<SerializableJobData>): Promise<void> {
-    this.updateJobSync(streamId, updates);
-  }
-
-  /** Synchronous version for in-memory use */
-  updateJobSync(streamId: string, updates: Partial<SerializableJobData>): void {
     const job = this.jobs.get(streamId);
     if (!job) {
       return;
@@ -115,21 +95,11 @@ export class InMemoryJobStore implements IJobStore {
   }
 
   async deleteJob(streamId: string): Promise<void> {
-    this.deleteJobSync(streamId);
-  }
-
-  /** Synchronous version for in-memory use */
-  deleteJobSync(streamId: string): void {
     this.jobs.delete(streamId);
     logger.debug(`[InMemoryJobStore] Deleted job: ${streamId}`);
   }
 
   async hasJob(streamId: string): Promise<boolean> {
-    return this.hasJobSync(streamId);
-  }
-
-  /** Synchronous version for in-memory use */
-  hasJobSync(streamId: string): boolean {
     return this.jobs.has(streamId);
   }
 
@@ -166,11 +136,6 @@ export class InMemoryJobStore implements IJobStore {
   }
 
   private async evictOldest(): Promise<void> {
-    this.evictOldestSync();
-  }
-
-  /** Synchronous version for in-memory use */
-  private evictOldestSync(): void {
     let oldestId: string | null = null;
     let oldestTime = Infinity;
 
@@ -183,32 +148,27 @@ export class InMemoryJobStore implements IJobStore {
 
     if (oldestId) {
       logger.warn(`[InMemoryJobStore] Evicting oldest job: ${oldestId}`);
-      this.deleteJobSync(oldestId);
+      await this.deleteJob(oldestId);
     }
   }
 
   /** Get job count (for monitoring) */
-  getJobCount(): number {
+  async getJobCount(): Promise<number> {
     return this.jobs.size;
   }
 
   /** Get job count by status (for monitoring) */
-  getJobCountByStatus(): Record<JobStatus, number> {
-    const counts: Record<JobStatus, number> = {
-      running: 0,
-      complete: 0,
-      error: 0,
-      aborted: 0,
-    };
-
+  async getJobCountByStatus(status: JobStatus): Promise<number> {
+    let count = 0;
     for (const job of this.jobs.values()) {
-      counts[job.status]++;
+      if (job.status === status) {
+        count++;
+      }
     }
-
-    return counts;
+    return count;
   }
 
-  destroy(): void {
+  async destroy(): Promise<void> {
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;

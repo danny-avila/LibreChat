@@ -63,7 +63,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       }
     });
 
-    const job = GenerationJobManager.createJob(streamId, userId, reqConversationId);
+    const job = await GenerationJobManager.createJob(streamId, userId, reqConversationId);
     req._resumableStreamId = streamId;
 
     // Track if partial response was already saved to avoid duplicates
@@ -83,7 +83,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         return;
       }
 
-      const resumeState = GenerationJobManager.getResumeState(streamId);
+      const resumeState = await GenerationJobManager.getResumeState(streamId);
       if (!resumeState?.userMessage) {
         logger.debug('[ResumableAgentController] No user message to save partial response for');
         return;
@@ -166,7 +166,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // Start background generation - wait for subscriber with timeout fallback
     const startGeneration = async () => {
       try {
-        await Promise.race([job.readyPromise, new Promise((resolve) => setTimeout(resolve, 2500))]);
+        await Promise.race([job.readyPromise, new Promise((resolve) => setTimeout(resolve, 3500))]);
       } catch (waitError) {
         logger.warn(
           `[ResumableAgentController] Error waiting for subscriber: ${waitError.message}`,

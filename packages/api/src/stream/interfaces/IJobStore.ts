@@ -56,6 +56,9 @@ export interface ResumeState {
  * Implementations can use in-memory Map, Redis, KV store, etc.
  */
 export interface IJobStore {
+  /** Initialize the store (e.g., connect to Redis, start cleanup intervals) */
+  initialize(): Promise<void>;
+
   /** Create a new job */
   createJob(
     streamId: string,
@@ -83,6 +86,15 @@ export interface IJobStore {
 
   /** Cleanup expired jobs */
   cleanup(): Promise<number>;
+
+  /** Get total job count */
+  getJobCount(): Promise<number>;
+
+  /** Get job count by status */
+  getJobCountByStatus(status: JobStatus): Promise<number>;
+
+  /** Destroy the store and release resources */
+  destroy(): Promise<void>;
 }
 
 /**
@@ -117,6 +129,12 @@ export interface IEventTransport {
 
   /** Listen for all subscribers leaving */
   onAllSubscribersLeft(streamId: string, callback: () => void): void;
+
+  /** Cleanup transport resources for a specific stream */
+  cleanup(streamId: string): void;
+
+  /** Destroy all transport resources */
+  destroy(): void;
 }
 
 /**
@@ -139,4 +157,7 @@ export interface IContentStateManager {
 
   /** Clear content state for a job */
   clearContentState(streamId: string): void;
+
+  /** Destroy all content state resources */
+  destroy(): void;
 }
