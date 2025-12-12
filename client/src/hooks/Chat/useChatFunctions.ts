@@ -283,22 +283,7 @@ export default function useChatFunctions({
           }
         }
       } else {
-        // Assistants endpoint uses nested format: { type: 'text', text: { value: 'content' } }
-        // Agents and other endpoints use flat format: { type: 'text', text: 'content' }
-        if (isAssistantsEndpoint(endpoint)) {
-          initialResponse.content = [
-            {
-              type: ContentTypes.TEXT,
-              [ContentTypes.TEXT]: {
-                value: '',
-              },
-            },
-          ];
-        } else {
-          // Don't pre-initialize content type - let incoming delta events
-          // create content parts dynamically (supports think, text, etc.)
-          initialResponse.content = [];
-        }
+        initialResponse.content = [];
       }
       setShowStopButton(true);
     }
