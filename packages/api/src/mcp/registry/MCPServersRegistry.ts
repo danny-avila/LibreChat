@@ -95,9 +95,25 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
+
+    // Merge existing admin API key if not provided in update (needed for inspection)
+    let configForInspection = { ...config };
+    if (config.apiKey?.source === 'admin' && !config.apiKey?.key) {
+      const existingConfig = await configRepo.get(serverName, userId);
+      if (existingConfig?.apiKey?.key) {
+        configForInspection = {
+          ...configForInspection,
+          apiKey: {
+            ...configForInspection.apiKey!,
+            key: existingConfig.apiKey.key,
+          },
+        };
+      }
+    }
+
     let parsedConfig: t.ParsedServerConfig;
     try {
-      parsedConfig = await MCPServerInspector.inspect(serverName, config);
+      parsedConfig = await MCPServerInspector.inspect(serverName, configForInspection);
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
       throw new Error(`MCP_INSPECTION_FAILED: Failed to connect to MCP server "${serverName}"`);

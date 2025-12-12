@@ -28,6 +28,7 @@ enum AuthorizationTypeEnum {
 export interface AuthConfig {
   auth_type?: AuthTypeEnum;
   api_key?: string;
+  api_key_source?: 'admin' | 'user'; // Whether admin provides key for all or each user provides their own
   api_key_authorization_type?: AuthorizationTypeEnum;
   api_key_custom_header?: string;
   oauth_client_id?: string;
@@ -171,8 +172,6 @@ export default function MCPAuth({
                       {localize('com_ui_none')}
                     </label>
                   </div>
-                  {/* 
-                  TODO Support API keys for auth
                   <div className="flex items-center gap-2">
                     <label htmlFor="auth-apikey" className="flex cursor-pointer items-center gap-1">
                       <RadioGroup.Item
@@ -189,7 +188,7 @@ export default function MCPAuth({
                       </RadioGroup.Item>
                       {localize('com_ui_api_key')}
                     </label>
-                  </div> */}
+                  </div>
                   <div className="flex items-center gap-2">
                     <label htmlFor="auth-oauth" className="flex cursor-pointer items-center gap-1">
                       <RadioGroup.Item
@@ -228,21 +227,84 @@ export default function MCPAuth({
 const ApiKey = ({ inputClasses }: { inputClasses: string }) => {
   const localize = useLocalize();
   const { register, watch, setValue } = useFormContext();
-  const authorization_type = watch('api_key_authorization_type') || AuthorizationTypeEnum.Basic;
+  const api_key_source = watch('api_key_source') || 'admin';
+  const authorization_type = watch('api_key_authorization_type') || AuthorizationTypeEnum.Bearer;
 
   return (
     <>
-      <label className="mb-1 block text-sm font-medium">{localize('com_ui_api_key')}</label>
-      <input
-        placeholder="<HIDDEN>"
-        type="password"
-        autoComplete="new-password"
-        className={inputClasses}
-        {...register('api_key')}
-      />
-      <label className="mb-1 block text-sm font-medium">{localize('com_ui_auth_type')}</label>
+      {/* API Key Source selection */}
+      <label className="mb-1 block text-sm font-medium">{localize('com_ui_api_key_source')}</label>
       <RadioGroup.Root
-        defaultValue={AuthorizationTypeEnum.Basic}
+        defaultValue="admin"
+        onValueChange={(value) => setValue('api_key_source', value)}
+        value={api_key_source}
+        role="radiogroup"
+        aria-required="true"
+        dir="ltr"
+        className="mb-3 flex flex-col gap-2"
+        style={{ outline: 'none' }}
+      >
+        <div className="flex items-center gap-2">
+          <label htmlFor="source-admin" className="flex cursor-pointer items-center gap-1">
+            <RadioGroup.Item
+              type="button"
+              role="radio"
+              value="admin"
+              id="source-admin"
+              className={cn(
+                'mr-1 flex h-5 w-5 items-center justify-center rounded-full border',
+                'border-border-heavy bg-surface-primary',
+              )}
+            >
+              <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-text-primary" />
+            </RadioGroup.Item>
+            {localize('com_ui_admin_provides_key')}
+          </label>
+        </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor="source-user" className="flex cursor-pointer items-center gap-1">
+            <RadioGroup.Item
+              type="button"
+              role="radio"
+              value="user"
+              id="source-user"
+              className={cn(
+                'mr-1 flex h-5 w-5 items-center justify-center rounded-full border',
+                'border-border-heavy bg-surface-primary',
+              )}
+            >
+              <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-text-primary" />
+            </RadioGroup.Item>
+            {localize('com_ui_user_provides_key')}
+          </label>
+        </div>
+      </RadioGroup.Root>
+
+      {/* API Key input - only show for admin-provided mode */}
+      {api_key_source === 'admin' && (
+        <>
+          <label className="mb-1 block text-sm font-medium">{localize('com_ui_api_key')}</label>
+          <input
+            placeholder="<HIDDEN>"
+            type="password"
+            autoComplete="new-password"
+            className={inputClasses}
+            {...register('api_key')}
+          />
+        </>
+      )}
+
+      {/* User-provided mode info */}
+      {api_key_source === 'user' && (
+        <div className="mb-3 rounded-lg border border-border-medium bg-surface-secondary p-3">
+          <p className="text-sm text-text-secondary">{localize('com_ui_user_provides_key_note')}</p>
+        </div>
+      )}
+
+      {/* Header Format selection - shown for both modes */}
+      <label className="mb-1 block text-sm font-medium">{localize('com_ui_header_format')}</label>
+      <RadioGroup.Root
+        defaultValue={AuthorizationTypeEnum.Bearer}
         onValueChange={(value) => setValue('api_key_authorization_type', value)}
         value={authorization_type}
         role="radiogroup"
@@ -251,23 +313,6 @@ const ApiKey = ({ inputClasses }: { inputClasses: string }) => {
         className="mb-2 flex gap-6 overflow-hidden rounded-lg"
         style={{ outline: 'none' }}
       >
-        <div className="flex items-center gap-2">
-          <label htmlFor="auth-basic" className="flex cursor-pointer items-center gap-1">
-            <RadioGroup.Item
-              type="button"
-              role="radio"
-              value={AuthorizationTypeEnum.Basic}
-              id="auth-basic"
-              className={cn(
-                'mr-1 flex h-5 w-5 items-center justify-center rounded-full border',
-                'border-border-heavy bg-surface-primary',
-              )}
-            >
-              <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-text-primary" />
-            </RadioGroup.Item>
-            {localize('com_ui_basic')}
-          </label>
-        </div>
         <div className="flex items-center gap-2">
           <label htmlFor="auth-bearer" className="flex cursor-pointer items-center gap-1">
             <RadioGroup.Item
@@ -283,6 +328,23 @@ const ApiKey = ({ inputClasses }: { inputClasses: string }) => {
               <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-text-primary" />
             </RadioGroup.Item>
             {localize('com_ui_bearer')}
+          </label>
+        </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor="auth-basic" className="flex cursor-pointer items-center gap-1">
+            <RadioGroup.Item
+              type="button"
+              role="radio"
+              value={AuthorizationTypeEnum.Basic}
+              id="auth-basic"
+              className={cn(
+                'mr-1 flex h-5 w-5 items-center justify-center rounded-full border',
+                'border-border-heavy bg-surface-primary',
+              )}
+            >
+              <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-text-primary" />
+            </RadioGroup.Item>
+            {localize('com_ui_basic')}
           </label>
         </div>
         <div className="flex items-center gap-2">

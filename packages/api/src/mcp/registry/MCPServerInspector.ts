@@ -68,6 +68,12 @@ export class MCPServerInspector {
       return;
     }
 
+    // Admin-provided API key means no OAuth flow is needed
+    if (this.config.apiKey?.source === 'admin') {
+      this.config.requiresOAuth = false;
+      return;
+    }
+
     const result = await detectOAuthRequirement(this.config.url);
     this.config.requiresOAuth = result.requiresOAuth;
     this.config.oauthMetadata = result.metadata;

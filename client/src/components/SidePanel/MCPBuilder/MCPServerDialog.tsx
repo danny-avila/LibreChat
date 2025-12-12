@@ -85,9 +85,12 @@ export default function MCPServerDialog({
       let authType: AuthTypeEnum = AuthTypeEnum.None;
       if (server.config.oauth) {
         authType = AuthTypeEnum.OAuth;
-      } else if ('api_key' in server.config) {
+      } else if ('apiKey' in server.config && server.config.apiKey) {
         authType = AuthTypeEnum.ServiceHttp;
       }
+
+      // Extract apiKey config if present
+      const apiKeyConfig = 'apiKey' in server.config ? server.config.apiKey : undefined;
 
       return {
         title: server.config.title || '',
@@ -97,9 +100,12 @@ export default function MCPServerDialog({
         icon: server.config.iconPath || '',
         auth: {
           auth_type: authType,
-          api_key: '',
-          api_key_authorization_type: AuthorizationTypeEnum.Basic,
-          api_key_custom_header: '',
+          api_key: '', // NEVER pre-fill secrets
+          api_key_source: (apiKeyConfig?.source as 'admin' | 'user') || 'admin',
+          api_key_authorization_type:
+            (apiKeyConfig?.authorization_type as AuthorizationTypeEnum) ||
+            AuthorizationTypeEnum.Bearer,
+          api_key_custom_header: apiKeyConfig?.custom_header || '',
           oauth_client_id: server.config.oauth?.client_id || '',
           oauth_client_secret: '', // NEVER pre-fill secrets
           oauth_authorization_url: server.config.oauth?.authorization_url || '',
@@ -119,7 +125,8 @@ export default function MCPServerDialog({
       auth: {
         auth_type: AuthTypeEnum.None,
         api_key: '',
-        api_key_authorization_type: AuthorizationTypeEnum.Basic,
+        api_key_source: 'admin',
+        api_key_authorization_type: AuthorizationTypeEnum.Bearer,
         api_key_custom_header: '',
         oauth_client_id: '',
         oauth_client_secret: '',
@@ -249,6 +256,22 @@ export default function MCPServerDialog({
         if (formData.auth.oauth_scope) {
           config.oauth.scope = formData.auth.oauth_scope;
         }
+      }
+
+      // Add API Key if auth type is service_http
+      if (formData.auth.auth_type === AuthTypeEnum.ServiceHttp) {
+        const source = formData.auth.api_key_source || 'admin';
+        const authorizationType = formData.auth.api_key_authorization_type || 'bearer';
+
+        config.apiKey = {
+          source,
+          authorization_type: authorizationType,
+          ...(source === 'admin' && formData.auth.api_key && { key: formData.auth.api_key }),
+          ...(authorizationType === 'custom' &&
+            formData.auth.api_key_custom_header && {
+              custom_header: formData.auth.api_key_custom_header,
+            }),
+        };
       }
 
       const params: MCPServerCreateParams = {

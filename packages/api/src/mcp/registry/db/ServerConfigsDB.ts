@@ -95,8 +95,10 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
         '[ServerConfigsDB.add] User ID is required to create a database-stored MCP server.',
       );
     }
+    // Transform user-provided API key config (adds customUserVars and headers)
+    const transformedConfig = this.transformUserApiKeyConfig(config);
     // Encrypt sensitive fields before storing in database
-    const encryptedConfig = await this.encryptConfig(config);
+    const encryptedConfig = await this.encryptConfig(transformedConfig);
     const createdServer = await this._dbMethods.createMCPServer({
       config: encryptedConfig,
       author: userId,
@@ -132,25 +134,44 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       );
     }
 
-    // Handle secret preservation and encryption
     const existingServer = await this._dbMethods.findMCPServerById(serverName);
-    let configToSave: ParsedServerConfig;
+    let configToSave: ParsedServerConfig = { ...config };
 
+    // Transform user-provided API key config (adds customUserVars and headers)
+    configToSave = this.transformUserApiKeyConfig(configToSave);
+
+    // Encrypt NEW secrets only (secrets provided in this update)
+    // We must do this BEFORE preserving existing encrypted secrets
+    configToSave = await this.encryptConfig(configToSave);
+
+    // Preserve existing OAuth client_secret if not provided in update (already encrypted)
     if (!config.oauth?.client_secret && existingServer?.config?.oauth?.client_secret) {
-      // No new secret provided - preserve the existing encrypted secret from DB (don't re-encrypt)
       configToSave = {
-        ...config,
+        ...configToSave,
         oauth: {
-          ...config.oauth,
+          ...configToSave.oauth,
           client_secret: existingServer.config.oauth.client_secret,
         },
       };
-    } else if (config.oauth?.client_secret) {
-      // New secret provided - encrypt it
-      configToSave = await this.encryptConfig(config);
-    } else {
-      // No secret in config or DB - nothing to encrypt
-      configToSave = config;
+    }
+
+    // Preserve existing API key if not provided in update (already encrypted)
+    // Only preserve if both old and new configs use admin mode to avoid cross-mode key leakage
+    if (
+      config.apiKey?.source === 'admin' &&
+      !config.apiKey?.key &&
+      existingServer?.config?.apiKey?.source === 'admin' &&
+      existingServer?.config?.apiKey?.key
+    ) {
+      configToSave = {
+        ...configToSave,
+        apiKey: {
+          source: configToSave.apiKey!.source,
+          authorization_type: configToSave.apiKey!.authorization_type,
+          custom_header: configToSave.apiKey?.custom_header,
+          key: existingServer.config.apiKey.key,
+        },
+      };
     }
 
     // specific user permissions for action permission will be handled in the controller calling the  update method of the registry
@@ -367,55 +388,148 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
   }
 
   /**
+   * Transforms user-provided API key config by auto-generating customUserVars and headers.
+   * This is a config transformation, not encryption.
+   * @param config - The server config to transform
+   * @returns The transformed config with customUserVars and headers set up
+   */
+  private transformUserApiKeyConfig(config: ParsedServerConfig): ParsedServerConfig {
+    if (!config.apiKey || config.apiKey.source !== 'user') {
+      return config;
+    }
+
+    const result = { ...config };
+    const headerName =
+      result.apiKey!.authorization_type === 'custom'
+        ? result.apiKey!.custom_header || 'X-Api-Key'
+        : 'Authorization';
+
+    let headerValue: string;
+    if (result.apiKey!.authorization_type === 'basic') {
+      headerValue = 'Basic {{MCP_API_KEY}}';
+    } else if (result.apiKey!.authorization_type === 'bearer') {
+      headerValue = 'Bearer {{MCP_API_KEY}}';
+    } else {
+      headerValue = '{{MCP_API_KEY}}';
+    }
+
+    result.customUserVars = {
+      ...result.customUserVars,
+      MCP_API_KEY: {
+        title: 'API Key',
+        description: 'Your API key for this MCP server',
+      },
+    };
+
+    // Cast to access headers property (not available on Stdio type)
+    const resultWithHeaders = result as ParsedServerConfig & {
+      headers?: Record<string, string>;
+    };
+    resultWithHeaders.headers = {
+      ...resultWithHeaders.headers,
+      [headerName]: headerValue,
+    };
+
+    // Remove key field since it's user-provided (destructure to omit, not set to undefined)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { key: _removed, ...apiKeyWithoutKey } = result.apiKey!;
+    result.apiKey = apiKeyWithoutKey;
+
+    return result;
+  }
+
+  /**
    * Encrypts sensitive fields in config before database storage.
-   * Currently encrypts only oauth.client_secret.
+   * Encrypts oauth.client_secret and apiKey.key (when source === 'admin').
    * Throws on failure to prevent storing plaintext secrets.
    */
   private async encryptConfig(config: ParsedServerConfig): Promise<ParsedServerConfig> {
-    if (!config.oauth?.client_secret) {
-      return config;
+    let result = { ...config };
+
+    // Encrypt admin-provided API key
+    if (result.apiKey?.source === 'admin' && result.apiKey.key) {
+      try {
+        result.apiKey = {
+          ...result.apiKey,
+          key: await encryptV2(result.apiKey.key),
+        };
+      } catch (error) {
+        logger.error('[ServerConfigsDB.encryptConfig] Failed to encrypt apiKey.key', error);
+        throw new Error('Failed to encrypt MCP server configuration');
+      }
     }
-    try {
-      return {
-        ...config,
-        oauth: {
-          ...config.oauth,
-          client_secret: await encryptV2(config.oauth.client_secret),
-        },
-      };
-    } catch (error) {
-      logger.error('[ServerConfigsDB.encryptConfig] Failed to encrypt client_secret', error);
-      throw new Error('Failed to encrypt MCP server configuration');
+
+    // Encrypt OAuth client_secret
+    if (result.oauth?.client_secret) {
+      try {
+        result = {
+          ...result,
+          oauth: {
+            ...result.oauth,
+            client_secret: await encryptV2(result.oauth.client_secret),
+          },
+        };
+      } catch (error) {
+        logger.error('[ServerConfigsDB.encryptConfig] Failed to encrypt client_secret', error);
+        throw new Error('Failed to encrypt MCP server configuration');
+      }
     }
+
+    return result;
   }
 
   /**
    * Decrypts sensitive fields in config after database retrieval.
+   * Decrypts oauth.client_secret and apiKey.key (when source === 'admin').
    * Returns config without secret on failure (graceful degradation).
    */
   private async decryptConfig(config: ParsedServerConfig): Promise<ParsedServerConfig> {
-    if (!config.oauth?.client_secret) {
-      return config;
+    let result = { ...config };
+
+    // Handle API key decryption (admin-provided only)
+    if (result.apiKey?.source === 'admin' && result.apiKey.key) {
+      try {
+        result.apiKey = {
+          ...result.apiKey,
+          key: await decryptV2(result.apiKey.key),
+        };
+      } catch (error) {
+        logger.warn(
+          '[ServerConfigsDB.decryptConfig] Failed to decrypt apiKey.key, returning config without key',
+          error,
+        );
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { key: _removedKey, ...apiKeyWithoutKey } = result.apiKey;
+        result.apiKey = apiKeyWithoutKey;
+      }
     }
-    try {
-      return {
-        ...config,
-        oauth: {
-          ...config.oauth,
-          client_secret: await decryptV2(config.oauth.client_secret),
-        },
-      };
-    } catch (error) {
-      logger.warn(
-        '[ServerConfigsDB.decryptConfig] Failed to decrypt client_secret, returning config without secret',
-        error,
-      );
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { client_secret: _removed, ...oauthWithoutSecret } = config.oauth;
-      return {
-        ...config,
-        oauth: oauthWithoutSecret,
-      };
+
+    // Handle OAuth client_secret decryption
+    if (result.oauth?.client_secret) {
+      // Cast oauth to type with client_secret since we've verified it exists
+      const oauthConfig = result.oauth as { client_secret: string } & typeof result.oauth;
+      try {
+        result = {
+          ...result,
+          oauth: {
+            ...oauthConfig,
+            client_secret: await decryptV2(oauthConfig.client_secret),
+          },
+        };
+      } catch (error) {
+        logger.warn(
+          '[ServerConfigsDB.decryptConfig] Failed to decrypt client_secret, returning config without secret',
+          error,
+        );
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { client_secret: _removed, ...oauthWithoutSecret } = oauthConfig;
+        result = {
+          ...result,
+          oauth: oauthWithoutSecret,
+        };
+      }
     }
+
+    return result;
   }
 }
