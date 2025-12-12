@@ -3,19 +3,19 @@ import { FlowStateManager } from './manager';
 import { FlowState } from './types';
 
 /** Mock class without extending Keyv */
-class MockKeyv {
-  private store: Map<string, FlowState<string>>;
+class MockKeyv<T = string> {
+  private store: Map<string, FlowState<T>>;
 
   constructor() {
     this.store = new Map();
   }
 
-  async get(key: string): Promise<FlowState<string> | undefined> {
+  async get(key: string): Promise<FlowState<T> | undefined> {
     return this.store.get(key);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async set(key: string, value: FlowState<string>, _ttl?: number): Promise<true> {
+  async set(key: string, value: FlowState<T>, _ttl?: number): Promise<true> {
     this.store.set(key, value);
     return true;
   }
@@ -180,6 +180,95 @@ describe('FlowStateManager', () => {
 
       expect(result).toBe(true);
     });
+  });
+
+  describe('createFlowWithHandler - token expiration', () => {
+    const flowId = 'token-flow';
+    const type = 'mcp_get_tokens';
+    const flowKey = `${type}:${flowId}`;
+
+    type TokenResult = {
+      access_token: string;
+      refresh_token: string;
+      expires_at?: number;
+    };
+
+    let tokenFlowManager: FlowStateManager<TokenResult>;
+    let tokenStore: MockKeyv<TokenResult>;
+
+    beforeEach(() => {
+      tokenStore = new MockKeyv<TokenResult>();
+      tokenFlowManager = new FlowStateManager(tokenStore as unknown as Keyv, {
+        ttl: 30000,
+        ci: true,
+      });
+    });
+
+    it('should execute handler when existing flow has expired token', async () => {
+      const expiredTokenResult: TokenResult = {
+        access_token: 'expired_token',
+        refresh_token: 'refresh_token',
+        expires_at: Date.now() - 1000, // Expired 1 second ago
+      };
+
+      // Create flow with expired token
+      await tokenStore.set(flowKey, {
+        type,
+        status: 'COMPLETED',
+        metadata: {},
+        createdAt: Date.now() - 5000,
+        completedAt: Date.now() - 4000,
+        result: expiredTokenResult,
+      } as FlowState<TokenResult>);
+
+      const newTokenResult: TokenResult = {
+        access_token: 'new_token',
+        refresh_token: 'new_refresh',
+        expires_at: Date.now() + 3600000,
+      };
+      const handlerSpy = jest.fn().mockResolvedValue(newTokenResult);
+
+      const result = await tokenFlowManager.createFlowWithHandler(flowId, type, handlerSpy);
+
+      // Handler should be called because token is expired
+      expect(handlerSpy).toHaveBeenCalled();
+      expect(result).toEqual(newTokenResult);
+    });
+
+    it('should reuse existing flow when token is still valid', async () => {
+      const validTokenResult: TokenResult = {
+        access_token: 'valid_token',
+        refresh_token: 'refresh_token',
+        expires_at: Date.now() + 3600000, // Expires in 1 hour
+      };
+
+      // Create flow with valid token
+      await tokenStore.set(flowKey, {
+        type,
+        status: 'COMPLETED',
+        metadata: {},
+        createdAt: Date.now() - 5000,
+        completedAt: Date.now() - 4000,
+        result: validTokenResult,
+      } as FlowState<TokenResult>);
+
+      const handlerSpy = jest.fn().mockResolvedValue({
+        access_token: 'new_token',
+        refresh_token: 'new_refresh',
+        expires_at: Date.now() + 3600000,
+      });
+
+      const resultPromise = tokenFlowManager.createFlowWithHandler(flowId, type, handlerSpy);
+
+      // Complete the monitored flow
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const result = await resultPromise;
+
+      // Handler should NOT be called because token is still valid
+      expect(handlerSpy).not.toHaveBeenCalled();
+      expect(result).toEqual(validTokenResult);
+    }, 15000);
   });
 
   describe('isFlowStale', () => {
