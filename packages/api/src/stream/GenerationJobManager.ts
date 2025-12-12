@@ -33,14 +33,30 @@ interface RuntimeJobState {
 
 /**
  * Manages generation jobs for resumable LLM streams.
- * Composes three implementations for clean separation of concerns:
- * - InMemoryJobStore: Serializable job metadata (swappable for Redis)
- * - InMemoryEventTransport: Pub/sub events (swappable for Redis Pub/Sub)
- * - InMemoryContentState: Volatile content refs with WeakRef (always in-memory)
+ *
+ * Architecture: Composes three pluggable services for clean separation:
+ * - jobStore: Serializable job metadata (InMemory → Redis/KV for horizontal scaling)
+ * - eventTransport: Pub/sub events (InMemory → Redis Pub/Sub for horizontal scaling)
+ * - contentState: Volatile content refs with WeakRef (always in-memory, not shared)
+ *
+ * Current implementation uses sync methods for performance. When adding Redis support,
+ * the manager methods will need to become async, or use a sync-capable Redis client.
+ *
+ * @example Future Redis injection (requires async refactor):
+ * ```ts
+ * const manager = new GenerationJobManagerClass({
+ *   jobStore: new RedisJobStore(redisClient),
+ *   eventTransport: new RedisPubSubTransport(redisClient),
+ *   contentState: new InMemoryContentState(), // Always local
+ * });
+ * ```
  */
 class GenerationJobManagerClass {
+  /** Job metadata storage - swappable for Redis, KV store, etc. */
   private jobStore: InMemoryJobStore;
+  /** Event pub/sub transport - swappable for Redis Pub/Sub, etc. */
   private eventTransport: InMemoryEventTransport;
+  /** Volatile content state with WeakRef - always in-memory per instance */
   private contentState: InMemoryContentState;
 
   /** Runtime state - always in-memory, not serializable */
@@ -146,9 +162,12 @@ class GenerationJobManagerClass {
   }
 
   /**
-   * Build a GenerationJob facade from job data and runtime state.
-   * This maintains backwards compatibility with existing code that expects
-   * job.emitter, job.abortController, etc.
+   * Build a GenerationJob facade from composed services.
+   *
+   * This facade provides a unified API (job.emitter, job.abortController, etc.)
+   * while internally delegating to the injected services (jobStore, eventTransport,
+   * contentState). This allows swapping implementations (e.g., Redis) without
+   * changing consumer code.
    *
    * IMPORTANT: The emitterProxy.on('allSubscribersLeft') handler registration
    * does NOT use eventTransport.subscribe(). This is intentional:
