@@ -26,7 +26,6 @@ export default function SharedLinkButton({
   share,
   conversationId,
   targetMessageId,
-  setShareDialogOpen,
   showQR,
   setShowQR,
   setSharedLink,
@@ -34,7 +33,6 @@ export default function SharedLinkButton({
   share: TSharedLinkGetResponse | undefined;
   conversationId: string;
   targetMessageId?: string;
-  setShareDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
   showQR: boolean;
   setShowQR: (showQR: boolean) => void;
   setSharedLink: (sharedLink: string) => void;
@@ -67,9 +65,16 @@ export default function SharedLinkButton({
   });
 
   const deleteMutation = useDeleteSharedLinkMutation({
-    onSuccess: async () => {
+    onSuccess: () => {
       setShowDeleteDialog(false);
-      setShareDialogOpen(false);
+      setTimeout(() => {
+        const dialog = document
+          .getElementById('share-conversation-dialog')
+          ?.closest('[role="dialog"]');
+        if (dialog instanceof HTMLElement) {
+          dialog.focus();
+        }
+      }, 0);
     },
     onError: (error) => {
       console.error('Delete error:', error);
@@ -190,7 +195,11 @@ export default function SharedLinkButton({
             />
           </div>
         )}
-        <OGDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <OGDialog
+          open={showDeleteDialog}
+          triggerRef={deleteButtonRef}
+          onOpenChange={setShowDeleteDialog}
+        >
           <OGDialogContent className="max-w-[450px]" showCloseButton={false}>
             <OGDialogHeader>
               <OGDialogTitle>{localize('com_ui_delete_shared_link_heading')}</OGDialogTitle>
