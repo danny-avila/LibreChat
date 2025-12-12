@@ -306,7 +306,13 @@ async function createMCPTool({
 function createToolInstance({ res, toolName, serverName, toolDefinition, provider: _provider }) {
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
-  const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
+  const providerLower = _provider?.toLowerCase?.() ?? '';
+  // Check for Google providers (native or custom Gemini endpoints)
+  const isGoogle =
+    _provider === Providers.VERTEXAI ||
+    _provider === Providers.GOOGLE ||
+    providerLower.includes('gemini') ||
+    providerLower.includes('google');
   let schema = convertWithResolvedRefs(parameters, {
     allowEmptyObject: !isGoogle,
     transformOneOfAnyOf: true,
@@ -383,7 +389,12 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
         return result[0];
       }
-      if (isGoogle && Array.isArray(result[0]) && result[0][0]?.type === ContentTypes.TEXT) {
+      // Check if this is a Google-like provider (native Google or custom Gemini endpoint)
+      // Custom Gemini endpoints use OpenAI-compatible format but need text extraction
+      // to avoid sending array content that causes "Proto field is not repeating" errors
+      const isGoogleLike =
+        isGoogle || (provider && (provider.includes('gemini') || provider.includes('google')));
+      if (isGoogleLike && Array.isArray(result[0]) && result[0][0]?.type === ContentTypes.TEXT) {
         return [result[0][0].text, result[1]];
       }
       return result;
