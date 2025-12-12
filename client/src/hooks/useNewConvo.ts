@@ -163,7 +163,7 @@ const useNewConvo = (index = 0) => {
           });
         }
 
-        if (disableParams === true) {
+        if (_disableParams === true) {
           conversation.disableParams = true;
         }
 
