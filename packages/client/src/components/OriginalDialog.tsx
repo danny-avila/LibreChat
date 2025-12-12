@@ -78,7 +78,7 @@ const DialogContent = React.forwardRef<
     },
     ref,
   ) => {
-    /* Handle Escape key to prevent closing dialog if a tooltip is open 
+    /* Handle Escape key to prevent closing dialog if a tooltip or dropdown is open 
     (this is a workaround in order to achieve WCAG compliance which requires
     that our tooltips be dismissable with Escape key) */
     const handleEscapeKeyDown = React.useCallback(
@@ -91,6 +91,22 @@ const DialogContent = React.forwardRef<
 
           if (
             tooltip.parentElement &&
+            computedStyle.display !== 'none' &&
+            computedStyle.visibility !== 'hidden' &&
+            opacity > 0
+          ) {
+            event.preventDefault();
+            return;
+          }
+        }
+
+        // Check if a dropdown menu is open
+        const dropdownMenus = document.querySelectorAll('[role="menu"]');
+        for (const dropdown of Array.from(dropdownMenus)) {
+          const computedStyle = window.getComputedStyle(dropdown);
+          const opacity = parseFloat(computedStyle.opacity);
+
+          if (
             computedStyle.display !== 'none' &&
             computedStyle.visibility !== 'hidden' &&
             opacity > 0
