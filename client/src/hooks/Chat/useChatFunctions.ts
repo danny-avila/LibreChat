@@ -295,12 +295,9 @@ export default function useChatFunctions({
             },
           ];
         } else {
-          initialResponse.content = [
-            {
-              type: ContentTypes.TEXT,
-              text: '',
-            },
-          ];
+          // Don't pre-initialize content type - let incoming delta events
+          // create content parts dynamically (supports think, text, etc.)
+          initialResponse.content = [];
         }
       }
       setShowStopButton(true);
