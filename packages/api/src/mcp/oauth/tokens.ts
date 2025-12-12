@@ -134,6 +134,9 @@ export class MCPTokenStorage {
 
       // Store refresh token if available
       if (tokens.refresh_token) {
+        logger.debug(
+          `${logPrefix} New refresh token received from OAuth server, will store/update`,
+        );
         const encryptedRefreshToken = await encryptV2(tokens.refresh_token);
         const extendedTokens = tokens as ExtendedOAuthTokens;
         const refreshTokenExpiry = extendedTokens.refresh_token_expires_in
@@ -173,6 +176,10 @@ export class MCPTokenStorage {
           await createToken(refreshTokenData);
           logger.debug(`${logPrefix} Created refresh token (no update methods available)`);
         }
+      } else {
+        logger.debug(
+          `${logPrefix} No refresh token in response - OAuth server did not rotate refresh token (this is normal for some providers)`,
+        );
       }
 
       /** Store client information if provided */
@@ -319,6 +326,13 @@ export class MCPTokenStorage {
           };
 
           const newTokens = await refreshTokens(decryptedRefreshToken, metadata);
+
+          logger.debug(`${logPrefix} Refresh completed`, {
+            has_new_access_token: !!newTokens.access_token,
+            has_new_refresh_token: !!newTokens.refresh_token,
+            refresh_token_will_be_rotated: !!newTokens.refresh_token,
+            expires_at: newTokens.expires_at,
+          });
 
           // Store the refreshed tokens (handles both create and update)
           // Pass existing token state to avoid duplicate DB calls
