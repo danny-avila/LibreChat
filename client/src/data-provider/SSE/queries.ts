@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { request } from 'librechat-data-provider';
+import type { Agents } from 'librechat-data-provider';
 
 export interface StreamStatusResponse {
   active: boolean;
@@ -8,6 +9,7 @@ export interface StreamStatusResponse {
   chunkCount?: number;
   aggregatedContent?: Array<{ type: string; text?: string }>;
   createdAt?: number;
+  resumeState?: Agents.ResumeState;
 }
 
 /**
@@ -19,8 +21,12 @@ export const streamStatusQueryKey = (conversationId: string) => ['streamStatus',
  * Fetch stream status for a conversation
  */
 export const fetchStreamStatus = async (conversationId: string): Promise<StreamStatusResponse> => {
-  const response = await request.get(`/api/agents/chat/status/${conversationId}`);
-  return response.data;
+  console.log('[fetchStreamStatus] Fetching status for:', conversationId);
+  const result = await request.get<StreamStatusResponse>(
+    `/api/agents/chat/status/${conversationId}`,
+  );
+  console.log('[fetchStreamStatus] Result:', result);
+  return result;
 };
 
 /**

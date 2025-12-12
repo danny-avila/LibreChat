@@ -9,6 +9,8 @@ export interface GenerationJobMetadata {
   userMessage?: Agents.UserMessageMeta;
   /** Response message ID for tracking */
   responseMessageId?: string;
+  /** Sender label for the response (e.g., "GPT-4.1", "Claude") */
+  sender?: string;
 }
 
 export type GenerationJobStatus = 'running' | 'complete' | 'error' | 'aborted';

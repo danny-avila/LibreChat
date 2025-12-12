@@ -140,6 +140,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     client = result.client;
 
+    if (client?.sender) {
+      GenerationJobManager.updateMetadata(streamId, { sender: client.sender });
+    }
+
     res.json({ streamId, status: 'started' });
 
     let conversationId = reqConversationId;

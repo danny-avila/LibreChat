@@ -11,7 +11,6 @@ import {
 } from 'librechat-data-provider';
 import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
-import type { TResData } from '~/common';
 import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
@@ -43,6 +42,11 @@ const MAX_RETRIES = 5;
  * Hook for resumable SSE streams.
  * Separates generation start (POST) from stream subscription (GET EventSource).
  * Supports auto-reconnection with exponential backoff.
+ *
+ * Key behavior:
+ * - Navigation away does NOT abort the generation (just closes SSE)
+ * - Only explicit abort (via stop button → backend abort endpoint) stops generation
+ * - Backend emits `done` event with `aborted: true` on abort, handled via finalHandler
  */
 export default function useResumableSSE(
   submission: TSubmission | null,
@@ -83,7 +87,6 @@ export default function useResumableSSE(
     contentHandler,
     createdHandler,
     attachmentHandler,
-    abortConversation,
   } = useEventHandlers({
     genTitle,
     setMessages,
@@ -104,6 +107,7 @@ export default function useResumableSSE(
 
   /**
    * Subscribe to stream via SSE library (supports custom headers)
+   * Follows same auth pattern as useSSE
    */
   const subscribeToStream = useCallback(
     (currentStreamId: string, currentSubmission: TSubmission) => {
@@ -131,6 +135,11 @@ export default function useResumableSSE(
           const data = JSON.parse(e.data);
 
           if (data.final != null) {
+            console.log('[ResumableSSE] Received FINAL event', {
+              aborted: data.aborted,
+              conversationId: data.conversation?.conversationId,
+              hasResponseMessage: !!data.responseMessage,
+            });
             clearDraft(currentSubmission.conversation?.conversationId);
             try {
               finalHandler(data, currentSubmission as EventSubmission);
@@ -146,6 +155,10 @@ export default function useResumableSSE(
           }
 
           if (data.created != null) {
+            console.log('[ResumableSSE] Received CREATED event', {
+              messageId: data.message?.messageId,
+              conversationId: data.message?.conversationId,
+            });
             const runId = v4();
             setActiveRunId(runId);
             userMessage = {
@@ -171,6 +184,10 @@ export default function useResumableSSE(
           }
 
           if (data.sync != null) {
+            console.log('[ResumableSSE] Received SYNC event', {
+              conversationId: data.conversationId,
+              hasResumeState: !!data.resumeState,
+            });
             const runId = v4();
             setActiveRunId(runId);
             syncHandler(data, { ...currentSubmission, userMessage } as EventSubmission);
@@ -200,67 +217,32 @@ export default function useResumableSSE(
         }
       });
 
-      // Handle cancel event (triggered when stop button is clicked)
-      sse.addEventListener('cancel', async () => {
-        console.log('[ResumableSSE] Cancel requested, aborting job');
-        sse.close();
-
-        // Call abort endpoint to stop backend generation
-        try {
-          await fetch('/api/agents/chat/abort', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ streamId: currentStreamId }),
-          });
-        } catch (error) {
-          console.error('[ResumableSSE] Error aborting job:', error);
-        }
-
-        // Handle UI cleanup via abortConversation
-        const latestMessages = getMessages();
-        const conversationId = latestMessages?.[latestMessages.length - 1]?.conversationId;
-        try {
-          await abortConversation(
-            conversationId ??
-              userMessage.conversationId ??
-              currentSubmission.conversation?.conversationId ??
-              '',
-            currentSubmission as EventSubmission,
-            latestMessages,
-          );
-        } catch (error) {
-          console.error('[ResumableSSE] Error during abort:', error);
-          setIsSubmitting(false);
-          setShowStopButton(false);
-        }
-        setStreamId(null);
-      });
-
       sse.addEventListener('error', async (e: MessageEvent) => {
-        console.log('[ResumableSSE] Stream error, connection closed');
-        sse.close();
+        console.log('[ResumableSSE] Stream error');
+        (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
 
-        // Check for 401 and try to refresh token
+        // Check for 401 and try to refresh token (same pattern as useSSE)
         /* @ts-ignore */
         if (e.responseCode === 401) {
           try {
             const refreshResponse = await request.refreshToken();
             const newToken = refreshResponse?.token ?? '';
-            if (newToken) {
-              request.dispatchTokenUpdatedEvent(newToken);
-              // Retry with new token
-              if (submissionRef.current) {
-                subscribeToStream(currentStreamId, submissionRef.current);
-              }
-              return;
+            if (!newToken) {
+              throw new Error('Token refresh failed.');
             }
+            // Update headers on same SSE instance and retry (like useSSE)
+            sse.headers = {
+              Authorization: `Bearer ${newToken}`,
+            };
+            request.dispatchTokenUpdatedEvent(newToken);
+            sse.stream();
+            return;
           } catch (error) {
             console.log('[ResumableSSE] Token refresh failed:', error);
           }
         }
+
+        sse.close();
 
         if (reconnectAttemptRef.current < MAX_RETRIES) {
           reconnectAttemptRef.current++;
@@ -303,13 +285,12 @@ export default function useResumableSSE(
       setIsSubmitting,
       startupConfig?.balance?.enabled,
       balanceQuery,
-      abortConversation,
-      getMessages,
     ],
   );
 
   /**
    * Start generation (POST request that returns streamId)
+   * Uses request.post which has axios interceptors for automatic token refresh
    */
   const startGeneration = useCallback(
     async (currentSubmission: TSubmission): Promise<string | null> => {
@@ -324,24 +305,10 @@ export default function useResumableSSE(
         : `${payloadData.server}?resumable=true`;
 
       try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `Failed to start generation: ${response.statusText}`);
-        }
-
-        const { streamId: newStreamId } = await response.json();
-        console.log('[ResumableSSE] Generation started:', { streamId: newStreamId });
-
-        return newStreamId;
+        // Use request.post which handles auth token refresh via axios interceptors
+        const data = (await request.post(url, payload)) as { streamId: string };
+        console.log('[ResumableSSE] Generation started:', { streamId: data.streamId });
+        return data.streamId;
       } catch (error) {
         console.error('[ResumableSSE] Error starting generation:', error);
         errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
@@ -349,15 +316,18 @@ export default function useResumableSSE(
         return null;
       }
     },
-    [token, clearStepMaps, errorHandler, setIsSubmitting],
+    [clearStepMaps, errorHandler, setIsSubmitting],
   );
 
   useEffect(() => {
     if (!submission || Object.keys(submission).length === 0) {
+      console.log('[ResumableSSE] No submission, cleaning up');
+      // Clear reconnect timeout if submission is cleared
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
+      // Close SSE but do NOT dispatch cancel - navigation should not abort
       if (sseRef.current) {
         sseRef.current.close();
         sseRef.current = null;
@@ -368,36 +338,56 @@ export default function useResumableSSE(
       return;
     }
 
+    const resumeStreamId = (submission as TSubmission & { resumeStreamId?: string }).resumeStreamId;
+    console.log('[ResumableSSE] Effect triggered', {
+      conversationId: submission.conversation?.conversationId,
+      hasResumeStreamId: !!resumeStreamId,
+      resumeStreamId,
+      userMessageId: submission.userMessage?.messageId,
+    });
+
     submissionRef.current = submission;
 
     const initStream = async () => {
       setIsSubmitting(true);
+      setShowStopButton(true);
 
-      const newStreamId = await startGeneration(submission);
-      if (newStreamId) {
-        setStreamId(newStreamId);
-        subscribeToStream(newStreamId, submission);
+      if (resumeStreamId) {
+        // Resume: just subscribe to existing stream, don't start new generation
+        console.log('[ResumableSSE] Resuming existing stream:', resumeStreamId);
+        setStreamId(resumeStreamId);
+        subscribeToStream(resumeStreamId, submission);
+      } else {
+        // New generation: start and then subscribe
+        console.log('[ResumableSSE] Starting NEW generation');
+        const newStreamId = await startGeneration(submission);
+        if (newStreamId) {
+          setStreamId(newStreamId);
+          subscribeToStream(newStreamId, submission);
+        } else {
+          console.error('[ResumableSSE] Failed to get streamId from startGeneration');
+        }
       }
     };
 
     initStream();
 
     return () => {
+      console.log('[ResumableSSE] Cleanup - closing SSE, resetting UI state');
+      // Cleanup on unmount/navigation - close connection but DO NOT abort backend
+      // Reset UI state so it doesn't leak to other conversations
+      // If user returns to this conversation, useResumeOnLoad will restore the state
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
       if (sseRef.current) {
-        const isCancelled = sseRef.current.readyState <= 1;
         sseRef.current.close();
-        if (isCancelled) {
-          // Dispatch cancel event to trigger abort
-          const e = new Event('cancel');
-          /* @ts-ignore */
-          sseRef.current.dispatchEvent(e);
-        }
         sseRef.current = null;
       }
+      // Reset UI state on cleanup - useResumeOnLoad will restore if needed
+      setIsSubmitting(false);
+      setShowStopButton(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);

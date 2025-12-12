@@ -177,6 +177,7 @@ class GenerationJobManagerClass {
     );
 
     // Create a final event for abort so clients can properly handle UI cleanup
+    const userMessageId = job.metadata.userMessage?.messageId;
     const abortFinalEvent = {
       final: true,
       conversation: {
@@ -185,18 +186,23 @@ class GenerationJobManagerClass {
       title: 'New Chat',
       requestMessage: job.metadata.userMessage
         ? {
-            messageId: job.metadata.userMessage.messageId,
+            messageId: userMessageId,
+            parentMessageId: job.metadata.userMessage.parentMessageId,
             conversationId: job.metadata.conversationId,
             text: job.metadata.userMessage.text ?? '',
+            isCreatedByUser: true,
           }
         : null,
       responseMessage: {
-        messageId:
-          job.metadata.responseMessageId ?? `${job.metadata.userMessage?.messageId ?? 'aborted'}_`,
+        messageId: job.metadata.responseMessageId ?? `${userMessageId ?? 'aborted'}_`,
+        parentMessageId: userMessageId, // Link response to user message
         conversationId: job.metadata.conversationId,
         content: job.aggregatedContent ?? [],
+        sender: job.metadata.sender ?? 'AI',
         unfinished: true,
-        error: true,
+        /** Not an error - the job was intentionally aborted */
+        error: false,
+        isCreatedByUser: false,
       },
       aborted: true,
     } as unknown as ServerSentEvent;

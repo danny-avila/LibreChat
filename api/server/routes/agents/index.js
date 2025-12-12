@@ -156,12 +156,27 @@ router.post('/chat/abort', (req, res) => {
   logger.debug(`[AgentStream] Method: ${req.method}, Path: ${req.path}`);
   logger.debug(`[AgentStream] Body:`, req.body);
 
-  const { streamId, abortKey } = req.body;
+  const { streamId, conversationId, abortKey } = req.body;
 
-  const jobStreamId = streamId || abortKey?.split(':')?.[0];
+  // Try to find job by streamId first, then by conversationId, then by abortKey
+  let jobStreamId = streamId;
+  let job = jobStreamId ? GenerationJobManager.getJob(jobStreamId) : null;
+
+  if (!job && conversationId) {
+    job = GenerationJobManager.getJobByConversation(conversationId);
+    if (job) {
+      jobStreamId = job.streamId;
+    }
+  }
+
+  if (!job && abortKey) {
+    jobStreamId = abortKey.split(':')[0];
+    job = GenerationJobManager.getJob(jobStreamId);
+  }
+
   logger.debug(`[AgentStream] Computed jobStreamId: ${jobStreamId}`);
 
-  if (jobStreamId && GenerationJobManager.hasJob(jobStreamId)) {
+  if (job && jobStreamId) {
     logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
     GenerationJobManager.abortJob(jobStreamId);
     logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`);
