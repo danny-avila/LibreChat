@@ -101,8 +101,13 @@ export default function useStepHandler({
     }
     /** Prevent overwriting an existing content part with a different type */
     const existingType = (updatedContent[index]?.type as string | undefined) ?? '';
-    if (existingType && !contentType.startsWith(existingType)) {
-      console.warn('Content type mismatch');
+    if (
+      existingType &&
+      existingType !== contentType &&
+      !contentType.startsWith(existingType) &&
+      !existingType.startsWith(contentType)
+    ) {
+      console.warn('Content type mismatch', { existingType, contentType, index });
       return message;
     }
 
