@@ -51,18 +51,20 @@ function buildSubmissionFromResumeState(
           isCreatedByUser: true,
         } as TMessage)));
 
-  // Use existing response from DB if available (preserves already-saved content)
-  const initialResponse: TMessage =
-    existingResponseMessage ??
-    ({
-      messageId: responseMessageId,
-      parentMessageId: userMessage.messageId,
-      conversationId,
-      text: '',
-      content: (resumeState.aggregatedContent as TMessage['content']) ?? [],
-      isCreatedByUser: false,
-      role: 'assistant',
-    } as TMessage);
+  // ALWAYS use aggregatedContent from resumeState - it has the latest content from the running job.
+  // DB content may be stale (saved at disconnect, but generation continued).
+  const initialResponse: TMessage = {
+    messageId: existingResponseMessage?.messageId ?? responseMessageId,
+    parentMessageId: existingResponseMessage?.parentMessageId ?? userMessage.messageId,
+    conversationId,
+    text: '',
+    // aggregatedContent is authoritative - it reflects actual job state
+    content: (resumeState.aggregatedContent as TMessage['content']) ?? [],
+    isCreatedByUser: false,
+    role: 'assistant',
+    sender: existingResponseMessage?.sender,
+    model: existingResponseMessage?.model,
+  } as TMessage;
 
   const conversation: TConversation = {
     conversationId,
@@ -91,11 +93,14 @@ function buildSubmissionFromResumeState(
  * 1. Uses useStreamStatus to check for active jobs on navigation
  * 2. If active job found, builds a submission with streamId and sets it
  * 3. useResumableSSE picks up the submission and subscribes to the stream
+ *
+ * @param messagesLoaded - Whether the messages query has finished loading (prevents race condition)
  */
 export default function useResumeOnLoad(
   conversationId: string | undefined,
   getMessages: () => TMessage[] | undefined,
   runIndex = 0,
+  messagesLoaded = true,
 ) {
   const resumableEnabled = useRecoilValue(store.resumableStreams);
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
@@ -104,10 +109,14 @@ export default function useResumeOnLoad(
   const processedConvoRef = useRef<string | null>(null);
 
   // Check for active stream when conversation changes
-  // Only check if resumable is enabled and no active submission
+  // Allow check if no submission OR submission is for a different conversation (stale)
+  const submissionConvoId = currentSubmission?.conversation?.conversationId;
+  const hasActiveSubmissionForThisConvo = currentSubmission && submissionConvoId === conversationId;
+
   const shouldCheck =
     resumableEnabled &&
-    !currentSubmission &&
+    messagesLoaded && // Wait for messages to load before checking
+    !hasActiveSubmissionForThisConvo && // Allow if no submission or stale submission
     !!conversationId &&
     conversationId !== Constants.NEW_CONVO &&
     processedConvoRef.current !== conversationId; // Don't re-check processed convos
@@ -118,6 +127,7 @@ export default function useResumeOnLoad(
     console.log('[ResumeOnLoad] Effect check', {
       resumableEnabled,
       conversationId,
+      messagesLoaded,
       hasCurrentSubmission: !!currentSubmission,
       currentSubmissionConvoId: currentSubmission?.conversation?.conversationId,
       isSuccess,
@@ -131,12 +141,30 @@ export default function useResumeOnLoad(
       return;
     }
 
-    // Don't resume if we already have an active submission (we started it ourselves)
-    if (currentSubmission) {
-      console.log('[ResumeOnLoad] Skipping - already have active submission, marking as processed');
+    // Wait for messages to load to avoid race condition where sync overwrites then DB overwrites
+    if (!messagesLoaded) {
+      console.log('[ResumeOnLoad] Waiting for messages to load');
+      return;
+    }
+
+    // Don't resume if we already have an active submission FOR THIS CONVERSATION
+    // A stale submission with undefined/different conversationId should not block us
+    if (hasActiveSubmissionForThisConvo) {
+      console.log('[ResumeOnLoad] Skipping - already have active submission for this conversation');
       // Mark as processed so we don't try again
       processedConvoRef.current = conversationId;
       return;
+    }
+
+    // If there's a stale submission for a different conversation, log it but continue
+    if (currentSubmission && submissionConvoId !== conversationId) {
+      console.log(
+        '[ResumeOnLoad] Found stale submission for different conversation, will check for resume',
+        {
+          staleConvoId: submissionConvoId,
+          currentConvoId: conversationId,
+        },
+      );
     }
 
     // Wait for stream status query to complete
@@ -151,14 +179,16 @@ export default function useResumeOnLoad(
       return;
     }
 
-    // Mark as processed immediately to prevent race conditions
-    processedConvoRef.current = conversationId;
-
     // Check if there's an active job to resume
+    // DON'T mark as processed here - only mark when we actually create a submission
+    // This prevents stale cache data from blocking subsequent resume attempts
     if (!streamStatus.active || !streamStatus.streamId) {
       console.log('[ResumeOnLoad] No active job to resume for:', conversationId);
       return;
     }
+
+    // Mark as processed NOW - we verified there's an active job and will create submission
+    processedConvoRef.current = conversationId;
 
     console.log('[ResumeOnLoad] Found active job, creating submission...', {
       streamId: streamStatus.streamId,
@@ -202,6 +232,9 @@ export default function useResumeOnLoad(
   }, [
     conversationId,
     resumableEnabled,
+    messagesLoaded,
+    hasActiveSubmissionForThisConvo,
+    submissionConvoId,
     currentSubmission,
     isSuccess,
     streamStatus,
@@ -209,11 +242,14 @@ export default function useResumeOnLoad(
     setSubmission,
   ]);
 
-  // Reset processedConvoRef when conversation changes to a different one
+  // Reset processedConvoRef when conversation changes to allow re-checking
   useEffect(() => {
-    if (conversationId && conversationId !== processedConvoRef.current) {
-      // Only reset if we're navigating to a DIFFERENT conversation
-      // This allows re-checking when navigating back
+    // Always reset when conversation changes - this allows resuming when navigating back
+    if (conversationId !== processedConvoRef.current) {
+      console.log('[ResumeOnLoad] Resetting processedConvoRef for new conversation:', {
+        old: processedConvoRef.current,
+        new: conversationId,
+      });
       processedConvoRef.current = null;
     }
   }, [conversationId]);

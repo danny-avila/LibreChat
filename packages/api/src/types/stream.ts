@@ -1,5 +1,6 @@
 import type { EventEmitter } from 'events';
 import type { Agents } from 'librechat-data-provider';
+import type { StandardGraph } from '@librechat/agents';
 import type { ServerSentEvent } from '~/types';
 
 export interface GenerationJobMetadata {
@@ -30,10 +31,10 @@ export interface GenerationJob {
   chunks: ServerSentEvent[];
   /** Final event when job completes */
   finalEvent?: ServerSentEvent;
-  /** Aggregated content parts for saving partial response */
-  aggregatedContent?: ContentPart[];
-  /** Tracked run steps for reconnection - maps step ID to step data */
-  runSteps: Map<string, Agents.RunStep>;
+  /** Reference to graph's contentParts - the authoritative content source */
+  contentPartsRef?: Agents.MessageContentComplex[];
+  /** Reference to the graph instance for accessing run steps (contentData) */
+  graphRef?: StandardGraph;
   /** Flag to indicate if a sync event was already sent (prevent duplicate replays) */
   syncSent?: boolean;
 }

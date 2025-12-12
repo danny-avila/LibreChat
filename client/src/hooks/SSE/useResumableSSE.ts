@@ -58,7 +58,7 @@ export default function useResumableSSE(
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
   const { token, isAuthenticated } = useAuthContext();
-  const [completed, setCompleted] = useState(new Set());
+  const [_completed, setCompleted] = useState(new Set());
   const [streamId, setStreamId] = useState<string | null>(null);
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
@@ -78,15 +78,16 @@ export default function useResumableSSE(
   } = chatHelpers;
 
   const {
-    clearStepMaps,
     stepHandler,
-    syncHandler,
     finalHandler,
     errorHandler,
+    clearStepMaps,
     messageHandler,
     contentHandler,
     createdHandler,
+    syncStepMessage,
     attachmentHandler,
+    resetContentHandler,
   } = useEventHandlers({
     genTitle,
     setMessages,
@@ -108,14 +109,16 @@ export default function useResumableSSE(
   /**
    * Subscribe to stream via SSE library (supports custom headers)
    * Follows same auth pattern as useSSE
+   * @param isResume - If true, adds ?resume=true to trigger sync event from server
    */
   const subscribeToStream = useCallback(
-    (currentStreamId: string, currentSubmission: TSubmission) => {
+    (currentStreamId: string, currentSubmission: TSubmission, isResume = false) => {
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
 
-      const url = `/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
-      console.log('[ResumableSSE] Subscribing to stream:', url);
+      const baseUrl = `/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
+      const url = isResume ? `${baseUrl}?resume=true` : baseUrl;
+      console.log('[ResumableSSE] Subscribing to stream:', url, { isResume });
 
       const sse = new SSE(url, {
         headers: { Authorization: `Bearer ${token}` },
@@ -184,13 +187,98 @@ export default function useResumableSSE(
           }
 
           if (data.sync != null) {
-            console.log('[ResumableSSE] Received SYNC event', {
-              conversationId: data.conversationId,
-              hasResumeState: !!data.resumeState,
+            const textPart = data.resumeState?.aggregatedContent?.find(
+              (p: { type: string }) => p.type === 'text',
+            );
+            console.log('[ResumableSSE] SYNC received', {
+              runSteps: data.resumeState?.runSteps?.length ?? 0,
+              contentLength: textPart?.text?.length ?? 0,
             });
+
             const runId = v4();
             setActiveRunId(runId);
-            syncHandler(data, { ...currentSubmission, userMessage } as EventSubmission);
+
+            // Replay run steps
+            if (data.resumeState?.runSteps) {
+              for (const runStep of data.resumeState.runSteps) {
+                stepHandler({ event: 'on_run_step', data: runStep }, {
+                  ...currentSubmission,
+                  userMessage,
+                } as EventSubmission);
+              }
+            }
+
+            // Set message content from aggregatedContent
+            if (data.resumeState?.aggregatedContent && userMessage?.messageId) {
+              const messages = getMessages() ?? [];
+              const userMsgId = userMessage.messageId;
+              const serverResponseId = data.resumeState.responseMessageId;
+
+              // Find the EXACT response message - prioritize responseMessageId from server
+              // This is critical when there are multiple responses to the same user message
+              let responseIdx = -1;
+              if (serverResponseId) {
+                responseIdx = messages.findIndex((m) => m.messageId === serverResponseId);
+              }
+              // Fallback: find by parentMessageId pattern (for new messages)
+              if (responseIdx < 0) {
+                responseIdx = messages.findIndex(
+                  (m) =>
+                    !m.isCreatedByUser &&
+                    (m.messageId === `${userMsgId}_` || m.parentMessageId === userMsgId),
+                );
+              }
+
+              const textPart = data.resumeState.aggregatedContent?.find(
+                (p: { type: string }) => p.type === 'text',
+              );
+              console.log('[ResumableSSE] SYNC update', {
+                userMsgId,
+                serverResponseId,
+                responseIdx,
+                foundMessageId: responseIdx >= 0 ? messages[responseIdx]?.messageId : null,
+                messagesCount: messages.length,
+                aggregatedContentLength: data.resumeState.aggregatedContent?.length,
+                textContentLength: textPart?.text?.length ?? 0,
+              });
+
+              if (responseIdx >= 0) {
+                // Update existing response message with aggregatedContent
+                const updated = [...messages];
+                const oldContent = updated[responseIdx]?.content;
+                updated[responseIdx] = {
+                  ...updated[responseIdx],
+                  content: data.resumeState.aggregatedContent,
+                };
+                console.log('[ResumableSSE] SYNC updating message', {
+                  messageId: updated[responseIdx]?.messageId,
+                  oldContentLength: Array.isArray(oldContent) ? oldContent.length : 0,
+                  newContentLength: data.resumeState.aggregatedContent?.length,
+                });
+                setMessages(updated);
+                // Sync both content handler and step handler with the updated message
+                // so subsequent deltas build on synced content, not stale content
+                resetContentHandler();
+                syncStepMessage(updated[responseIdx]);
+                console.log('[ResumableSSE] SYNC complete, handlers synced');
+              } else {
+                // Add new response message
+                const responseId = serverResponseId ?? `${userMsgId}_`;
+                setMessages([
+                  ...messages,
+                  {
+                    messageId: responseId,
+                    parentMessageId: userMsgId,
+                    conversationId: currentSubmission.conversation?.conversationId ?? '',
+                    text: '',
+                    content: data.resumeState.aggregatedContent,
+                    isCreatedByUser: false,
+                  } as TMessage,
+                ]);
+              }
+            }
+
+            setShowStopButton(true);
             return;
           }
 
@@ -278,11 +366,14 @@ export default function useResumableSSE(
       createdHandler,
       attachmentHandler,
       stepHandler,
-      syncHandler,
       contentHandler,
+      resetContentHandler,
+      syncStepMessage,
       messageHandler,
       errorHandler,
       setIsSubmitting,
+      getMessages,
+      setMessages,
       startupConfig?.balance?.enabled,
       balanceQuery,
     ],
@@ -356,7 +447,7 @@ export default function useResumableSSE(
         // Resume: just subscribe to existing stream, don't start new generation
         console.log('[ResumableSSE] Resuming existing stream:', resumeStreamId);
         setStreamId(resumeStreamId);
-        subscribeToStream(resumeStreamId, submission);
+        subscribeToStream(resumeStreamId, submission, true); // isResume=true
       } else {
         // New generation: start and then subscribe
         console.log('[ResumableSSE] Starting NEW generation');

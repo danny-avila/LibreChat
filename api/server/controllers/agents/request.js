@@ -144,6 +144,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       GenerationJobManager.updateMetadata(streamId, { sender: client.sender });
     }
 
+    // Store reference to client's contentParts - graph will be set when run is created
+    if (client?.contentParts) {
+      GenerationJobManager.setContentParts(streamId, client.contentParts);
+    }
+
     res.json({ streamId, status: 'started' });
 
     let conversationId = reqConversationId;

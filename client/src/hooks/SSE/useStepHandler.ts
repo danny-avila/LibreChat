@@ -51,12 +51,9 @@ type AllContentTypes =
   | ContentTypes.IMAGE_URL
   | ContentTypes.ERROR;
 
-const noop = () => {};
-
 export default function useStepHandler({
   setMessages,
   getMessages,
-  setIsSubmitting = noop,
   announcePolite,
   lastAnnouncementTimeRef,
 }: TUseStepHandler) {
@@ -468,7 +465,7 @@ export default function useStepHandler({
         stepMap.current.clear();
       };
     },
-    [getMessages, setIsSubmitting, lastAnnouncementTimeRef, announcePolite, setMessages],
+    [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages],
   );
 
   const clearStepMaps = useCallback(() => {
@@ -476,5 +473,17 @@ export default function useStepHandler({
     messageMap.current.clear();
     stepMap.current.clear();
   }, []);
-  return { stepHandler, clearStepMaps };
+
+  /**
+   * Sync a message into the step handler's messageMap.
+   * Call this after receiving sync event to ensure subsequent deltas
+   * build on the synced content, not stale content.
+   */
+  const syncStepMessage = useCallback((message: TMessage) => {
+    if (message?.messageId) {
+      messageMap.current.set(message.messageId, { ...message });
+    }
+  }, []);
+
+  return { stepHandler, clearStepMaps, syncStepMessage };
 }

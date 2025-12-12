@@ -190,7 +190,8 @@ export namespace Agents {
   /** State data sent to reconnecting clients */
   export interface ResumeState {
     runSteps: RunStep[];
-    aggregatedContent?: ContentPart[];
+    /** Aggregated content parts - can be MessageContentComplex[] or ContentPart[] */
+    aggregatedContent?: MessageContentComplex[];
     userMessage?: UserMessageMeta;
     responseMessageId?: string;
     conversationId?: string;
