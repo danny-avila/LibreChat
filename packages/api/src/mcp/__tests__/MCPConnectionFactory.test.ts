@@ -49,6 +49,7 @@ describe('MCPConnectionFactory', () => {
       createFlow: jest.fn(),
       createFlowWithHandler: jest.fn(),
       getFlowState: jest.fn(),
+      deleteFlow: jest.fn().mockResolvedValue(true),
     } as unknown as jest.Mocked<FlowStateManager<MCPOAuthTokens | null>>;
 
     mockConnectionInstance = {
