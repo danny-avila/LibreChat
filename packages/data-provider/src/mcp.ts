@@ -73,6 +73,23 @@ const BaseOptionsSchema = z.object({
     .optional(),
   /** Custom headers to send with OAuth requests (registration, discovery, token exchange, etc.) */
   oauth_headers: z.record(z.string(), z.string()).optional(),
+  /**
+   * API Key authentication configuration for SSE and Streamable HTTP transports
+   * - source: 'admin' means the key is provided by admin and shared by all users
+   * - source: 'user' means each user provides their own key via customUserVars
+   */
+  apiKey: z
+    .object({
+      /** API key value (only for admin-provided mode, stored encrypted) */
+      key: z.string().optional(),
+      /** Whether key is provided by admin or each user */
+      source: z.enum(['admin', 'user']),
+      /** How to format the authorization header */
+      authorization_type: z.enum(['basic', 'bearer', 'custom']),
+      /** Custom header name when authorization_type is 'custom' */
+      custom_header: z.string().optional(),
+    })
+    .optional(),
   customUserVars: z
     .record(
       z.string(),
