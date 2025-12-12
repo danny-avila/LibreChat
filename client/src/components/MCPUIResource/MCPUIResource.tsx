@@ -56,7 +56,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
     console.error('Error rendering UI resource:', error);
     return (
       <span className="inline-flex items-center rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-600">
-        {localize('com_ui_ui_resource_error', { 0: uiResource.name })}
+        {localize('com_ui_ui_resource_error', { 0: uiResource.name || resourceId })}
       </span>
     );
   }
