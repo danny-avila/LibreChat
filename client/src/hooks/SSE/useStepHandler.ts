@@ -232,7 +232,12 @@ export default function useStepHandler({
         let response = messageMap.current.get(responseMessageId);
 
         if (!response) {
-          const responseMessage = messages[messages.length - 1] as TMessage;
+          // Find the actual response message - check if last message is a response, otherwise use initialResponse
+          const lastMessage = messages[messages.length - 1] as TMessage;
+          const responseMessage =
+            lastMessage && !lastMessage.isCreatedByUser
+              ? lastMessage
+              : (submission?.initialResponse as TMessage);
 
           // Preserve existing content from DB (partial response) and prepend initialContent if provided
           const existingContent = responseMessage?.content ?? [];
@@ -248,7 +253,10 @@ export default function useStepHandler({
           };
 
           messageMap.current.set(responseMessageId, response);
-          setMessages([...messages.slice(0, -1), response]);
+          // If last message was user message, append response; otherwise replace last
+          const baseMessages =
+            lastMessage && !lastMessage.isCreatedByUser ? messages.slice(0, -1) : messages;
+          setMessages([...baseMessages, response]);
         }
 
         // Store tool call IDs if present
