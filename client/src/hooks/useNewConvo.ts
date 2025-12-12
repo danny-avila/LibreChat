@@ -97,9 +97,8 @@ const useNewConvo = (index = 0) => {
           : preset ?? null;
         const conversationSetup = appliedPreset ?? storedConversation ?? null;
 
-        const disableParams =
-          _disableParams ??
-          (appliedPreset?.presetId != null &&
+        const isDefaultPresetApplied = Boolean(
+          appliedPreset &&
             appliedPreset.presetId &&
             appliedPreset.presetId === defaultPreset?.presetId);
 
