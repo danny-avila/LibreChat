@@ -83,7 +83,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
         {agent.description && (
           <p
             id={`agent-${agent.id}-description`}
-            className="mt-0.5 line-clamp-2 text-sm leading-snug text-text-secondary md:line-clamp-3"
+            className="mt-0.5 line-clamp-2 text-sm leading-snug text-text-secondary md:line-clamp-5"
             aria-label={localize('com_agents_description_card', {
               description: agent.description,
             })}
