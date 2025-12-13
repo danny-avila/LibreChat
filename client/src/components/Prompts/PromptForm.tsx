@@ -130,7 +130,7 @@ const RightPanel = React.memo(
                   !canEdit
                 }
               >
-                <Rocket className="size-5 cursor-pointer text-white" />
+                <Rocket className="size-5 cursor-pointer text-white" aria-hidden="true" />
               </Button>
             )}
             <DeleteVersion
@@ -422,7 +422,7 @@ const PromptForm = () => {
                         onClick={() => setShowSidePanel(true)}
                         aria-label={localize('com_endpoint_open_menu')}
                       >
-                        <Menu className="size-5" />
+                        <Menu className="size-5" aria-hidden="true" />
                       </Button>
                       <div className="hidden lg:block">
                         {editorMode === PromptsEditorMode.SIMPLE && (

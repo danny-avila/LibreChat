@@ -142,7 +142,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
           onClick={handleCopyLink}
           title={localize('com_agents_copy_link')}
         >
-          <Link />
+          <Link aria-hidden="true" />
         </Button>
 
         {/* Agent avatar - top center */}

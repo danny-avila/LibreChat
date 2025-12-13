@@ -241,7 +241,7 @@ export default function GenericGrantAccessDialog({
     >
       <div className="flex min-w-[32px] items-center justify-center gap-2 text-blue-500">
         <span className="flex h-6 w-6 items-center justify-center">
-          <Share2Icon className="icon-md h-4 w-4" />
+          <Share2Icon className="icon-md h-4 w-4" aria-hidden="true" />
         </span>
         {totalCurrentShares > 0 && (
           <Label className="text-sm font-medium text-text-secondary">{totalCurrentShares}</Label>
@@ -256,7 +256,7 @@ export default function GenericGrantAccessDialog({
       <OGDialogContent className="max-h-[90vh] w-11/12 overflow-y-auto md:max-w-3xl">
         <OGDialogTitle>
           <div className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
+            <Users className="h-5 w-5" aria-hidden="true" />
             {localize('com_ui_share_var', {
               0: config?.getShareMessage(resourceName),
             })}
@@ -270,7 +270,7 @@ export default function GenericGrantAccessDialog({
             {hasPeoplePickerAccess && (
               <div className="space-y-2">
                 <h4 className="mb-2 flex items-center gap-2 text-sm font-medium text-text-primary">
-                  <UserCheck className="h-4 w-4" />
+                  <UserCheck className="h-4 w-4" aria-hidden="true" />
                   {localize('com_ui_user_group_permissions')} ( {allShares.length} )
                 </h4>
 
@@ -295,7 +295,7 @@ export default function GenericGrantAccessDialog({
                   if (allShares.length === 0 && !hasChanges) {
                     return (
                       <div className="rounded-lg border-2 border-dashed border-border-light p-8 text-center">
-                        <Users className="mx-auto h-8 w-8 text-text-primary" />
+                        <Users className="mx-auto h-8 w-8 text-text-primary" aria-hidden="true" />
                         <p className="mt-2 text-sm text-text-primary">
                           {localize('com_ui_no_individual_access')}
                         </p>
@@ -311,7 +311,7 @@ export default function GenericGrantAccessDialog({
                       {!hasAtLeastOneOwner && hasChanges && (
                         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-center">
                           <div className="flex items-center justify-center gap-2 text-sm text-red-600 dark:text-red-400">
-                            <UserX className="h-4 w-4" />
+                            <UserX className="h-4 w-4" aria-hidden="true" />
                             {localize('com_ui_at_least_one_owner_required')}
                           </div>
                         </div>
@@ -363,7 +363,11 @@ export default function GenericGrantAccessDialog({
                       : localize('com_ui_copy_url_to_clipboard')
                   }
                 >
-                  {isCopying ? <CopyCheck className="h-4 w-4" /> : <Link className="h-4 w-4" />}
+                  {isCopying ? (
+                    <CopyCheck className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Link className="h-4 w-4" aria-hidden="true" />
+                  )}
                 </Button>
               )}
             </div>

@@ -291,7 +291,7 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                           <Ariakit.VisuallyHidden>
                             {localize('com_ui_tool_more_info')}
                           </Ariakit.VisuallyHidden>
-                          <ChevronDown className="h-4 w-4" />
+                          <ChevronDown className="h-4 w-4" aria-hidden="true" />
                         </Ariakit.HovercardDisclosure>
                       </div>
                       <Ariakit.Hovercard

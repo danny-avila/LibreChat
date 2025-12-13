@@ -65,14 +65,14 @@ export default function MCPConfigDialog({
       if (requiresOAuth) {
         return (
           <div className="flex items-center gap-2 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-600 dark:bg-amber-950 dark:text-amber-400">
-            <KeyRound className="h-3 w-3" />
+            <KeyRound className="h-3 w-3" aria-hidden="true" />
             <span>{localize('com_ui_oauth')}</span>
           </div>
         );
       } else {
         return (
           <div className="flex items-center gap-2 rounded-full bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-600 dark:bg-orange-950 dark:text-orange-400">
-            <PlugZap className="h-3 w-3" />
+            <PlugZap className="h-3 w-3" aria-hidden="true" />
             <span>{localize('com_ui_offline')}</span>
           </div>
         );
@@ -82,7 +82,7 @@ export default function MCPConfigDialog({
     if (connectionState === 'error') {
       return (
         <div className="flex items-center gap-2 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600 dark:bg-red-950 dark:text-red-400">
-          <AlertTriangle className="h-3 w-3" />
+          <AlertTriangle className="h-3 w-3" aria-hidden="true" />
           <span>{localize('com_ui_error')}</span>
         </div>
       );
