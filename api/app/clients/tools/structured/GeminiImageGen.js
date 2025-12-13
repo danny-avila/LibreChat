@@ -4,8 +4,14 @@ const { v4 } = require('uuid');
 const { tool } = require('@langchain/core/tools');
 const { FileContext, ContentTypes, FileSources } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
-const { geminiToolkit, loadServiceKey } = require('@librechat/api');
+const {
+  geminiToolkit,
+  loadServiceKey,
+  getBalanceConfig,
+  getTransactionsConfig,
+} = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { spendTokens } = require('~/models/spendTokens');
 const { getFiles } = require('~/models/File');
 const { GoogleGenAI } = require('@google/genai');
 
@@ -277,6 +283,66 @@ function checkForSafetyBlock(response) {
 }
 
 /**
+ * Record token usage for balance tracking
+ * @param {Object} params - Parameters
+ * @param {Object} params.usageMetadata - The usage metadata from API response
+ * @param {Object} params.req - The request object
+ * @param {string} params.userId - The user ID
+ * @param {string} params.conversationId - The conversation ID
+ * @param {string} params.model - The model name
+ */
+async function recordTokenUsage({ usageMetadata, req, userId, conversationId, model }) {
+  if (!usageMetadata) {
+    logger.debug('[GeminiImageGen] No usage metadata available for balance tracking');
+    return;
+  }
+
+  const appConfig = req?.config;
+  const balance = getBalanceConfig(appConfig);
+  const transactions = getTransactionsConfig(appConfig);
+
+  // Skip if neither balance nor transactions are enabled
+  if (!balance?.enabled && transactions?.enabled === false) {
+    return;
+  }
+
+  const promptTokens = usageMetadata.prompt_token_count || usageMetadata.promptTokenCount || 0;
+  const completionTokens =
+    usageMetadata.candidates_token_count || usageMetadata.candidatesTokenCount || 0;
+
+  if (promptTokens === 0 && completionTokens === 0) {
+    logger.debug('[GeminiImageGen] No tokens to record');
+    return;
+  }
+
+  logger.debug('[GeminiImageGen] Recording token usage:', {
+    promptTokens,
+    completionTokens,
+    model,
+    conversationId,
+  });
+
+  try {
+    await spendTokens(
+      {
+        user: userId,
+        model,
+        conversationId,
+        context: 'image_generation',
+        balance,
+        transactions,
+      },
+      {
+        promptTokens,
+        completionTokens,
+      },
+    );
+  } catch (error) {
+    logger.error('[GeminiImageGen] Error recording token usage:', error);
+  }
+}
+
+/**
  * Creates Gemini Image Generation tool
  * @param {Object} fields - Configuration fields
  * @returns {ReturnType<tool>} - The image generation tool
@@ -305,12 +371,13 @@ function createGeminiImageTool(fields = {}) {
   } = fields;
 
   const geminiImageGenTool = tool(
-    async ({ prompt, image_ids }, _runnableConfig) => {
+    async ({ prompt, image_ids, aspectRatio, imageSize }, _runnableConfig) => {
       if (!prompt) {
         throw new Error('Missing required field: prompt');
       }
 
       logger.debug('[GeminiImageGen] Generating image with prompt:', prompt?.substring(0, 100));
+      logger.debug('[GeminiImageGen] Options:', { aspectRatio, imageSize });
 
       // Initialize Gemini client with user-provided credentials
       let ai;
@@ -344,12 +411,28 @@ function createGeminiImageTool(fields = {}) {
 
       // Generate image
       let apiResponse;
+      const geminiModel = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
       try {
-        const geminiModel = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
+        // Build config with optional imageConfig
+        const config = {
+          responseModalities: ['TEXT', 'IMAGE'],
+        };
+
+        // Add imageConfig if aspectRatio or imageSize is specified
+        if (aspectRatio || imageSize) {
+          config.imageConfig = {};
+          if (aspectRatio) {
+            config.imageConfig.aspectRatio = aspectRatio;
+          }
+          if (imageSize) {
+            config.imageConfig.imageSize = imageSize;
+          }
+        }
+
         apiResponse = await ai.models.generateContent({
           model: geminiModel,
           contents,
-          config: { responseModalities: ['TEXT', 'IMAGE'] },
+          config,
         });
       } catch (error) {
         logger.error('[GeminiImageGen] API error:', error);
@@ -436,6 +519,18 @@ function createGeminiImageTool(fields = {}) {
             (image_ids?.length > 0 ? `\nreferenced_image_ids: ["${image_ids.join('", "')}"]` : ''),
         },
       ];
+
+      // Record token usage for balance tracking (don't await to avoid blocking response)
+      const conversationId = _runnableConfig?.configurable?.thread_id;
+      recordTokenUsage({
+        usageMetadata: apiResponse.usageMetadata,
+        req,
+        userId,
+        conversationId,
+        model: geminiModel,
+      }).catch((error) => {
+        logger.error('[GeminiImageGen] Failed to record token usage:', error);
+      });
 
       return [textResponse, { content, file_ids }];
     },
