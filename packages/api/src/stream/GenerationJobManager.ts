@@ -261,21 +261,6 @@ class GenerationJobManagerClass {
   }
 
   /**
-   * Find an active job by conversationId.
-   */
-  async getJobByConversation(conversationId: string): Promise<t.GenerationJob | undefined> {
-    const jobData = await this.jobStore.getJobByConversation(conversationId);
-    if (!jobData) {
-      return undefined;
-    }
-    const runtime = this.runtimeState.get(jobData.streamId);
-    if (!runtime) {
-      return undefined;
-    }
-    return this.buildJobFacade(jobData.streamId, jobData, runtime);
-  }
-
-  /**
    * Check if a job exists.
    */
   async hasJob(streamId: string): Promise<boolean> {
@@ -393,21 +378,6 @@ class GenerationJobManagerClass {
       })
       .join('')
       .trim();
-  }
-
-  /**
-   * Abort a job by conversationId (for abort middleware).
-   * Returns abort result with all data needed for token spending and message saving.
-   */
-  async abortByConversation(conversationId: string): Promise<AbortResult> {
-    const jobData = await this.jobStore.getJobByConversation(conversationId);
-    if (!jobData) {
-      logger.debug(
-        `[GenerationJobManager] No active job found for conversation: ${conversationId}`,
-      );
-      return { success: false, jobData: null, content: [], text: '', finalEvent: null };
-    }
-    return this.abortJob(jobData.streamId);
   }
 
   /**

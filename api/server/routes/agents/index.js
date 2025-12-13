@@ -122,7 +122,8 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 router.get('/chat/status/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
 
-  const job = await GenerationJobManager.getJobByConversation(conversationId);
+  // streamId === conversationId, so we can use getJob directly
+  const job = await GenerationJobManager.getJob(conversationId);
 
   if (!job) {
     return res.json({ active: false });
@@ -132,12 +133,12 @@ router.get('/chat/status/:conversationId', async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
-  const info = await GenerationJobManager.getStreamInfo(job.streamId);
-  const resumeState = await GenerationJobManager.getResumeState(job.streamId);
+  const info = await GenerationJobManager.getStreamInfo(conversationId);
+  const resumeState = await GenerationJobManager.getResumeState(conversationId);
 
   res.json({
     active: info?.active ?? false,
-    streamId: job.streamId,
+    streamId: conversationId,
     status: info?.status ?? job.status,
     aggregatedContent: info?.aggregatedContent,
     createdAt: info?.createdAt ?? job.createdAt,
@@ -158,21 +159,9 @@ router.post('/chat/abort', async (req, res) => {
 
   const { streamId, conversationId, abortKey } = req.body;
 
-  // Try to find job by streamId first, then by conversationId, then by abortKey
-  let jobStreamId = streamId;
-  let job = jobStreamId ? await GenerationJobManager.getJob(jobStreamId) : null;
-
-  if (!job && conversationId) {
-    job = await GenerationJobManager.getJobByConversation(conversationId);
-    if (job) {
-      jobStreamId = job.streamId;
-    }
-  }
-
-  if (!job && abortKey) {
-    jobStreamId = abortKey.split(':')[0];
-    job = await GenerationJobManager.getJob(jobStreamId);
-  }
+  // streamId === conversationId, so try any of the provided IDs
+  const jobStreamId = streamId || conversationId || abortKey?.split(':')[0];
+  const job = jobStreamId ? await GenerationJobManager.getJob(jobStreamId) : null;
 
   logger.debug(`[AgentStream] Computed jobStreamId: ${jobStreamId}`);
 

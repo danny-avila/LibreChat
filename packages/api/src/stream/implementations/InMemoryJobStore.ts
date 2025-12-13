@@ -69,23 +69,6 @@ export class InMemoryJobStore implements IJobStore {
     return this.jobs.get(streamId) ?? null;
   }
 
-  async getJobByConversation(conversationId: string): Promise<SerializableJobData | null> {
-    // Direct match first (streamId === conversationId for existing conversations)
-    const directMatch = this.jobs.get(conversationId);
-    if (directMatch && directMatch.status === 'running') {
-      return directMatch;
-    }
-
-    // Search by conversationId in metadata
-    for (const job of this.jobs.values()) {
-      if (job.conversationId === conversationId && job.status === 'running') {
-        return job;
-      }
-    }
-
-    return null;
-  }
-
   async updateJob(streamId: string, updates: Partial<SerializableJobData>): Promise<void> {
     const job = this.jobs.get(streamId);
     if (!job) {

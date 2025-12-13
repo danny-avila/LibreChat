@@ -89,11 +89,8 @@ export interface IJobStore {
     conversationId?: string,
   ): Promise<SerializableJobData>;
 
-  /** Get a job by streamId */
+  /** Get a job by streamId (streamId === conversationId) */
   getJob(streamId: string): Promise<SerializableJobData | null>;
-
-  /** Find active job by conversationId */
-  getJobByConversation(conversationId: string): Promise<SerializableJobData | null>;
 
   /** Update job data */
   updateJob(streamId: string, updates: Partial<SerializableJobData>): Promise<void>;

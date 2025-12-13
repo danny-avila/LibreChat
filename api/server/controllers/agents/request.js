@@ -46,8 +46,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   } = req.body;
 
   const userId = req.user.id;
-  const streamId =
-    reqConversationId || `stream_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+  // Generate conversationId upfront if not provided - streamId === conversationId always
+  const conversationId = reqConversationId || crypto.randomUUID();
+  const streamId = conversationId;
 
   let client = null;
 
@@ -59,7 +61,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       }
     });
 
-    const job = await GenerationJobManager.createJob(streamId, userId, reqConversationId);
+    const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
     req._resumableStreamId = streamId;
 
     // Track if partial response was already saved to avoid duplicates
@@ -86,7 +88,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       }
 
       partialResponseSaved = true;
-      const responseConversationId = resumeState.conversationId || reqConversationId;
+      const responseConversationId = resumeState.conversationId || conversationId;
 
       try {
         const partialMessage = {
@@ -145,18 +147,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       GenerationJobManager.setContentParts(streamId, client.contentParts);
     }
 
-    res.json({ streamId, status: 'started' });
+    res.json({ streamId, conversationId, status: 'started' });
 
-    let conversationId = reqConversationId;
     let userMessage;
 
     const getReqData = (data = {}) => {
       if (data.userMessage) {
         userMessage = data.userMessage;
       }
-      if (!conversationId && data.conversationId) {
-        conversationId = data.conversationId;
-      }
+      // conversationId is pre-generated, no need to update from callback
     };
 
     // Start background generation - wait for subscriber with timeout fallback
@@ -356,11 +355,11 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     return ResumableAgentController(req, res, next, initializeClient, addTitle);
   }
 
-  let {
+  const {
     text,
     isRegenerate,
     endpointOption,
-    conversationId,
+    conversationId: reqConversationId,
     isContinued = false,
     editedContent = null,
     parentMessageId = null,
@@ -368,14 +367,17 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     responseMessageId: editedResponseMessageId = null,
   } = req.body;
 
+  // Generate conversationId upfront if not provided - streamId === conversationId always
+  const conversationId = reqConversationId || crypto.randomUUID();
+  const streamId = conversationId;
+
   let userMessage;
   let userMessageId;
   let responseMessageId;
   let client = null;
   let cleanupHandlers = [];
-  let streamId = null;
 
-  const newConvo = !conversationId;
+  const newConvo = !reqConversationId;
   const userId = req.user.id;
 
   // Create handler to avoid capturing the entire parent scope
@@ -386,14 +388,13 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
         userMessageId = data[key].messageId;
       } else if (key === 'responseMessageId') {
         responseMessageId = data[key];
-      } else if (key === 'promptTokens' && streamId) {
+      } else if (key === 'promptTokens') {
         // Update job metadata with prompt tokens for abort handling
         GenerationJobManager.updateMetadata(streamId, { promptTokens: data[key] });
-      } else if (key === 'sender' && streamId) {
+      } else if (key === 'sender') {
         GenerationJobManager.updateMetadata(streamId, { sender: data[key] });
-      } else if (!conversationId && key === 'conversationId') {
-        conversationId = data[key];
       }
+      // conversationId is pre-generated, no need to update from callback
     }
   };
 
@@ -427,10 +428,6 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     client = null;
     getReqData = null;
     userMessage = null;
-    if (endpointOption) {
-      endpointOption.agent = null;
-    }
-    endpointOption = null;
     cleanupHandlers = null;
 
     // Clear request data map
@@ -481,9 +478,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     requestDataMap.set(req, { client });
 
     // Create job in GenerationJobManager for abort handling
-    // Use conversationId as streamId, or generate one for new conversations
-    streamId =
-      conversationId || `nonresumable_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    // streamId === conversationId (pre-generated above)
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
 
     // Store endpoint metadata for abort handling
@@ -518,19 +513,13 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       userMessageId = userMsg.messageId;
       responseMessageId = respMsgId;
 
-      // Update conversationId if it was a new conversation
-      if (!conversationId && userMsg.conversationId) {
-        conversationId = userMsg.conversationId;
-      }
-
-      // Store metadata for abort handling
+      // Store metadata for abort handling (conversationId is pre-generated)
       GenerationJobManager.updateMetadata(streamId, {
         responseMessageId: respMsgId,
-        conversationId: userMsg.conversationId,
         userMessage: {
           messageId: userMsg.messageId,
           parentMessageId: userMsg.parentMessageId,
-          conversationId: userMsg.conversationId,
+          conversationId,
           text: userMsg.text,
         },
       });
