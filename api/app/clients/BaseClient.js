@@ -967,7 +967,9 @@ class BaseClient {
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);
     const hasNonEphemeralAgent =
-      endpointOptions?.agent_id && endpointOptions.agent_id !== Constants.EPHEMERAL_AGENT_ID;
+      isAgentsEndpoint(this.options.endpoint) &&
+      endpointOptions?.agent_id &&
+      endpointOptions.agent_id !== Constants.EPHEMERAL_AGENT_ID;
     if (hasNonEphemeralAgent) {
       exceptions.add('model');
     }
