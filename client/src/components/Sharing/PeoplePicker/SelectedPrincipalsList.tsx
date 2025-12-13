@@ -38,7 +38,7 @@ export default function SelectedPrincipalsList({
     return (
       <div className={`space-y-3 ${className}`}>
         <div className="rounded-lg border border-dashed border-border-medium py-8 text-center text-muted-foreground">
-          <Users className="mx-auto mb-2 h-8 w-8 opacity-50" />
+          <Users className="mx-auto mb-2 h-8 w-8 opacity-50" aria-hidden="true" />
           <p className="mt-1 text-xs">{localize('com_ui_search_above_to_add_all')}</p>
         </div>
       </div>
@@ -64,7 +64,7 @@ export default function SelectedPrincipalsList({
                     <span>{subtitle}</span>
                     {share.source === 'entra' && (
                       <>
-                        <ExternalLink className="h-3 w-3" />
+                        <ExternalLink className="h-3 w-3" aria-hidden="true" />
                         <span>{localize('com_ui_azure_ad')}</span>
                       </>
                     )}
@@ -89,7 +89,7 @@ export default function SelectedPrincipalsList({
                   className="h-9 w-9 p-0 hover:border-destructive/10 hover:bg-destructive/10 hover:text-destructive"
                   aria-label={localize('com_ui_remove_user', { 0: displayName })}
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </div>
             </div>

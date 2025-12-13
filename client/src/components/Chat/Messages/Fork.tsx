@@ -273,10 +273,10 @@ export default function Fork({
     {
       setting: ForkOptions.DIRECT_PATH,
       label: localize(optionLabels[ForkOptions.DIRECT_PATH]),
-      icon: <GitCommit className="h-full w-full rotate-90 p-2" />,
+      icon: <GitCommit className="h-full w-full rotate-90 p-2" aria-hidden="true" />,
       hoverTitle: (
         <>
-          <GitCommit className="h-5 w-5 rotate-90" />
+          <GitCommit className="h-5 w-5 rotate-90" aria-hidden="true" />
           {localize(optionLabels[ForkOptions.DIRECT_PATH])}
         </>
       ),
@@ -285,10 +285,10 @@ export default function Fork({
     {
       setting: ForkOptions.INCLUDE_BRANCHES,
       label: localize(optionLabels[ForkOptions.INCLUDE_BRANCHES]),
-      icon: <GitBranchPlus className="h-full w-full rotate-180 p-2" />,
+      icon: <GitBranchPlus className="h-full w-full rotate-180 p-2" aria-hidden="true" />,
       hoverTitle: (
         <>
-          <GitBranchPlus className="h-4 w-4 rotate-180" />
+          <GitBranchPlus className="h-4 w-4 rotate-180" aria-hidden="true" />
           {localize(optionLabels[ForkOptions.INCLUDE_BRANCHES])}
         </>
       ),
@@ -297,10 +297,10 @@ export default function Fork({
     {
       setting: ForkOptions.TARGET_LEVEL,
       label: localize(optionLabels[ForkOptions.TARGET_LEVEL]),
-      icon: <ListTree className="h-full w-full p-2" />,
+      icon: <ListTree className="h-full w-full p-2" aria-hidden="true" />,
       hoverTitle: (
         <>
-          <ListTree className="h-5 w-5" />
+          <ListTree className="h-5 w-5" aria-hidden="true" />
           {`${localize(optionLabels[ForkOptions.TARGET_LEVEL])} (${localize('com_endpoint_default')})`}
         </>
       ),
@@ -333,7 +333,7 @@ export default function Fork({
             type="button"
             aria-label={localize('com_ui_fork')}
           >
-            <GitFork size="19" />
+            <GitFork size="19" aria-hidden="true" />
           </button>
         }
       />
@@ -360,7 +360,7 @@ export default function Fork({
                     className="flex h-5 w-5 cursor-help items-center rounded-full text-text-secondary"
                     aria-label={localize('com_ui_fork_info_button_label')}
                   >
-                    <InfoIcon />
+                    <InfoIcon aria-hidden="true" />
                   </button>
                 }
               />

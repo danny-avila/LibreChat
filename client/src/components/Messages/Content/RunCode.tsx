@@ -93,7 +93,7 @@ const RunCode: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, blockIndex 
         {execute.isLoading ? (
           <Spinner className="animate-spin" size={18} />
         ) : (
-          <TerminalSquareIcon size={18} />
+          <TerminalSquareIcon size={18} aria-hidden="true" />
         )}
         {localize('com_ui_run_code')}
       </button>

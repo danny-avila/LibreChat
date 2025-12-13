@@ -133,7 +133,7 @@ function MCPPanelContent() {
           size="sm"
           aria-label={localize('com_ui_back')}
         >
-          <ChevronLeft className="mr-1 h-4 w-4" />
+          <ChevronLeft className="mr-1 h-4 w-4" aria-hidden="true" />
           {localize('com_ui_back')}
         </Button>
 
@@ -173,7 +173,7 @@ function MCPPanelContent() {
             onClick={() => handleConfigRevoke(selectedServerNameForEditing)}
             aria-label={localize('com_ui_oauth_revoke')}
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
             {localize('com_ui_oauth_revoke')}
           </Button>
         )}

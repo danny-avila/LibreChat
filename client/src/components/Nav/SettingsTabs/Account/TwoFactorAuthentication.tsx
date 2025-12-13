@@ -216,7 +216,7 @@ const TwoFactorAuthentication: React.FC = () => {
           >
             <OGDialogHeader>
               <OGDialogTitle className="mb-2 flex items-center gap-3 text-2xl font-bold">
-                <SmartphoneIcon className="h-6 w-6 text-primary" />
+                <SmartphoneIcon className="h-6 w-6 text-primary" aria-hidden="true" />
                 {user?.twoFactorEnabled
                   ? localize('com_ui_2fa_disable')
                   : localize('com_ui_2fa_setup')}

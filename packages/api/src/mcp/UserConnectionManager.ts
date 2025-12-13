@@ -5,6 +5,7 @@ import { mcpServersRegistry as serversRegistry } from '~/mcp/registry/MCPServers
 import { MCPConnection } from './connection';
 import type * as t from './types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
+import { mcpConfig } from './mcpConfig';
 
 /**
  * Abstract base class for managing user-specific MCP connections with lifecycle management.
@@ -20,7 +21,6 @@ export abstract class UserConnectionManager {
   protected userConnections: Map<string, Map<string, MCPConnection>> = new Map();
   /** Last activity timestamp for users (not per server) */
   protected userLastActivity: Map<string, number> = new Map();
-  protected readonly USER_CONNECTION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes (TODO: make configurable)
 
   /** Updates the last activity timestamp for a user */
   protected updateUserLastActivity(userId: string): void {
@@ -67,7 +67,7 @@ export abstract class UserConnectionManager {
 
     // Check if user is idle
     const lastActivity = this.userLastActivity.get(userId);
-    if (lastActivity && now - lastActivity > this.USER_CONNECTION_IDLE_TIMEOUT) {
+    if (lastActivity && now - lastActivity > mcpConfig.USER_CONNECTION_IDLE_TIMEOUT) {
       logger.info(`[MCP][User: ${userId}] User idle for too long. Disconnecting all connections.`);
       // Disconnect all user connections
       try {
@@ -217,7 +217,7 @@ export abstract class UserConnectionManager {
       if (currentUserId && currentUserId === userId) {
         continue;
       }
-      if (now - lastActivity > this.USER_CONNECTION_IDLE_TIMEOUT) {
+      if (now - lastActivity > mcpConfig.USER_CONNECTION_IDLE_TIMEOUT) {
         logger.info(
           `[MCP][User: ${userId}] User idle for too long. Disconnecting all connections...`,
         );

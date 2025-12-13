@@ -144,7 +144,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
         tabIndex={showClearIcon ? 0 : -1}
         disabled={!showClearIcon}
       >
-        <X className="h-5 w-5 cursor-pointer" />
+        <X className="h-5 w-5 cursor-pointer" aria-hidden="true" />
       </button>
     </div>
   );
