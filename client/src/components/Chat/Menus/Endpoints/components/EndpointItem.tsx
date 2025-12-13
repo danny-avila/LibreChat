@@ -14,6 +14,7 @@ import { cn } from '~/utils';
 
 interface EndpointItemProps {
   endpoint: Endpoint;
+  endpointIndex: number;
 }
 
 const SettingsButton = ({
@@ -54,7 +55,7 @@ const SettingsButton = ({
   );
 };
 
-export function EndpointItem({ endpoint }: EndpointItemProps) {
+export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
   const localize = useLocalize();
   const {
     agentsMap,
@@ -153,8 +154,21 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
             ))}
             {/* Render endpoint models */}
             {filteredModels
-              ? renderEndpointModels(endpoint, endpoint.models || [], selectedModel, filteredModels)
-              : endpoint.models && renderEndpointModels(endpoint, endpoint.models, selectedModel)}
+              ? renderEndpointModels(
+                  endpoint,
+                  endpoint.models || [],
+                  selectedModel,
+                  filteredModels,
+                  endpointIndex,
+                )
+              : endpoint.models &&
+                renderEndpointModels(
+                  endpoint,
+                  endpoint.models,
+                  selectedModel,
+                  undefined,
+                  endpointIndex,
+                )}
           </>
         )}
       </Menu>
@@ -198,7 +212,11 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
 }
 
 export function renderEndpoints(mappedEndpoints: Endpoint[]) {
-  return mappedEndpoints.map((endpoint) => (
-    <EndpointItem endpoint={endpoint} key={`endpoint-${endpoint.value}-item`} />
+  return mappedEndpoints.map((endpoint, index) => (
+    <EndpointItem
+      endpoint={endpoint}
+      endpointIndex={index}
+      key={`endpoint-${endpoint.value}-${index}`}
+    />
   ));
 }
