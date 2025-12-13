@@ -184,7 +184,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
           {/* Agent grid - 2 per row with proper semantic structure */}
           {currentAgents && currentAgents.length > 0 && (
             <div
-              className="grid grid-cols-1 gap-6 md:grid-cols-2"
+              className="mx-4 grid grid-cols-1 gap-6 md:grid-cols-2"
               role="grid"
               aria-label={localize('com_agents_grid_announcement', {
                 count: currentAgents.length,

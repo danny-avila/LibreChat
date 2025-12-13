@@ -34,6 +34,7 @@
   "com_agents_copy_link": "Copy Link",
   "com_agents_create_error": "There was an error creating your agent.",
   "com_agents_created_by": "by",
+  "com_agents_description_card": "Description: {{description}}",
   "com_agents_description_placeholder": "Optional: Describe your Agent here",
   "com_agents_empty_state_heading": "No agents found",
   "com_agents_enable_file_search": "Enable File Search",

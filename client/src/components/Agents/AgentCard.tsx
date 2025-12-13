@@ -31,13 +31,16 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
     return agent.category.charAt(0).toUpperCase() + agent.category.slice(1);
   }, [agent.category, categories, localize]);
 
+  const displayName = getContactDisplayName(agent);
+
   return (
     <div
       className={cn(
-        'group relative h-40 overflow-hidden rounded-xl border border-border-light',
-        'cursor-pointer shadow-sm transition-all duration-200 hover:border-border-medium hover:shadow-lg',
-        'bg-surface-tertiary hover:bg-surface-hover',
-        'space-y-3 p-4',
+        'group relative flex h-32 gap-5 overflow-hidden rounded-xl',
+        'cursor-pointer select-none px-6 py-4',
+        'bg-surface-tertiary transition-colors duration-150 hover:bg-surface-hover',
+        'md:h-36 lg:h-40',
+        '[&_*]:cursor-pointer',
         className,
       )}
       onClick={onClick}
@@ -45,7 +48,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
         name: agent.name,
         description: agent.description ?? '',
       })}
-      aria-describedby={`agent-${agent.id}-description`}
+      aria-describedby={agent.description ? `agent-${agent.id}-description` : undefined}
       tabIndex={0}
       role="button"
       onKeyDown={(e) => {
@@ -55,56 +58,48 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick, className = '' })
         }
       }}
     >
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          {/* Left column: Avatar and Category */}
-          <div className="flex h-full flex-shrink-0 flex-col justify-between space-y-4">
-            <div className="flex-shrink-0">{renderAgentAvatar(agent, { size: 'sm' })}</div>
+      {/* Category badge - top right */}
+      {categoryLabel && (
+        <span className="absolute right-4 top-3 rounded-md bg-surface-hover px-2 py-0.5 text-xs text-text-secondary">
+          {categoryLabel}
+        </span>
+      )}
 
-            {/* Category tag */}
-            {agent.category && (
-              <div className="inline-flex items-center rounded-md border-border-xheavy bg-surface-active-alt px-2 py-1 text-xs font-medium">
-                <Label className="line-clamp-1 font-normal">{categoryLabel}</Label>
-              </div>
-            )}
-          </div>
-
-          {/* Right column: Name, description, and other content */}
-          <div className="flex h-full min-w-0 flex-1 flex-col justify-between space-y-1">
-            <div className="space-y-1">
-              {/* Agent name */}
-              <Label className="mb-1 line-clamp-1 text-xl font-semibold text-text-primary">
-                {agent.name}
-              </Label>
-
-              {/* Agent description */}
-              <p
-                id={`agent-${agent.id}-description`}
-                className="line-clamp-3 text-sm leading-relaxed text-text-primary"
-                {...(agent.description
-                  ? { 'aria-label': `Description: ${agent.description}` }
-                  : {})}
-              >
-                {agent.description ?? ''}
-              </p>
-            </div>
-
-            {/* Owner info */}
-            {(() => {
-              const displayName = getContactDisplayName(agent);
-              if (displayName) {
-                return (
-                  <div className="flex justify-end">
-                    <div className="flex items-center text-sm text-text-secondary">
-                      <Label>{displayName}</Label>
-                    </div>
-                  </div>
-                );
-              }
-              return null;
-            })()}
-          </div>
+      {/* Avatar */}
+      <div className="flex-shrink-0 self-center">
+        <div className="overflow-hidden rounded-full shadow-[0_0_15px_rgba(0,0,0,0.3)] dark:shadow-[0_0_15px_rgba(0,0,0,0.5)]">
+          {renderAgentAvatar(agent, { size: 'sm', showBorder: false })}
         </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden">
+        {/* Agent name */}
+        <Label className="line-clamp-2 text-base font-semibold text-text-primary md:text-lg">
+          {agent.name}
+        </Label>
+
+        {/* Agent description */}
+        {agent.description && (
+          <p
+            id={`agent-${agent.id}-description`}
+            className="mt-0.5 line-clamp-2 text-sm leading-snug text-text-secondary md:line-clamp-3"
+            aria-label={localize('com_agents_description_card', {
+              description: agent.description,
+            })}
+          >
+            {agent.description}
+          </p>
+        )}
+
+        {/* Author */}
+        {displayName && (
+          <div className="mt-1 text-xs text-text-tertiary">
+            <span className="truncate">
+              {localize('com_ui_by_author', { 0: displayName || '' })}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
