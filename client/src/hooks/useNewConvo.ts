@@ -24,6 +24,7 @@ import type {
 import type { AssistantListItem } from '~/common';
 import {
   updateLastSelectedModel,
+  getLocalStorageItems,
   getDefaultModelSpec,
   getDefaultEndpoint,
   getModelSpecPreset,
@@ -112,7 +113,21 @@ const useNewConvo = (index = 0) => {
           });
 
           // If the selected endpoint is agents but user doesn't have access, find an alternative
-          if (defaultEndpoint && isAgentsEndpoint(defaultEndpoint) && !hasAgentAccess) {
+          // Skip this check for existing agent conversations (they have agent_id set)
+          // Also check localStorage for new conversations restored after refresh
+          const { lastConversationSetup } = getLocalStorageItems();
+          const storedAgentId =
+            isAgentsEndpoint(lastConversationSetup?.endpoint) && lastConversationSetup?.agent_id;
+          const isExistingAgentConvo =
+            isAgentsEndpoint(defaultEndpoint) &&
+            ((conversation.agent_id && conversation.agent_id !== Constants.EPHEMERAL_AGENT_ID) ||
+              (storedAgentId && storedAgentId !== Constants.EPHEMERAL_AGENT_ID));
+          if (
+            defaultEndpoint &&
+            isAgentsEndpoint(defaultEndpoint) &&
+            !hasAgentAccess &&
+            !isExistingAgentConvo
+          ) {
             defaultEndpoint = Object.keys(endpointsConfig ?? {}).find(
               (ep) => !isAgentsEndpoint(ep as EModelEndpoint) && endpointsConfig?.[ep],
             ) as EModelEndpoint | undefined;
@@ -121,7 +136,11 @@ const useNewConvo = (index = 0) => {
           if (!defaultEndpoint) {
             // Find first available endpoint that's not agents (if no access) or any endpoint
             defaultEndpoint = Object.keys(endpointsConfig ?? {}).find((ep) => {
-              if (isAgentsEndpoint(ep as EModelEndpoint) && !hasAgentAccess) {
+              if (
+                isAgentsEndpoint(ep as EModelEndpoint) &&
+                !hasAgentAccess &&
+                !isExistingAgentConvo
+              ) {
                 return false;
               }
               return !!endpointsConfig?.[ep];
