@@ -250,7 +250,7 @@ const Conversations: FC<ConversationsProps> = ({
 
       if (item.type === 'loading') {
         return (
-          <MeasuredRow {...rowProps}>
+          <MeasuredRow key={key} {...rowProps}>
             <LoadingSpinner />
           </MeasuredRow>
         );
@@ -258,7 +258,7 @@ const Conversations: FC<ConversationsProps> = ({
 
       if (item.type === 'favorites') {
         return (
-          <MeasuredRow {...rowProps}>
+          <MeasuredRow key={key} {...rowProps}>
             <FavoritesList
               isSmallScreen={isSmallScreen}
               toggleNav={toggleNav}
@@ -270,7 +270,7 @@ const Conversations: FC<ConversationsProps> = ({
 
       if (item.type === 'chats-header') {
         return (
-          <MeasuredRow {...rowProps}>
+          <MeasuredRow key={key} {...rowProps}>
             <ChatsHeader
               isExpanded={isChatsExpanded}
               onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
@@ -285,7 +285,7 @@ const Conversations: FC<ConversationsProps> = ({
         // Without favorites: [chats-header, first-header] → index 1
         const firstHeaderIndex = shouldShowFavorites ? 2 : 1;
         return (
-          <MeasuredRow {...rowProps}>
+          <MeasuredRow key={key} {...rowProps}>
             <DateLabel groupName={item.groupName} isFirst={index === firstHeaderIndex} />
           </MeasuredRow>
         );
@@ -293,7 +293,7 @@ const Conversations: FC<ConversationsProps> = ({
 
       if (item.type === 'convo') {
         return (
-          <MeasuredRow {...rowProps}>
+          <MeasuredRow key={key} {...rowProps}>
             <MemoizedConvo conversation={item.convo} retainView={moveToTop} toggleNav={toggleNav} />
           </MeasuredRow>
         );
