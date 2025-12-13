@@ -16,7 +16,7 @@ import store from '~/store';
 
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
-  const { isAuthenticated, user } = useAuthRedirect();
+  const { isAuthenticated, user, roles } = useAuthRedirect();
 
   const defaultTemporaryChat = useRecoilValue(temporaryStore.defaultTemporaryChat);
   const setIsTemporary = useRecoilCallback(
@@ -61,8 +61,11 @@ export default function ChatRoute() {
    *  Adjusting this may have unintended consequences on the conversation state.
    */
   useEffect(() => {
+    // Wait for roles to load so hasAgentAccess has a definitive value in useNewConvo
+    const rolesLoaded = roles?.USER != null;
     const shouldSetConvo =
-      (startupConfig && !hasSetConversation.current && !modelsQuery.data?.initial) ?? false;
+      (startupConfig && rolesLoaded && !hasSetConversation.current && !modelsQuery.data?.initial) ??
+      false;
     /* Early exit if startupConfig is not loaded and conversation is already set and only initial models have loaded */
     if (!shouldSetConvo) {
       return;
@@ -119,6 +122,7 @@ export default function ChatRoute() {
     /* Creates infinite render if all dependencies included due to newConversation invocations exceeding call stack before hasSetConversation.current becomes truthy */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    roles,
     startupConfig,
     initialConvoQuery.data,
     endpointsQuery.data,
