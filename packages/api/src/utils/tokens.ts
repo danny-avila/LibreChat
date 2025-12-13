@@ -1,34 +1,16 @@
 import z from 'zod';
-import { EModelEndpoint } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  TOKEN_DEFAULTS,
+  findMatchingPattern as findMatchingPatternSimple,
+  getModelMaxTokens as getModelMaxTokensSimple,
+  getModelMaxOutputTokens as getModelMaxOutputTokensSimple,
+  matchModelName as matchModelNameSimple,
+} from 'librechat-data-provider';
 import type { EndpointTokenConfig, TokenConfig } from '~/types';
 
-/**
- * Model Token Configuration Maps
- *
- * IMPORTANT: Key Ordering for Pattern Matching
- * ============================================
- * The `findMatchingPattern` function iterates through object keys in REVERSE order
- * (last-defined keys are checked first) and uses `modelName.includes(key)` for matching.
- *
- * This means:
- * 1. BASE PATTERNS must be defined FIRST (e.g., "kimi", "moonshot")
- * 2. SPECIFIC PATTERNS must be defined AFTER their base patterns (e.g., "kimi-k2", "kimi-k2.5")
- *
- * Example ordering for Kimi models:
- *   kimi: 262144,           // Base pattern - checked last
- *   'kimi-k2': 262144,      // More specific - checked before "kimi"
- *   'kimi-k2.5': 262144,    // Most specific - checked first
- *
- * Why this matters:
- * - Model name "kimi-k2.5" contains both "kimi" and "kimi-k2" as substrings
- * - If "kimi" were checked first, it would incorrectly match "kimi-k2.5"
- * - By defining specific patterns AFTER base patterns, they're checked first in reverse iteration
- *
- * When adding new model families:
- * 1. Define the base/generic pattern first
- * 2. Define increasingly specific patterns after
- * 3. Ensure no pattern is a substring of another that should match differently
- */
+// Re-export from data-provider for backwards compatibility
+export { TOKEN_DEFAULTS };
 
 const openAIModels = {
   'o4-mini': 200000,
@@ -419,6 +401,14 @@ export const maxOutputTokensMap = {
   [EModelEndpoint.azureOpenAI]: modelMaxOutputs,
   [EModelEndpoint.openAI]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
   [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
+};
+
+// Re-export simple versions (for use without EndpointTokenConfig)
+export {
+  findMatchingPatternSimple,
+  getModelMaxTokensSimple,
+  getModelMaxOutputTokensSimple,
+  matchModelNameSimple,
 };
 
 /**
