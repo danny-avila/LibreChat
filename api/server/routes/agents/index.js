@@ -67,9 +67,8 @@ router.get('/chat/stream/:streamId', async (req, res) => {
       if (typeof res.flush === 'function') {
         res.flush();
       }
-      const textPart = resumeState.aggregatedContent?.find((p) => p.type === 'text');
       logger.debug(
-        `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps, content length: ${textPart?.text?.length ?? 0}`,
+        `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps`,
       );
     }
   }
