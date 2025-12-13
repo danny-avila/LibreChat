@@ -7,10 +7,11 @@ import type {
   Agents,
 } from 'librechat-data-provider';
 import { MessageContext, SearchContext } from '~/Providers';
+import { EditTextPart, EmptyText } from './Parts';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import { mapAttachments } from '~/utils/map';
-import { EditTextPart } from './Parts';
+import Container from './Container';
 import Part from './Part';
 
 type ContentPartsProps = {
@@ -95,11 +96,19 @@ const ContentParts = memo(
       );
     }
 
+    /** Show cursor placeholder when content is empty but actively submitting */
+    const showEmptyCursor = content.length === 0 && effectiveIsSubmitting;
+
     return (
       <>
         <SearchContext.Provider value={{ searchResults }}>
           <MemoryArtifacts attachments={attachments} />
           <Sources messageId={messageId} conversationId={conversationId || undefined} />
+          {showEmptyCursor && (
+            <Container>
+              <EmptyText />
+            </Container>
+          )}
           {content.map((part, idx) => {
             if (!part) {
               return null;

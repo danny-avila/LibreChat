@@ -23,9 +23,10 @@ async function buildEndpointOption(req, res, next) {
   try {
     parsedBody = parseCompactConvo({ endpoint, endpointType, conversation: req.body });
   } catch (error) {
-    logger.warn(
-      `Error parsing conversation for endpoint ${endpoint}${error?.message ? `: ${error.message}` : ''}`,
-    );
+    logger.error(`Error parsing compact conversation for endpoint ${endpoint}`, error);
+    logger.debug({
+      'Error parsing compact conversation': { endpoint, endpointType, conversation: req.body },
+    });
     return handleError(res, { text: 'Error parsing conversation' });
   }
 

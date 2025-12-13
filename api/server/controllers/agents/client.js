@@ -14,6 +14,7 @@ const {
   getBalanceConfig,
   getProviderConfig,
   memoryInstructions,
+  GenerationJobManager,
   getTransactionsConfig,
   createMemoryProcessor,
   filterMalformedContentParts,
@@ -953,6 +954,12 @@ class AgentClient extends BaseClient {
         }
 
         this.run = run;
+
+        const streamId = this.options.req?._resumableStreamId;
+        if (streamId && run.Graph) {
+          GenerationJobManager.setGraph(streamId, run.Graph);
+        }
+
         if (userMCPAuthMap != null) {
           config.configurable.userMCPAuthMap = userMCPAuthMap;
         }

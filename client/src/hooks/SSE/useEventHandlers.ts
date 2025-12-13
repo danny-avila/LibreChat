@@ -189,8 +189,8 @@ export default function useEventHandlers({
   const { conversationId: paramId } = useParams();
   const { token } = useAuthContext();
 
-  const contentHandler = useContentHandler({ setMessages, getMessages });
-  const { stepHandler, clearStepMaps } = useStepHandler({
+  const { contentHandler, resetContentHandler } = useContentHandler({ setMessages, getMessages });
+  const { stepHandler, clearStepMaps, syncStepMessage } = useStepHandler({
     setMessages,
     getMessages,
     announcePolite,
@@ -827,15 +827,17 @@ export default function useEventHandlers({
   );
 
   return {
-    clearStepMaps,
     stepHandler,
     syncHandler,
     finalHandler,
     errorHandler,
+    clearStepMaps,
     messageHandler,
     contentHandler,
     createdHandler,
+    syncStepMessage,
     attachmentHandler,
     abortConversation,
+    resetContentHandler,
   };
 }
