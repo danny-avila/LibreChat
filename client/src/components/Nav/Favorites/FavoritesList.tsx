@@ -4,14 +4,13 @@ import { LayoutGrid } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Skeleton } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
+import { useQueries } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
-import { useQueries, useQueryClient } from '@tanstack/react-query';
-import type { InfiniteData } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import { useFavorites, useLocalize, useShowMarketplace, useNewConvo } from '~/hooks';
+import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { useAssistantsMapContext } from '~/Providers';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
 
@@ -121,13 +120,13 @@ export default function FavoritesList({
 }) {
   const navigate = useNavigate();
   const localize = useLocalize();
-  const queryClient = useQueryClient();
   const search = useRecoilValue(store.search);
   const { favorites, reorderFavorites, isLoading: isFavoritesLoading } = useFavorites();
   const showAgentMarketplace = useShowMarketplace();
 
   const { newConversation } = useNewConvo();
   const assistantsMap = useAssistantsMapContext();
+  const agentsMap = useAgentsMapContext();
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const { data: endpointsConfig = {} as t.TEndpointsConfig } = useGetEndpointsQuery();
 
@@ -168,59 +167,56 @@ export default function FavoritesList({
     newChatButton?.focus();
   }, []);
 
-  // Ensure favorites is always an array (could be corrupted in localStorage)
   const safeFavorites = useMemo(() => (Array.isArray(favorites) ? favorites : []), [favorites]);
 
-  const agentIds = safeFavorites.map((f) => f.agentId).filter(Boolean) as string[];
+  const allAgentIds = useMemo(
+    () => safeFavorites.map((f) => f.agentId).filter(Boolean) as string[],
+    [safeFavorites],
+  );
 
-  const agentQueries = useQueries({
-    queries: agentIds.map((agentId) => ({
+  const missingAgentIds = useMemo(() => {
+    if (agentsMap === undefined) {
+      return [];
+    }
+    return allAgentIds.filter((id) => !agentsMap[id]);
+  }, [allAgentIds, agentsMap]);
+
+  const missingAgentQueries = useQueries({
+    queries: missingAgentIds.map((agentId) => ({
       queryKey: [QueryKeys.agent, agentId],
       queryFn: () => dataService.getAgentById({ agent_id: agentId }),
       staleTime: 1000 * 60 * 5,
+      enabled: missingAgentIds.length > 0,
     })),
   });
 
-  const isAgentsLoading = agentIds.length > 0 && agentQueries.some((q) => q.isLoading);
+  const combinedAgentsMap = useMemo(() => {
+    if (agentsMap === undefined) {
+      return undefined;
+    }
+    const combined: Record<string, t.Agent> = {};
+    for (const [key, value] of Object.entries(agentsMap)) {
+      if (value) {
+        combined[key] = value;
+      }
+    }
+    missingAgentQueries.forEach((query) => {
+      if (query.data) {
+        combined[query.data.id] = query.data;
+      }
+    });
+    return combined;
+  }, [agentsMap, missingAgentQueries]);
+
+  const isAgentsLoading =
+    (allAgentIds.length > 0 && agentsMap === undefined) ||
+    (missingAgentIds.length > 0 && missingAgentQueries.some((q) => q.isLoading));
 
   useEffect(() => {
     if (!isAgentsLoading && onHeightChange) {
       onHeightChange();
     }
   }, [isAgentsLoading, onHeightChange]);
-  const agentsMap = useMemo(() => {
-    const map: Record<string, t.Agent> = {};
-
-    const addToMap = (agent: t.Agent) => {
-      if (agent && agent.id && !map[agent.id]) {
-        map[agent.id] = agent;
-      }
-    };
-
-    const marketplaceData = queryClient.getQueriesData<InfiniteData<t.AgentListResponse>>([
-      QueryKeys.marketplaceAgents,
-    ]);
-    marketplaceData.forEach(([_, data]) => {
-      data?.pages.forEach((page) => {
-        page.data.forEach(addToMap);
-      });
-    });
-
-    const agentsListData = queryClient.getQueriesData<t.AgentListResponse>([QueryKeys.agents]);
-    agentsListData.forEach(([_, data]) => {
-      if (data && Array.isArray(data.data)) {
-        data.data.forEach(addToMap);
-      }
-    });
-
-    agentQueries.forEach((query) => {
-      if (query.data) {
-        map[query.data.id] = query.data;
-      }
-    });
-
-    return map;
-  }, [agentQueries, queryClient]);
 
   const draggedFavoritesRef = useRef(safeFavorites);
 
@@ -306,7 +302,7 @@ export default function FavoritesList({
             )}
             {safeFavorites.map((fav, index) => {
               if (fav.agentId) {
-                const agent = agentsMap[fav.agentId];
+                const agent = combinedAgentsMap?.[fav.agentId];
                 if (!agent) {
                   return null;
                 }
