@@ -613,6 +613,9 @@ export const tMessageSchema = z.object({
   unfinished: z.boolean().optional(),
   searchResult: z.boolean().optional(),
   finish_reason: z.string().optional(),
+  tokenCount: z.number().optional(),
+  usage: z.any().optional(),
+  tokens: z.any().optional(),
   /* assistant */
   thread_id: z.string().optional(),
   /* frontend components */

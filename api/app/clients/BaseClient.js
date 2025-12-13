@@ -794,13 +794,25 @@ class BaseClient {
       }
     }
 
+    // Persist usage metadata on the assistant message if available for accurate costing
+    if (this.getStreamUsage != null) {
+      const streamUsage = this.getStreamUsage();
+      if (streamUsage && (Number(streamUsage[this.inputTokensKey]) > 0 || Number(streamUsage[this.outputTokensKey]) > 0)) {
+        responseMessage.usage = {
+          prompt_tokens: streamUsage[this.inputTokensKey],
+          completion_tokens: streamUsage[this.outputTokensKey],
+          reasoning_tokens: streamUsage.reasoning_tokens,
+          input_token_details: streamUsage.input_token_details,
+        };
+      }
+    }
+
     responseMessage.databasePromise = this.saveMessageToDatabase(
       responseMessage,
       saveOptions,
       user,
     );
     this.savedMessageIds.add(responseMessage.messageId);
-    delete responseMessage.tokenCount;
     return responseMessage;
   }
 
