@@ -11,6 +11,14 @@ export interface GenerationJobMetadata {
   responseMessageId?: string;
   /** Sender label for the response (e.g., "GPT-4.1", "Claude") */
   sender?: string;
+  /** Endpoint identifier for abort handling */
+  endpoint?: string;
+  /** Icon URL for UI display */
+  iconURL?: string;
+  /** Model name for token tracking */
+  model?: string;
+  /** Prompt token count for abort token spending */
+  promptTokens?: number;
 }
 
 export type GenerationJobStatus = 'running' | 'complete' | 'error' | 'aborted';

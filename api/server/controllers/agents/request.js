@@ -6,11 +6,7 @@ const {
   sanitizeFileForTransmit,
   sanitizeMessageForTransmit,
 } = require('@librechat/api');
-const {
-  handleAbortError,
-  createAbortController,
-  cleanupAbortController,
-} = require('~/server/middleware');
+const { handleAbortError } = require('~/server/middleware');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { saveMessage } = require('~/models');
 
@@ -350,6 +346,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   }
 };
 
+/**
+ * Non-resumable Agent Controller - Uses GenerationJobManager for abort handling.
+ * Response is streamed directly to client via res, but abort state is managed centrally.
+ */
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
   const isResumable = req.query.resumable === 'true';
   if (isResumable) {
@@ -368,16 +368,12 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     responseMessageId: editedResponseMessageId = null,
   } = req.body;
 
-  let sender;
-  let abortKey;
   let userMessage;
-  let promptTokens;
   let userMessageId;
   let responseMessageId;
-  let userMessagePromise;
-  let getAbortData;
   let client = null;
   let cleanupHandlers = [];
+  let streamId = null;
 
   const newConvo = !conversationId;
   const userId = req.user.id;
@@ -388,16 +384,13 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       if (key === 'userMessage') {
         userMessage = data[key];
         userMessageId = data[key].messageId;
-      } else if (key === 'userMessagePromise') {
-        userMessagePromise = data[key];
       } else if (key === 'responseMessageId') {
         responseMessageId = data[key];
-      } else if (key === 'promptTokens') {
-        promptTokens = data[key];
-      } else if (key === 'sender') {
-        sender = data[key];
-      } else if (key === 'abortKey') {
-        abortKey = data[key];
+      } else if (key === 'promptTokens' && streamId) {
+        // Update job metadata with prompt tokens for abort handling
+        GenerationJobManager.updateMetadata(streamId, { promptTokens: data[key] });
+      } else if (key === 'sender' && streamId) {
+        GenerationJobManager.updateMetadata(streamId, { sender: data[key] });
       } else if (!conversationId && key === 'conversationId') {
         conversationId = data[key];
       }
@@ -405,7 +398,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   };
 
   // Create a function to handle final cleanup
-  const performCleanup = () => {
+  const performCleanup = async () => {
     logger.debug('[AgentController] Performing cleanup');
     if (Array.isArray(cleanupHandlers)) {
       for (const handler of cleanupHandlers) {
@@ -419,10 +412,10 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       }
     }
 
-    // Clean up abort controller
-    if (abortKey) {
-      logger.debug('[AgentController] Cleaning up abort controller');
-      cleanupAbortController(abortKey);
+    // Complete the job in GenerationJobManager
+    if (streamId) {
+      logger.debug('[AgentController] Completing job in GenerationJobManager');
+      await GenerationJobManager.completeJob(streamId);
     }
 
     // Dispose client properly
@@ -434,11 +427,11 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     client = null;
     getReqData = null;
     userMessage = null;
-    getAbortData = null;
-    endpointOption.agent = null;
+    if (endpointOption) {
+      endpointOption.agent = null;
+    }
     endpointOption = null;
     cleanupHandlers = null;
-    userMessagePromise = null;
 
     // Clear request data map
     if (requestDataMap.has(req)) {
@@ -460,6 +453,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       }
     };
     cleanupHandlers.push(removePrelimHandler);
+
     /** @type {{ client: TAgentClient; userMCPAuthMap?: Record<string, Record<string, string>> }} */
     const result = await initializeClient({
       req,
@@ -467,6 +461,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       endpointOption,
       signal: prelimAbortController.signal,
     });
+
     if (prelimAbortController.signal?.aborted) {
       prelimAbortController = null;
       throw new Error('Request was aborted before initialization could complete');
@@ -485,28 +480,26 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     // Store request data in WeakMap keyed by req object
     requestDataMap.set(req, { client });
 
-    // Use WeakRef to allow GC but still access content if it exists
-    const contentRef = new WeakRef(client.contentParts || []);
+    // Create job in GenerationJobManager for abort handling
+    // Use conversationId as streamId, or generate one for new conversations
+    streamId =
+      conversationId || `nonresumable_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
 
-    // Minimize closure scope - only capture small primitives and WeakRef
-    getAbortData = () => {
-      // Dereference WeakRef each time
-      const content = contentRef.deref();
+    // Store endpoint metadata for abort handling
+    GenerationJobManager.updateMetadata(streamId, {
+      endpoint: endpointOption.endpoint,
+      iconURL: endpointOption.iconURL,
+      model: endpointOption.modelOptions?.model || endpointOption.model_parameters?.model,
+      sender: client?.sender,
+    });
 
-      return {
-        sender,
-        content: content || [],
-        userMessage,
-        promptTokens,
-        conversationId,
-        userMessagePromise,
-        messageId: responseMessageId,
-        parentMessageId: overrideParentMessageId ?? userMessageId,
-      };
-    };
+    // Store content parts reference for abort
+    if (client?.contentParts) {
+      GenerationJobManager.setContentParts(streamId, client.contentParts);
+    }
 
-    const { abortController, onStart } = createAbortController(req, res, getAbortData, getReqData);
-    const closeHandler = createCloseHandler(abortController);
+    const closeHandler = createCloseHandler(job.abortController);
     res.on('close', closeHandler);
     cleanupHandlers.push(() => {
       try {
@@ -515,6 +508,33 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
         logger.error('[AgentController] Error removing close listener', e);
       }
     });
+
+    /**
+     * onStart callback - stores user message and response ID for abort handling
+     */
+    const onStart = (userMsg, respMsgId, _isNewConvo) => {
+      sendEvent(res, { message: userMsg, created: true });
+      userMessage = userMsg;
+      userMessageId = userMsg.messageId;
+      responseMessageId = respMsgId;
+
+      // Update conversationId if it was a new conversation
+      if (!conversationId && userMsg.conversationId) {
+        conversationId = userMsg.conversationId;
+      }
+
+      // Store metadata for abort handling
+      GenerationJobManager.updateMetadata(streamId, {
+        responseMessageId: respMsgId,
+        conversationId: userMsg.conversationId,
+        userMessage: {
+          messageId: userMsg.messageId,
+          parentMessageId: userMsg.parentMessageId,
+          conversationId: userMsg.conversationId,
+          text: userMsg.text,
+        },
+      });
+    };
 
     const messageOptions = {
       user: userId,
@@ -525,7 +545,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       editedContent,
       conversationId,
       parentMessageId,
-      abortController,
+      abortController: job.abortController,
       overrideParentMessageId,
       isEdited: !!editedContent,
       userMCPAuthMap: result.userMCPAuthMap,
@@ -565,7 +585,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     }
 
     // Only send if not aborted
-    if (!abortController.signal.aborted) {
+    if (!job.abortController.signal.aborted) {
       // Create a new response object with minimal copies
       const finalResponse = { ...response };
 
@@ -639,7 +659,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     // Handle error without capturing much scope
     handleAbortError(res, req, error, {
       conversationId,
-      sender,
+      sender: client?.sender,
       messageId: responseMessageId,
       parentMessageId: overrideParentMessageId ?? userMessageId ?? parentMessageId,
       userMessageId,

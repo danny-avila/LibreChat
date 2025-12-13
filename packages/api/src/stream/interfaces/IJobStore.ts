@@ -37,6 +37,29 @@ export interface SerializableJobData {
 
   /** Serialized final event for replay */
   finalEvent?: string;
+
+  /** Endpoint metadata for abort handling - avoids storing functions */
+  endpoint?: string;
+  iconURL?: string;
+  model?: string;
+  promptTokens?: number;
+}
+
+/**
+ * Result returned from aborting a job - contains all data needed
+ * for token spending and message saving without storing callbacks
+ */
+export interface AbortResult {
+  /** Whether the abort was successful */
+  success: boolean;
+  /** The job data at time of abort */
+  jobData: SerializableJobData | null;
+  /** Aggregated content from the stream */
+  content: Agents.MessageContentComplex[];
+  /** Plain text representation of content */
+  text: string;
+  /** Final event to send to client */
+  finalEvent: unknown;
 }
 
 /**
