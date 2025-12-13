@@ -76,6 +76,7 @@ jest.mock('~/utils', () => ({
   })),
   getModelSpecIconURL: jest.fn(() => 'icon-url'),
   removeUnavailableTools: jest.fn((preset) => preset),
+  clearModelForNonEphemeralAgent: jest.fn(),
   logger: { log: jest.fn() },
   getInitialTheme: jest.fn(() => 'light'),
   applyFontSize: jest.fn(),
