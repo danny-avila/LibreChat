@@ -1,5 +1,10 @@
-const { getLLMConfig } = require('@librechat/api');
-const { EModelEndpoint } = require('librechat-data-provider');
+const {
+  getLLMConfig,
+  loadAnthropicVertexCredentials,
+  getVertexCredentialOptions,
+  isEnabled,
+} = require('@librechat/api');
+const { EModelEndpoint, AuthKeys } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const AnthropicClient = require('~/app/clients/AnthropicClient');
 
@@ -7,18 +12,43 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
   const appConfig = req.config;
   const { ANTHROPIC_API_KEY, ANTHROPIC_REVERSE_PROXY, PROXY } = process.env;
   const expiresAt = req.body.key;
-  const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
 
-  const anthropicApiKey = isUserProvided
-    ? await getUserKey({ userId: req.user.id, name: EModelEndpoint.anthropic })
-    : ANTHROPIC_API_KEY;
+  let credentials = {};
+  let anthropicApiKey = null;
+  let vertexOptions = null;
 
-  if (!anthropicApiKey) {
-    throw new Error('Anthropic API key not provided. Please provide it again.');
-  }
+  /** @type {undefined | import('librechat-data-provider').TVertexAIConfig} */
+  const vertexConfig = appConfig.endpoints?.[EModelEndpoint.anthropic]?.vertexConfig;
 
-  if (expiresAt && isUserProvided) {
-    checkUserKeyExpiry(expiresAt, EModelEndpoint.anthropic);
+  // Check for Vertex AI configuration: YAML config takes priority over env var
+  const useVertexAI = vertexConfig?.enabled || isEnabled(process.env.ANTHROPIC_USE_VERTEX);
+
+  if (useVertexAI) {
+    // Load credentials with optional YAML config overrides
+    const credentialOptions = vertexConfig ? getVertexCredentialOptions(vertexConfig) : undefined;
+    credentials = await loadAnthropicVertexCredentials(credentialOptions);
+
+    // Store vertex options for client creation
+    if (vertexConfig) {
+      vertexOptions = {
+        region: vertexConfig.region,
+        projectId: vertexConfig.projectId,
+      };
+    }
+  } else {
+    const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
+    anthropicApiKey = isUserProvided
+      ? await getUserKey({ userId: req.user.id, name: EModelEndpoint.anthropic })
+      : ANTHROPIC_API_KEY;
+
+    if (!anthropicApiKey) {
+      throw new Error('Anthropic API key not provided. Please provide it again.');
+    }
+
+    if (expiresAt && isUserProvided) {
+      checkUserKeyExpiry(expiresAt, EModelEndpoint.anthropic);
+    }
+    credentials[AuthKeys.ANTHROPIC_API_KEY] = anthropicApiKey;
   }
 
   let clientOptions = {};
@@ -42,6 +72,10 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
         proxy: PROXY ?? null,
         reverseProxyUrl: ANTHROPIC_REVERSE_PROXY ?? null,
         modelOptions: endpointOption?.model_parameters ?? {},
+        // Pass Vertex AI options if configured
+        ...(vertexOptions && { vertexOptions }),
+        // Pass full Vertex AI config including model mappings
+        ...(vertexConfig && { vertexConfig }),
       },
       clientOptions,
     );
@@ -49,7 +83,7 @@ const initializeClient = async ({ req, res, endpointOption, overrideModel, optio
       clientOptions.modelOptions.model = overrideModel;
     }
     clientOptions.modelOptions.user = req.user.id;
-    return getLLMConfig(anthropicApiKey, clientOptions);
+    return getLLMConfig(credentials, clientOptions);
   }
 
   const client = new AnthropicClient(anthropicApiKey, {
