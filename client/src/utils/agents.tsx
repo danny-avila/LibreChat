@@ -32,10 +32,28 @@ const LazyAgentAvatar = ({
   alt: string;
   imgClass: string;
 }) => {
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(() => {
+    // Check if image is already cached by creating a test image
+    if (typeof window !== 'undefined') {
+      const img = new Image();
+      img.src = url;
+      return img.complete && img.naturalWidth > 0;
+    }
+    return false;
+  });
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
-    setIsLoaded(false);
+    // When URL changes, check if new image is cached
+    const img = new Image();
+    img.src = url;
+    if (img.complete && img.naturalWidth > 0) {
+      setIsLoaded(true);
+      setHasError(false);
+    } else {
+      setIsLoaded(false);
+      setHasError(false);
+    }
   }, [url]);
 
   return (
@@ -44,15 +62,19 @@ const LazyAgentAvatar = ({
         src={url}
         alt={alt}
         className={imgClass}
-        loading="lazy"
         onLoad={() => setIsLoaded(true)}
-        onError={() => setIsLoaded(false)}
+        onError={() => {
+          setIsLoaded(false);
+          setHasError(true);
+        }}
         style={{
           opacity: isLoaded ? 1 : 0,
           transition: 'opacity 0.2s ease-in-out',
         }}
       />
-      {!isLoaded && <Skeleton className="absolute inset-0 rounded-full" aria-hidden="true" />}
+      {!isLoaded && !hasError && (
+        <Skeleton className="absolute inset-0 rounded-full" aria-hidden="true" />
+      )}
     </>
   );
 };

@@ -1,5 +1,6 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useState, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { Skeleton } from '@librechat/client';
 import { icons } from '~/hooks/Endpoint/Icons';
 
 export const URLIcon = memo(
@@ -19,9 +20,34 @@ export const URLIcon = memo(
     endpoint?: string;
   }) => {
     const [imageError, setImageError] = useState(false);
+    const [isLoaded, setIsLoaded] = useState(() => {
+      // Check if image is already cached
+      if (typeof window !== 'undefined' && iconURL) {
+        const img = new Image();
+        img.src = iconURL;
+        return img.complete && img.naturalWidth > 0;
+      }
+      return false;
+    });
+
+    useEffect(() => {
+      // When URL changes, check if new image is cached
+      if (iconURL) {
+        const img = new Image();
+        img.src = iconURL;
+        if (img.complete && img.naturalWidth > 0) {
+          setIsLoaded(true);
+          setImageError(false);
+        } else {
+          setIsLoaded(false);
+          setImageError(false);
+        }
+      }
+    }, [iconURL]);
 
     const handleImageError = () => {
       setImageError(true);
+      setIsLoaded(false);
     };
 
     const DefaultIcon: React.ElementType =
@@ -46,18 +72,29 @@ export const URLIcon = memo(
     }
 
     return (
-      <div className={className} style={containerStyle}>
+      <div className={`${className} relative`} style={containerStyle}>
         <img
           src={iconURL}
           alt={altName ?? 'Icon'}
-          style={imageStyle}
+          style={{
+            ...imageStyle,
+            opacity: isLoaded ? 1 : 0,
+            transition: 'opacity 0.2s ease-in-out',
+          }}
           className="object-cover"
+          onLoad={() => setIsLoaded(true)}
           onError={handleImageError}
-          loading="lazy"
           decoding="async"
           width={Number(containerStyle.width) || 20}
           height={Number(containerStyle.height) || 20}
         />
+        {!isLoaded && !imageError && (
+          <Skeleton
+            className="absolute inset-0 rounded-full"
+            style={{ width: containerStyle.width, height: containerStyle.height }}
+            aria-hidden="true"
+          />
+        )}
       </div>
     );
   },
