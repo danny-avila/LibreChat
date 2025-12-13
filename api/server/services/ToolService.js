@@ -369,7 +369,15 @@ async function processRequiredActions(client, requiredActions) {
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
  * @returns {Promise<{ tools?: StructuredTool[]; userMCPAuthMap?: Record<string, Record<string, string>> }>} The agent tools.
  */
-async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIApiKey }) {
+async function loadAgentTools({
+  req,
+  res,
+  agent,
+  signal,
+  tool_resources,
+  openAIApiKey,
+  streamId = null,
+}) {
   if (!agent.tools || agent.tools.length === 0) {
     return {};
   } else if (
@@ -422,7 +430,7 @@ async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIA
   /** @type {ReturnType<typeof createOnSearchResults>} */
   let webSearchCallbacks;
   if (includesWebSearch) {
-    webSearchCallbacks = createOnSearchResults(res);
+    webSearchCallbacks = createOnSearchResults(res, streamId);
   }
 
   /** @type {Record<string, Record<string, string>>} */

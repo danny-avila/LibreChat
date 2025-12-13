@@ -25,9 +25,11 @@ const { logViolation } = require('~/cache');
 const db = require('~/models');
 
 /**
- * @param {AbortSignal} signal
+ * Creates a tool loader function for the agent.
+ * @param {AbortSignal} signal - The abort signal
+ * @param {string | null} [streamId] - The stream ID for resumable mode
  */
-function createToolLoader(signal) {
+function createToolLoader(signal, streamId = null) {
   /**
    * @param {object} params
    * @param {ServerRequest} params.req
@@ -52,6 +54,7 @@ function createToolLoader(signal) {
         agent,
         signal,
         tool_resources,
+        streamId,
       });
     } catch (error) {
       logger.error('Error loading tools for agent ' + agentId, error);
@@ -108,7 +111,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const agentConfigs = new Map();
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
 
-  const loadTools = createToolLoader(signal);
+  const loadTools = createToolLoader(signal, streamId);
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   /** @type {string} */

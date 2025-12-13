@@ -594,10 +594,12 @@ class AgentClient extends BaseClient {
     const userId = this.options.req.user.id + '';
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
+    const streamId = this.options.req?._resumableStreamId || null;
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
       config,
       messageId,
+      streamId,
       conversationId,
       memoryMethods: {
         setMemory: db.setMemory,

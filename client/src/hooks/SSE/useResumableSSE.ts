@@ -189,12 +189,8 @@ export default function useResumableSSE(
           }
 
           if (data.sync != null) {
-            const textPart = data.resumeState?.aggregatedContent?.find(
-              (p: { type: string }) => p.type === 'text',
-            );
             console.log('[ResumableSSE] SYNC received', {
               runSteps: data.resumeState?.runSteps?.length ?? 0,
-              contentLength: textPart?.text?.length ?? 0,
             });
 
             const runId = v4();
@@ -231,9 +227,6 @@ export default function useResumableSSE(
                 );
               }
 
-              const textPart = data.resumeState.aggregatedContent?.find(
-                (p: { type: string }) => p.type === 'text',
-              );
               console.log('[ResumableSSE] SYNC update', {
                 userMsgId,
                 serverResponseId,
@@ -241,7 +234,6 @@ export default function useResumableSSE(
                 foundMessageId: responseIdx >= 0 ? messages[responseIdx]?.messageId : null,
                 messagesCount: messages.length,
                 aggregatedContentLength: data.resumeState.aggregatedContent?.length,
-                textContentLength: textPart?.text?.length ?? 0,
               });
 
               if (responseIdx >= 0) {
