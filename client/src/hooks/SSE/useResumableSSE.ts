@@ -129,6 +129,8 @@ export default function useResumableSSE(
       sse.addEventListener('open', () => {
         console.log('[ResumableSSE] Stream connected');
         setAbortScroll(false);
+        // Restore UI state on successful connection (including reconnection)
+        setIsSubmitting(true);
         setShowStopButton(true);
         reconnectAttemptRef.current = 0;
       });
@@ -299,8 +301,12 @@ export default function useResumableSSE(
         }
       });
 
+      /**
+       * Error event - fired on actual network failures (non-200, connection lost, etc.)
+       * This should trigger reconnection with exponential backoff.
+       */
       sse.addEventListener('error', async (e: MessageEvent) => {
-        console.log('[ResumableSSE] Stream error');
+        console.log('[ResumableSSE] Stream error (network failure) - will attempt reconnect');
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
 
         // Check for 401 and try to refresh token (same pattern as useSSE)
@@ -336,9 +342,15 @@ export default function useResumableSSE(
 
           reconnectTimeoutRef.current = setTimeout(() => {
             if (submissionRef.current) {
-              subscribeToStream(currentStreamId, submissionRef.current);
+              // Reconnect with isResume=true to get sync event with any missed content
+              subscribeToStream(currentStreamId, submissionRef.current, true);
             }
           }, delay);
+
+          // Keep UI in "submitting" state during reconnection attempts
+          // so user knows we're still trying (abort handler may have reset these)
+          setIsSubmitting(true);
+          setShowStopButton(true);
         } else {
           console.error('[ResumableSSE] Max reconnect attempts reached');
           errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
@@ -348,8 +360,50 @@ export default function useResumableSSE(
         }
       });
 
+      /**
+       * Abort event - fired when sse.close() is called (intentional close).
+       * This happens on cleanup/navigation. Do NOT reconnect, just reset UI.
+       * The backend stream continues running - useResumeOnLoad will restore if user returns.
+       */
+      sse.addEventListener('abort', () => {
+        console.log('[ResumableSSE] Stream aborted (intentional close) - no reconnect');
+        // Clear any pending reconnect attempts
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
+        reconnectAttemptRef.current = 0;
+        // Reset UI state - useResumeOnLoad will restore if user returns to this conversation
+        setIsSubmitting(false);
+        setShowStopButton(false);
+        setStreamId(null);
+      });
+
       // Start the SSE connection
       sse.stream();
+
+      // Debug hooks for testing reconnection vs clean close behavior (dev only)
+      if (import.meta.env.DEV) {
+        const debugWindow = window as Window & {
+          __sse?: SSE;
+          __killNetwork?: () => void;
+          __closeClean?: () => void;
+        };
+        debugWindow.__sse = sse;
+
+        /** Simulate network drop - triggers error event → reconnection */
+        debugWindow.__killNetwork = () => {
+          console.log('[Debug] Simulating network drop...');
+          // @ts-ignore - sse.js types are incorrect, dispatchEvent actually takes Event
+          sse.dispatchEvent(new Event('error'));
+        };
+
+        /** Simulate clean close (navigation away) - triggers abort event → no reconnection */
+        debugWindow.__closeClean = () => {
+          console.log('[Debug] Simulating clean close (navigation away)...');
+          sse.close();
+        };
+      }
     },
     [
       token,
@@ -376,7 +430,8 @@ export default function useResumableSSE(
 
   /**
    * Start generation (POST request that returns streamId)
-   * Uses request.post which has axios interceptors for automatic token refresh
+   * Uses request.post which has axios interceptors for automatic token refresh.
+   * Retries up to 3 times on network errors with exponential backoff.
    */
   const startGeneration = useCallback(
     async (currentSubmission: TSubmission): Promise<string | null> => {
@@ -390,17 +445,42 @@ export default function useResumableSSE(
         ? `${payloadData.server}&resumable=true`
         : `${payloadData.server}?resumable=true`;
 
-      try {
-        // Use request.post which handles auth token refresh via axios interceptors
-        const data = (await request.post(url, payload)) as { streamId: string };
-        console.log('[ResumableSSE] Generation started:', { streamId: data.streamId });
-        return data.streamId;
-      } catch (error) {
-        console.error('[ResumableSSE] Error starting generation:', error);
-        errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
-        setIsSubmitting(false);
-        return null;
+      const maxRetries = 3;
+      let lastError: unknown = null;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          // Use request.post which handles auth token refresh via axios interceptors
+          const data = (await request.post(url, payload)) as { streamId: string };
+          console.log('[ResumableSSE] Generation started:', { streamId: data.streamId });
+          return data.streamId;
+        } catch (error) {
+          lastError = error;
+          // Check if it's a network error (retry) vs server error (don't retry)
+          const isNetworkError =
+            error instanceof Error &&
+            'code' in error &&
+            (error.code === 'ERR_NETWORK' || error.code === 'ERR_INTERNET_DISCONNECTED');
+
+          if (isNetworkError && attempt < maxRetries) {
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+            console.log(
+              `[ResumableSSE] Network error starting generation, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            continue;
+          }
+
+          // Don't retry: either not a network error or max retries reached
+          break;
+        }
       }
+
+      // All retries failed or non-network error
+      console.error('[ResumableSSE] Error starting generation:', lastError);
+      errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
+      setIsSubmitting(false);
+      return null;
     },
     [clearStepMaps, errorHandler, setIsSubmitting],
   );
