@@ -220,20 +220,24 @@ export function getOpenAILLMConfig({
     llmConfig.include_reasoning = true;
   }
 
+  const allowXHigh = modelOptions.model ? /^gpt-5\\.2/.test(String(modelOptions.model)) : false;
+  const sanitizedReasoningEffort =
+    reasoning_effort === 'xhigh' && !allowXHigh ? undefined : reasoning_effort;
+
   if (
-    hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
+    hasReasoningParams({ reasoning_effort: sanitizedReasoningEffort, reasoning_summary }) &&
     (llmConfig.useResponsesApi === true ||
       (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI))
   ) {
     llmConfig.reasoning = removeNullishValues(
       {
-        effort: reasoning_effort,
+        effort: sanitizedReasoningEffort,
         summary: reasoning_summary,
       },
       true,
     ) as OpenAI.Reasoning;
-  } else if (hasReasoningParams({ reasoning_effort })) {
-    llmConfig.reasoning_effort = reasoning_effort;
+  } else if (hasReasoningParams({ reasoning_effort: sanitizedReasoningEffort })) {
+    llmConfig.reasoning_effort = sanitizedReasoningEffort;
   }
 
   if (llmConfig.max_tokens != null) {

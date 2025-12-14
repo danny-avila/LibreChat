@@ -50,8 +50,34 @@ export default function Parameters() {
       .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
   }, [endpointType, endpointsConfig, model, provider]);
 
+  const filteredParameters = useMemo((): SettingDefinition[] => {
+    const allowXHigh = /^gpt-5\\.2/.test(model ?? '');
+
+    return parameters?.map((param) => {
+      if (param?.key !== 'reasoning_effort' || !param.options) {
+        return param;
+      }
+
+      const filteredOptions = allowXHigh
+        ? param.options
+        : param.options.filter((option) => option !== 'xhigh');
+
+      const filteredEnumMappings = param.enumMappings
+        ? Object.fromEntries(
+            Object.entries(param.enumMappings).filter(([key]) => allowXHigh || key !== 'xhigh'),
+          )
+        : undefined;
+
+      return {
+        ...param,
+        options: filteredOptions,
+        enumMappings: filteredEnumMappings,
+      };
+    });
+  }, [parameters, model]);
+
   useEffect(() => {
-    if (!parameters) {
+    if (!filteredParameters) {
       return;
     }
 
@@ -65,7 +91,7 @@ export default function Parameters() {
     //   }),
     // );
     const paramKeys = new Set(
-      parameters.filter((setting) => setting != null).map((setting) => setting.key),
+      filteredParameters.filter((setting) => setting != null).map((setting) => setting.key),
     );
     setConversation((prev) => {
       if (!prev) {
@@ -76,6 +102,13 @@ export default function Parameters() {
 
       const conversationKeys = Object.keys(updatedConversation);
       const updatedKeys: string[] = [];
+
+      const allowXHigh = /^gpt-5\\.2/.test(model ?? '');
+      if (!allowXHigh && updatedConversation.reasoning_effort === 'xhigh') {
+        updatedKeys.push('reasoning_effort');
+        delete updatedConversation.reasoning_effort;
+      }
+
       conversationKeys.forEach((key) => {
         // const defaultValue = defaultValueMap.get(key);
         // if (paramKeys.has(key) && defaultValue != null && prev[key] != null) {
@@ -102,7 +135,7 @@ export default function Parameters() {
 
       return updatedConversation;
     });
-  }, [parameters, setConversation]);
+  }, [filteredParameters, setConversation, model]);
 
   const resetParameters = useCallback(() => {
     setConversation((prev) => {
@@ -137,7 +170,7 @@ export default function Parameters() {
     setIsDialogOpen(true);
   }, [conversation]);
 
-  if (!parameters) {
+  if (!filteredParameters) {
     return null;
   }
 
@@ -147,7 +180,7 @@ export default function Parameters() {
         {' '}
         {/* This is the parent element containing all settings */}
         {/* Below is an example of an applied dynamic setting, each be contained by a div with the column span specified */}
-        {parameters.map((setting) => {
+        {filteredParameters.map((setting) => {
           const Component = componentMapping[setting.component];
           if (!Component) {
             return null;

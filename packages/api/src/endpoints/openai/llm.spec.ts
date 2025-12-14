@@ -210,6 +210,32 @@ describe('getOpenAILLMConfig', () => {
       });
     });
 
+    it('should allow xhigh reasoning_effort for gpt-5.2 models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        modelOptions: {
+          model: 'gpt-5.2-pro',
+          reasoning_effort: ReasoningEffort.xhigh,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('reasoning_effort', ReasoningEffort.xhigh);
+    });
+
+    it('should drop xhigh reasoning_effort for non-gpt-5.2 models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        modelOptions: {
+          model: 'gpt-5-pro',
+          reasoning_effort: ReasoningEffort.xhigh,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+    });
+
     it('should NOT exclude parameters for gpt-5-chat (it supports sampling params)', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
