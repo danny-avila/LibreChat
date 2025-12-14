@@ -62,9 +62,9 @@ const ArtifactsSubMenu = React.forwardRef<HTMLDivElement, ArtifactsSubMenuProps>
             }
           >
             <div className="flex items-center gap-2">
-              <WandSparkles className="icon-md" />
+              <WandSparkles className="icon-md" aria-hidden="true" />
               <span>{localize('com_ui_artifacts')}</span>
-              {isEnabled && <ChevronRight className="ml-auto h-3 w-3" />}
+              {isEnabled && <ChevronRight className="ml-auto h-3 w-3" aria-hidden="true" />}
             </div>
             <button
               type="button"

@@ -133,7 +133,7 @@ function ConvoOptions({
       {
         label: localize('com_ui_share'),
         onClick: handleShareClick,
-        icon: <Share2 className="icon-sm mr-2 text-text-primary" />,
+        icon: <Share2 className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
         show: startupConfig && startupConfig.sharedLinksEnabled,
         hideOnClick: false,
         ref: shareButtonRef,
@@ -142,7 +142,7 @@ function ConvoOptions({
       {
         label: localize('com_ui_rename'),
         onClick: renameHandler,
-        icon: <Pen className="icon-sm mr-2 text-text-primary" />,
+        icon: <Pen className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
       },
       {
         label: localize('com_ui_duplicate'),
@@ -151,7 +151,7 @@ function ConvoOptions({
         icon: isDuplicateLoading ? (
           <Spinner className="size-4" />
         ) : (
-          <CopyPlus className="icon-sm mr-2 text-text-primary" />
+          <CopyPlus className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
         ),
       },
       {
@@ -161,13 +161,13 @@ function ConvoOptions({
         icon: isArchiveLoading ? (
           <Spinner className="size-4" />
         ) : (
-          <Archive className="icon-sm mr-2 text-text-primary" />
+          <Archive className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
         ),
       },
       {
         label: localize('com_ui_delete'),
         onClick: handleDeleteClick,
-        icon: <Trash className="icon-sm mr-2 text-text-primary" />,
+        icon: <Trash className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
         hideOnClick: false,
         ref: deleteButtonRef,
         render: (props) => <button {...props} />,

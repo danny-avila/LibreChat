@@ -168,7 +168,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
       render: (props) => (
         <div {...props}>
           <div className="flex items-center gap-2">
-            <Globe className="icon-md" />
+            <Globe className="icon-md" aria-hidden="true" />
             <span>{localize('com_ui_web_search')}</span>
           </div>
           <div className="flex items-center gap-1">
@@ -188,7 +188,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
                 ref={searchMenuTriggerRef}
               >
                 <div className="h-4 w-4">
-                  <Settings className="h-4 w-4" />
+                  <Settings className="h-4 w-4" aria-hidden="true" />
                 </div>
               </button>
             )}
@@ -222,7 +222,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
       render: (props) => (
         <div {...props}>
           <div className="flex items-center gap-2">
-            <TerminalSquareIcon className="icon-md" />
+            <TerminalSquareIcon className="icon-md" aria-hidden="true" />
             <span>{localize('com_assistants_code_interpreter')}</span>
           </div>
           <div className="flex items-center gap-1">
@@ -242,7 +242,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
                 aria-label="Configure code interpreter"
               >
                 <div className="h-4 w-4">
-                  <Settings className="h-4 w-4" />
+                  <Settings className="h-4 w-4" aria-hidden="true" />
                 </div>
               </button>
             )}
@@ -310,7 +310,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
           )}
         >
           <div className="flex w-full items-center justify-center gap-2">
-            <Settings2 className="icon-md" />
+            <Settings2 className="icon-md" aria-hidden="true" />
           </div>
         </Ariakit.MenuButton>
       }

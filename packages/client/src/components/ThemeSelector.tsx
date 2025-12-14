@@ -12,9 +12,9 @@ type ThemeType = 'system' | 'dark' | 'light';
 
 const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) => void }) => {
   const themeIcons: Record<ThemeType, JSX.Element> = {
-    system: <Monitor />,
-    dark: <Moon color="white" />,
-    light: <Sun />,
+    system: <Monitor aria-hidden="true" />,
+    dark: <Moon color="white" aria-hidden="true" />,
+    light: <Sun aria-hidden="true" />,
   };
 
   const nextTheme = isDark(theme) ? 'light' : 'dark';

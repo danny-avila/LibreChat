@@ -181,14 +181,13 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
             <div className="mt-4 flex flex-col gap-4">
               <div className="flex items-center">
                 <div className="relative flex items-center">
-                  <Search className="absolute left-2 h-6 w-6 text-gray-500" />
+                  <Search className="absolute left-2 h-6 w-6 text-gray-500" aria-hidden="true" />
                   <input
                     type="text"
                     value={searchValue}
                     onChange={handleSearch}
                     placeholder={localize('com_nav_plugin_search')}
-                    className="
-                    text-token-text-primary flex rounded-md border border-border-heavy bg-surface-tertiary py-2 pl-10 pr-2"
+                    className="text-token-text-primary flex rounded-md border border-border-heavy bg-surface-tertiary py-2 pl-10 pr-2"
                   />
                 </div>
               </div>
