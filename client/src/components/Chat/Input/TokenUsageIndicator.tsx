@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { TooltipAnchor } from '@librechat/client';
-import { useTokenUsage } from '~/hooks';
+import { useLocalize, useTokenUsage } from '~/hooks';
 import { cn } from '~/utils';
 
 function formatTokens(n: number): string {
@@ -14,6 +14,7 @@ function formatTokens(n: number): string {
 }
 
 const TokenUsageIndicator = memo(function TokenUsageIndicator() {
+  const localize = useLocalize();
   const { inputTokens, outputTokens, maxContext } = useTokenUsage();
 
   const totalUsed = inputTokens + outputTokens;
@@ -28,10 +29,21 @@ const TokenUsageIndicator = memo(function TokenUsageIndicator() {
   const offset = circumference - (percentage / 100) * circumference;
 
   const tooltipText = hasMaxContext
-    ? `Input: ${formatTokens(inputTokens)} | Output: ${formatTokens(outputTokens)} | Max: ${formatTokens(maxContext)}`
-    : `Input: ${formatTokens(inputTokens)} | Output: ${formatTokens(outputTokens)} | Max: N/A`;
+    ? localize('com_ui_token_usage_with_max', {
+        0: formatTokens(inputTokens),
+        1: formatTokens(outputTokens),
+        2: formatTokens(maxContext),
+      })
+    : localize('com_ui_token_usage_no_max', {
+        0: formatTokens(inputTokens),
+        1: formatTokens(outputTokens),
+      });
 
-  // Color based on percentage
+  const ariaLabel = hasMaxContext
+    ? localize('com_ui_token_usage_aria', { 0: Math.round(percentage).toString() })
+    : localize('com_ui_token_usage_indicator');
+
+  // Color based on percentage (using raw colors to match existing patterns in AudioRecorder.tsx)
   const getProgressColor = () => {
     if (!hasMaxContext) {
       return 'stroke-text-secondary';
@@ -49,12 +61,17 @@ const TokenUsageIndicator = memo(function TokenUsageIndicator() {
     <TooltipAnchor
       description={tooltipText}
       render={
-        <div className="flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover">
+        <div
+          className="flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover"
+          role="img"
+          aria-label={ariaLabel}
+        >
           <svg
             width={size}
             height={size}
             viewBox={`0 0 ${size} ${size}`}
             className="rotate-[-90deg]"
+            aria-hidden="true"
           >
             {/* Background ring */}
             <circle
