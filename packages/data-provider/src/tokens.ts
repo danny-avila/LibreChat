@@ -8,19 +8,19 @@ import { EModelEndpoint } from './schemas';
 
 const openAIModels: Record<string, number> = {
   'o4-mini': 200000,
-  'o3-mini': 195000,
+  'o3-mini': 195000, // -5000 from max
   o3: 200000,
-  o1: 195000,
-  'o1-mini': 127500,
-  'o1-preview': 127500,
-  'gpt-4': 8187,
-  'gpt-4-0613': 8187,
-  'gpt-4-32k': 32758,
-  'gpt-4-32k-0314': 32758,
-  'gpt-4-32k-0613': 32758,
-  'gpt-4-1106': 127500,
-  'gpt-4-0125': 127500,
-  'gpt-4.5': 127500,
+  o1: 195000, // -5000 from max
+  'o1-mini': 127500, // -500 from max
+  'o1-preview': 127500, // -500 from max
+  'gpt-4': 8187, // -5 from max
+  'gpt-4-0613': 8187, // -5 from max
+  'gpt-4-32k': 32758, // -10 from max
+  'gpt-4-32k-0314': 32758, // -10 from max
+  'gpt-4-32k-0613': 32758, // -10 from max
+  'gpt-4-1106': 127500, // -500 from max
+  'gpt-4-0125': 127500, // -500 from max
+  'gpt-4.5': 127500, // -500 from max
   'gpt-4.1': 1047576,
   'gpt-4.1-mini': 1047576,
   'gpt-4.1-nano': 1047576,
@@ -28,25 +28,25 @@ const openAIModels: Record<string, number> = {
   'gpt-5-mini': 400000,
   'gpt-5-nano': 400000,
   'gpt-5-pro': 400000,
-  'gpt-4o': 127500,
-  'gpt-4o-mini': 127500,
-  'gpt-4o-2024-05-13': 127500,
-  'gpt-4-turbo': 127500,
-  'gpt-4-vision': 127500,
-  'gpt-3.5-turbo': 16375,
-  'gpt-3.5-turbo-0613': 4092,
-  'gpt-3.5-turbo-0301': 4092,
-  'gpt-3.5-turbo-16k': 16375,
-  'gpt-3.5-turbo-16k-0613': 16375,
-  'gpt-3.5-turbo-1106': 16375,
-  'gpt-3.5-turbo-0125': 16375,
+  'gpt-4o': 127500, // -500 from max
+  'gpt-4o-mini': 127500, // -500 from max
+  'gpt-4o-2024-05-13': 127500, // -500 from max
+  'gpt-4-turbo': 127500, // -500 from max
+  'gpt-4-vision': 127500, // -500 from max
+  'gpt-3.5-turbo': 16375, // -10 from max
+  'gpt-3.5-turbo-0613': 4092, // -5 from max
+  'gpt-3.5-turbo-0301': 4092, // -5 from max
+  'gpt-3.5-turbo-16k': 16375, // -10 from max
+  'gpt-3.5-turbo-16k-0613': 16375, // -10 from max
+  'gpt-3.5-turbo-1106': 16375, // -10 from max
+  'gpt-3.5-turbo-0125': 16375, // -10 from max
 };
 
 const mistralModels: Record<string, number> = {
-  'mistral-': 31990,
-  'mistral-7b': 31990,
-  'mistral-small': 31990,
-  'mixtral-8x7b': 31990,
+  'mistral-': 31990, // -10 from max
+  'mistral-7b': 31990, // -10 from max
+  'mistral-small': 31990, // -10 from max
+  'mixtral-8x7b': 31990, // -10 from max
   'mixtral-8x22b': 65536,
   'mistral-large': 131000,
   'mistral-large-2402': 127500,
@@ -60,25 +60,26 @@ const mistralModels: Record<string, number> = {
 };
 
 const cohereModels: Record<string, number> = {
-  'command-light': 4086,
-  'command-light-nightly': 8182,
-  command: 4086,
-  'command-nightly': 8182,
-  'command-text': 4086,
-  'command-r': 127500,
-  'command-r-plus': 127500,
+  'command-light': 4086, // -10 from max
+  'command-light-nightly': 8182, // -10 from max
+  command: 4086, // -10 from max
+  'command-nightly': 8182, // -10 from max
+  'command-text': 4086, // -10 from max
+  'command-r': 127500, // -500 from max
+  'command-r-plus': 127500, // -500 from max
 };
 
 const googleModels: Record<string, number> = {
+  /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
   gemma: 8196,
   'gemma-2': 32768,
   'gemma-3': 32768,
   'gemma-3-27b': 131072,
-  gemini: 30720,
+  gemini: 30720, // -2048 from max
   'gemini-pro-vision': 12288,
   'gemini-exp': 2000000,
-  'gemini-3': 1000000,
-  'gemini-2.5': 1000000,
+  'gemini-3': 1000000, // 1M input tokens, 64k output tokens
+  'gemini-2.5': 1000000, // 1M input tokens, 64k output tokens
   'gemini-2.5-pro': 1000000,
   'gemini-2.5-flash': 1000000,
   'gemini-2.5-flash-lite': 1000000,
@@ -88,12 +89,14 @@ const googleModels: Record<string, number> = {
   'gemini-1.5': 1000000,
   'gemini-1.5-flash': 1000000,
   'gemini-1.5-flash-8b': 1000000,
-  'text-bison-32k': 32758,
-  'chat-bison-32k': 32758,
-  'code-bison-32k': 32758,
+  'text-bison-32k': 32758, // -10 from max
+  'chat-bison-32k': 32758, // -10 from max
+  'code-bison-32k': 32758, // -10 from max
   'codechat-bison-32k': 32758,
+  /* Codey, -5 from max: 6144 */
   'code-': 6139,
   'codechat-': 6139,
+  /* PaLM2, -5 from max: 8192 */
   'text-': 8187,
   'chat-': 8187,
 };
@@ -132,19 +135,28 @@ const deepseekModels: Record<string, number> = {
 };
 
 const metaModels: Record<string, number> = {
+  // Basic patterns
   llama3: 8000,
   llama2: 4000,
   'llama-3': 8000,
   'llama-2': 4000,
+
+  // llama3.x pattern
   'llama3.1': 127500,
   'llama3.2': 127500,
   'llama3.3': 127500,
+
+  // llama3-x pattern
   'llama3-1': 127500,
   'llama3-2': 127500,
   'llama3-3': 127500,
+
+  // llama-3.x pattern
   'llama-3.1': 127500,
   'llama-3.2': 127500,
   'llama-3.3': 127500,
+
+  // llama3.x:Nb pattern
   'llama3.1:405b': 127500,
   'llama3.1:70b': 127500,
   'llama3.1:8b': 127500,
@@ -153,6 +165,8 @@ const metaModels: Record<string, number> = {
   'llama3.2:11b': 127500,
   'llama3.2:90b': 127500,
   'llama3.3:70b': 127500,
+
+  // llama3-x-Nb pattern
   'llama3-1-405b': 127500,
   'llama3-1-70b': 127500,
   'llama3-1-8b': 127500,
@@ -161,6 +175,8 @@ const metaModels: Record<string, number> = {
   'llama3-2-11b': 127500,
   'llama3-2-90b': 127500,
   'llama3-3-70b': 127500,
+
+  // llama-3.x-Nb pattern
   'llama-3.1-405b': 127500,
   'llama-3.1-70b': 127500,
   'llama-3.1-8b': 127500,
@@ -169,6 +185,8 @@ const metaModels: Record<string, number> = {
   'llama-3.2-11b': 127500,
   'llama-3.2-90b': 127500,
   'llama-3.3-70b': 127500,
+
+  // Original llama2/3 patterns
   'llama3-70b': 8000,
   'llama3-8b': 8000,
   'llama2-70b': 4000,
@@ -185,16 +203,19 @@ const qwenModels: Record<string, number> = {
   'qwen-plus': 131000,
   'qwen-max': 32000,
   'qwq-32b': 32000,
-  qwen3: 40960,
+  // Qwen3 models
+  qwen3: 40960, // Qwen3 base pattern (using qwen3-4b context)
   'qwen3-8b': 128000,
   'qwen3-14b': 40960,
   'qwen3-30b-a3b': 40960,
   'qwen3-32b': 40960,
   'qwen3-235b-a22b': 40960,
+  // Qwen3 VL (Vision-Language) models
   'qwen3-vl-8b-thinking': 256000,
   'qwen3-vl-8b-instruct': 262144,
   'qwen3-vl-30b-a3b': 262144,
   'qwen3-vl-235b-a22b': 131072,
+  // Qwen3 specialized models
   'qwen3-max': 256000,
   'qwen3-coder': 262144,
   'qwen3-coder-30b-a3b': 262144,
@@ -204,19 +225,22 @@ const qwenModels: Record<string, number> = {
 };
 
 const ai21Models: Record<string, number> = {
-  'j2-mid': 8182,
-  'j2-ultra': 8182,
-  'jamba-instruct': 255500,
+  'j2-mid': 8182, // -10 from max
+  'j2-ultra': 8182, // -10 from max
+  'jamba-instruct': 255500, // -500 from max
 };
 
 const amazonModels: Record<string, number> = {
+  // Amazon Titan models
   'titan-text-lite': 4000,
   'titan-text-express': 8000,
-  'titan-text-premier': 31500,
-  'nova-micro': 127000,
-  'nova-lite': 295000,
-  'nova-pro': 295000,
-  'nova-premier': 995000,
+  'titan-text-premier': 31500, // -500 from max
+  // Amazon Nova models
+  // https://aws.amazon.com/ai/generative-ai/nova/
+  'nova-micro': 127000, // -1000 from max
+  'nova-lite': 295000, // -5000 from max
+  'nova-pro': 295000, // -5000 from max
+  'nova-premier': 995000, // -5000 from max
 };
 
 const bedrockModels: Record<string, number> = {
@@ -243,10 +267,10 @@ const xAIModels: Record<string, number> = {
   'grok-3-fast': 131072,
   'grok-3-mini': 131072,
   'grok-3-mini-fast': 131072,
-  'grok-4': 256000,
-  'grok-4-fast': 2000000,
-  'grok-4-1-fast': 2000000,
-  'grok-code-fast': 256000,
+  'grok-4': 256000, // 256K context
+  'grok-4-fast': 2000000, // 2M context
+  'grok-4-1-fast': 2000000, // 2M context (covers reasoning & non-reasoning variants)
+  'grok-code-fast': 256000, // 256K context
 };
 
 const aggregateModels: Record<string, number> = {
@@ -255,12 +279,15 @@ const aggregateModels: Record<string, number> = {
   ...bedrockModels,
   ...xAIModels,
   ...qwenModels,
+  // misc.
   kimi: 131000,
+  // GPT-OSS
   'gpt-oss': 131000,
   'gpt-oss:20b': 131000,
   'gpt-oss-20b': 131000,
   'gpt-oss:120b': 131000,
   'gpt-oss-120b': 131000,
+  // GLM models (Zhipu AI)
   glm4: 128000,
   'glm-4': 128000,
   'glm-4-32b': 128000,
