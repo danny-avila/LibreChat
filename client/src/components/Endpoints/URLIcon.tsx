@@ -2,6 +2,7 @@ import React, { memo, useState, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { Skeleton } from '@librechat/client';
 import { icons } from '~/hooks/Endpoint/Icons';
+import { isImageCached } from '~/utils';
 
 export const URLIcon = memo(
   ({
@@ -20,28 +21,15 @@ export const URLIcon = memo(
     endpoint?: string;
   }) => {
     const [imageError, setImageError] = useState(false);
-    const [isLoaded, setIsLoaded] = useState(() => {
-      // Check if image is already cached
-      if (typeof window !== 'undefined' && iconURL) {
-        const img = new Image();
-        img.src = iconURL;
-        return img.complete && img.naturalWidth > 0;
-      }
-      return false;
-    });
+    const [isLoaded, setIsLoaded] = useState(() => isImageCached(iconURL));
 
     useEffect(() => {
-      // When URL changes, check if new image is cached
-      if (iconURL) {
-        const img = new Image();
-        img.src = iconURL;
-        if (img.complete && img.naturalWidth > 0) {
-          setIsLoaded(true);
-          setImageError(false);
-        } else {
-          setIsLoaded(false);
-          setImageError(false);
-        }
+      if (isImageCached(iconURL)) {
+        setIsLoaded(true);
+        setImageError(false);
+      } else {
+        setIsLoaded(false);
+        setImageError(false);
       }
     }, [iconURL]);
 

@@ -8,7 +8,7 @@ import type {
 } from 'librechat-data-provider';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
-import { getIconEndpoint } from '~/utils';
+import { getIconEndpoint, getAgentAvatarUrl } from '~/utils';
 
 export default function EndpointIcon({
   conversation,
@@ -42,7 +42,7 @@ export default function EndpointIcon({
 
   const agent =
     endpoint === EModelEndpoint.agents ? agentsMap?.[conversation?.agent_id ?? ''] : null;
-  const agentAvatar = agent?.avatar?.filepath ?? '';
+  const agentAvatar = getAgentAvatarUrl(agent) ?? '';
 
   const iconURL = assistantAvatar || agentAvatar || convoIconURL;
 

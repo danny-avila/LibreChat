@@ -4,6 +4,19 @@ import { Skeleton } from '@librechat/client';
 import type t from 'librechat-data-provider';
 
 /**
+ * Checks if an image is already cached in the browser
+ * Returns true if image is complete and has valid dimensions
+ */
+export const isImageCached = (url: string | null | undefined): boolean => {
+  if (typeof window === 'undefined' || !url) {
+    return false;
+  }
+  const img = new Image();
+  img.src = url;
+  return img.complete && img.naturalWidth > 0;
+};
+
+/**
  * Extracts the avatar URL from an agent's avatar property
  * Handles both string and object formats
  */
@@ -32,22 +45,11 @@ const LazyAgentAvatar = ({
   alt: string;
   imgClass: string;
 }) => {
-  const [isLoaded, setIsLoaded] = useState(() => {
-    // Check if image is already cached by creating a test image
-    if (typeof window !== 'undefined') {
-      const img = new Image();
-      img.src = url;
-      return img.complete && img.naturalWidth > 0;
-    }
-    return false;
-  });
+  const [isLoaded, setIsLoaded] = useState(() => isImageCached(url));
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
-    // When URL changes, check if new image is cached
-    const img = new Image();
-    img.src = url;
-    if (img.complete && img.naturalWidth > 0) {
+    if (isImageCached(url)) {
       setIsLoaded(true);
       setHasError(false);
     } else {
