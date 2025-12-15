@@ -92,7 +92,8 @@ export const columns: ColumnDef<TFile>[] = [
               className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
               onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
               aria-sort={ariaSort}
-              aria-label={localize('com_ui_name_sort')} aria-hidden="true"
+              aria-label={localize('com_ui_name_sort')}
+              aria-hidden="true"
               aria-current={sortState ? 'true' : 'false'}
             >
               {localize('com_ui_name')}
@@ -150,7 +151,8 @@ export const columns: ColumnDef<TFile>[] = [
               onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
               className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
               aria-sort={ariaSort}
-              aria-label={localize('com_ui_date_sort')} aria-hidden="true"
+              aria-label={localize('com_ui_date_sort')}
+              aria-hidden="true"
               aria-current={sortState ? 'true' : 'false'}
             >
               {localize('com_ui_date')}
@@ -268,7 +270,8 @@ export const columns: ColumnDef<TFile>[] = [
               className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
               onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
               aria-sort={ariaSort}
-              aria-label={localize('com_ui_size_sort')} aria-hidden="true"
+              aria-label={localize('com_ui_size_sort')}
+              aria-hidden="true"
               aria-current={sortState ? 'true' : 'false'}
             >
               {localize('com_ui_size')}
