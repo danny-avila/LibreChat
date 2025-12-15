@@ -25,11 +25,14 @@ function ProgressBar({ value, max, colorClass, showPercentage = false }: Progres
 
   return (
     <div className="flex items-center gap-2">
-      <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-tertiary">
-        <div
-          className={cn('h-full rounded-full transition-all duration-300', colorClass)}
-          style={{ width: `${percentage}%` }}
-        />
+      <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-secondary">
+        <div className="flex h-full rounded-full">
+          <div
+            className={cn('rounded-full transition-all duration-300', colorClass)}
+            style={{ width: `${percentage}%` }}
+          />
+          <div className="flex-1 bg-surface-hover" />
+        </div>
       </div>
       {showPercentage && (
         <span className="min-w-[3rem] text-right text-xs text-text-secondary">
@@ -56,7 +59,7 @@ function TokenRow({ label, value, total, colorClass }: TokenRowProps) {
         <span className="text-text-secondary">{label}</span>
         <span className="font-medium text-text-primary">
           {formatTokens(value)}
-          <span className="ml-1 text-xs text-text-tertiary">({percentage}%)</span>
+          <span className="ml-1 text-xs text-text-secondary">({percentage}%)</span>
         </span>
       </div>
       <ProgressBar value={value} max={total} colorClass={colorClass} />
@@ -109,7 +112,7 @@ function TokenUsageContent() {
       {hasMaxContext && (
         <div className="space-y-1">
           <ProgressBar value={totalUsed} max={maxContext} colorClass={getMainProgressColor()} />
-          <div className="flex justify-between text-xs text-text-tertiary">
+          <div className="flex justify-between text-xs text-text-secondary">
             <span>{formatTokens(totalUsed)}</span>
             <span>{formatTokens(maxContext)}</span>
           </div>
