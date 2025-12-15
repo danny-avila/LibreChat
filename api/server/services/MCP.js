@@ -448,7 +448,10 @@ async function getMCPSetupData(userId) {
   /** @type {Map<string, import('@librechat/api').MCPConnection>} */
   let appConnections = new Map();
   try {
-    appConnections = (await mcpManager.appConnections?.getAll()) || new Map();
+    // Use getLoaded() instead of getAll() to avoid forcing connection creation
+    // getAll() creates connections for all servers, which is problematic for servers
+    // that require user context (e.g., those with {{LIBRECHAT_USER_ID}} placeholders)
+    appConnections = (await mcpManager.appConnections?.getLoaded()) || new Map();
   } catch (error) {
     logger.error(`[MCP][User: ${userId}] Error getting app connections:`, error);
   }

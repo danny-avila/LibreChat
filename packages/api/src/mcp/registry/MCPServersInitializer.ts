@@ -30,11 +30,24 @@ export class MCPServersInitializer {
    * - Followers wait and poll `statusCache` until the leader finishes, ensuring only one node
    *   performs the expensive initialization operations.
    */
+  private static hasInitializedThisProcess = false;
+
+  /** Reset the process-level initialization flag. Only used for testing. */
+  public static resetProcessFlag(): void {
+    MCPServersInitializer.hasInitializedThisProcess = false;
+  }
+
   public static async initialize(rawConfigs: t.MCPServers): Promise<void> {
-    if (await statusCache.isInitialized()) return;
+    // On first call in this process, always reset and re-initialize
+    // This ensures we don't use stale Redis data from previous runs
+    const isFirstCallThisProcess = !MCPServersInitializer.hasInitializedThisProcess;
+    // Set flag immediately so recursive calls (from followers) use Redis cache for coordination
+    MCPServersInitializer.hasInitializedThisProcess = true;
+
+    if (!isFirstCallThisProcess && (await statusCache.isInitialized())) return;
 
     if (await isLeader()) {
-      // Leader performs initialization
+      // Leader performs initialization - always reset on first call
       await statusCache.reset();
       await MCPServersRegistry.getInstance().reset();
       const serverNames = Object.keys(rawConfigs);
