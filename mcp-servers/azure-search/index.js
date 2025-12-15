@@ -99,49 +99,59 @@ function extractAnchors(text) {
  * Build OData filter from anchors
  */
 function buildFilter(anchors) {
-  const conditions = [];
-
-  // Model tags: model:102-commercial
-  if (anchors.models.length > 0) {
-    const modelConds = anchors.models.map((m) => `Tags/any(t: t eq 'model:${m}')`);
-    conditions.push(`(${modelConds.join(' or ')})`);
-  }
-
-  // Model name tags: modelname:102 - Commercial
-  if (anchors.modelNames.length > 0) {
-    const nameConds = anchors.modelNames.map((n) => `Tags/any(t: t eq 'modelname:${n}')`);
-    conditions.push(`(${nameConds.join(' or ')})`);
-  }
-
-  // SKU tags (if indexed)
-  if (anchors.skus.length > 0) {
-    const skuConds = anchors.skus.map((s) => `Tags/any(t: t eq 'sku:${s}')`);
-    conditions.push(`(${skuConds.join(' or ')})`);
-  }
-
-  return conditions.length > 0 ? conditions.join(' or ') : null;
+  // The encyclopedia index does not expose a top-level 'Tags' field for OData filtering.
+  // Avoid using $filter to prevent Azure Search errors. Return null to skip filter.
+  return null;
 }
 
 /**
  * Search Azure AI Search index with tag filtering and scoring
  */
 async function searchFAQ(query, options = {}) {
+  // Debug: log the query being searched
+  // eslint-disable-next-line no-console
+  console.error(`[AzureSearchMCP] searchFAQ called: query length=${query.length}, query="${query}"`);
+
   const anchors = extractAnchors(query);
   const filter = buildFilter(anchors);
+
+  // Augment query with detected anchors to boost relevance instead of using $filter
+  const anchorTerms = [];
+  if (anchors.models.length) {
+    anchorTerms.push(...anchors.models.map((m) => `model ${m}`));
+  }
+  if (anchors.modelNames.length) {
+    anchorTerms.push(...anchors.modelNames);
+  }
+  if (anchors.skus.length) {
+    anchorTerms.push(...anchors.skus.map((s) => `sku ${s}`));
+  }
+  const augmentedQuery = anchorTerms.length ? `${query} ${anchorTerms.join(' ')}` : query;
 
   const searchOptions = {
     top: options.top || TOP_K,
     includeTotalCount: true,
-    queryType: 'full',
+    // Use simple query parsing to avoid syntax errors on characters like '/'
+    queryType: 'simple',
     searchMode: 'any',
   };
 
-  if (filter) {
-    searchOptions.filter = filter;
-  }
+  // Skip setting searchOptions.filter since Tags are not filterable at top-level
 
   try {
-    const searchResults = await searchClient.search(query, searchOptions);
+    let searchResults;
+    try {
+      searchResults = await searchClient.search(augmentedQuery, searchOptions);
+    } catch (err) {
+      // Fallback: if parsing fails for any reason, retry with sanitized query
+      const msg = err?.message || '';
+      // eslint-disable-next-line no-console
+      console.error(`[AzureSearchMCP] Initial search failed: ${msg}`);
+      const sanitized = augmentedQuery.replace(/[\/]/g, ' ').replace(/\s+/g, ' ').trim();
+      // eslint-disable-next-line no-console
+      console.error(`[AzureSearchMCP] Retrying with sanitized query: "${sanitized}"`);
+      searchResults = await searchClient.search(sanitized, searchOptions);
+    }
     const results = [];
 
     for await (const result of searchResults.results) {
@@ -328,6 +338,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (!query || typeof query !== 'string') {
     throw new Error('query parameter is required and must be a string');
   }
+
+  // Debug: log query length and content
+  // eslint-disable-next-line no-console
+  console.error(`[AzureSearchMCP] Query received: length=${query.length}, content="${query}"`);
 
   const searchResponse = await searchFAQ(query, { top });
   // eslint-disable-next-line no-console
