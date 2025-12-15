@@ -221,16 +221,24 @@ class GenerationJobManagerClass {
         currentRuntime.syncSent = false;
         // Call registered handlers (from job.emitter.on('allSubscribersLeft', ...))
         if (currentRuntime.allSubscribersLeftHandlers) {
-          this.jobStore.getContentParts(streamId).then((content) => {
-            const parts = content ?? [];
-            for (const handler of currentRuntime.allSubscribersLeftHandlers ?? []) {
-              try {
-                handler(parts);
-              } catch (err) {
-                logger.error(`[GenerationJobManager] Error in allSubscribersLeft handler:`, err);
+          this.jobStore
+            .getContentParts(streamId)
+            .then((content) => {
+              const parts = content ?? [];
+              for (const handler of currentRuntime.allSubscribersLeftHandlers ?? []) {
+                try {
+                  handler(parts);
+                } catch (err) {
+                  logger.error(`[GenerationJobManager] Error in allSubscribersLeft handler:`, err);
+                }
               }
-            }
-          });
+            })
+            .catch((err) => {
+              logger.error(
+                `[GenerationJobManager] Failed to get content parts for allSubscribersLeft handlers:`,
+                err,
+              );
+            });
         }
       }
     });
