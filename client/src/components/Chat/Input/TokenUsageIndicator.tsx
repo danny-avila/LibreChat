@@ -4,13 +4,10 @@ import { useLocalize, useTokenUsage } from '~/hooks';
 import { cn } from '~/utils';
 
 function formatTokens(n: number): string {
-  if (n >= 1000000) {
-    return `${(n / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
-  }
-  if (n >= 1000) {
-    return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}K`;
-  }
-  return n.toString();
+  return new Intl.NumberFormat(undefined, {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(n);
 }
 
 interface ProgressBarProps {
@@ -19,30 +16,48 @@ interface ProgressBarProps {
   colorClass: string;
   label: string;
   showPercentage?: boolean;
+  indeterminate?: boolean;
 }
 
-function ProgressBar({ value, max, colorClass, label, showPercentage = false }: ProgressBarProps) {
+function ProgressBar({
+  value,
+  max,
+  colorClass,
+  label,
+  showPercentage = false,
+  indeterminate = false,
+}: ProgressBarProps) {
   const percentage = max > 0 ? Math.min((value / max) * 100, 100) : 0;
 
   return (
     <div className="flex items-center gap-2">
       <div
         role="progressbar"
-        aria-valuenow={Math.round(percentage)}
+        aria-valuenow={indeterminate ? undefined : Math.round(percentage)}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={label}
         className="h-2 flex-1 overflow-hidden rounded-full bg-surface-secondary"
       >
-        <div className="flex h-full rounded-full">
+        {indeterminate ? (
           <div
-            className={cn('rounded-full transition-all duration-300', colorClass)}
-            style={{ width: `${percentage}%` }}
+            className="h-full w-full rounded-full"
+            style={{
+              background:
+                'repeating-linear-gradient(-45deg, var(--border-medium), var(--border-medium) 4px, var(--surface-tertiary) 4px, var(--surface-tertiary) 8px)',
+            }}
           />
-          <div className="flex-1 bg-surface-hover" />
-        </div>
+        ) : (
+          <div className="flex h-full rounded-full">
+            <div
+              className={cn('rounded-full transition-all duration-300', colorClass)}
+              style={{ width: `${percentage}%` }}
+            />
+            <div className="flex-1 bg-surface-hover" />
+          </div>
+        )}
       </div>
-      {showPercentage && (
+      {showPercentage && !indeterminate && (
         <span className="min-w-[3rem] text-right text-xs text-text-secondary" aria-hidden="true">
           {Math.round(percentage)}%
         </span>
@@ -80,7 +95,7 @@ function TokenRow({ label, value, total, colorClass, ariaLabel }: TokenRowProps)
 
 function TokenUsageContent() {
   const localize = useLocalize();
-  const { inputTokens, outputTokens, maxContext } = useTokenUsage();
+  const { inputTokens = 0, outputTokens = 0, maxContext = null } = useTokenUsage() ?? {};
 
   const totalUsed = inputTokens + outputTokens;
   const hasMaxContext = maxContext !== null && maxContext > 0;
@@ -127,20 +142,23 @@ function TokenUsageContent() {
       </div>
 
       {/* Main Progress Bar */}
-      {hasMaxContext && (
-        <div className="space-y-1">
-          <ProgressBar
-            value={totalUsed}
-            max={maxContext}
-            colorClass={getMainProgressColor()}
-            label={`${localize('com_ui_token_usage_context')}: ${formatTokens(totalUsed)} of ${formatTokens(maxContext)}, ${Math.round(percentage)}%`}
-          />
-          <div className="flex justify-between text-xs text-text-secondary" aria-hidden="true">
-            <span>{formatTokens(totalUsed)}</span>
-            <span>{formatTokens(maxContext)}</span>
-          </div>
+      <div className="space-y-1">
+        <ProgressBar
+          value={totalUsed}
+          max={hasMaxContext ? maxContext : 0}
+          colorClass={getMainProgressColor()}
+          label={
+            hasMaxContext
+              ? `${localize('com_ui_token_usage_context')}: ${formatTokens(totalUsed)} of ${formatTokens(maxContext)}, ${Math.round(percentage)}%`
+              : `${localize('com_ui_token_usage_context')}: ${formatTokens(totalUsed)} tokens used, max context unknown`
+          }
+          indeterminate={!hasMaxContext}
+        />
+        <div className="flex justify-between text-xs text-text-secondary" aria-hidden="true">
+          <span>{formatTokens(totalUsed)}</span>
+          <span>{hasMaxContext ? formatTokens(maxContext) : 'N/A'}</span>
         </div>
-      )}
+      </div>
 
       {/* Divider */}
       <div className="border-t border-border-light" role="separator" />
@@ -168,7 +186,7 @@ function TokenUsageContent() {
 
 const TokenUsageIndicator = memo(function TokenUsageIndicator() {
   const localize = useLocalize();
-  const { inputTokens, outputTokens, maxContext } = useTokenUsage();
+  const { inputTokens = 0, outputTokens = 0, maxContext = null } = useTokenUsage() ?? {};
 
   const totalUsed = inputTokens + outputTokens;
   const hasMaxContext = maxContext !== null && maxContext > 0;
@@ -249,13 +267,7 @@ const TokenUsageIndicator = memo(function TokenUsageIndicator() {
         </button>
       </HoverCardTrigger>
       <HoverCardPortal>
-        <HoverCardContent
-          side="top"
-          align="end"
-          className="p-3"
-          role="dialog"
-          aria-label={localize('com_ui_token_usage_context')}
-        >
+        <HoverCardContent side="top" align="end" className="p-3">
           <TokenUsageContent />
         </HoverCardContent>
       </HoverCardPortal>

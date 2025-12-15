@@ -313,6 +313,10 @@ export const maxTokensMap: Record<string, Record<string, number>> = {
 /**
  * Finds the first matching pattern in the tokens map.
  * Searches in reverse order to match more specific patterns first.
+ *
+ * Note: This relies on the insertion order of keys in the tokensMap object.
+ * More specific patterns must be defined later in the object to be matched first.
+ * If the order of keys is changed, the matching behavior may be affected.
  */
 export function findMatchingPattern(
   modelName: string,
@@ -322,7 +326,7 @@ export function findMatchingPattern(
   const lowerModelName = modelName.toLowerCase();
   for (let i = keys.length - 1; i >= 0; i--) {
     const modelKey = keys[i];
-    if (lowerModelName.includes(modelKey)) {
+    if (lowerModelName.startsWith(modelKey)) {
       return modelKey;
     }
   }
@@ -510,7 +514,6 @@ export function getModelMaxOutputTokens(
 
 /**
  * Centralized token-related default values.
- * These replace hardcoded magic numbers throughout the codebase.
  */
 export const TOKEN_DEFAULTS = {
   /** Fallback context window for agents when model lookup fails */
