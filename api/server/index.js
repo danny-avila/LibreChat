@@ -17,6 +17,7 @@ const {
   handleJsonParseError,
   initializeFileStorage,
   GenerationJobManager,
+  createStreamServices,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -193,6 +194,10 @@ const startServer = async () => {
     await initializeMCPs();
     await initializeOAuthReconnectManager();
     await checkMigrations();
+
+    // Configure stream services (auto-detects Redis from USE_REDIS env var)
+    const streamServices = createStreamServices();
+    GenerationJobManager.configure(streamServices);
     GenerationJobManager.initialize();
   });
 };

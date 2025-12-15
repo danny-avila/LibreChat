@@ -212,7 +212,7 @@ export class InMemoryJobStore implements IJobStore {
    * Get content parts for a job.
    * Returns live content from stored reference.
    */
-  getContentParts(streamId: string): Agents.MessageContentComplex[] | null {
+  async getContentParts(streamId: string): Promise<Agents.MessageContentComplex[] | null> {
     return this.contentState.get(streamId)?.contentParts ?? null;
   }
 
@@ -220,7 +220,7 @@ export class InMemoryJobStore implements IJobStore {
    * Get run steps for a job from graph.contentData.
    * Uses WeakRef - may return empty if graph has been GC'd.
    */
-  getRunSteps(streamId: string): Agents.RunStep[] {
+  async getRunSteps(streamId: string): Promise<Agents.RunStep[]> {
     const state = this.contentState.get(streamId);
     if (!state?.graphRef) {
       return [];

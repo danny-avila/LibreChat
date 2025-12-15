@@ -159,7 +159,7 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @returns Content parts or null if not available
    */
-  getContentParts(streamId: string): Agents.MessageContentComplex[] | null;
+  getContentParts(streamId: string): Promise<Agents.MessageContentComplex[] | null>;
 
   /**
    * Get run steps for a job (for resume state).
@@ -170,7 +170,7 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @returns Run steps or empty array
    */
-  getRunSteps(streamId: string): Agents.RunStep[];
+  getRunSteps(streamId: string): Promise<Agents.RunStep[]>;
 
   /**
    * Append a streaming chunk for later reconstruction.
@@ -190,6 +190,16 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    */
   clearContentState(streamId: string): void;
+
+  /**
+   * Save run steps to persistent storage.
+   * In-memory: No-op (run steps accessed via graph reference)
+   * Redis: Persists for resume across instances
+   *
+   * @param streamId - The stream identifier
+   * @param runSteps - Run steps to save
+   */
+  saveRunSteps?(streamId: string, runSteps: Agents.RunStep[]): Promise<void>;
 }
 
 /**
