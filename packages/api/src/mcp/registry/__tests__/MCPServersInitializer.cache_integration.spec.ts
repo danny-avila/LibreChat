@@ -322,13 +322,16 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
       expect(await registryStatusCache.isInitialized()).toBe(true);
 
       // Add a stale server directly to Redis to simulate stale data
-      await registry.sharedAppServers.add('stale_server', {
-        type: 'stdio',
-        command: 'node',
-        args: ['stale.js'],
-        requiresOAuth: false,
-      });
-      expect(await registry.sharedAppServers.get('stale_server')).toBeDefined();
+      await registry.addServer(
+        'stale_server',
+        {
+          type: 'stdio',
+          command: 'node',
+          args: ['stale.js'],
+        },
+        'CACHE',
+      );
+      expect(await registry.getServerConfig('stale_server')).toBeDefined();
 
       // Simulate app restart by resetting the process flag (but NOT Redis)
       MCPServersInitializer.resetProcessFlag();
@@ -340,11 +343,11 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
       await MCPServersInitializer.initialize(testConfigs);
 
       // Stale server should be gone because registry.reset() was called
-      expect(await registry.sharedAppServers.get('stale_server')).toBeUndefined();
+      expect(await registry.getServerConfig('stale_server')).toBeUndefined();
 
       // Real servers should be present
-      expect(await registry.sharedAppServers.get('file_tools_server')).toBeDefined();
-      expect(await registry.sharedUserServers.get('disabled_server')).toBeDefined();
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
+      expect(await registry.getServerConfig('disabled_server')).toBeDefined();
 
       // Inspector should have been called (proving re-initialization happened)
       expect((MCPServerInspector.inspect as jest.Mock).mock.calls.length).toBeGreaterThan(0);
@@ -370,15 +373,18 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
       await MCPServersInitializer.initialize(testConfigs);
 
       // Add stale data that shouldn't exist after next initialization
-      await registry.sharedAppServers.add('should_be_removed', {
-        type: 'stdio',
-        command: 'node',
-        args: ['old.js'],
-        requiresOAuth: false,
-      });
+      await registry.addServer(
+        'should_be_removed',
+        {
+          type: 'stdio',
+          command: 'node',
+          args: ['old.js'],
+        },
+        'CACHE',
+      );
 
       // Verify stale data exists
-      expect(await registry.sharedAppServers.get('should_be_removed')).toBeDefined();
+      expect(await registry.getServerConfig('should_be_removed')).toBeDefined();
 
       // Simulate new process starting (reset process flag)
       MCPServersInitializer.resetProcessFlag();
@@ -391,11 +397,11 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
       await MCPServersInitializer.initialize(reducedConfigs);
 
       // Stale server from previous config should be gone
-      expect(await registry.sharedAppServers.get('should_be_removed')).toBeUndefined();
+      expect(await registry.getServerConfig('should_be_removed')).toBeUndefined();
       // Server not in new configs should be gone
-      expect(await registry.sharedUserServers.get('disabled_server')).toBeUndefined();
+      expect(await registry.getServerConfig('disabled_server')).toBeUndefined();
       // Only server in new configs should exist
-      expect(await registry.sharedAppServers.get('file_tools_server')).toBeDefined();
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
     });
 
     it('should work correctly when multiple instances share Redis (leader handles init)', async () => {
@@ -406,7 +412,7 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
       expect(await registryStatusCache.isInitialized()).toBe(true);
 
       // Verify servers are in Redis
-      const fileToolsServer = await registry.sharedAppServers.get('file_tools_server');
+      const fileToolsServer = await registry.getServerConfig('file_tools_server');
       expect(fileToolsServer).toBeDefined();
       expect(fileToolsServer?.tools).toBe('file_read, file_write');
 
@@ -419,7 +425,7 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
 
       // Redis should still have correct data
       expect(await registryStatusCache.isInitialized()).toBe(true);
-      expect(await registry.sharedAppServers.get('file_tools_server')).toBeDefined();
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
     });
   });
 });
