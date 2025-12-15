@@ -158,10 +158,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       // conversationId is pre-generated, no need to update from callback
     };
 
-    // Start background generation - wait for subscriber with timeout fallback
+    // Start background generation - readyPromise resolves immediately now
+    // (sync mechanism handles late subscribers)
     const startGeneration = async () => {
       try {
-        await Promise.race([job.readyPromise, new Promise((resolve) => setTimeout(resolve, 3500))]);
+        // Short timeout as safety net - promise should already be resolved
+        await Promise.race([job.readyPromise, new Promise((resolve) => setTimeout(resolve, 100))]);
       } catch (waitError) {
         logger.warn(
           `[ResumableAgentController] Error waiting for subscriber: ${waitError.message}`,
