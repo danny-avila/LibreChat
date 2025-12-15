@@ -50,9 +50,9 @@ function getAuthLocalizationKey(type: AuthTypeEnum): TranslationKeys {
     case AuthTypeEnum.ServiceHttp:
       return 'com_ui_api_key';
     case AuthTypeEnum.OAuth:
-      return 'com_ui_oauth';
+      return 'com_ui_manual_oauth';
     default:
-      return 'com_ui_none';
+      return 'com_ui_auto_detect';
   }
 }
 
@@ -156,12 +156,15 @@ export default function MCPAuth({
                   style={{ outline: 'none' }}
                 >
                   <div className="flex items-center gap-2">
-                    <label htmlFor="auth-none" className="flex cursor-pointer items-center gap-1">
+                    <label
+                      htmlFor="auth-auto-detect"
+                      className="flex cursor-pointer items-center gap-1"
+                    >
                       <RadioGroup.Item
                         type="button"
                         role="radio"
                         value={AuthTypeEnum.None}
-                        id="auth-none"
+                        id="auth-auto-detect"
                         className={cn(
                           'mr-1 flex h-5 w-5 items-center justify-center rounded-full border',
                           'border-border-heavy bg-surface-primary',
@@ -169,7 +172,7 @@ export default function MCPAuth({
                       >
                         <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-text-primary" />
                       </RadioGroup.Item>
-                      {localize('com_ui_none')}
+                      {localize('com_ui_auto_detect')}
                     </label>
                   </div>
                   <div className="flex items-center gap-2">
@@ -190,12 +193,15 @@ export default function MCPAuth({
                     </label>
                   </div>
                   <div className="flex items-center gap-2">
-                    <label htmlFor="auth-oauth" className="flex cursor-pointer items-center gap-1">
+                    <label
+                      htmlFor="auth-manual-oauth"
+                      className="flex cursor-pointer items-center gap-1"
+                    >
                       <RadioGroup.Item
                         type="button"
                         role="radio"
                         value={AuthTypeEnum.OAuth}
-                        id="auth-oauth"
+                        id="auth-manual-oauth"
                         className={cn(
                           'mr-1 flex h-5 w-5 items-center justify-center rounded-full border',
                           'border-border-heavy bg-surface-primary',
@@ -203,12 +209,18 @@ export default function MCPAuth({
                       >
                         <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-text-primary" />
                       </RadioGroup.Item>
-                      {localize('com_ui_oauth')}
+                      {localize('com_ui_manual_oauth')}
                     </label>
                   </div>
                 </RadioGroup.Root>
               </div>
-              {authType === AuthTypeEnum.None && null}
+              {authType === AuthTypeEnum.None && (
+                <div className="rounded-lg border border-border-medium bg-surface-secondary p-3">
+                  <p className="text-sm text-text-secondary">
+                    {localize('com_ui_auto_detect_description')}
+                  </p>
+                </div>
+              )}
               {authType === AuthTypeEnum.ServiceHttp && <ApiKey inputClasses={inputClasses} />}
               {authType === AuthTypeEnum.OAuth && <OAuth inputClasses={inputClasses} />}
             </div>
@@ -384,8 +396,9 @@ const ApiKey = ({ inputClasses }: { inputClasses: string }) => {
 const OAuth = ({ inputClasses }: { inputClasses: string }) => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { register, watch } = useFormContext();
+  const { register, watch, formState } = useFormContext();
   const [isCopying, setIsCopying] = useState(false);
+  const { errors } = formState;
 
   // Check if we're in edit mode (server exists with ID)
   const serverId = watch('server_id');
@@ -400,26 +413,48 @@ const OAuth = ({ inputClasses }: { inputClasses: string }) => {
 
   return (
     <>
-      <label className="mb-1 block text-sm font-medium">{localize('com_ui_client_id')}</label>
+      <label className="mb-1 block text-sm font-medium">
+        {localize('com_ui_client_id')} {!isEditMode && <span className="text-red-500">*</span>}
+      </label>
       <input
-        placeholder="<HIDDEN>"
+        placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
+        autoComplete="off"
+        className={inputClasses}
+        {...register('oauth_client_id', { required: !isEditMode })}
+      />
+      {errors.oauth_client_id && (
+        <span className="text-xs text-red-500">{localize('com_ui_field_required')}</span>
+      )}
+      <label className="mb-1 block text-sm font-medium">
+        {localize('com_ui_client_secret')} {!isEditMode && <span className="text-red-500">*</span>}
+      </label>
+      <input
+        placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
         type="password"
         autoComplete="new-password"
         className={inputClasses}
-        {...register('oauth_client_id')}
+        {...register('oauth_client_secret', { required: !isEditMode })}
       />
-      <label className="mb-1 block text-sm font-medium">{localize('com_ui_client_secret')}</label>
+      {errors.oauth_client_secret && (
+        <span className="text-xs text-red-500">{localize('com_ui_field_required')}</span>
+      )}
+      <label className="mb-1 block text-sm font-medium">
+        {localize('com_ui_auth_url')} <span className="text-red-500">*</span>
+      </label>
       <input
-        placeholder="<HIDDEN>"
-        type="password"
-        autoComplete="new-password"
         className={inputClasses}
-        {...register('oauth_client_secret')}
+        {...register('oauth_authorization_url', { required: true })}
       />
-      <label className="mb-1 block text-sm font-medium">{localize('com_ui_auth_url')}</label>
-      <input className={inputClasses} {...register('oauth_authorization_url')} />
-      <label className="mb-1 block text-sm font-medium">{localize('com_ui_token_url')}</label>
-      <input className={inputClasses} {...register('oauth_token_url')} />
+      {errors.oauth_authorization_url && (
+        <span className="text-xs text-red-500">{localize('com_ui_field_required')}</span>
+      )}
+      <label className="mb-1 block text-sm font-medium">
+        {localize('com_ui_token_url')} <span className="text-red-500">*</span>
+      </label>
+      <input className={inputClasses} {...register('oauth_token_url', { required: true })} />
+      {errors.oauth_token_url && (
+        <span className="text-xs text-red-500">{localize('com_ui_field_required')}</span>
+      )}
 
       {/* Redirect URI - read-only in edit mode, info message in create mode */}
       <label className="mb-1 block text-sm font-medium">{localize('com_ui_redirect_uri')}</label>
