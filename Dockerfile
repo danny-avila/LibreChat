@@ -14,6 +14,10 @@ ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
 COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
 RUN uv --version
 
+# Add `deno` for better MCP isolation
+RUN apk add --no-cache deno
+RUN deno --version
+
 RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
 
