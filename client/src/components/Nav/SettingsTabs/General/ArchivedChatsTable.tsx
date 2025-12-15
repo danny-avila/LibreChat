@@ -17,6 +17,7 @@ import {
   OGDialogContent,
 } from '@librechat/client';
 import type { ConversationListParams, TConversation } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks';
 import {
   useConversationsInfiniteQuery,
   useDeleteConversationMutation,
@@ -142,7 +143,7 @@ export default function ArchivedChatsTable({
               onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
               className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
               aria-sort={ariaSort}
-              aria-label={localize('com_nav_archive_name_sort')}
+              aria-label={localize('com_nav_archive_name_sort' as TranslationKeys)}
               aria-current={sortState ? 'true' : 'false'}
             >
               {localize('com_nav_archive_name')}
@@ -192,7 +193,7 @@ export default function ArchivedChatsTable({
               onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
               className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
               aria-sort={ariaSort}
-              aria-label={localize('com_nav_archive_created_at_sort')}
+              aria-label={localize('com_nav_archive_created_at_sort' as TranslationKeys)}
               aria-current={sortState ? 'true' : 'false'}
             >
               {localize('com_nav_archive_created_at')}
