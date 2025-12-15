@@ -503,10 +503,120 @@ class WoodlandProductHistory extends Tool {
       const key = String(doc.record_id || doc.id || doc.key || '').toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
-      results.push(this._shapeDocument({ ...doc, ['@search.score']: result.score }));
+      const shaped = this._shapeDocument({ ...doc, ['@search.score']: result.score });
+      const merged = await this._maybeMergeFallbackParts(shaped, doc);
+      results.push(merged);
     }
 
     return results;
+  }
+
+  /**
+   * Determine fallback compatible model for "All other parts" behavior.
+   * Supports multiple potential field names to match Airtable export variations.
+   */
+  _getFallbackModel(doc) {
+    const candidates = [
+      doc.all_other_parts,
+      doc.allOtherParts,
+      doc.all_other_parts_model,
+      doc.other_parts_model,
+      doc.compatible_model_for_other_parts,
+      doc.compatibleModelForOtherParts,
+    ];
+    for (const c of candidates) {
+      if (typeof c === 'string' && c.trim()) {
+        return c.trim();
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * If a fallback model is specified, fetch its record and merge missing groups/fields
+   * into the shaped result. Annotate merged entries via a source label for clarity.
+   */
+  async _maybeMergeFallbackParts(shaped, originalDoc) {
+    try {
+      const fallbackModel = this._getFallbackModel(originalDoc);
+      if (!fallbackModel) {
+        return shaped;
+      }
+
+      // Fetch the fallback record by model name
+      const filter = `rake_model eq '${fallbackModel.replace(/'/g, "''")}'`;
+      const opts = {
+        top: 1,
+        select: this.select?.length ? this.select : undefined,
+        searchMode: 'any',
+        queryType: this.queryType,
+        filter,
+      };
+      const iterator = await this.client.search('*', opts);
+      const first = await iterator.next();
+      const fbResult = first?.value;
+      const fbDoc = fbResult?.document;
+      if (!fbDoc) {
+        return shaped;
+      }
+
+      const fbShaped = this._shapeDocument({ ...fbDoc });
+
+      // Merge logic: for any empty group or missing field in shaped, pull from fallback
+      const merged = { ...shaped };
+      merged.normalized_product = { ...shaped.normalized_product };
+
+      const srcLabel = `(sourced from ${fallbackModel})`;
+
+      // Merge groups
+      const groups = merged.normalized_product.groups || {};
+      const fbGroups = fbShaped.normalized_product.groups || {};
+      Object.keys(fbGroups).forEach((gk) => {
+        const current = groups[gk];
+        const fbVal = fbGroups[gk];
+        const isEmpty = !Array.isArray(current) || current.length === 0;
+        if (isEmpty && Array.isArray(fbVal) && fbVal.length > 0) {
+          // annotate entries with source label
+          groups[gk] = fbVal.map((e) => ({ ...e, value: `${e.value} ${srcLabel}`.trim() }));
+        }
+      });
+      merged.normalized_product.groups = groups;
+
+      // Merge primary fields (if missing)
+      const fields = merged.normalized_product.fields || {};
+      const fbFields = fbShaped.normalized_product.fields || {};
+      Object.keys(fbFields).forEach((fk) => {
+        const cur = fields[fk];
+        const fb = fbFields[fk];
+        if (cur == null && fb != null) {
+          if (typeof fb === 'object' && fb.value) {
+            fields[fk] = { ...fb, value: `${fb.value} ${srcLabel}`.trim() };
+          } else if (typeof fb === 'string') {
+            fields[fk] = `${fb} ${srcLabel}`.trim();
+          } else {
+            fields[fk] = fb;
+          }
+        }
+      });
+      merged.normalized_product.fields = fields;
+
+      // Tag annotation for visibility
+      const tags = Array.isArray(merged.normalized_product.tags)
+        ? merged.normalized_product.tags
+        : [];
+      merged.normalized_product.tags = [...tags, `fallback:${fallbackModel}`];
+
+      // Add citation for fallback record if available
+      const fbCitation = fbShaped.citations?.[0];
+      if (fbCitation && !merged.citations?.includes(fbCitation)) {
+        merged.citations = [...(merged.citations || []), fbCitation];
+      }
+
+      return merged;
+    } catch (e) {
+      logger.warn('[woodland-ai-product-history] Fallback merge failed', e);
+      return shaped;
+    }
   }
 
   _resolveQueryType(fields = {}) {

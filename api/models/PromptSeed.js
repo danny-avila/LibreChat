@@ -289,9 +289,11 @@ Use structured filters for precise results.`,
     command: 'engine-timeline',
     type: 'text',
     public: true,
-    prompt: `Show the engine configuration timeline grouped by rake model.
+    prompt: `Show the engine configuration timeline for:
 
-Provide for each rake model:
+Engine Model: {{engine_model}}
+
+Provide grouped by rake model:
 1. Chronological list of all engine changes
 2. What changed (horsepower, filter, air filter, blower)
 3. When each change occurred
