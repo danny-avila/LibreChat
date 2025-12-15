@@ -26,8 +26,8 @@ export class InMemoryJobStore implements IJobStore {
   private contentState = new Map<string, ContentState>();
   private cleanupInterval: NodeJS.Timeout | null = null;
 
-  /** Time to keep completed jobs before cleanup (5 minutes) */
-  private ttlAfterComplete = 300000;
+  /** Time to keep completed jobs before cleanup (0 = immediate) */
+  private ttlAfterComplete = 0;
 
   /** Maximum number of concurrent jobs */
   private maxJobs = 1000;
@@ -119,8 +119,11 @@ export class InMemoryJobStore implements IJobStore {
 
     for (const [streamId, job] of this.jobs) {
       const isFinished = ['complete', 'error', 'aborted'].includes(job.status);
-      if (isFinished && job.completedAt && now - job.completedAt > this.ttlAfterComplete) {
-        toDelete.push(streamId);
+      if (isFinished && job.completedAt) {
+        // TTL of 0 means immediate cleanup, otherwise wait for TTL to expire
+        if (this.ttlAfterComplete === 0 || now - job.completedAt > this.ttlAfterComplete) {
+          toDelete.push(streamId);
+        }
       }
     }
 
