@@ -128,7 +128,7 @@ describe('tests for the new helper functions used by the MCP connection status e
 
     beforeEach(() => {
       mockGetMCPManager.mockReturnValue({
-        appConnections: { getAll: jest.fn(() => new Map()) },
+        appConnections: { getLoaded: jest.fn(() => new Map()) },
         getUserConnections: jest.fn(() => new Map()),
       });
       mockRegistryInstance.getOAuthServers.mockResolvedValue(new Set());
@@ -143,7 +143,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       const mockOAuthServers = new Set(['server2']);
 
       const mockMCPManager = {
-        appConnections: { getAll: jest.fn(() => Promise.resolve(mockAppConnections)) },
+        appConnections: { getLoaded: jest.fn(() => Promise.resolve(mockAppConnections)) },
         getUserConnections: jest.fn(() => mockUserConnections),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);
@@ -153,7 +153,7 @@ describe('tests for the new helper functions used by the MCP connection status e
 
       expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith(mockUserId);
       expect(mockGetMCPManager).toHaveBeenCalledWith(mockUserId);
-      expect(mockMCPManager.appConnections.getAll).toHaveBeenCalled();
+      expect(mockMCPManager.appConnections.getLoaded).toHaveBeenCalled();
       expect(mockMCPManager.getUserConnections).toHaveBeenCalledWith(mockUserId);
       expect(mockRegistryInstance.getOAuthServers).toHaveBeenCalledWith(mockUserId);
 
@@ -174,7 +174,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       mockRegistryInstance.getAllServerConfigs.mockResolvedValue(mockConfig);
 
       const mockMCPManager = {
-        appConnections: { getAll: jest.fn(() => Promise.resolve(null)) },
+        appConnections: { getLoaded: jest.fn(() => Promise.resolve(null)) },
         getUserConnections: jest.fn(() => null),
       };
       mockGetMCPManager.mockReturnValue(mockMCPManager);

@@ -201,6 +201,11 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
 
     // Mock MCPConnectionFactory
     jest.spyOn(MCPConnectionFactory, 'create').mockResolvedValue(mockConnection);
+
+    // Reset caches and process flag before each test
+    await registryStatusCache.reset();
+    await registry.reset();
+    MCPServersInitializer.resetProcessFlag();
   });
 
   afterEach(async () => {
@@ -261,7 +266,7 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
       await MCPServersInitializer.initialize(testConfigs);
 
       // Verify inspect was not called again
-      expect(MCPServerInspector.inspect).not.toHaveBeenCalled();
+      expect((MCPServerInspector.inspect as jest.Mock).mock.calls.length).toBe(0);
     });
 
     it('should initialize all servers to cache repository', async () => {
@@ -307,6 +312,120 @@ describe('MCPServersInitializer Redis Integration Tests', () => {
       await MCPServersInitializer.initialize(testConfigs);
 
       expect(await registryStatusCache.isInitialized()).toBe(true);
+    });
+  });
+
+  describe('horizontal scaling / app restart behavior', () => {
+    it('should re-initialize on first call even if Redis says initialized (simulating app restart)', async () => {
+      // First: run full initialization
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(await registryStatusCache.isInitialized()).toBe(true);
+
+      // Add a stale server directly to Redis to simulate stale data
+      await registry.addServer(
+        'stale_server',
+        {
+          type: 'stdio',
+          command: 'node',
+          args: ['stale.js'],
+        },
+        'CACHE',
+      );
+      expect(await registry.getServerConfig('stale_server')).toBeDefined();
+
+      // Simulate app restart by resetting the process flag (but NOT Redis)
+      MCPServersInitializer.resetProcessFlag();
+
+      // Clear mocks to track new calls
+      jest.clearAllMocks();
+
+      // Re-initialize - should still run initialization because process flag was reset
+      await MCPServersInitializer.initialize(testConfigs);
+
+      // Stale server should be gone because registry.reset() was called
+      expect(await registry.getServerConfig('stale_server')).toBeUndefined();
+
+      // Real servers should be present
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
+      expect(await registry.getServerConfig('disabled_server')).toBeDefined();
+
+      // Inspector should have been called (proving re-initialization happened)
+      expect((MCPServerInspector.inspect as jest.Mock).mock.calls.length).toBeGreaterThan(0);
+    });
+
+    it('should skip re-initialization on subsequent calls within same process', async () => {
+      // First initialization
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(await registryStatusCache.isInitialized()).toBe(true);
+
+      // Clear mocks
+      jest.clearAllMocks();
+
+      // Second call in same process should skip
+      await MCPServersInitializer.initialize(testConfigs);
+
+      // Inspector should NOT have been called
+      expect((MCPServerInspector.inspect as jest.Mock).mock.calls.length).toBe(0);
+    });
+
+    it('should clear stale data from Redis when a new instance becomes leader', async () => {
+      // Initial setup with testConfigs
+      await MCPServersInitializer.initialize(testConfigs);
+
+      // Add stale data that shouldn't exist after next initialization
+      await registry.addServer(
+        'should_be_removed',
+        {
+          type: 'stdio',
+          command: 'node',
+          args: ['old.js'],
+        },
+        'CACHE',
+      );
+
+      // Verify stale data exists
+      expect(await registry.getServerConfig('should_be_removed')).toBeDefined();
+
+      // Simulate new process starting (reset process flag)
+      MCPServersInitializer.resetProcessFlag();
+
+      // Initialize with different configs (fewer servers)
+      const reducedConfigs: t.MCPServers = {
+        file_tools_server: testConfigs.file_tools_server,
+      };
+
+      await MCPServersInitializer.initialize(reducedConfigs);
+
+      // Stale server from previous config should be gone
+      expect(await registry.getServerConfig('should_be_removed')).toBeUndefined();
+      // Server not in new configs should be gone
+      expect(await registry.getServerConfig('disabled_server')).toBeUndefined();
+      // Only server in new configs should exist
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
+    });
+
+    it('should work correctly when multiple instances share Redis (leader handles init)', async () => {
+      // First instance initializes (we are the leader)
+      await MCPServersInitializer.initialize(testConfigs);
+
+      // Verify initialized state is in Redis
+      expect(await registryStatusCache.isInitialized()).toBe(true);
+
+      // Verify servers are in Redis
+      const fileToolsServer = await registry.getServerConfig('file_tools_server');
+      expect(fileToolsServer).toBeDefined();
+      expect(fileToolsServer?.tools).toBe('file_read, file_write');
+
+      // Simulate second instance starting (reset process flag but keep Redis data)
+      MCPServersInitializer.resetProcessFlag();
+      jest.clearAllMocks();
+
+      // Second instance initializes - should still process because isFirstCallThisProcess
+      await MCPServersInitializer.initialize(testConfigs);
+
+      // Redis should still have correct data
+      expect(await registryStatusCache.isInitialized()).toBe(true);
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
     });
   });
 });

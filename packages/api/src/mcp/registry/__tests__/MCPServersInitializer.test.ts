@@ -179,9 +179,10 @@ describe('MCPServersInitializer', () => {
       } as unknown as t.ParsedServerConfig;
     });
 
-    // Reset caches before each test
+    // Reset caches and process flag before each test
     await registryStatusCache.reset();
     await registry.reset();
+    MCPServersInitializer.resetProcessFlag();
     jest.clearAllMocks();
   });
 
@@ -308,6 +309,52 @@ describe('MCPServersInitializer', () => {
       await MCPServersInitializer.initialize(testConfigs);
 
       expect(await registryStatusCache.isInitialized()).toBe(true);
+    });
+
+    it('should re-initialize on first call even if Redis cache says initialized (simulating app restart)', async () => {
+      // First initialization - populates caches
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(await registryStatusCache.isInitialized()).toBe(true);
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
+
+      // Simulate stale data: add an extra server that shouldn't be there
+      await registry.addServer('stale_server', testConfigs.file_tools_server, 'CACHE');
+      expect(await registry.getServerConfig('stale_server')).toBeDefined();
+
+      jest.clearAllMocks();
+
+      // Simulate app restart by resetting the process flag
+      // In real scenario, this happens automatically when process restarts
+      MCPServersInitializer.resetProcessFlag();
+
+      // Re-initialize - should reset caches even though Redis says initialized
+      await MCPServersInitializer.initialize(testConfigs);
+
+      // Verify stale server was removed (cache was reset)
+      expect(await registry.getServerConfig('stale_server')).toBeUndefined();
+
+      // Verify new servers are present
+      expect(await registry.getServerConfig('file_tools_server')).toBeDefined();
+      expect(await registry.getServerConfig('oauth_server')).toBeDefined();
+
+      // Verify inspector was called again (re-initialization happened)
+      expect(mockInspect).toHaveBeenCalled();
+    });
+
+    it('should not re-initialize on subsequent calls within same process', async () => {
+      // First initialization (5 servers in testConfigs)
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(mockInspect).toHaveBeenCalledTimes(5);
+
+      jest.clearAllMocks();
+
+      // Second call - should skip because process flag is set and Redis says initialized
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(mockInspect).not.toHaveBeenCalled();
+
+      // Third call - still skips
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(mockInspect).not.toHaveBeenCalled();
     });
   });
 });

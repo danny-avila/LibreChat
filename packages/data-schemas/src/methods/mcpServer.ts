@@ -5,8 +5,8 @@ import logger from '~/config/winston';
 import { nanoid } from 'nanoid';
 
 const NORMALIZED_LIMIT_DEFAULT = 20;
-const MAX_CREATE_RETRIES = 3;
-const RETRY_BASE_DELAY_MS = 10;
+const MAX_CREATE_RETRIES = 5;
+const RETRY_BASE_DELAY_MS = 25;
 
 /**
  * Helper to check if an error is a MongoDB duplicate key error.
