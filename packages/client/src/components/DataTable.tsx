@@ -438,26 +438,37 @@ export default function DataTable<TData, TValue>({
           <TableHeader className="sticky top-0 z-50 bg-surface-secondary">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id} className="border-b border-border-light">
-                {headerGroup.headers.map((header) => (
-                  <TableHead
-                    key={header.id}
-                    className="whitespace-nowrap bg-surface-secondary px-2 py-2 text-left text-sm font-medium text-text-secondary sm:px-4"
-                    style={getColumnStyle(
-                      header.column.columnDef as TableColumn<TData, TValue>,
-                      isSmallScreen,
-                    )}
-                    onClick={
-                      header.column.getCanSort()
-                        ? header.column.getToggleSortingHandler()
-                        : undefined
-                    }
-                    scope="col"
-                  >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
-                  </TableHead>
-                ))}
+                {headerGroup.headers.map((header) => {
+                  const sortState = header.column.getIsSorted();
+                  let ariaSort: 'ascending' | 'descending' | undefined;
+                  if (sortState === 'asc') {
+                    ariaSort = 'ascending';
+                  } else if (sortState === 'desc') {
+                    ariaSort = 'descending';
+                  }
+
+                  return (
+                    <TableHead
+                      key={header.id}
+                      className="whitespace-nowrap bg-surface-secondary px-2 py-2 text-left text-sm font-medium text-text-secondary sm:px-4"
+                      style={getColumnStyle(
+                        header.column.columnDef as TableColumn<TData, TValue>,
+                        isSmallScreen,
+                      )}
+                      onClick={
+                        header.column.getCanSort()
+                          ? header.column.getToggleSortingHandler()
+                          : undefined
+                      }
+                      scope="col"
+                      aria-sort={ariaSort}
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </TableHead>
+                  );
+                })}
               </TableRow>
             ))}
           </TableHeader>
