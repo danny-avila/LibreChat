@@ -17,15 +17,23 @@ interface ProgressBarProps {
   value: number;
   max: number;
   colorClass: string;
+  label: string;
   showPercentage?: boolean;
 }
 
-function ProgressBar({ value, max, colorClass, showPercentage = false }: ProgressBarProps) {
+function ProgressBar({ value, max, colorClass, label, showPercentage = false }: ProgressBarProps) {
   const percentage = max > 0 ? Math.min((value / max) * 100, 100) : 0;
 
   return (
     <div className="flex items-center gap-2">
-      <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-secondary">
+      <div
+        role="progressbar"
+        aria-valuenow={Math.round(percentage)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={label}
+        className="h-2 flex-1 overflow-hidden rounded-full bg-surface-secondary"
+      >
         <div className="flex h-full rounded-full">
           <div
             className={cn('rounded-full transition-all duration-300', colorClass)}
@@ -35,7 +43,7 @@ function ProgressBar({ value, max, colorClass, showPercentage = false }: Progres
         </div>
       </div>
       {showPercentage && (
-        <span className="min-w-[3rem] text-right text-xs text-text-secondary">
+        <span className="min-w-[3rem] text-right text-xs text-text-secondary" aria-hidden="true">
           {Math.round(percentage)}%
         </span>
       )}
@@ -48,9 +56,10 @@ interface TokenRowProps {
   value: number;
   total: number;
   colorClass: string;
+  ariaLabel: string;
 }
 
-function TokenRow({ label, value, total, colorClass }: TokenRowProps) {
+function TokenRow({ label, value, total, colorClass, ariaLabel }: TokenRowProps) {
   const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
 
   return (
@@ -59,10 +68,12 @@ function TokenRow({ label, value, total, colorClass }: TokenRowProps) {
         <span className="text-text-secondary">{label}</span>
         <span className="font-medium text-text-primary">
           {formatTokens(value)}
-          <span className="ml-1 text-xs text-text-secondary">({percentage}%)</span>
+          <span className="ml-1 text-xs text-text-secondary" aria-hidden="true">
+            ({percentage}%)
+          </span>
         </span>
       </div>
-      <ProgressBar value={value} max={total} colorClass={colorClass} />
+      <ProgressBar value={value} max={total} colorClass={colorClass} label={ariaLabel} />
     </div>
   );
 }
@@ -88,11 +99,18 @@ function TokenUsageContent() {
     return 'bg-green-500';
   };
 
+  const inputPercentage = totalUsed > 0 ? Math.round((inputTokens / totalUsed) * 100) : 0;
+  const outputPercentage = totalUsed > 0 ? Math.round((outputTokens / totalUsed) * 100) : 0;
+
   return (
-    <div className="w-full space-y-3">
+    <div
+      className="w-full space-y-3"
+      role="region"
+      aria-label={localize('com_ui_token_usage_context')}
+    >
       {/* Header */}
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-text-primary">
+        <span className="text-sm font-medium text-text-primary" id="token-usage-title">
           {localize('com_ui_token_usage_context')}
         </span>
         {hasMaxContext && (
@@ -111,8 +129,13 @@ function TokenUsageContent() {
       {/* Main Progress Bar */}
       {hasMaxContext && (
         <div className="space-y-1">
-          <ProgressBar value={totalUsed} max={maxContext} colorClass={getMainProgressColor()} />
-          <div className="flex justify-between text-xs text-text-secondary">
+          <ProgressBar
+            value={totalUsed}
+            max={maxContext}
+            colorClass={getMainProgressColor()}
+            label={`${localize('com_ui_token_usage_context')}: ${formatTokens(totalUsed)} of ${formatTokens(maxContext)}, ${Math.round(percentage)}%`}
+          />
+          <div className="flex justify-between text-xs text-text-secondary" aria-hidden="true">
             <span>{formatTokens(totalUsed)}</span>
             <span>{formatTokens(maxContext)}</span>
           </div>
@@ -120,7 +143,7 @@ function TokenUsageContent() {
       )}
 
       {/* Divider */}
-      <div className="border-t border-border-light" />
+      <div className="border-t border-border-light" role="separator" />
 
       {/* Input/Output Breakdown */}
       <div className="space-y-3">
@@ -129,30 +152,16 @@ function TokenUsageContent() {
           value={inputTokens}
           total={totalUsed}
           colorClass="bg-blue-500"
+          ariaLabel={`${localize('com_ui_token_usage_input')}: ${formatTokens(inputTokens)}, ${inputPercentage}% of total`}
         />
         <TokenRow
           label={localize('com_ui_token_usage_output')}
           value={outputTokens}
           total={totalUsed}
           colorClass="bg-green-500"
+          ariaLabel={`${localize('com_ui_token_usage_output')}: ${formatTokens(outputTokens)}, ${outputPercentage}% of total`}
         />
       </div>
-
-      {/* Total Section */}
-      <div className="border-t border-border-light pt-2">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-text-secondary">{localize('com_ui_token_usage_total')}</span>
-          <span className="font-medium text-text-primary">{formatTokens(totalUsed)}</span>
-        </div>
-      </div>
-
-      {/* Max Context (when available) */}
-      {hasMaxContext && (
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-text-secondary">{localize('com_ui_token_usage_max_context')}</span>
-          <span className="font-medium text-text-primary">{formatTokens(maxContext)}</span>
-        </div>
-      )}
     </div>
   );
 }
@@ -203,8 +212,9 @@ const TokenUsageIndicator = memo(function TokenUsageIndicator() {
       <HoverCardTrigger asChild>
         <button
           type="button"
-          className="flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+          className="flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={ariaLabel}
+          aria-haspopup="dialog"
         >
           <svg
             width={size}
@@ -212,6 +222,7 @@ const TokenUsageIndicator = memo(function TokenUsageIndicator() {
             viewBox={`0 0 ${size} ${size}`}
             className="rotate-[-90deg]"
             aria-hidden="true"
+            focusable="false"
           >
             {/* Background ring */}
             <circle
@@ -238,7 +249,13 @@ const TokenUsageIndicator = memo(function TokenUsageIndicator() {
         </button>
       </HoverCardTrigger>
       <HoverCardPortal>
-        <HoverCardContent side="top" align="end" className="p-3">
+        <HoverCardContent
+          side="top"
+          align="end"
+          className="p-3"
+          role="dialog"
+          aria-label={localize('com_ui_token_usage_context')}
+        >
           <TokenUsageContent />
         </HoverCardContent>
       </HoverCardPortal>
