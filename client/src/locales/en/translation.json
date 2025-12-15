@@ -740,7 +740,7 @@
   "com_ui_authentication_type": "Authentication Type",
   "com_ui_auto": "Auto",
   "com_ui_auto_detect": "Auto Detect",
-  "com_ui_auto_detect_description": "DCR will be attempted in case auth is actually required. Choose this if your MCP server has no auth requirements or DCR is supported.",
+  "com_ui_auto_detect_description": "DCR will be attempted if auth is required. Choose this if your MCP server has no auth requirements or supports DCR.",
   "com_ui_avatar": "Avatar",
   "com_ui_azure": "Azure",
   "com_ui_azure_ad": "Entra ID",

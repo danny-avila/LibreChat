@@ -418,7 +418,7 @@ const OAuth = ({ inputClasses }: { inputClasses: string }) => {
       </label>
       <input
         placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
-        autoComplete="new-password"
+        autoComplete="off"
         className={inputClasses}
         {...register('oauth_client_id', { required: !isEditMode })}
       />
