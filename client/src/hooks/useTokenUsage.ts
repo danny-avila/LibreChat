@@ -84,6 +84,17 @@ export function useTokenUsageComputation() {
   useEffect(() => {
     setTokenUsage(tokenData);
   }, [tokenData, setTokenUsage]);
+
+  // Reset token usage when starting a new conversation
+  useEffect(() => {
+    if (paramId === 'new' && effectiveMessages.length === 0) {
+      setTokenUsage({
+        inputTokens: 0,
+        outputTokens: 0,
+        maxContext: null,
+      });
+    }
+  }, [paramId, effectiveMessages.length, setTokenUsage]);
 }
 
 /**
