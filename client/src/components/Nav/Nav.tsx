@@ -222,7 +222,10 @@ const Nav = memo(
                     aria-label={localize('com_ui_chat_history')}
                     className="flex h-full flex-col px-2 pb-3.5"
                   >
-                    <div className="flex flex-1 flex-col overflow-hidden" ref={outerContainerRef}>
+                    <div
+                      className="flex flex-1 flex-col overflow-x-visible"
+                      ref={outerContainerRef}
+                    >
                       <MemoNewChat
                         subHeaders={subHeaders}
                         toggleNav={toggleNavVisible}
