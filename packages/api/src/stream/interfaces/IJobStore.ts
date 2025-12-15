@@ -77,6 +77,12 @@ export interface ResumeState {
 /**
  * Interface for job storage backend.
  * Implementations can use in-memory Map, Redis, KV store, etc.
+ *
+ * Content state is tied to jobs:
+ * - In-memory: Holds WeakRef to graph for live content/run steps access
+ * - Redis: Persists chunks, reconstructs content on reconnect
+ *
+ * This consolidates job metadata + content state into a single interface.
  */
 export interface IJobStore {
   /** Initialize the store (e.g., connect to Redis, start cleanup intervals) */
@@ -115,6 +121,75 @@ export interface IJobStore {
 
   /** Destroy the store and release resources */
   destroy(): Promise<void>;
+
+  // ===== Content State Methods =====
+  // These methods manage volatile content state tied to each job.
+  // In-memory: Uses WeakRef to graph for live access
+  // Redis: Persists chunks and reconstructs on demand
+
+  /**
+   * Set the graph reference for a job (in-memory only).
+   * The graph provides live access to contentParts and contentData (run steps).
+   *
+   * In-memory: Stores WeakRef to graph
+   * Redis: No-op (graph not transferable, uses chunks instead)
+   *
+   * @param streamId - The stream identifier
+   * @param graph - The StandardGraph instance
+   */
+  setGraph(streamId: string, graph: StandardGraph): void;
+
+  /**
+   * Set content parts reference for a job.
+   *
+   * In-memory: Stores direct reference to content array
+   * Redis: No-op (content built from chunks)
+   *
+   * @param streamId - The stream identifier
+   * @param contentParts - The content parts array
+   */
+  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void;
+
+  /**
+   * Get aggregated content for a job.
+   *
+   * In-memory: Returns live content from graph.contentParts or stored reference
+   * Redis: Reconstructs from stored chunks
+   *
+   * @param streamId - The stream identifier
+   * @returns Content parts or null if not available
+   */
+  getContentParts(streamId: string): Agents.MessageContentComplex[] | null;
+
+  /**
+   * Get run steps for a job (for resume state).
+   *
+   * In-memory: Returns live run steps from graph.contentData
+   * Redis: Fetches from persistent storage
+   *
+   * @param streamId - The stream identifier
+   * @returns Run steps or empty array
+   */
+  getRunSteps(streamId: string): Agents.RunStep[];
+
+  /**
+   * Append a streaming chunk for later reconstruction.
+   *
+   * In-memory: No-op (content available via graph reference)
+   * Redis: Uses XADD for append-only log efficiency
+   *
+   * @param streamId - The stream identifier
+   * @param event - The SSE event to append
+   */
+  appendChunk(streamId: string, event: unknown): Promise<void>;
+
+  /**
+   * Clear all content state for a job.
+   * Called on job completion/cleanup.
+   *
+   * @param streamId - The stream identifier
+   */
+  clearContentState(streamId: string): void;
 }
 
 /**
@@ -154,30 +229,5 @@ export interface IEventTransport {
   cleanup(streamId: string): void;
 
   /** Destroy all transport resources */
-  destroy(): void;
-}
-
-/**
- * Interface for content state management.
- * Separates volatile content state from persistent job data.
- * In-memory only - not persisted to external storage.
- */
-export interface IContentStateManager {
-  /** Set content parts reference (in-memory only) */
-  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void;
-
-  /** Get content parts */
-  getContentParts(streamId: string): Agents.MessageContentComplex[] | null;
-
-  /** Set graph reference for run steps */
-  setGraph(streamId: string, graph: StandardGraph): void;
-
-  /** Get run steps from graph */
-  getRunSteps(streamId: string): Agents.RunStep[];
-
-  /** Clear content state for a job */
-  clearContentState(streamId: string): void;
-
-  /** Destroy all content state resources */
   destroy(): void;
 }

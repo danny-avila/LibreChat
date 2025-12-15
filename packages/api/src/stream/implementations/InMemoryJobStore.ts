@@ -1,13 +1,29 @@
 import { logger } from '@librechat/data-schemas';
-import type { IJobStore, SerializableJobData, JobStatus } from '../interfaces/IJobStore';
+import type { StandardGraph } from '@librechat/agents';
+import type { Agents } from 'librechat-data-provider';
+import type { IJobStore, SerializableJobData, JobStatus } from '~/stream/interfaces/IJobStore';
+
+/**
+ * Content state for a job - volatile, in-memory only.
+ * Uses WeakRef to allow garbage collection of graph when no longer needed.
+ */
+interface ContentState {
+  contentParts: Agents.MessageContentComplex[];
+  graphRef: WeakRef<StandardGraph> | null;
+}
 
 /**
  * In-memory implementation of IJobStore.
  * Suitable for single-instance deployments.
  * For horizontal scaling, use RedisJobStore.
+ *
+ * Content state is tied to jobs:
+ * - Uses WeakRef to graph for live access to contentParts and contentData (run steps)
+ * - No chunk persistence needed - same instance handles generation and reconnects
  */
 export class InMemoryJobStore implements IJobStore {
   private jobs = new Map<string, SerializableJobData>();
+  private contentState = new Map<string, ContentState>();
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   /** Time to keep completed jobs before cleanup (5 minutes) */
@@ -79,6 +95,7 @@ export class InMemoryJobStore implements IJobStore {
 
   async deleteJob(streamId: string): Promise<void> {
     this.jobs.delete(streamId);
+    this.contentState.delete(streamId);
     logger.debug(`[InMemoryJobStore] Deleted job: ${streamId}`);
   }
 
@@ -157,6 +174,74 @@ export class InMemoryJobStore implements IJobStore {
       this.cleanupInterval = null;
     }
     this.jobs.clear();
+    this.contentState.clear();
     logger.debug('[InMemoryJobStore] Destroyed');
+  }
+
+  // ===== Content State Methods =====
+
+  /**
+   * Set the graph reference for a job.
+   * Uses WeakRef to allow garbage collection when graph is no longer needed.
+   */
+  setGraph(streamId: string, graph: StandardGraph): void {
+    const existing = this.contentState.get(streamId);
+    if (existing) {
+      existing.graphRef = new WeakRef(graph);
+    } else {
+      this.contentState.set(streamId, {
+        contentParts: [],
+        graphRef: new WeakRef(graph),
+      });
+    }
+  }
+
+  /**
+   * Set content parts reference for a job.
+   */
+  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void {
+    const existing = this.contentState.get(streamId);
+    if (existing) {
+      existing.contentParts = contentParts;
+    } else {
+      this.contentState.set(streamId, { contentParts, graphRef: null });
+    }
+  }
+
+  /**
+   * Get content parts for a job.
+   * Returns live content from stored reference.
+   */
+  getContentParts(streamId: string): Agents.MessageContentComplex[] | null {
+    return this.contentState.get(streamId)?.contentParts ?? null;
+  }
+
+  /**
+   * Get run steps for a job from graph.contentData.
+   * Uses WeakRef - may return empty if graph has been GC'd.
+   */
+  getRunSteps(streamId: string): Agents.RunStep[] {
+    const state = this.contentState.get(streamId);
+    if (!state?.graphRef) {
+      return [];
+    }
+
+    // Dereference WeakRef - may return undefined if GC'd
+    const graph = state.graphRef.deref();
+    return graph?.contentData ?? [];
+  }
+
+  /**
+   * No-op for in-memory - content available via graph reference.
+   */
+  async appendChunk(): Promise<void> {
+    // No-op: content available via graph reference
+  }
+
+  /**
+   * Clear content state for a job.
+   */
+  clearContentState(streamId: string): void {
+    this.contentState.delete(streamId);
   }
 }
