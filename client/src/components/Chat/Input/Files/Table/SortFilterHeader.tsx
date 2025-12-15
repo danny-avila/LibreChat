@@ -33,12 +33,12 @@ export function SortFilterHeader<TData, TValue>({
       {
         label: localize('com_ui_ascending'),
         onClick: () => column.toggleSorting(false),
-        icon: <ArrowUpIcon className="icon-sm opacity-60" />,
+        icon: <ArrowUpIcon className="icon-sm text-text-secondary" />,
       },
       {
         label: localize('com_ui_descending'),
         onClick: () => column.toggleSorting(true),
-        icon: <ArrowDownIcon className="icon-sm opacity-60" />,
+        icon: <ArrowDownIcon className="icon-sm text-text-secondary" />,
       },
     ];
 
@@ -56,7 +56,7 @@ export function SortFilterHeader<TData, TValue>({
             items.push({
               label: filterValue,
               onClick: () => column.setFilterValue(value),
-              icon: <ListFilter className="icon-sm opacity-60" aria-hidden="true" />,
+              icon: <ListFilter className="icon-sm text-text-secondary" aria-hidden="true" />,
               show: true,
               className: isActive ? 'border-l-2 border-l-border-xheavy' : '',
             });
@@ -68,7 +68,7 @@ export function SortFilterHeader<TData, TValue>({
       items.push({
         label: localize('com_ui_show_all'),
         onClick: () => column.setFilterValue(undefined),
-        icon: <FilterX className="icon-sm opacity-60" />,
+        icon: <FilterX className="icon-sm text-text-secondary" />,
         show: true,
       });
     }
@@ -113,7 +113,7 @@ export function SortFilterHeader<TData, TValue>({
                 {column.getIsFiltered() ? (
                   <ListFilter className="icon-sm" aria-hidden="true" />
                 ) : (
-                  <ListFilter className="icon-sm opacity-60" aria-hidden="true" />
+                  <ListFilter className="icon-sm text-text-secondary" aria-hidden="true" />
                 )}
                 {(() => {
                   const sortState = column.getIsSorted();
