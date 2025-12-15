@@ -12,6 +12,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks';
 import {
   OGDialog,
   useToastContext,
@@ -120,7 +121,7 @@ export default function SharedLinks() {
 
       if (validRows.length === 0) {
         showToast({
-          message: localize('com_ui_no_valid_items'),
+          message: localize('com_ui_no_valid_items' as TranslationKeys),
           severity: NotificationSeverity.WARNING,
         });
         return;
@@ -134,15 +135,15 @@ export default function SharedLinks() {
         showToast({
           message: localize(
             validRows.length === 1
-              ? 'com_ui_shared_link_delete_success'
-              : 'com_ui_shared_link_bulk_delete_success',
+              ? ('com_ui_shared_link_delete_success' as TranslationKeys)
+              : ('com_ui_shared_link_bulk_delete_success' as TranslationKeys),
           ),
           severity: NotificationSeverity.SUCCESS,
         });
       } catch (error) {
         console.error('Failed to delete shared links:', error);
         showToast({
-          message: localize('com_ui_bulk_delete_error'),
+          message: localize('com_ui_bulk_delete_error' as TranslationKeys),
           severity: NotificationSeverity.ERROR,
         });
       }
@@ -225,10 +226,8 @@ export default function SharedLinks() {
             <Button
               variant="ghost"
               className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-              onClick={() =>
-                handleSort('createdAt', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
-              }
-              aria-label={localize('com_ui_creation_date_sort')}
+              aria-label={localize('com_ui_creation_date_sort' as TranslationKeys)}
+              aria-current={sortState ? 'true' : 'false'}
             >
               {localize('com_ui_date')}
               {isSorted && sortDirection === 'asc' && (
