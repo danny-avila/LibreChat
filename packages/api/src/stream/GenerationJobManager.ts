@@ -221,7 +221,6 @@ class GenerationJobManagerClass {
           });
         }
       }
-      logger.debug(`[GenerationJobManager] All subscribers left ${streamId}, reset syncSent`);
     });
 
     logger.debug(`[GenerationJobManager] Created job: ${streamId}`);
@@ -615,7 +614,6 @@ class GenerationJobManagerClass {
     }
 
     this.jobStore.updateJob(streamId, updates);
-    logger.debug(`[GenerationJobManager] Tracked user message for ${streamId}`);
   }
 
   /**
@@ -648,7 +646,6 @@ class GenerationJobManagerClass {
       updates.promptTokens = metadata.promptTokens;
     }
     this.jobStore.updateJob(streamId, updates);
-    logger.debug(`[GenerationJobManager] Updated metadata for ${streamId}`);
   }
 
   /**
@@ -660,7 +657,6 @@ class GenerationJobManagerClass {
       return;
     }
     this.jobStore.setContentParts(streamId, contentParts);
-    logger.debug(`[GenerationJobManager] Set contentParts for ${streamId}`);
   }
 
   /**
@@ -672,7 +668,6 @@ class GenerationJobManagerClass {
       return;
     }
     this.jobStore.setGraph(streamId, graph);
-    logger.debug(`[GenerationJobManager] Set graph reference for ${streamId}`);
   }
 
   /**
@@ -689,8 +684,8 @@ class GenerationJobManagerClass {
 
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
-      aggregatedContentLength: aggregatedContent.length,
       runStepsLength: runSteps.length,
+      aggregatedContentLength: aggregatedContent.length,
     });
 
     return {

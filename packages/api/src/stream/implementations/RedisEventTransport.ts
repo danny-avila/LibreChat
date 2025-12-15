@@ -161,7 +161,6 @@ export class RedisEventTransport implements IEventTransport {
       this.subscriber.subscribe(channel).catch((err) => {
         logger.error(`[RedisEventTransport] Failed to subscribe to ${channel}:`, err);
       });
-      logger.debug(`[RedisEventTransport] Subscribed to channel: ${channel}`);
     }
 
     // Return unsubscribe function
@@ -192,7 +191,6 @@ export class RedisEventTransport implements IEventTransport {
           }
 
           this.streams.delete(streamId);
-          logger.debug(`[RedisEventTransport] All subscribers left ${streamId}`);
         }
       },
     };

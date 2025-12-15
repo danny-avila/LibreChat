@@ -267,8 +267,6 @@ export class RedisJobStore implements IJobStore {
    */
   async getContentParts(streamId: string): Promise<Agents.MessageContentComplex[] | null> {
     const chunks = await this.getChunks(streamId);
-    logger.debug(`[RedisJobStore] getContentParts: ${streamId} has ${chunks.length} chunks`);
-
     if (chunks.length === 0) {
       return null;
     }
@@ -314,13 +312,10 @@ export class RedisJobStore implements IJobStore {
     const key = KEYS.runSteps(streamId);
     const data = await this.redis.get(key);
     if (!data) {
-      logger.debug(`[RedisJobStore] getRunSteps: ${streamId} has no run steps`);
       return [];
     }
     try {
-      const runSteps = JSON.parse(data);
-      logger.debug(`[RedisJobStore] getRunSteps: ${streamId} has ${runSteps.length} run steps`);
-      return runSteps;
+      return JSON.parse(data);
     } catch {
       return [];
     }
@@ -352,8 +347,6 @@ export class RedisJobStore implements IJobStore {
    */
   async appendChunk(streamId: string, event: unknown): Promise<void> {
     const key = KEYS.chunks(streamId);
-    const eventObj = event as { event?: string };
-    logger.debug(`[RedisJobStore] appendChunk: ${streamId} event=${eventObj.event}`);
     await this.redis.xadd(key, '*', 'event', JSON.stringify(event));
   }
 
