@@ -38,7 +38,7 @@ const transactionSchema: Schema<ITransaction> = new Schema(
     },
     model: {
       type: String,
-      index: true
+      index: true,
     },
     context: {
       type: String,

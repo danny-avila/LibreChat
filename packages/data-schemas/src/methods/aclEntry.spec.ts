@@ -723,7 +723,9 @@ describe('AclEntry Model Tests', () => {
 
       expect(permissionsMap.size).toBe(2); // Only resource1 and resource2 for user
       expect(permissionsMap.get(resource1.toString())).toBe(PermissionBits.VIEW);
-      expect(permissionsMap.get(resource2.toString())).toBe(PermissionBits.VIEW | PermissionBits.EDIT);
+      expect(permissionsMap.get(resource2.toString())).toBe(
+        PermissionBits.VIEW | PermissionBits.EDIT,
+      );
       expect(permissionsMap.get(resource3.toString())).toBeUndefined(); // User has no access
     });
 
@@ -772,7 +774,9 @@ describe('AclEntry Model Tests', () => {
 
       expect(permissionsMap.size).toBe(2);
       /** Resource1 should have VIEW | EDIT (from user + group) */
-      expect(permissionsMap.get(resource1.toString())).toBe(PermissionBits.VIEW | PermissionBits.EDIT);
+      expect(permissionsMap.get(resource1.toString())).toBe(
+        PermissionBits.VIEW | PermissionBits.EDIT,
+      );
       /** Resource2 should have only VIEW (from user) */
       expect(permissionsMap.get(resource2.toString())).toBe(PermissionBits.VIEW);
     });
@@ -847,7 +851,9 @@ describe('AclEntry Model Tests', () => {
       );
 
       expect(permissionsMap.size).toBe(2);
-      expect(permissionsMap.get(resource1.toString())).toBe(PermissionBits.VIEW | PermissionBits.EDIT);
+      expect(permissionsMap.get(resource1.toString())).toBe(
+        PermissionBits.VIEW | PermissionBits.EDIT,
+      );
       expect(permissionsMap.get(resource2.toString())).toBe(PermissionBits.VIEW);
     });
 
@@ -903,7 +909,9 @@ describe('AclEntry Model Tests', () => {
 
       /** Resources 20-29: USER VIEW | GROUP EDIT */
       for (let i = 20; i < 30; i++) {
-        expect(permissionsMap.get(resources[i].toString())).toBe(PermissionBits.VIEW | PermissionBits.EDIT);
+        expect(permissionsMap.get(resources[i].toString())).toBe(
+          PermissionBits.VIEW | PermissionBits.EDIT,
+        );
       }
 
       /** Resources 30-39: GROUP EDIT only */

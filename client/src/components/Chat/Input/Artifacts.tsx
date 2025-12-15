@@ -100,7 +100,8 @@ function Artifacts() {
                 'ml-1 h-4 w-4 text-text-secondary transition-transform duration-300 md:ml-0.5',
                 isButtonExpanded && 'rotate-180',
               )}
-            aria-hidden="true" />
+              aria-hidden="true"
+            />
           </Ariakit.MenuButton>
 
           <Ariakit.Menu
