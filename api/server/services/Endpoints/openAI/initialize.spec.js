@@ -12,6 +12,15 @@ const { EModelEndpoint, ErrorTypes, validateAzureGroups } = require('librechat-d
 const { getUserKey, getUserKeyValues } = require('~/server/services/UserService');
 const initializeClient = require('./initialize');
 const { OpenAIClient } = require('~/app');
+jest.mock('@librechat/api', () => {
+  const actual = jest.requireActual('@librechat/api');
+  return {
+    ...actual,
+    getEntraIdAccessToken: jest.fn(),
+    shouldUseEntraId: jest.fn(() => actual.shouldUseEntraId()),
+  };
+});
+const { getEntraIdAccessToken, shouldUseEntraId } = require('@librechat/api');
 
 // Mock getUserKey since it's the only function we want to mock
 jest.mock('~/server/services/UserService', () => ({
@@ -430,6 +439,8 @@ describe('initializeClient', () => {
   });
 
   test('should use Entra ID authentication when AZURE_OPENAI_USE_ENTRA_ID is enabled', async () => {
+    shouldUseEntraId.mockReturnValue(true);
+    getEntraIdAccessToken.mockResolvedValue('entra-token');
     process.env.AZURE_OPENAI_USE_ENTRA_ID = 'true';
     process.env.AZURE_API_KEY = 'test-azure-api-key';
     process.env.AZURE_OPENAI_API_INSTANCE_NAME = 'test-instance';
