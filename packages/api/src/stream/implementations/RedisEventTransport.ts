@@ -6,8 +6,8 @@ import type { IEventTransport } from '~/stream/interfaces/IJobStore';
  * Redis key prefixes for pub/sub channels
  */
 const CHANNELS = {
-  /** Main event channel: stream:events:{streamId} */
-  events: (streamId: string) => `stream:events:${streamId}`,
+  /** Main event channel: stream:{streamId}:events (hash tag for cluster compatibility) */
+  events: (streamId: string) => `stream:{${streamId}}:events`,
 };
 
 /**
@@ -92,12 +92,13 @@ export class RedisEventTransport implements IEventTransport {
    * Handle incoming pub/sub message
    */
   private handleMessage(channel: string, message: string): void {
-    // Extract streamId from channel name
-    const prefix = 'stream:events:';
-    if (!channel.startsWith(prefix)) {
+    // Extract streamId from channel name: stream:{streamId}:events
+    // Use regex to extract the hash tag content
+    const match = channel.match(/^stream:\{([^}]+)\}:events$/);
+    if (!match) {
       return;
     }
-    const streamId = channel.slice(prefix.length);
+    const streamId = match[1];
 
     const streamState = this.streams.get(streamId);
     if (!streamState) {
