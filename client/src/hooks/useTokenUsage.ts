@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import { useSetAtom, useAtomValue } from 'jotai';
-import type { TMessage } from 'librechat-data-provider';
 import { getModelMaxTokens } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
 import { tokenUsageAtom, type TokenUsage } from '~/store/tokenUsage';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { useChatContext } from '~/Providers';
@@ -14,19 +15,37 @@ export function useTokenUsageComputation() {
   const { conversation } = useChatContext();
   const conversationId = conversation?.conversationId ?? '';
   const setTokenUsage = useSetAtom(tokenUsageAtom);
+  const { conversationId: paramId } = useParams();
+
+  // Determine the query key to use - same logic as useChatHelpers
+  const queryParam = paramId === 'new' ? paramId : conversationId || paramId || '';
 
   // Use the query hook to get reactive messages
-  const { data: messages } = useGetMessagesByConvoId(conversationId, {
-    enabled: !!conversationId && conversationId !== 'new',
+  // Subscribe to both the paramId-based key and conversationId-based key
+  const { data: messages } = useGetMessagesByConvoId(queryParam, {
+    enabled: !!queryParam,
   });
+
+  // Also subscribe to the actual conversationId if different from queryParam
+  // This ensures we get updates when conversation transitions from 'new' to actual ID
+  const { data: messagesById } = useGetMessagesByConvoId(conversationId, {
+    enabled: !!conversationId && conversationId !== 'new' && conversationId !== queryParam,
+  });
+
+  // Use whichever has more messages (handles transition from new -> actual ID)
+  const effectiveMessages = useMemo(() => {
+    const msgArray = messages ?? [];
+    const msgByIdArray = messagesById ?? [];
+    return msgByIdArray.length > msgArray.length ? msgByIdArray : msgArray;
+  }, [messages, messagesById]);
 
   // Compute token usage whenever messages change
   const tokenData = useMemo(() => {
     let inputTokens = 0;
     let outputTokens = 0;
 
-    if (messages && Array.isArray(messages)) {
-      for (const msg of messages as TMessage[]) {
+    if (effectiveMessages && Array.isArray(effectiveMessages)) {
+      for (const msg of effectiveMessages as TMessage[]) {
         const count = msg.tokenCount ?? 0;
         if (msg.isCreatedByUser) {
           inputTokens += count;
@@ -54,7 +73,7 @@ export function useTokenUsageComputation() {
       maxContext,
     };
   }, [
-    messages,
+    effectiveMessages,
     conversation?.maxContextTokens,
     conversation?.model,
     conversation?.endpoint,
