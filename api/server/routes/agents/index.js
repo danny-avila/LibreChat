@@ -133,15 +133,17 @@ router.get('/chat/status/:conversationId', async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
-  const info = await GenerationJobManager.getStreamInfo(conversationId);
+  // Get resume state which contains aggregatedContent
+  // Avoid calling both getStreamInfo and getResumeState (both fetch content)
   const resumeState = await GenerationJobManager.getResumeState(conversationId);
+  const isActive = job.status === 'running';
 
   res.json({
-    active: info?.active ?? false,
+    active: isActive,
     streamId: conversationId,
-    status: info?.status ?? job.status,
-    aggregatedContent: info?.aggregatedContent,
-    createdAt: info?.createdAt ?? job.createdAt,
+    status: job.status,
+    aggregatedContent: resumeState?.aggregatedContent ?? [],
+    createdAt: job.createdAt,
     resumeState,
   });
 });
