@@ -29,11 +29,17 @@ describe('RedisEventTransport Integration Tests', () => {
   });
 
   afterAll(async () => {
-    if (ioredisClient && 'disconnect' in ioredisClient) {
+    if (ioredisClient) {
       try {
-        ioredisClient.disconnect();
+        // Use quit() to gracefully close - waits for pending commands
+        await ioredisClient.quit();
       } catch {
-        // Ignore
+        // Fall back to disconnect if quit fails
+        try {
+          ioredisClient.disconnect();
+        } catch {
+          // Ignore
+        }
       }
     }
     process.env = originalEnv;
