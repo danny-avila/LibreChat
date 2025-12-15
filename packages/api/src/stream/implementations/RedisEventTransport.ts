@@ -268,6 +268,13 @@ export class RedisEventTransport implements IEventTransport {
   }
 
   /**
+   * Get all tracked stream IDs (for orphan cleanup)
+   */
+  getTrackedStreamIds(): string[] {
+    return Array.from(this.streams.keys());
+  }
+
+  /**
    * Cleanup resources for a specific stream.
    */
   cleanup(streamId: string): void {

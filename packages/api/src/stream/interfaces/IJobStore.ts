@@ -238,6 +238,9 @@ export interface IEventTransport {
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;
 
+  /** Get all tracked stream IDs (for orphan cleanup) */
+  getTrackedStreamIds(): string[];
+
   /** Destroy all transport resources */
   destroy(): void;
 }

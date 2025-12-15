@@ -55,9 +55,12 @@ export class InMemoryEventTransport implements IEventTransport {
           currentState.emitter.off('done', doneHandler);
           currentState.emitter.off('error', errorHandler);
 
-          // Check if all subscribers left
+          // Check if all subscribers left - cleanup and notify
           if (currentState.emitter.listenerCount('chunk') === 0) {
             currentState.allSubscribersLeftCallback?.();
+            // Auto-cleanup the stream entry when no subscribers remain
+            currentState.emitter.removeAllListeners();
+            this.streams.delete(streamId);
           }
         }
       },
@@ -115,6 +118,13 @@ export class InMemoryEventTransport implements IEventTransport {
    */
   getStreamCount(): number {
     return this.streams.size;
+  }
+
+  /**
+   * Get all tracked stream IDs (for orphan cleanup)
+   */
+  getTrackedStreamIds(): string[] {
+    return Array.from(this.streams.keys());
   }
 
   destroy(): void {

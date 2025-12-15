@@ -357,7 +357,10 @@ class GenerationJobManagerClass {
 
   /**
    * Mark job as complete.
-   * If cleanupOnComplete is true (default), immediately cleans up all job resources.
+   * If cleanupOnComplete is true (default), immediately cleans up job resources.
+   * Note: eventTransport is NOT cleaned up here to allow the final event to be
+   * fully transmitted. It will be cleaned up when subscribers disconnect or
+   * by the periodic cleanup job.
    */
   async completeJob(streamId: string, error?: string): Promise<void> {
     // Clear content state and run step buffer (Redis only)
@@ -367,7 +370,8 @@ class GenerationJobManagerClass {
     // Immediate cleanup if configured (default: true)
     if (this._cleanupOnComplete) {
       this.runtimeState.delete(streamId);
-      this.eventTransport.cleanup(streamId);
+      // Don't cleanup eventTransport here - let the done event fully transmit first.
+      // EventTransport will be cleaned up when subscribers disconnect or by periodic cleanup.
       await this.jobStore.deleteJob(streamId);
     } else {
       // Only update status if keeping the job around
@@ -443,7 +447,7 @@ class GenerationJobManagerClass {
     // Immediate cleanup if configured (default: true)
     if (this._cleanupOnComplete) {
       this.runtimeState.delete(streamId);
-      this.eventTransport.cleanup(streamId);
+      // Don't cleanup eventTransport here - let the abort event fully transmit first.
       await this.jobStore.deleteJob(streamId);
     } else {
       // Only update status if keeping the job around
@@ -803,6 +807,14 @@ class GenerationJobManagerClass {
         if (!(await this.jobStore.hasJob(streamId))) {
           this.runStepBuffers.delete(streamId);
         }
+      }
+    }
+
+    // Check eventTransport for orphaned streams (e.g., connections dropped without clean close)
+    // These are streams that exist in eventTransport but have no corresponding job
+    for (const streamId of this.eventTransport.getTrackedStreamIds()) {
+      if (!(await this.jobStore.hasJob(streamId)) && !this.runtimeState.has(streamId)) {
+        this.eventTransport.cleanup(streamId);
       }
     }
 
