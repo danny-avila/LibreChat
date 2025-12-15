@@ -1,8 +1,8 @@
 import { PlaywrightTestConfig } from '@playwright/test';
-import mainConfig from './playwright.config';
-import path from 'path';
-const absolutePath = path.resolve(process.cwd(), 'api/server/index.js');
 import dotenv from 'dotenv';
+import path from 'path';
+import mainConfig from './playwright.config';
+const absolutePath = path.resolve(process.cwd(), 'api/server/index.js');
 dotenv.config();
 
 const config: PlaywrightTestConfig = {
@@ -49,6 +49,14 @@ const config: PlaywrightTestConfig = {
       MESSAGE_USER_MAX: '100',
       MESSAGE_USER_WINDOW: '1',
     },
+  },
+  // Override shared use settings for local debug – make browser visible
+  // each test opens its own visible Chromium instance, so we can see what's happening
+  use: {
+    ...mainConfig.use,
+    headless: false,
+    baseURL: 'http://localhost:3090',
+    storageState: path.resolve(process.cwd(), 'e2e/storageState.json'),
   },
   fullyParallel: false, // if you are on Windows, keep this as `false`. On a Mac, `true` could make tests faster (maybe on some Windows too, just try)
   // workers: 1,
