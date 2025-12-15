@@ -227,9 +227,13 @@ function ShareHeader({
                 <OGDialogTitle>{settingsLabel}</OGDialogTitle>
               </OGDialogHeader>
               <div className="flex flex-col gap-4 pt-2 text-sm">
-                <ThemeSelector theme={theme} onChange={onThemeChange} />
+                <div className="relative focus-within:z-[100]">
+                  <ThemeSelector theme={theme} onChange={onThemeChange} portal={false} />
+                </div>
                 <div className="bg-border-medium/60 h-px w-full" />
-                <LangSelector langcode={langcode} onChange={onLangChange} portal={false} />
+                <div className="relative focus-within:z-[100]">
+                  <LangSelector langcode={langcode} onChange={onLangChange} portal={false} />
+                </div>
               </div>
             </OGDialogContent>
           </OGDialog>

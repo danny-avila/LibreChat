@@ -9,6 +9,7 @@ const {
   logAxiosError,
   sanitizeTitle,
   resolveHeaders,
+  createSafeUser,
   getBalanceConfig,
   memoryInstructions,
   getTransactionsConfig,
@@ -20,6 +21,7 @@ const {
   Providers,
   TitleMethod,
   formatMessage,
+  labelContentByAgent,
   formatAgentMessages,
   getTokenCountForMessage,
   createMetadataAggregator,
@@ -92,6 +94,61 @@ function logToolError(graph, error, toolId) {
   });
 }
 
+/**
+ * Applies agent labeling to conversation history when multi-agent patterns are detected.
+ * Labels content parts by their originating agent to prevent identity confusion.
+ *
+ * @param {TMessage[]} orderedMessages - The ordered conversation messages
+ * @param {Agent} primaryAgent - The primary agent configuration
+ * @param {Map<string, Agent>} agentConfigs - Map of additional agent configurations
+ * @returns {TMessage[]} Messages with agent labels applied where appropriate
+ */
+function applyAgentLabelsToHistory(orderedMessages, primaryAgent, agentConfigs) {
+  const shouldLabelByAgent = (primaryAgent.edges?.length ?? 0) > 0 || (agentConfigs?.size ?? 0) > 0;
+
+  if (!shouldLabelByAgent) {
+    return orderedMessages;
+  }
+
+  const processedMessages = [];
+
+  for (let i = 0; i < orderedMessages.length; i++) {
+    const message = orderedMessages[i];
+
+    /** @type {Record<string, string>} */
+    const agentNames = { [primaryAgent.id]: primaryAgent.name || 'Assistant' };
+
+    if (agentConfigs) {
+      for (const [agentId, agentConfig] of agentConfigs.entries()) {
+        agentNames[agentId] = agentConfig.name || agentConfig.id;
+      }
+    }
+
+    if (
+      !message.isCreatedByUser &&
+      message.metadata?.agentIdMap &&
+      Array.isArray(message.content)
+    ) {
+      try {
+        const labeledContent = labelContentByAgent(
+          message.content,
+          message.metadata.agentIdMap,
+          agentNames,
+        );
+
+        processedMessages.push({ ...message, content: labeledContent });
+      } catch (error) {
+        logger.error('[AgentClient] Error applying agent labels to message:', error);
+        processedMessages.push(message);
+      }
+    } else {
+      processedMessages.push(message);
+    }
+  }
+
+  return processedMessages;
+}
+
 class AgentClient extends BaseClient {
   constructor(options = {}) {
     super(null, options);
@@ -141,6 +198,8 @@ class AgentClient extends BaseClient {
     this.indexTokenCountMap = {};
     /** @type {(messages: BaseMessage[]) => Promise<void>} */
     this.processMemory;
+    /** @type {Record<number, string> | null} */
+    this.agentIdMap = null;
   }
 
   /**
@@ -232,6 +291,12 @@ class AgentClient extends BaseClient {
       parentMessageId,
       summary: this.shouldSummarize,
     });
+
+    orderedMessages = applyAgentLabelsToHistory(
+      orderedMessages,
+      this.options.agent,
+      this.agentConfigs,
+    );
 
     let payload;
     /** @type {number | undefined} */
@@ -612,7 +677,11 @@ class AgentClient extends BaseClient {
       userMCPAuthMap: opts.userMCPAuthMap,
       abortController: opts.abortController,
     });
-    return filterMalformedContentParts(this.contentParts);
+
+    const completion = filterMalformedContentParts(this.contentParts);
+    const metadata = this.agentIdMap ? { agentIdMap: this.agentIdMap } : undefined;
+
+    return { completion, metadata };
   }
 
   /**
@@ -788,7 +857,7 @@ class AgentClient extends BaseClient {
             conversationId: this.conversationId,
             parentMessageId: this.parentMessageId,
           },
-          user: this.options.req.user,
+          user: createSafeUser(this.options.req.user),
         },
         recursionLimit: agentsEConfig?.recursionLimit ?? 25,
         signal: abortController.signal,
@@ -864,6 +933,7 @@ class AgentClient extends BaseClient {
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
           requestBody: config.configurable.requestBody,
+          user: createSafeUser(this.options.req?.user),
           tokenCounter: createTokenCounter(this.getEncoding()),
         });
 
@@ -902,6 +972,24 @@ class AgentClient extends BaseClient {
           );
         });
       }
+
+      try {
+        /** Capture agent ID map if we have edges or multiple agents */
+        const shouldStoreAgentMap =
+          (this.options.agent.edges?.length ?? 0) > 0 || (this.agentConfigs?.size ?? 0) > 0;
+        if (shouldStoreAgentMap && run?.Graph) {
+          const contentPartAgentMap = run.Graph.getContentPartAgentMap();
+          if (contentPartAgentMap && contentPartAgentMap.size > 0) {
+            this.agentIdMap = Object.fromEntries(contentPartAgentMap);
+            logger.debug('[AgentClient] Captured agent ID map:', {
+              totalParts: this.contentParts.length,
+              mappedParts: Object.keys(this.agentIdMap).length,
+            });
+          }
+        }
+      } catch (error) {
+        logger.error('[AgentClient] Error capturing agent ID map:', error);
+      }
     } catch (err) {
       logger.error(
         '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
@@ -935,6 +1023,9 @@ class AgentClient extends BaseClient {
           err,
         );
       }
+      run = null;
+      config = null;
+      memoryPromise = null;
     }
   }
 
@@ -1063,6 +1154,7 @@ class AgentClient extends BaseClient {
     if (clientOptions?.configuration?.defaultHeaders != null) {
       clientOptions.configuration.defaultHeaders = resolveHeaders({
         headers: clientOptions.configuration.defaultHeaders,
+        user: createSafeUser(this.options.req?.user),
         body: {
           messageId: this.responseMessageId,
           conversationId: this.conversationId,

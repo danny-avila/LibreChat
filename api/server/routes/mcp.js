@@ -429,13 +429,23 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
     const connectionStatus = {};
 
     for (const [serverName] of Object.entries(mcpConfig)) {
-      connectionStatus[serverName] = await getServerConnectionStatus(
-        user.id,
-        serverName,
-        appConnections,
-        userConnections,
-        oauthServers,
-      );
+      try {
+        connectionStatus[serverName] = await getServerConnectionStatus(
+          user.id,
+          serverName,
+          appConnections,
+          userConnections,
+          oauthServers,
+        );
+      } catch (error) {
+        const message = `Failed to get status for server "${serverName}"`;
+        logger.error(`[MCP Connection Status] ${message},`, error);
+        connectionStatus[serverName] = {
+          connectionState: 'error',
+          requiresOAuth: oauthServers.has(serverName),
+          error: message,
+        };
+      }
     }
 
     res.json({

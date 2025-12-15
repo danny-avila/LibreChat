@@ -93,10 +93,37 @@ export class MCPOAuthHandler {
     });
 
     if (!rawMetadata) {
-      logger.error(
-        `[MCPOAuth] Failed to discover OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
+      /**
+       * No metadata discovered - create fallback metadata using default OAuth endpoint paths.
+       * This mirrors the MCP SDK's behavior where it falls back to /authorize, /token, /register
+       * when metadata discovery fails (e.g., servers without .well-known endpoints).
+       * See: https://github.com/modelcontextprotocol/sdk/blob/main/src/client/auth.ts
+       */
+      logger.warn(
+        `[MCPOAuth] No OAuth metadata discovered from ${sanitizeUrlForLogging(authServerUrl)}, using legacy fallback endpoints`,
       );
-      throw new Error('Failed to discover OAuth metadata');
+
+      const fallbackMetadata: OAuthMetadata = {
+        issuer: authServerUrl.toString(),
+        authorization_endpoint: new URL('/authorize', authServerUrl).toString(),
+        token_endpoint: new URL('/token', authServerUrl).toString(),
+        registration_endpoint: new URL('/register', authServerUrl).toString(),
+        response_types_supported: ['code'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        code_challenge_methods_supported: ['S256', 'plain'],
+        token_endpoint_auth_methods_supported: [
+          'client_secret_basic',
+          'client_secret_post',
+          'none',
+        ],
+      };
+
+      logger.debug(`[MCPOAuth] Using fallback metadata:`, fallbackMetadata);
+      return {
+        metadata: fallbackMetadata,
+        resourceMetadata,
+        authServerUrl,
+      };
     }
 
     logger.debug(`[MCPOAuth] OAuth metadata discovered successfully`);
@@ -223,6 +250,23 @@ export class MCPOAuthHandler {
       // Check if we have pre-configured OAuth settings
       if (config?.authorization_url && config?.token_url && config?.client_id) {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for ${serverName}`);
+
+        const skipCodeChallengeCheck =
+          config?.skip_code_challenge_check === true ||
+          process.env.MCP_SKIP_CODE_CHALLENGE_CHECK === 'true';
+        let codeChallengeMethodsSupported: string[];
+
+        if (config?.code_challenge_methods_supported !== undefined) {
+          codeChallengeMethodsSupported = config.code_challenge_methods_supported;
+        } else if (skipCodeChallengeCheck) {
+          codeChallengeMethodsSupported = ['S256', 'plain'];
+          logger.debug(
+            `[MCPOAuth] Code challenge check skip enabled, forcing S256 support for ${serverName}`,
+          );
+        } else {
+          codeChallengeMethodsSupported = ['S256', 'plain'];
+        }
+
         /** Metadata based on pre-configured settings */
         const metadata: OAuthMetadata = {
           authorization_endpoint: config.authorization_url,
@@ -238,10 +282,7 @@ export class MCPOAuthHandler {
             'client_secret_post',
           ],
           response_types_supported: config?.response_types_supported ?? ['code'],
-          code_challenge_methods_supported: config?.code_challenge_methods_supported ?? [
-            'S256',
-            'plain',
-          ],
+          code_challenge_methods_supported: codeChallengeMethodsSupported,
         };
         logger.debug(`[MCPOAuth] metadata for "${serverName}": ${JSON.stringify(metadata)}`);
         const clientInfo: OAuthClientInformation = {
@@ -548,13 +589,21 @@ export class MCPOAuthHandler {
             fetchFn: this.createOAuthFetch(oauthHeaders),
           });
           if (!oauthMetadata) {
-            throw new Error('Failed to discover OAuth metadata for token refresh');
-          }
-          if (!oauthMetadata.token_endpoint) {
+            /**
+             * No metadata discovered - use fallback /token endpoint.
+             * This mirrors the MCP SDK's behavior for legacy servers without .well-known endpoints.
+             */
+            logger.warn(
+              `[MCPOAuth] No OAuth metadata discovered for token refresh, using fallback /token endpoint`,
+            );
+            tokenUrl = new URL('/token', metadata.serverUrl).toString();
+            authMethods = ['client_secret_basic', 'client_secret_post', 'none'];
+          } else if (!oauthMetadata.token_endpoint) {
             throw new Error('No token endpoint found in OAuth metadata');
+          } else {
+            tokenUrl = oauthMetadata.token_endpoint;
+            authMethods = oauthMetadata.token_endpoint_auth_methods_supported;
           }
-          tokenUrl = oauthMetadata.token_endpoint;
-          authMethods = oauthMetadata.token_endpoint_auth_methods_supported;
         }
 
         const body = new URLSearchParams({
@@ -727,11 +776,19 @@ export class MCPOAuthHandler {
         fetchFn: this.createOAuthFetch(oauthHeaders),
       });
 
+      let tokenUrl: URL;
       if (!oauthMetadata?.token_endpoint) {
-        throw new Error('No token endpoint found in OAuth metadata');
+        /**
+         * No metadata or token_endpoint discovered - use fallback /token endpoint.
+         * This mirrors the MCP SDK's behavior for legacy servers without .well-known endpoints.
+         */
+        logger.warn(
+          `[MCPOAuth] No OAuth metadata or token endpoint found, using fallback /token endpoint`,
+        );
+        tokenUrl = new URL('/token', metadata.serverUrl);
+      } else {
+        tokenUrl = new URL(oauthMetadata.token_endpoint);
       }
-
-      const tokenUrl = new URL(oauthMetadata.token_endpoint);
 
       const body = new URLSearchParams({
         grant_type: 'refresh_token',
