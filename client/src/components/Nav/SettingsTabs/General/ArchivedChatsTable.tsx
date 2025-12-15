@@ -17,6 +17,7 @@ import {
   OGDialogContent,
 } from '@librechat/client';
 import type { ConversationListParams, TConversation } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks';
 import {
   useConversationsInfiniteQuery,
   useDeleteConversationMutation,
@@ -55,14 +56,6 @@ export default function ArchivedChatsTable({
       refetchOnWindowFocus: false,
       refetchOnMount: false,
     });
-
-  const handleSort = useCallback((sortField: string, sortOrder: 'asc' | 'desc') => {
-    setQueryParams((prev) => ({
-      ...prev,
-      sortBy: sortField as 'title' | 'createdAt',
-      sortDirection: sortOrder,
-    }));
-  }, []);
 
   const handleFilterChange = useCallback((value: string) => {
     const encodedValue = encodeURIComponent(value.trim());
@@ -133,25 +126,28 @@ export default function ArchivedChatsTable({
     () => [
       {
         accessorKey: 'title',
-        header: () => {
-          const isSorted = queryParams.sortBy === 'title';
-          const sortDirection = queryParams.sortDirection;
+        header: ({ column }) => {
+          const sortState = column.getIsSorted();
+          let SortIcon = ArrowUpDown;
+          let ariaSort: 'ascending' | 'descending' | 'none' = 'none';
+          if (sortState === 'desc') {
+            SortIcon = ArrowDown;
+            ariaSort = 'descending';
+          } else if (sortState === 'asc') {
+            SortIcon = ArrowUp;
+            ariaSort = 'ascending';
+          }
           return (
             <Button
               variant="ghost"
+              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
               className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-              onClick={() =>
-                handleSort('title', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
-              }
+              aria-sort={ariaSort}
+              aria-label={localize('com_nav_archive_name_sort' as TranslationKeys)}
+              aria-current={sortState ? 'true' : 'false'}
             >
               {localize('com_nav_archive_name')}
-              {isSorted && sortDirection === 'asc' && (
-                <ArrowUp className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-              )}
-              {isSorted && sortDirection === 'desc' && (
-                <ArrowDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-              )}
-              {!isSorted && <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />}
+              <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
             </Button>
           );
         },
@@ -180,26 +176,28 @@ export default function ArchivedChatsTable({
       },
       {
         accessorKey: 'createdAt',
-        header: () => {
-          const isSorted = queryParams.sortBy === 'createdAt';
-          const sortDirection = queryParams.sortDirection;
+        header: ({ column }) => {
+          const sortState = column.getIsSorted();
+          let SortIcon = ArrowUpDown;
+          let ariaSort: 'ascending' | 'descending' | 'none' = 'none';
+          if (sortState === 'desc') {
+            SortIcon = ArrowDown;
+            ariaSort = 'descending';
+          } else if (sortState === 'asc') {
+            SortIcon = ArrowUp;
+            ariaSort = 'ascending';
+          }
           return (
             <Button
               variant="ghost"
+              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
               className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-              onClick={() =>
-                handleSort('createdAt', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
-              }
-              aria-label={localize('com_nav_archive_created_at_sort')}
+              aria-sort={ariaSort}
+              aria-label={localize('com_nav_archive_created_at_sort' as TranslationKeys)}
+              aria-current={sortState ? 'true' : 'false'}
             >
               {localize('com_nav_archive_created_at')}
-              {isSorted && sortDirection === 'asc' && (
-                <ArrowUp className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-              )}
-              {isSorted && sortDirection === 'desc' && (
-                <ArrowDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-              )}
-              {!isSorted && <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />}
+              <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
             </Button>
           );
         },
@@ -270,7 +268,7 @@ export default function ArchivedChatsTable({
         },
       },
     ],
-    [handleSort, isSmallScreen, localize, queryParams, unarchiveMutation],
+    [isSmallScreen, localize, unarchiveMutation],
   );
 
   return (

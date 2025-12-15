@@ -12,6 +12,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks';
 import {
   OGDialog,
   useToastContext,
@@ -61,14 +62,6 @@ export default function SharedLinks() {
       refetchOnWindowFocus: false,
       refetchOnMount: false,
     });
-
-  const handleSort = useCallback((sortField: string, sortOrder: 'asc' | 'desc') => {
-    setQueryParams((prev) => ({
-      ...prev,
-      sortBy: sortField as 'title' | 'createdAt',
-      sortDirection: sortOrder,
-    }));
-  }, []);
 
   const handleFilterChange = useCallback((value: string) => {
     const encodedValue = encodeURIComponent(value.trim());
@@ -120,7 +113,7 @@ export default function SharedLinks() {
 
       if (validRows.length === 0) {
         showToast({
-          message: localize('com_ui_no_valid_items'),
+          message: localize('com_ui_no_valid_items' as TranslationKeys),
           severity: NotificationSeverity.WARNING,
         });
         return;
@@ -134,15 +127,15 @@ export default function SharedLinks() {
         showToast({
           message: localize(
             validRows.length === 1
-              ? 'com_ui_shared_link_delete_success'
-              : 'com_ui_shared_link_bulk_delete_success',
+              ? ('com_ui_shared_link_delete_success' as TranslationKeys)
+              : ('com_ui_shared_link_bulk_delete_success' as TranslationKeys),
           ),
           severity: NotificationSeverity.SUCCESS,
         });
       } catch (error) {
         console.error('Failed to delete shared links:', error);
         showToast({
-          message: localize('com_ui_bulk_delete_error'),
+          message: localize('com_ui_bulk_delete_error' as TranslationKeys),
           severity: NotificationSeverity.ERROR,
         });
       }
@@ -168,26 +161,28 @@ export default function SharedLinks() {
     () => [
       {
         accessorKey: 'title',
-        header: () => {
-          const isSorted = queryParams.sortBy === 'title';
-          const sortDirection = queryParams.sortDirection;
+        header: ({ column }) => {
+          const sortState = column.getIsSorted();
+          let SortIcon = ArrowUpDown;
+          let ariaSort: 'ascending' | 'descending' | 'none' = 'none';
+          if (sortState === 'desc') {
+            SortIcon = ArrowDown;
+            ariaSort = 'descending';
+          } else if (sortState === 'asc') {
+            SortIcon = ArrowUp;
+            ariaSort = 'ascending';
+          }
           return (
             <Button
               variant="ghost"
+              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
               className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-              onClick={() =>
-                handleSort('title', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
-              }
+              aria-sort={ariaSort}
               aria-label={localize('com_ui_name_sort')}
+              aria-current={sortState ? 'true' : 'false'}
             >
               {localize('com_ui_name')}
-              {isSorted && sortDirection === 'asc' && (
-                <ArrowUp className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-              )}
-              {isSorted && sortDirection === 'desc' && (
-                <ArrowDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-              )}
-              {!isSorted && <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />}
+              <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
             </Button>
           );
         },
@@ -218,26 +213,28 @@ export default function SharedLinks() {
       },
       {
         accessorKey: 'createdAt',
-        header: () => {
-          const isSorted = queryParams.sortBy === 'createdAt';
-          const sortDirection = queryParams.sortDirection;
+        header: ({ column }) => {
+          const sortState = column.getIsSorted();
+          let SortIcon = ArrowUpDown;
+          let ariaSort: 'ascending' | 'descending' | 'none' = 'none';
+          if (sortState === 'desc') {
+            SortIcon = ArrowDown;
+            ariaSort = 'descending';
+          } else if (sortState === 'asc') {
+            SortIcon = ArrowUp;
+            ariaSort = 'ascending';
+          }
           return (
             <Button
               variant="ghost"
+              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
               className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-              onClick={() =>
-                handleSort('createdAt', isSorted && sortDirection === 'asc' ? 'desc' : 'asc')
-              }
-              aria-label={localize('com_ui_creation_date_sort')}
+              aria-sort={ariaSort}
+              aria-label={localize('com_ui_creation_date_sort' as TranslationKeys)}
+              aria-current={sortState ? 'true' : 'false'}
             >
               {localize('com_ui_date')}
-              {isSorted && sortDirection === 'asc' && (
-                <ArrowUp className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-              )}
-              {isSorted && sortDirection === 'desc' && (
-                <ArrowDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-              )}
-              {!isSorted && <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />}
+              <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
             </Button>
           );
         },
@@ -300,7 +297,7 @@ export default function SharedLinks() {
         ),
       },
     ],
-    [isSmallScreen, localize, queryParams, handleSort],
+    [isSmallScreen, localize],
   );
 
   return (
