@@ -23,7 +23,7 @@ const TokenUsageIndicator = memo(function TokenUsageIndicator() {
 
   // Ring calculations
   const size = 28;
-  const strokeWidth = 2.5;
+  const strokeWidth = 3.5;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (percentage / 100) * circumference;
@@ -40,10 +40,18 @@ const TokenUsageIndicator = memo(function TokenUsageIndicator() {
       });
 
   const ariaLabel = hasMaxContext
-    ? localize('com_ui_token_usage_aria', { 0: Math.round(percentage).toString() })
-    : localize('com_ui_token_usage_indicator');
+    ? localize('com_ui_token_usage_aria_full', {
+        0: formatTokens(inputTokens),
+        1: formatTokens(outputTokens),
+        2: formatTokens(maxContext),
+        3: Math.round(percentage).toString(),
+      })
+    : localize('com_ui_token_usage_aria_no_max', {
+        0: formatTokens(inputTokens),
+        1: formatTokens(outputTokens),
+      });
 
-  // Color based on percentage (using raw colors to match existing patterns in AudioRecorder.tsx)
+  // Color based on percentage
   const getProgressColor = () => {
     if (!hasMaxContext) {
       return 'stroke-text-secondary';
@@ -80,7 +88,7 @@ const TokenUsageIndicator = memo(function TokenUsageIndicator() {
               r={radius}
               fill="transparent"
               strokeWidth={strokeWidth}
-              className="stroke-border-medium"
+              className="stroke-border-heavy"
             />
             {/* Progress ring */}
             <circle
