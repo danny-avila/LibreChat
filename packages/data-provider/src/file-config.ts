@@ -200,6 +200,27 @@ export const codeTypeMapping: { [key: string]: string } = {
   tsv: 'text/tab-separated-values',
 };
 
+/** Maps image extensions to MIME types for formats browsers may not recognize */
+export const imageTypeMapping: { [key: string]: string } = {
+  heic: 'image/heic',
+  heif: 'image/heif',
+};
+
+/**
+ * Infers the MIME type from a file's extension when the browser doesn't recognize it
+ * @param fileName - The name of the file including extension
+ * @param currentType - The current MIME type reported by the browser (may be empty)
+ * @returns The inferred MIME type if browser didn't provide one, otherwise the original type
+ */
+export function inferMimeType(fileName: string, currentType: string): string {
+  if (currentType) {
+    return currentType;
+  }
+
+  const extension = fileName.split('.').pop()?.toLowerCase() ?? '';
+  return codeTypeMapping[extension] || imageTypeMapping[extension] || currentType;
+}
+
 export const retrievalMimeTypes = [
   /^(text\/(x-c|x-c\+\+|x-h|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|vtt|xml))$/,
   /^(application\/(json|pdf|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)))$/,

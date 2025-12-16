@@ -35,7 +35,13 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
   ): Promise<IToken | null> {
     try {
       const Token = mongoose.models.Token;
-      return await Token.findOneAndUpdate(query, updateData, { new: true });
+
+      const dataToUpdate = { ...updateData };
+      if (updateData?.expiresIn !== undefined) {
+        dataToUpdate.expiresAt = new Date(Date.now() + updateData.expiresIn * 1000);
+      }
+
+      return await Token.findOneAndUpdate(query, dataToUpdate, { new: true });
     } catch (error) {
       logger.debug('An error occurred while updating token:', error);
       throw error;
@@ -44,6 +50,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Deletes all Token documents that match the provided token, user ID, or email.
+   * Email is automatically normalized to lowercase for case-insensitive matching.
    */
   async function deleteTokens(query: TokenQuery): Promise<TokenDeleteResult> {
     try {
@@ -57,7 +64,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
         conditions.push({ token: query.token });
       }
       if (query.email !== undefined) {
-        conditions.push({ email: query.email });
+        conditions.push({ email: query.email.trim().toLowerCase() });
       }
       if (query.identifier !== undefined) {
         conditions.push({ identifier: query.identifier });
@@ -81,6 +88,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Finds a Token document that matches the provided query.
+   * Email is automatically normalized to lowercase for case-insensitive matching.
    */
   async function findToken(query: TokenQuery, options?: QueryOptions): Promise<IToken | null> {
     try {
@@ -94,7 +102,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
         conditions.push({ token: query.token });
       }
       if (query.email) {
-        conditions.push({ email: query.email });
+        conditions.push({ email: query.email.trim().toLowerCase() });
       }
       if (query.identifier) {
         conditions.push({ identifier: query.identifier });

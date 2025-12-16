@@ -595,16 +595,26 @@ export class MCPConnection extends EventEmitter {
 
   private setupTransportErrorHandlers(transport: Transport): void {
     transport.onerror = (error) => {
-      logger.error(`${this.getLogPrefix()} Transport error:`, error);
-
-      // Check if it's an OAuth authentication error
       if (error && typeof error === 'object' && 'code' in error) {
         const errorCode = (error as unknown as { code?: number }).code;
+
+        // Ignore SSE 404 errors for servers that don't support SSE
+        if (
+          errorCode === 404 &&
+          String(error?.message).toLowerCase().includes('failed to open sse stream')
+        ) {
+          logger.warn(`${this.getLogPrefix()} SSE stream not available (404). Ignoring.`);
+          return;
+        }
+
+        // Check if it's an OAuth authentication error
         if (errorCode === 401 || errorCode === 403) {
           logger.warn(`${this.getLogPrefix()} OAuth authentication error detected`);
           this.emit('oauthError', error);
         }
       }
+
+      logger.error(`${this.getLogPrefix()} Transport error:`, error);
 
       this.emit('connectionChange', 'error');
     };
@@ -678,7 +688,9 @@ export class MCPConnection extends EventEmitter {
       const pingUnsupported =
         error instanceof Error &&
         ((error as Error)?.message.includes('-32601') ||
+          (error as Error)?.message.includes('-32602') ||
           (error as Error)?.message.includes('invalid method ping') ||
+          (error as Error)?.message.includes('Unsupported method: ping') ||
           (error as Error)?.message.includes('method not found'));
 
       if (!pingUnsupported) {

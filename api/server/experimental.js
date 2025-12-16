@@ -16,6 +16,7 @@ const {
   isEnabled,
   ErrorController,
   performStartupChecks,
+  handleJsonParseError,
   initializeFileStorage,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
@@ -245,6 +246,7 @@ if (cluster.isMaster) {
     app.use(noIndex);
     app.use(express.json({ limit: '3mb' }));
     app.use(express.urlencoded({ extended: true, limit: '3mb' }));
+    app.use(handleJsonParseError);
     app.use(mongoSanitize());
     app.use(cors());
     app.use(cookieParser());
@@ -290,7 +292,6 @@ if (cluster.isMaster) {
     app.use('/api/presets', routes.presets);
     app.use('/api/prompts', routes.prompts);
     app.use('/api/categories', routes.categories);
-    app.use('/api/tokenizer', routes.tokenizer);
     app.use('/api/endpoints', routes.endpoints);
     app.use('/api/balance', routes.balance);
     app.use('/api/models', routes.models);

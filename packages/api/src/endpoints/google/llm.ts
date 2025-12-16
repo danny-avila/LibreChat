@@ -121,9 +121,12 @@ export function getSafetySettings(
 export function getGoogleConfig(
   credentials: string | t.GoogleCredentials | undefined,
   options: t.GoogleConfigOptions = {},
+  acceptRawApiKey = false,
 ) {
   let creds: t.GoogleCredentials = {};
-  if (typeof credentials === 'string') {
+  if (acceptRawApiKey && typeof credentials === 'string') {
+    creds[AuthKeys.GOOGLE_API_KEY] = credentials;
+  } else if (typeof credentials === 'string') {
     try {
       creds = JSON.parse(credentials);
     } catch (err: unknown) {

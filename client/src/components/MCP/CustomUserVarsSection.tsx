@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
+import DOMPurify from 'dompurify';
 import { useForm, Controller } from 'react-hook-form';
-import { Input, Label, Button, TooltipAnchor, CircleHelpIcon } from '@librechat/client';
+import { Input, Label, Button } from '@librechat/client';
 import { useMCPAuthValuesQuery } from '~/data-provider/Tools/queries';
 import { useLocalize } from '~/hooks';
 
@@ -27,21 +28,40 @@ interface AuthFieldProps {
 function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) {
   const localize = useLocalize();
 
+  const sanitizer = useMemo(() => {
+    const instance = DOMPurify();
+    instance.addHook('afterSanitizeAttributes', (node) => {
+      if (node.tagName && node.tagName === 'A') {
+        node.setAttribute('target', '_blank');
+        node.setAttribute('rel', 'noopener noreferrer');
+      }
+    });
+    return instance;
+  }, []);
+
+  const sanitizedDescription = useMemo(() => {
+    if (!config.description) {
+      return '';
+    }
+    try {
+      return sanitizer.sanitize(config.description, {
+        ALLOWED_TAGS: ['a', 'strong', 'b', 'em', 'i', 'br', 'code'],
+        ALLOWED_ATTR: ['href', 'class', 'target', 'rel'],
+        ALLOW_DATA_ATTR: false,
+        ALLOW_ARIA_ATTR: false,
+      });
+    } catch (error) {
+      console.error('Sanitization failed', error);
+      return config.description;
+    }
+  }, [config.description, sanitizer]);
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <TooltipAnchor
-          enableHTML={true}
-          description={config.description || ''}
-          render={
-            <div className="flex items-center gap-2">
-              <Label htmlFor={name} className="text-sm font-medium">
-                {config.title}
-              </Label>
-              <CircleHelpIcon className="h-6 w-6 cursor-help text-text-secondary transition-colors hover:text-text-primary" />
-            </div>
-          }
-        />
+        <Label htmlFor={name} className="text-sm font-medium">
+          {config.title}
+        </Label>
         {hasValue ? (
           <div className="flex min-w-fit items-center gap-2 whitespace-nowrap rounded-full border border-border-light px-2 py-0.5 text-xs font-medium text-text-secondary">
             <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
@@ -66,12 +86,18 @@ function AuthField({ name, config, hasValue, control, errors }: AuthFieldProps) 
             placeholder={
               hasValue
                 ? localize('com_ui_mcp_update_var', { 0: config.title })
-                : `${localize('com_ui_mcp_enter_var', { 0: config.title })} ${localize('com_ui_optional')}`
+                : localize('com_ui_mcp_enter_var', { 0: config.title })
             }
             className="w-full rounded border border-border-medium bg-transparent px-2 py-1 text-text-primary placeholder:text-text-secondary focus:outline-none sm:text-sm"
           />
         )}
       />
+      {sanitizedDescription && (
+        <p
+          className="text-xs text-text-secondary [&_a]:text-blue-500 [&_a]:hover:underline"
+          dangerouslySetInnerHTML={{ __html: sanitizedDescription }}
+        />
+      )}
       {errors[name] && <p className="text-xs text-red-500">{errors[name]?.message}</p>}
     </div>
   );
