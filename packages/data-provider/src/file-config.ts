@@ -200,8 +200,8 @@ export const codeTypeMapping: { [key: string]: string } = {
   zip: 'application/zip', // .zip - ZIP archive
   log: 'text/plain', // .log - Log file
   tsv: 'text/tab-separated-values', // .tsv - Tab-separated values
-  yml: 'application/x-yaml', // .yml - YAML
-  yaml: 'application/x-yaml', // .yaml - YAML
+  yml: 'application/yaml', // .yml - YAML
+  yaml: 'application/yaml', // .yaml - YAML
   sql: 'application/sql', // .sql - SQL (IANA registered)
   dart: 'text/plain', // .dart - Dart source
   coffee: 'application/vnd.coffeescript', // .coffee - CoffeeScript (IANA registered)
@@ -213,7 +213,6 @@ export const codeTypeMapping: { [key: string]: string } = {
   scala: 'text/plain', // .scala - Scala source
   lua: 'text/plain', // .lua - Lua source
   r: 'text/plain', // .r - R source
-  R: 'text/plain', // .R - R source (uppercase)
   pl: 'text/plain', // .pl - Perl source
   pm: 'text/plain', // .pm - Perl module
   groovy: 'text/plain', // .groovy - Groovy source
