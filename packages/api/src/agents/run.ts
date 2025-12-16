@@ -16,9 +16,9 @@ import { resolveHeaders, createSafeUser } from '~/utils/env';
 
 const customProviders = new Set([
   Providers.XAI,
-  Providers.OLLAMA,
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
+  KnownEndpoints.ollama,
 ]);
 
 export function getReasoningKey(
