@@ -72,6 +72,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     permission: Permissions.USE,
   });
 
+  const canUseMcp = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
+  });
+
   const showWebSearchSettings = useMemo(() => {
     const authTypes = webSearchAuthData?.authTypes ?? [];
     if (authTypes.length === 0) return true;
@@ -286,8 +291,8 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     });
   }
 
-  const { configuredServers } = mcpServerManager;
-  if (configuredServers && configuredServers.length > 0) {
+  const { availableMCPServers } = mcpServerManager;
+  if (canUseMcp && availableMCPServers && availableMCPServers.length > 0) {
     dropdownItems.push({
       hideOnClick: false,
       render: (props) => <MCPSubMenu {...props} placeholder={mcpPlaceholder} />,
@@ -307,10 +312,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
           aria-label="Tools Options"
           className={cn(
             'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50',
+            isPopoverActive && 'bg-surface-hover',
           )}
         >
           <div className="flex w-full items-center justify-center gap-2">
-            <Settings2 className="icon-md" aria-hidden="true" />
+            <Settings2 className="size-5" aria-hidden="true" />
           </div>
         </Ariakit.MenuButton>
       }

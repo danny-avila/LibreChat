@@ -12,10 +12,9 @@ import { cn } from '~/utils';
 type BookmarkNavProps = {
   tags: string[];
   setTags: (tags: string[]) => void;
-  isSmallScreen: boolean;
 };
 
-const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags, isSmallScreen }: BookmarkNavProps) => {
+const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) => {
   const localize = useLocalize();
   const { data } = useGetConversationTags();
   const label = useMemo(
@@ -42,9 +41,9 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags, isSmallScreen }: Boo
                 data-testid="bookmark-menu"
               >
                 {tags.length > 0 ? (
-                  <BookmarkFilledIcon className="icon-lg text-text-primary" aria-hidden="true" />
+                  <BookmarkFilledIcon aria-hidden="true" className="icon-lg text-text-primary" />
                 ) : (
-                  <BookmarkIcon className="icon-lg text-text-primary" aria-hidden="true" />
+                  <BookmarkIcon aria-hidden="true" className="icon-lg text-text-primary" />
                 )}
               </MenuButton>
             }
