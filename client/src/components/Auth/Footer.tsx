@@ -11,7 +11,7 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
 
   const privacyPolicyRender = privacyPolicy?.externalUrl && (
     <a
-      className="text-sm text-green-600 dark:text-green-500"
+      className="text-sm text-green-600 transition-colors hover:text-green-700 hover:underline dark:text-green-500 dark:hover:text-green-400"
       href={privacyPolicy.externalUrl}
       // Removed for WCAG compliance
       // target={privacyPolicy.openNewTab ? '_blank' : undefined}
@@ -23,7 +23,7 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
 
   const termsOfServiceRender = termsOfService?.externalUrl && (
     <a
-      className="text-sm text-green-600 dark:text-green-500"
+      className="text-sm text-green-600 transition-colors hover:text-green-700 hover:underline dark:text-green-500 dark:hover:text-green-400"
       href={termsOfService.externalUrl}
       // Removed for WCAG compliance
       // target={termsOfService.openNewTab ? '_blank' : undefined}
