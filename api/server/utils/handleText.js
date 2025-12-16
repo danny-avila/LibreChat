@@ -1,3 +1,4 @@
+const partialRight = require('lodash/partialRight');
 const {
   Capabilities,
   EModelEndpoint,
@@ -7,8 +8,7 @@ const {
   defaultAssistantsVersion,
   defaultAgentCapabilities,
 } = require('librechat-data-provider');
-const { sendEvent } = require('@librechat/api');
-const partialRight = require('lodash/partialRight');
+const { sendEvent, isUserProvided } = require('@librechat/api');
 
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
 
@@ -118,14 +118,6 @@ function formatAction(action) {
 }
 
 /**
- * Checks if the provided value is 'user_provided'.
- *
- * @param {string} value - The value to check.
- * @returns {boolean} - Returns true if the value is 'user_provided', otherwise false.
- */
-const isUserProvided = (value) => value === 'user_provided';
-
-/**
  * Generate the configuration for a given key and base URL.
  * @param {string} key
  * @param {string} [baseURL]
@@ -174,7 +166,6 @@ module.exports = {
   handleText,
   formatSteps,
   formatAction,
-  isUserProvided,
   generateConfig,
   addSpaceIfNeeded,
   createOnProgress,

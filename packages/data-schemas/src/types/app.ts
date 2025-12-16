@@ -104,8 +104,6 @@ export interface AppConfig {
       /** Validated Vertex AI configuration */
       vertexConfig?: TVertexAIConfig;
     };
-    /** GPT plugins endpoint configuration */
-    gptPlugins?: Partial<TEndpoint>;
     /** Azure OpenAI endpoint configuration */
     azureOpenAI?: TAzureConfig;
     /** Assistants endpoint configuration */

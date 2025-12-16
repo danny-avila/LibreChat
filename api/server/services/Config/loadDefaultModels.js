@@ -5,7 +5,7 @@ const {
   getBedrockModels,
   getOpenAIModels,
   getGoogleModels,
-} = require('~/server/services/ModelService');
+} = require('@librechat/api');
 const { getAppConfig } = require('./app');
 
 /**

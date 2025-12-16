@@ -223,7 +223,7 @@ describe('BookmarkForm - Bookmark Editing', () => {
         />,
       );
 
-      const tagInput = screen.getByLabelText('Edit Bookmark');
+      const tagInput = screen.getByLabelText('Title');
 
       await act(async () => {
         fireEvent.change(tagInput, { target: { value: 'Existing Tag' } });
@@ -265,7 +265,7 @@ describe('BookmarkForm - Bookmark Editing', () => {
         />,
       );
 
-      const tagInput = screen.getByLabelText('Edit Bookmark');
+      const tagInput = screen.getByLabelText('Title');
 
       await act(async () => {
         fireEvent.change(tagInput, { target: { value: 'Existing Tag' } });
@@ -308,7 +308,7 @@ describe('BookmarkForm - Bookmark Editing', () => {
         />,
       );
 
-      const tagInput = screen.getByLabelText('Edit Bookmark');
+      const tagInput = screen.getByLabelText('Title');
 
       await act(async () => {
         fireEvent.change(tagInput, { target: { value: 'Brand New Tag' } });
@@ -401,7 +401,7 @@ describe('BookmarkForm - Bookmark Editing', () => {
         />,
       );
 
-      const tagInput = screen.getByLabelText('Edit Bookmark');
+      const tagInput = screen.getByLabelText('Title');
 
       await act(async () => {
         fireEvent.change(tagInput, { target: { value: 'Props Tag' } });
@@ -477,7 +477,7 @@ describe('BookmarkForm - Bookmark Editing', () => {
         />,
       );
 
-      const tagInput = screen.getByLabelText('Edit Bookmark');
+      const tagInput = screen.getByLabelText('Title');
 
       await act(async () => {
         fireEvent.change(tagInput, { target: { value: 'New Tag' } });

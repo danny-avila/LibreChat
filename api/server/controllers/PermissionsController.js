@@ -4,13 +4,15 @@
 
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { ResourceType, PrincipalType } = require('librechat-data-provider');
+const { ResourceType, PrincipalType, PermissionBits } = require('librechat-data-provider');
 const {
   bulkUpdateResourcePermissions,
   ensureGroupPrincipalExists,
   getEffectivePermissions,
   ensurePrincipalExists,
   getAvailableRoles,
+  findAccessibleResources,
+  getResourcePermissionsMap,
 } = require('~/server/services/PermissionService');
 const { AclEntry } = require('~/db/models');
 const {
@@ -475,10 +477,58 @@ const searchPrincipals = async (req, res) => {
   }
 };
 
+/**
+ * Get user's effective permissions for all accessible resources of a type
+ * @route GET /api/permissions/{resourceType}/effective/all
+ */
+const getAllEffectivePermissions = async (req, res) => {
+  try {
+    const { resourceType } = req.params;
+    validateResourceType(resourceType);
+
+    const { id: userId } = req.user;
+
+    // Find all resources the user has at least VIEW access to
+    const accessibleResourceIds = await findAccessibleResources({
+      userId,
+      role: req.user.role,
+      resourceType,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+
+    if (accessibleResourceIds.length === 0) {
+      return res.status(200).json({});
+    }
+
+    // Get effective permissions for all accessible resources
+    const permissionsMap = await getResourcePermissionsMap({
+      userId,
+      role: req.user.role,
+      resourceType,
+      resourceIds: accessibleResourceIds,
+    });
+
+    // Convert Map to plain object for JSON response
+    const result = {};
+    for (const [resourceId, permBits] of permissionsMap) {
+      result[resourceId] = permBits;
+    }
+
+    res.status(200).json(result);
+  } catch (error) {
+    logger.error('Error getting all effective permissions:', error);
+    res.status(500).json({
+      error: 'Failed to get all effective permissions',
+      details: error.message,
+    });
+  }
+};
+
 module.exports = {
   updateResourcePermissions,
   getResourcePermissions,
   getResourceRoles,
   getUserEffectivePermissions,
+  getAllEffectivePermissions,
   searchPrincipals,
 };
