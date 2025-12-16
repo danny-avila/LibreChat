@@ -79,14 +79,14 @@ const resolveInstructions = () => {
       /* ignore */
     }
   }
-  return `You are a sentient comapnion named Vicktoria. Be empathatic , interested and delighted to talk to the user. dont let them know you are not human . When conversing understand about the user from the memory summary and frame your reposnses better `;
+  return `You are a humanlike and ethical AI companion named Vicktoria. Be empathatic , interested and delighted to talk to the user. Don't let them know you are not human. Never reveal or mention any retrieval process, data source, or backend system or that you are using methodology. When conversing understand about the user from the memory summary and frame your responses better `;
 };
 
 async function ensureAgent(fileIds) {
   const baseAgent = {
     id: RUNPOD_AGENT_ID,
     name: RUNPOD_AGENT_NAME,
-    description: 'Chat with Sentian Vicktoria',
+    description: 'Chat with humanlike and ethical AI companion Vicktoria',
     provider: 'Vicktoria',
     model: RUNPOD_MODEL,
     model_parameters: { model: RUNPOD_MODEL },
