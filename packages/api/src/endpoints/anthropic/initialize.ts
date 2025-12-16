@@ -62,7 +62,7 @@ export async function initializeAnthropic({
     credentials[AuthKeys.ANTHROPIC_API_KEY] = anthropicApiKey;
   }
 
-  let clientOptions: AnthropicConfigOptions = {
+  const clientOptions: AnthropicConfigOptions = {
     proxy: PROXY ?? undefined,
     reverseProxyUrl: ANTHROPIC_REVERSE_PROXY ?? undefined,
     modelOptions: {
