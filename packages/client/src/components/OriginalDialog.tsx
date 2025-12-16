@@ -78,22 +78,37 @@ const DialogContent = React.forwardRef<
     },
     ref,
   ) => {
+    const contentRef = React.useRef<HTMLDivElement>(null);
+
+    React.useImperativeHandle(ref, () => contentRef.current as HTMLDivElement, []);
+
     /* Handle Escape key to prevent closing dialog if a tooltip or dropdown is open 
     (this is a workaround in order to achieve WCAG compliance which requires
     that our tooltips be dismissable with Escape key) */
     const handleEscapeKeyDown = React.useCallback(
       (event: KeyboardEvent) => {
-        const tooltips = document.querySelectorAll('.tooltip');
-        const dropdownMenus = document.querySelectorAll('[role="menu"]');
-
-        if (tooltips.length > 0) {
-          event.preventDefault();
+        if (!contentRef.current) {
+          propsOnEscapeKeyDown?.(event);
           return;
         }
 
-        if (dropdownMenus.length > 0) {
-          event.preventDefault();
-          return;
+        const tooltips = contentRef.current.querySelectorAll('.tooltip');
+        const dropdownMenus = contentRef.current.querySelectorAll('[role="menu"]');
+
+        for (const tooltip of tooltips) {
+          const style = window.getComputedStyle(tooltip);
+          if (style.display !== 'none') {
+            event.preventDefault();
+            return;
+          }
+        }
+
+        for (const dropdownMenu of dropdownMenus) {
+          const style = window.getComputedStyle(dropdownMenu);
+          if (style.display !== 'none') {
+            event.preventDefault();
+            return;
+          }
         }
 
         propsOnEscapeKeyDown?.(event);
@@ -105,7 +120,7 @@ const DialogContent = React.forwardRef<
       <DialogPortal>
         <DialogOverlay className={overlayClassName} />
         <DialogPrimitive.Content
-          ref={ref}
+          ref={contentRef}
           onEscapeKeyDown={handleEscapeKeyDown}
           className={cn(
             'max-w-11/12 fixed left-[50%] top-[50%] z-50 grid max-h-[90vh] w-full translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-2xl bg-background p-6 text-text-primary shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]',
