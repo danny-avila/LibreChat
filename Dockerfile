@@ -1,4 +1,4 @@
-# v0.8.1
+# v0.8.2-rc1
 
 # Base node image
 FROM node:20-alpine AS node
@@ -11,7 +11,7 @@ RUN apk add --no-cache python3 py3-pip uv
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
 
 # Add `uv` for extended MCP support
-COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.9.5-python3.12-alpine /usr/local/bin/uv /usr/local/bin/uvx /bin/
 RUN uv --version
 
 RUN mkdir -p /app && chown node:node /app

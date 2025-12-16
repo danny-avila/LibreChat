@@ -6,11 +6,10 @@ const { ProxyAgent } = require('undici');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { logAxiosError, oaiToolkit } = require('@librechat/api');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
+const { logAxiosError, oaiToolkit, extractBaseURL } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const extractBaseURL = require('~/utils/extractBaseURL');
-const { getFiles } = require('~/models/File');
+const { getFiles } = require('~/models');
 
 const displayMessage =
   "The tool displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";

@@ -102,7 +102,11 @@ const Radio = memo(function Radio({
             currentValue === option.value ? 'text-foreground' : 'text-foreground'
           } ${disabled ? 'cursor-not-allowed opacity-50' : ''} ${fullWidth ? 'flex-1' : ''}`}
         >
-          {option.icon && <span className="flex-shrink-0">{option.icon}</span>}
+          {option.icon && (
+            <span className="flex-shrink-0" aria-hidden="true">
+              {option.icon}
+            </span>
+          )}
           <span className="whitespace-nowrap">{option.label}</span>
         </button>
       ))}
