@@ -4,7 +4,6 @@ const buildEndpointOption = require('./buildEndpointOption');
 const validateMessageReq = require('./validateMessageReq');
 const checkDomainAllowed = require('./checkDomainAllowed');
 const concurrentLimiter = require('./concurrentLimiter');
-const validateEndpoint = require('./validateEndpoint');
 const requireLocalAuth = require('./requireLocalAuth');
 const canDeleteAccount = require('./canDeleteAccount');
 const accessResources = require('./accessResources');
@@ -42,7 +41,6 @@ module.exports = {
   requireLdapAuth,
   requireLocalAuth,
   canDeleteAccount,
-  validateEndpoint,
   configMiddleware,
   concurrentLimiter,
   checkDomainAllowed,

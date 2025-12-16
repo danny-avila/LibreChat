@@ -13,7 +13,7 @@ export type SearchState = {
 export const search = constRecoilStateOpts<SearchState>({
   key: 'search',
   default: {
-    enabled: null,
+    enabled: false,
     query: '',
     debouncedQuery: '',
     isSearching: false,

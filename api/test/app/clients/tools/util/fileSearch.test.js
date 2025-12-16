@@ -13,7 +13,7 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-jest.mock('~/models/File', () => ({
+jest.mock('~/models', () => ({
   getFiles: jest.fn().mockResolvedValue([]),
 }));
 

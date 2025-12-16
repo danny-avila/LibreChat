@@ -92,9 +92,24 @@ describe('constRecoilState Tests', () => {
       expect(button).toHaveAttribute('title', 'Recoil Value=true');
     });
 
+    test('defaultTemporaryChat is locked to true', () => {
+      render(
+        <RecoilRoot>
+          <TestRecoilState recoilState={store.defaultTemporaryChat} clickState={false} />
+        </RecoilRoot>,
+      );
+
+      const button = screen.getByTestId('changeRecoilState');
+      expect(button).toHaveAttribute('title', 'Recoil Value=true');
+
+      // Click button (which attempts to change the recoil state), but it should remain unchanged
+      fireEvent.click(button);
+      expect(button).toHaveAttribute('title', 'Recoil Value=true');
+    });
+
     test('search is locked to disabled', () => {
       const defaultState = {
-        enabled: null,
+        enabled: false,
         query: '',
         debouncedQuery: '',
         isSearching: false,
