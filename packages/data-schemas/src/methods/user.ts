@@ -301,6 +301,32 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       });
   };
 
+  /**
+   * Updates the plugins for a user based on the action specified (install/uninstall).
+   * @param userId - The user ID whose plugins are to be updated
+   * @param plugins - The current plugins array
+   * @param pluginKey - The key of the plugin to install or uninstall
+   * @param action - The action to perform, 'install' or 'uninstall'
+   * @returns The result of the update operation or null if action is invalid
+   */
+  async function updateUserPlugins(
+    userId: string,
+    plugins: string[] | undefined,
+    pluginKey: string,
+    action: 'install' | 'uninstall',
+  ): Promise<IUser | null> {
+    const userPlugins = plugins ?? [];
+    if (action === 'install') {
+      return updateUser(userId, { plugins: [...userPlugins, pluginKey] });
+    }
+    if (action === 'uninstall') {
+      return updateUser(userId, {
+        plugins: userPlugins.filter((plugin) => plugin !== pluginKey),
+      });
+    }
+    return null;
+  }
+
   return {
     findUser,
     countUsers,
@@ -310,6 +336,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     getUserById,
     generateToken,
     deleteUserById,
+    updateUserPlugins,
     toggleUserMemories,
   };
 }

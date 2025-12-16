@@ -7,6 +7,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks';
+import { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 
 export function isEphemeralAgent(agentId: string | null | undefined): boolean {
   return agentId == null || agentId === '' || agentId === Constants.EPHEMERAL_AGENT_ID;
@@ -152,7 +153,6 @@ export enum Panel {
   actions = 'actions',
   model = 'model',
   version = 'version',
-  mcp = 'mcp',
 }
 
 export type FileSetter =
@@ -174,15 +174,6 @@ export type ActionAuthForm = {
   client_url: string;
   scope: string;
   token_exchange_method: t.TokenExchangeMethodEnum;
-};
-
-export type MCPForm = ActionAuthForm & {
-  name?: string;
-  description?: string;
-  url?: string;
-  tools?: string[];
-  icon?: string;
-  trust?: boolean;
 };
 
 export type ActionWithNullableMetadata = Omit<t.Action, 'metadata'> & {
@@ -225,6 +216,7 @@ export interface MCPServerInfo {
   tools: t.AgentToolType[];
   isConfigured: boolean;
   isConnected: boolean;
+  consumeOnly?: boolean;
   metadata: t.TPlugin;
 }
 
@@ -246,6 +238,8 @@ export type AgentPanelContextType = {
   endpointsConfig?: t.TEndpointsConfig | null;
   /** Pre-computed MCP server information indexed by server key */
   mcpServersMap: Map<string, MCPServerInfo>;
+  availableMCPServers: MCPServerDefinition[];
+  availableMCPServersMap: t.MCPServersListResponse | undefined;
 };
 
 export type AgentModelPanelProps = {
@@ -323,10 +317,6 @@ export type TSetOptionsPayload = {
   setExample: TSetExample;
   addExample: () => void;
   removeExample: () => void;
-  setAgentOption: TSetOption;
-  // getConversation: () => t.TConversation | t.TPreset | null;
-  checkPluginSelection: (value: string) => boolean;
-  setTools: (newValue: string, remove?: boolean) => void;
   setOptions?: TSetOptions;
 };
 
@@ -447,7 +437,7 @@ export type TDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-export type TPluginStoreDialogProps = {
+export type ToolDialogProps = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
 };
@@ -602,7 +592,6 @@ export type NewConversationParams = {
 export type ConvoGenerator = (params: NewConversationParams) => void | t.TConversation;
 
 export type TBaseResData = {
-  plugin?: t.TResPlugin;
   final?: boolean;
   initial?: boolean;
   previousMessages?: t.TMessage[];

@@ -60,7 +60,7 @@ const SharePrompt = React.memo(
           className="h-10 w-10 border border-transparent bg-blue-500/90 p-0.5 transition-all hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-800"
           disabled={disabled}
         >
-          <Share2Icon className="size-5 cursor-pointer text-white" />
+          <Share2Icon className="size-5 cursor-pointer text-white" aria-hidden="true" />
         </Button>
       </GenericGrantAccessDialog>
     );
