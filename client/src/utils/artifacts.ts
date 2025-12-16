@@ -140,7 +140,7 @@ export function getProps(type: string): Partial<SandpackProviderProps> {
 }
 
 export const sharedOptions: SandpackProviderProps['options'] = {
-  externalResources: ['https://unpkg.com/@tailwindcss/ui/dist/tailwind-ui.min.css'],
+  externalResources: ['https://cdn.tailwindcss.com/3.4.17'],
 };
 
 export const sharedFiles = {
@@ -189,7 +189,7 @@ export const sharedFiles = {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Document</title>
-        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdn.tailwindcss.com/3.4.17"></script>
       </head>
       <body>
         <div id="root"></div>

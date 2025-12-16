@@ -1,6 +1,8 @@
-import { resolveHeaders, processMCPEnv } from './env';
 import { TokenExchangeMethodEnum } from 'librechat-data-provider';
-import type { TUser, MCPOptions } from 'librechat-data-provider';
+import { resolveHeaders, resolveNestedObject, processMCPEnv } from './env';
+import type { MCPOptions } from 'librechat-data-provider';
+import type { IUser } from '@librechat/data-schemas';
+import { Types } from 'mongoose';
 
 function isStdioOptions(options: MCPOptions): options is Extract<MCPOptions, { type?: 'stdio' }> {
   return !options.type || options.type === 'stdio';
@@ -13,19 +15,21 @@ function isStreamableHTTPOptions(
 }
 
 /** Helper function to create test user objects */
-function createTestUser(overrides: Partial<TUser> = {}): TUser {
+function createTestUser(overrides: Partial<IUser> = {}): IUser {
   return {
-    id: 'test-user-id',
+    _id: new Types.ObjectId(),
+    id: new Types.ObjectId().toString(),
     username: 'testuser',
     email: 'test@example.com',
     name: 'Test User',
     avatar: 'https://example.com/avatar.png',
     provider: 'email',
     role: 'user',
-    createdAt: new Date('2021-01-01').toISOString(),
-    updatedAt: new Date('2021-01-01').toISOString(),
+    createdAt: new Date('2021-01-01'),
+    updatedAt: new Date('2021-01-01'),
+    emailVerified: true,
     ...overrides,
-  };
+  } as IUser;
 }
 
 describe('resolveHeaders', () => {
@@ -445,6 +449,428 @@ describe('resolveHeaders', () => {
     const result = resolveHeaders({ headers, body });
     expect(result['X-Conversation']).toBe('conv-123');
   });
+
+  describe('non-string header values (type guard tests)', () => {
+    it('should handle numeric header values without crashing', () => {
+      const headers = {
+        'X-Number': 12345 as unknown as string,
+        'X-String': 'normal-string',
+      };
+      const result = resolveHeaders({ headers });
+      expect(result['X-Number']).toBe('12345');
+      expect(result['X-String']).toBe('normal-string');
+    });
+
+    it('should handle boolean header values without crashing', () => {
+      const headers = {
+        'X-Boolean-True': true as unknown as string,
+        'X-Boolean-False': false as unknown as string,
+        'X-String': 'normal-string',
+      };
+      const result = resolveHeaders({ headers });
+      expect(result['X-Boolean-True']).toBe('true');
+      expect(result['X-Boolean-False']).toBe('false');
+      expect(result['X-String']).toBe('normal-string');
+    });
+
+    it('should handle null and undefined header values', () => {
+      const headers = {
+        'X-Null': null as unknown as string,
+        'X-Undefined': undefined as unknown as string,
+        'X-String': 'normal-string',
+      };
+      const result = resolveHeaders({ headers });
+      expect(result['X-Null']).toBe('null');
+      expect(result['X-Undefined']).toBe('undefined');
+      expect(result['X-String']).toBe('normal-string');
+    });
+
+    it('should handle numeric values with placeholders', () => {
+      const user = { id: 'user-123' };
+      const headers = {
+        'X-Number': 42 as unknown as string,
+        'X-String-With-Placeholder': '{{LIBRECHAT_USER_ID}}',
+      };
+      const result = resolveHeaders({ headers, user });
+      expect(result['X-Number']).toBe('42');
+      expect(result['X-String-With-Placeholder']).toBe('user-123');
+    });
+
+    it('should handle objects in header values', () => {
+      const headers = {
+        'X-Object': { nested: 'value' } as unknown as string,
+        'X-String': 'normal-string',
+      };
+      const result = resolveHeaders({ headers });
+      expect(result['X-Object']).toBe('[object Object]');
+      expect(result['X-String']).toBe('normal-string');
+    });
+
+    it('should handle arrays in header values', () => {
+      const headers = {
+        'X-Array': ['value1', 'value2'] as unknown as string,
+        'X-String': 'normal-string',
+      };
+      const result = resolveHeaders({ headers });
+      expect(result['X-Array']).toBe('value1,value2');
+      expect(result['X-String']).toBe('normal-string');
+    });
+
+    it('should handle numeric values with env variables', () => {
+      process.env.TEST_API_KEY = 'test-api-key-value';
+      const headers = {
+        'X-Number': 12345 as unknown as string,
+        'X-Env': '${TEST_API_KEY}',
+      };
+      const result = resolveHeaders({ headers });
+      expect(result['X-Number']).toBe('12345');
+      expect(result['X-Env']).toBe('test-api-key-value');
+      delete process.env.TEST_API_KEY;
+    });
+
+    it('should handle numeric values with body placeholders', () => {
+      const body = {
+        conversationId: 'conv-123',
+        parentMessageId: 'parent-456',
+        messageId: 'msg-789',
+      };
+      const headers = {
+        'X-Number': 999 as unknown as string,
+        'X-Conv': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      };
+      const result = resolveHeaders({ headers, body });
+      expect(result['X-Number']).toBe('999');
+      expect(result['X-Conv']).toBe('conv-123');
+    });
+
+    it('should handle mixed type headers with user and custom vars', () => {
+      const user = { id: 'user-123', email: 'test@example.com' };
+      const customUserVars = { CUSTOM_TOKEN: 'secret-token' };
+      const headers = {
+        'X-Number': 42 as unknown as string,
+        'X-Boolean': true as unknown as string,
+        'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+        'X-Custom': '{{CUSTOM_TOKEN}}',
+        'X-String': 'normal',
+      };
+      const result = resolveHeaders({ headers, user, customUserVars });
+      expect(result['X-Number']).toBe('42');
+      expect(result['X-Boolean']).toBe('true');
+      expect(result['X-User-Id']).toBe('user-123');
+      expect(result['X-Custom']).toBe('secret-token');
+      expect(result['X-String']).toBe('normal');
+    });
+
+    it('should not crash when calling includes on non-string body field values', () => {
+      const body = {
+        conversationId: 12345 as unknown as string,
+        parentMessageId: 'parent-456',
+        messageId: 'msg-789',
+      };
+      const headers = {
+        'X-Conv-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        'X-Number': 999 as unknown as string,
+      };
+      expect(() => resolveHeaders({ headers, body })).not.toThrow();
+      const result = resolveHeaders({ headers, body });
+      expect(result['X-Number']).toBe('999');
+    });
+  });
+});
+
+describe('resolveNestedObject', () => {
+  beforeEach(() => {
+    process.env.TEST_API_KEY = 'test-api-key-value';
+    process.env.ANOTHER_SECRET = 'another-secret-value';
+  });
+
+  afterEach(() => {
+    delete process.env.TEST_API_KEY;
+    delete process.env.ANOTHER_SECRET;
+  });
+
+  it('should preserve nested object structure', () => {
+    const obj = {
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+      },
+      anthropic_beta: ['output-128k-2025-02-19'],
+      max_tokens: 4096,
+      temperature: 0.7,
+    };
+
+    const result = resolveNestedObject({ obj });
+
+    expect(result).toEqual({
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+      },
+      anthropic_beta: ['output-128k-2025-02-19'],
+      max_tokens: 4096,
+      temperature: 0.7,
+    });
+  });
+
+  it('should process placeholders in string values while preserving structure', () => {
+    const user = { id: 'user-123', email: 'test@example.com' };
+    const obj = {
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+        user_context: '{{LIBRECHAT_USER_ID}}',
+      },
+      anthropic_beta: ['output-128k-2025-02-19'],
+      api_key: '${TEST_API_KEY}',
+      max_tokens: 4096,
+    };
+
+    const result = resolveNestedObject({ obj, user });
+
+    expect(result).toEqual({
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+        user_context: 'user-123',
+      },
+      anthropic_beta: ['output-128k-2025-02-19'],
+      api_key: 'test-api-key-value',
+      max_tokens: 4096,
+    });
+  });
+
+  it('should process strings in arrays', () => {
+    const user = { id: 'user-123' };
+    const obj = {
+      headers: ['Authorization: Bearer ${TEST_API_KEY}', 'X-User-Id: {{LIBRECHAT_USER_ID}}'],
+      values: [1, 2, 3],
+      mixed: ['string', 42, true, '{{LIBRECHAT_USER_ID}}'],
+    };
+
+    const result = resolveNestedObject({ obj, user });
+
+    expect(result).toEqual({
+      headers: ['Authorization: Bearer test-api-key-value', 'X-User-Id: user-123'],
+      values: [1, 2, 3],
+      mixed: ['string', 42, true, 'user-123'],
+    });
+  });
+
+  it('should handle deeply nested structures', () => {
+    const user = { id: 'user-123' };
+    const obj = {
+      level1: {
+        level2: {
+          level3: {
+            user_id: '{{LIBRECHAT_USER_ID}}',
+            settings: {
+              api_key: '${TEST_API_KEY}',
+              enabled: true,
+            },
+          },
+        },
+      },
+    };
+
+    const result = resolveNestedObject({ obj, user });
+
+    expect(result).toEqual({
+      level1: {
+        level2: {
+          level3: {
+            user_id: 'user-123',
+            settings: {
+              api_key: 'test-api-key-value',
+              enabled: true,
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('should preserve all primitive types', () => {
+    const obj = {
+      string: 'text',
+      number: 42,
+      float: 3.14,
+      boolean_true: true,
+      boolean_false: false,
+      null_value: null,
+      undefined_value: undefined,
+    };
+
+    const result = resolveNestedObject({ obj });
+
+    expect(result).toEqual(obj);
+  });
+
+  it('should handle empty objects and arrays', () => {
+    const obj = {
+      empty_object: {},
+      empty_array: [],
+      nested: {
+        also_empty: {},
+      },
+    };
+
+    const result = resolveNestedObject({ obj });
+
+    expect(result).toEqual(obj);
+  });
+
+  it('should handle body placeholders in nested objects', () => {
+    const body = {
+      conversationId: 'conv-123',
+      parentMessageId: 'parent-456',
+      messageId: 'msg-789',
+    };
+    const obj = {
+      metadata: {
+        conversation: '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        parent: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+        count: 5,
+      },
+    };
+
+    const result = resolveNestedObject({ obj, body });
+
+    expect(result).toEqual({
+      metadata: {
+        conversation: 'conv-123',
+        parent: 'parent-456',
+        count: 5,
+      },
+    });
+  });
+
+  it('should handle custom user variables in nested objects', () => {
+    const customUserVars = {
+      CUSTOM_TOKEN: 'secret-token',
+      REGION: 'us-west-1',
+    };
+    const obj = {
+      auth: {
+        token: '{{CUSTOM_TOKEN}}',
+        region: '{{REGION}}',
+        timeout: 3000,
+      },
+    };
+
+    const result = resolveNestedObject({ obj, customUserVars });
+
+    expect(result).toEqual({
+      auth: {
+        token: 'secret-token',
+        region: 'us-west-1',
+        timeout: 3000,
+      },
+    });
+  });
+
+  it('should handle mixed placeholders in nested objects', () => {
+    const user = { id: 'user-123', email: 'test@example.com' };
+    const customUserVars = { CUSTOM_VAR: 'custom-value' };
+    const body = { conversationId: 'conv-456' };
+
+    const obj = {
+      config: {
+        user_id: '{{LIBRECHAT_USER_ID}}',
+        custom: '{{CUSTOM_VAR}}',
+        api_key: '${TEST_API_KEY}',
+        conversation: '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        nested: {
+          email: '{{LIBRECHAT_USER_EMAIL}}',
+          port: 8080,
+        },
+      },
+    };
+
+    const result = resolveNestedObject({ obj, user, customUserVars, body });
+
+    expect(result).toEqual({
+      config: {
+        user_id: 'user-123',
+        custom: 'custom-value',
+        api_key: 'test-api-key-value',
+        conversation: 'conv-456',
+        nested: {
+          email: 'test@example.com',
+          port: 8080,
+        },
+      },
+    });
+  });
+
+  it('should handle Bedrock additionalModelRequestFields example', () => {
+    const obj = {
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+      },
+      anthropic_beta: ['output-128k-2025-02-19'],
+    };
+
+    const result = resolveNestedObject({ obj });
+
+    expect(result).toEqual({
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+      },
+      anthropic_beta: ['output-128k-2025-02-19'],
+    });
+
+    expect(typeof result.thinking).toBe('object');
+    expect(Array.isArray(result.anthropic_beta)).toBe(true);
+    expect(result.thinking).not.toBe('[object Object]');
+  });
+
+  it('should return undefined when obj is undefined', () => {
+    const result = resolveNestedObject({ obj: undefined });
+    expect(result).toBeUndefined();
+  });
+
+  it('should return null when obj is null', () => {
+    const result = resolveNestedObject({ obj: null });
+    expect(result).toBeNull();
+  });
+
+  it('should handle arrays of objects', () => {
+    const user = { id: 'user-123' };
+    const obj = {
+      items: [
+        { name: 'item1', user: '{{LIBRECHAT_USER_ID}}', count: 1 },
+        { name: 'item2', user: '{{LIBRECHAT_USER_ID}}', count: 2 },
+      ],
+    };
+
+    const result = resolveNestedObject({ obj, user });
+
+    expect(result).toEqual({
+      items: [
+        { name: 'item1', user: 'user-123', count: 1 },
+        { name: 'item2', user: 'user-123', count: 2 },
+      ],
+    });
+  });
+
+  it('should not modify the original object', () => {
+    const user = { id: 'user-123' };
+    const originalObj = {
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+        user_id: '{{LIBRECHAT_USER_ID}}',
+      },
+    };
+
+    const result = resolveNestedObject({ obj: originalObj, user });
+
+    expect(result.thinking.user_id).toBe('user-123');
+    expect(originalObj.thinking.user_id).toBe('{{LIBRECHAT_USER_ID}}');
+  });
 });
 
 describe('processMCPEnv', () => {
@@ -773,5 +1199,182 @@ describe('processMCPEnv', () => {
     } else {
       throw new Error('Expected stdio options');
     }
+  });
+
+  describe('non-string values (type guard tests)', () => {
+    it('should handle numeric values in env without crashing', () => {
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: [],
+        env: {
+          PORT: 8080 as unknown as string,
+          TIMEOUT: 30000 as unknown as string,
+          API_KEY: '${TEST_API_KEY}',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.PORT).toBe('8080');
+        expect(result.env?.TIMEOUT).toBe('30000');
+        expect(result.env?.API_KEY).toBe('test-api-key-value');
+      }
+    });
+
+    it('should handle boolean values in env without crashing', () => {
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: [],
+        env: {
+          DEBUG: true as unknown as string,
+          PRODUCTION: false as unknown as string,
+          API_KEY: '${TEST_API_KEY}',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.DEBUG).toBe('true');
+        expect(result.env?.PRODUCTION).toBe('false');
+        expect(result.env?.API_KEY).toBe('test-api-key-value');
+      }
+    });
+
+    it('should handle numeric values in args without crashing', () => {
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: ['--port', 8080 as unknown as string, '--timeout', 30000 as unknown as string],
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStdioOptions(result)) {
+        expect(result.args).toEqual(['--port', '8080', '--timeout', '30000']);
+      }
+    });
+
+    it('should handle null and undefined values in env', () => {
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: [],
+        env: {
+          NULL_VALUE: null as unknown as string,
+          UNDEFINED_VALUE: undefined as unknown as string,
+          NORMAL_VALUE: 'normal',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.NULL_VALUE).toBe('null');
+        expect(result.env?.UNDEFINED_VALUE).toBe('undefined');
+        expect(result.env?.NORMAL_VALUE).toBe('normal');
+      }
+    });
+
+    it('should handle numeric values in headers without crashing', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'X-Timeout': 5000 as unknown as string,
+          'X-Retry-Count': 3 as unknown as string,
+          'Content-Type': 'application/json',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Timeout']).toBe('5000');
+        expect(result.headers?.['X-Retry-Count']).toBe('3');
+        expect(result.headers?.['Content-Type']).toBe('application/json');
+      }
+    });
+
+    it('should handle numeric URL values', () => {
+      const options: MCPOptions = {
+        type: 'websocket',
+        url: 12345 as unknown as string,
+      };
+
+      const result = processMCPEnv({ options });
+
+      expect((result as unknown as { url?: string }).url).toBe('12345');
+    });
+
+    it('should handle mixed numeric and placeholder values', () => {
+      const user = createTestUser({ id: 'user-123' });
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: [],
+        env: {
+          PORT: 8080 as unknown as string,
+          USER_ID: '{{LIBRECHAT_USER_ID}}',
+          API_KEY: '${TEST_API_KEY}',
+        },
+      };
+
+      const result = processMCPEnv({ options, user });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.PORT).toBe('8080');
+        expect(result.env?.USER_ID).toBe('user-123');
+        expect(result.env?.API_KEY).toBe('test-api-key-value');
+      }
+    });
+
+    it('should handle objects and arrays in env values', () => {
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: [],
+        env: {
+          OBJECT_VALUE: { nested: 'value' } as unknown as string,
+          ARRAY_VALUE: ['item1', 'item2'] as unknown as string,
+          STRING_VALUE: 'normal',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.OBJECT_VALUE).toBe('[object Object]');
+        expect(result.env?.ARRAY_VALUE).toBe('item1,item2');
+        expect(result.env?.STRING_VALUE).toBe('normal');
+      }
+    });
+
+    it('should not crash with numeric body field values', () => {
+      const body = {
+        conversationId: 12345 as unknown as string,
+        parentMessageId: 'parent-456',
+        messageId: 'msg-789',
+      };
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: [],
+        env: {
+          CONV_ID: '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+          PORT: 8080 as unknown as string,
+        },
+      };
+
+      expect(() => processMCPEnv({ options, body })).not.toThrow();
+      const result = processMCPEnv({ options, body });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.PORT).toBe('8080');
+      }
+    });
   });
 });

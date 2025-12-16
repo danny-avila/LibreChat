@@ -1,7 +1,11 @@
 {
   "name": "@librechat/client",
-  "version": "0.3.1",
+  "version": "0.4.1",
   "description": "React components for LibreChat",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/danny-avila/LibreChat"
+  },
   "main": "dist/index.js",
   "module": "dist/index.es.js",
   "types": "dist/types/index.d.ts",
@@ -17,7 +21,9 @@
   ],
   "scripts": {
     "clean": "rimraf dist",
+    "b:clean": "bun run rimraf dist",
     "build": "npm run clean && rollup -c --bundleConfigAsCjs",
+    "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs",
     "build:watch": "rollup -c -w --bundleConfigAsCjs",
     "dev": "rollup -c -w --bundleConfigAsCjs"
   },
@@ -51,7 +57,7 @@
     "@tanstack/react-virtual": "^3.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "dompurify": "^3.2.6",
+    "dompurify": "^3.3.0",
     "framer-motion": "^12.23.6",
     "i18next": "^24.2.2 || ^25.3.2",
     "i18next-browser-languagedetector": "^8.2.0",
@@ -64,13 +70,13 @@
     "react-dom": "^18.2.0 || ^19.1.0",
     "react-hook-form": "^7.56.4",
     "react-i18next": "^15.4.0 || ^15.6.0",
-    "react-resizable-panels": "^3.0.2",
+    "react-resizable-panels": "^3.0.6",
     "react-textarea-autosize": "^8.4.0",
     "tailwind-merge": "^1.9.1"
   },
   "devDependencies": {
     "@rollup/plugin-alias": "^5.1.0",
-    "@rollup/plugin-commonjs": "^25.0.2",
+    "@rollup/plugin-commonjs": "^29.0.0",
     "@rollup/plugin-node-resolve": "^15.0.0",
     "@rollup/plugin-replace": "^5.0.5",
     "@rollup/plugin-terser": "^0.4.4",
@@ -85,7 +91,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-i18next": "^15.4.0",
-    "rimraf": "^5.0.1",
+    "rimraf": "^6.1.2",
     "rollup": "^4.0.0",
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "rollup-plugin-postcss": "^4.0.2",

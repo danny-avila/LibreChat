@@ -2,7 +2,7 @@ import { useState, useId, useRef, memo, useCallback, useMemo } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DropdownPopup, Spinner, useToastContext } from '@librechat/client';
-import { Ellipsis, Share2, Copy, Archive, Pen, Trash } from 'lucide-react';
+import { Ellipsis, Share2, CopyPlus, Archive, Pen, Trash } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import {
   useDuplicateConversationMutation,
@@ -151,7 +151,7 @@ function ConvoOptions({
         icon: isDuplicateLoading ? (
           <Spinner className="size-4" />
         ) : (
-          <Copy className="icon-sm mr-2 text-text-primary" />
+          <CopyPlus className="icon-sm mr-2 text-text-primary" />
         ),
       },
       {

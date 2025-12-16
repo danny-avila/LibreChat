@@ -5,6 +5,46 @@ import type { GoogleAIToolType } from '@langchain/google-common';
 import type * as t from '~/types';
 import { isEnabled } from '~/utils';
 
+/** Known Google/Vertex AI parameters that map directly to the client config */
+export const knownGoogleParams = new Set([
+  'model',
+  'modelName',
+  'temperature',
+  'maxOutputTokens',
+  'maxReasoningTokens',
+  'topP',
+  'topK',
+  'seed',
+  'presencePenalty',
+  'frequencyPenalty',
+  'stopSequences',
+  'stop',
+  'logprobs',
+  'topLogprobs',
+  'safetySettings',
+  'responseModalities',
+  'convertSystemMessageToHumanContent',
+  'speechConfig',
+  'streamUsage',
+  'apiKey',
+  'baseUrl',
+  'location',
+  'authOptions',
+]);
+
+/**
+ * Applies default parameters to the target object only if the field is undefined
+ * @param target - The target object to apply defaults to
+ * @param defaults - Record of default parameter values
+ */
+function applyDefaultParams(target: Record<string, unknown>, defaults: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(defaults)) {
+    if (target[key] === undefined) {
+      target[key] = value;
+    }
+  }
+}
+
 function getThresholdMapping(model: string) {
   const gemini1Pattern = /gemini-(1\.0|1\.5|pro$|1\.0-pro|1\.5-pro|1\.5-flash-001)/;
   const restrictedPattern = /(gemini-(1\.5-flash-8b|2\.0|exp)|learnlm)/;
@@ -81,9 +121,12 @@ export function getSafetySettings(
 export function getGoogleConfig(
   credentials: string | t.GoogleCredentials | undefined,
   options: t.GoogleConfigOptions = {},
+  acceptRawApiKey = false,
 ) {
   let creds: t.GoogleCredentials = {};
-  if (typeof credentials === 'string') {
+  if (acceptRawApiKey && typeof credentials === 'string') {
+    creds[AuthKeys.GOOGLE_API_KEY] = credentials;
+  } else if (typeof credentials === 'string') {
     try {
       creds = JSON.parse(credentials);
     } catch (err: unknown) {
@@ -111,6 +154,8 @@ export function getGoogleConfig(
     thinkingBudget = googleSettings.thinkingBudget.default,
     ...modelOptions
   } = options.modelOptions || {};
+
+  let enableWebSearch = web_search;
 
   const llmConfig: GoogleClientOptions | VertexAIClientOptions = removeNullishValues({
     ...(modelOptions || {}),
@@ -193,9 +238,61 @@ export function getGoogleConfig(
     };
   }
 
+  /** Handle defaultParams first - only process Google-native params if undefined */
+  if (options.defaultParams && typeof options.defaultParams === 'object') {
+    for (const [key, value] of Object.entries(options.defaultParams)) {
+      /** Handle web_search separately - don't add to config */
+      if (key === 'web_search') {
+        if (enableWebSearch === undefined && typeof value === 'boolean') {
+          enableWebSearch = value;
+        }
+        continue;
+      }
+
+      if (knownGoogleParams.has(key)) {
+        /** Route known Google params to llmConfig only if undefined */
+        applyDefaultParams(llmConfig as Record<string, unknown>, { [key]: value });
+      }
+      /** Leave other params for transform to handle - they might be OpenAI params */
+    }
+  }
+
+  /** Handle addParams - can override defaultParams */
+  if (options.addParams && typeof options.addParams === 'object') {
+    for (const [key, value] of Object.entries(options.addParams)) {
+      /** Handle web_search separately - don't add to config */
+      if (key === 'web_search') {
+        if (typeof value === 'boolean') {
+          enableWebSearch = value;
+        }
+        continue;
+      }
+
+      if (knownGoogleParams.has(key)) {
+        /** Route known Google params to llmConfig */
+        (llmConfig as Record<string, unknown>)[key] = value;
+      }
+      /** Leave other params for transform to handle - they might be OpenAI params */
+    }
+  }
+
+  /** Handle dropParams - only drop from Google config */
+  if (options.dropParams && Array.isArray(options.dropParams)) {
+    options.dropParams.forEach((param) => {
+      if (param === 'web_search') {
+        enableWebSearch = false;
+        return;
+      }
+
+      if (param in llmConfig) {
+        delete (llmConfig as Record<string, unknown>)[param];
+      }
+    });
+  }
+
   const tools: GoogleAIToolType[] = [];
 
-  if (web_search) {
+  if (enableWebSearch) {
     tools.push({ googleSearch: {} });
   }
 

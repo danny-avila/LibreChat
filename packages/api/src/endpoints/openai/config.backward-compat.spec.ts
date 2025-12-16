@@ -48,7 +48,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
         configOptions: {},
         tools: [
           {
-            type: 'web_search_preview',
+            type: 'web_search',
           },
         ],
       });

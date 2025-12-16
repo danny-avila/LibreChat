@@ -18,6 +18,7 @@ const {
   ImageVisionTool,
   openapiToFunction,
   AgentCapabilities,
+  validateActionDomain,
   defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
@@ -236,10 +237,24 @@ async function processRequiredActions(client, requiredActions) {
 
           // Validate and parse OpenAPI spec
           const validationResult = validateAndParseOpenAPISpec(action.metadata.raw_spec);
-          if (!validationResult.spec) {
+          if (!validationResult.spec || !validationResult.serverUrl) {
             throw new Error(
               `Invalid spec: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
             );
+          }
+
+          // SECURITY: Validate the domain from the spec matches the stored domain
+          // This is defense-in-depth to prevent any stored malicious actions
+          const domainValidation = validateActionDomain(
+            action.metadata.domain,
+            validationResult.serverUrl,
+          );
+          if (!domainValidation.isValid) {
+            logger.error(`Domain mismatch in stored action: ${domainValidation.message}`, {
+              userId: client.req.user.id,
+              action_id: action.action_id,
+            });
+            continue; // Skip this action rather than failing the entire request
           }
 
           // Process the OpenAPI spec
@@ -525,8 +540,23 @@ async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIA
 
     // Validate and parse OpenAPI spec once per action set
     const validationResult = validateAndParseOpenAPISpec(action.metadata.raw_spec);
-    if (!validationResult.spec) {
+    if (!validationResult.spec || !validationResult.serverUrl) {
       continue;
+    }
+
+    // SECURITY: Validate the domain from the spec matches the stored domain
+    // This is defense-in-depth to prevent any stored malicious actions
+    const domainValidation = validateActionDomain(
+      action.metadata.domain,
+      validationResult.serverUrl,
+    );
+    if (!domainValidation.isValid) {
+      logger.error(`Domain mismatch in stored action: ${domainValidation.message}`, {
+        userId: req.user.id,
+        agent_id: agent.id,
+        action_id: action.action_id,
+      });
+      continue; // Skip this action rather than failing the entire request
     }
 
     const encrypted = {

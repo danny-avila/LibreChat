@@ -6,15 +6,27 @@ describe('isEmailDomainAllowed', () => {
     jest.clearAllMocks();
   });
 
-  it('should return false if email is falsy', async () => {
+  it('should return true if email is falsy and no domain restrictions exist', async () => {
     const email = '';
     const result = isEmailDomainAllowed(email);
+    expect(result).toBe(true);
+  });
+
+  it('should return true if domain is not present in the email and no domain restrictions exist', async () => {
+    const email = 'test';
+    const result = isEmailDomainAllowed(email);
+    expect(result).toBe(true);
+  });
+
+  it('should return false if email is falsy and domain restrictions exist', async () => {
+    const email = '';
+    const result = isEmailDomainAllowed(email, ['domain1.com']);
     expect(result).toBe(false);
   });
 
-  it('should return false if domain is not present in the email', async () => {
+  it('should return false if domain is not present in the email and domain restrictions exist', async () => {
     const email = 'test';
-    const result = isEmailDomainAllowed(email);
+    const result = isEmailDomainAllowed(email, ['domain1.com']);
     expect(result).toBe(false);
   });
 

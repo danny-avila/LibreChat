@@ -8,12 +8,14 @@ on:
       - release/*
     paths:
       - 'packages/api/src/cache/**'
+      - 'packages/api/src/cluster/**'
+      - 'packages/api/src/mcp/**'
       - 'redis-config/**'
       - '.github/workflows/cache-integration-tests.yml'
 
 jobs:
   cache_integration_tests:
-    name: Run Cache Integration Tests
+    name: Integration Tests that use actual Redis Cache
     timeout-minutes: 30
     runs-on: ubuntu-latest
 
@@ -59,14 +61,23 @@ jobs:
           npm run build:data-schemas
           npm run build:api
 
-      - name: Run cache integration tests
+      - name: Run all cache integration tests (Single Redis Node)
         working-directory: packages/api
         env:
           NODE_ENV: test
           USE_REDIS: true
+          USE_REDIS_CLUSTER: false
           REDIS_URI: redis://127.0.0.1:6379
-          REDIS_CLUSTER_URI: redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003
-        run: npm run test:cache:integration
+        run: npm run test:cache-integration
+
+      - name: Run all cache integration tests (Redis Cluster)
+        working-directory: packages/api
+        env:
+          NODE_ENV: test
+          USE_REDIS: true
+          USE_REDIS_CLUSTER: true
+          REDIS_URI: redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003
+        run: npm run test:cache-integration
 
       - name: Stop Redis Cluster
         if: always()

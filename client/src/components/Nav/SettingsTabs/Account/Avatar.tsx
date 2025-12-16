@@ -134,8 +134,13 @@ function Avatar() {
     e.preventDefault();
   }, []);
 
-  const openFileDialog = () => {
+  const openFileDialog = useCallback(() => {
     fileInputRef.current?.click();
+  }, []);
+
+  const handleSelectFileClick = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    openFileDialog();
   };
 
   const resetImage = useCallback(() => {
@@ -341,7 +346,7 @@ function Avatar() {
                       : '2MB',
                 })}
               </p>
-              <Button type="button" variant="secondary" onClick={openFileDialog}>
+              <Button type="button" variant="secondary" onClick={handleSelectFileClick}>
                 {localize('com_ui_select_file')}
               </Button>
               <input

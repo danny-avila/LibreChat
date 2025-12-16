@@ -99,6 +99,12 @@ export default function useStepHandler({
     if (!updatedContent[index]) {
       updatedContent[index] = { type: contentPart.type as AllContentTypes };
     }
+    /** Prevent overwriting an existing content part with a different type */
+    const existingType = (updatedContent[index]?.type as string | undefined) ?? '';
+    if (existingType && !contentType.startsWith(existingType)) {
+      console.warn('Content type mismatch');
+      return message;
+    }
 
     if (
       contentType.startsWith(ContentTypes.TEXT) &&
@@ -151,12 +157,16 @@ export default function useStepHandler({
       const existingToolCall = existingContent?.tool_call;
       const toolCallArgs = (contentPart.tool_call as Agents.ToolCall).args;
       /** When args are a valid object, they are likely already invoked */
-      const args =
+      let args =
         finalUpdate ||
         typeof existingToolCall?.args === 'object' ||
         typeof toolCallArgs === 'object'
           ? contentPart.tool_call.args
           : (existingToolCall?.args ?? '') + (toolCallArgs ?? '');
+      /** Preserve previously streamed args when final update omits them */
+      if (finalUpdate && args == null && existingToolCall?.args != null) {
+        args = existingToolCall.args;
+      }
 
       const id = getNonEmptyValue([contentPart.tool_call.id, existingToolCall?.id]) ?? '';
       const name = getNonEmptyValue([contentPart.tool_call.name, existingToolCall?.name]) ?? '';
@@ -303,6 +313,10 @@ export default function useStepHandler({
             ? messageDelta.delta.content[0]
             : messageDelta.delta.content;
 
+          if (contentPart == null) {
+            return;
+          }
+
           const currentIndex = calculateContentIndex(
             runStep.index,
             initialContent,
@@ -334,6 +348,10 @@ export default function useStepHandler({
           const contentPart = Array.isArray(reasoningDelta.delta.content)
             ? reasoningDelta.delta.content[0]
             : reasoningDelta.delta.content;
+
+          if (contentPart == null) {
+            return;
+          }
 
           const currentIndex = calculateContentIndex(
             runStep.index,

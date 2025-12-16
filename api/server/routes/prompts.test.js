@@ -544,6 +544,169 @@ describe('Prompt Routes - ACL Permissions', () => {
     });
   });
 
+  describe('PATCH /api/prompts/groups/:groupId - Update Prompt Group Security', () => {
+    let testGroup;
+
+    beforeEach(async () => {
+      // Create a prompt group
+      testGroup = await PromptGroup.create({
+        name: 'Security Test Group',
+        category: 'security-test',
+        author: testUsers.owner._id,
+        authorName: testUsers.owner.name,
+        productionId: new ObjectId(),
+      });
+
+      // Grant owner permissions
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: testUsers.owner._id,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: testGroup._id,
+        accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+        grantedBy: testUsers.owner._id,
+      });
+    });
+
+    afterEach(async () => {
+      await PromptGroup.deleteMany({});
+      await AclEntry.deleteMany({});
+    });
+
+    it('should allow updating allowed fields (name, category, oneliner)', async () => {
+      const updateData = {
+        name: 'Updated Group Name',
+        category: 'updated-category',
+        oneliner: 'Updated description',
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(updateData)
+        .expect(200);
+
+      expect(response.body.name).toBe(updateData.name);
+      expect(response.body.category).toBe(updateData.category);
+      expect(response.body.oneliner).toBe(updateData.oneliner);
+    });
+
+    it('should reject request with author field (400 Bad Request)', async () => {
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        author: testUsers.noAccess._id.toString(), // Try to change ownership
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+      expect(response.body.details).toBeDefined();
+    });
+
+    it('should reject request with authorName field (400 Bad Request)', async () => {
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        authorName: 'Malicious Author Name',
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with _id field (400 Bad Request)', async () => {
+      const newId = new ObjectId();
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        _id: newId.toString(),
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with productionId field (400 Bad Request)', async () => {
+      const newProductionId = new ObjectId();
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        productionId: newProductionId.toString(),
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with createdAt field (400 Bad Request)', async () => {
+      const maliciousDate = new Date('2020-01-01');
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        createdAt: maliciousDate.toISOString(),
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with __v field (400 Bad Request)', async () => {
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        __v: 999,
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with multiple sensitive fields (400 Bad Request)', async () => {
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        author: testUsers.noAccess._id.toString(),
+        authorName: 'Hacker',
+        _id: new ObjectId().toString(),
+        productionId: new ObjectId().toString(),
+        createdAt: new Date('2020-01-01').toISOString(),
+        __v: 999,
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected with validation errors
+      expect(response.body.error).toBe('Invalid request body');
+      expect(response.body.details).toBeDefined();
+      expect(Array.isArray(response.body.details)).toBe(true);
+    });
+  });
+
   describe('Pagination', () => {
     beforeEach(async () => {
       // Create multiple prompt groups for pagination testing

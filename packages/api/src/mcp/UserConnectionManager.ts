@@ -1,10 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { MCPServersRegistry } from '~/mcp/MCPServersRegistry';
+import { mcpServersRegistry as serversRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPConnection } from './connection';
 import type * as t from './types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
+import { mcpConfig } from './mcpConfig';
 
 /**
  * Abstract base class for managing user-specific MCP connections with lifecycle management.
@@ -14,23 +15,12 @@ import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
  * https://github.com/danny-avila/LibreChat/discussions/8790
  */
 export abstract class UserConnectionManager {
-  protected readonly serversRegistry: MCPServersRegistry;
   // Connections shared by all users.
   public appConnections: ConnectionsRepository | null = null;
   // Connections per userId -> serverName -> connection
   protected userConnections: Map<string, Map<string, MCPConnection>> = new Map();
   /** Last activity timestamp for users (not per server) */
   protected userLastActivity: Map<string, number> = new Map();
-  protected readonly USER_CONNECTION_IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes (TODO: make configurable)
-
-  constructor(serverConfigs: t.MCPServers) {
-    this.serversRegistry = new MCPServersRegistry(serverConfigs);
-  }
-
-  /** fetches am MCP Server config from the registry */
-  public getRawConfig(serverName: string): t.MCPOptions | undefined {
-    return this.serversRegistry.rawConfigs[serverName];
-  }
 
   /** Updates the last activity timestamp for a user */
   protected updateUserLastActivity(userId: string): void {
@@ -77,7 +67,7 @@ export abstract class UserConnectionManager {
 
     // Check if user is idle
     const lastActivity = this.userLastActivity.get(userId);
-    if (lastActivity && now - lastActivity > this.USER_CONNECTION_IDLE_TIMEOUT) {
+    if (lastActivity && now - lastActivity > mcpConfig.USER_CONNECTION_IDLE_TIMEOUT) {
       logger.info(`[MCP][User: ${userId}] User idle for too long. Disconnecting all connections.`);
       // Disconnect all user connections
       try {
@@ -106,7 +96,7 @@ export abstract class UserConnectionManager {
       logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
     }
 
-    const config = this.serversRegistry.parsedConfigs[serverName];
+    const config = await serversRegistry.getServerConfig(serverName, userId);
     if (!config) {
       throw new McpError(
         ErrorCode.InvalidRequest,
@@ -227,7 +217,7 @@ export abstract class UserConnectionManager {
       if (currentUserId && currentUserId === userId) {
         continue;
       }
-      if (now - lastActivity > this.USER_CONNECTION_IDLE_TIMEOUT) {
+      if (now - lastActivity > mcpConfig.USER_CONNECTION_IDLE_TIMEOUT) {
         logger.info(
           `[MCP][User: ${userId}] User idle for too long. Disconnecting all connections...`,
         );

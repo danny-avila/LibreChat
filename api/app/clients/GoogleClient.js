@@ -305,7 +305,9 @@ class GoogleClient extends BaseClient {
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
-      EModelEndpoint.google,
+      {
+        endpoint: EModelEndpoint.google,
+      },
       mode,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;

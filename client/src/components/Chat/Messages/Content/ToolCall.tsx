@@ -11,6 +11,7 @@ import { logger, cn } from '~/utils';
 
 export default function ToolCall({
   initialProgress = 0.1,
+  isLast = false,
   isSubmitting,
   name,
   args: _args = '',
@@ -19,6 +20,7 @@ export default function ToolCall({
   auth,
 }: {
   initialProgress: number;
+  isLast?: boolean;
   isSubmitting: boolean;
   name: string;
   args: string | Record<string, unknown>;
@@ -154,6 +156,10 @@ export default function ToolCall({
       resizeObserver.disconnect();
     };
   }, [showInfo, isAnimating]);
+
+  if (!isLast && (!function_name || function_name.length === 0) && !output) {
+    return null;
+  }
 
   return (
     <>

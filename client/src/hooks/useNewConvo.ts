@@ -1,15 +1,16 @@
 import { useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
   Constants,
   FileSources,
   EModelEndpoint,
   isParamEndpoint,
+  getEndpointField,
   LocalStorageKeys,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type {
   TPreset,
   TSubmission,
@@ -19,19 +20,18 @@ import type {
 } from 'librechat-data-provider';
 import type { AssistantListItem } from '~/common';
 import {
-  getEndpointField,
-  buildDefaultConvo,
+  updateLastSelectedModel,
+  getDefaultModelSpec,
   getDefaultEndpoint,
   getModelSpecPreset,
-  getDefaultModelSpec,
-  updateLastSelectedModel,
+  buildDefaultConvo,
+  logger,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useResetChatBadges } from './useChatBadges';
 import { useApplyModelSpecEffects } from './Agents';
 import { usePauseGlobalAudio } from './Audio';
-import { logger } from '~/utils';
 import store from '~/store';
 
 const useNewConvo = (index = 0) => {

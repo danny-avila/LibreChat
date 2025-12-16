@@ -1,8 +1,12 @@
 import { logger } from '@librechat/data-schemas';
-import { EModelEndpoint, removeNullishValues } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  removeNullishValues,
+  normalizeEndpointName,
+} from 'librechat-data-provider';
 import type { TCustomConfig, TEndpoint, TTransactionsConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { isEnabled, normalizeEndpointName } from '~/utils';
+import { isEnabled } from '~/utils';
 
 /**
  * Retrieves the balance configuration object

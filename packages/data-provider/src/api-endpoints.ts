@@ -64,7 +64,7 @@ export const messages = (params: q.MessagesListParams) => {
   return `${messagesRoot}${buildQuery(rest)}`;
 };
 
-export const messagesArtifacts = (messageId: string) => `${messagesRoot}/artifacts/${messageId}`;
+export const messagesArtifacts = (messageId: string) => `${messagesRoot}/artifact/${messageId}`;
 
 const shareRoot = `${BASE_URL}/api/share`;
 export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
@@ -148,6 +148,10 @@ export const requestPasswordReset = () => `${BASE_URL}/api/auth/requestPasswordR
 export const resetPassword = () => `${BASE_URL}/api/auth/resetPassword`;
 
 export const verifyEmail = () => `${BASE_URL}/api/user/verify`;
+
+// Auth page URLs (for client-side navigation and redirects)
+export const loginPage = () => `${BASE_URL}/login`;
+export const registerPage = () => `${BASE_URL}/register`;
 
 export const resendVerificationEmail = () => `${BASE_URL}/api/user/verify/resend`;
 

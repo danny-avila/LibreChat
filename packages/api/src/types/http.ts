@@ -7,11 +7,12 @@ import type { IUser, AppConfig } from '@librechat/data-schemas';
  */
 export type RequestBody = {
   messageId?: string;
+  fileTokenLimit?: number;
   conversationId?: string;
   parentMessageId?: string;
 };
 
-export type ServerRequest = Request & {
+export type ServerRequest = Request<unknown, unknown, RequestBody> & {
   user?: IUser;
   config?: AppConfig;
 };

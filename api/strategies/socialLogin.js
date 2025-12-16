@@ -25,10 +25,24 @@ const socialLogin =
         return cb(error);
       }
 
-      const existingUser = await findUser({ email: email.trim() });
+      const providerKey = `${provider}Id`;
+      let existingUser = null;
+
+      /** First try to find user by provider ID (e.g., googleId, facebookId) */
+      if (id && typeof id === 'string') {
+        existingUser = await findUser({ [providerKey]: id });
+      }
+
+      /** If not found by provider ID, try finding by email */
+      if (!existingUser) {
+        existingUser = await findUser({ email: email?.trim() });
+        if (existingUser) {
+          logger.warn(`[${provider}Login] User found by email: ${email} but not by ${providerKey}`);
+        }
+      }
 
       if (existingUser?.provider === provider) {
-        await handleExistingUser(existingUser, avatarUrl, appConfig);
+        await handleExistingUser(existingUser, avatarUrl, appConfig, email);
         return cb(null, existingUser);
       } else if (existingUser) {
         logger.info(

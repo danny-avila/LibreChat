@@ -301,6 +301,22 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # Helicone Example
+    - name: 'Helicone'
+      # For `apiKey` and `baseURL`, you can use environment variables that you define.
+      # recommended environment variables:
+      apiKey: '${HELICONE_KEY}'
+      baseURL: 'https://ai-gateway.helicone.ai'
+      headers:
+          x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
+      models:
+        default: ['gpt-4o-mini', 'claude-4.5-sonnet', 'llama-3.1-8b-instruct', 'gemini-2.5-flash-lite']
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-4o-mini'
+      modelDisplayLabel: 'Helicone'
+      iconURL: https://marketing-assets-helicone.s3.us-west-2.amazonaws.com/helicone.png
+
     # Portkey AI Example
     - name: 'Portkey'
       apiKey: 'dummy'
@@ -407,15 +423,12 @@ endpoints:
 #   # Jina Reranking Configuration
 #   jinaApiKey: '${JINA_API_KEY}'  # Your Jina API key
 #   jinaApiUrl: '${JINA_API_URL}'  # Custom Jina API URL (optional, defaults to https://api.jina.ai/v1/rerank)
-#   
 #   # Other rerankers
 #   cohereApiKey: '${COHERE_API_KEY}'
-#   
 #   # Search providers
 #   serperApiKey: '${SERPER_API_KEY}'
 #   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
 #   searxngApiKey: '${SEARXNG_API_KEY}'
-#   
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'

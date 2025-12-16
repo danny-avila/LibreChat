@@ -75,7 +75,7 @@ function AuthLayout({
 
       <div className="flex flex-grow items-center justify-center">
         <div className="w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
-          {!hasStartupConfigError && !isFetching && (
+          {!hasStartupConfigError && !isFetching && header && (
             <h1
               className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
               style={{ userSelect: 'none' }}

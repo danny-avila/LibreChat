@@ -16,21 +16,27 @@ export interface AudioValidationResult {
   error?: string;
 }
 
+export interface ImageValidationResult {
+  isValid: boolean;
+  error?: string;
+}
+
 export async function validatePdf(
   pdfBuffer: Buffer,
   fileSize: number,
   provider: Providers,
+  configuredFileSizeLimit?: number,
 ): Promise<PDFValidationResult> {
   if (provider === Providers.ANTHROPIC) {
-    return validateAnthropicPdf(pdfBuffer, fileSize);
+    return validateAnthropicPdf(pdfBuffer, fileSize, configuredFileSizeLimit);
   }
 
   if (isOpenAILikeProvider(provider)) {
-    return validateOpenAIPdf(fileSize);
+    return validateOpenAIPdf(fileSize, configuredFileSizeLimit);
   }
 
   if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
-    return validateGooglePdf(fileSize);
+    return validateGooglePdf(fileSize, configuredFileSizeLimit);
   }
 
   return { isValid: true };
@@ -40,17 +46,23 @@ export async function validatePdf(
  * Validates if a PDF meets Anthropic's requirements
  * @param pdfBuffer - The PDF file as a buffer
  * @param fileSize - The file size in bytes
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
  * @returns Promise that resolves to validation result
  */
 async function validateAnthropicPdf(
   pdfBuffer: Buffer,
   fileSize: number,
+  configuredFileSizeLimit?: number,
 ): Promise<PDFValidationResult> {
   try {
-    if (fileSize > mbToBytes(32)) {
+    const providerLimit = mbToBytes(32);
+    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
+
+    if (fileSize > effectiveLimit) {
+      const limitMB = Math.round(effectiveLimit / (1024 * 1024));
       return {
         isValid: false,
-        error: `PDF file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds Anthropic's 32MB limit`,
+        error: `PDF file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
       };
     }
 
@@ -101,22 +113,48 @@ async function validateAnthropicPdf(
   }
 }
 
-async function validateOpenAIPdf(fileSize: number): Promise<PDFValidationResult> {
-  if (fileSize > 10 * 1024 * 1024) {
+/**
+ * Validates if a PDF meets OpenAI's requirements
+ * @param fileSize - The file size in bytes
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
+ * @returns Promise that resolves to validation result
+ */
+async function validateOpenAIPdf(
+  fileSize: number,
+  configuredFileSizeLimit?: number,
+): Promise<PDFValidationResult> {
+  const providerLimit = mbToBytes(10);
+  const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
+
+  if (fileSize > effectiveLimit) {
+    const limitMB = Math.round(effectiveLimit / (1024 * 1024));
     return {
       isValid: false,
-      error: "PDF file size exceeds OpenAI's 10MB limit",
+      error: `PDF file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
     };
   }
 
   return { isValid: true };
 }
 
-async function validateGooglePdf(fileSize: number): Promise<PDFValidationResult> {
-  if (fileSize > 20 * 1024 * 1024) {
+/**
+ * Validates if a PDF meets Google's requirements
+ * @param fileSize - The file size in bytes
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
+ * @returns Promise that resolves to validation result
+ */
+async function validateGooglePdf(
+  fileSize: number,
+  configuredFileSizeLimit?: number,
+): Promise<PDFValidationResult> {
+  const providerLimit = mbToBytes(20);
+  const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
+
+  if (fileSize > effectiveLimit) {
+    const limitMB = Math.round(effectiveLimit / (1024 * 1024));
     return {
       isValid: false,
-      error: "PDF file size exceeds Google's 20MB limit",
+      error: `PDF file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
     };
   }
 
@@ -128,18 +166,24 @@ async function validateGooglePdf(fileSize: number): Promise<PDFValidationResult>
  * @param videoBuffer - The video file as a buffer
  * @param fileSize - The file size in bytes
  * @param provider - The provider to validate for
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
  * @returns Promise that resolves to validation result
  */
 export async function validateVideo(
   videoBuffer: Buffer,
   fileSize: number,
   provider: Providers,
+  configuredFileSizeLimit?: number,
 ): Promise<VideoValidationResult> {
   if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
-    if (fileSize > 20 * 1024 * 1024) {
+    const providerLimit = mbToBytes(20);
+    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
+
+    if (fileSize > effectiveLimit) {
+      const limitMB = Math.round(effectiveLimit / (1024 * 1024));
       return {
         isValid: false,
-        error: `Video file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds Google's 20MB limit`,
+        error: `Video file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
       };
     }
   }
@@ -159,18 +203,24 @@ export async function validateVideo(
  * @param audioBuffer - The audio file as a buffer
  * @param fileSize - The file size in bytes
  * @param provider - The provider to validate for
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
  * @returns Promise that resolves to validation result
  */
 export async function validateAudio(
   audioBuffer: Buffer,
   fileSize: number,
   provider: Providers,
+  configuredFileSizeLimit?: number,
 ): Promise<AudioValidationResult> {
   if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
-    if (fileSize > 20 * 1024 * 1024) {
+    const providerLimit = mbToBytes(20);
+    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
+
+    if (fileSize > effectiveLimit) {
+      const limitMB = Math.round(effectiveLimit / (1024 * 1024));
       return {
         isValid: false,
-        error: `Audio file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds Google's 20MB limit`,
+        error: `Audio file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
       };
     }
   }
@@ -179,6 +229,56 @@ export async function validateAudio(
     return {
       isValid: false,
       error: 'Invalid audio file: too small or corrupted',
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validates image files for different providers
+ * @param imageBuffer - The image file as a buffer
+ * @param fileSize - The file size in bytes
+ * @param provider - The provider to validate for
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
+ * @returns Promise that resolves to validation result
+ */
+export async function validateImage(
+  imageBuffer: Buffer,
+  fileSize: number,
+  provider: Providers | string,
+  configuredFileSizeLimit?: number,
+): Promise<ImageValidationResult> {
+  if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
+    const providerLimit = mbToBytes(20);
+    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
+
+    if (fileSize > effectiveLimit) {
+      const limitMB = Math.round(effectiveLimit / (1024 * 1024));
+      return {
+        isValid: false,
+        error: `Image file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
+      };
+    }
+  }
+
+  if (provider === Providers.ANTHROPIC) {
+    const providerLimit = mbToBytes(5);
+    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
+
+    if (fileSize > effectiveLimit) {
+      const limitMB = Math.round(effectiveLimit / (1024 * 1024));
+      return {
+        isValid: false,
+        error: `Image file size (${Math.round(fileSize / (1024 * 1024))}MB) exceeds the ${limitMB}MB limit`,
+      };
+    }
+  }
+
+  if (!imageBuffer || imageBuffer.length < 10) {
+    return {
+      isValid: false,
+      error: 'Invalid image file: too small or corrupted',
     };
   }
 

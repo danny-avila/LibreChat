@@ -10,8 +10,8 @@ const {
   ResourceType,
   EModelEndpoint,
   PermissionBits,
-  isAgentsEndpoint,
   checkOpenAIStorage,
+  isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const {
   filterFile,
@@ -376,11 +376,11 @@ router.post('/', async (req, res) => {
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 
-    if (isAgentsEndpoint(metadata.endpoint)) {
-      return await processAgentFileUpload({ req, res, metadata });
+    if (isAssistantsEndpoint(metadata.endpoint)) {
+      return await processFileUpload({ req, res, metadata });
     }
 
-    await processFileUpload({ req, res, metadata });
+    return await processAgentFileUpload({ req, res, metadata });
   } catch (error) {
     let message = 'Error processing file';
     logger.error('[/files] Error processing file:', error);
