@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ErrorTypes, registerPage } from 'librechat-data-provider';
 import { OpenIDIcon, useToastContext } from '@librechat/client';
-import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { useOutletContext, useSearchParams, useLocation } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
@@ -17,6 +17,7 @@ function Login() {
   const { startupConfig } = useOutletContext<TLoginLayoutContext>();
 
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
   // Determine if auto-redirect should be disabled based on the URL parameter
   const disableAutoRedirect = searchParams.get('redirect') === 'false';
 
@@ -24,6 +25,14 @@ function Login() {
   const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
 
   useEffect(() => {
+    // Persist redirect target for flows that leave the SPA (OAuth)
+    const redirectTo = searchParams.get('redirect_to');
+    if (redirectTo) {
+      sessionStorage.setItem('post_login_redirect_to', decodeURIComponent(redirectTo));
+    } else if (location.state && (location.state as any).redirect_to) {
+      sessionStorage.setItem('post_login_redirect_to', (location.state as any).redirect_to);
+    }
+
     const oauthError = searchParams?.get('error');
     if (oauthError && oauthError === ErrorTypes.AUTH_FAILED) {
       showToast({
@@ -34,7 +43,7 @@ function Login() {
       newParams.delete('error');
       setSearchParams(newParams, { replace: true });
     }
-  }, [searchParams, setSearchParams, showToast, localize]);
+  }, [searchParams, setSearchParams, showToast, localize, location.state]);
 
   // Once the disable flag is detected, update local state and remove the parameter from the URL.
   useEffect(() => {
