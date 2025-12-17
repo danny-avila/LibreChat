@@ -87,7 +87,7 @@ export default function DeleteButton({
         <Button
           size="sm"
           variant="outline"
-          aria-label={localize('com_ui_delete') + ' ' + localize('com_ui_agent')}
+          aria-label={localize('com_ui_delete_agent')}
           type="button"
         >
           <div className="flex w-full items-center justify-center gap-2 text-red-500">
@@ -96,7 +96,7 @@ export default function DeleteButton({
         </Button>
       </OGDialogTrigger>
       <OGDialogTemplate
-        title={localize('com_ui_delete') + ' ' + localize('com_ui_agent')}
+        title={localize('com_ui_delete_agent')}
         className="max-w-[450px]"
         main={
           <>

@@ -1,6 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
 const {
+  initializeAgent,
   validateAgentModel,
   getCustomEndpointConfig,
   createSequentialChainEdges,
@@ -15,12 +16,13 @@ const {
   createToolEndCallback,
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
-const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
+const { getConvoFiles } = require('~/models/Conversation');
 const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
+const db = require('~/models');
 
 /**
  * @param {AbortSignal} signal
@@ -109,17 +111,27 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   /** @type {string} */
   const conversationId = req.body.conversationId;
 
-  const primaryConfig = await initializeAgent({
-    req,
-    res,
-    loadTools,
-    requestFiles,
-    conversationId,
-    agent: primaryAgent,
-    endpointOption,
-    allowedProviders,
-    isInitialAgent: true,
-  });
+  const primaryConfig = await initializeAgent(
+    {
+      req,
+      res,
+      loadTools,
+      requestFiles,
+      conversationId,
+      agent: primaryAgent,
+      endpointOption,
+      allowedProviders,
+      isInitialAgent: true,
+    },
+    {
+      getConvoFiles,
+      getFiles: db.getFiles,
+      getUserKey: db.getUserKey,
+      updateFilesUsage: db.updateFilesUsage,
+      getUserKeyValues: db.getUserKeyValues,
+      getToolFilesByIds: db.getToolFilesByIds,
+    },
+  );
 
   const agent_ids = primaryConfig.agent_ids;
   let userMCPAuthMap = primaryConfig.userMCPAuthMap;
@@ -142,16 +154,26 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       throw new Error(validationResult.error?.message);
     }
 
-    const config = await initializeAgent({
-      req,
-      res,
-      agent,
-      loadTools,
-      requestFiles,
-      conversationId,
-      endpointOption,
-      allowedProviders,
-    });
+    const config = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestFiles,
+        conversationId,
+        endpointOption,
+        allowedProviders,
+      },
+      {
+        getConvoFiles,
+        getFiles: db.getFiles,
+        getUserKey: db.getUserKey,
+        updateFilesUsage: db.updateFilesUsage,
+        getUserKeyValues: db.getUserKeyValues,
+        getToolFilesByIds: db.getToolFilesByIds,
+      },
+    );
     if (userMCPAuthMap != null) {
       Object.assign(userMCPAuthMap, config.userMCPAuthMap ?? {});
     } else {
