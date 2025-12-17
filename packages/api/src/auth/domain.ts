@@ -96,3 +96,45 @@ export async function isActionDomainAllowed(
 
   return false;
 }
+
+/**
+ * Extracts domain from MCP server config URL.
+ * Returns null for stdio transports (no URL) or invalid URLs.
+ * @param config - MCP server configuration (accepts any config with optional url field)
+ */
+export function extractMCPServerDomain(config: Record<string, unknown>): string | null {
+  const url = config.url;
+  // Stdio transports don't have URLs - always allowed
+  if (!url || typeof url !== 'string') {
+    return null;
+  }
+
+  try {
+    const parsedUrl = new URL(url);
+    return parsedUrl.hostname.replace(/^www\./i, '');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validates MCP server domain against allowedDomains.
+ * Reuses isActionDomainAllowed for consistent validation logic.
+ * Stdio transports (no URL) are always allowed.
+ * @param config - MCP server configuration with optional url field
+ * @param allowedDomains - List of allowed domains (with wildcard support)
+ */
+export async function isMCPDomainAllowed(
+  config: Record<string, unknown>,
+  allowedDomains?: string[] | null,
+): Promise<boolean> {
+  const domain = extractMCPServerDomain(config);
+
+  // Stdio transports don't have domains - always allowed
+  if (!domain) {
+    return true;
+  }
+
+  // Reuse existing validation logic (includes wildcard support)
+  return isActionDomainAllowed(domain, allowedDomains);
+}

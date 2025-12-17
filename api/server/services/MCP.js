@@ -12,6 +12,7 @@ const {
   MCPOAuthHandler,
   normalizeServerName,
   convertWithResolvedRefs,
+  isMCPDomainAllowed,
 } = require('@librechat/api');
 const {
   Time,
@@ -29,6 +30,7 @@ const {
 const { findToken, createToken, updateToken } = require('~/models');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getLogStores } = require('~/cache');
+const { getAppConfig } = require('./Config');
 
 /**
  * @param {object} params
@@ -223,9 +225,19 @@ async function reconnectServer({ res, user, index, signal, serverName, userMCPAu
  * @param {number} [params.index]
  * @param {AbortSignal} [params.signal]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+ * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
-async function createMCPTools({ res, user, index, signal, serverName, provider, userMCPAuthMap }) {
+async function createMCPTools({
+  res,
+  user,
+  index,
+  signal,
+  serverName,
+  provider,
+  userMCPAuthMap,
+  config,
+}) {
   const result = await reconnectServer({ res, user, index, signal, serverName, userMCPAuthMap });
   if (!result || !result.tools) {
     logger.warn(`[MCP][${serverName}] Failed to reinitialize MCP server.`);
@@ -241,6 +253,7 @@ async function createMCPTools({ res, user, index, signal, serverName, provider, 
       userMCPAuthMap,
       availableTools: result.availableTools,
       toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
+      config,
     });
     if (toolInstance) {
       serverTools.push(toolInstance);
@@ -262,6 +275,7 @@ async function createMCPTools({ res, user, index, signal, serverName, provider, 
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {LCAvailableTools} [params.availableTools]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+ * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTool({
@@ -273,8 +287,24 @@ async function createMCPTool({
   provider,
   userMCPAuthMap,
   availableTools,
+  config,
 }) {
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
+
+  // Runtime domain validation: check if the server's domain is still allowed
+  const serverConfig =
+    config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id));
+  if (serverConfig?.url) {
+    const appConfig = await getAppConfig();
+    const isDomainAllowed = await isMCPDomainAllowed(
+      serverConfig,
+      appConfig?.mcpSettings?.allowedDomains,
+    );
+    if (!isDomainAllowed) {
+      logger.warn(`[MCP][${serverName}] Domain no longer allowed, skipping tool: ${toolName}`);
+      return undefined;
+    }
+  }
 
   /** @type {LCTool | undefined} */
   let toolDefinition = availableTools?.[toolKey]?.function;

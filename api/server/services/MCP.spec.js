@@ -46,6 +46,7 @@ jest.mock('@librechat/agents', () => ({
 const mockRegistryInstance = {
   getOAuthServers: jest.fn(() => Promise.resolve(new Set())),
   getAllServerConfigs: jest.fn(() => Promise.resolve({})),
+  getServerConfig: jest.fn(() => Promise.resolve(null)),
 };
 
 jest.mock('@librechat/api', () => ({
@@ -55,6 +56,7 @@ jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
   normalizeServerName: jest.fn((name) => name),
   convertWithResolvedRefs: jest.fn((params) => params),
+  isMCPDomainAllowed: jest.fn(() => Promise.resolve(true)),
   MCPServersRegistry: {
     getInstance: () => mockRegistryInstance,
   },
