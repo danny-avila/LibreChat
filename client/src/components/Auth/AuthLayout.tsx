@@ -58,9 +58,6 @@ function AuthLayout({
   };
   const logo_url = startupConfig?.interface?.loginImageUrl;
   const logo_text = startupConfig?.interface?.loginText;
-  console.log('Login Image URL:', logo_url);
-  console.log('Login Logo Text:', logo_text);
-  console.log('Startup Config:', startupConfig);
 
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
