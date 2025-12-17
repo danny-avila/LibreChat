@@ -50,6 +50,7 @@ export const createProviderOption = (provider: string) => ({
  **/
 export const getDefaultAgentFormValues = () => ({
   ...defaultAgentFormValues,
+  conversation_starters: [],
   model: localStorage.getItem(LocalStorageKeys.LAST_AGENT_MODEL) ?? '',
   provider: createProviderOption(localStorage.getItem(LocalStorageKeys.LAST_AGENT_PROVIDER) ?? ''),
   avatar_file: null,
