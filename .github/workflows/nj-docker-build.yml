@@ -30,7 +30,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secret.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Redeploy dev from latest
         uses: apideck-libraries/ecs-restart-service@v1
