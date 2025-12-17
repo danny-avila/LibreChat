@@ -24,6 +24,8 @@ const KEYS = {
   runSteps: (streamId: string) => `stream:{${streamId}}:runsteps`,
   /** Running jobs set for cleanup (global set - single slot) */
   runningJobs: 'stream:running',
+  /** User's active jobs set: stream:user:{userId}:jobs */
+  userJobs: (userId: string) => `stream:user:{${userId}}:jobs`,
 };
 
 /**
@@ -137,18 +139,21 @@ export class RedisJobStore implements IJobStore {
     };
 
     const key = KEYS.job(streamId);
+    const userJobsKey = KEYS.userJobs(userId);
 
     // For cluster mode, we can't pipeline keys on different slots
-    // The job key uses hash tag {streamId}, runningJobs is global
+    // The job key uses hash tag {streamId}, runningJobs and userJobs are on different slots
     if (this.isCluster) {
       await this.redis.hmset(key, this.serializeJob(job));
       await this.redis.expire(key, this.ttl.running);
       await this.redis.sadd(KEYS.runningJobs, streamId);
+      await this.redis.sadd(userJobsKey, streamId);
     } else {
       const pipeline = this.redis.pipeline();
       pipeline.hmset(key, this.serializeJob(job));
       pipeline.expire(key, this.ttl.running);
       pipeline.sadd(KEYS.runningJobs, streamId);
+      pipeline.sadd(userJobsKey, streamId);
       await pipeline.exec();
     }
 
@@ -166,8 +171,10 @@ export class RedisJobStore implements IJobStore {
 
   async updateJob(streamId: string, updates: Partial<SerializableJobData>): Promise<void> {
     const key = KEYS.job(streamId);
-    const exists = await this.redis.exists(key);
-    if (!exists) {
+
+    // Get existing job data (needed for userId when removing from user jobs set)
+    const job = await this.getJob(streamId);
+    if (!job) {
       return;
     }
 
@@ -178,12 +185,17 @@ export class RedisJobStore implements IJobStore {
 
     await this.redis.hmset(key, serialized);
 
-    // If status changed to complete/error/aborted, update TTL and remove from running set
+    // If status changed to complete/error/aborted, update TTL and remove from running/user sets
     if (updates.status && ['complete', 'error', 'aborted'].includes(updates.status)) {
+      const userId = job.userId;
+
       // In cluster mode, separate runningJobs (global) from stream-specific keys
       if (this.isCluster) {
         await this.redis.expire(key, this.ttl.completed);
         await this.redis.srem(KEYS.runningJobs, streamId);
+        if (userId) {
+          await this.redis.srem(KEYS.userJobs(userId), streamId);
+        }
 
         if (this.ttl.chunksAfterComplete === 0) {
           await this.redis.del(KEYS.chunks(streamId));
@@ -200,6 +212,9 @@ export class RedisJobStore implements IJobStore {
         const pipeline = this.redis.pipeline();
         pipeline.expire(key, this.ttl.completed);
         pipeline.srem(KEYS.runningJobs, streamId);
+        if (userId) {
+          pipeline.srem(KEYS.userJobs(userId), streamId);
+        }
 
         if (this.ttl.chunksAfterComplete === 0) {
           pipeline.del(KEYS.chunks(streamId));
@@ -222,6 +237,10 @@ export class RedisJobStore implements IJobStore {
     // Clear local cache
     this.localGraphCache.delete(streamId);
 
+    // Get job to find userId for user jobs cleanup
+    const job = await this.getJob(streamId);
+    const userId = job?.userId;
+
     // In cluster mode, separate runningJobs (global) from stream-specific keys (same slot)
     if (this.isCluster) {
       // Stream-specific keys all hash to same slot due to {streamId}
@@ -230,14 +249,20 @@ export class RedisJobStore implements IJobStore {
       pipeline.del(KEYS.chunks(streamId));
       pipeline.del(KEYS.runSteps(streamId));
       await pipeline.exec();
-      // Global set is on different slot - execute separately
+      // Global sets are on different slots - execute separately
       await this.redis.srem(KEYS.runningJobs, streamId);
+      if (userId) {
+        await this.redis.srem(KEYS.userJobs(userId), streamId);
+      }
     } else {
       const pipeline = this.redis.pipeline();
       pipeline.del(KEYS.job(streamId));
       pipeline.del(KEYS.chunks(streamId));
       pipeline.del(KEYS.runSteps(streamId));
       pipeline.srem(KEYS.runningJobs, streamId);
+      if (userId) {
+        pipeline.srem(KEYS.userJobs(userId), streamId);
+      }
       await pipeline.exec();
     }
     logger.debug(`[RedisJobStore] Deleted job: ${streamId}`);
@@ -325,6 +350,47 @@ export class RedisJobStore implements IJobStore {
     // For other statuses, we'd need to scan - return 0 for now
     // In production, consider maintaining separate sets per status if needed
     return 0;
+  }
+
+  /**
+   * Get active job IDs for a user.
+   * Returns conversation IDs of running jobs belonging to the user.
+   * Also performs self-healing cleanup: removes stale entries for jobs that no longer exist.
+   *
+   * @param userId - The user ID to query
+   * @returns Array of conversation IDs with active jobs
+   */
+  async getActiveJobIdsByUser(userId: string): Promise<string[]> {
+    const userJobsKey = KEYS.userJobs(userId);
+    const trackedIds = await this.redis.smembers(userJobsKey);
+
+    if (trackedIds.length === 0) {
+      return [];
+    }
+
+    const activeIds: string[] = [];
+    const staleIds: string[] = [];
+
+    for (const streamId of trackedIds) {
+      const job = await this.getJob(streamId);
+      // Only include if job exists AND is still running
+      if (job && job.status === 'running') {
+        activeIds.push(streamId);
+      } else {
+        // Self-healing: job completed/deleted but mapping wasn't cleaned - mark for removal
+        staleIds.push(streamId);
+      }
+    }
+
+    // Clean up stale entries
+    if (staleIds.length > 0) {
+      await this.redis.srem(userJobsKey, ...staleIds);
+      logger.debug(
+        `[RedisJobStore] Self-healed ${staleIds.length} stale job entries for user ${userId}`,
+      );
+    }
+
+    return activeIds;
   }
 
   async destroy(): Promise<void> {

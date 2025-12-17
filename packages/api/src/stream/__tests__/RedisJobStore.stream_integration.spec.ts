@@ -613,6 +613,273 @@ describe('RedisJobStore Integration Tests', () => {
     });
   });
 
+  describe('Active Jobs by User', () => {
+    test('should return active job IDs for a user', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `test-user-${Date.now()}`;
+      const streamId1 = `stream-1-${Date.now()}`;
+      const streamId2 = `stream-2-${Date.now()}`;
+
+      // Create two jobs for the same user
+      await store.createJob(streamId1, userId, streamId1);
+      await store.createJob(streamId2, userId, streamId2);
+
+      // Get active jobs for user
+      const activeJobs = await store.getActiveJobIdsByUser(userId);
+
+      expect(activeJobs).toHaveLength(2);
+      expect(activeJobs).toContain(streamId1);
+      expect(activeJobs).toContain(streamId2);
+
+      await store.destroy();
+    });
+
+    test('should return empty array for user with no jobs', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `nonexistent-user-${Date.now()}`;
+
+      const activeJobs = await store.getActiveJobIdsByUser(userId);
+
+      expect(activeJobs).toHaveLength(0);
+
+      await store.destroy();
+    });
+
+    test('should not return completed jobs', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `test-user-${Date.now()}`;
+      const streamId1 = `stream-1-${Date.now()}`;
+      const streamId2 = `stream-2-${Date.now()}`;
+
+      // Create two jobs
+      await store.createJob(streamId1, userId, streamId1);
+      await store.createJob(streamId2, userId, streamId2);
+
+      // Complete one job
+      await store.updateJob(streamId1, { status: 'complete', completedAt: Date.now() });
+
+      // Get active jobs - should only return the running one
+      const activeJobs = await store.getActiveJobIdsByUser(userId);
+
+      expect(activeJobs).toHaveLength(1);
+      expect(activeJobs).toContain(streamId2);
+      expect(activeJobs).not.toContain(streamId1);
+
+      await store.destroy();
+    });
+
+    test('should not return aborted jobs', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `test-user-${Date.now()}`;
+      const streamId = `stream-${Date.now()}`;
+
+      // Create a job and abort it
+      await store.createJob(streamId, userId, streamId);
+      await store.updateJob(streamId, { status: 'aborted', completedAt: Date.now() });
+
+      // Get active jobs - should be empty
+      const activeJobs = await store.getActiveJobIdsByUser(userId);
+
+      expect(activeJobs).toHaveLength(0);
+
+      await store.destroy();
+    });
+
+    test('should not return error jobs', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `test-user-${Date.now()}`;
+      const streamId = `stream-${Date.now()}`;
+
+      // Create a job with error status
+      await store.createJob(streamId, userId, streamId);
+      await store.updateJob(streamId, {
+        status: 'error',
+        error: 'Test error',
+        completedAt: Date.now(),
+      });
+
+      // Get active jobs - should be empty
+      const activeJobs = await store.getActiveJobIdsByUser(userId);
+
+      expect(activeJobs).toHaveLength(0);
+
+      await store.destroy();
+    });
+
+    test('should perform self-healing cleanup of stale entries', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `test-user-${Date.now()}`;
+      const streamId = `stream-${Date.now()}`;
+      const staleStreamId = `stale-stream-${Date.now()}`;
+
+      // Create a real job
+      await store.createJob(streamId, userId, streamId);
+
+      // Manually add a stale entry to the user's job set (simulating orphaned data)
+      const userJobsKey = `stream:user:{${userId}}:jobs`;
+      await ioredisClient.sadd(userJobsKey, staleStreamId);
+
+      // Verify both entries exist in the set
+      const beforeCleanup = await ioredisClient.smembers(userJobsKey);
+      expect(beforeCleanup).toContain(streamId);
+      expect(beforeCleanup).toContain(staleStreamId);
+
+      // Get active jobs - should trigger self-healing
+      const activeJobs = await store.getActiveJobIdsByUser(userId);
+
+      // Should only return the real job
+      expect(activeJobs).toHaveLength(1);
+      expect(activeJobs).toContain(streamId);
+
+      // Verify stale entry was removed
+      const afterCleanup = await ioredisClient.smembers(userJobsKey);
+      expect(afterCleanup).toContain(streamId);
+      expect(afterCleanup).not.toContain(staleStreamId);
+
+      await store.destroy();
+    });
+
+    test('should isolate jobs between different users', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId1 = `user-1-${Date.now()}`;
+      const userId2 = `user-2-${Date.now()}`;
+      const streamId1 = `stream-1-${Date.now()}`;
+      const streamId2 = `stream-2-${Date.now()}`;
+
+      // Create jobs for different users
+      await store.createJob(streamId1, userId1, streamId1);
+      await store.createJob(streamId2, userId2, streamId2);
+
+      // Get active jobs for user 1
+      const user1Jobs = await store.getActiveJobIdsByUser(userId1);
+      expect(user1Jobs).toHaveLength(1);
+      expect(user1Jobs).toContain(streamId1);
+      expect(user1Jobs).not.toContain(streamId2);
+
+      // Get active jobs for user 2
+      const user2Jobs = await store.getActiveJobIdsByUser(userId2);
+      expect(user2Jobs).toHaveLength(1);
+      expect(user2Jobs).toContain(streamId2);
+      expect(user2Jobs).not.toContain(streamId1);
+
+      await store.destroy();
+    });
+
+    test('should work across multiple store instances (horizontal scaling)', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+
+      // Simulate two server instances
+      const instance1 = new RedisJobStore(ioredisClient);
+      const instance2 = new RedisJobStore(ioredisClient);
+
+      await instance1.initialize();
+      await instance2.initialize();
+
+      const userId = `test-user-${Date.now()}`;
+      const streamId = `stream-${Date.now()}`;
+
+      // Instance 1 creates a job
+      await instance1.createJob(streamId, userId, streamId);
+
+      // Instance 2 should see the active job
+      const activeJobs = await instance2.getActiveJobIdsByUser(userId);
+      expect(activeJobs).toHaveLength(1);
+      expect(activeJobs).toContain(streamId);
+
+      // Instance 1 completes the job
+      await instance1.updateJob(streamId, { status: 'complete', completedAt: Date.now() });
+
+      // Instance 2 should no longer see the job as active
+      const activeJobsAfter = await instance2.getActiveJobIdsByUser(userId);
+      expect(activeJobsAfter).toHaveLength(0);
+
+      await instance1.destroy();
+      await instance2.destroy();
+    });
+
+    test('should clean up user jobs set when job is deleted', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `test-user-${Date.now()}`;
+      const streamId = `stream-${Date.now()}`;
+
+      // Create a job
+      await store.createJob(streamId, userId, streamId);
+
+      // Verify job is in active list
+      let activeJobs = await store.getActiveJobIdsByUser(userId);
+      expect(activeJobs).toContain(streamId);
+
+      // Delete the job
+      await store.deleteJob(streamId);
+
+      // Job should no longer be in active list
+      activeJobs = await store.getActiveJobIdsByUser(userId);
+      expect(activeJobs).not.toContain(streamId);
+
+      await store.destroy();
+    });
+  });
+
   describe('Local Graph Cache Optimization', () => {
     test('should use local cache when available', async () => {
       if (!ioredisClient) {
