@@ -24,3 +24,16 @@ jobs:
         with:
           push: true
           tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/newjersey/librechat:${{ github.sha }}
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secret.AWS_REGION }}
+
+      - name: Redeploy dev from latest
+        uses: apideck-libraries/ecs-restart-service@v1
+        with: 
+          service: ${{ secrets.DEV_SERVICE_NAME }}
+          cluster: ${{ secrets.DEV_CLUSTER_NAME }}
