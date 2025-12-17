@@ -106,18 +106,6 @@ export class InMemoryJobStore implements IJobStore {
   }
 
   async deleteJob(streamId: string): Promise<void> {
-    // Remove from user's job set before deleting
-    const job = this.jobs.get(streamId);
-    if (job) {
-      const userJobs = this.userJobMap.get(job.userId);
-      if (userJobs) {
-        userJobs.delete(streamId);
-        if (userJobs.size === 0) {
-          this.userJobMap.delete(job.userId);
-        }
-      }
-    }
-
     this.jobs.delete(streamId);
     this.contentState.delete(streamId);
     logger.debug(`[InMemoryJobStore] Deleted job: ${streamId}`);
