@@ -16,6 +16,29 @@ const { Agent, AclEntry } = require('~/db/models');
 const { getActions } = require('./Action');
 
 /**
+ * Extracts unique MCP server names from tools array
+ * Tools format: "toolName_mcp_serverName" or "sys__server__sys_mcp_serverName"
+ * @param {string[]} tools - Array of tool identifiers
+ * @returns {string[]} Array of unique MCP server names
+ */
+const extractMCPServerNames = (tools) => {
+  if (!tools || !Array.isArray(tools)) {
+    return [];
+  }
+  const serverNames = new Set();
+  for (const tool of tools) {
+    if (!tool || !tool.includes(mcp_delimiter)) {
+      continue;
+    }
+    const parts = tool.split(mcp_delimiter);
+    if (parts.length >= 2) {
+      serverNames.add(parts[parts.length - 1]);
+    }
+  }
+  return Array.from(serverNames);
+};
+
+/**
  * Create an agent with the provided data.
  * @param {Object} agentData - The agent data to create.
  * @returns {Promise<Agent>} The created agent document as a plain object.
@@ -34,6 +57,7 @@ const createAgent = async (agentData) => {
       },
     ],
     category: agentData.category || 'general',
+    mcpServerNames: extractMCPServerNames(agentData.tools),
   };
 
   return (await Agent.create(initialAgentData)).toObject();
@@ -353,6 +377,13 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
       ...versionData
     } = currentAgent.toObject();
     const { $push, $pull, $addToSet, ...directUpdates } = updateData;
+
+    // Sync mcpServerNames when tools are updated
+    if (directUpdates.tools !== undefined) {
+      const mcpServerNames = extractMCPServerNames(directUpdates.tools);
+      directUpdates.mcpServerNames = mcpServerNames;
+      updateData.mcpServerNames = mcpServerNames; // Also update the original updateData
+    }
 
     let actionsHash = null;
 

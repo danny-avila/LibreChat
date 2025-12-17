@@ -74,7 +74,7 @@ function NavContent({ links, isCollapsed, resize }: Omit<NavProps, 'defaultActiv
                                 }
                               }}
                             >
-                              <link.icon className="mr-2 h-4 w-4" />
+                              <link.icon className="mr-2 h-4 w-4" aria-hidden="true" />
                               {localize(link.title)}
                               {link.label != null && link.label && (
                                 <span

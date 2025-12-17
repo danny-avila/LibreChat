@@ -119,6 +119,58 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
+   * Get effective permissions for multiple resources in a single query (BATCH)
+   * Returns a map of resourceId → effectivePermissionBits
+   *
+   * @param principalsList - List of principals (user + groups + public)
+   * @param resourceType - The type of resource ('MCPSERVER', 'AGENT', etc.)
+   * @param resourceIds - Array of resource IDs to check
+   * @returns {Promise<Map<string, number>>} Map of resourceId → permission bits
+   *
+   * @example
+   * const principals = await getUserPrincipals({ userId, role });
+   * const serverIds = [id1, id2, id3];
+   * const permMap = await getEffectivePermissionsForResources(
+   *   principals,
+   *   ResourceType.MCPSERVER,
+   *   serverIds
+   * );
+   * // permMap.get(id1.toString()) → 7 (VIEW|EDIT|DELETE)
+   */
+  async function getEffectivePermissionsForResources(
+    principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
+    resourceType: string,
+    resourceIds: Array<string | Types.ObjectId>,
+  ): Promise<Map<string, number>> {
+    if (!Array.isArray(resourceIds) || resourceIds.length === 0) {
+      return new Map();
+    }
+
+    const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
+    const principalsQuery = principalsList.map((p) => ({
+      principalType: p.principalType,
+      ...(p.principalType !== PrincipalType.PUBLIC && { principalId: p.principalId }),
+    }));
+
+    // Batch query for all resources at once
+    const aclEntries = await AclEntry.find({
+      $or: principalsQuery,
+      resourceType,
+      resourceId: { $in: resourceIds },
+    }).lean();
+
+    // Compute effective permissions per resource
+    const permissionsMap = new Map<string, number>();
+    for (const entry of aclEntries) {
+      const rid = entry.resourceId.toString();
+      const currentBits = permissionsMap.get(rid) || 0;
+      permissionsMap.set(rid, currentBits | entry.permBits);
+    }
+
+    return permissionsMap;
+  }
+
+  /**
    * Grant permission to a principal for a resource
    * @param principalType - The type of principal ('user', 'group', 'public')
    * @param principalId - The ID of the principal (null for 'public')
@@ -301,6 +353,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     findEntriesByPrincipalsAndResource,
     hasPermission,
     getEffectivePermissions,
+    getEffectivePermissionsForResources,
     grantPermission,
     revokePermission,
     modifyPermissionBits,

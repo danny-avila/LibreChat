@@ -1,4 +1,4 @@
-# v0.8.1
+# v0.8.2-rc1
 
 # Base node image
 FROM node:22-alpine AS node
@@ -14,7 +14,7 @@ RUN npm install -g npm@latest
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
 
 # Add `uv` for extended MCP support
-COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.9.5-python3.12-alpine /usr/local/bin/uv /usr/local/bin/uvx /bin/
 RUN uv --version
 
 RUN mkdir -p /app && chown node:node /app
@@ -33,7 +33,7 @@ RUN \
     # Allow mounting of these files, which have no default
     touch .env ; \
     # Create directories for the volumes to inherit the correct permissions
-    mkdir -p /app/client/public/images /app/api/logs /app/uploads ; \
+    mkdir -p /app/client/public/images /app/logs /app/uploads ; \
     npm config set fetch-retry-maxtimeout 600000 ; \
     npm config set fetch-retries 5 ; \
     npm config set fetch-retry-mintimeout 15000 ; \

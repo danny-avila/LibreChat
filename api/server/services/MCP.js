@@ -20,12 +20,15 @@ const {
   ContentTypes,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
-const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
+const {
+  getMCPManager,
+  getFlowStateManager,
+  getOAuthReconnectionManager,
+  getMCPServersRegistry,
+} = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
 const { reinitMCPServer } = require('./Tools/mcp');
-const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
-const { mcpServersRegistry } = require('@librechat/api');
 
 /**
  * @param {object} params
@@ -435,8 +438,7 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
  * @returns {Object} Object containing mcpConfig, appConnections, userConnections, and oauthServers
  */
 async function getMCPSetupData(userId) {
-  const config = await getAppConfig();
-  const mcpConfig = config?.mcpConfig;
+  const mcpConfig = await getMCPServersRegistry().getAllServerConfigs(userId);
 
   if (!mcpConfig) {
     throw new Error('MCP config not found');
@@ -446,12 +448,15 @@ async function getMCPSetupData(userId) {
   /** @type {Map<string, import('@librechat/api').MCPConnection>} */
   let appConnections = new Map();
   try {
-    appConnections = (await mcpManager.appConnections?.getAll()) || new Map();
+    // Use getLoaded() instead of getAll() to avoid forcing connection creation
+    // getAll() creates connections for all servers, which is problematic for servers
+    // that require user context (e.g., those with {{LIBRECHAT_USER_ID}} placeholders)
+    appConnections = (await mcpManager.appConnections?.getLoaded()) || new Map();
   } catch (error) {
     logger.error(`[MCP][User: ${userId}] Error getting app connections:`, error);
   }
   const userConnections = mcpManager.getUserConnections(userId) || new Map();
-  const oauthServers = await mcpServersRegistry.getOAuthServers();
+  const oauthServers = await getMCPServersRegistry().getOAuthServers(userId);
 
   return {
     mcpConfig,
@@ -524,24 +529,26 @@ async function checkOAuthFlowStatus(userId, serverName) {
  * Get connection status for a specific MCP server
  * @param {string} userId - The user ID
  * @param {string} serverName - The server name
- * @param {Map} appConnections - App-level connections
- * @param {Map} userConnections - User-level connections
+ * @param {import('@librechat/api').ParsedServerConfig} config - The server configuration
+ * @param {Map<string, import('@librechat/api').MCPConnection>} appConnections - App-level connections
+ * @param {Map<string, import('@librechat/api').MCPConnection>} userConnections - User-level connections
  * @param {Set} oauthServers - Set of OAuth servers
  * @returns {Object} Object containing requiresOAuth and connectionState
  */
 async function getServerConnectionStatus(
   userId,
   serverName,
+  config,
   appConnections,
   userConnections,
   oauthServers,
 ) {
-  const getConnectionState = () =>
-    appConnections.get(serverName)?.connectionState ??
-    userConnections.get(serverName)?.connectionState ??
-    'disconnected';
+  const connection = appConnections.get(serverName) || userConnections.get(serverName);
+  const isStaleOrDoNotExist = connection ? connection?.isStale(config.updatedAt) : true;
 
-  const baseConnectionState = getConnectionState();
+  const baseConnectionState = isStaleOrDoNotExist
+    ? 'disconnected'
+    : connection?.connectionState || 'disconnected';
   let finalConnectionState = baseConnectionState;
 
   // connection state overrides specific to OAuth servers

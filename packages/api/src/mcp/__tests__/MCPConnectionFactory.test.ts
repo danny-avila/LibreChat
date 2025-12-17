@@ -49,6 +49,7 @@ describe('MCPConnectionFactory', () => {
       createFlow: jest.fn(),
       createFlowWithHandler: jest.fn(),
       getFlowState: jest.fn(),
+      deleteFlow: jest.fn().mockResolvedValue(true),
     } as unknown as jest.Mocked<FlowStateManager<MCPOAuthTokens | null>>;
 
     mockConnectionInstance = {
@@ -263,6 +264,78 @@ describe('MCPConnectionFactory', () => {
         'oauthFailed',
         expect.objectContaining({
           message: 'OAuth flow initiated - return early',
+        }),
+      );
+    });
+
+    it('should delete existing flow before creating new OAuth flow to prevent stale codeVerifier', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+        user: mockUser,
+      };
+
+      const oauthOptions = {
+        user: mockUser,
+        useOAuth: true,
+        returnOnOAuth: true,
+        oauthStart: jest.fn(),
+        flowManager: mockFlowManager,
+      };
+
+      const mockFlowData = {
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'user123:test-server',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'test-state',
+          codeVerifier: 'new-code-verifier-xyz',
+          clientInfo: { client_id: 'test-client' },
+          metadata: {
+            authorization_endpoint: 'https://auth.example.com/authorize',
+            token_endpoint: 'https://auth.example.com/token',
+            issuer: 'https://api.example.com',
+          },
+        },
+      };
+
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
+      mockFlowManager.deleteFlow.mockResolvedValue(true);
+      mockFlowManager.createFlow.mockRejectedValue(new Error('Timeout expected'));
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected to fail due to connection not established
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      // Verify deleteFlow was called with correct parameters
+      expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('user123:test-server', 'mcp_oauth');
+
+      // Verify deleteFlow was called before createFlow
+      const deleteCallOrder = mockFlowManager.deleteFlow.mock.invocationCallOrder[0];
+      const createCallOrder = mockFlowManager.createFlow.mock.invocationCallOrder[0];
+      expect(deleteCallOrder).toBeLessThan(createCallOrder);
+
+      // Verify createFlow was called with fresh metadata
+      expect(mockFlowManager.createFlow).toHaveBeenCalledWith(
+        'user123:test-server',
+        'mcp_oauth',
+        expect.objectContaining({
+          codeVerifier: 'new-code-verifier-xyz',
         }),
       );
     });

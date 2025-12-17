@@ -9,5 +9,7 @@ export const mcpConfig = {
   OAUTH_DETECTION_TIMEOUT: math(process.env.MCP_OAUTH_DETECTION_TIMEOUT ?? 5000),
   CONNECTION_CHECK_TTL: math(process.env.MCP_CONNECTION_CHECK_TTL ?? 60000),
   /** Idle timeout (ms) after which user connections are disconnected. Default: 15 minutes */
-  USER_CONNECTION_IDLE_TIMEOUT: math(process.env.MCP_USER_CONNECTION_IDLE_TIMEOUT ?? 15 * 60 * 1000),
+  USER_CONNECTION_IDLE_TIMEOUT: math(
+    process.env.MCP_USER_CONNECTION_IDLE_TIMEOUT ?? 15 * 60 * 1000,
+  ),
 };
