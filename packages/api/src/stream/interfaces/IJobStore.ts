@@ -122,6 +122,16 @@ export interface IJobStore {
   /** Destroy the store and release resources */
   destroy(): Promise<void>;
 
+  /**
+   * Get active job IDs for a user.
+   * Returns conversation IDs of running jobs belonging to the user.
+   * Also performs self-healing cleanup of stale entries.
+   *
+   * @param userId - The user ID to query
+   * @returns Array of conversation IDs with active jobs
+   */
+  getActiveJobIdsByUser(userId: string): Promise<string[]>;
+
   // ===== Content State Methods =====
   // These methods manage volatile content state tied to each job.
   // In-memory: Uses WeakRef to graph for live access

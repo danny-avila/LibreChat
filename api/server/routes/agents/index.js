@@ -114,6 +114,17 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 });
 
 /**
+ * @route GET /chat/active
+ * @desc Get all active generation job IDs for the current user
+ * @access Private
+ * @returns { activeJobIds: string[] }
+ */
+router.get('/chat/active', async (req, res) => {
+  const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(req.user.id);
+  res.json({ activeJobIds });
+});
+
+/**
  * @route GET /chat/status/:conversationId
  * @desc Check if there's an active generation job for a conversation
  * @access Private

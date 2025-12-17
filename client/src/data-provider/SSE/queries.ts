@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { request } from 'librechat-data-provider';
+import { QueryKeys, request, dataService } from 'librechat-data-provider';
 import type { Agents } from 'librechat-data-provider';
 
 export interface StreamStatusResponse {
@@ -40,6 +40,38 @@ export function useStreamStatus(conversationId: string | undefined, enabled = tr
     staleTime: 1000, // Consider stale after 1 second
     refetchOnMount: true,
     refetchOnWindowFocus: true,
+    retry: false,
+  });
+}
+
+/**
+ * Query key for active jobs
+ */
+export const activeJobsQueryKey = [QueryKeys.activeJobs] as const;
+
+/**
+ * React Query hook for getting all active job IDs for the current user.
+ * Used to show generation indicators in the conversation list.
+ *
+ * Key behaviors:
+ * - Fetches on mount to get initial state (handles page refresh)
+ * - Refetches on window focus (handles multi-tab scenarios)
+ * - Optimistic updates from useResumableSSE when jobs start/complete
+ * - Polls every 5s while there are active jobs (catches completions when navigated away)
+ */
+export function useActiveJobs(enabled = true) {
+  return useQuery({
+    queryKey: activeJobsQueryKey,
+    queryFn: () => dataService.getActiveJobs(),
+    enabled,
+    staleTime: 5_000, // 5s - short to catch completions quickly
+    refetchOnMount: true,
+    refetchOnWindowFocus: true, // Catch up on tab switch (multi-tab scenario)
+    // Poll every 5s while there are active jobs to catch completions when navigated away
+    refetchInterval: (data) => {
+      const hasActiveJobs = (data?.activeJobIds?.length ?? 0) > 0;
+      return hasActiveJobs ? 5_000 : false;
+    },
     retry: false,
   });
 }

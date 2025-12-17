@@ -226,6 +226,8 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
   return url;
 };
 
+export const activeJobs = () => `${BASE_URL}/api/agents/chat/active`;
+
 export const mcp = {
   tools: `${BASE_URL}/api/mcp/tools`,
   servers: `${BASE_URL}/api/mcp/servers`,

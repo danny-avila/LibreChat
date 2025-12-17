@@ -26,6 +26,9 @@ export class InMemoryJobStore implements IJobStore {
   private contentState = new Map<string, ContentState>();
   private cleanupInterval: NodeJS.Timeout | null = null;
 
+  /** Maps userId -> Set of streamIds (conversationIds) for active jobs */
+  private userJobMap = new Map<string, Set<string>>();
+
   /** Time to keep completed jobs before cleanup (0 = immediate) */
   private ttlAfterComplete = 0;
 
@@ -76,6 +79,15 @@ export class InMemoryJobStore implements IJobStore {
     };
 
     this.jobs.set(streamId, job);
+
+    // Track job by userId for efficient user-scoped queries
+    let userJobs = this.userJobMap.get(userId);
+    if (!userJobs) {
+      userJobs = new Set();
+      this.userJobMap.set(userId, userJobs);
+    }
+    userJobs.add(streamId);
+
     logger.debug(`[InMemoryJobStore] Created job: ${streamId}`);
 
     return job;
@@ -94,6 +106,18 @@ export class InMemoryJobStore implements IJobStore {
   }
 
   async deleteJob(streamId: string): Promise<void> {
+    // Remove from user's job set before deleting
+    const job = this.jobs.get(streamId);
+    if (job) {
+      const userJobs = this.userJobMap.get(job.userId);
+      if (userJobs) {
+        userJobs.delete(streamId);
+        if (userJobs.size === 0) {
+          this.userJobMap.delete(job.userId);
+        }
+      }
+    }
+
     this.jobs.delete(streamId);
     this.contentState.delete(streamId);
     logger.debug(`[InMemoryJobStore] Deleted job: ${streamId}`);
@@ -178,7 +202,40 @@ export class InMemoryJobStore implements IJobStore {
     }
     this.jobs.clear();
     this.contentState.clear();
+    this.userJobMap.clear();
     logger.debug('[InMemoryJobStore] Destroyed');
+  }
+
+  /**
+   * Get active job IDs for a user.
+   * Returns conversation IDs of running jobs belonging to the user.
+   * Also performs self-healing cleanup: removes stale entries for jobs that no longer exist.
+   */
+  async getActiveJobIdsByUser(userId: string): Promise<string[]> {
+    const trackedIds = this.userJobMap.get(userId);
+    if (!trackedIds || trackedIds.size === 0) {
+      return [];
+    }
+
+    const activeIds: string[] = [];
+
+    for (const streamId of trackedIds) {
+      const job = this.jobs.get(streamId);
+      // Only include if job exists AND is still running
+      if (job && job.status === 'running') {
+        activeIds.push(streamId);
+      } else {
+        // Self-healing: job completed/deleted but mapping wasn't cleaned - fix it now
+        trackedIds.delete(streamId);
+      }
+    }
+
+    // Clean up empty set
+    if (trackedIds.size === 0) {
+      this.userJobMap.delete(userId);
+    }
+
+    return activeIds;
   }
 
   // ===== Content State Methods =====

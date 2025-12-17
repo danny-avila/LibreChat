@@ -904,6 +904,18 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Get active job IDs for a user.
+   * Returns conversation IDs of running jobs belonging to the user.
+   * Performs self-healing cleanup of stale entries.
+   *
+   * @param userId - The user ID to query
+   * @returns Array of conversation IDs with active jobs
+   */
+  async getActiveJobIdsForUser(userId: string): Promise<string[]> {
+    return this.jobStore.getActiveJobIdsByUser(userId);
+  }
+
+  /**
    * Destroy the manager.
    * Cleans up all resources including runtime state, buffers, and stores.
    */

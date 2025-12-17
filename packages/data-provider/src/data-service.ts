@@ -1037,3 +1037,12 @@ export function getGraphApiToken(params: q.GraphTokenParams): Promise<q.GraphTok
 export function getDomainServerBaseUrl(): string {
   return `${endpoints.apiBaseUrl()}/api`;
 }
+
+/* Active Jobs */
+export interface ActiveJobsResponse {
+  activeJobIds: string[];
+}
+
+export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
+  return request.get(endpoints.activeJobs());
+};
