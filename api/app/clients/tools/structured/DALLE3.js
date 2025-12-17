@@ -5,9 +5,8 @@ const { v4: uuidv4 } = require('uuid');
 const { ProxyAgent, fetch } = require('undici');
 const { Tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
-const { getImageBasename } = require('@librechat/api');
+const { getImageBasename, extractBaseURL } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
-const extractBaseURL = require('~/utils/extractBaseURL');
 
 const displayMessage =
   "DALL-E displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";

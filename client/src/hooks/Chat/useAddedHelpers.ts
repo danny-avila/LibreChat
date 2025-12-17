@@ -31,7 +31,7 @@ export default function useAddedHelpers({
     store.messagesSiblingIdxFamily(latestMessage?.parentMessageId ?? null),
   );
 
-  const queryParam = paramId === 'new' ? paramId : conversation?.conversationId ?? paramId ?? '';
+  const queryParam = paramId === 'new' ? paramId : (conversation?.conversationId ?? paramId ?? '');
 
   const setMessages = useCallback(
     (messages: TMessage[]) => {

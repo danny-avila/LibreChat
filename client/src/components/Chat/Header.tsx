@@ -1,17 +1,18 @@
 import { useMemo } from 'react';
 import { useMediaQuery } from '@librechat/client';
 import { useOutletContext } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ContextType } from '~/common';
-import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { PresetsMenu, HeaderNewChat, OpenSidebar } from './Menus';
+import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
 import { useHasAccess } from '~/hooks';
-import { AnimatePresence, motion } from 'framer-motion';
+import { cn } from '~/utils';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -43,7 +44,7 @@ export default function Header() {
           <AnimatePresence initial={false}>
             {!navVisible && (
               <motion.div
-                className={`flex items-center gap-2`}
+                className="flex items-center gap-2"
                 initial={{ width: 0, opacity: 0 }}
                 animate={{ width: 'auto', opacity: 1 }}
                 exit={{ width: 0, opacity: 0 }}
@@ -55,22 +56,30 @@ export default function Header() {
               </motion.div>
             )}
           </AnimatePresence>
-
-          <div className={navVisible ? 'flex items-center gap-2' : 'ml-2 flex items-center gap-2'}>
-            <ModelSelector startupConfig={startupConfig} />
-            {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
-            {hasAccessToBookmarks === true && <BookmarkMenu />}
-            {hasAccessToMultiConvo === true && <AddMultiConvo />}
-            {isSmallScreen && (
-              <>
-                <ExportAndShareMenu
-                  isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
-                />
-                <TemporaryChat />
-              </>
-            )}
-          </div>
+          {!(navVisible && isSmallScreen) && (
+            <div
+              className={cn(
+                'flex items-center gap-2',
+                !isSmallScreen ? 'transition-all duration-200 ease-in-out' : '',
+                !navVisible && !isSmallScreen ? 'pl-2' : '',
+              )}
+            >
+              <ModelSelector startupConfig={startupConfig} />
+              {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
+              {hasAccessToBookmarks === true && <BookmarkMenu />}
+              {hasAccessToMultiConvo === true && <AddMultiConvo />}
+              {isSmallScreen && (
+                <>
+                  <ExportAndShareMenu
+                    isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
+                  />
+                  <TemporaryChat />
+                </>
+              )}
+            </div>
+          )}
         </div>
+
         {!isSmallScreen && (
           <div className="flex items-center gap-2">
             <ExportAndShareMenu

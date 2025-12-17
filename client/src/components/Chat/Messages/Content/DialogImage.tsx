@@ -204,7 +204,7 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
                 className="h-10 w-10 p-0 hover:bg-surface-hover"
                 aria-label={localize('com_ui_close')}
               >
-                <X className="size-7 sm:size-6" />
+                <X className="size-7 sm:size-6" aria-hidden="true" />
               </Button>
             }
           />
@@ -219,7 +219,7 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
                     className="h-10 w-10 p-0"
                     aria-label={localize('com_ui_reset_zoom')}
                   >
-                    <RotateCcw className="size-6" />
+                    <RotateCcw className="size-6" aria-hidden="true" />
                   </Button>
                 }
               />
@@ -233,7 +233,7 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
                   className="h-10 w-10 p-0"
                   aria-label={localize('com_ui_download')}
                 >
-                  <ArrowDownToLine className="size-6" />
+                  <ArrowDownToLine className="size-6" aria-hidden="true" />
                 </Button>
               }
             />
@@ -247,9 +247,9 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
                   aria-label={imageDetailsLabel}
                 >
                   {isPromptOpen ? (
-                    <PanelLeftOpen className="size-7 sm:size-6" />
+                    <PanelLeftOpen className="size-7 sm:size-6" aria-hidden="true" />
                   ) : (
-                    <PanelLeftClose className="size-7 sm:size-6" />
+                    <PanelLeftClose className="size-7 sm:size-6" aria-hidden="true" />
                   )}
                 </Button>
               }
@@ -322,7 +322,7 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
                 variant="ghost"
                 className="h-12 w-12 p-0"
               >
-                <X className="size-6" />
+                <X className="size-6" aria-hidden="true" />
               </Button>
             </div>
 
