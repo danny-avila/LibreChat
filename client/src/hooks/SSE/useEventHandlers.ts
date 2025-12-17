@@ -21,7 +21,6 @@ import type {
 } from 'librechat-data-provider';
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { InfiniteData } from '@tanstack/react-query';
-import type { TGenTitleMutation } from '~/data-provider';
 import type { SetterOrUpdater, Resetter } from 'recoil';
 import type { ConversationCursorData } from '~/utils';
 import {
@@ -54,7 +53,6 @@ type TSyncData = {
 
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
-  genTitle?: TGenTitleMutation;
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
   setMessages: (messages: TMessage[]) => void;
   getMessages: () => TMessage[] | undefined;
@@ -167,7 +165,6 @@ export const getConvoTitle = ({
 };
 
 export default function useEventHandlers({
-  genTitle,
   setMessages,
   getMessages,
   setCompleted,
@@ -258,13 +255,6 @@ export default function useEventHandlers({
         removeConvoFromAllQueries(queryClient, submission.conversation.conversationId as string);
       }
 
-      // refresh title
-      if (genTitle && isNewConvo && requestMessage.parentMessageId === Constants.NO_PARENT) {
-        setTimeout(() => {
-          genTitle.mutate({ conversationId: convoUpdate.conversationId as string });
-        }, 2500);
-      }
-
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
           const update = { ...prevState, ...convoUpdate };
@@ -274,7 +264,7 @@ export default function useEventHandlers({
 
       setIsSubmitting(false);
     },
-    [setMessages, setConversation, genTitle, isAddedRequest, queryClient, setIsSubmitting],
+    [setMessages, setConversation, isAddedRequest, queryClient, setIsSubmitting],
   );
 
   const syncHandler = useCallback(
@@ -443,7 +433,7 @@ export default function useEventHandlers({
         messages,
         conversation: submissionConvo,
         isRegenerate = false,
-        isTemporary = false,
+        isTemporary: _isTemporary = false,
       } = submission;
 
       try {
@@ -532,19 +522,6 @@ export default function useEventHandlers({
           removeConvoFromAllQueries(queryClient, submissionConvo.conversationId);
         }
 
-        /* Refresh title */
-        if (
-          genTitle &&
-          isNewConvo &&
-          !isTemporary &&
-          requestMessage &&
-          requestMessage.parentMessageId === Constants.NO_PARENT
-        ) {
-          setTimeout(() => {
-            genTitle.mutate({ conversationId: conversation.conversationId as string });
-          }, 2500);
-        }
-
         if (setConversation && isAddedRequest !== true) {
           setConversation((prevState) => {
             const update = {
@@ -588,7 +565,6 @@ export default function useEventHandlers({
     },
     [
       navigate,
-      genTitle,
       getMessages,
       setMessages,
       queryClient,

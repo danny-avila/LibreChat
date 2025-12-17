@@ -12,8 +12,8 @@ import {
 } from 'librechat-data-provider';
 import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
-import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';
-import { activeJobsQueryKey } from '~/data-provider/SSE/queries';
+import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import { activeJobsQueryKey, queueTitleGeneration } from '~/data-provider/SSE/queries';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import store from '~/store';
@@ -61,7 +61,6 @@ export default function useResumableSSE(
   isAddedRequest = false,
   runIndex = 0,
 ) {
-  const genTitle = useGenTitleMutation();
   const queryClient = useQueryClient();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
@@ -123,7 +122,6 @@ export default function useResumableSSE(
     attachmentHandler,
     resetContentHandler,
   } = useEventHandlers({
-    genTitle,
     setMessages,
     getMessages,
     setCompleted,
@@ -596,6 +594,11 @@ export default function useResumableSSE(
           setStreamId(newStreamId);
           // Optimistically add to active jobs
           addActiveJob(newStreamId);
+          // Queue title generation if this is a new conversation (first message)
+          const isNewConvo = submission.userMessage?.parentMessageId === Constants.NO_PARENT;
+          if (isNewConvo) {
+            queueTitleGeneration(newStreamId);
+          }
           subscribeToStream(newStreamId, submission);
         } else {
           console.error('[ResumableSSE] Failed to get streamId from startGeneration');

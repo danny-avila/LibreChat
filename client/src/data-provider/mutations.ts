@@ -25,24 +25,6 @@ export type TGenTitleMutation = UseMutationResult<
   unknown
 >;
 
-export const useGenTitleMutation = (): TGenTitleMutation => {
-  const queryClient = useQueryClient();
-  return useMutation((payload: t.TGenTitleRequest) => dataService.genTitle(payload), {
-    onSuccess: (response, vars) => {
-      queryClient.setQueryData(
-        [QueryKeys.conversation, vars.conversationId],
-        (convo: t.TConversation | undefined) =>
-          convo ? { ...convo, title: response.title } : convo,
-      );
-      updateConvoInAllQueries(queryClient, vars.conversationId, (c) => ({
-        ...c,
-        title: response.title,
-      }));
-      document.title = response.title;
-    },
-  });
-};
-
 export const useUpdateConversationMutation = (
   id: string,
 ): UseMutationResult<
