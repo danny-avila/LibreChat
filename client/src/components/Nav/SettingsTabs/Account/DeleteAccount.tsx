@@ -123,12 +123,12 @@ const renderDeleteButton = (
       <>
         {isLocked ? (
           <>
-            <LockIcon className="size-5" />
+            <LockIcon className="size-5" aria-hidden="true" />
             <span className="ml-2">{localize('com_ui_locked')}</span>
           </>
         ) : (
           <>
-            <Trash className="size-5" />
+            <Trash className="size-5" aria-hidden="true" />
             <span className="ml-2">{localize('com_nav_delete_account_button')}</span>
           </>
         )}

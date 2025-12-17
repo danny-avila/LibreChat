@@ -1,9 +1,9 @@
 import React, { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, Constants } from 'librechat-data-provider';
 import { TooltipAnchor, NewChatIcon, MobileSidebar, Sidebar, Button } from '@librechat/client';
-import type { TMessage } from 'librechat-data-provider';
+import { CLOSE_SIDEBAR_ID, OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { clearMessagesCache } from '~/utils';
 import store from '~/store';
@@ -27,6 +27,14 @@ export default function NewChat({
   const navigate = useNavigate();
   const localize = useLocalize();
   const { conversation } = store.useCreateConversationAtom(index);
+
+  const handleToggleNav = useCallback(() => {
+    toggleNav();
+    // Delay focus until after the sidebar animation completes (200ms)
+    setTimeout(() => {
+      document.getElementById(OPEN_SIDEBAR_ID)?.focus();
+    }, 250);
+  }, [toggleNav]);
 
   const clickHandler: React.MouseEventHandler<HTMLButtonElement> = useCallback(
     (e) => {
@@ -52,15 +60,20 @@ export default function NewChat({
           description={localize('com_nav_close_sidebar')}
           render={
             <Button
+              id={CLOSE_SIDEBAR_ID}
               size="icon"
               variant="outline"
               data-testid="close-sidebar-button"
               aria-label={localize('com_nav_close_sidebar')}
+              aria-expanded={true}
               className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl"
-              onClick={toggleNav}
+              onClick={handleToggleNav}
             >
-              <Sidebar className="max-md:hidden" />
-              <MobileSidebar className="m-1 inline-flex size-10 items-center justify-center md:hidden" />
+              <Sidebar aria-hidden="true" className="max-md:hidden" />
+              <MobileSidebar
+                aria-hidden="true"
+                className="m-1 inline-flex size-10 items-center justify-center md:hidden"
+              />
             </Button>
           }
         />

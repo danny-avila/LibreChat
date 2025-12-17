@@ -20,6 +20,7 @@ export default function FileIcon({
       className="h-10 w-10 flex-shrink-0"
       width="36"
       height="36"
+      aria-hidden="true"
     >
       <rect width="36" height="36" rx="6" fill={fileType.fill} />
       {(file?.['progress'] ?? 1) >= 1 && <>{<fileType.paths />}</>}

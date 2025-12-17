@@ -167,6 +167,10 @@ export class MCPConnectionFactory {
               config?.oauth,
             );
 
+          // Delete any existing flow state to ensure we start fresh
+          // This prevents stale codeVerifier issues when re-authenticating
+          await this.flowManager!.deleteFlow(flowId, 'mcp_oauth');
+
           // Create the flow state so the OAuth callback can find it
           // We spawn this in the background without waiting for it
           this.flowManager!.createFlow(flowId, 'mcp_oauth', flowMetadata).catch(() => {
@@ -259,14 +263,20 @@ export class MCPConnectionFactory {
         attempts++;
 
         if (this.useOAuth && this.isOAuthError(error)) {
-          // Only handle OAuth if this is a user connection (has oauthStart handler)
+          // For returnOnOAuth mode, let the event handler (handleOAuthEvents) deal with OAuth
+          // We just need to stop retrying and let the error propagate
+          if (this.returnOnOAuth) {
+            logger.info(
+              `${this.logPrefix} OAuth required (return on OAuth mode), stopping retries`,
+            );
+            throw error;
+          }
+
+          // Normal flow - wait for OAuth to complete
           if (this.oauthStart && !oauthHandled) {
-            const errorWithFlag = error as (Error & { isOAuthError?: boolean }) | undefined;
-            if (errorWithFlag?.isOAuthError) {
-              oauthHandled = true;
-              logger.info(`${this.logPrefix} Handling OAuth`);
-              await this.handleOAuthRequired();
-            }
+            oauthHandled = true;
+            logger.info(`${this.logPrefix} Handling OAuth`);
+            await this.handleOAuthRequired();
           }
           // Don't retry on OAuth errors - just throw
           logger.info(`${this.logPrefix} OAuth required, stopping connection attempts`);
@@ -288,15 +298,29 @@ export class MCPConnectionFactory {
       return false;
     }
 
-    // Check for SSE error with 401 status
-    if ('message' in error && typeof error.message === 'string') {
-      return error.message.includes('401') || error.message.includes('Non-200 status code (401)');
-    }
-
     // Check for error code
     if ('code' in error) {
       const code = (error as { code?: number }).code;
-      return code === 401 || code === 403;
+      if (code === 401 || code === 403) {
+        return true;
+      }
+    }
+
+    // Check message for various auth error indicators
+    if ('message' in error && typeof error.message === 'string') {
+      const message = error.message.toLowerCase();
+      // Check for 401 status
+      if (message.includes('401') || message.includes('non-200 status code (401)')) {
+        return true;
+      }
+      // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
+      if (message.includes('invalid_token')) {
+        return true;
+      }
+      // Check for authentication required
+      if (message.includes('authentication required') || message.includes('unauthorized')) {
+        return true;
+      }
     }
 
     return false;
