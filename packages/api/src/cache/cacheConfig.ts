@@ -112,6 +112,13 @@ const cacheConfig = {
    * @default 1000
    */
   REDIS_SCAN_COUNT: math(process.env.REDIS_SCAN_COUNT, 1000),
+
+  /**
+   * TTL in milliseconds for MCP registry read-through cache.
+   * This cache reduces redundant lookups within a single request flow.
+   * @default 5000 (5 seconds)
+   */
+  MCP_REGISTRY_CACHE_TTL: math(process.env.MCP_REGISTRY_CACHE_TTL, 5000),
 };
 
 export { cacheConfig };

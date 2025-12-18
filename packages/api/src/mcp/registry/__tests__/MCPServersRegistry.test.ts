@@ -158,11 +158,13 @@ describe('MCPServersRegistry', () => {
 
       it('should route removeServer to cache repository', async () => {
         await registry.addServer('cache_server', testParsedConfig, 'CACHE');
-        expect(await registry.getServerConfig('cache_server')).toBeDefined();
+        // Verify server exists in underlying cache repository (not via getServerConfig to avoid populating read-through cache)
+        expect(await registry['cacheConfigsRepo'].get('cache_server')).toBeDefined();
 
         await registry.removeServer('cache_server', 'CACHE');
 
-        const config = await registry.getServerConfig('cache_server');
+        // Verify server is removed from underlying cache repository
+        const config = await registry['cacheConfigsRepo'].get('cache_server');
         expect(config).toBeUndefined();
       });
     });
@@ -187,6 +189,116 @@ describe('MCPServersRegistry', () => {
         await expect(registry.removeServer('test_server', 'S3' as any)).rejects.toThrow(
           'The provided storage location "S3" is not supported',
         );
+      });
+    });
+  });
+
+  describe('Read-through cache', () => {
+    describe('getServerConfig', () => {
+      it('should cache repeated calls for the same server', async () => {
+        // Add a server to the cache repository
+        await registry['cacheConfigsRepo'].add('test_server', testParsedConfig);
+
+        // Spy on the cache repository get method
+        const cacheRepoGetSpy = jest.spyOn(registry['cacheConfigsRepo'], 'get');
+
+        // First call should hit the cache repository
+        const config1 = await registry.getServerConfig('test_server');
+        expect(config1).toEqual(testParsedConfig);
+        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(1);
+
+        // Second call should hit the read-through cache, not the repository
+        const config2 = await registry.getServerConfig('test_server');
+        expect(config2).toEqual(testParsedConfig);
+        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(1); // Still 1, not 2
+
+        // Third call should also hit the read-through cache
+        const config3 = await registry.getServerConfig('test_server');
+        expect(config3).toEqual(testParsedConfig);
+        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(1); // Still 1
+      });
+
+      it('should cache "not found" results to avoid repeated DB lookups', async () => {
+        // Spy on the DB repository get method
+        const dbRepoGetSpy = jest.spyOn(registry['dbConfigsRepo'], 'get');
+
+        // First call - server doesn't exist, should hit DB
+        const config1 = await registry.getServerConfig('nonexistent_server');
+        expect(config1).toBeUndefined();
+        expect(dbRepoGetSpy).toHaveBeenCalledTimes(1);
+
+        // Second call - should hit read-through cache, not DB
+        const config2 = await registry.getServerConfig('nonexistent_server');
+        expect(config2).toBeUndefined();
+        expect(dbRepoGetSpy).toHaveBeenCalledTimes(1); // Still 1, not 2
+      });
+
+      it('should use different cache keys for different userIds', async () => {
+        // Spy on the cache repository get method
+        const cacheRepoGetSpy = jest.spyOn(registry['cacheConfigsRepo'], 'get');
+
+        // First call without userId
+        await registry.getServerConfig('test_server');
+        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(1);
+
+        // Call with userId - should be a different cache key, so hits repository again
+        await registry.getServerConfig('test_server', 'user123');
+        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(2);
+
+        // Repeat call with same userId - should hit read-through cache
+        await registry.getServerConfig('test_server', 'user123');
+        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(2); // Still 2
+
+        // Call with different userId - should hit repository
+        await registry.getServerConfig('test_server', 'user456');
+        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(3);
+      });
+    });
+
+    describe('getAllServerConfigs', () => {
+      it('should cache repeated calls', async () => {
+        // Add servers to cache
+        await registry['cacheConfigsRepo'].add('server1', testParsedConfig);
+        await registry['cacheConfigsRepo'].add('server2', testParsedConfig);
+
+        // Spy on the cache repository getAll method
+        const cacheRepoGetAllSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAll');
+
+        // First call should hit the repository
+        const configs1 = await registry.getAllServerConfigs();
+        expect(Object.keys(configs1)).toHaveLength(2);
+        expect(cacheRepoGetAllSpy).toHaveBeenCalledTimes(1);
+
+        // Second call should hit the read-through cache
+        const configs2 = await registry.getAllServerConfigs();
+        expect(Object.keys(configs2)).toHaveLength(2);
+        expect(cacheRepoGetAllSpy).toHaveBeenCalledTimes(1); // Still 1
+
+        // Third call should also hit the read-through cache
+        const configs3 = await registry.getAllServerConfigs();
+        expect(Object.keys(configs3)).toHaveLength(2);
+        expect(cacheRepoGetAllSpy).toHaveBeenCalledTimes(1); // Still 1
+      });
+
+      it('should use different cache keys for different userIds', async () => {
+        // Spy on the cache repository getAll method
+        const cacheRepoGetAllSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAll');
+
+        // First call without userId
+        await registry.getAllServerConfigs();
+        expect(cacheRepoGetAllSpy).toHaveBeenCalledTimes(1);
+
+        // Call with userId - should be a different cache key
+        await registry.getAllServerConfigs('user123');
+        expect(cacheRepoGetAllSpy).toHaveBeenCalledTimes(2);
+
+        // Repeat call with same userId - should hit read-through cache
+        await registry.getAllServerConfigs('user123');
+        expect(cacheRepoGetAllSpy).toHaveBeenCalledTimes(2); // Still 2
+
+        // Call with different userId - should hit repository
+        await registry.getAllServerConfigs('user456');
+        expect(cacheRepoGetAllSpy).toHaveBeenCalledTimes(3);
       });
     });
   });
