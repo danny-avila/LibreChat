@@ -84,17 +84,16 @@ const DialogContent = React.forwardRef<
     that our tooltips be dismissable with Escape key) */
     const handleEscapeKeyDown = React.useCallback(
       (event: KeyboardEvent) => {
-        if (!ref.current) {
-          propsOnEscapeKeyDown?.(event);
-          return;
-        }
-
-        const tooltips = ref.current?.querySelectorAll('.tooltip') ?? [];
-        const dropdownMenus = ref.current?.querySelectorAll('[role="menu"]') ?? [];
+        const tooltips = document.querySelectorAll('.tooltip');
+        const dropdownMenus = document.querySelectorAll('[role="menu"]');
 
         for (const tooltip of tooltips) {
           const style = window.getComputedStyle(tooltip);
-          if (style.display !== 'none') {
+          if (
+            style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            parseFloat(style.opacity) > 0
+          ) {
             event.preventDefault();
             return;
           }
@@ -102,7 +101,11 @@ const DialogContent = React.forwardRef<
 
         for (const dropdownMenu of dropdownMenus) {
           const style = window.getComputedStyle(dropdownMenu);
-          if (style.display !== 'none') {
+          if (
+            style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            parseFloat(style.opacity) > 0
+          ) {
             event.preventDefault();
             return;
           }
