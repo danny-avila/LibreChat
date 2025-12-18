@@ -498,9 +498,7 @@ export default function useResumableSSE(
 
       clearStepMaps();
 
-      const url = payloadData.server.includes('?')
-        ? `${payloadData.server}&resumable=true`
-        : `${payloadData.server}?resumable=true`;
+      const url = payloadData.server;
 
       const maxRetries = 3;
       let lastError: unknown = null;

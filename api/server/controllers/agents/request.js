@@ -348,15 +348,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 };
 
 /**
- * Non-resumable Agent Controller - Uses GenerationJobManager for abort handling.
- * Response is streamed directly to client via res, but abort state is managed centrally.
+ * Agent Controller - Routes to ResumableAgentController for all requests.
+ * The legacy non-resumable path is kept below but no longer used by default.
  */
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
-  const isResumable = req.query.resumable === 'true';
-  if (isResumable) {
-    return ResumableAgentController(req, res, next, initializeClient, addTitle);
-  }
+  return ResumableAgentController(req, res, next, initializeClient, addTitle);
+};
 
+/**
+ * Legacy Non-resumable Agent Controller - Uses GenerationJobManager for abort handling.
+ * Response is streamed directly to client via res, but abort state is managed centrally.
+ * @deprecated Use ResumableAgentController instead
+ */
+const _LegacyAgentController = async (req, res, next, initializeClient, addTitle) => {
   const {
     text,
     isRegenerate,
