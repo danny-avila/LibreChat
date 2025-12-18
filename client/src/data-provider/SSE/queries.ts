@@ -38,15 +38,19 @@ export interface ActiveJobsResponse {
   activeJobIds: string[];
 }
 
-// Module-level queue for title generation (survives re-renders)
-// Stores conversationIds that need title generation once their job completes
+/** Module-level queue for title generation (survives re-renders).
+ * Stores conversationIds that need title generation once their job completes */
 const titleQueue = new Set<string>();
 const processedTitles = new Set<string>();
+
+/** Listeners to notify when queue changes (for non-resumable streams like assistants) */
+const queueListeners = new Set<() => void>();
 
 /** Queue a conversation for title generation (call when starting new conversation) */
 export function queueTitleGeneration(conversationId: string) {
   if (!processedTitles.has(conversationId)) {
     titleQueue.add(conversationId);
+    queueListeners.forEach((listener) => listener());
   }
 }
 
@@ -57,6 +61,7 @@ export function queueTitleGeneration(conversationId: string) {
  */
 export function useTitleGeneration(enabled = true) {
   const queryClient = useQueryClient();
+  const [queueVersion, setQueueVersion] = useState(0);
   const [readyToFetch, setReadyToFetch] = useState<string[]>([]);
 
   const { data: activeJobsData } = useActiveJobs(enabled);
@@ -65,7 +70,14 @@ export function useTitleGeneration(enabled = true) {
     [activeJobsData?.activeJobIds],
   );
 
-  // Check queue for completed jobs and fetch titles immediately
+  useEffect(() => {
+    const listener = () => setQueueVersion((v) => v + 1);
+    queueListeners.add(listener);
+    return () => {
+      queueListeners.delete(listener);
+    };
+  }, []);
+
   useEffect(() => {
     const activeSet = new Set(activeJobIds);
     const completedJobs: string[] = [];
@@ -79,7 +91,7 @@ export function useTitleGeneration(enabled = true) {
     if (completedJobs.length > 0) {
       setReadyToFetch((prev) => [...new Set([...prev, ...completedJobs])]);
     }
-  }, [activeJobIds]);
+  }, [activeJobIds, queueVersion]);
 
   // Fetch titles for ready conversations
   const titleQueries = useQueries({
