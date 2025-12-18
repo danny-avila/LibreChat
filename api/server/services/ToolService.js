@@ -630,6 +630,7 @@ async function loadAgentTools({
         encrypted,
         name: toolName,
         description: functionSig.description,
+        streamId,
       });
 
       if (!tool) {
