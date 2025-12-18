@@ -1,16 +1,14 @@
 /**
  * MCP Tools Controller
  * Handles MCP-specific tool endpoints, decoupled from regular LibreChat tools
+ *
+ * @import { MCPServerRegistry } from '@librechat/api'
+ * @import { MCPServerDocument } from 'librechat-data-provider'
  */
 const { logger } = require('@librechat/data-schemas');
-const { Constants } = require('librechat-data-provider');
-const {
-  cacheMCPServerTools,
-  getMCPServerTools,
-  getAppConfig,
-} = require('~/server/services/Config');
-const { getMCPManager } = require('~/config');
-const { mcpServersRegistry } = require('@librechat/api');
+const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
+const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
+const { getMCPManager, getMCPServersRegistry } = require('~/config');
 
 /**
  * Get all MCP tools available to the user
@@ -23,13 +21,14 @@ const getMCPTools = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
-    if (!appConfig?.mcpConfig) {
+    const mcpConfig = await getMCPServersRegistry().getAllServerConfigs(userId);
+    const configuredServers = mcpConfig ? Object.keys(mcpConfig) : [];
+
+    if (!mcpConfig || Object.keys(mcpConfig).length == 0) {
       return res.status(200).json({ servers: {} });
     }
 
     const mcpManager = getMCPManager();
-    const configuredServers = Object.keys(appConfig.mcpConfig);
     const mcpServers = {};
 
     const cachePromises = configuredServers.map((serverName) =>
@@ -71,8 +70,8 @@ const getMCPTools = async (req, res) => {
         const serverTools = serverToolsMap.get(serverName);
 
         // Get server config once
-        const serverConfig = appConfig.mcpConfig[serverName];
-        const rawServerConfig = await mcpServersRegistry.getServerConfig(serverName, userId);
+        const serverConfig = mcpConfig[serverName];
+        const rawServerConfig = await getMCPServersRegistry().getServerConfig(serverName, userId);
 
         // Initialize server object with all server-level data
         const server = {
@@ -127,7 +126,146 @@ const getMCPTools = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+/**
+ * Get all MCP servers with permissions
+ * @route GET /api/mcp/servers
+ */
+const getMCPServersList = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    // 2. Get all server configs from registry (YAML + DB)
+    const serverConfigs = await getMCPServersRegistry().getAllServerConfigs(userId);
+
+    return res.json(serverConfigs);
+  } catch (error) {
+    logger.error('[getMCPServersList]', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Create MCP server
+ * @route POST /api/mcp/servers
+ */
+const createMCPServerController = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { config } = req.body;
+
+    const validation = MCPServerUserInputSchema.safeParse(config);
+    if (!validation.success) {
+      return res.status(400).json({
+        message: 'Invalid configuration',
+        errors: validation.error.errors,
+      });
+    }
+    const result = await getMCPServersRegistry().addServer(
+      'temp_server_name',
+      validation.data,
+      'DB',
+      userId,
+    );
+    res.status(201).json({
+      serverName: result.serverName,
+      ...result.config,
+    });
+  } catch (error) {
+    logger.error('[createMCPServer]', error);
+    if (error.message?.startsWith('MCP_INSPECTION_FAILED')) {
+      return res.status(400).json({
+        error: 'MCP_INSPECTION_FAILED',
+        message: error.message,
+      });
+    }
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * Get MCP server by ID
+ */
+const getMCPServerById = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { serverName } = req.params;
+    if (!serverName) {
+      return res.status(400).json({ message: 'Server name is required' });
+    }
+    const parsedConfig = await getMCPServersRegistry().getServerConfig(serverName, userId);
+
+    if (!parsedConfig) {
+      return res.status(404).json({ message: 'MCP server not found' });
+    }
+
+    res.status(200).json(parsedConfig);
+  } catch (error) {
+    logger.error('[getMCPServerById]', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * Update MCP server
+ * @route PATCH /api/mcp/servers/:serverName
+ */
+const updateMCPServerController = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { serverName } = req.params;
+    const { config } = req.body;
+
+    const validation = MCPServerUserInputSchema.safeParse(config);
+    if (!validation.success) {
+      return res.status(400).json({
+        message: 'Invalid configuration',
+        errors: validation.error.errors,
+      });
+    }
+    const parsedConfig = await getMCPServersRegistry().updateServer(
+      serverName,
+      validation.data,
+      'DB',
+      userId,
+    );
+
+    res.status(200).json(parsedConfig);
+  } catch (error) {
+    logger.error('[updateMCPServer]', error);
+    if (error.message?.startsWith('MCP_INSPECTION_FAILED:')) {
+      return res.status(400).json({
+        error: 'MCP_INSPECTION_FAILED',
+        message: error.message,
+      });
+    }
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/**
+ * Delete MCP server
+ * @route DELETE /api/mcp/servers/:serverName
+ */
+const deleteMCPServerController = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { serverName } = req.params;
+    await getMCPServersRegistry().removeServer(serverName, 'DB', userId);
+    res.status(200).json({ message: 'MCP server deleted successfully' });
+  } catch (error) {
+    logger.error('[deleteMCPServer]', error);
+    res.status(500).json({ message: error.message });
+  }
+};
 
 module.exports = {
   getMCPTools,
+  getMCPServersList,
+  createMCPServerController,
+  getMCPServerById,
+  updateMCPServerController,
+  deleteMCPServerController,
 };

@@ -38,14 +38,24 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
 
   if (!results.length) {
     return (
-      <div className="cursor-default p-2 sm:py-1 sm:text-sm">
-        {localize('com_files_no_results')}
-      </div>
+      <>
+        <div role="alert" aria-live="polite" className="sr-only">
+          {localize('com_files_no_results')}
+        </div>
+        <div className="cursor-default p-2 sm:py-1 sm:text-sm">
+          {localize('com_files_no_results')}
+        </div>
+      </>
     );
   }
 
   return (
     <>
+      <div role="alert" aria-live="polite" className="sr-only">
+        {results.length === 1
+          ? localize('com_files_result_found', { count: results.length })
+          : localize('com_files_results_found', { count: results.length })}
+      </div>
       {results.map((item, i) => {
         if ('name' in item && 'label' in item) {
           // Render model spec
@@ -176,7 +186,9 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                         )}
                         <span>{modelName}</span>
                       </div>
-                      {isGlobal && <EarthIcon className="ml-auto size-4 text-green-400" />}
+                      {isGlobal && (
+                        <EarthIcon className="ml-auto size-4 text-green-400" aria-hidden="true" />
+                      )}
                       {selectedEndpoint === endpoint.value && selectedModel === modelId && (
                         <svg
                           width="16"

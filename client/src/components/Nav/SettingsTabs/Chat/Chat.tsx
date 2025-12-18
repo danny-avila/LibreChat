@@ -77,6 +77,13 @@ const toggleSwitchConfigs = [
     hoverCardText: undefined,
     key: 'modularChat',
   },
+  {
+    stateAtom: store.defaultTemporaryChat,
+    localizationKey: 'com_nav_default_temporary_chat',
+    switchId: 'defaultTemporaryChat',
+    hoverCardText: 'com_nav_info_default_temporary_chat',
+    key: 'defaultTemporaryChat',
+  },
 ];
 
 function Chat() {

@@ -1,5 +1,5 @@
 # Dockerfile.multi
-# v0.8.1-rc2
+# v0.8.2-rc1
 
 # Base for all builds
 FROM node:20-alpine AS base-min
