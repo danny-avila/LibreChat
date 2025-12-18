@@ -10,9 +10,9 @@ const {
 const {
   sendEvent,
   MCPOAuthHandler,
+  isMCPDomainAllowed,
   normalizeServerName,
   convertWithResolvedRefs,
-  isMCPDomainAllowed,
 } = require('@librechat/api');
 const {
   Time,
@@ -22,10 +22,10 @@ const {
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const {
-  getMCPManager,
-  getFlowStateManager,
   getOAuthReconnectionManager,
   getMCPServersRegistry,
+  getFlowStateManager,
+  getMCPManager,
 } = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
 const { reinitMCPServer } = require('./Tools/mcp');
@@ -223,8 +223,8 @@ async function reconnectServer({ res, user, index, signal, serverName, userMCPAu
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {number} [params.index]
  * @param {AbortSignal} [params.signal]
- * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
+ * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTools({
@@ -232,10 +232,10 @@ async function createMCPTools({
   user,
   index,
   signal,
-  serverName,
-  provider,
-  userMCPAuthMap,
   config,
+  provider,
+  serverName,
+  userMCPAuthMap,
 }) {
   // Early domain validation before reconnecting server (avoid wasted work on disallowed domains)
   const serverConfig =
