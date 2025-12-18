@@ -187,7 +187,11 @@ export const getEntraIdAccessToken = async (): Promise<string> => {
     cachedToken = token;
     return token.token;
   } catch (error) {
-    logger.error('[ENTRA_ID_DEBUG] Failed to get Entra ID access token:', error);
+    const safeError =
+      error instanceof Error
+        ? { message: error.message, ...((error as any).code && { code: (error as any).code }) }
+        : { message: String(error) };
+    logger.error('[ENTRA_ID_DEBUG] Failed to get Entra ID access token:', safeError);
     throw error;
   } finally {
     cachedTokenPromise = null;
