@@ -193,7 +193,7 @@ class OpenRouterImageGen extends Tool {
     const headers = {
       Authorization: `Bearer ${this.apiKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.OPENROUTER_SITE_URL || 'https://librechat.ai',
+      'HTTP-Referer': 'https://librechat.ai',
     };
 
     const requestBody = {
