@@ -310,7 +310,7 @@ export default function useEventHandlers({
         if (requestMessage.parentMessageId === Constants.NO_PARENT) {
           addConvoToAllQueries(queryClient, update);
         } else {
-          updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update);
+          updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
         }
       } else if (setConversation) {
         setConversation((prevState) => {
@@ -385,7 +385,7 @@ export default function useEventHandlers({
           if (parentMessageId === Constants.NO_PARENT) {
             addConvoToAllQueries(queryClient, update);
           } else {
-            updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update);
+            updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
           }
         }
       } else if (setConversation) {
