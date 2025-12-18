@@ -1,6 +1,6 @@
 import { isEnabled } from './common';
 import type { AzureOptions, GenericClient } from '~/types';
-import { DefaultAzureCredential } from '@azure/identity';
+import { DefaultAzureCredential, AccessToken } from '@azure/identity';
 import { logger } from '@librechat/data-schemas';
 
 /**
@@ -145,24 +145,51 @@ export const shouldUseEntraId = (): boolean => {
  *
  * @returns DefaultAzureCredential instance
  */
-
 export const createEntraIdCredential = (): DefaultAzureCredential => {
   return new DefaultAzureCredential();
 };
 
+
+let cachedToken: AccessToken | null = null;
+let cachedTokenPromise: Promise<AccessToken | null> | null = null;
+
+const ENTRA_ID_SCOPE = 'https://cognitiveservices.azure.com/.default';
+
+// Refresh cached token a bit early to avoid edge cases (clock skew, retries, etc.)
+const ENTRA_ID_EARLY_REFRESH_MS = 2 * 60 * 1000; // 2 minutes
+
+const isTokenFresh = (token: AccessToken, nowMs: number): boolean =>
+  nowMs < token.expiresOnTimestamp - ENTRA_ID_EARLY_REFRESH_MS;
+
 /**
  * Gets the access token for Entra ID authentication from azure/identity.
- * @returns {Promise<AccessToken>} The access token
+ * @returns The access token string
  */
 export const getEntraIdAccessToken = async (): Promise<string> => {
-  try {
+  const nowMs = Date.now();
+
+  if (cachedToken && isTokenFresh(cachedToken, nowMs)) {
+    return cachedToken.token;
+  }
+
+  // Dedupe concurrent refreshes to avoid token "stampedes"
+  if (!cachedTokenPromise) {
     const credential = createEntraIdCredential();
+    cachedTokenPromise = credential.getToken(ENTRA_ID_SCOPE);
+  }
 
-    const tokenResponse = await credential.getToken('https://cognitiveservices.azure.com/.default');
+  try {
+    const token = await cachedTokenPromise;
+    if (!token) {
+      throw new Error('Failed to get Entra ID access token (credential returned null token)');
+    }
 
-    return tokenResponse.token;
+    cachedToken = token;
+    return token.token;
   } catch (error) {
     logger.error('[ENTRA_ID_DEBUG] Failed to get Entra ID access token:', error);
     throw error;
+  } finally {
+    cachedTokenPromise = null;
   }
 };
