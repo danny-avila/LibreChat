@@ -179,5 +179,19 @@
         "description": "Provide your Flux API key from your user profile."
       }
     ]
+  },
+  {
+    "name": "OpenRouter Image Generation",
+    "pluginKey": "openrouter_image_gen",
+    "toolkit": true,
+    "description": "Generate high-quality images using OpenRouter-supported models like FLUX.2-Pro, FLUX.2-Flex, and Gemini Image Generation. Supports aspect ratio control for Gemini models.",
+    "icon": "https://openrouter.ai/favicon.ico",
+    "authConfig": [
+      {
+        "authField": "OPENROUTER_API_KEY",
+        "label": "OpenRouter API Key",
+        "description": "Your OpenRouter API key. Get one at <a href=\"https://openrouter.ai/keys\" target=\"_blank\">https://openrouter.ai/keys</a>"
+      }
+    ]
   }
 ]
