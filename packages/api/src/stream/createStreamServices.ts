@@ -49,14 +49,17 @@ export interface StreamServices {
 /**
  * Create stream services (job store + event transport).
  *
- * Automatically detects Redis from cacheConfig.USE_REDIS and uses
+ * Automatically detects Redis from cacheConfig.USE_REDIS_STREAMS and uses
  * the existing ioredisClient. Falls back to in-memory if Redis
  * is not configured or not available.
+ *
+ * USE_REDIS_STREAMS defaults to USE_REDIS if not explicitly set,
+ * allowing users to disable Redis for streams while keeping it for other caches.
  *
  * @example Auto-detect (uses cacheConfig)
  * ```ts
  * const services = createStreamServices();
- * // Uses Redis if USE_REDIS=true, otherwise in-memory
+ * // Uses Redis if USE_REDIS_STREAMS=true (defaults to USE_REDIS), otherwise in-memory
  * ```
  *
  * @example Force in-memory
@@ -65,8 +68,8 @@ export interface StreamServices {
  * ```
  */
 export function createStreamServices(config: StreamServicesConfig = {}): StreamServices {
-  // Use provided config or fall back to cache config
-  const useRedis = config.useRedis ?? cacheConfig.USE_REDIS;
+  // Use provided config or fall back to cache config (USE_REDIS_STREAMS for stream-specific override)
+  const useRedis = config.useRedis ?? cacheConfig.USE_REDIS_STREAMS;
   const redisClient = config.redisClient ?? ioredisClient;
   const { redisSubscriber, inMemoryOptions } = config;
 
