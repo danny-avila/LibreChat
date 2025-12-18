@@ -6,7 +6,6 @@ const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 const extractBaseURL = require('~/utils/extractBaseURL');
-const sharp = require('sharp');
 
 const displayMessage =
   "OpenRouter displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but not mention anything about downloading to the user.";
@@ -247,118 +246,25 @@ Error Message: ${typeof errorDetails === 'string' ? errorDetails : JSON.stringif
     // Extract base64 from data URL (format: "data:image/png;base64,...")
     const imageUrl = images[0].image_url.url;
 
-    // For agents, save the image first to avoid token limit issues with base64
+    // For agents, return base64 directly (consistent with other image tools)
     if (this.isAgent) {
-      const imageName = `img-${uuidv4()}.png`;
-      const file_id = uuidv4();
-
       try {
-        // Extract base64 data
-        let base64Data = imageUrl;
-        if (imageUrl.startsWith('data:')) {
-          base64Data = imageUrl.split(',')[1];
-        }
-        const buffer = Buffer.from(base64Data, 'base64');
-
-        // Try to use uploadImageBuffer if available (more efficient, similar to StableDiffusion)
-        if (this.uploadImageBuffer && this.req) {
-          try {
-            // Get image dimensions using sharp
-            const metadata = await sharp(buffer).metadata();
-            const savedFile = await this.uploadImageBuffer({
-              req: this.req,
-              context: FileContext.image_generation,
-              resize: false,
-              metadata: {
-                buffer,
-                height: metadata.height,
-                width: metadata.width,
-                bytes: Buffer.byteLength(buffer),
-                filename: imageName,
-                type: 'image/png',
-                file_id,
-              },
-            });
-
-            logger.debug('[OpenRouterImageGen] Image saved for agent via uploadImageBuffer:', {
-              file_id: savedFile.file_id,
-              filepath: savedFile.filepath,
-            });
-
-            // Use the saved file URL instead of base64 to avoid token limit issues
-            const content = [
-              {
-                type: ContentTypes.IMAGE_URL,
-                image_url: {
-                  url: savedFile.filepath,
-                },
-              },
-            ];
-
-            const file_ids = [savedFile.file_id];
-            const response = [
-              {
-                type: ContentTypes.TEXT,
-                text: displayMessage + `\n\ngenerated_image_id: "${file_ids[0]}"`,
-              },
-            ];
-            return [response, { content, file_ids }];
-          } catch (uploadError) {
-            logger.warn(
-              '[OpenRouterImageGen] uploadImageBuffer failed, falling back to processFileURL:',
-              uploadError,
-            );
-          }
+        // Ensure imageUrl is in the correct format
+        let base64Url = imageUrl;
+        if (!imageUrl.startsWith('data:')) {
+          // If it's already base64 without data: prefix, add it
+          base64Url = `data:image/png;base64,${imageUrl}`;
         }
 
-        // Fallback to processFileURL if uploadImageBuffer is not available
-        if (this.processFileURL) {
-          const savedFile = await this.processFileURL({
-            fileStrategy: this.fileStrategy,
-            userId: this.userId,
-            URL: imageUrl,
-            fileName: imageName,
-            basePath: 'images',
-            context: FileContext.image_generation,
-          });
-
-          logger.debug('[OpenRouterImageGen] Image saved for agent via processFileURL:', {
-            file_id: savedFile.file_id,
-            filepath: savedFile.filepath,
-          });
-
-          // Use the saved file URL instead of base64 to avoid token limit issues
-          const content = [
-            {
-              type: ContentTypes.IMAGE_URL,
-              image_url: {
-                url: savedFile.filepath,
-              },
-            },
-          ];
-
-          const file_ids = [savedFile.file_id];
-          const response = [
-            {
-              type: ContentTypes.TEXT,
-              text: displayMessage + `\n\ngenerated_image_id: "${file_ids[0]}"`,
-            },
-          ];
-          return [response, { content, file_ids }];
-        }
-
-        // If neither method is available, log warning and use base64 (may hit token limits)
-        logger.warn(
-          '[OpenRouterImageGen] Neither uploadImageBuffer nor processFileURL available, using base64 (may hit token limits)',
-        );
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: imageUrl,
+              url: base64Url,
             },
           },
         ];
+
         const response = [
           {
             type: ContentTypes.TEXT,
@@ -367,23 +273,8 @@ Error Message: ${typeof errorDetails === 'string' ? errorDetails : JSON.stringif
         ];
         return [response, { content }];
       } catch (error) {
-        logger.error('[OpenRouterImageGen] Error saving image for agent:', error);
-        // Fallback to base64 if saving fails (though this may hit token limits)
-        const content = [
-          {
-            type: ContentTypes.IMAGE_URL,
-            image_url: {
-              url: imageUrl,
-            },
-          },
-        ];
-        const response = [
-          {
-            type: ContentTypes.TEXT,
-            text: displayMessage,
-          },
-        ];
-        return [response, { content }];
+        logger.error('[OpenRouterImageGen] Error processing image for agent:', error);
+        return this.returnValue(`Failed to process the image. ${error.message}`);
       }
     }
 
