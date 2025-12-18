@@ -1239,6 +1239,7 @@ export enum InfiniteCollections {
  */
 export enum Time {
   ONE_DAY = 86400000,
+  TWELVE_HOURS = 43200000,
   ONE_HOUR = 3600000,
   THIRTY_MINUTES = 1800000,
   TEN_MINUTES = 600000,
