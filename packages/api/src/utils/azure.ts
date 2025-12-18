@@ -136,7 +136,7 @@ export const shouldUseEntraId = (): boolean => {
 };
 
 /**
- * Creates an Azure credential for Entra ID authentication.
+ * Creates and caches an Azure credential for Entra ID authentication.
  * Uses DefaultAzureCredential which supports multiple authentication methods:
  * - Managed Identity (when running in Azure)
  * - Service Principal (when environment variables are set)
@@ -145,18 +145,21 @@ export const shouldUseEntraId = (): boolean => {
  *
  * @returns DefaultAzureCredential instance
  */
+let entraIdCredential: DefaultAzureCredential | undefined;
 export const createEntraIdCredential = (): DefaultAzureCredential => {
-  return new DefaultAzureCredential();
+  if (!entraIdCredential) {
+    entraIdCredential = new DefaultAzureCredential();
+  }
+  return entraIdCredential;
 };
-
 
 let cachedToken: AccessToken | null = null;
 let cachedTokenPromise: Promise<AccessToken | null> | null = null;
 
-const ENTRA_ID_SCOPE = 'https://cognitiveservices.azure.com/.default';
 
 // Refresh cached token a bit early to avoid edge cases (clock skew, retries, etc.)
 const ENTRA_ID_EARLY_REFRESH_MS = 2 * 60 * 1000; // 2 minutes
+const ENTRA_ID_SCOPE = 'https://cognitiveservices.azure.com/.default';
 
 const isTokenFresh = (token: AccessToken, nowMs: number): boolean =>
   nowMs < token.expiresOnTimestamp - ENTRA_ID_EARLY_REFRESH_MS;
