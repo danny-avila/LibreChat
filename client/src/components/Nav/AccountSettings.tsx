@@ -1,5 +1,4 @@
-import { useState, memo, useRef, useEffect, useCallback } from 'react';
-import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import { useState, memo } from 'react';
 import * as Select from '@ariakit/react/select';
 import { FileText, LogOut } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
@@ -8,7 +7,6 @@ import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
-import store from '~/store';
 
 function AccountSettings() {
   const localize = useLocalize();
@@ -18,23 +16,7 @@ function AccountSettings() {
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
   const [showSettings, setShowSettings] = useState(false);
-  const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
-  const setFilesModalTriggerElement = useSetRecoilState(store.filesModalTriggerElement);
-  const filesModalTriggerElement = useRecoilValue(store.filesModalTriggerElement);
-  const myFilesRef = useRef<HTMLDivElement>(null);
-
-  const filesModalTriggerRef = useRef<HTMLButtonElement | HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    filesModalTriggerRef.current = filesModalTriggerElement || myFilesRef.current;
-  }, [filesModalTriggerElement]);
-
-  const handleMyFilesClick = useCallback(() => {
-    if (myFilesRef.current) {
-      setFilesModalTriggerElement(myFilesRef.current);
-    }
-    setShowFiles(true);
-  }, [setShowFiles, setFilesModalTriggerElement]);
+  const [showFiles, setShowFiles] = useState(false);
 
   return (
     <Select.SelectProvider>
@@ -77,8 +59,7 @@ function AccountSettings() {
         )}
         <Select.SelectItem
           value=""
-          ref={myFilesRef}
-          onClick={handleMyFilesClick}
+          onClick={() => setShowFiles(true)}
           className="select-item text-sm"
         >
           <FileText className="icon-md" aria-hidden="true" />
@@ -113,9 +94,7 @@ function AccountSettings() {
           {localize('com_nav_log_out')}
         </Select.SelectItem>
       </Select.SelectPopover>
-      {showFiles && (
-        <FilesView open={showFiles} onOpenChange={setShowFiles} triggerRef={filesModalTriggerRef} />
-      )}
+      {showFiles && <FilesView open={showFiles} onOpenChange={setShowFiles} />}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </Select.SelectProvider>
   );

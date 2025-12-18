@@ -6,11 +6,6 @@ import type { TOptionSettings } from '~/common';
 // Static atoms without localStorage
 const staticAtoms = {
   abortScroll: atom<boolean>({ key: 'abortScroll', default: false }),
-  showFiles: atom<boolean>({ key: 'showFiles', default: false }),
-  filesModalTriggerElement: atom<HTMLButtonElement | HTMLDivElement | null>({
-    key: 'filesModalTriggerElement',
-    default: null,
-  }),
   optionSettings: atom<TOptionSettings>({ key: 'optionSettings', default: {} }),
   currentSettingsView: atom<SettingsViews>({
     key: 'currentSettingsView',
