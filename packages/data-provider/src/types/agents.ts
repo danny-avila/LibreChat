@@ -333,7 +333,7 @@ export type ActionMetadataRuntime = ActionMetadata & {
 };
 
 export type MCP = {
-  mcp_id: string;
+  serverName: string;
   metadata: MCPMetadata;
 } & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id?: string });
 

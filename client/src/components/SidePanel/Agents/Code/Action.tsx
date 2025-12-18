@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { KeyRoundIcon } from 'lucide-react';
 import { AuthType, AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller, useWatch } from 'react-hook-form';
@@ -17,7 +18,8 @@ import { ESide } from '~/common';
 export default function Action({ authType = '', isToolAuthenticated = false }) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
-  const { control, setValue, getValues } = methods;
+  const { control, setValue } = methods;
+  const apiKeyButtonRef = useRef<HTMLButtonElement>(null);
   const {
     onSubmit,
     isDialogOpen,
@@ -27,9 +29,11 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
   } = useCodeApiKeyForm({
     onSubmit: () => {
       setValue(AgentCapabilities.execute_code, true, { shouldDirty: true });
+      setTimeout(() => apiKeyButtonRef.current?.focus(), 100);
     },
     onRevoke: () => {
       setValue(AgentCapabilities.execute_code, false, { shouldDirty: true });
+      setTimeout(() => apiKeyButtonRef.current?.focus(), 100);
     },
   });
 
@@ -56,42 +60,44 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
             render={({ field }) => (
               <Checkbox
                 {...field}
+                id="execute-code-checkbox"
                 checked={runCodeIsEnabled ? runCodeIsEnabled : isToolAuthenticated && field.value}
                 onCheckedChange={handleCheckboxChange}
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
                 disabled={runCodeIsEnabled ? false : !isToolAuthenticated}
-                aria-label={localize('com_ui_run_code')}
+                aria-labelledby="execute-code-label"
               />
             )}
           />
-          <button
-            type="button"
-            className="flex items-center space-x-2"
-            onClick={() => {
-              const value = !getValues(AgentCapabilities.execute_code);
-              handleCheckboxChange(value);
-            }}
+          <label
+            id="execute-code-label"
+            htmlFor="execute-code-checkbox"
+            className="form-check-label text-token-text-primary cursor-pointer"
           >
-            <label
-              className="form-check-label text-token-text-primary w-full cursor-pointer"
-              htmlFor={AgentCapabilities.execute_code}
-            >
-              {localize('com_ui_run_code')}
-            </label>
-          </button>
+            {localize('com_ui_run_code')}
+          </label>
           <div className="ml-2 flex gap-2">
-            {isUserProvided && (isToolAuthenticated || runCodeIsEnabled) && (
+            {isUserProvided && (
               <button
+                ref={apiKeyButtonRef}
                 type="button"
                 onClick={() => setIsDialogOpen(true)}
-                aria-label={localize('com_ui_add_api_key')}
+                aria-label={localize('com_ui_add_code_interpreter_api_key')}
+                aria-haspopup="dialog"
+                aria-expanded={isDialogOpen}
               >
-                <KeyRoundIcon className="h-5 w-5 text-text-primary" />
+                <KeyRoundIcon className="h-5 w-5 text-text-primary" aria-hidden="true" />
               </button>
             )}
-            <HoverCardTrigger>
-              <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
+            <HoverCardTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center"
+                aria-label={localize('com_agents_code_interpreter')}
+              >
+                <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
+              </button>
             </HoverCardTrigger>
           </div>
           <HoverCardPortal>
@@ -114,6 +120,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
         isToolAuthenticated={isToolAuthenticated}
         handleSubmit={keyFormMethods.handleSubmit}
         isUserProvided={authType === AuthType.USER_PROVIDED}
+        triggerRef={apiKeyButtonRef}
       />
     </>
   );

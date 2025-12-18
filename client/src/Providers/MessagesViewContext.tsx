@@ -28,6 +28,10 @@ interface MessagesViewContextValue {
 
 const MessagesViewContext = createContext<MessagesViewContextValue | undefined>(undefined);
 
+// Export the context so it can be provided by other providers (e.g., ShareMessagesProvider)
+export { MessagesViewContext };
+export type { MessagesViewContextValue };
+
 export function MessagesViewProvider({ children }: { children: React.ReactNode }) {
   const chatContext = useChatContext();
   const addedChatContext = useAddedChatContext();

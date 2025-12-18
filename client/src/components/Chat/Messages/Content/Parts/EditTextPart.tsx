@@ -157,7 +157,7 @@ const EditTextPart = ({
       {part.type === ContentTypes.THINK && (
         <div className="mt-2 flex items-center gap-1.5 text-xs text-text-secondary">
           <span className="flex gap-2 rounded-lg bg-surface-tertiary px-1.5 py-1 font-medium">
-            <Lightbulb className="size-3.5" />
+            <Lightbulb className="size-3.5" aria-hidden="true" />
             {localize('com_ui_thoughts')}
           </span>
         </div>
@@ -165,7 +165,7 @@ const EditTextPart = ({
       {part.type !== ContentTypes.THINK && (
         <div className="mt-2 flex items-center gap-1.5 text-xs text-text-secondary">
           <span className="flex gap-2 rounded-lg bg-surface-tertiary px-1.5 py-1 font-medium">
-            <MessageSquare className="size-3.5" />
+            <MessageSquare className="size-3.5" aria-hidden="true" />
             {localize('com_ui_response')}
           </span>
         </div>

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { SmartphoneIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -35,6 +35,7 @@ const TwoFactorAuthentication: React.FC = () => {
   const { user } = useAuthContext();
   const setUser = useSetRecoilState(store.user);
   const { showToast } = useToastContext();
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   const [secret, setSecret] = useState<string>('');
   const [otpauthUrl, setOtpauthUrl] = useState<string>('');
@@ -197,16 +198,19 @@ const TwoFactorAuthentication: React.FC = () => {
           resetState();
         }
       }}
+      triggerRef={buttonRef}
     >
       <DisableTwoFactorToggle
         enabled={!!user?.twoFactorEnabled}
         onChange={() => setDialogOpen(true)}
         disabled={isVerifying || isDisabling || isGenerating}
+        buttonRef={buttonRef}
       />
 
       <OGDialogContent className="w-11/12 max-w-lg p-6">
         <AnimatePresence mode="wait">
           <motion.div
+            id="two-factor-authentication-dialog"
             key={phase}
             variants={phaseVariants}
             initial="initial"
@@ -216,7 +220,7 @@ const TwoFactorAuthentication: React.FC = () => {
           >
             <OGDialogHeader>
               <OGDialogTitle className="mb-2 flex items-center gap-3 text-2xl font-bold">
-                <SmartphoneIcon className="h-6 w-6 text-primary" />
+                <SmartphoneIcon className="h-6 w-6 text-primary" aria-hidden="true" />
                 {user?.twoFactorEnabled
                   ? localize('com_ui_2fa_disable')
                   : localize('com_ui_2fa_setup')}
