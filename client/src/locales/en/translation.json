@@ -26,7 +26,7 @@
   "com_agents_category_sales_description": "Agents focused on sales processes, customer relations",
   "com_agents_category_tab_label": "{{category}} category, {{position}} of {{total}}",
   "com_agents_category_tabs_label": "Agent Categories",
-  "com_agents_chat_with": "Chat with {{name}}",
+  "com_agents_chat_with": "Chat with Vicktoria",
   "com_agents_clear_search": "Clear search",
   "com_agents_code_interpreter": "When enabled, allows your agent to leverage the LibreChat Code Interpreter API to run generated code, including file processing, securely. Requires a valid API key.",
   "com_agents_code_interpreter_title": "Code Interpreter API",

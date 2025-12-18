@@ -86,7 +86,7 @@ async function ensureAgent(fileIds) {
   const baseAgent = {
     id: RUNPOD_AGENT_ID,
     name: RUNPOD_AGENT_NAME,
-    description: 'Chat with Sentian Vicktoria',
+    description: 'Chat with Vicktoria',
     provider: 'Vicktoria',
     model: RUNPOD_MODEL,
     model_parameters: { model: RUNPOD_MODEL },
