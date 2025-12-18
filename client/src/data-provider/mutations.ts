@@ -18,13 +18,6 @@ import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
 import { updateConversationTag } from '~/utils/conversationTags';
 import { useConversationTagsQuery } from './queries';
 
-export type TGenTitleMutation = UseMutationResult<
-  t.TGenTitleResponse,
-  unknown,
-  t.TGenTitleRequest,
-  unknown
->;
-
 export const useUpdateConversationMutation = (
   id: string,
 ): UseMutationResult<

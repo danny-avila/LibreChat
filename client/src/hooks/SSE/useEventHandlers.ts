@@ -33,6 +33,7 @@ import {
   removeConvoFromAllQueries,
   findConversationInInfinite,
 } from '~/utils';
+import { queueTitleGeneration } from '~/data-provider/SSE/queries';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
@@ -465,6 +466,10 @@ export default function useEventHandlers({
         announcePolite({ message: getAllContentText(responseMessage) });
 
         const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
+
+        if (isNewConvo && conversation.conversationId) {
+          queueTitleGeneration(conversation.conversationId);
+        }
 
         const setFinalMessages = (id: string | null, _messages: TMessage[]) => {
           setMessages(_messages);
