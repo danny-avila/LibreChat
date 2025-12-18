@@ -25,6 +25,10 @@ services:
       - MEILI_HOST=http://meilisearch:7700
       - RAG_PORT=${RAG_PORT:-8000}
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+      # Agent initialization (optional - set these to auto-run init-runpod-agent.js)
+      - METHODOLOGY_DIR=${METHODOLOGY_DIR:-}
+      - ADMIN_USER_ID=${ADMIN_USER_ID:-}
+      - RAG_UPLOAD_TIMEOUT_MS=${RAG_UPLOAD_TIMEOUT_MS:-300000}
     volumes:
       - type: bind
         source: ./librechat.yaml
@@ -32,6 +36,10 @@ services:
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/api/logs
+      # Methodology files for agent (optional - mount if using agent init)
+      - ./methodology:/app/methodology
+      - ./config/docker-entrypoint.sh:/app/config/docker-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/app/config/docker-entrypoint.sh"]
     networks: [default, npm-network]
 
   client:

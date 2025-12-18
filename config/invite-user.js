@@ -51,7 +51,7 @@ const connect = require('./connect');
   const token = await createInvite(email);
   const inviteLink = `${process.env.DOMAIN_CLIENT}/register?token=${token}`;
 
-  const appName = process.env.APP_TITLE || 'LibreChat';
+  const appName = process.env.APP_TITLE || 'Vicktoria AI';
 
   if (!checkEmailConfig()) {
     console.green('Send this link to the user:', inviteLink);

@@ -80,7 +80,9 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
       if (files.length === 0) {
         return ['No files to search. Instruct the user to add files for the search.', undefined];
       }
-      const jwtToken = generateShortLivedToken(userId);
+      // Use entity_id (agent's ID) for the JWT token when querying through an agent
+      // This allows users to access documents uploaded with the agent's entity_id
+      const jwtToken = generateShortLivedToken(entity_id || userId);
       if (!jwtToken) {
         return ['There was an error authenticating the file search request.', undefined];
       }

@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import TagManager from 'react-gtm-module';
-import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -40,14 +39,13 @@ export default function Footer({ className }: { className?: string }) {
     </a>
   );
 
+  const copyrightNotice = '© & ™ 2019-2025 Andrey V. Karpov, HireTheBest LLC dba TrueAgileMindset AI, Vicktoria AI, Vicka AI, & Memorandum Project. All Rights Reserved.';
+
   const mainContentParts = (
     typeof config?.customFooter === 'string'
       ? config.customFooter
-      : '[LibreChat ' +
-        Constants.VERSION +
-        '](https://librechat.ai) - ' +
-        localize('com_ui_latest_footer')
-  ).split('|');
+      : ''
+  ).split('|').filter(Boolean);
 
   useEffect(() => {
     if (config?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {
@@ -94,24 +92,29 @@ export default function Footer({ className }: { className?: string }) {
       <div
         className={
           className ??
-          'absolute bottom-0 left-0 right-0 hidden items-center justify-center gap-2 px-2 py-2 text-center text-xs text-text-primary sm:flex md:px-[60px]'
+          'absolute bottom-0 left-0 right-0 hidden flex-col items-center justify-center gap-1 px-2 py-2 text-center text-xs text-text-primary sm:flex md:px-[60px]'
         }
         role="contentinfo"
       >
-        {footerElements.map((contentRender, index) => {
-          const isLastElement = index === footerElements.length - 1;
-          return (
-            <React.Fragment key={`footer-element-${index}`}>
-              {contentRender}
-              {!isLastElement && (
-                <div
-                  key={`separator-${index}`}
-                  className="h-2 border-r-[1px] border-border-medium"
-                />
-              )}
-            </React.Fragment>
-          );
-        })}
+        {footerElements.length > 0 && (
+          <div className="flex items-center gap-2">
+            {footerElements.map((contentRender, index) => {
+              const isLastElement = index === footerElements.length - 1;
+              return (
+                <React.Fragment key={`footer-element-${index}`}>
+                  {contentRender}
+                  {!isLastElement && (
+                    <div
+                      key={`separator-${index}`}
+                      className="h-2 border-r-[1px] border-border-medium"
+                    />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        )}
+        <div className="text-text-secondary">{copyrightNotice}</div>
       </div>
     </div>
   );

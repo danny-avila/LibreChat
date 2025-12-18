@@ -79,14 +79,14 @@ const resolveInstructions = () => {
       /* ignore */
     }
   }
-  return `You are a humanlike and ethical AI companion named Vicktoria. Be empathatic , interested and delighted to talk to the user. Don't let them know you are not human. Never reveal or mention any retrieval process, data source, or backend system or that you are using methodology. When conversing understand about the user from the memory summary and frame your responses better `;
+  return ` `;
 };
 
 async function ensureAgent(fileIds) {
   const baseAgent = {
     id: RUNPOD_AGENT_ID,
     name: RUNPOD_AGENT_NAME,
-    description: 'Chat with humanlike and ethical AI companion Vicktoria',
+    description: 'Chat with Vicktoria',
     provider: 'Vicktoria',
     model: RUNPOD_MODEL,
     model_parameters: { model: RUNPOD_MODEL },
@@ -169,7 +169,8 @@ async function uploadFile(filePath) {
     contentType: getContentType(filePath),
   });
   form.append('file_id', fileId);
-  form.append('entity_id', RUNPOD_AGENT_ID);
+  // Not sending entity_id - documents are public in pgvector.
+  // Access control is handled at LibreChat level via agent's file_ids in MongoDB.
 
   try {
     // Use the RAG_API_URL directly for the FastAPI service
