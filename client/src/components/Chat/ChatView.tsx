@@ -7,7 +7,13 @@ import { Constants, buildTree } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
-import { useChatHelpers, useAddedResponse, useAdaptiveSSE, useResumeOnLoad } from '~/hooks';
+import {
+  useResumableStreamToggle,
+  useAddedResponse,
+  useResumeOnLoad,
+  useAdaptiveSSE,
+  useChatHelpers,
+} from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
@@ -49,6 +55,11 @@ function ChatView({ index = 0 }: { index?: number }) {
 
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse({ rootIndex: index });
+
+  useResumableStreamToggle(
+    chatHelpers.conversation?.endpoint,
+    chatHelpers.conversation?.endpointType,
+  );
 
   useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
 
