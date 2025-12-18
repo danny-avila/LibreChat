@@ -35,7 +35,7 @@ import {
 import { useFileMapContext, useChatContext } from '~/Providers';
 import { useLocalize, useUpdateFiles } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
-import FilesView from '~/components/Chat/Input/Files/FilesView';
+import MyFilesModal from '~/components/Chat/Input/Files/MyFilesModal';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -335,7 +335,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           </Button>
         </div>
       </div>
-      <FilesView
+      <MyFilesModal
         open={showFilesModal}
         onOpenChange={setShowFilesModal}
         triggerRef={manageFilesRef}

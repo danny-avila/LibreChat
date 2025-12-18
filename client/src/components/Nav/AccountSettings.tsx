@@ -3,7 +3,7 @@ import * as Select from '@ariakit/react/select';
 import { FileText, LogOut } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
-import FilesView from '~/components/Chat/Input/Files/FilesView';
+import MyFilesModal from '~/components/Chat/Input/Files/MyFilesModal';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
@@ -94,7 +94,7 @@ function AccountSettings() {
           {localize('com_nav_log_out')}
         </Select.SelectItem>
       </Select.SelectPopover>
-      {showFiles && <FilesView open={showFiles} onOpenChange={setShowFiles} />}
+      {showFiles && <MyFilesModal open={showFiles} onOpenChange={setShowFiles} />}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </Select.SelectProvider>
   );
