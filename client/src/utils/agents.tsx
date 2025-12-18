@@ -85,16 +85,17 @@ const LazyAgentAvatar = ({
  * Renders an agent avatar with fallback to Bot icon
  * Consistent across all agent displays
  */
-export const renderAgentAvatar = (
-  agent: t.Agent | null | undefined,
-  options: {
-    size?: 'icon' | 'sm' | 'md' | 'lg' | 'xl';
-    className?: string;
-    showBorder?: boolean;
-  } = {},
-): React.ReactElement => {
-  const { size = 'md', className = '', showBorder = true } = options;
-
+export const AgentAvatar = ({
+  agent,
+  size = 'md',
+  className = '',
+  showBorder = true,
+}: {
+  agent: t.Agent | null | undefined;
+  size?: 'icon' | 'sm' | 'md' | 'lg' | 'xl';
+  className?: string;
+  showBorder?: boolean;
+}) => {
   const avatarUrl = getAgentAvatarUrl(agent);
 
   // Size mappings for responsive design

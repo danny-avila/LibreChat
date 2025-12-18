@@ -41,7 +41,9 @@ export default function EndpointIcon({
   const assistantName = assistant && (assistant.name ?? '');
 
   const agent =
-    endpoint === EModelEndpoint.agents ? agentsMap?.[conversation?.agent_id ?? ''] : null;
+    endpoint === EModelEndpoint.agents && conversation?.agent_id
+      ? agentsMap?.[conversation.agent_id]
+      : null;
   const agentAvatar = getAgentAvatarUrl(agent) ?? '';
 
   const iconURL = assistantAvatar || agentAvatar || convoIconURL;

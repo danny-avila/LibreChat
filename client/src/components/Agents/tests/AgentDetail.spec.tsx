@@ -46,9 +46,7 @@ jest.mock('@librechat/client', () => ({
 }));
 
 jest.mock('~/utils/agents', () => ({
-  renderAgentAvatar: jest.fn((agent, options) => (
-    <div data-testid="agent-avatar" data-size={options?.size} />
-  )),
+  AgentAvatar: jest.fn(({ agent, size }) => <div data-testid="agent-avatar" data-size={size} />),
 }));
 
 jest.mock('~/Providers', () => ({
