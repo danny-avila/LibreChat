@@ -14,7 +14,8 @@ const displayMessage =
  * Supports FLUX.2-Pro, FLUX.2-Flex, Gemini Image Generation, and other OpenRouter-compatible models.
  */
 class OpenRouterImageGen extends Tool {
-  // Supported models with their characteristics
+  // Known models with their characteristics (for reference only, not a restriction)
+  // OpenRouter supports many more models - this list is just for documentation
   static MODELS = {
     'black-forest-labs/flux.2-pro': {
       name: 'FLUX.2 Pro',
@@ -37,6 +38,22 @@ class OpenRouterImageGen extends Tool {
       supportsAspectRatio: false,
     },
   };
+
+  /**
+   * Check if a model supports aspect ratio configuration.
+   * Currently, only Gemini models support aspect ratios.
+   * @param {string} model - The model identifier
+   * @returns {boolean} - True if the model supports aspect ratios
+   */
+  static supportsAspectRatio(model) {
+    // Check known models first
+    const modelInfo = OpenRouterImageGen.MODELS[model];
+    if (modelInfo) {
+      return modelInfo.supportsAspectRatio;
+    }
+    // For unknown models, check if it's a Gemini model by name
+    return model.toLowerCase().includes('gemini');
+  }
 
   // Supported aspect ratios for Gemini models (from OpenRouter docs)
   static ASPECT_RATIOS = [
@@ -92,14 +109,15 @@ class OpenRouterImageGen extends Tool {
       'Generate high-quality images from text descriptions using OpenRouter-supported models like FLUX.2-Pro, FLUX.2-Flex, or Gemini Image Generation. Supports various models optimized for different use cases.';
 
     this.description_for_model = `// Generate images from detailed text descriptions using OpenRouter's image generation models.
-    // Available models:
+    // OpenRouter supports many image generation models. Popular options include:
     // - black-forest-labs/flux.2-pro: Best for high-quality, detailed images
     // - black-forest-labs/flux.2-flex: Flexible model for various styles
     // - google/gemini-2.5-flash-image-preview: Fast generation with aspect ratio control
+    // - Any other OpenRouter-compatible image generation model
     // 
     // Always enhance basic prompts into detailed descriptions (3-6 sentences minimum).
     // Focus on visual elements: lighting, composition, mood, style, colors, and details.
-    // For Gemini models, you can specify aspect ratios like "16:9" for wide images or "9:16" for portraits.`;
+    // For Gemini models (models with "gemini" in the name), you can specify aspect ratios like "16:9" for wide images or "9:16" for portraits.`;
 
     // Define the schema for structured input
     this.schema = z.object({
@@ -110,15 +128,12 @@ class OpenRouterImageGen extends Tool {
           'Detailed text description of the image to generate. Should be 3-6 sentences, focusing on visual elements, lighting, composition, mood, and style.',
         ),
       model: z
-        .enum([
-          'black-forest-labs/flux.2-pro',
-          'black-forest-labs/flux.2-flex',
-          'google/gemini-2.5-flash-image-preview',
-          'sourceful/riverflow-v2-standard-preview',
-        ])
+        .string()
         .optional()
         .default('black-forest-labs/flux.2-pro')
-        .describe('The image generation model to use. Defaults to FLUX.2-Pro for best quality.'),
+        .describe(
+          'The image generation model to use. Any OpenRouter-compatible image generation model can be used. Defaults to FLUX.2-Pro for best quality. Examples: black-forest-labs/flux.2-pro, google/gemini-2.5-flash-image-preview, etc.',
+        ),
       aspect_ratio: z
         .enum(OpenRouterImageGen.ASPECT_RATIOS)
         .optional()
@@ -165,15 +180,12 @@ class OpenRouterImageGen extends Tool {
       throw new Error('Missing required field: prompt');
     }
 
-    // Validate aspect ratio is only used with Gemini models
-    const modelInfo = OpenRouterImageGen.MODELS[model];
-    if (!modelInfo) {
-      throw new Error(`Unsupported model: ${model}`);
-    }
+    // Check if model supports aspect ratio (Gemini models typically do)
+    const supportsAspectRatio = OpenRouterImageGen.supportsAspectRatio(model);
 
-    if (aspect_ratio && !modelInfo.supportsAspectRatio) {
+    if (aspect_ratio && !supportsAspectRatio) {
       logger.warn(
-        `[OpenRouterImageGen] Aspect ratio is only supported for Gemini models. Ignoring aspect_ratio for ${model}.`,
+        `[OpenRouterImageGen] Aspect ratio is typically only supported for Gemini models. Ignoring aspect_ratio for ${model}.`,
       );
     }
 
@@ -195,8 +207,8 @@ class OpenRouterImageGen extends Tool {
       modalities: ['image', 'text'],
     };
 
-    // Add image_config for Gemini models if aspect_ratio is specified
-    if (modelInfo.supportsAspectRatio && aspect_ratio) {
+    // Add image_config for models that support aspect ratio (e.g., Gemini models)
+    if (supportsAspectRatio && aspect_ratio) {
       requestBody.image_config = {
         aspect_ratio,
       };
