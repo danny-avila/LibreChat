@@ -1,5 +1,5 @@
-import { useState, memo } from 'react';
-import { useRecoilState } from 'recoil';
+import { useState, memo, useRef, useEffect, useCallback } from 'react';
+import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import * as Select from '@ariakit/react/select';
 import { FileText, LogOut } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
@@ -19,6 +19,22 @@ function AccountSettings() {
   });
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
+  const setFilesModalTriggerElement = useSetRecoilState(store.filesModalTriggerElement);
+  const filesModalTriggerElement = useRecoilValue(store.filesModalTriggerElement);
+  const myFilesRef = useRef<HTMLDivElement>(null);
+
+  const filesModalTriggerRef = useRef<HTMLButtonElement | HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    filesModalTriggerRef.current = filesModalTriggerElement || myFilesRef.current;
+  }, [filesModalTriggerElement]);
+
+  const handleMyFilesClick = useCallback(() => {
+    if (myFilesRef.current) {
+      setFilesModalTriggerElement(myFilesRef.current);
+    }
+    setShowFiles(true);
+  }, [setShowFiles, setFilesModalTriggerElement]);
 
   return (
     <Select.SelectProvider>
@@ -61,7 +77,8 @@ function AccountSettings() {
         )}
         <Select.SelectItem
           value=""
-          onClick={() => setShowFiles(true)}
+          ref={myFilesRef}
+          onClick={handleMyFilesClick}
           className="select-item text-sm"
         >
           <FileText className="icon-md" aria-hidden="true" />
@@ -96,7 +113,9 @@ function AccountSettings() {
           {localize('com_nav_log_out')}
         </Select.SelectItem>
       </Select.SelectPopover>
-      {showFiles && <FilesView open={showFiles} onOpenChange={setShowFiles} />}
+      {showFiles && (
+        <FilesView open={showFiles} onOpenChange={setShowFiles} triggerRef={filesModalTriggerRef} />
+      )}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </Select.SelectProvider>
   );

@@ -50,6 +50,20 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [{ pageIndex, pageSize }, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
   const setShowFiles = useSetRecoilState(store.showFiles);
+  const setFilesModalTriggerElement = useSetRecoilState(store.filesModalTriggerElement);
+
+  const handleManageFilesClick = useCallback(() => {
+    setShowFiles(true);
+  }, [setShowFiles]);
+
+  const manageFilesRefCallback = useCallback(
+    (node: HTMLButtonElement | null) => {
+      if (node) {
+        setFilesModalTriggerElement(node);
+      }
+    },
+    [setFilesModalTriggerElement],
+  );
 
   const pagination = useMemo(
     () => ({
@@ -301,9 +315,10 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
       <div className="flex items-center justify-between">
         <Button
+          ref={manageFilesRefCallback}
           variant="outline"
           size="sm"
-          onClick={() => setShowFiles(true)}
+          onClick={handleManageFilesClick}
           aria-label={localize('com_sidepanel_manage_files')}
         >
           <ArrowUpLeft className="h-4 w-4" aria-hidden="true" />
