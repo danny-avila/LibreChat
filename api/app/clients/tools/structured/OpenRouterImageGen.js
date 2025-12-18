@@ -1,10 +1,9 @@
 const { z } = require('zod');
 const axios = require('axios');
-const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { FileContext, ContentTypes } = require('librechat-data-provider');
+const { ContentTypes } = require('librechat-data-provider');
 const extractBaseURL = require('~/utils/extractBaseURL');
 
 const displayMessage =
@@ -59,6 +58,11 @@ class OpenRouterImageGen extends Tool {
     /** @type {boolean} Used to initialize the Tool without necessary variables. */
     this.override = fields.override ?? false;
 
+    // This tool is only available for agents
+    if (!this.override && !fields.isAgent) {
+      throw new Error('This tool is only available for agents.');
+    }
+
     this.userId = fields.userId;
     this.fileStrategy = fields.fileStrategy;
 
@@ -66,10 +70,6 @@ class OpenRouterImageGen extends Tool {
     this.isAgent = fields.isAgent;
     this.returnMetadata = fields.returnMetadata ?? false;
 
-    if (fields.processFileURL) {
-      /** @type {processFileURL} Necessary for output to contain all image metadata. */
-      this.processFileURL = fields.processFileURL.bind(this);
-    }
     if (fields.uploadImageBuffer) {
       /** @type {uploadImageBuffer} More efficient for agents - uploads buffer directly. */
       this.uploadImageBuffer = fields.uploadImageBuffer.bind(this);
@@ -129,7 +129,9 @@ class OpenRouterImageGen extends Tool {
   }
 
   getAxiosConfig() {
-    const config = {};
+    const config = {
+      timeout: 12000, // 12 seconds timeout for image generation
+    };
     if (process.env.PROXY) {
       config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
     }
@@ -144,15 +146,10 @@ class OpenRouterImageGen extends Tool {
     return apiKey;
   }
 
-  wrapInMarkdown(imageUrl) {
-    const serverDomain = process.env.DOMAIN_SERVER || 'http://localhost:3080';
-    return `![generated image](${serverDomain}${imageUrl})`;
-  }
-
   returnValue(value) {
-    if (this.isAgent === true && typeof value === 'string') {
+    if (typeof value === 'string') {
       return [value, {}];
-    } else if (this.isAgent === true && typeof value === 'object') {
+    } else if (typeof value === 'object') {
       if (Array.isArray(value)) {
         return value;
       }
@@ -246,62 +243,34 @@ Error Message: ${typeof errorDetails === 'string' ? errorDetails : JSON.stringif
     // Extract base64 from data URL (format: "data:image/png;base64,...")
     const imageUrl = images[0].image_url.url;
 
-    // For agents, return base64 directly (consistent with other image tools)
-    if (this.isAgent) {
-      try {
-        // Ensure imageUrl is in the correct format
-        let base64Url = imageUrl;
-        if (!imageUrl.startsWith('data:')) {
-          // If it's already base64 without data: prefix, add it
-          base64Url = `data:image/png;base64,${imageUrl}`;
-        }
-
-        const content = [
-          {
-            type: ContentTypes.IMAGE_URL,
-            image_url: {
-              url: base64Url,
-            },
-          },
-        ];
-
-        const response = [
-          {
-            type: ContentTypes.TEXT,
-            text: displayMessage,
-          },
-        ];
-        return [response, { content }];
-      } catch (error) {
-        logger.error('[OpenRouterImageGen] Error processing image for agent:', error);
-        return this.returnValue(`Failed to process the image. ${error.message}`);
-      }
-    }
-
-    // For non-agents, save locally
-    const imageName = `img-${uuidv4()}.png`;
+    // Return base64 directly for agents (consistent with other image tools)
     try {
-      logger.debug('[OpenRouterImageGen] Saving image:', imageName);
-      // Ensure imageUrl is in the correct format for processFileURL
-      const imageUrlForSave = imageUrl.startsWith('data:')
-        ? imageUrl
-        : `data:image/png;base64,${imageUrl}`;
-      const result = await this.processFileURL({
-        fileStrategy: this.fileStrategy,
-        userId: this.userId,
-        URL: imageUrlForSave,
-        fileName: imageName,
-        basePath: 'images',
-        context: FileContext.image_generation,
-      });
+      // Ensure imageUrl is in the correct format
+      let base64Url = imageUrl;
+      if (!imageUrl.startsWith('data:')) {
+        // If it's already base64 without data: prefix, add it
+        base64Url = `data:image/png;base64,${imageUrl}`;
+      }
 
-      logger.debug('[OpenRouterImageGen] Image saved to path:', result.filepath);
-      this.result = this.returnMetadata ? result : this.wrapInMarkdown(result.filepath);
-      return this.returnValue(this.result);
+      const content = [
+        {
+          type: ContentTypes.IMAGE_URL,
+          image_url: {
+            url: base64Url,
+          },
+        },
+      ];
+
+      const response = [
+        {
+          type: ContentTypes.TEXT,
+          text: displayMessage,
+        },
+      ];
+      return [response, { content }];
     } catch (error) {
-      const details = error?.message ?? 'No additional error details.';
-      logger.error('[OpenRouterImageGen] Error while saving the image:', details);
-      return this.returnValue(`Failed to save the image locally. ${details}`);
+      logger.error('[OpenRouterImageGen] Error processing image for agent:', error);
+      return this.returnValue(`Failed to process the image. ${error.message}`);
     }
   }
 }
