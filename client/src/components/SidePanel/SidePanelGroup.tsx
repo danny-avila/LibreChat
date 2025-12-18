@@ -147,11 +147,13 @@ const SidePanelGroup = memo(
         {artifacts != null && isSmallScreen && (
           <div className="fixed inset-0 z-[100]">{artifacts}</div>
         )}
-        <button
-          aria-label="Close right side panel"
-          className={`nav-mask ${!isCollapsed ? 'active' : ''}`}
-          onClick={handleClosePanel}
-        />
+        {!hideSidePanel && interfaceConfig.sidePanel === true && (
+          <button
+            aria-label="Close right side panel"
+            className={`nav-mask ${!isCollapsed ? 'active' : ''}`}
+            onClick={handleClosePanel}
+          />
+        )}
       </>
     );
   },

@@ -1,4 +1,5 @@
 const { ObjectId } = require('mongodb');
+const { escapeRegExp } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
   Constants,
@@ -13,8 +14,7 @@ const {
   getProjectByName,
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
-const { PromptGroup, Prompt } = require('~/db/models');
-const { escapeRegExp } = require('~/server/utils');
+const { PromptGroup, Prompt, AclEntry } = require('~/db/models');
 
 /**
  * Create a pipeline for the aggregation to get prompt groups
@@ -589,6 +589,36 @@ module.exports = {
       }
 
       return { prompt: 'Prompt deleted successfully' };
+    }
+  },
+  /**
+   * Delete all prompts and prompt groups created by a specific user.
+   * @param {ServerRequest} req - The server request object.
+   * @param {string} userId - The ID of the user whose prompts and prompt groups are to be deleted.
+   */
+  deleteUserPrompts: async (req, userId) => {
+    try {
+      const promptGroups = await getAllPromptGroups(req, { author: new ObjectId(userId) });
+
+      if (promptGroups.length === 0) {
+        return;
+      }
+
+      const groupIds = promptGroups.map((group) => group._id);
+
+      for (const groupId of groupIds) {
+        await removeGroupFromAllProjects(groupId);
+      }
+
+      await AclEntry.deleteMany({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: { $in: groupIds },
+      });
+
+      await PromptGroup.deleteMany({ author: new ObjectId(userId) });
+      await Prompt.deleteMany({ author: new ObjectId(userId) });
+    } catch (error) {
+      logger.error('[deleteUserPrompts] General error:', error);
     }
   },
   /**

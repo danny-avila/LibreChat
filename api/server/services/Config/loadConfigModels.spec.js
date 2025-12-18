@@ -1,8 +1,11 @@
-const { fetchModels } = require('~/server/services/ModelService');
+const { fetchModels } = require('@librechat/api');
 const loadConfigModels = require('./loadConfigModels');
 const { getAppConfig } = require('./app');
 
-jest.mock('~/server/services/ModelService');
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  fetchModels: jest.fn(),
+}));
 jest.mock('./app');
 
 const exampleConfig = {

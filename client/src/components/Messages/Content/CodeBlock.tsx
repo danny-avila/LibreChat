@@ -36,7 +36,7 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(
             <button
               type="button"
               className={cn(
-                'ml-auto flex gap-2',
+                'ml-auto flex gap-2 rounded-sm focus:outline focus:outline-white',
                 error === true ? 'h-4 w-4 items-start text-white/50' : '',
               )}
               onClick={async () => {

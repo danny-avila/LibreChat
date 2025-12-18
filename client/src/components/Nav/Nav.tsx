@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useMediaQuery } from '@librechat/client';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Skeleton, useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
@@ -20,10 +21,17 @@ import store from '~/store';
 
 const BookmarkNav = lazy(() => import('./Bookmarks/BookmarkNav'));
 const AccountSettings = lazy(() => import('./AccountSettings'));
-const AgentMarketplaceButton = lazy(() => import('./AgentMarketplaceButton'));
 
 const NAV_WIDTH_DESKTOP = '260px';
 const NAV_WIDTH_MOBILE = '320px';
+
+const SearchBarSkeleton = memo(() => (
+  <div className={cn('flex h-10 items-center py-2')}>
+    <Skeleton className="h-10 w-full rounded-lg" />
+  </div>
+));
+
+SearchBarSkeleton.displayName = 'SearchBarSkeleton';
 
 const NavMask = memo(
   ({ navVisible, toggleNavVisible }: { navVisible: boolean; toggleNavVisible: () => void }) => (
@@ -59,6 +67,7 @@ const Nav = memo(
     const [navWidth, setNavWidth] = useState(NAV_WIDTH_DESKTOP);
     const isSmallScreen = useMediaQuery('(max-width: 768px)');
     const [newUser, setNewUser] = useLocalStorage('newUser', true);
+    const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
     const [showLoading, setShowLoading] = useState(false);
     const [tags, setTags] = useState<string[]>([]);
 
@@ -91,7 +100,7 @@ const Nav = memo(
     }, [data?.pages]);
 
     const outerContainerRef = useRef<HTMLDivElement>(null);
-    const listRef = useRef<any>(null);
+    const conversationsRef = useRef<List | null>(null);
 
     const { moveToTop } = useNavScrolling<ConversationListResponse>({
       setShowLoading,
@@ -151,27 +160,29 @@ const Nav = memo(
     }, [isFetchingNextPage, computedHasNextPage, fetchNextPage]);
 
     const subHeaders = useMemo(
-      () => search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />,
+      () => (
+        <>
+          {search.enabled === null && <SearchBarSkeleton />}
+          {search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
+        </>
+      ),
       [search.enabled, isSmallScreen],
     );
 
     const headerButtons = useMemo(
       () => (
         <>
-          <Suspense fallback={null}>
-            <AgentMarketplaceButton isSmallScreen={isSmallScreen} toggleNav={toggleNavVisible} />
-          </Suspense>
           {hasAccessToBookmarks && (
             <>
               <div className="mt-1.5" />
               <Suspense fallback={null}>
-                <BookmarkNav tags={tags} setTags={setTags} isSmallScreen={isSmallScreen} />
+                <BookmarkNav tags={tags} setTags={setTags} />
               </Suspense>
             </>
           )}
         </>
       ),
-      [hasAccessToBookmarks, tags, isSmallScreen, toggleNavVisible],
+      [hasAccessToBookmarks, tags],
     );
 
     const [isSearchLoading, setIsSearchLoading] = useState(
@@ -190,54 +201,57 @@ const Nav = memo(
 
     return (
       <>
-        <div
-          data-testid="nav"
-          className={cn(
-            'nav active max-w-[320px] flex-shrink-0 transform overflow-x-hidden bg-surface-primary-alt transition-all duration-200 ease-in-out',
-            'md:max-w-[260px]',
-          )}
-          style={{
-            width: navVisible ? navWidth : '0px',
-            transform: navVisible ? 'translateX(0)' : 'translateX(-100%)',
-          }}
-        >
-          <div className="h-full w-[320px] md:w-[260px]">
-            <div className="flex h-full flex-col">
-              <div
-                className={`flex h-full flex-col transition-opacity duration-200 ease-in-out ${navVisible ? 'opacity-100' : 'opacity-0'}`}
-              >
+        <AnimatePresence initial={false}>
+          {navVisible && (
+            <motion.div
+              data-testid="nav"
+              className={cn(
+                'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-surface-primary-alt',
+                'md:max-w-[260px]',
+              )}
+              initial={{ width: 0 }}
+              animate={{ width: navWidth }}
+              exit={{ width: 0 }}
+              transition={{ duration: 0.2 }}
+              key="nav"
+            >
+              <div className="h-full w-[320px] md:w-[260px]">
                 <div className="flex h-full flex-col">
                   <nav
                     id="chat-history-nav"
                     aria-label={localize('com_ui_chat_history')}
-                    className="flex h-full flex-col px-2 pb-3.5 md:px-3"
+                    className="flex h-full flex-col px-2 pb-3.5"
                   >
-                    <div className="flex flex-1 flex-col" ref={outerContainerRef}>
+                    <div className="flex flex-1 flex-col overflow-hidden" ref={outerContainerRef}>
                       <MemoNewChat
                         subHeaders={subHeaders}
                         toggleNav={toggleNavVisible}
                         headerButtons={headerButtons}
                         isSmallScreen={isSmallScreen}
                       />
-                      <Conversations
-                        conversations={conversations}
-                        moveToTop={moveToTop}
-                        toggleNav={itemToggleNav}
-                        containerRef={listRef}
-                        loadMoreConversations={loadMoreConversations}
-                        isLoading={isFetchingNextPage || showLoading || isLoading}
-                        isSearchLoading={isSearchLoading}
-                      />
+                      <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
+                        <Conversations
+                          conversations={conversations}
+                          moveToTop={moveToTop}
+                          toggleNav={itemToggleNav}
+                          containerRef={conversationsRef}
+                          loadMoreConversations={loadMoreConversations}
+                          isLoading={isFetchingNextPage || showLoading || isLoading}
+                          isSearchLoading={isSearchLoading}
+                          isChatsExpanded={isChatsExpanded}
+                          setIsChatsExpanded={setIsChatsExpanded}
+                        />
+                      </div>
                     </div>
-                    <Suspense fallback={null}>
+                    <Suspense fallback={<Skeleton className="mt-1 h-12 w-full rounded-xl" />}>
                       <AccountSettings />
                     </Suspense>
                   </nav>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         {isSmallScreen && <NavMask navVisible={navVisible} toggleNavVisible={toggleNavVisible} />}
       </>
     );

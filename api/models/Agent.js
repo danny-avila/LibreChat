@@ -12,8 +12,31 @@ const {
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
 const { getMCPServerTools } = require('~/server/services/Config');
+const { Agent, AclEntry } = require('~/db/models');
 const { getActions } = require('./Action');
-const { Agent } = require('~/db/models');
+
+/**
+ * Extracts unique MCP server names from tools array
+ * Tools format: "toolName_mcp_serverName" or "sys__server__sys_mcp_serverName"
+ * @param {string[]} tools - Array of tool identifiers
+ * @returns {string[]} Array of unique MCP server names
+ */
+const extractMCPServerNames = (tools) => {
+  if (!tools || !Array.isArray(tools)) {
+    return [];
+  }
+  const serverNames = new Set();
+  for (const tool of tools) {
+    if (!tool || !tool.includes(mcp_delimiter)) {
+      continue;
+    }
+    const parts = tool.split(mcp_delimiter);
+    if (parts.length >= 2) {
+      serverNames.add(parts[parts.length - 1]);
+    }
+  }
+  return Array.from(serverNames);
+};
 
 /**
  * Create an agent with the provided data.
@@ -34,6 +57,7 @@ const createAgent = async (agentData) => {
       },
     ],
     category: agentData.category || 'general',
+    mcpServerNames: extractMCPServerNames(agentData.tools),
   };
 
   return (await Agent.create(initialAgentData)).toObject();
@@ -354,6 +378,13 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
     } = currentAgent.toObject();
     const { $push, $pull, $addToSet, ...directUpdates } = updateData;
 
+    // Sync mcpServerNames when tools are updated
+    if (directUpdates.tools !== undefined) {
+      const mcpServerNames = extractMCPServerNames(directUpdates.tools);
+      directUpdates.mcpServerNames = mcpServerNames;
+      updateData.mcpServerNames = mcpServerNames; // Also update the original updateData
+    }
+
     let actionsHash = null;
 
     // Generate actions hash if agent has actions
@@ -537,6 +568,37 @@ const deleteAgent = async (searchParameter) => {
     });
   }
   return agent;
+};
+
+/**
+ * Deletes all agents created by a specific user.
+ * @param {string} userId - The ID of the user whose agents should be deleted.
+ * @returns {Promise<void>} A promise that resolves when all user agents have been deleted.
+ */
+const deleteUserAgents = async (userId) => {
+  try {
+    const userAgents = await getAgents({ author: userId });
+
+    if (userAgents.length === 0) {
+      return;
+    }
+
+    const agentIds = userAgents.map((agent) => agent.id);
+    const agentObjectIds = userAgents.map((agent) => agent._id);
+
+    for (const agentId of agentIds) {
+      await removeAgentFromAllProjects(agentId);
+    }
+
+    await AclEntry.deleteMany({
+      resourceType: ResourceType.AGENT,
+      resourceId: { $in: agentObjectIds },
+    });
+
+    await Agent.deleteMany({ author: userId });
+  } catch (error) {
+    logger.error('[deleteUserAgents] General error:', error);
+  }
 };
 
 /**
@@ -856,6 +918,7 @@ module.exports = {
   createAgent,
   updateAgent,
   deleteAgent,
+  deleteUserAgents,
   getListAgents,
   revertAgentVersion,
   updateAgentProjects,

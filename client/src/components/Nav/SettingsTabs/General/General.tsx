@@ -29,14 +29,23 @@ const toggleSwitchConfigs = [
     hoverCardText: undefined,
     key: 'hideSidePanel',
   },
+  {
+    stateAtom: store.keepScreenAwake,
+    localizationKey: 'com_nav_keep_screen_awake',
+    switchId: 'keepScreenAwake',
+    hoverCardText: undefined,
+    key: 'keepScreenAwake',
+  },
 ];
 
 export const ThemeSelector = ({
   theme,
   onChange,
+  portal = true,
 }: {
   theme: string;
   onChange: (value: string) => void;
+  portal?: boolean;
 }) => {
   const localize = useLocalize();
 
@@ -60,6 +69,7 @@ export const ThemeSelector = ({
         testId="theme-selector"
         className="z-50"
         aria-labelledby={labelId}
+        portal={portal}
       />
     </div>
   );

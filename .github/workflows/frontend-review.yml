@@ -5,6 +5,7 @@ on:
     branches: 
       - main
       - dev
+      - dev-staging
       - release/*
     paths:
       - 'client/**'
