@@ -43,6 +43,8 @@ const mockRegistryInstance = {
 // Create isMCPDomainAllowed mock that can be configured per-test
 const mockIsMCPDomainAllowed = jest.fn(() => Promise.resolve(true));
 
+const mockGetAppConfig = jest.fn(() => Promise.resolve({}));
+
 jest.mock('@librechat/api', () => {
   // Access mock via getter to avoid hoisting issues
   return {
@@ -89,9 +91,6 @@ jest.mock('librechat-data-provider', () => ({
     TWO_MINUTES: 120000,
   },
 }));
-
-// Mock getAppConfig to return configurable mcpSettings
-const mockGetAppConfig = jest.fn(() => Promise.resolve({}));
 
 jest.mock('./Config', () => ({
   loadCustomConfig: jest.fn(),
