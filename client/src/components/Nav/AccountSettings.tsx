@@ -1,4 +1,4 @@
-import { useState, memo } from 'react';
+import { useState, memo, useRef } from 'react';
 import * as Select from '@ariakit/react/select';
 import { FileText, LogOut } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
@@ -17,10 +17,12 @@ function AccountSettings() {
   });
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
+  const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
 
   return (
     <Select.SelectProvider>
       <Select.Select
+        ref={accountSettingsButtonRef}
         aria-label={localize('com_nav_account_settings')}
         data-testid="nav-user"
         className="mt-text-sm flex h-auto w-full items-center gap-2 rounded-xl p-2 text-sm transition-all duration-200 ease-in-out hover:bg-surface-hover aria-[expanded=true]:bg-surface-hover"
@@ -94,7 +96,13 @@ function AccountSettings() {
           {localize('com_nav_log_out')}
         </Select.SelectItem>
       </Select.SelectPopover>
-      {showFiles && <MyFilesModal open={showFiles} onOpenChange={setShowFiles} />}
+      {showFiles && (
+        <MyFilesModal
+          open={showFiles}
+          onOpenChange={setShowFiles}
+          triggerRef={accountSettingsButtonRef}
+        />
+      )}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </Select.SelectProvider>
   );
