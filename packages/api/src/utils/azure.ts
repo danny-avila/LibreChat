@@ -132,7 +132,7 @@ export function constructAzureURL({
  * @returns {boolean} True if Entra ID authentication should be used
  */
 export const shouldUseEntraId = (): boolean => {
-  return process.env.AZURE_OPENAI_USE_ENTRA_ID === 'true';
+  return isEnabled(process.env.AZURE_OPENAI_USE_ENTRA_ID);
 };
 
 /**
