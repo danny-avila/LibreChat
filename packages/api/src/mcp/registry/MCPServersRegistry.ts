@@ -1,3 +1,4 @@
+import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type * as t from '~/mcp/types';
@@ -5,6 +6,7 @@ import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/erro
 import { ServerConfigsCacheFactory } from './cache/ServerConfigsCacheFactory';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
+import { cacheConfig } from '~/cache/cacheConfig';
 
 /**
  * Central registry for managing MCP server configurations.
@@ -22,11 +24,25 @@ export class MCPServersRegistry {
   private readonly dbConfigsRepo: IServerConfigsRepositoryInterface;
   private readonly cacheConfigsRepo: IServerConfigsRepositoryInterface;
   private readonly allowedDomains?: string[] | null;
+  private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
+  private readonly readThroughCacheAll: Keyv<Record<string, t.ParsedServerConfig>>;
 
   constructor(mongoose: typeof import('mongoose'), allowedDomains?: string[] | null) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create('App', false);
     this.allowedDomains = allowedDomains;
+
+    const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
+
+    this.readThroughCache = new Keyv<t.ParsedServerConfig>({
+      namespace: 'mcp-registry-read-through',
+      ttl,
+    });
+
+    this.readThroughCacheAll = new Keyv<Record<string, t.ParsedServerConfig>>({
+      namespace: 'mcp-registry-read-through-all',
+      ttl,
+    });
   }
 
   /** Creates and initializes the singleton MCPServersRegistry instance */
@@ -61,20 +77,40 @@ export class MCPServersRegistry {
     serverName: string,
     userId?: string,
   ): Promise<t.ParsedServerConfig | undefined> {
+    const cacheKey = this.getReadThroughCacheKey(serverName, userId);
+
+    if (await this.readThroughCache.has(cacheKey)) {
+      return await this.readThroughCache.get(cacheKey);
+    }
+
     // First we check if any config exist with the cache
     // Yaml config are pre loaded to the cache
     const configFromCache = await this.cacheConfigsRepo.get(serverName);
-    if (configFromCache) return configFromCache;
+    if (configFromCache) {
+      await this.readThroughCache.set(cacheKey, configFromCache);
+      return configFromCache;
+    }
+
     const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
-    if (configFromDB) return configFromDB;
-    return undefined;
+    await this.readThroughCache.set(cacheKey, configFromDB);
+    return configFromDB;
   }
 
   public async getAllServerConfigs(userId?: string): Promise<Record<string, t.ParsedServerConfig>> {
-    return {
+    const cacheKey = userId ?? '__no_user__';
+
+    // Check if key exists in read-through cache
+    if (await this.readThroughCacheAll.has(cacheKey)) {
+      return (await this.readThroughCacheAll.get(cacheKey)) ?? {};
+    }
+
+    const result = {
       ...(await this.cacheConfigsRepo.getAll()),
       ...(await this.dbConfigsRepo.getAll(userId)),
     };
+
+    await this.readThroughCacheAll.set(cacheKey, result);
+    return result;
   }
 
   public async addServer(
@@ -156,6 +192,8 @@ export class MCPServersRegistry {
 
   public async reset(): Promise<void> {
     await this.cacheConfigsRepo.reset();
+    await this.readThroughCache.clear();
+    await this.readThroughCacheAll.clear();
   }
 
   public async removeServer(
@@ -178,5 +216,9 @@ export class MCPServersRegistry {
           `MCPServersRegistry: The provided storage location "${storageLocation}" is not supported`,
         );
     }
+  }
+
+  private getReadThroughCacheKey(serverName: string, userId?: string): string {
+    return userId ? `${serverName}::${userId}` : serverName;
   }
 }
