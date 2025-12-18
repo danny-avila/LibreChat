@@ -32,7 +32,6 @@ function LoadingSpinner() {
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
-  const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
 
   const fileMap = useFileMapContext();
@@ -52,7 +51,6 @@ function ChatView({ index = 0 }: { index?: number }) {
   const addedChatHelpers = useAddedResponse({ rootIndex: index });
 
   useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
-  useAdaptiveSSE(addedSubmission, addedChatHelpers, true, index + 1);
 
   // Auto-resume if navigating back to conversation with active job
   // Wait for messages to load before resuming to avoid race condition
