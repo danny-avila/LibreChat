@@ -2,9 +2,10 @@ import { Constants } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { MCPDomainNotAllowedError } from '~/mcp/errors';
+import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isEnabled } from '~/utils';
 
 /**
@@ -38,7 +39,7 @@ export class MCPServerInspector {
     const isDomainAllowed = await isMCPDomainAllowed(rawConfig, allowedDomains);
     if (!isDomainAllowed) {
       const domain = extractMCPServerDomain(rawConfig);
-      throw new Error(`MCP_DOMAIN_NOT_ALLOWED: Domain "${domain}" is not allowed`);
+      throw new MCPDomainNotAllowedError(domain ?? 'unknown');
     }
 
     const start = Date.now();

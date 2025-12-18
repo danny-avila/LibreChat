@@ -30,7 +30,6 @@ const {
 const { findToken, createToken, updateToken } = require('~/models');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getLogStores } = require('~/cache');
-const { getAppConfig } = require('./Config');
 
 /**
  * @param {object} params
@@ -238,6 +237,18 @@ async function createMCPTools({
   userMCPAuthMap,
   config,
 }) {
+  // Early domain validation before reconnecting server (avoid wasted work on disallowed domains)
+  const serverConfig =
+    config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id));
+  if (serverConfig?.url) {
+    const allowedDomains = getMCPServersRegistry().getAllowedDomains();
+    const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
+    if (!isDomainAllowed) {
+      logger.warn(`[MCP][${serverName}] Domain not allowed, skipping all tools`);
+      return [];
+    }
+  }
+
   const result = await reconnectServer({ res, user, index, signal, serverName, userMCPAuthMap });
   if (!result || !result.tools) {
     logger.warn(`[MCP][${serverName}] Failed to reinitialize MCP server.`);
@@ -253,7 +264,7 @@ async function createMCPTools({
       userMCPAuthMap,
       availableTools: result.availableTools,
       toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
-      config,
+      config: serverConfig,
     });
     if (toolInstance) {
       serverTools.push(toolInstance);
@@ -292,14 +303,12 @@ async function createMCPTool({
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
 
   // Runtime domain validation: check if the server's domain is still allowed
+  // Use registry's cached allowedDomains to avoid fetching app config per tool
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id));
   if (serverConfig?.url) {
-    const appConfig = await getAppConfig();
-    const isDomainAllowed = await isMCPDomainAllowed(
-      serverConfig,
-      appConfig?.mcpSettings?.allowedDomains,
-    );
+    const allowedDomains = getMCPServersRegistry().getAllowedDomains();
+    const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
     if (!isDomainAllowed) {
       logger.warn(`[MCP][${serverName}] Domain no longer allowed, skipping tool: ${toolName}`);
       return undefined;

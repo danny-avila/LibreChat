@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type * as t from '~/mcp/types';
+import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
 import { ServerConfigsCacheFactory } from './cache/ServerConfigsCacheFactory';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
@@ -94,10 +95,10 @@ export class MCPServersRegistry {
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
       // Preserve domain-specific error for better error handling
-      if ((error as Error).message?.startsWith('MCP_DOMAIN_NOT_ALLOWED')) {
+      if (isMCPDomainNotAllowedError(error)) {
         throw error;
       }
-      throw new Error(`MCP_INSPECTION_FAILED: Failed to connect to MCP server "${serverName}"`);
+      throw new MCPInspectionFailedError(serverName, error as Error);
     }
     return await configRepo.add(serverName, parsedConfig, userId);
   }
@@ -136,10 +137,10 @@ export class MCPServersRegistry {
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
       // Preserve domain-specific error for better error handling
-      if ((error as Error).message?.startsWith('MCP_DOMAIN_NOT_ALLOWED')) {
+      if (isMCPDomainNotAllowedError(error)) {
         throw error;
       }
-      throw new Error(`MCP_INSPECTION_FAILED: Failed to connect to MCP server "${serverName}"`);
+      throw new MCPInspectionFailedError(serverName, error as Error);
     }
     await configRepo.update(serverName, parsedConfig, userId);
     return parsedConfig;
@@ -151,6 +152,14 @@ export class MCPServersRegistry {
     const allServers = await this.getAllServerConfigs(userId);
     const oauthServers = Object.entries(allServers).filter(([, config]) => config.requiresOAuth);
     return new Set(oauthServers.map(([name]) => name));
+  }
+
+  /**
+   * Returns the configured allowedDomains for this registry instance.
+   * Used for runtime domain validation without re-fetching app config.
+   */
+  public getAllowedDomains(): string[] | null | undefined {
+    return this.allowedDomains;
   }
 
   public async reset(): Promise<void> {
