@@ -38,7 +38,6 @@ const mockRegistryInstance = {
   getOAuthServers: jest.fn(() => Promise.resolve(new Set())),
   getAllServerConfigs: jest.fn(() => Promise.resolve({})),
   getServerConfig: jest.fn(() => Promise.resolve(null)),
-  getAllowedDomains: jest.fn(() => null),
 };
 
 // Create isMCPDomainAllowed mock that can be configured per-test
@@ -91,9 +90,14 @@ jest.mock('librechat-data-provider', () => ({
   },
 }));
 
+// Mock getAppConfig to return configurable mcpSettings
+const mockGetAppConfig = jest.fn(() => Promise.resolve({}));
+
 jest.mock('./Config', () => ({
   loadCustomConfig: jest.fn(),
-  getAppConfig: jest.fn(),
+  get getAppConfig() {
+    return mockGetAppConfig;
+  },
 }));
 
 jest.mock('~/config', () => ({
@@ -713,8 +717,10 @@ describe('User parameter passing tests', () => {
     // Reset registry mocks
     mockRegistryInstance.getServerConfig.mockReset();
     mockRegistryInstance.getServerConfig.mockResolvedValue(null);
-    mockRegistryInstance.getAllowedDomains.mockReset();
-    mockRegistryInstance.getAllowedDomains.mockReturnValue(null);
+
+    // Reset getAppConfig mock to default (no restrictions)
+    mockGetAppConfig.mockReset();
+    mockGetAppConfig.mockResolvedValue({});
   });
 
   describe('createMCPTools', () => {
@@ -912,14 +918,18 @@ describe('User parameter passing tests', () => {
 
   describe('Runtime domain validation', () => {
     it('should skip tool creation when domain is not allowed', async () => {
-      const mockUser = { id: 'domain-test-user' };
+      const mockUser = { id: 'domain-test-user', role: 'user' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };
 
       // Mock server config with URL (remote server)
       mockRegistryInstance.getServerConfig.mockResolvedValue({
         url: 'https://disallowed-domain.com/sse',
       });
-      mockRegistryInstance.getAllowedDomains.mockReturnValue(['allowed-domain.com']);
+
+      // Mock getAppConfig to return domain restrictions
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['allowed-domain.com'] },
+      });
 
       // Mock domain validation to return false (domain not allowed)
       mockIsMCPDomainAllowed.mockResolvedValueOnce(false);
@@ -946,6 +956,9 @@ describe('User parameter passing tests', () => {
       // Should not call reinitMCPServer since domain check failed
       expect(mockReinitMCPServer).not.toHaveBeenCalled();
 
+      // Verify getAppConfig was called with user role
+      expect(mockGetAppConfig).toHaveBeenCalledWith({ role: 'user' });
+
       // Verify domain validation was called with correct parameters
       expect(mockIsMCPDomainAllowed).toHaveBeenCalledWith(
         { url: 'https://disallowed-domain.com/sse' },
@@ -954,14 +967,18 @@ describe('User parameter passing tests', () => {
     });
 
     it('should allow tool creation when domain is allowed', async () => {
-      const mockUser = { id: 'domain-test-user' };
+      const mockUser = { id: 'domain-test-user', role: 'admin' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };
 
       // Mock server config with URL (remote server)
       mockRegistryInstance.getServerConfig.mockResolvedValue({
         url: 'https://allowed-domain.com/sse',
       });
-      mockRegistryInstance.getAllowedDomains.mockReturnValue(['allowed-domain.com']);
+
+      // Mock getAppConfig to return domain restrictions
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['allowed-domain.com'] },
+      });
 
       // Mock domain validation to return true (domain allowed)
       mockIsMCPDomainAllowed.mockResolvedValueOnce(true);
@@ -986,6 +1003,9 @@ describe('User parameter passing tests', () => {
 
       // Should create tool successfully
       expect(result).toBeDefined();
+
+      // Verify getAppConfig was called with user role
+      expect(mockGetAppConfig).toHaveBeenCalledWith({ role: 'admin' });
     });
 
     it('should skip domain validation for stdio transports (no URL)', async () => {
@@ -997,7 +1017,11 @@ describe('User parameter passing tests', () => {
         command: 'npx',
         args: ['@modelcontextprotocol/server'],
       });
-      mockRegistryInstance.getAllowedDomains.mockReturnValue(['restricted-domain.com']);
+
+      // Mock getAppConfig (should not be called for stdio)
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['restricted-domain.com'] },
+      });
 
       const availableTools = {
         'test-tool::test-server': {
@@ -1020,18 +1044,23 @@ describe('User parameter passing tests', () => {
       // Should create tool successfully without domain check
       expect(result).toBeDefined();
 
-      // Should not call isMCPDomainAllowed for stdio transport (no URL)
+      // Should not call getAppConfig or isMCPDomainAllowed for stdio transport (no URL)
+      expect(mockGetAppConfig).not.toHaveBeenCalled();
       expect(mockIsMCPDomainAllowed).not.toHaveBeenCalled();
     });
 
     it('should return empty array from createMCPTools when domain is not allowed', async () => {
-      const mockUser = { id: 'domain-test-user' };
+      const mockUser = { id: 'domain-test-user', role: 'user' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };
 
       // Mock server config with URL (remote server)
       const serverConfig = { url: 'https://disallowed-domain.com/sse' };
       mockRegistryInstance.getServerConfig.mockResolvedValue(serverConfig);
-      mockRegistryInstance.getAllowedDomains.mockReturnValue(['allowed-domain.com']);
+
+      // Mock getAppConfig to return domain restrictions
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['allowed-domain.com'] },
+      });
 
       // Mock domain validation to return false (domain not allowed)
       mockIsMCPDomainAllowed.mockResolvedValueOnce(false);
@@ -1050,6 +1079,63 @@ describe('User parameter passing tests', () => {
 
       // Should not call reinitMCPServer since domain check failed early
       expect(mockReinitMCPServer).not.toHaveBeenCalled();
+
+      // Verify getAppConfig was called with user role
+      expect(mockGetAppConfig).toHaveBeenCalledWith({ role: 'user' });
+    });
+
+    it('should use user role when fetching domain restrictions', async () => {
+      const adminUser = { id: 'admin-user', role: 'admin' };
+      const regularUser = { id: 'regular-user', role: 'user' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        url: 'https://some-domain.com/sse',
+      });
+
+      // Mock different responses based on role
+      mockGetAppConfig
+        .mockResolvedValueOnce({ mcpSettings: { allowedDomains: ['admin-allowed.com'] } })
+        .mockResolvedValueOnce({ mcpSettings: { allowedDomains: ['user-allowed.com'] } });
+
+      mockIsMCPDomainAllowed.mockResolvedValue(true);
+
+      const availableTools = {
+        'test-tool::test-server': {
+          function: {
+            description: 'Test tool',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+
+      // Call with admin user
+      await createMCPTool({
+        res: mockRes,
+        user: adminUser,
+        toolKey: 'test-tool::test-server',
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools,
+      });
+
+      // Reset and call with regular user
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        url: 'https://some-domain.com/sse',
+      });
+
+      await createMCPTool({
+        res: mockRes,
+        user: regularUser,
+        toolKey: 'test-tool::test-server',
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools,
+      });
+
+      // Verify getAppConfig was called with correct roles
+      expect(mockGetAppConfig).toHaveBeenNthCalledWith(1, { role: 'admin' });
+      expect(mockGetAppConfig).toHaveBeenNthCalledWith(2, { role: 'user' });
     });
   });
 

@@ -29,6 +29,7 @@ const {
 } = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
 const { reinitMCPServer } = require('./Tools/mcp');
+const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -238,10 +239,12 @@ async function createMCPTools({
   userMCPAuthMap,
 }) {
   // Early domain validation before reconnecting server (avoid wasted work on disallowed domains)
+  // Use getAppConfig() to support per-user/role domain restrictions
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id));
   if (serverConfig?.url) {
-    const allowedDomains = getMCPServersRegistry().getAllowedDomains();
+    const appConfig = await getAppConfig({ role: user?.role });
+    const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
     if (!isDomainAllowed) {
       logger.warn(`[MCP][${serverName}] Domain not allowed, skipping all tools`);
@@ -303,11 +306,12 @@ async function createMCPTool({
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
 
   // Runtime domain validation: check if the server's domain is still allowed
-  // Use registry's cached allowedDomains to avoid fetching app config per tool
+  // Use getAppConfig() to support per-user/role domain restrictions
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id));
   if (serverConfig?.url) {
-    const allowedDomains = getMCPServersRegistry().getAllowedDomains();
+    const appConfig = await getAppConfig({ role: user?.role });
+    const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
     if (!isDomainAllowed) {
       logger.warn(`[MCP][${serverName}] Domain no longer allowed, skipping tool: ${toolName}`);

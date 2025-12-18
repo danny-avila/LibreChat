@@ -154,14 +154,6 @@ export class MCPServersRegistry {
     return new Set(oauthServers.map(([name]) => name));
   }
 
-  /**
-   * Returns the configured allowedDomains for this registry instance.
-   * Used for runtime domain validation without re-fetching app config.
-   */
-  public getAllowedDomains(): string[] | null | undefined {
-    return this.allowedDomains;
-  }
-
   public async reset(): Promise<void> {
     await this.cacheConfigsRepo.reset();
   }
