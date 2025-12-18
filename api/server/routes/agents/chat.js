@@ -2,9 +2,7 @@ const express = require('express');
 const { generateCheckAccess, skipAgentCheck } = require('@librechat/api');
 const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
 const {
-  setHeaders,
   moderateText,
-  requireJwtAuth,
   // validateModel,
   validateConvoAccess,
   buildEndpointOption,
@@ -32,7 +30,6 @@ router.use(checkAgentAccess);
 router.use(checkAgentResourceAccess);
 router.use(validateConvoAccess);
 router.use(buildEndpointOption);
-router.use(setHeaders);
 
 const controller = async (req, res, next) => {
   await AgentController(req, res, next, initializeClient, addTitle);
