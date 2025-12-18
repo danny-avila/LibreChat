@@ -4,7 +4,7 @@ const { Tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { ContentTypes } = require('librechat-data-provider');
-const extractBaseURL = require('~/utils/extractBaseURL');
+const { extractBaseURL } = require('@librechat/api');
 
 const displayMessage =
   "OpenRouter displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but not mention anything about downloading to the user.";
