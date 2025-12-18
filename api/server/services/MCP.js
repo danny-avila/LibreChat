@@ -10,6 +10,7 @@ const {
 const {
   sendEvent,
   MCPOAuthHandler,
+  isMCPDomainAllowed,
   normalizeServerName,
   convertWithResolvedRefs,
 } = require('@librechat/api');
@@ -21,13 +22,14 @@ const {
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const {
-  getMCPManager,
-  getFlowStateManager,
   getOAuthReconnectionManager,
   getMCPServersRegistry,
+  getFlowStateManager,
+  getMCPManager,
 } = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
 const { reinitMCPServer } = require('./Tools/mcp');
+const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -222,10 +224,34 @@ async function reconnectServer({ res, user, index, signal, serverName, userMCPAu
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {number} [params.index]
  * @param {AbortSignal} [params.signal]
+ * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
-async function createMCPTools({ res, user, index, signal, serverName, provider, userMCPAuthMap }) {
+async function createMCPTools({
+  res,
+  user,
+  index,
+  signal,
+  config,
+  provider,
+  serverName,
+  userMCPAuthMap,
+}) {
+  // Early domain validation before reconnecting server (avoid wasted work on disallowed domains)
+  // Use getAppConfig() to support per-user/role domain restrictions
+  const serverConfig =
+    config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id));
+  if (serverConfig?.url) {
+    const appConfig = await getAppConfig({ role: user?.role });
+    const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
+    const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
+    if (!isDomainAllowed) {
+      logger.warn(`[MCP][${serverName}] Domain not allowed, skipping all tools`);
+      return [];
+    }
+  }
+
   const result = await reconnectServer({ res, user, index, signal, serverName, userMCPAuthMap });
   if (!result || !result.tools) {
     logger.warn(`[MCP][${serverName}] Failed to reinitialize MCP server.`);
@@ -241,6 +267,7 @@ async function createMCPTools({ res, user, index, signal, serverName, provider, 
       userMCPAuthMap,
       availableTools: result.availableTools,
       toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
+      config: serverConfig,
     });
     if (toolInstance) {
       serverTools.push(toolInstance);
@@ -262,6 +289,7 @@ async function createMCPTools({ res, user, index, signal, serverName, provider, 
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {LCAvailableTools} [params.availableTools]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+ * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTool({
@@ -273,8 +301,23 @@ async function createMCPTool({
   provider,
   userMCPAuthMap,
   availableTools,
+  config,
 }) {
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
+
+  // Runtime domain validation: check if the server's domain is still allowed
+  // Use getAppConfig() to support per-user/role domain restrictions
+  const serverConfig =
+    config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id));
+  if (serverConfig?.url) {
+    const appConfig = await getAppConfig({ role: user?.role });
+    const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
+    const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
+    if (!isDomainAllowed) {
+      logger.warn(`[MCP][${serverName}] Domain no longer allowed, skipping tool: ${toolName}`);
+      return undefined;
+    }
+  }
 
   /** @type {LCTool | undefined} */
   let toolDefinition = availableTools?.[toolKey]?.function;

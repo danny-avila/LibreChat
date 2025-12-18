@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type * as t from '~/mcp/types';
+import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
 import { ServerConfigsCacheFactory } from './cache/ServerConfigsCacheFactory';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
@@ -20,14 +21,19 @@ export class MCPServersRegistry {
 
   private readonly dbConfigsRepo: IServerConfigsRepositoryInterface;
   private readonly cacheConfigsRepo: IServerConfigsRepositoryInterface;
+  private readonly allowedDomains?: string[] | null;
 
-  constructor(mongoose: typeof import('mongoose')) {
+  constructor(mongoose: typeof import('mongoose'), allowedDomains?: string[] | null) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create('App', false);
+    this.allowedDomains = allowedDomains;
   }
 
   /** Creates and initializes the singleton MCPServersRegistry instance */
-  public static createInstance(mongoose: typeof import('mongoose')): MCPServersRegistry {
+  public static createInstance(
+    mongoose: typeof import('mongoose'),
+    allowedDomains?: string[] | null,
+  ): MCPServersRegistry {
     if (!mongoose) {
       throw new Error(
         'MCPServersRegistry creation failed: mongoose instance is required for database operations. ' +
@@ -39,7 +45,7 @@ export class MCPServersRegistry {
       return MCPServersRegistry.instance;
     }
     logger.info('[MCPServersRegistry] Creating new instance');
-    MCPServersRegistry.instance = new MCPServersRegistry(mongoose);
+    MCPServersRegistry.instance = new MCPServersRegistry(mongoose, allowedDomains);
     return MCPServersRegistry.instance;
   }
 
@@ -80,10 +86,19 @@ export class MCPServersRegistry {
     const configRepo = this.getConfigRepository(storageLocation);
     let parsedConfig: t.ParsedServerConfig;
     try {
-      parsedConfig = await MCPServerInspector.inspect(serverName, config);
+      parsedConfig = await MCPServerInspector.inspect(
+        serverName,
+        config,
+        undefined,
+        this.allowedDomains,
+      );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
-      throw new Error(`MCP_INSPECTION_FAILED: Failed to connect to MCP server "${serverName}"`);
+      // Preserve domain-specific error for better error handling
+      if (isMCPDomainNotAllowedError(error)) {
+        throw error;
+      }
+      throw new MCPInspectionFailedError(serverName, error as Error);
     }
     return await configRepo.add(serverName, parsedConfig, userId);
   }
@@ -113,10 +128,19 @@ export class MCPServersRegistry {
 
     let parsedConfig: t.ParsedServerConfig;
     try {
-      parsedConfig = await MCPServerInspector.inspect(serverName, configForInspection);
+      parsedConfig = await MCPServerInspector.inspect(
+        serverName,
+        configForInspection,
+        undefined,
+        this.allowedDomains,
+      );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
-      throw new Error(`MCP_INSPECTION_FAILED: Failed to connect to MCP server "${serverName}"`);
+      // Preserve domain-specific error for better error handling
+      if (isMCPDomainNotAllowedError(error)) {
+        throw error;
+      }
+      throw new MCPInspectionFailedError(serverName, error as Error);
     }
     await configRepo.update(serverName, parsedConfig, userId);
     return parsedConfig;

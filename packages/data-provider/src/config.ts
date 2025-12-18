@@ -849,6 +849,11 @@ export const configSchema = z.object({
   includedTools: z.array(z.string()).optional(),
   filteredTools: z.array(z.string()).optional(),
   mcpServers: MCPServersSchema.optional(),
+  mcpSettings: z
+    .object({
+      allowedDomains: z.array(z.string()).optional(),
+    })
+    .optional(),
   interface: interfaceSchema,
   turnstile: turnstileSchema.optional(),
   fileStrategy: fileSourceSchema.default(FileSources.local),
