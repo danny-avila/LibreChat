@@ -5,7 +5,7 @@ import { useGetFiles } from '~/data-provider';
 import { DataTable, columns } from './Table';
 import { useLocalize } from '~/hooks';
 
-export default function MyFilesModal({
+export function MyFilesModal({
   open,
   onOpenChange,
   triggerRef,

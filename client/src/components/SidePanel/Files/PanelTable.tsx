@@ -32,10 +32,10 @@ import {
   getEndpointFileConfig,
   type TFile,
 } from 'librechat-data-provider';
+import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useFileMapContext, useChatContext } from '~/Providers';
 import { useLocalize, useUpdateFiles } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
-import MyFilesModal from '~/components/Chat/Input/Files/MyFilesModal';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
