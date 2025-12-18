@@ -6,22 +6,18 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   request,
   Constants,
+  QueryKeys,
   createPayload,
   LocalStorageKeys,
   removeNullishValues,
 } from 'librechat-data-provider';
 import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
-import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
-import { activeJobsQueryKey, queueTitleGeneration } from '~/data-provider/SSE/queries';
+import { useGetStartupConfig, useGetUserBalance, queueTitleGeneration } from '~/data-provider';
+import type { ActiveJobsResponse } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import store from '~/store';
-
-/** Response type for active jobs query */
-interface ActiveJobsResponse {
-  activeJobIds: string[];
-}
 
 const clearDraft = (conversationId?: string | null) => {
   if (conversationId) {
@@ -72,7 +68,7 @@ export default function useResumableSSE(
    */
   const addActiveJob = useCallback(
     (jobId: string) => {
-      queryClient.setQueryData<ActiveJobsResponse>(activeJobsQueryKey, (old) => ({
+      queryClient.setQueryData<ActiveJobsResponse>([QueryKeys.activeJobs], (old) => ({
         activeJobIds: [...new Set([...(old?.activeJobIds ?? []), jobId])],
       }));
     },
@@ -85,7 +81,7 @@ export default function useResumableSSE(
    */
   const removeActiveJob = useCallback(
     (jobId: string) => {
-      queryClient.setQueryData<ActiveJobsResponse>(activeJobsQueryKey, (old) => ({
+      queryClient.setQueryData<ActiveJobsResponse>([QueryKeys.activeJobs], (old) => ({
         activeJobIds: (old?.activeJobIds ?? []).filter((id) => id !== jobId),
       }));
     },

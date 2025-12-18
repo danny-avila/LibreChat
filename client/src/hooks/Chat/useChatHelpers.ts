@@ -3,7 +3,8 @@ import { QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
-import { useAbortStreamMutation, useGetMessagesByConvoId } from '~/data-provider';
+import type { ActiveJobsResponse } from '~/data-provider';
+import { useGetMessagesByConvoId, useAbortStreamMutation } from '~/data-provider';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useNewConvo from '~/hooks/useNewConvo';
@@ -129,6 +130,10 @@ export default function useChatHelpers(index = 0, paramId?: string) {
 
     // For non-assistants endpoints (using resumable streams), call abort endpoint first
     if (conversationId && !isAssistants) {
+      queryClient.setQueryData<ActiveJobsResponse>([QueryKeys.activeJobs], (old) => ({
+        activeJobIds: (old?.activeJobIds ?? []).filter((id) => id !== conversationId),
+      }));
+
       try {
         console.log('[useChatHelpers] Calling abort mutation for:', conversationId);
         await abortMutation.mutateAsync({ conversationId });
@@ -146,7 +151,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
       console.log('[useChatHelpers] Assistants endpoint, just clearing submissions');
       clearAllSubmissions();
     }
-  }, [conversationId, endpoint, endpointType, abortMutation, clearAllSubmissions]);
+  }, [conversationId, endpoint, endpointType, abortMutation, clearAllSubmissions, queryClient]);
 
   const handleStopGenerating = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();

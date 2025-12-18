@@ -31,8 +31,12 @@ export function useStreamStatus(conversationId: string | undefined, enabled = tr
   });
 }
 
-export const activeJobsQueryKey = [QueryKeys.activeJobs] as const;
 export const genTitleQueryKey = (conversationId: string) => ['genTitle', conversationId] as const;
+
+/** Response type for active jobs query */
+export interface ActiveJobsResponse {
+  activeJobIds: string[];
+}
 
 // Module-level queue for title generation (survives re-renders)
 // Stores conversationIds that need title generation once their job completes
@@ -123,7 +127,7 @@ export function useTitleGeneration(enabled = true) {
  */
 export function useActiveJobs(enabled = true) {
   return useQuery({
-    queryKey: activeJobsQueryKey,
+    queryKey: [QueryKeys.activeJobs],
     queryFn: () => dataService.getActiveJobs(),
     enabled,
     staleTime: 5_000,
