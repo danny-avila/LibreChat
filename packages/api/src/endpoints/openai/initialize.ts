@@ -110,7 +110,8 @@ export async function initializeOpenAI({
         clientOptions.headers = {};
       }
       if (shouldUseEntraId()) {
-        clientOptions.headers['Authorization'] = `Bearer ${await getEntraIdAccessToken()}`;
+        const token = await getEntraIdAccessToken();
+        clientOptions.headers['Authorization'] = `Bearer ${token}`;
       } else {
         clientOptions.headers['api-key'] = apiKey || '';
       }
@@ -119,16 +120,18 @@ export async function initializeOpenAI({
       clientOptions.azure = azureOptions;
       if (shouldUseEntraId()) {
         apiKey = 'entra-id-placeholder';
-        clientOptions.headers['Authorization'] = `Bearer ${await getEntraIdAccessToken()}`;
+        const token = await getEntraIdAccessToken();
+        clientOptions.headers['Authorization'] = `Bearer ${token}`;
       }
     }
   } else if (isAzureOpenAI) {
     clientOptions.azure =
       userProvidesKey && userValues?.apiKey ? JSON.parse(userValues.apiKey) : getAzureCredentials();
     if (shouldUseEntraId()) {
+      const token = await getEntraIdAccessToken();
       clientOptions.headers = {
         ...clientOptions.headers,
-        Authorization: `Bearer ${await getEntraIdAccessToken()}`,
+        Authorization: `Bearer ${token}`,
       };
     } else {
       apiKey = clientOptions.azure ? clientOptions.azure.azureOpenAIApiKey : undefined;

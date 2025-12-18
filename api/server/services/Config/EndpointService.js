@@ -23,11 +23,7 @@ const {
  */
 const finalAzureOpenAIApiKey = shouldUseEntraId() ? 'entra-id-placeholder' : azureOpenAIApiKey;
 
-const useAzurePlugins = !!PLUGINS_USE_AZURE;
-
-const userProvidedOpenAI = useAzurePlugins
-  ? isUserProvided(finalAzureOpenAIApiKey)
-  : isUserProvided(openAIApiKey);
+const userProvidedOpenAI = isUserProvided(finalAzureOpenAIApiKey);
 
 module.exports = {
   config: {

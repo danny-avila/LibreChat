@@ -126,6 +126,7 @@ describe('initializeOpenAI', () => {
               'librechat-westus': {
                 ...mockAppConfig.endpoints.azureOpenAI.groupMap['librechat-westus'],
                 serverless: true,
+                baseURL: 'https://librechat-westus.openai.azure.com',
               },
             },
           },
