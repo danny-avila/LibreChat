@@ -20,12 +20,14 @@ const PopoverContainer = memo(
     isVariableDialogOpen,
     variableGroup,
     setVariableDialogOpen,
+    textAreaRef,
   }: {
     index: number;
     children: React.ReactNode;
     isVariableDialogOpen: boolean;
     variableGroup: TPromptGroup | null;
     setVariableDialogOpen: (isOpen: boolean) => void;
+    textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   }) => {
     const showPromptsPopover = useRecoilValue(store.showPromptsPopoverFamily(index));
     return (
@@ -33,7 +35,12 @@ const PopoverContainer = memo(
         {showPromptsPopover ? children : null}
         <VariableDialog
           open={isVariableDialogOpen}
-          onClose={() => setVariableDialogOpen(false)}
+          onClose={() => {
+            setVariableDialogOpen(false);
+            requestAnimationFrame(() => {
+              textAreaRef.current?.focus();
+            });
+          }}
           group={variableGroup}
         />
       </>
@@ -167,6 +174,7 @@ function PromptsCommand({
       isVariableDialogOpen={isVariableDialogOpen}
       variableGroup={variableGroup}
       setVariableDialogOpen={setVariableDialogOpen}
+      textAreaRef={textAreaRef}
     >
       <div className="absolute bottom-28 z-10 w-full space-y-2">
         <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">

@@ -182,13 +182,21 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
   return (
     <div role="region" aria-label={localize('com_files_table')} className="mt-2 space-y-2">
-      <div className="flex items-center gap-4">
+      <div className="relative flex items-center gap-4">
         <Input
-          placeholder={localize('com_files_filter')}
+          id="filename-filter"
+          placeholder=" "
           value={filenameFilter ?? ''}
           onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
           aria-label={localize('com_files_filter')}
+          className="peer"
         />
+        <label
+          htmlFor="filename-filter"
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary transition-all duration-200 peer-focus:top-0 peer-focus:bg-background peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:bg-background peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs"
+        >
+          {localize('com_files_filter')}
+        </label>
       </div>
 
       <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
@@ -233,6 +241,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
                           }}
+                          className={
+                            isFilenameCell
+                              ? 'focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-text-primary'
+                              : ''
+                          }
                           data-skip-refocus="true"
                           key={cell.id}
                           role={isFilenameCell ? 'button' : undefined}

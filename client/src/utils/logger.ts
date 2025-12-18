@@ -9,7 +9,7 @@ const createLogFunction = (
   type?: 'log' | 'warn' | 'error' | 'info' | 'debug' | 'dir',
 ): LogFunction => {
   return (...args: unknown[]) => {
-    if (isDevelopment || isLoggerEnabled) {
+    if (isLoggerEnabled || (import.meta.env.VITE_ENABLE_LOGGER == null && isDevelopment)) {
       const tag = typeof args[0] === 'string' ? args[0] : '';
       if (shouldLog(tag)) {
         if (tag && typeof args[1] === 'string' && type === 'error') {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { KeyRound, PlugZap, AlertTriangle } from 'lucide-react';
 import {
   Spinner,
@@ -44,6 +44,33 @@ export default function MCPConfigDialog({
     ? localize('com_ui_configure_mcp_variables_for', { 0: serverName })
     : `${serverName} MCP Server`;
 
+  const fullTitle = useMemo(() => {
+    if (!serverStatus) {
+      return localize('com_ui_mcp_dialog_title', {
+        serverName,
+        status: '',
+      });
+    }
+
+    const { connectionState, requiresOAuth } = serverStatus;
+    let statusText = '';
+
+    if (connectionState === 'connecting') {
+      statusText = localize('com_ui_connecting');
+    } else if (connectionState === 'error') {
+      statusText = localize('com_ui_error');
+    } else if (connectionState === 'connected') {
+      statusText = localize('com_ui_active');
+    } else if (connectionState === 'disconnected') {
+      statusText = requiresOAuth ? localize('com_ui_oauth') : localize('com_ui_offline');
+    }
+
+    return localize('com_ui_mcp_dialog_title', {
+      serverName,
+      status: statusText,
+    });
+  }, [serverStatus, serverName, localize]);
+
   // Helper function to render status badge based on connection state
   const renderStatusBadge = () => {
     if (!serverStatus) {
@@ -65,14 +92,14 @@ export default function MCPConfigDialog({
       if (requiresOAuth) {
         return (
           <div className="flex items-center gap-2 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-600 dark:bg-amber-950 dark:text-amber-400">
-            <KeyRound className="h-3 w-3" />
+            <KeyRound className="h-3 w-3" aria-hidden="true" />
             <span>{localize('com_ui_oauth')}</span>
           </div>
         );
       } else {
         return (
           <div className="flex items-center gap-2 rounded-full bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-600 dark:bg-orange-950 dark:text-orange-400">
-            <PlugZap className="h-3 w-3" />
+            <PlugZap className="h-3 w-3" aria-hidden="true" />
             <span>{localize('com_ui_offline')}</span>
           </div>
         );
@@ -82,7 +109,7 @@ export default function MCPConfigDialog({
     if (connectionState === 'error') {
       return (
         <div className="flex items-center gap-2 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600 dark:bg-red-950 dark:text-red-400">
-          <AlertTriangle className="h-3 w-3" />
+          <AlertTriangle className="h-3 w-3" aria-hidden="true" />
           <span>{localize('com_ui_error')}</span>
         </div>
       );
@@ -102,7 +129,10 @@ export default function MCPConfigDialog({
 
   return (
     <OGDialog open={isOpen} onOpenChange={onOpenChange}>
-      <OGDialogContent className="flex max-h-screen w-11/12 max-w-lg flex-col space-y-2">
+      <OGDialogContent
+        className="flex max-h-screen w-11/12 max-w-lg flex-col space-y-2"
+        title={fullTitle}
+      >
         <OGDialogHeader>
           <div className="flex items-center gap-3">
             <OGDialogTitle className="text-xl">

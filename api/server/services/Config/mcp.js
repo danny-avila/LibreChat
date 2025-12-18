@@ -16,6 +16,11 @@ async function updateMCPServerTools({ userId, serverName, tools }) {
     const serverTools = {};
     const mcpDelimiter = Constants.mcp_delimiter;
 
+    if (tools == null || tools.length === 0) {
+      logger.debug(`[MCP Cache] No tools to update for server ${serverName} (user: ${userId})`);
+      return serverTools;
+    }
+
     for (const tool of tools) {
       const name = `${tool.name}${mcpDelimiter}${serverName}`;
       serverTools[name] = {

@@ -29,7 +29,20 @@ const initialize = async () => {
   router.use('/speech', speech);
 
   const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
-  router.post('*', fileUploadIpLimiter, fileUploadUserLimiter);
+
+  /** Apply rate limiters to all POST routes (excluding /speech which is handled above) */
+  router.use((req, res, next) => {
+    if (req.method === 'POST' && !req.path.startsWith('/speech')) {
+      return fileUploadIpLimiter(req, res, (err) => {
+        if (err) {
+          return next(err);
+        }
+        return fileUploadUserLimiter(req, res, next);
+      });
+    }
+    next();
+  });
+
   router.post('/', upload.single('file'));
   router.post('/images', upload.single('file'));
   router.post('/images/avatar', upload.single('file'));

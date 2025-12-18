@@ -50,8 +50,9 @@ import { parseTextNative, parseText } from './text';
 import fs, { ReadStream } from 'fs';
 import axios from 'axios';
 import FormData from 'form-data';
-import { generateShortLivedToken } from '../crypto/jwt';
-import { readFileAsString } from '../utils';
+import type { ServerRequest } from '~/types';
+import { generateShortLivedToken } from '~/crypto/jwt';
+import { readFileAsString } from '~/utils';
 
 const mockedFs = fs as jest.Mocked<typeof fs>;
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -77,7 +78,7 @@ describe('text', () => {
 
   const mockReq = {
     user: { id: 'user123' },
-  };
+  } as ServerRequest;
 
   const mockFileId = 'file123';
 
@@ -228,6 +229,13 @@ describe('text', () => {
         file_id: mockFileId,
       });
 
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'http://rag-api.test/text',
+        expect.any(Object),
+        expect.objectContaining({
+          timeout: 300000,
+        }),
+      );
       expect(result).toEqual({
         text: '',
         bytes: 0,
@@ -278,7 +286,7 @@ describe('text', () => {
       });
 
       const result = await parseText({
-        req: { user: undefined },
+        req: { user: undefined } as ServerRequest,
         file: mockFile,
         file_id: mockFileId,
       });

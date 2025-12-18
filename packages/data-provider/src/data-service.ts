@@ -6,6 +6,7 @@ import * as ag from './types/agents';
 import * as m from './types/mutations';
 import * as q from './types/queries';
 import * as f from './types/files';
+import * as mcp from './types/mcpServers';
 import * as config from './config';
 import request from './request';
 import * as s from './schemas';
@@ -22,6 +23,20 @@ export function revokeAllUserKeys(): Promise<unknown> {
 
 export function deleteUser(): Promise<s.TPreset> {
   return request.delete(endpoints.deleteUser());
+}
+
+export type FavoriteItem = {
+  agentId?: string;
+  model?: string;
+  endpoint?: string;
+};
+
+export function getFavorites(): Promise<FavoriteItem[]> {
+  return request.get('/api/user/settings/favorites');
+}
+
+export function updateFavorites(favorites: FavoriteItem[]): Promise<FavoriteItem[]> {
+  return request.post('/api/user/settings/favorites', { favorites });
 }
 
 export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {
@@ -539,6 +554,51 @@ export const deleteAgentAction = async ({
   );
 
 /**
+ * MCP Servers
+ */
+
+/**
+ *
+ * Ensure and List loaded mcp server configs from the cache Enriched with effective permissions.
+ */
+export const getMCPServers = async (): Promise<mcp.MCPServersListResponse> => {
+  return request.get(endpoints.mcp.servers);
+};
+
+/**
+ * Get a single MCP server by ID
+ */
+export const getMCPServer = async (serverName: string): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.get(endpoints.mcpServer(serverName));
+};
+
+/**
+ * Create a new MCP server
+ */
+export const createMCPServer = async (
+  data: mcp.MCPServerCreateParams,
+): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.post(endpoints.mcp.servers, data);
+};
+
+/**
+ * Update an existing MCP server
+ */
+export const updateMCPServer = async (
+  serverName: string,
+  data: mcp.MCPServerUpdateParams,
+): Promise<mcp.MCPServerDBObjectResponse> => {
+  return request.patch(endpoints.mcpServer(serverName), data);
+};
+
+/**
+ * Delete an MCP server
+ */
+export const deleteMCPServer = async (serverName: string): Promise<{ success: boolean }> => {
+  return request.delete(endpoints.mcpServer(serverName));
+};
+
+/**
  * Imports a conversations file.
  *
  * @param data - The FormData containing the file to import.
@@ -805,6 +865,12 @@ export function updatePeoplePickerPermissions(
   );
 }
 
+export function updateMCPServersPermissions(
+  variables: m.UpdateMCPServersPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateMCPServersPermissions(variables.roleName), variables.updates);
+}
+
 export function updateMarketplacePermissions(
   variables: m.UpdateMarketplacePermVars,
 ): Promise<m.UpdatePermResponse> {
@@ -955,6 +1021,12 @@ export function getEffectivePermissions(
   resourceId: string,
 ): Promise<permissions.TEffectivePermissionsResponse> {
   return request.get(endpoints.getEffectivePermissions(resourceType, resourceId));
+}
+
+export function getAllEffectivePermissions(
+  resourceType: permissions.ResourceType,
+): Promise<permissions.TAllEffectivePermissionsResponse> {
+  return request.get(endpoints.getAllEffectivePermissions(resourceType));
 }
 
 // SharePoint Graph API Token

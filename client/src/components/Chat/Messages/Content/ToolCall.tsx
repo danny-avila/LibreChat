@@ -11,6 +11,7 @@ import { logger, cn } from '~/utils';
 
 export default function ToolCall({
   initialProgress = 0.1,
+  isLast = false,
   isSubmitting,
   name,
   args: _args = '',
@@ -19,6 +20,7 @@ export default function ToolCall({
   auth,
 }: {
   initialProgress: number;
+  isLast?: boolean;
   isSubmitting: boolean;
   name: string;
   args: string | Record<string, unknown>;
@@ -155,6 +157,10 @@ export default function ToolCall({
     };
   }, [showInfo, isAnimating]);
 
+  if (!isLast && (!function_name || function_name.length === 0) && !output) {
+    return null;
+  }
+
   return (
     <>
       <div className="relative my-2.5 flex h-5 shrink-0 items-center gap-2.5">
@@ -230,7 +236,7 @@ export default function ToolCall({
             </Button>
           </div>
           <p className="flex items-center text-xs text-text-warning">
-            <TriangleAlert className="mr-1.5 inline-block h-4 w-4" />
+            <TriangleAlert className="mr-1.5 inline-block h-4 w-4" aria-hidden="true" />
             {localize('com_assistants_allow_sites_you_trust')}
           </p>
         </div>

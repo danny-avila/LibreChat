@@ -35,11 +35,13 @@ export const ThinkingButton = memo(
     onClick,
     label,
     content,
+    showCopyButton = true,
   }: {
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
     label: string;
     content?: string;
+    showCopyButton?: boolean;
   }) => {
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
@@ -59,27 +61,32 @@ export const ThinkingButton = memo(
     );
 
     return (
-      <div className="flex w-full items-center justify-between gap-2">
+      <div className="group/thinking flex w-full items-center justify-between gap-2">
         <button
           type="button"
           onClick={onClick}
+          aria-expanded={isExpanded}
           className={cn(
             'group/button flex flex-1 items-center justify-start rounded-lg leading-[18px]',
             fontSize,
           )}
         >
           <span className="relative mr-1.5 inline-flex h-[18px] w-[18px] items-center justify-center">
-            <Lightbulb className="icon-sm absolute text-text-secondary opacity-100 transition-opacity group-hover/button:opacity-0" />
+            <Lightbulb
+              className="icon-sm absolute text-text-secondary opacity-100 transition-opacity group-hover/button:opacity-0"
+              aria-hidden="true"
+            />
             <ChevronDown
               className={cn(
                 'icon-sm absolute transform-gpu text-text-primary opacity-0 transition-all duration-300 group-hover/button:opacity-100',
                 isExpanded && 'rotate-180',
               )}
+              aria-hidden="true"
             />
           </span>
           {label}
         </button>
-        {content && (
+        {content && showCopyButton && (
           <button
             type="button"
             onClick={handleCopy}
@@ -90,8 +97,11 @@ export const ThinkingButton = memo(
             }
             className={cn(
               'rounded-lg p-1.5 text-text-secondary-alt transition-colors duration-200',
+              isExpanded
+                ? 'opacity-0 group-focus-within/thinking-container:opacity-100 group-hover/thinking-container:opacity-100'
+                : 'opacity-0',
               'hover:bg-surface-hover hover:text-text-primary',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
+              'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
             )}
           >
             {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
@@ -142,8 +152,8 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
   }
 
   return (
-    <>
-      <div className="sticky top-0 z-10 mb-4 bg-surface-primary pb-2 pt-2">
+    <div className="group/thinking-container">
+      <div className="sticky top-0 z-10 mb-4 bg-presentation pb-2 pt-2">
         <ThinkingButton
           isExpanded={isExpanded}
           onClick={handleClick}
@@ -161,7 +171,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
           <ThinkingContent>{children}</ThinkingContent>
         </div>
       </div>
-    </>
+    </div>
   );
 });
 

@@ -66,13 +66,21 @@ const BookmarkTable = () => {
   return (
     <BookmarkContext.Provider value={{ bookmarks }}>
       <div role="region" aria-label={localize('com_ui_bookmarks')} className="mt-2 space-y-2">
-        <div className="flex items-center gap-4">
+        <div className="relative flex items-center gap-4">
           <Input
-            placeholder={localize('com_ui_bookmarks_filter')}
+            id="bookmarks-filter"
+            placeholder=" "
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             aria-label={localize('com_ui_bookmarks_filter')}
+            className="peer"
           />
+          <label
+            htmlFor="bookmarks-filter"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary transition-all duration-200 peer-focus:top-0 peer-focus:bg-background peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:bg-background peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs"
+          >
+            {localize('com_ui_bookmarks_filter')}
+          </label>
         </div>
 
         <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
@@ -115,7 +123,7 @@ const BookmarkTable = () => {
                   aria-label={localize('com_ui_bookmarks_new')}
                   onClick={() => setOpen(!open)}
                 >
-                  <BookmarkPlusIcon className="size-4" />
+                  <BookmarkPlusIcon className="size-4" aria-hidden="true" />
                   <div className="break-all">{localize('com_ui_bookmarks_new')}</div>
                 </Button>
               </OGDialogTrigger>

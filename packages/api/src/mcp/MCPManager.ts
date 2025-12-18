@@ -2,9 +2,8 @@ import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
-import type { TokenMethods } from '@librechat/data-schemas';
+import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
-import type { TUser } from 'librechat-data-provider';
 import type { MCPOAuthTokens } from './oauth';
 import type { RequestBody } from '~/types';
 import type * as t from './types';
@@ -12,7 +11,7 @@ import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPServerInspector } from './registry/MCPServerInspector';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
-import { mcpServersRegistry as registry } from './registry/MCPServersRegistry';
+import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
@@ -41,21 +40,22 @@ export class MCPManager extends UserConnectionManager {
   /** Initializes the MCPManager by setting up server registry and app connections */
   public async initialize(configs: t.MCPServers) {
     await MCPServersInitializer.initialize(configs);
-    const appConfigs = await registry.sharedAppServers.getAll();
-    this.appConnections = new ConnectionsRepository(appConfigs);
+    this.appConnections = new ConnectionsRepository(undefined);
   }
 
   /** Retrieves an app-level or user-specific connection based on provided arguments */
   public async getConnection(
     args: {
       serverName: string;
-      user?: TUser;
+      user?: IUser;
       forceNew?: boolean;
       flowManager?: FlowStateManager<MCPOAuthTokens | null>;
     } & Omit<t.OAuthConnectionOptions, 'useOAuth' | 'user' | 'flowManager'>,
   ): Promise<MCPConnection> {
-    if (this.appConnections!.has(args.serverName)) {
-      return this.appConnections!.get(args.serverName);
+    //the get method checks if the config is still valid as app level
+    const existingAppConnection = await this.appConnections!.get(args.serverName);
+    if (existingAppConnection) {
+      return existingAppConnection;
     } else if (args.user?.id) {
       return this.getUserConnection(args as Parameters<typeof this.getUserConnection>[0]);
     } else {
@@ -69,7 +69,7 @@ export class MCPManager extends UserConnectionManager {
   /** Returns all available tool functions from app-level connections */
   public async getAppToolFunctions(): Promise<t.LCAvailableTools> {
     const toolFunctions: t.LCAvailableTools = {};
-    const configs = await registry.getAllServerConfigs();
+    const configs = await MCPServersRegistry.getInstance().getAllServerConfigs();
     for (const config of Object.values(configs)) {
       if (config.toolFunctions != null) {
         Object.assign(toolFunctions, config.toolFunctions);
@@ -84,11 +84,10 @@ export class MCPManager extends UserConnectionManager {
     serverName: string,
   ): Promise<t.LCAvailableTools | null> {
     try {
-      if (this.appConnections?.has(serverName)) {
-        return MCPServerInspector.getToolFunctions(
-          serverName,
-          await this.appConnections.get(serverName),
-        );
+      //try get the appConnection (if the config is not in the app level anymore any existing connection will disconnect and get will return null)
+      const existingAppConnection = await this.appConnections?.get(serverName);
+      if (existingAppConnection) {
+        return MCPServerInspector.getToolFunctions(serverName, existingAppConnection);
       }
 
       const userConnections = this.getUserConnections(userId);
@@ -116,7 +115,7 @@ export class MCPManager extends UserConnectionManager {
    */
   private async getInstructions(serverNames?: string[]): Promise<Record<string, string>> {
     const instructions: Record<string, string> = {};
-    const configs = await registry.getAllServerConfigs();
+    const configs = await MCPServersRegistry.getInstance().getAllServerConfigs();
     for (const [serverName, config] of Object.entries(configs)) {
       if (config.serverInstructions != null) {
         instructions[serverName] = config.serverInstructions as string;
@@ -176,7 +175,7 @@ Please follow these instructions when using tools from the respective MCP server
     oauthEnd,
     customUserVars,
   }: {
-    user?: TUser;
+    user?: IUser;
     serverName: string;
     toolName: string;
     provider: t.Provider;
@@ -217,7 +216,10 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
 
-      const rawConfig = (await registry.getServerConfig(serverName, userId)) as t.MCPOptions;
+      const rawConfig = (await MCPServersRegistry.getInstance().getServerConfig(
+        serverName,
+        userId,
+      )) as t.MCPOptions;
       const currentOptions = processMCPEnv({
         user,
         options: rawConfig,

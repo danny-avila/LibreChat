@@ -11,7 +11,7 @@ import SiblingSwitch from './SiblingSwitch';
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
-import { cn } from '~/utils';
+import { cn, getMessageAriaLabel } from '~/utils';
 import store from '~/store';
 
 export default function Message(props: TMessageProps) {
@@ -96,7 +96,7 @@ export default function Message(props: TMessageProps) {
         <div className="m-auto justify-center p-4 py-2 md:gap-6">
           <div
             id={messageId ?? ''}
-            aria-label={`message-${message.depth}-${messageId}`}
+            aria-label={getMessageAriaLabel(message, localize)}
             className={cn(baseClasses.common, baseClasses.chat, 'message-render')}
           >
             <div className="relative flex flex-shrink-0 flex-col items-center">

@@ -2,8 +2,9 @@ import React from 'react';
 import UninitializedMCPTool from './UninitializedMCPTool';
 import UnconfiguredMCPTool from './UnconfiguredMCPTool';
 import { useAgentPanelContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
+import { useHasAccess, useLocalize } from '~/hooks';
 import MCPTool from './MCPTool';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 
 export default function MCPTools({
   agentId,
@@ -16,7 +17,13 @@ export default function MCPTools({
 }) {
   const localize = useLocalize();
   const { mcpServersMap } = useAgentPanelContext();
-
+  const hasMcpAccess = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
+  });
+  if (!hasMcpAccess) {
+    return null;
+  }
   return (
     <div className="mb-4">
       <label className="text-token-text-primary mb-2 block font-medium">

@@ -2,9 +2,9 @@ import { Constants } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isEnabled } from '~/utils';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 
 /**
  * Inspects MCP servers to discover their metadata, capabilities, and tools.
@@ -64,6 +64,12 @@ export class MCPServerInspector {
   private async detectOAuth(): Promise<void> {
     if (this.config.requiresOAuth != null) return;
     if (this.config.url == null || this.config.startup === false) {
+      this.config.requiresOAuth = false;
+      return;
+    }
+
+    // Admin-provided API key means no OAuth flow is needed
+    if (this.config.apiKey?.source === 'admin') {
       this.config.requiresOAuth = false;
       return;
     }

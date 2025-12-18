@@ -112,6 +112,12 @@ const agentSchema = new Schema<IAgent>(
       default: false,
       index: true,
     },
+    /** MCP server names extracted from tools for efficient querying */
+    mcpServerNames: {
+      type: [String],
+      default: [],
+      index: true,
+    },
   },
   {
     timestamps: true,

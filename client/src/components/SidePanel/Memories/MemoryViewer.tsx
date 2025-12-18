@@ -1,6 +1,7 @@
 /* Memories */
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { Plus } from 'lucide-react';
+import { Trans } from 'react-i18next';
 import { matchSorter } from 'match-sorter';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
@@ -120,7 +121,11 @@ const DeleteMemoryButton = ({ memory }: { memory: TUserMemory }) => {
         className="w-11/12 max-w-lg"
         main={
           <Label className="text-left text-sm font-medium">
-            {localize('com_ui_delete_confirm')} &quot;{memory.key}&quot;?
+            <Trans
+              i18nKey="com_ui_delete_confirm_strong"
+              values={{ title: memory.key }}
+              components={{ strong: <strong /> }}
+            />
           </Label>
         }
         selection={{
@@ -234,15 +239,23 @@ export default function MemoryViewer() {
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden">
+    <div className="flex h-full w-full flex-col">
       <div role="region" aria-label={localize('com_ui_memories')} className="mt-2 space-y-2">
-        <div className="flex items-center gap-4">
+        <div className="relative">
           <Input
-            placeholder={localize('com_ui_memories_filter')}
+            id="memory-search"
+            placeholder=" "
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             aria-label={localize('com_ui_memories_filter')}
+            className="peer"
           />
+          <Label
+            htmlFor="memory-search"
+            className="pointer-events-none absolute -top-1 left-3 w-auto origin-[0] translate-y-3 scale-100 rounded bg-background px-1 text-base text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75"
+          >
+            {localize('com_ui_memories_filter')}
+          </Label>
         </div>
         {/* Memory Usage and Toggle Display */}
         {(memData?.tokenLimit || hasOptOutAccess) && (
@@ -293,7 +306,7 @@ export default function MemoryViewer() {
                 <Switch
                   checked={referenceSavedMemories}
                   onCheckedChange={handleMemoryToggle}
-                  aria-label={localize('com_ui_reference_saved_memories')}
+                  aria-label={localize('com_ui_use_memory')}
                   disabled={updateMemoryPreferencesMutation.isLoading}
                 />
               </div>
@@ -310,7 +323,7 @@ export default function MemoryViewer() {
                   className="w-full bg-transparent"
                   aria-label={localize('com_ui_create_memory')}
                 >
-                  <Plus className="size-4" aria-hidden />
+                  <Plus className="size-4" aria-hidden="true" />
                   {localize('com_ui_create_memory')}
                 </Button>
               </OGDialogTrigger>

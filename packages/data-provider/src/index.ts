@@ -22,6 +22,7 @@ export * from './types';
 export * from './types/agents';
 export * from './types/assistants';
 export * from './types/files';
+export * from './types/mcpServers';
 export * from './types/mutations';
 export * from './types/queries';
 export * from './types/runs';
@@ -33,6 +34,7 @@ export * from './accessPermissions';
 export * from './keys';
 /* api call helpers */
 export * from './headers-helpers';
+export { loginPage, registerPage, apiBaseUrl } from './api-endpoints';
 export { default as request } from './request';
 export { dataService };
 import * as dataService from './data-service';

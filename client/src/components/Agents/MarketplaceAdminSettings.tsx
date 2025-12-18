@@ -154,9 +154,9 @@ const MarketplaceAdminSettings = () => {
         </Button>
       </OGDialogTrigger>
       <OGDialogContent className="w-11/12 max-w-md border-border-light bg-surface-primary text-text-primary">
-        <OGDialogTitle>{`${localize('com_ui_admin_settings')} - ${localize(
-          'com_ui_marketplace',
-        )}`}</OGDialogTitle>
+        <OGDialogTitle>
+          {localize('com_ui_admin_settings_section', { section: localize('com_ui_marketplace') })}
+        </OGDialogTitle>
         <div className="p-2">
           {/* Role selection dropdown */}
           <div className="flex items-center gap-2">

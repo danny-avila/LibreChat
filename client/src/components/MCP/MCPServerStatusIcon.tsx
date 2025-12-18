@@ -1,6 +1,6 @@
 import React from 'react';
-import { Spinner } from '@librechat/client';
-import { SettingsIcon, AlertTriangle, KeyRound, PlugZap, X } from 'lucide-react';
+import { Spinner, TooltipAnchor } from '@librechat/client';
+import { SettingsIcon, AlertTriangle, KeyRound, PlugZap, X, CircleCheck } from 'lucide-react';
 import type { MCPServerStatus, TPlugin } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -85,7 +85,13 @@ export default function MCPServerStatusIcon({
         />
       );
     }
-    return null; // No config button for connected servers without customUserVars
+    return (
+      <ConnectedStatusIcon
+        serverName={serverName}
+        requiresOAuth={requiresOAuth}
+        onConfigClick={onConfigClick}
+      />
+    );
   }
 
   return null;
@@ -138,7 +144,7 @@ function DisconnectedOAuthStatusIcon({ serverName, onConfigClick }: StatusIconPr
       className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
       aria-label={localize('com_nav_mcp_configure_server', { 0: serverName })}
     >
-      <KeyRound className="h-4 w-4 text-amber-500" />
+      <KeyRound className="h-4 w-4 text-amber-500" aria-hidden="true" />
     </button>
   );
 }
@@ -151,7 +157,7 @@ function DisconnectedStatusIcon({ serverName, onConfigClick }: StatusIconProps) 
       className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
       aria-label={localize('com_nav_mcp_configure_server', { 0: serverName })}
     >
-      <PlugZap className="h-4 w-4 text-orange-500" />
+      <PlugZap className="h-4 w-4 text-orange-500" aria-hidden="true" />
     </button>
   );
 }
@@ -164,7 +170,7 @@ function ErrorStatusIcon({ serverName, onConfigClick }: StatusIconProps) {
       className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
       aria-label={localize('com_nav_mcp_configure_server', { 0: serverName })}
     >
-      <AlertTriangle className="h-4 w-4 text-red-500" />
+      <AlertTriangle className="h-4 w-4 text-red-500" aria-hidden="true" />
     </button>
   );
 }
@@ -185,7 +191,43 @@ function AuthenticatedStatusIcon({
       className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
       aria-label={localize('com_nav_mcp_configure_server', { 0: serverName })}
     >
-      <SettingsIcon className={`h-4 w-4 ${isAuthenticated ? 'text-green-500' : 'text-gray-400'}`} />
+      <SettingsIcon
+        className={`h-4 w-4 ${isAuthenticated ? 'text-green-500' : 'text-gray-400'}`}
+        aria-hidden="true"
+      />
     </button>
+  );
+}
+
+interface ConnectedStatusProps {
+  serverName: string;
+  requiresOAuth?: boolean;
+  onConfigClick: (e: React.MouseEvent) => void;
+}
+
+function ConnectedStatusIcon({ serverName, requiresOAuth, onConfigClick }: ConnectedStatusProps) {
+  if (requiresOAuth) {
+    return (
+      <TooltipAnchor
+        role="button"
+        onClick={onConfigClick}
+        className="flex h-6 w-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
+        aria-label={localize('com_nav_mcp_configure_server', { 0: serverName })}
+        description={localize('com_nav_mcp_status_connected')}
+        side="top"
+      >
+        <CircleCheck className="h-4 w-4 text-green-500" />
+      </TooltipAnchor>
+    );
+  }
+
+  return (
+    <TooltipAnchor
+      className="flex h-6 w-6 items-center justify-center rounded p-1"
+      description={localize('com_nav_mcp_status_connected')}
+      side="top"
+    >
+      <CircleCheck className="h-4 w-4 text-green-500" />
+    </TooltipAnchor>
   );
 }

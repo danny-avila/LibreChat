@@ -2,6 +2,7 @@ const express = require('express');
 const { ResourceType, PermissionBits } = require('librechat-data-provider');
 const {
   getUserEffectivePermissions,
+  getAllEffectivePermissions,
   updateResourcePermissions,
   getResourcePermissions,
   getResourceRoles,
@@ -9,6 +10,7 @@ const {
 } = require('~/server/controllers/PermissionsController');
 const { requireJwtAuth, checkBan, uaParser, canAccessResource } = require('~/server/middleware');
 const { checkPeoplePickerAccess } = require('~/server/middleware/checkPeoplePickerAccess');
+const { findMCPServerById } = require('~/models');
 
 const router = express.Router();
 
@@ -63,6 +65,13 @@ router.put(
         requiredPermission: PermissionBits.SHARE,
         resourceIdParam: 'resourceId',
       });
+    } else if (resourceType === ResourceType.MCPSERVER) {
+      middleware = canAccessResource({
+        resourceType: ResourceType.MCPSERVER,
+        requiredPermission: PermissionBits.SHARE,
+        resourceIdParam: 'resourceId',
+        idResolver: findMCPServerById,
+      });
     } else {
       return res.status(400).json({
         error: 'Bad Request',
@@ -75,6 +84,12 @@ router.put(
   },
   updateResourcePermissions,
 );
+
+/**
+ * GET /api/permissions/{resourceType}/effective/all
+ * Get user's effective permissions for all accessible resources of a type
+ */
+router.get('/:resourceType/effective/all', getAllEffectivePermissions);
 
 /**
  * GET /api/permissions/{resourceType}/{resourceId}/effective
