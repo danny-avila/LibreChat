@@ -15,9 +15,12 @@ const {
   AZURE_ASSISTANTS_BASE_URL,
 } = process.env ?? {};
 
-// Note: For Entra ID, we can't determine the actual token here since this is synchronous
-// The actual token will be obtained in the initialize functions.
-// Still we need to set a placeholder token to avoid errors.
+/**
+ * The Entra ID authentication is a synchronous service, so we set a placeholder token here.
+ * The actual token is retrieved asynchronously in initialize functions (initializeOpenAI,
+ * initializeClient) via getEntraIdAccessToken() and set in headers['Authorization'].
+ * The placeholder is never used for authentication - it only satisfies config validation.
+ */
 const finalAzureOpenAIApiKey = shouldUseEntraId() ? 'entra-id-placeholder' : azureOpenAIApiKey;
 
 const useAzurePlugins = !!PLUGINS_USE_AZURE;
