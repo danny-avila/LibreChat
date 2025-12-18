@@ -8,8 +8,6 @@ const {
   ASSISTANTS_API_KEY: assistantsApiKey,
   AZURE_API_KEY: azureOpenAIApiKey,
   ANTHROPIC_API_KEY: anthropicApiKey,
-  CHATGPT_TOKEN: chatGPTToken,
-  PLUGINS_USE_AZURE,
   GOOGLE_KEY: googleKey,
   OPENAI_REVERSE_PROXY,
   AZURE_OPENAI_BASEURL,
@@ -30,13 +28,11 @@ const userProvidedOpenAI = useAzurePlugins
 
 module.exports = {
   config: {
+    googleKey,
     openAIApiKey,
     azureOpenAIApiKey: finalAzureOpenAIApiKey,
-    useAzurePlugins,
     userProvidedOpenAI,
-    googleKey,
     [EModelEndpoint.anthropic]: generateConfig(anthropicApiKey),
-    [EModelEndpoint.chatGPTBrowser]: generateConfig(chatGPTToken),
     [EModelEndpoint.openAI]: generateConfig(openAIApiKey, OPENAI_REVERSE_PROXY),
     [EModelEndpoint.azureOpenAI]: generateConfig(finalAzureOpenAIApiKey, AZURE_OPENAI_BASEURL),
     [EModelEndpoint.assistants]: generateConfig(

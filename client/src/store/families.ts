@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createSearchParams } from 'react-router-dom';
 import {
   atom,
   selector,
@@ -13,9 +14,13 @@ import {
 import { LocalStorageKeys, Constants } from 'librechat-data-provider';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
+import {
+  clearModelForNonEphemeralAgent,
+  createChatSearchParams,
+  storeEndpointSettings,
+  logger,
+} from '~/utils';
 import { useSetConvoContext } from '~/Providers/SetConvoContext';
-import { storeEndpointSettings, logger, createChatSearchParams } from '~/utils';
-import { createSearchParams } from 'react-router-dom';
 
 const latestMessageKeysAtom = atom<(string | number)[]>({
   key: 'latestMessageKeys',
@@ -101,9 +106,12 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
         }
 
         storeEndpointSettings(newValue);
+
+        const convoToStore = { ...newValue };
+        clearModelForNonEphemeralAgent(convoToStore);
         localStorage.setItem(
           `${LocalStorageKeys.LAST_CONVO_SETUP}_${index}`,
-          JSON.stringify(newValue),
+          JSON.stringify(convoToStore),
         );
 
         const disableParams = newValue.disableParams === true;
@@ -201,11 +209,6 @@ const anySubmittingSelector = selector<boolean>({
 const optionSettingsFamily = atomFamily<TOptionSettings, string | number>({
   key: 'optionSettingsByIndex',
   default: {},
-});
-
-const showAgentSettingsFamily = atomFamily({
-  key: 'showAgentSettingsByIndex',
-  default: false,
 });
 
 const showPopoverFamily = atomFamily({
@@ -403,7 +406,6 @@ export default {
   abortScrollFamily,
   isSubmittingFamily,
   optionSettingsFamily,
-  showAgentSettingsFamily,
   showPopoverFamily,
   latestMessageFamily,
   messagesSiblingIdxFamily,

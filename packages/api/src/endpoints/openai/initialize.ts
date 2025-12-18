@@ -1,13 +1,18 @@
 import { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } from 'librechat-data-provider';
 import type {
-  InitializeOpenAIOptionsParams,
+  BaseInitializeParams,
+  InitializeResultBase,
   OpenAIConfigOptions,
-  LLMConfigResult,
   UserKeyValues,
 } from '~/types';
-import { getAzureCredentials, getEntraIdAccessToken, shouldUseEntraId } from '~/utils/azure';
-import { isUserProvided } from '~/utils/common';
-import { resolveHeaders } from '~/utils/env';
+import { 
+  isUserProvided,
+  resolveHeaders,
+  shouldUseEntraId,
+  checkUserKeyExpiry,
+  getAzureCredentials, 
+  getEntraIdAccessToken,
+ } from '~/utils';
 import { getOpenAIConfig } from './config';
 
 /**
@@ -18,25 +23,18 @@ import { getOpenAIConfig } from './config';
  * @returns Promise resolving to OpenAI configuration options
  * @throws Error if API key is missing or user key has expired
  */
-export const initializeOpenAI = async ({
+export async function initializeOpenAI({
   req,
-  appConfig,
-  overrideModel,
-  endpointOption,
-  overrideEndpoint,
-  getUserKeyValues,
-  checkUserKeyExpiry,
-}: InitializeOpenAIOptionsParams): Promise<LLMConfigResult> => {
+  endpoint,
+  model_parameters,
+  db,
+}: BaseInitializeParams): Promise<InitializeResultBase> {
+  const appConfig = req.config;
   const { PROXY, OPENAI_API_KEY, AZURE_API_KEY, OPENAI_REVERSE_PROXY, AZURE_OPENAI_BASEURL } =
     process.env;
 
   const { key: expiresAt } = req.body;
-  const modelName = overrideModel ?? req.body.model;
-  const endpoint = overrideEndpoint ?? req.body.endpoint;
-
-  if (!endpoint) {
-    throw new Error('Endpoint is required');
-  }
+  const modelName = model_parameters?.model as string | undefined;
 
   const credentials = {
     [EModelEndpoint.openAI]: OPENAI_API_KEY,
@@ -54,7 +52,7 @@ export const initializeOpenAI = async ({
   let userValues: UserKeyValues | null = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
     checkUserKeyExpiry(expiresAt, endpoint);
-    userValues = await getUserKeyValues({ userId: req.user.id, name: endpoint });
+    userValues = await db.getUserKeyValues({ userId: req.user?.id ?? '', name: endpoint });
   }
 
   let apiKey = userProvidesKey
@@ -71,7 +69,8 @@ export const initializeOpenAI = async ({
   };
 
   const isAzureOpenAI = endpoint === EModelEndpoint.azureOpenAI;
-  const azureConfig = isAzureOpenAI && appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
+  const azureConfig = isAzureOpenAI && appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
+  let isServerless = false;
 
   if (isAzureOpenAI && azureConfig) {
     const { modelGroupMap, groupMap } = azureConfig;
@@ -85,6 +84,7 @@ export const initializeOpenAI = async ({
       modelGroupMap,
       groupMap,
     });
+    isServerless = serverless === true;
 
     clientOptions.reverseProxyUrl = configBaseURL ?? clientOptions.reverseProxyUrl;
     clientOptions.headers = resolveHeaders({
@@ -99,9 +99,9 @@ export const initializeOpenAI = async ({
     }
 
     apiKey = shouldUseEntraId() ? 'entra-id-placeholder' : azureOptions.azureOpenAIApiKey;
-    clientOptions.azure = !serverless ? azureOptions : undefined;
+    clientOptions.azure = !isServerless ? azureOptions : undefined;
 
-    if (serverless === true) {
+    if (isServerless) {
       clientOptions.defaultQuery = azureOptions.azureOpenAIApiVersion
         ? { 'api-version': azureOptions.azureOpenAIApiVersion }
         : undefined;
@@ -148,9 +148,9 @@ export const initializeOpenAI = async ({
   }
 
   const modelOptions = {
-    ...endpointOption.model_parameters,
+    ...(model_parameters ?? {}),
     model: modelName,
-    user: req.user.id,
+    user: req.user?.id,
   };
 
   const finalClientOptions: OpenAIConfigOptions = {
@@ -160,8 +160,13 @@ export const initializeOpenAI = async ({
 
   const options = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
 
-  const openAIConfig = appConfig.endpoints?.[EModelEndpoint.openAI];
-  const allConfig = appConfig.endpoints?.all;
+  /** Set useLegacyContent for Azure serverless deployments */
+  if (isServerless) {
+    (options as InitializeResultBase).useLegacyContent = true;
+  }
+
+  const openAIConfig = appConfig?.endpoints?.[EModelEndpoint.openAI];
+  const allConfig = appConfig?.endpoints?.all;
   const azureRate = modelName?.includes('gpt-4') ? 30 : 17;
 
   let streamRate: number | undefined;
@@ -181,4 +186,4 @@ export const initializeOpenAI = async ({
   }
 
   return options;
-};
+}

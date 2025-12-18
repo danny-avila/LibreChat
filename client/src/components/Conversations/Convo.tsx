@@ -132,12 +132,16 @@ export default function Conversation({ conversation, retainView, toggleNav }: Co
   return (
     <div
       className={cn(
-        'group relative flex h-12 w-full items-center rounded-lg transition-colors duration-200 md:h-9',
-        isActiveConvo ? 'bg-surface-active-alt' : 'hover:bg-surface-active-alt',
+        'group relative flex h-12 w-full items-center rounded-lg md:h-9',
+        isActiveConvo || isPopoverActive
+          ? 'bg-surface-active-alt before:absolute before:bottom-1 before:left-0 before:top-1 before:w-0.5 before:rounded-full before:bg-black dark:before:bg-white'
+          : 'hover:bg-surface-active-alt',
       )}
       role="button"
       tabIndex={renaming ? -1 : 0}
-      aria-label={`${title || localize('com_ui_untitled')} conversation`}
+      aria-label={localize('com_ui_conversation_label', {
+        title: title || localize('com_ui_untitled'),
+      })}
       onClick={(e) => {
         if (renaming) {
           return;
@@ -148,6 +152,9 @@ export default function Conversation({ conversation, retainView, toggleNav }: Co
       }}
       onKeyDown={(e) => {
         if (renaming) {
+          return;
+        }
+        if (e.target !== e.currentTarget) {
           return;
         }
         if (e.key === 'Enter' || e.key === ' ') {
@@ -169,6 +176,7 @@ export default function Conversation({ conversation, retainView, toggleNav }: Co
       ) : (
         <ConvoLink
           isActiveConvo={isActiveConvo}
+          isPopoverActive={isPopoverActive}
           title={title}
           onRename={handleRename}
           isSmallScreen={isSmallScreen}
@@ -189,7 +197,9 @@ export default function Conversation({ conversation, retainView, toggleNav }: Co
             ? 'pointer-events-auto max-w-[28px] scale-x-100 opacity-100'
             : 'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-[28px] group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-[28px] group-hover:scale-x-100 group-hover:opacity-100',
         )}
-        aria-hidden={!(isPopoverActive || isActiveConvo)}
+        // Removing aria-hidden to fix accessibility issue: ARIA hidden element must not be focusable or contain focusable elements
+        // but not sure what its original purpose was, so leaving the property commented out until it can be cleared safe to delete.
+        // aria-hidden={!(isPopoverActive || isActiveConvo)}
       >
         {!renaming && <ConvoOptions {...convoOptionsProps} />}
       </div>

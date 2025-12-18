@@ -156,7 +156,7 @@ const AdminSettings = () => {
         </OGDialogTrigger>
         <OGDialogContent className="max-w-lg border-border-light bg-surface-primary text-text-primary lg:w-1/4">
           <OGDialogTitle>
-            {`${localize('com_ui_admin_settings')} - ${localize('com_ui_prompts')}`}
+            {localize('com_ui_admin_settings_section', { section: localize('com_ui_prompts') })}
           </OGDialogTitle>
           <div className="p-2">
             {/* Role selection dropdown */}
@@ -208,7 +208,7 @@ const AdminSettings = () => {
                             className="inline-flex items-center text-blue-500 underline"
                           >
                             {localize('com_ui_more_info')}
-                            <ExternalLink size={16} className="ml-1" />
+                            <ExternalLink size={16} className="ml-1" aria-hidden="true" />
                           </a>
                         </div>
                       </>
