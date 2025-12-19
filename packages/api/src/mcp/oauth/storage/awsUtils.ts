@@ -44,7 +44,7 @@ export function extractEncryptedFlag(
     return fallback;
   }
 
-  if (typeof metadata === 'object' && metadata !== null) {
+  if (metadata && typeof metadata === 'object') {
     const value = (metadata as Record<string, unknown>).encrypted;
     if (typeof value === 'boolean') {
       return value;
