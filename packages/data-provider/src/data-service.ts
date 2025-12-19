@@ -12,6 +12,7 @@ import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
 import * as permissions from './accessPermissions';
+import * as mc from './types/mcp';
 
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
@@ -1037,3 +1038,10 @@ export function getGraphApiToken(params: q.GraphTokenParams): Promise<q.GraphTok
 export function getDomainServerBaseUrl(): string {
   return `${endpoints.apiBaseUrl()}/api`;
 }
+
+export const respondToElicitation = (
+  elicitationId: string,
+  response: mc.ElicitationResponse,
+): Promise<{ success: boolean; message: string }> => {
+  return request.post(`/api/mcp/elicitations/${elicitationId}/respond`, response);
+};
