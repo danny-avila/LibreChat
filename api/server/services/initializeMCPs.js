@@ -14,8 +14,9 @@ async function initializeMCPs() {
   }
 
   // Initialize MCPServersRegistry first (required for MCPManager)
+  // Pass allowedDomains from mcpSettings for domain validation
   try {
-    createMCPServersRegistry(mongoose);
+    createMCPServersRegistry(mongoose, appConfig?.mcpSettings?.allowedDomains);
   } catch (error) {
     logger.error('[MCP] Failed to initialize MCPServersRegistry:', error);
     throw error;

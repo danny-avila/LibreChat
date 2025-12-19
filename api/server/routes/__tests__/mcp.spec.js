@@ -12,26 +12,36 @@ const mockRegistryInstance = {
   removeServer: jest.fn(),
 };
 
-jest.mock('@librechat/api', () => ({
-  ...jest.requireActual('@librechat/api'),
-  MCPOAuthHandler: {
-    initiateOAuthFlow: jest.fn(),
-    getFlowState: jest.fn(),
-    completeOAuthFlow: jest.fn(),
-    generateFlowId: jest.fn(),
-  },
-  MCPTokenStorage: {
-    storeTokens: jest.fn(),
-    getClientInfoAndMetadata: jest.fn(),
-    getTokens: jest.fn(),
-    deleteUserTokens: jest.fn(),
-  },
-  getUserMCPAuthMap: jest.fn(),
-  generateCheckAccess: jest.fn(() => (req, res, next) => next()),
-  MCPServersRegistry: {
-    getInstance: () => mockRegistryInstance,
-  },
-}));
+jest.mock('@librechat/api', () => {
+  const actual = jest.requireActual('@librechat/api');
+  return {
+    ...actual,
+    MCPOAuthHandler: {
+      initiateOAuthFlow: jest.fn(),
+      getFlowState: jest.fn(),
+      completeOAuthFlow: jest.fn(),
+      generateFlowId: jest.fn(),
+    },
+    MCPTokenStorage: {
+      storeTokens: jest.fn(),
+      getClientInfoAndMetadata: jest.fn(),
+      getTokens: jest.fn(),
+      deleteUserTokens: jest.fn(),
+    },
+    getUserMCPAuthMap: jest.fn(),
+    generateCheckAccess: jest.fn(() => (req, res, next) => next()),
+    MCPServersRegistry: {
+      getInstance: () => mockRegistryInstance,
+    },
+    // Error handling utilities (from @librechat/api mcp/errors)
+    isMCPDomainNotAllowedError: (error) => error?.code === 'MCP_DOMAIN_NOT_ALLOWED',
+    isMCPInspectionFailedError: (error) => error?.code === 'MCP_INSPECTION_FAILED',
+    MCPErrorCodes: {
+      DOMAIN_NOT_ALLOWED: 'MCP_DOMAIN_NOT_ALLOWED',
+      INSPECTION_FAILED: 'MCP_INSPECTION_FAILED',
+    },
+  };
+});
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {

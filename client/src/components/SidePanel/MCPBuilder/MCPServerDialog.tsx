@@ -308,6 +308,8 @@ export default function MCPServerDialog({
         const axiosError = error as any;
         if (axiosError.response?.data?.error === 'MCP_INSPECTION_FAILED') {
           errorMessage = localize('com_ui_mcp_server_connection_failed');
+        } else if (axiosError.response?.data?.error === 'MCP_DOMAIN_NOT_ALLOWED') {
+          errorMessage = localize('com_ui_mcp_domain_not_allowed');
         } else if (axiosError.response?.data?.error) {
           errorMessage = axiosError.response.data.error;
         }

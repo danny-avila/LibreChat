@@ -224,18 +224,38 @@ describe('MCPServersInitializer', () => {
     it('should process all server configs through inspector', async () => {
       await MCPServersInitializer.initialize(testConfigs);
 
-      // Verify all configs were processed by inspector (without connection parameter)
+      // Verify all configs were processed by inspector
+      // Signature: inspect(serverName, rawConfig, connection?, allowedDomains?)
       expect(mockInspect).toHaveBeenCalledTimes(5);
-      expect(mockInspect).toHaveBeenCalledWith('disabled_server', testConfigs.disabled_server);
-      expect(mockInspect).toHaveBeenCalledWith('oauth_server', testConfigs.oauth_server);
-      expect(mockInspect).toHaveBeenCalledWith('file_tools_server', testConfigs.file_tools_server);
+      expect(mockInspect).toHaveBeenCalledWith(
+        'disabled_server',
+        testConfigs.disabled_server,
+        undefined,
+        undefined,
+      );
+      expect(mockInspect).toHaveBeenCalledWith(
+        'oauth_server',
+        testConfigs.oauth_server,
+        undefined,
+        undefined,
+      );
+      expect(mockInspect).toHaveBeenCalledWith(
+        'file_tools_server',
+        testConfigs.file_tools_server,
+        undefined,
+        undefined,
+      );
       expect(mockInspect).toHaveBeenCalledWith(
         'search_tools_server',
         testConfigs.search_tools_server,
+        undefined,
+        undefined,
       );
       expect(mockInspect).toHaveBeenCalledWith(
         'remote_no_oauth_server',
         testConfigs.remote_no_oauth_server,
+        undefined,
+        undefined,
       );
     });
 
