@@ -27,6 +27,7 @@ type ModelSelectorContextType = {
   agentsMap: t.TAgentsMap | undefined;
   assistantsMap: t.TAssistantsMap | undefined;
   endpointsConfig: t.TEndpointsConfig;
+  hideBaseModels: boolean;
 
   // Functions
   endpointRequiresUserKey: (endpoint: string) => boolean;
@@ -209,6 +210,8 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     });
   };
 
+  const hideBaseModels = startupConfig?.modelSpecs?.hideBaseModels ?? false;
+
   const value = {
     // State
     searchValue,
@@ -221,6 +224,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     assistantsMap,
     mappedEndpoints,
     endpointsConfig,
+    hideBaseModels,
 
     // Functions
     handleSelectSpec,

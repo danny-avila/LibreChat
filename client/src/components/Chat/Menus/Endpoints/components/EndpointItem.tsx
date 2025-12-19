@@ -62,6 +62,7 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
     assistantsMap,
     modelSpecs,
     selectedValues,
+    hideBaseModels,
     handleOpenKeyDialog,
     handleSelectEndpoint,
     endpointSearchValues,
@@ -152,23 +153,24 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
             {endpointSpecs.map((spec: TModelSpec) => (
               <ModelSpecItem key={spec.name} spec={spec} isSelected={selectedSpec === spec.name} />
             ))}
-            {/* Render endpoint models */}
-            {filteredModels
-              ? renderEndpointModels(
-                  endpoint,
-                  endpoint.models || [],
-                  selectedModel,
-                  filteredModels,
-                  endpointIndex,
-                )
-              : endpoint.models &&
-                renderEndpointModels(
-                  endpoint,
-                  endpoint.models,
-                  selectedModel,
-                  undefined,
-                  endpointIndex,
-                )}
+            {/* Render endpoint models (hidden when hideBaseModels is enabled and there are specs for this endpoint) */}
+            {!(hideBaseModels && endpointSpecs.length > 0) &&
+              (filteredModels
+                ? renderEndpointModels(
+                    endpoint,
+                    endpoint.models || [],
+                    selectedModel,
+                    filteredModels,
+                    endpointIndex,
+                  )
+                : endpoint.models &&
+                  renderEndpointModels(
+                    endpoint,
+                    endpoint.models,
+                    selectedModel,
+                    undefined,
+                    endpointIndex,
+                  ))}
           </>
         )}
       </Menu>
