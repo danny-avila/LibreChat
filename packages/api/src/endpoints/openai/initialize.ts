@@ -5,7 +5,14 @@ import type {
   OpenAIConfigOptions,
   UserKeyValues,
 } from '~/types';
-import { getAzureCredentials, resolveHeaders, isUserProvided, checkUserKeyExpiry } from '~/utils';
+import { 
+  resolveHeaders, 
+  isUserProvided, 
+  shouldUseEntraId, 
+  checkUserKeyExpiry, 
+  getAzureCredentials, 
+  getEntraIdAccessToken,
+ } from '~/utils';
 import { getOpenAIConfig } from './config';
 
 /**
@@ -91,7 +98,7 @@ export async function initializeOpenAI({
       clientOptions.dropParams = groupMap[groupName]?.dropParams;
     }
 
-    apiKey = azureOptions.azureOpenAIApiKey;
+    apiKey = shouldUseEntraId() ? 'entra-id-placeholder' : azureOptions.azureOpenAIApiKey;
     clientOptions.azure = !isServerless ? azureOptions : undefined;
 
     if (isServerless) {
@@ -102,12 +109,33 @@ export async function initializeOpenAI({
       if (!clientOptions.headers) {
         clientOptions.headers = {};
       }
-      clientOptions.headers['api-key'] = apiKey;
+      if (shouldUseEntraId()) {
+        const token = await getEntraIdAccessToken();
+        clientOptions.headers['Authorization'] = `Bearer ${token}`;
+      } else {
+        clientOptions.headers['api-key'] = apiKey || '';
+      }
+    } else {
+      apiKey = azureOptions.azureOpenAIApiKey || '';
+      clientOptions.azure = azureOptions;
+      if (shouldUseEntraId()) {
+        apiKey = 'entra-id-placeholder';
+        const token = await getEntraIdAccessToken();
+        clientOptions.headers['Authorization'] = `Bearer ${token}`;
+      }
     }
   } else if (isAzureOpenAI) {
     clientOptions.azure =
       userProvidesKey && userValues?.apiKey ? JSON.parse(userValues.apiKey) : getAzureCredentials();
-    apiKey = clientOptions.azure ? clientOptions.azure.azureOpenAIApiKey : undefined;
+    if (shouldUseEntraId()) {
+      const token = await getEntraIdAccessToken();
+      clientOptions.headers = {
+        ...clientOptions.headers,
+        Authorization: `Bearer ${token}`,
+      };
+    } else {
+      apiKey = clientOptions.azure ? clientOptions.azure.azureOpenAIApiKey : undefined;
+    }
   }
 
   if (userProvidesKey && !apiKey) {
