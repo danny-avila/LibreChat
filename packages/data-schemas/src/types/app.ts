@@ -84,6 +84,8 @@ export interface AppConfig {
   speech?: TCustomConfig['speech'];
   /** MCP server configuration */
   mcpConfig?: TCustomConfig['mcpServers'] | null;
+  /** MCP settings (domain allowlist, etc.) */
+  mcpSettings?: TCustomConfig['mcpSettings'] | null;
   /** File configuration */
   fileConfig?: TFileConfig;
   /** Secure image links configuration */

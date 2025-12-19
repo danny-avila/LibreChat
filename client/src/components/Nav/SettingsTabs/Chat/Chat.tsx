@@ -84,6 +84,13 @@ const toggleSwitchConfigs = [
     hoverCardText: 'com_nav_info_default_temporary_chat',
     key: 'defaultTemporaryChat',
   },
+  {
+    stateAtom: store.resumableStreams,
+    localizationKey: 'com_nav_resumable_streams',
+    switchId: 'resumableStreams',
+    hoverCardText: 'com_nav_info_resumable_streams',
+    key: 'resumableStreams',
+  },
 ];
 
 function Chat() {

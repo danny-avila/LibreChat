@@ -184,6 +184,16 @@ actions:
     - 'librechat.ai'
     - 'google.com'
 
+# MCP Server domain restrictions for remote transports (SSE, WebSocket, HTTP)
+# Stdio transports (local processes) are not restricted.
+# If not configured, all domains are allowed (permissive default).
+# Supports wildcards: '*.example.com' matches 'api.example.com', 'staging.example.com', etc.
+# mcpSettings:
+#   allowedDomains:
+#     - 'localhost'
+#     - '*.example.com'
+#     - 'trusted-mcp-provider.com'
+
 # Example MCP Servers Object Structure
 # mcpServers:
 #   everything:

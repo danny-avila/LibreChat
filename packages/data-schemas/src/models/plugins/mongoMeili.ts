@@ -183,7 +183,9 @@ const createMeiliMongooseModel = ({
         );
 
         // Build query with resume capability
-        const query: FilterQuery<unknown> = {};
+        const query: FilterQuery<unknown> = {
+          expiredAt: { $exists: false }, // Do not sync TTL documents
+        };
         if (options?.resumeFromId) {
           query._id = { $gt: options.resumeFromId };
         }
@@ -430,6 +432,11 @@ const createMeiliMongooseModel = ({
       this: DocumentWithMeiliIndex,
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
+      // If this conversation or message has a TTL, don't index it
+      if (!_.isNil(this.expiredAt)) {
+        return next();
+      }
+
       const object = this.preprocessObjectForIndex!();
       const maxRetries = 3;
       let retryCount = 0;

@@ -6,9 +6,53 @@
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
 const { logger } = require('@librechat/data-schemas');
+const {
+  isMCPDomainNotAllowedError,
+  isMCPInspectionFailedError,
+  MCPErrorCodes,
+} = require('@librechat/api');
 const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
+
+/**
+ * Handles MCP-specific errors and sends appropriate HTTP responses.
+ * @param {Error} error - The error to handle
+ * @param {import('express').Response} res - Express response object
+ * @returns {import('express').Response | null} Response if handled, null if not an MCP error
+ */
+function handleMCPError(error, res) {
+  if (isMCPDomainNotAllowedError(error)) {
+    return res.status(error.statusCode).json({
+      error: error.code,
+      message: error.message,
+    });
+  }
+
+  if (isMCPInspectionFailedError(error)) {
+    return res.status(error.statusCode).json({
+      error: error.code,
+      message: error.message,
+    });
+  }
+
+  // Fallback for legacy string-based error handling (backwards compatibility)
+  if (error.message?.startsWith(MCPErrorCodes.DOMAIN_NOT_ALLOWED)) {
+    return res.status(403).json({
+      error: MCPErrorCodes.DOMAIN_NOT_ALLOWED,
+      message: error.message.replace(/^MCP_DOMAIN_NOT_ALLOWED\s*:\s*/i, ''),
+    });
+  }
+
+  if (error.message?.startsWith(MCPErrorCodes.INSPECTION_FAILED)) {
+    return res.status(400).json({
+      error: MCPErrorCodes.INSPECTION_FAILED,
+      message: error.message,
+    });
+  }
+
+  return null;
+}
 
 /**
  * Get all MCP tools available to the user
@@ -175,11 +219,9 @@ const createMCPServerController = async (req, res) => {
     });
   } catch (error) {
     logger.error('[createMCPServer]', error);
-    if (error.message?.startsWith('MCP_INSPECTION_FAILED')) {
-      return res.status(400).json({
-        error: 'MCP_INSPECTION_FAILED',
-        message: error.message,
-      });
+    const mcpErrorResponse = handleMCPError(error, res);
+    if (mcpErrorResponse) {
+      return mcpErrorResponse;
     }
     res.status(500).json({ message: error.message });
   }
@@ -235,11 +277,9 @@ const updateMCPServerController = async (req, res) => {
     res.status(200).json(parsedConfig);
   } catch (error) {
     logger.error('[updateMCPServer]', error);
-    if (error.message?.startsWith('MCP_INSPECTION_FAILED:')) {
-      return res.status(400).json({
-        error: 'MCP_INSPECTION_FAILED',
-        message: error.message,
-      });
+    const mcpErrorResponse = handleMCPError(error, res);
+    if (mcpErrorResponse) {
+      return mcpErrorResponse;
     }
     res.status(500).json({ message: error.message });
   }
