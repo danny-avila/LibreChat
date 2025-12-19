@@ -68,8 +68,13 @@ const agentSchema = new Schema<IAgent>(
     end_after_tools: {
       type: Boolean,
     },
+    /** @deprecated Use edges instead */
     agent_ids: {
       type: [String],
+    },
+    edges: {
+      type: [{ type: Schema.Types.Mixed }],
+      default: [],
     },
     isCollaborative: {
       type: Boolean,
@@ -105,6 +110,12 @@ const agentSchema = new Schema<IAgent>(
     is_promoted: {
       type: Boolean,
       default: false,
+      index: true,
+    },
+    /** MCP server names extracted from tools for efficient querying */
+    mcpServerNames: {
+      type: [String],
+      default: [],
       index: true,
     },
   },

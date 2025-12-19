@@ -1,5 +1,8 @@
-import { ContentTypes } from 'librechat-data-provider';
+import { ContentTypes, QueryKeys, Constants } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type { QueryClient } from '@tanstack/react-query';
+import type { LocalizeFunction } from '~/common';
+import _ from 'lodash';
 
 export const TEXT_KEY_DIVIDER = '|||';
 
@@ -43,7 +46,7 @@ export const getAllContentText = (message?: TMessage | null): string => {
 
   if (message.content && message.content.length > 0) {
     return message.content
-      .filter((part) => part.type === ContentTypes.TEXT)
+      .filter((part) => part != null && part.type === ContentTypes.TEXT)
       .map((part) => {
         if (!('text' in part)) return '';
         const text = part.text;
@@ -145,4 +148,33 @@ export const scrollToEnd = (callback?: () => void) => {
       callback();
     }
   }
+};
+
+/**
+ * Clears messages for both the specified conversation ID and the NEW_CONVO query key.
+ * This ensures that messages are properly cleared in all contexts, preventing stale data
+ * from persisting in the NEW_CONVO cache.
+ *
+ * @param queryClient - The React Query client instance
+ * @param conversationId - The conversation ID to clear messages for
+ */
+export const clearMessagesCache = (
+  queryClient: QueryClient,
+  conversationId: string | undefined | null,
+): void => {
+  const convoId = conversationId ?? Constants.NEW_CONVO;
+
+  // Clear messages for the current conversation
+  queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], []);
+
+  // Also clear NEW_CONVO messages if we're not already on NEW_CONVO
+  if (convoId !== Constants.NEW_CONVO) {
+    queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
+  }
+};
+
+export const getMessageAriaLabel = (message: TMessage, localize: LocalizeFunction): string => {
+  return !_.isNil(message.depth)
+    ? localize('com_endpoint_message_new', { 0: message.depth + 1 })
+    : localize('com_endpoint_message');
 };

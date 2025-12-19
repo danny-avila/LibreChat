@@ -41,7 +41,7 @@ const BookmarkNavItems: FC<{
           data-testid="bookmark-item-clear"
           handleSubmit={clear}
           selected={false}
-          icon={<CrossCircledIcon className="size-4" />}
+          icon={<CrossCircledIcon aria-hidden="true" className="size-4" />}
         />
         <BookmarkItem
           tag={localize('com_ui_no_bookmarks')}
@@ -65,7 +65,7 @@ const BookmarkNavItems: FC<{
             data-testid="bookmark-item-clear"
             handleSubmit={clear}
             selected={false}
-            icon={<CrossCircledIcon className="size-4" />}
+            icon={<CrossCircledIcon aria-hidden="true" className="size-4" />}
           />
         }
       />

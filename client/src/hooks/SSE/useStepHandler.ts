@@ -21,7 +21,8 @@ type TUseStepHandler = {
   announcePolite: (options: AnnounceOptions) => void;
   setMessages: (messages: TMessage[]) => void;
   getMessages: () => TMessage[] | undefined;
-  setIsSubmitting: SetterOrUpdater<boolean>;
+  /** @deprecated - isSubmitting should be derived from submission state */
+  setIsSubmitting?: SetterOrUpdater<boolean>;
   lastAnnouncementTimeRef: React.MutableRefObject<number>;
 };
 
@@ -53,7 +54,6 @@ type AllContentTypes =
 export default function useStepHandler({
   setMessages,
   getMessages,
-  setIsSubmitting,
   announcePolite,
   lastAnnouncementTimeRef,
 }: TUseStepHandler) {
@@ -98,6 +98,17 @@ export default function useStepHandler({
     >;
     if (!updatedContent[index]) {
       updatedContent[index] = { type: contentPart.type as AllContentTypes };
+    }
+    /** Prevent overwriting an existing content part with a different type */
+    const existingType = (updatedContent[index]?.type as string | undefined) ?? '';
+    if (
+      existingType &&
+      existingType !== contentType &&
+      !contentType.startsWith(existingType) &&
+      !existingType.startsWith(contentType)
+    ) {
+      console.warn('Content type mismatch', { existingType, contentType, index });
+      return message;
     }
 
     if (
@@ -151,12 +162,16 @@ export default function useStepHandler({
       const existingToolCall = existingContent?.tool_call;
       const toolCallArgs = (contentPart.tool_call as Agents.ToolCall).args;
       /** When args are a valid object, they are likely already invoked */
-      const args =
+      let args =
         finalUpdate ||
         typeof existingToolCall?.args === 'object' ||
         typeof toolCallArgs === 'object'
           ? contentPart.tool_call.args
           : (existingToolCall?.args ?? '') + (toolCallArgs ?? '');
+      /** Preserve previously streamed args when final update omits them */
+      if (finalUpdate && args == null && existingToolCall?.args != null) {
+        args = existingToolCall.args;
+      }
 
       const id = getNonEmptyValue([contentPart.tool_call.id, existingToolCall?.id]) ?? '';
       const name = getNonEmptyValue([contentPart.tool_call.name, existingToolCall?.name]) ?? '';
@@ -188,7 +203,6 @@ export default function useStepHandler({
     ({ event, data }: TStepEvent, submission: EventSubmission) => {
       const messages = getMessages() || [];
       const { userMessage } = submission;
-      setIsSubmitting(true);
       let parentMessageId = userMessage.messageId;
 
       const currentTime = Date.now();
@@ -218,18 +232,42 @@ export default function useStepHandler({
         let response = messageMap.current.get(responseMessageId);
 
         if (!response) {
-          const responseMessage = messages[messages.length - 1] as TMessage;
+          // Find the actual response message - check if last message is a response, otherwise use initialResponse
+          const lastMessage = messages[messages.length - 1] as TMessage;
+          const responseMessage =
+            lastMessage && !lastMessage.isCreatedByUser
+              ? lastMessage
+              : (submission?.initialResponse as TMessage);
+
+          // For edit scenarios, initialContent IS the complete starting content (not to be merged)
+          // For resume scenarios (no editedContent), initialContent is empty and we use existingContent
+          const existingContent = responseMessage?.content ?? [];
+          const mergedContent = initialContent.length > 0 ? initialContent : existingContent;
 
           response = {
             ...responseMessage,
             parentMessageId,
             conversationId: userMessage.conversationId,
             messageId: responseMessageId,
-            content: initialContent,
+            content: mergedContent,
           };
 
           messageMap.current.set(responseMessageId, response);
-          setMessages([...messages.slice(0, -1), response]);
+
+          // Get fresh messages to handle multi-tab scenarios where messages may have loaded
+          // after this handler started (Tab 2 may have more complete history now)
+          const freshMessages = getMessages() || [];
+          const currentMessages = freshMessages.length > messages.length ? freshMessages : messages;
+
+          // Remove any existing response placeholder
+          let updatedMessages = currentMessages.filter((m) => m.messageId !== responseMessageId);
+
+          // Ensure userMessage is present (multi-tab: Tab 2 may not have it yet)
+          if (!updatedMessages.some((m) => m.messageId === userMessage.messageId)) {
+            updatedMessages = [...updatedMessages, userMessage as TMessage];
+          }
+
+          setMessages([...updatedMessages, response]);
         }
 
         // Store tool call IDs if present
@@ -303,6 +341,10 @@ export default function useStepHandler({
             ? messageDelta.delta.content[0]
             : messageDelta.delta.content;
 
+          if (contentPart == null) {
+            return;
+          }
+
           const currentIndex = calculateContentIndex(
             runStep.index,
             initialContent,
@@ -334,6 +376,10 @@ export default function useStepHandler({
           const contentPart = Array.isArray(reasoningDelta.delta.content)
             ? reasoningDelta.delta.content[0]
             : reasoningDelta.delta.content;
+
+          if (contentPart == null) {
+            return;
+          }
 
           const currentIndex = calculateContentIndex(
             runStep.index,
@@ -443,7 +489,7 @@ export default function useStepHandler({
         stepMap.current.clear();
       };
     },
-    [getMessages, setIsSubmitting, lastAnnouncementTimeRef, announcePolite, setMessages],
+    [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages],
   );
 
   const clearStepMaps = useCallback(() => {
@@ -451,5 +497,17 @@ export default function useStepHandler({
     messageMap.current.clear();
     stepMap.current.clear();
   }, []);
-  return { stepHandler, clearStepMaps };
+
+  /**
+   * Sync a message into the step handler's messageMap.
+   * Call this after receiving sync event to ensure subsequent deltas
+   * build on the synced content, not stale content.
+   */
+  const syncStepMessage = useCallback((message: TMessage) => {
+    if (message?.messageId) {
+      messageMap.current.set(message.messageId, { ...message });
+    }
+  }, []);
+
+  return { stepHandler, clearStepMaps, syncStepMessage };
 }

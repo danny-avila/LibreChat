@@ -1,6 +1,11 @@
 const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
-const { validateAgentModel, getCustomEndpointConfig } = require('@librechat/api');
+const {
+  initializeAgent,
+  validateAgentModel,
+  getCustomEndpointConfig,
+  createSequentialChainEdges,
+} = require('@librechat/api');
 const {
   Constants,
   EModelEndpoint,
@@ -11,17 +16,20 @@ const {
   createToolEndCallback,
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
-const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
+const { getConvoFiles } = require('~/models/Conversation');
 const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
+const db = require('~/models');
 
 /**
- * @param {AbortSignal} signal
+ * Creates a tool loader function for the agent.
+ * @param {AbortSignal} signal - The abort signal
+ * @param {string | null} [streamId] - The stream ID for resumable mode
  */
-function createToolLoader(signal) {
+function createToolLoader(signal, streamId = null) {
   /**
    * @param {object} params
    * @param {ServerRequest} params.req
@@ -46,6 +54,7 @@ function createToolLoader(signal) {
         agent,
         signal,
         tool_resources,
+        streamId,
       });
     } catch (error) {
       logger.error('Error loading tools for agent ' + agentId, error);
@@ -59,18 +68,21 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   }
   const appConfig = req.config;
 
-  // TODO: use endpointOption to determine options/modelOptions
+  /** @type {string | null} */
+  const streamId = req._resumableStreamId || null;
+
   /** @type {Array<UsageMetadata>} */
   const collectedUsage = [];
   /** @type {ArtifactPromises} */
   const artifactPromises = [];
   const { contentParts, aggregateContent } = createContentAggregator();
-  const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+  const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
   const eventHandlers = getDefaultHandlers({
     res,
     aggregateContent,
     toolEndCallback,
     collectedUsage,
+    streamId,
   });
 
   if (!endpointOption.agent) {
@@ -99,46 +111,57 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const agentConfigs = new Map();
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
 
-  const loadTools = createToolLoader(signal);
+  const loadTools = createToolLoader(signal, streamId);
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   /** @type {string} */
   const conversationId = req.body.conversationId;
 
-  const primaryConfig = await initializeAgent({
-    req,
-    res,
-    loadTools,
-    requestFiles,
-    conversationId,
-    agent: primaryAgent,
-    endpointOption,
-    allowedProviders,
-    isInitialAgent: true,
-  });
+  const primaryConfig = await initializeAgent(
+    {
+      req,
+      res,
+      loadTools,
+      requestFiles,
+      conversationId,
+      agent: primaryAgent,
+      endpointOption,
+      allowedProviders,
+      isInitialAgent: true,
+    },
+    {
+      getConvoFiles,
+      getFiles: db.getFiles,
+      getUserKey: db.getUserKey,
+      updateFilesUsage: db.updateFilesUsage,
+      getUserKeyValues: db.getUserKeyValues,
+      getToolFilesByIds: db.getToolFilesByIds,
+    },
+  );
 
   const agent_ids = primaryConfig.agent_ids;
   let userMCPAuthMap = primaryConfig.userMCPAuthMap;
-  if (agent_ids?.length) {
-    for (const agentId of agent_ids) {
-      const agent = await getAgent({ id: agentId });
-      if (!agent) {
-        throw new Error(`Agent ${agentId} not found`);
-      }
 
-      const validationResult = await validateAgentModel({
-        req,
-        res,
-        agent,
-        modelsConfig,
-        logViolation,
-      });
+  async function processAgent(agentId) {
+    const agent = await getAgent({ id: agentId });
+    if (!agent) {
+      throw new Error(`Agent ${agentId} not found`);
+    }
 
-      if (!validationResult.isValid) {
-        throw new Error(validationResult.error?.message);
-      }
+    const validationResult = await validateAgentModel({
+      req,
+      res,
+      agent,
+      modelsConfig,
+      logViolation,
+    });
 
-      const config = await initializeAgent({
+    if (!validationResult.isValid) {
+      throw new Error(validationResult.error?.message);
+    }
+
+    const config = await initializeAgent(
+      {
         req,
         res,
         agent,
@@ -147,15 +170,70 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         conversationId,
         endpointOption,
         allowedProviders,
-      });
-      if (userMCPAuthMap != null) {
-        Object.assign(userMCPAuthMap, config.userMCPAuthMap ?? {});
-      } else {
-        userMCPAuthMap = config.userMCPAuthMap;
+      },
+      {
+        getConvoFiles,
+        getFiles: db.getFiles,
+        getUserKey: db.getUserKey,
+        updateFilesUsage: db.updateFilesUsage,
+        getUserKeyValues: db.getUserKeyValues,
+        getToolFilesByIds: db.getToolFilesByIds,
+      },
+    );
+    if (userMCPAuthMap != null) {
+      Object.assign(userMCPAuthMap, config.userMCPAuthMap ?? {});
+    } else {
+      userMCPAuthMap = config.userMCPAuthMap;
+    }
+    agentConfigs.set(agentId, config);
+  }
+
+  let edges = primaryConfig.edges;
+  const checkAgentInit = (agentId) => agentId === primaryConfig.id || agentConfigs.has(agentId);
+  if ((edges?.length ?? 0) > 0) {
+    for (const edge of edges) {
+      if (Array.isArray(edge.to)) {
+        for (const to of edge.to) {
+          if (checkAgentInit(to)) {
+            continue;
+          }
+          await processAgent(to);
+        }
+      } else if (typeof edge.to === 'string' && checkAgentInit(edge.to)) {
+        continue;
+      } else if (typeof edge.to === 'string') {
+        await processAgent(edge.to);
       }
-      agentConfigs.set(agentId, config);
+
+      if (Array.isArray(edge.from)) {
+        for (const from of edge.from) {
+          if (checkAgentInit(from)) {
+            continue;
+          }
+          await processAgent(from);
+        }
+      } else if (typeof edge.from === 'string' && checkAgentInit(edge.from)) {
+        continue;
+      } else if (typeof edge.from === 'string') {
+        await processAgent(edge.from);
+      }
     }
   }
+
+  /** @deprecated Agent Chain */
+  if (agent_ids?.length) {
+    for (const agentId of agent_ids) {
+      if (checkAgentInit(agentId)) {
+        continue;
+      }
+      await processAgent(agentId);
+    }
+
+    const chain = await createSequentialChainEdges([primaryConfig.id].concat(agent_ids), '{convo}');
+    edges = edges ? edges.concat(chain) : chain;
+  }
+
+  primaryConfig.edges = edges;
 
   let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];
   if (!isAgentsEndpoint(primaryConfig.endpoint) && !endpointConfig) {

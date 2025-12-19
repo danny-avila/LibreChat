@@ -56,6 +56,7 @@ const LabelController: React.FC<LabelControllerProps> = ({
           checked={field.value}
           onCheckedChange={field.onChange}
           value={field.value.toString()}
+          aria-label={label}
         />
       )}
     />
@@ -151,16 +152,17 @@ const AdminSettings = () => {
         <Button
           size={'sm'}
           variant={'outline'}
-          className="btn btn-neutral border-token-border-light relative h-9 w-full gap-1 rounded-lg font-medium"
+          className="btn btn-neutral border-token-border-light relative h-9 w-full gap-1 rounded-lg font-medium focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
+          aria-label={localize('com_ui_admin_settings')}
         >
           <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
           {localize('com_ui_admin_settings')}
         </Button>
       </OGDialogTrigger>
       <OGDialogContent className="border-border-light bg-surface-primary text-text-primary lg:w-1/4">
-        <OGDialogTitle>{`${localize('com_ui_admin_settings')} - ${localize(
-          'com_ui_agents',
-        )}`}</OGDialogTitle>
+        <OGDialogTitle>
+          {localize('com_ui_admin_settings_section', { section: localize('com_ui_agents') })}
+        </OGDialogTitle>
         <div className="p-2">
           {/* Role selection dropdown */}
           <div className="flex items-center gap-2">
@@ -216,7 +218,7 @@ const AdminSettings = () => {
                 type="button"
                 onClick={handleSubmit(onSubmit)}
                 disabled={isSubmitting || isLoading}
-                className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
+                className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring-primary"
               >
                 {localize('com_ui_save')}
               </button>

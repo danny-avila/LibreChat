@@ -80,7 +80,7 @@ export default function AccessRolesPicker({
             <span className="font-medium">
               {selectedRoleInfo?.name || localize('com_ui_select')}
             </span>
-            <ChevronDown className="h-4 w-4 text-text-secondary" />
+            <ChevronDown className="h-4 w-4 text-text-secondary" aria-hidden="true" />
           </Ariakit.MenuButton>
         }
         items={dropdownItems}

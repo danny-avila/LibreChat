@@ -15,8 +15,9 @@ import type {
 } from '@librechat/agents';
 import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { ObjectId, MemoryMethods } from '@librechat/data-schemas';
-import type { BaseMessage } from '@langchain/core/messages';
+import type { BaseMessage, ToolMessage } from '@langchain/core/messages';
 import type { Response as ServerResponse } from 'express';
+import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { Tokenizer } from '~/utils';
 
 type RequiredMemoryMethods = Pick<
@@ -250,6 +251,7 @@ export class BasicToolEndHandler implements EventHandler {
   constructor(callback?: ToolEndCallback) {
     this.callback = callback;
   }
+
   handle(
     event: string,
     data: StreamEventData | undefined,
@@ -282,6 +284,7 @@ export async function processMemory({
   llmConfig,
   tokenLimit,
   totalTokens = 0,
+  streamId = null,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -296,6 +299,7 @@ export async function processMemory({
   tokenLimit?: number;
   totalTokens?: number;
   llmConfig?: Partial<LLMConfig>;
+  streamId?: string | null;
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({
@@ -345,7 +349,7 @@ ${memory ?? 'No existing memories'}`;
     };
 
     // Handle GPT-5+ models
-    if ('model' in finalLLMConfig && /\bgpt-[5-9]\b/i.test(finalLLMConfig.model ?? '')) {
+    if ('model' in finalLLMConfig && /\bgpt-[5-9](?:\.\d+)?\b/i.test(finalLLMConfig.model ?? '')) {
       // Remove temperature for GPT-5+ models
       delete finalLLMConfig.temperature;
 
@@ -363,7 +367,7 @@ ${memory ?? 'No existing memories'}`;
     }
 
     const artifactPromises: Promise<TAttachment | null>[] = [];
-    const memoryCallback = createMemoryCallback({ res, artifactPromises });
+    const memoryCallback = createMemoryCallback({ res, artifactPromises, streamId });
     const customHandlers = {
       [GraphEvents.TOOL_END]: new BasicToolEndHandler(memoryCallback),
     };
@@ -383,9 +387,11 @@ ${memory ?? 'No existing memories'}`;
     });
 
     const config = {
+      runName: 'MemoryRun',
       configurable: {
+        user_id: userId,
+        thread_id: conversationId,
         provider: llmConfig?.provider,
-        thread_id: `memory-run-${conversationId}`,
       },
       streamMode: 'values',
       recursionLimit: 3,
@@ -414,6 +420,7 @@ export async function createMemoryProcessor({
   memoryMethods,
   conversationId,
   config = {},
+  streamId = null,
 }: {
   res: ServerResponse;
   messageId: string;
@@ -421,6 +428,7 @@ export async function createMemoryProcessor({
   userId: string | ObjectId;
   memoryMethods: RequiredMemoryMethods;
   config?: MemoryConfig;
+  streamId?: string | null;
 }): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
@@ -441,6 +449,7 @@ export async function createMemoryProcessor({
           llmConfig,
           messageId,
           tokenLimit,
+          streamId,
           conversationId,
           memory: withKeys,
           totalTokens: totalTokens || 0,
@@ -459,12 +468,14 @@ async function handleMemoryArtifact({
   res,
   data,
   metadata,
+  streamId = null,
 }: {
   res: ServerResponse;
   data: ToolEndData;
   metadata?: ToolEndMetadata;
+  streamId?: string | null;
 }) {
-  const output = data?.output;
+  const output = data?.output as ToolMessage | undefined;
   if (!output) {
     return null;
   }
@@ -488,7 +499,11 @@ async function handleMemoryArtifact({
   if (!res.headersSent) {
     return attachment;
   }
-  res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
+  if (streamId) {
+    GenerationJobManager.emitChunk(streamId, { event: 'attachment', data: attachment });
+  } else {
+    res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
+  }
   return attachment;
 }
 
@@ -497,23 +512,26 @@ async function handleMemoryArtifact({
  * @param params - The parameters object
  * @param params.res - The server response object
  * @param params.artifactPromises - Array to collect artifact promises
+ * @param params.streamId - The stream ID for resumable mode, or null for standard mode
  * @returns The memory callback function
  */
 export function createMemoryCallback({
   res,
   artifactPromises,
+  streamId = null,
 }: {
   res: ServerResponse;
   artifactPromises: Promise<Partial<TAttachment> | null>[];
+  streamId?: string | null;
 }): ToolEndCallback {
   return async (data: ToolEndData, metadata?: Record<string, unknown>) => {
-    const output = data?.output;
+    const output = data?.output as ToolMessage | undefined;
     const memoryArtifact = output?.artifact?.[Tools.memory] as MemoryArtifact;
     if (memoryArtifact == null) {
       return;
     }
     artifactPromises.push(
-      handleMemoryArtifact({ res, data, metadata }).catch((error) => {
+      handleMemoryArtifact({ res, data, metadata, streamId }).catch((error) => {
         logger.error('Error processing memory artifact content:', error);
         return null;
       }),

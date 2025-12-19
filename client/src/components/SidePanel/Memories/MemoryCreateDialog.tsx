@@ -108,7 +108,7 @@ export default function MemoryCreateDialog({
       <OGDialogTemplate
         title={localize('com_ui_create_memory')}
         showCloseButton={false}
-        className="w-11/12 md:max-w-lg"
+        className="max-h-[90vh] w-11/12 overflow-y-auto md:max-w-lg"
         main={
           <div className="space-y-4">
             <div className="space-y-2">
@@ -147,6 +147,7 @@ export default function MemoryCreateDialog({
             onClick={handleSave}
             disabled={isLoading || !key.trim() || !value.trim()}
             className="text-white"
+            aria-label={localize('com_ui_create_memory')}
           >
             {isLoading ? <Spinner className="size-4" /> : localize('com_ui_create')}
           </Button>

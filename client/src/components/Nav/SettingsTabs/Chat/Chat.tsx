@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { showThinkingAtom } from '~/store/showThinking';
 import FontSizeSelector from './FontSizeSelector';
 import { ForkSettings } from './ForkSettings';
 import ChatDirection from './ChatDirection';
@@ -28,7 +29,7 @@ const toggleSwitchConfigs = [
     key: 'centerFormOnLanding',
   },
   {
-    stateAtom: store.showThinking,
+    stateAtom: showThinkingAtom,
     localizationKey: 'com_nav_show_thinking',
     switchId: 'showThinking',
     hoverCardText: undefined,
@@ -75,6 +76,20 @@ const toggleSwitchConfigs = [
     switchId: 'modularChat',
     hoverCardText: undefined,
     key: 'modularChat',
+  },
+  {
+    stateAtom: store.defaultTemporaryChat,
+    localizationKey: 'com_nav_default_temporary_chat',
+    switchId: 'defaultTemporaryChat',
+    hoverCardText: 'com_nav_info_default_temporary_chat',
+    key: 'defaultTemporaryChat',
+  },
+  {
+    stateAtom: store.resumableStreams,
+    localizationKey: 'com_nav_resumable_streams',
+    switchId: 'resumableStreams',
+    hoverCardText: 'com_nav_info_resumable_streams',
+    key: 'resumableStreams',
   },
 ];
 

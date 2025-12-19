@@ -4,7 +4,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
-import { PermissionTypes, Permissions, QueryKeys, Constants } from 'librechat-data-provider';
+import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/hooks';
@@ -13,11 +13,10 @@ import MarketplaceAdminSettings from './MarketplaceAdminSettings';
 import { SidePanelProvider, useChatContext } from '~/Providers';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { OpenSidebar } from '~/components/Chat/Menus';
+import { cn, clearMessagesCache } from '~/utils';
 import CategoryTabs from './CategoryTabs';
-import AgentDetail from './AgentDetail';
 import SearchBar from './SearchBar';
 import AgentGrid from './AgentGrid';
-import { cn } from '~/utils';
 import store from '~/store';
 
 interface AgentMarketplaceProps {
@@ -45,7 +44,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
 
   // Get URL parameters
   const searchQuery = searchParams.get('q') || '';
-  const selectedAgentId = searchParams.get('agent_id') || '';
 
   // Animation state
   type Direction = 'left' | 'right';
@@ -57,10 +55,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
 
   // Ref for the scrollable container to enable infinite scroll
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  // Local state
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState<t.Agent | null>(null);
 
   // Set page title
   useDocumentTitle(`${localize('com_agents_marketplace')} | LibreChat`);
@@ -102,28 +96,12 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   }, [category, categoriesQuery.data, displayCategory]);
 
   /**
-   * Handle agent card selection
-   *
-   * @param agent - The selected agent object
+   * Handle agent card selection - updates URL for deep linking
    */
   const handleAgentSelect = (agent: t.Agent) => {
-    // Update URL with selected agent
     const newParams = new URLSearchParams(searchParams);
     newParams.set('agent_id', agent.id);
     setSearchParams(newParams);
-    setSelectedAgent(agent);
-    setIsDetailOpen(true);
-  };
-
-  /**
-   * Handle closing the agent detail dialog
-   */
-  const handleDetailClose = () => {
-    const newParams = new URLSearchParams(searchParams);
-    newParams.delete('agent_id');
-    setSearchParams(newParams);
-    setSelectedAgent(null);
-    setIsDetailOpen(false);
   };
 
   /**
@@ -224,18 +202,10 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
       window.open('/c/new', '_blank');
       return;
     }
-    queryClient.setQueryData<t.TMessage[]>(
-      [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
-      [],
-    );
+    clearMessagesCache(queryClient, conversation?.conversationId);
     queryClient.invalidateQueries([QueryKeys.messages]);
     newConversation();
   };
-
-  // Check if a detail view should be open based on URL
-  useEffect(() => {
-    setIsDetailOpen(!!selectedAgentId);
-  }, [selectedAgentId]);
 
   // Layout configuration for SidePanelGroup
   const defaultLayout = useMemo(() => {
@@ -515,14 +485,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                   {/* Note: Using Tailwind keyframes for slide in/out animations */}
                 </div>
               </div>
-              {/* Agent detail dialog */}
-              {isDetailOpen && selectedAgent && (
-                <AgentDetail
-                  agent={selectedAgent}
-                  isOpen={isDetailOpen}
-                  onClose={handleDetailClose}
-                />
-              )}
             </div>
           </main>
         </SidePanelGroup>

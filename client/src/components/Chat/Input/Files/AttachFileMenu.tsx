@@ -61,13 +61,8 @@ const AttachFileMenu = ({
     ephemeralAgentByConvoId(conversationId),
   );
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
-  const { handleFileChange } = useFileHandling({
-    overrideEndpoint: EModelEndpoint.agents,
-    overrideEndpointFileConfig: endpointFileConfig,
-  });
+  const { handleFileChange } = useFileHandling();
   const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
-    overrideEndpoint: EModelEndpoint.agents,
-    overrideEndpointFileConfig: endpointFileConfig,
     toolResource,
   });
 
@@ -117,8 +112,10 @@ const AttachFileMenu = ({
       const items: MenuItemProps[] = [];
 
       const currentProvider = provider || endpoint;
-
-      if (isDocumentSupportedProvider(currentProvider || endpointType)) {
+      if (
+        isDocumentSupportedProvider(endpointType) ||
+        isDocumentSupportedProvider(currentProvider)
+      ) {
         items.push({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
@@ -224,6 +221,7 @@ const AttachFileMenu = ({
           aria-label="Attach File Options"
           className={cn(
             'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50',
+            isPopoverActive && 'bg-surface-hover',
           )}
         >
           <div className="flex w-full items-center justify-center gap-2">

@@ -1,16 +1,10 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, getBalanceConfig } = require('@librechat/api');
-const {
-  Constants,
-  CacheKeys,
-  removeNullishValues,
-  defaultSocialLogins,
-} = require('librechat-data-provider');
+const { Constants, CacheKeys, defaultSocialLogins } = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
 const { getProjectByName } = require('~/models/Project');
-const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const router = express.Router();
@@ -125,36 +119,6 @@ router.get('/', async function (req, res) {
       payload.minPasswordLength = minPasswordLength;
     }
 
-    const getMCPServers = () => {
-      try {
-        if (appConfig?.mcpConfig == null) {
-          return;
-        }
-        const mcpManager = getMCPManager();
-        if (!mcpManager) {
-          return;
-        }
-        const mcpServers = mcpManager.getAllServers();
-        if (!mcpServers) return;
-        const oauthServers = mcpManager.getOAuthServers();
-        for (const serverName in mcpServers) {
-          if (!payload.mcpServers) {
-            payload.mcpServers = {};
-          }
-          const serverConfig = mcpServers[serverName];
-          payload.mcpServers[serverName] = removeNullishValues({
-            startup: serverConfig?.startup,
-            chatMenu: serverConfig?.chatMenu,
-            isOAuth: oauthServers?.has(serverName),
-            customUserVars: serverConfig?.customUserVars,
-          });
-        }
-      } catch (error) {
-        logger.error('Error loading MCP servers', error);
-      }
-    };
-
-    getMCPServers();
     const webSearchConfig = appConfig?.webSearch;
     if (
       webSearchConfig != null &&
