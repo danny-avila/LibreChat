@@ -22,10 +22,13 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
     register,
     getValues,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<TLoginUser>();
   const [showResendLink, setShowResendLink] = useState<boolean>(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [isEmailFocused, setIsEmailFocused] = useState<boolean>(false);
+  const emailValue = watch('email');
 
   const { data: config } = useGetStartupConfig();
   const useUsernameLogin = config?.ldap?.username;
@@ -104,14 +107,22 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
               aria-invalid={!!errors.email}
               className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none"
               placeholder=" "
+              onFocus={() => setIsEmailFocused(true)}
+              onBlur={() => setIsEmailFocused(false)}
             />
             <label
               htmlFor="email"
               className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-600 dark:peer-focus:text-green-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
             >
-              {useUsernameLogin
-                ? localize('com_auth_username').replace(/ \(.*$/, '')
-                : localize('com_auth_email_address')}
+              {(() => {
+                if (useUsernameLogin) {
+                  return localize('com_auth_username').replace(/ \(.*$/, '');
+                }
+                if (isEmailFocused || emailValue) {
+                  return localize('com_auth_email_address');
+                }
+                return localize('com_auth_email_placeholder');
+              })()}
             </label>
           </div>
           {renderError('email')}
