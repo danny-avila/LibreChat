@@ -48,21 +48,24 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const userId = req.user.id;
 
   // Generate conversationId upfront if not provided - streamId === conversationId always
-  const conversationId = reqConversationId || crypto.randomUUID();
+  // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
+  const conversationId =
+    !reqConversationId || reqConversationId === 'new' ? crypto.randomUUID() : reqConversationId;
   const streamId = conversationId;
 
   let client = null;
 
   try {
-    const prelimAbortController = new AbortController();
-    res.on('close', () => {
-      if (!prelimAbortController.signal.aborted) {
-        prelimAbortController.abort();
-      }
-    });
-
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
     req._resumableStreamId = streamId;
+
+    // Send JSON response IMMEDIATELY so client can connect to SSE stream
+    // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
+    res.json({ streamId, conversationId, status: 'started' });
+
+    // Note: We no longer use res.on('close') to abort since we send JSON immediately.
+    // The response closes normally after res.json(), which is not an abort condition.
+    // Abort handling is done through GenerationJobManager via the SSE stream connection.
 
     // Track if partial response was already saved to avoid duplicates
     let partialResponseSaved = false;
@@ -128,12 +131,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       req,
       res,
       endpointOption,
-      signal: prelimAbortController.signal,
+      // Use the job's abort controller signal - allows abort via GenerationJobManager.abortJob()
+      signal: job.abortController.signal,
     });
 
-    if (prelimAbortController.signal.aborted) {
+    if (job.abortController.signal.aborted) {
       GenerationJobManager.completeJob(streamId, 'Request aborted during initialization');
-      return res.status(400).json({ error: 'Request aborted during initialization' });
+      return;
     }
 
     client = result.client;
@@ -146,8 +150,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     if (client?.contentParts) {
       GenerationJobManager.setContentParts(streamId, client.contentParts);
     }
-
-    res.json({ streamId, conversationId, status: 'started' });
 
     let userMessage;
 
@@ -339,6 +341,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     logger.error('[ResumableAgentController] Initialization error:', error);
     if (!res.headersSent) {
       res.status(500).json({ error: error.message || 'Failed to start generation' });
+    } else {
+      // JSON already sent, emit error to stream so client can receive it
+      GenerationJobManager.emitError(streamId, error.message || 'Failed to start generation');
     }
     GenerationJobManager.completeJob(streamId, error.message);
     if (client) {
@@ -374,7 +379,9 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
   } = req.body;
 
   // Generate conversationId upfront if not provided - streamId === conversationId always
-  const conversationId = reqConversationId || crypto.randomUUID();
+  // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
+  const conversationId =
+    !reqConversationId || reqConversationId === 'new' ? crypto.randomUUID() : reqConversationId;
   const streamId = conversationId;
 
   let userMessage;

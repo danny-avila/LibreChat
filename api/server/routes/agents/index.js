@@ -171,10 +171,26 @@ router.post('/chat/abort', async (req, res) => {
   logger.debug(`[AgentStream] Body:`, req.body);
 
   const { streamId, conversationId, abortKey } = req.body;
+  const userId = req.user?.id;
 
   // streamId === conversationId, so try any of the provided IDs
-  const jobStreamId = streamId || conversationId || abortKey?.split(':')[0];
-  const job = jobStreamId ? await GenerationJobManager.getJob(jobStreamId) : null;
+  // Skip "new" as it's a placeholder for new conversations, not an actual ID
+  let jobStreamId =
+    streamId || (conversationId !== 'new' ? conversationId : null) || abortKey?.split(':')[0];
+  let job = jobStreamId ? await GenerationJobManager.getJob(jobStreamId) : null;
+
+  // Fallback: if job not found and we have a userId, look up active jobs for user
+  // This handles the case where frontend sends "new" but job was created with a UUID
+  if (!job && userId) {
+    logger.debug(`[AgentStream] Job not found by ID, checking active jobs for user: ${userId}`);
+    const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(userId);
+    if (activeJobIds.length > 0) {
+      // Abort the most recent active job for this user
+      jobStreamId = activeJobIds[0];
+      job = await GenerationJobManager.getJob(jobStreamId);
+      logger.debug(`[AgentStream] Found active job for user: ${jobStreamId}`);
+    }
+  }
 
   logger.debug(`[AgentStream] Computed jobStreamId: ${jobStreamId}`);
 
