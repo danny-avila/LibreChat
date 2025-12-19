@@ -26,7 +26,7 @@
   "com_agents_name_placeholder": "선택 사항: 에이전트의 이름",
   "com_agents_no_access": "이 에이전트를 수정할 권한이 없습니다",
   "com_agents_no_agent_id_error": "에이전트 ID를 찾을 수 없습니다. 먼저 에이전트가 생성되었는지 확인하세요.",
-  "com_agents_not_available": "에이전트를 사용할 수 없음",
+  "com_agents_prompt_selection": "이름 또는 명령어로 프롬프트를 선택하세요.",
   "com_agents_search_info": "활성화하면 에이전트가 최신 정보를 검색할 수 있도록 허용합니다. 유효한 API 키가 필요합니다.",
   "com_agents_search_name": "이름으로 에이전트 검색",
   "com_agents_update_error": "에이전트 업데이트 중 오류가 발생했습니다",

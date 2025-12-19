@@ -74,7 +74,7 @@
   "com_agents_no_access": "Du har inte behörighet att redigera den här agenten.",
   "com_agents_no_agent_id_error": "Inget agent-ID hittades. Se till att agenten skapas först.",
   "com_agents_no_more_results": "Du har nått slutet av resultaten",
-  "com_agents_not_available": "Agenten är inte tillgänglig.",
+  "com_agents_prompt_selection": "Välj en prompt efter namn eller kommando.",
   "com_agents_recommended": "Våra rekommenderade agenter",
   "com_agents_results_for": "Resultat för \"{{query}}\"",
   "com_agents_search_aria": "Sök efter agenter",

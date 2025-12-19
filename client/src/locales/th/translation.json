@@ -28,7 +28,7 @@
   "com_agents_name_placeholder": "ตัวเลือกเพิ่มเติม: ชื่อของเอเจนต์",
   "com_agents_no_access": "คุณไม่มีสิทธิ์แก้ไขเอเจนต์นี้",
   "com_agents_no_agent_id_error": "ไม่พบรหัสเอเจนต์ (Agent ID) กรุณาสร้างเอเจนต์ก่อน",
-  "com_agents_not_available": "ไม่มีเอเจนต์ให้บริการ",
+  "com_agents_prompt_selection": "เลือกพรอมต์ตามชื่อหรือคำสั่ง.",
   "com_agents_search_info": "เมื่อเปิดใช้งานแล้ว เอเจนต์องคุณจะสามารถค้นหาข้อมูลล่าสุดบนเว็บได้ ต้องมีรหัส API ที่ถูกต้อง",
   "com_agents_search_name": "ค้นหาเอเจนต์ตามชื่อ",
   "com_agents_update_error": "เกิดข้อผิดพลาดในการอัปเดตเอเจนต์ของคุณ",

@@ -81,6 +81,7 @@
   "com_agents_no_agent_id_error": "ID агента не знайдено. Переконайтеся, що агент створений.",
   "com_agents_no_more_results": "Ви переглянули всі результати",
   "com_agents_not_available": "Агент недоступний",
+  "com_agents_prompt_selection": "Виберіть підказку за назвою або командою.",
   "com_agents_recommended": "Наші рекомендовані агенти",
   "com_agents_results_for": "Результати для '{{query}}'",
   "com_agents_search_aria": "Пошук агентів",
