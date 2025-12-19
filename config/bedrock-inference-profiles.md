@@ -20,6 +20,7 @@ Before creating custom inference profiles, ensure you have:
 4. **Knowledge of the foundation model ARN** you want to wrap
 
 ### Method 1: Using AWS CLI (Recommended)
+Make sure your default region variable is set up. If it's not or you are using AWS Cloud Shell make sure to set $AWS_REGION variable or add to every command.
 
 #### Step 1: List Available Foundation Models
 
@@ -27,37 +28,34 @@ First, find the ARN of the foundation model you want to wrap:
 
 ```bash
 # List all available foundation models
-aws bedrock list-foundation-models --region us-west-2
+aws bedrock list-foundation-models
 
 # Filter for specific model types (e.g., Claude models)
-aws bedrock list-foundation-models --region us-west-2 --query "modelSummaries[?contains(modelId, 'claude')]"
+aws bedrock list-foundation-models --query "modelSummaries[?contains(modelId, 'claude')]"
 ```
 
 #### Step 2: Create the Custom Inference Profile
 
 ```bash
+
+export PROFILE_ARN=$(aws bedrock list-inference-profiles | jq -r '.inferenceProfileSummaries[0].inferenceProfileArn')
+
 aws bedrock create-inference-profile \
   --inference-profile-name "MyLibreChatProfile" \
   --description "Custom inference profile for LibreChat application" \
-  --model-source copyFrom="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+  --model-source copyFrom="$PROFILE_ARN"
 ```
-
-**Parameters explained:**
-- `--inference-profile-name`: A unique name for your profile
-- `--description`: Human-readable description
-- `--model-source copyFrom`: The ARN of the foundation model to wrap
 
 
 #### Step 3: Verify Creation
 
 ```bash
 # List your inference profiles
-aws bedrock list-inference-profiles --region us-west-2
+aws bedrock list-inference-profiles
 
 # Get details of your specific profile
 aws bedrock get-inference-profile \
-  --inference-profile-name "MyLibreChatProfile" \
-  --region us-west-2
+  --inference-profile-name "MyLibreChatProfile"
 ```
 
 ### Method 2: Using Python Script
@@ -73,44 +71,45 @@ pip install boto3
 Create a file named `create_inference_profile.py`:
 
 ```python
+import os
 import boto3
 import json
 
+AWS_REGION='us-west-2'
+
 def create_inference_profile():
     # Initialize the Bedrock client
-    bedrock = boto3.client(service_name='bedrock', region_name='us-west-2')
-    
+    bedrock = boto3.client(service_name='bedrock', region_name=AWS_REGION)
+    resp = client.list_inference_profiles()
+    profile_arn = resp["inferenceProfileSummaries"][0]["inferenceProfileArn"]
+
     # Define the parameters for the inference profile
     inference_profile_name = 'MyLibreChatProfile'
     description = 'Custom inference profile for LibreChat application'
-    
-    # Replace with the actual ARN of the foundation model you want to associate
-    # You can get this from the Bedrock console or by using list_foundation_models()
-    model_arn = 'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0'
-    
+
     tags = [
         {'key': 'Project', 'value': 'LibreChat'},
         {'key': 'Environment', 'value': 'Production'},
         {'key': 'Owner', 'value': 'your-username'}
     ]
-    
+
     try:
         # Call the create_inference_profile API
         response = bedrock.create_inference_profile(
             inferenceProfileName=inference_profile_name,
             description=description,
             modelSource={
-                'copyFrom': model_arn  # Use 'copyFrom' to specify the model ARN
+                'copyFrom': profile_arn  # Use 'copyFrom' to specify the model ARN
             },
             tags=tags
         )
-        
+
         print(f"✅ Application inference profile '{inference_profile_name}' created successfully!")
         print(f"📋 Profile ARN: {response['inferenceProfileArn']}")
         print(f"🔗 Profile Name: {response['inferenceProfileName']}")
-        
+
         return response['inferenceProfileArn']
-        
+
     except Exception as e:
         print(f"❌ Error creating application inference profile: {e}")
         return None
@@ -125,60 +124,6 @@ if __name__ == "__main__":
 python create_inference_profile.py
 ```
 
-### Method 3: Using AWS SDK (Node.js/JavaScript)
-
-#### Step 1: Install Dependencies
-
-```bash
-npm install @aws-sdk/client-bedrock
-```
-
-#### Step 2: Create JavaScript Script
-
-Create a file named `create_inference_profile.js`:
-
-```javascript
-const { BedrockClient, CreateInferenceProfileCommand } = require('@aws-sdk/client-bedrock');
-
-async function createInferenceProfile() {
-    const client = new BedrockClient({ region: 'us-west-2' });
-    
-    const params = {
-        inferenceProfileName: 'MyLibreChatProfile',
-        description: 'Custom inference profile for LibreChat application',
-        modelSource: {
-            copyFrom: 'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0'
-        },
-        tags: [
-            { key: 'Project', value: 'LibreChat' },
-            { key: 'Environment', value: 'Production' }
-        ]
-    };
-    
-    try {
-        const command = new CreateInferenceProfileCommand(params);
-        const response = await client.send(command);
-        
-        console.log('✅ Application inference profile created successfully!');
-        console.log(`📋 Profile ARN: ${response.inferenceProfileArn}`);
-        console.log(`🔗 Profile Name: ${response.inferenceProfileName}`);
-        
-        return response.inferenceProfileArn;
-    } catch (error) {
-        console.error('❌ Error creating application inference profile:', error);
-        return null;
-    }
-}
-
-createInferenceProfile();
-```
-
-#### Step 3: Run the Script
-
-```bash
-node create_inference_profile.js
-```
-
 ### Step-by-Step Walkthrough Example
 
 Let's walk through creating a custom inference profile for Claude 3 Sonnet:
@@ -187,7 +132,7 @@ Let's walk through creating a custom inference profile for Claude 3 Sonnet:
 
 ```bash
 # List Claude models
-aws bedrock list-foundation-models --region us-west-2 --query "modelSummaries[?contains(modelId, 'claude-3-sonnet')]"
+aws bedrock list-foundation-models --query "modelSummaries[?contains(modelId, 'claude')]"
 ```
 
 **Output example:**
@@ -212,10 +157,13 @@ aws bedrock create-inference-profile \
 #### 3. **Get Your Profile ARN**
 
 ```bash
-aws bedrock get-inference-profile \
-  --inference-profile-name "LibreChat-Claude-Sonnet" \
-  --region us-west-2 \
-  --query "inferenceProfileArn"
+
+export PROFILE_ARN=$(aws bedrock list-inference-profiles | jq -r '.inferenceProfileSummaries[0].inferenceProfileArn')
+
+aws bedrock create-inference-profile \
+  --inference-profile-name "MyLibreChatProfile" \
+  --description "Custom inference profile for LibreChat application" \
+  --model-source copyFrom="$PROFILE_ARN"
 ```
 
 **Output example:**
@@ -243,7 +191,6 @@ BEDROCK_INFERENCE_PROFILE_MAPPINGS='{
 - Use descriptive names: `librechat-production-claude-sonnet`
 - Include environment: `librechat-dev-claude-haiku`
 - Include model type: `librechat-claude-opus-2024`
-
 
 
 ### Troubleshooting Creation Issues
@@ -280,12 +227,12 @@ Once you've created your custom inference profile:
 
 ### Environment Variable Configuration
 
-You can map custom inference profile ARNs to their underlying models using the `BEDROCK_INFERENCE_PROFILE_MAPPINGS` environment variable:
+You can map custom inference profile ARNs to their underlying models using the `BEDROCK_INFERENCE_PROFILE_MAPPINGS` example below:
 
 ```bash
 export BEDROCK_INFERENCE_PROFILE_MAPPINGS='{
-  "arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake": "anthropic.claude-3-7-sonnet-20250219-v1:0",
-  "arn:aws:bedrock:us-west-2:123456789123:application-inference-profile/abc123def": "anthropic.claude-3-5-sonnet-20241022-v1:0"
+  "arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rp2yeouqkafe": "anthropic.claude-3-7-sonnet-20250219-v1:0",
+  "arn:aws:bedrock:us-west-2:123456789123:application-inference-profile/abc123def456": "anthropic.claude-3-5-sonnet-20241022-v1:0"
 }'
 ```
 
@@ -294,7 +241,7 @@ export BEDROCK_INFERENCE_PROFILE_MAPPINGS='{
 1. Add your custom inference profile ARNs to the `BEDROCK_AWS_MODELS` environment variable:
 
 ```bash
-export BEDROCK_AWS_MODELS="arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake,arn:aws:bedrock:us-west-2:123456789123:application-inference-profile/abc123def"
+export BEDROCK_AWS_MODELS="arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake,arn:aws:bedrock:us-west-2:123456789123:application-inference-profile/abc123def456"
 ```
 
 2. Configure the mappings as shown above.
@@ -334,9 +281,9 @@ If features like thinking or temperature controls are missing:
 export BEDROCK_AWS_ACCESS_KEY_ID="your-access-key"
 export BEDROCK_AWS_SECRET_ACCESS_KEY="your-secret-key"
 export BEDROCK_AWS_DEFAULT_REGION="us-east-1"
-export BEDROCK_AWS_MODELS="arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake"
+export BEDROCK_AWS_MODELS="arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/abc123def456"
 export BEDROCK_INFERENCE_PROFILE_MAPPINGS='{
-  "arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake": "anthropic.claude-3-7-sonnet-20250219-v1:0"
+  "arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/abc123def456": "anthropic.claude-3-7-sonnet-20250219-v1:0"
 }'
 ```
 
@@ -347,4 +294,4 @@ The current implementation uses configuration-based mapping. Future versions may
 - Automatic detection via AWS Bedrock API calls
 - Dynamic model capability detection
 - Enhanced error handling and logging
-- UI-based configuration management 
+- UI-based configuration management
