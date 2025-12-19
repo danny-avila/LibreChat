@@ -1,40 +1,36 @@
 import React, { useState } from 'react';
-import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import { Constants } from 'librechat-data-provider';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import {
   Label,
+  ESide,
   Checkbox,
   OGDialog,
   Accordion,
   TrashIcon,
+  InfoHoverCard,
   AccordionItem,
-  CircleHelpIcon,
   OGDialogTrigger,
-  useToastContext,
   AccordionContent,
   OGDialogTemplate,
 } from '@librechat/client';
 import type { AgentForm, MCPServerInfo } from '~/common';
+import { useLocalize, useMCPServerManager, useRemoveMCPTool } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
-import { useLocalize, useMCPServerManager } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
-  const updateUserPlugins = useUpdateUserPluginsMutation();
+  const { removeTool } = useRemoveMCPTool();
   const { getValues, setValue } = useFormContext<AgentForm>();
   const { getServerStatusIconProps, getConfigDialogProps } = useMCPServerManager();
 
   const [isFocused, setIsFocused] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const [accordionValue, setAccordionValue] = useState<string>('');
-  const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
 
   if (!serverInfo) {
     return null;
@@ -54,36 +50,6 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
       (t: string) => !serverInfo?.tools?.some((st) => st.tool_id === t),
     );
     setValue('tools', [...otherTools, ...newSelectedTools]);
-  };
-
-  const removeTool = (serverName: string) => {
-    if (!serverName) {
-      return;
-    }
-    updateUserPlugins.mutate(
-      {
-        pluginKey: `${Constants.mcp_prefix}${serverName}`,
-        action: 'uninstall',
-        auth: {},
-        isEntityTool: true,
-      },
-      {
-        onError: (error: unknown) => {
-          showToast({ message: `Error while deleting the tool: ${error}`, status: 'error' });
-        },
-        onSuccess: () => {
-          const currentTools = getValues('tools');
-          const remainingToolIds =
-            currentTools?.filter(
-              (currentToolId) =>
-                currentToolId !== serverName &&
-                !currentToolId.endsWith(`${Constants.mcp_delimiter}${serverName}`),
-            ) || [];
-          setValue('tools', remainingToolIds);
-          showToast({ message: 'Tool deleted successfully', status: 'success' });
-        },
-      },
-    );
   };
 
   const selectedTools = getSelectedTools();
@@ -195,6 +161,12 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                               }
                             }}
                             tabIndex={isExpanded ? 0 : -1}
+                            aria-label={
+                              selectedTools.length === serverInfo.tools?.length &&
+                              selectedTools.length > 0
+                                ? localize('com_ui_deselect_all')
+                                : localize('com_ui_select_all')
+                            }
                           />
                         </div>
 
@@ -210,7 +182,16 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                                 'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200 hover:bg-surface-active-alt focus:translate-x-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
                                 isExpanded && 'bg-surface-active-alt',
                               )}
-                              aria-hidden="true"
+                              aria-label={
+                                isExpanded
+                                  ? localize('com_ui_tool_list_collapse', {
+                                      serverName: currentServerName,
+                                    })
+                                  : localize('com_ui_tool_list_expand', {
+                                      serverName: currentServerName,
+                                    })
+                              }
+                              aria-expanded={isExpanded}
                               tabIndex={0}
                               onFocus={() => setIsFocused(true)}
                             >
@@ -254,15 +235,13 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                   key={subTool.tool_id}
                   htmlFor={subTool.tool_id}
                   className={cn(
-                    'border-token-border-light hover:bg-token-surface-secondary flex cursor-pointer items-center rounded-lg border p-2',
+                    'group/item border-token-border-light hover:bg-token-surface-secondary flex cursor-pointer items-center rounded-lg border p-2',
                     'ml-2 mr-1 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
                   )}
                   onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => {
                     e.stopPropagation();
                   }}
-                  onMouseEnter={() => setHoveredToolId(subTool.tool_id)}
-                  onMouseLeave={() => setHoveredToolId(null)}
                 >
                   <Checkbox
                     id={subTool.tool_id}
@@ -285,59 +264,15 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                     className={cn(
                       'relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-border-medium transition-[border-color] duration-200 hover:border-border-heavy focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
                     )}
+                    aria-label={subTool.metadata.name}
                   />
                   <span className="text-token-text-primary select-none">
                     {subTool.metadata.name}
                   </span>
                   {subTool.metadata.description && (
-                    <Ariakit.HovercardProvider placement="left-start">
-                      <div className="ml-auto flex h-6 w-6 items-center justify-center">
-                        <Ariakit.HovercardAnchor
-                          render={
-                            <Ariakit.Button
-                              className={cn(
-                                'flex h-5 w-5 cursor-help items-center rounded-full text-text-secondary transition-opacity duration-200',
-                                hoveredToolId === subTool.tool_id ? 'opacity-100' : 'opacity-0',
-                              )}
-                              aria-label={localize('com_ui_tool_info')}
-                            >
-                              <CircleHelpIcon className="h-4 w-4" />
-                              <Ariakit.VisuallyHidden>
-                                {localize('com_ui_tool_info')}
-                              </Ariakit.VisuallyHidden>
-                            </Ariakit.Button>
-                          }
-                        />
-                        <Ariakit.HovercardDisclosure
-                          className="rounded-full text-text-secondary focus:outline-none focus:ring-2 focus:ring-ring"
-                          aria-label={localize('com_ui_tool_more_info')}
-                          aria-expanded={hoveredToolId === subTool.tool_id}
-                          aria-controls={`tool-description-${subTool.tool_id}`}
-                        >
-                          <Ariakit.VisuallyHidden>
-                            {localize('com_ui_tool_more_info')}
-                          </Ariakit.VisuallyHidden>
-                          <ChevronDown className="h-4 w-4" />
-                        </Ariakit.HovercardDisclosure>
-                      </div>
-                      <Ariakit.Hovercard
-                        id={`tool-description-${subTool.tool_id}`}
-                        gutter={14}
-                        shift={40}
-                        flip={false}
-                        className="z-[999] w-80 scale-95 rounded-2xl border border-border-medium bg-surface-secondary p-4 text-text-primary opacity-0 shadow-md transition-all duration-200 data-[enter]:scale-100 data-[leave]:scale-95 data-[enter]:opacity-100 data-[leave]:opacity-0"
-                        portal={true}
-                        unmountOnHide={true}
-                        role="tooltip"
-                        aria-label={subTool.metadata.description}
-                      >
-                        <div className="space-y-2">
-                          <p className="text-sm text-text-secondary">
-                            {subTool.metadata.description}
-                          </p>
-                        </div>
-                      </Ariakit.Hovercard>
-                    </Ariakit.HovercardProvider>
+                    <div className="ml-auto flex items-center opacity-0 transition-opacity duration-200 group-focus-within/item:opacity-100 group-hover/item:opacity-100">
+                      <InfoHoverCard side={ESide.Left} text={subTool.metadata.description} />
+                    </div>
                   )}
                 </label>
               ))}

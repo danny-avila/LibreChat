@@ -1,17 +1,20 @@
 import { useMemo } from 'react';
 import { SettingsIcon } from 'lucide-react';
-import { TooltipAnchor, Spinner } from '@librechat/client';
+import { Spinner } from '@librechat/client';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { renderEndpointModels } from './EndpointModelItem';
+import { ModelSpecItem } from './ModelSpecItem';
 import { filterModels } from '../utils';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface EndpointItemProps {
   endpoint: Endpoint;
+  endpointIndex: number;
 }
 
 const SettingsButton = ({
@@ -43,7 +46,7 @@ const SettingsButton = ({
       aria-label={`${text} ${endpoint.label}`}
     >
       <div className="flex w-[28px] items-center gap-1 whitespace-nowrap transition-all duration-300 ease-in-out group-hover:w-auto group-focus/button:w-auto">
-        <SettingsIcon className="h-4 w-4 flex-shrink-0" />
+        <SettingsIcon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
         <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-300 ease-in-out group-hover:max-w-[100px] group-hover:opacity-100 group-focus/button:max-w-[100px] group-focus/button:opacity-100">
           {text}
         </span>
@@ -52,11 +55,12 @@ const SettingsButton = ({
   );
 };
 
-export function EndpointItem({ endpoint }: EndpointItemProps) {
+export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
   const localize = useLocalize();
   const {
     agentsMap,
     assistantsMap,
+    modelSpecs,
     selectedValues,
     handleOpenKeyDialog,
     handleSelectEndpoint,
@@ -64,10 +68,25 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
     setEndpointSearchValue,
     endpointRequiresUserKey,
   } = useModelSelectorContext();
-  const { model: selectedModel, endpoint: selectedEndpoint } = selectedValues;
+  const {
+    model: selectedModel,
+    endpoint: selectedEndpoint,
+    modelSpec: selectedSpec,
+  } = selectedValues;
+
+  // Filter modelSpecs for this endpoint (by group matching endpoint value)
+  const endpointSpecs = useMemo(() => {
+    if (!modelSpecs || !modelSpecs.length) {
+      return [];
+    }
+    return modelSpecs.filter((spec: TModelSpec) => spec.group === endpoint.value);
+  }, [modelSpecs, endpoint.value]);
 
   const searchValue = endpointSearchValues[endpoint.value] || '';
-  const isUserProvided = useMemo(() => endpointRequiresUserKey(endpoint.value), [endpoint.value]);
+  const isUserProvided = useMemo(
+    () => endpointRequiresUserKey(endpoint.value),
+    [endpointRequiresUserKey, endpoint.value],
+  );
 
   const renderIconLabel = () => (
     <div className="flex items-center gap-2">
@@ -84,18 +103,6 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
       >
         {endpoint.label}
       </span>
-      {/* TODO: remove this after deprecation */}
-      {endpoint.value === 'gptPlugins' && (
-        <TooltipAnchor
-          description={localize('com_endpoint_deprecated_info')}
-          aria-label={localize('com_endpoint_deprecated_info_a11y')}
-          render={
-            <span className="ml-2 rounded bg-amber-600/70 px-2 py-0.5 text-xs font-semibold text-white">
-              {localize('com_endpoint_deprecated')}
-            </span>
-          }
-        />
-      )}
     </div>
   );
 
@@ -121,7 +128,8 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         defaultOpen={endpoint.value === selectedEndpoint}
         searchValue={searchValue}
         onSearch={(value) => setEndpointSearchValue(endpoint.value, value)}
-        combobox={<input placeholder={placeholder} />}
+        combobox={<input placeholder=" " />}
+        comboboxLabel={placeholder}
         label={
           <div
             onClick={() => handleSelectEndpoint(endpoint)}
@@ -138,10 +146,30 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
           <div className="flex items-center justify-center p-2">
             <Spinner />
           </div>
-        ) : filteredModels ? (
-          renderEndpointModels(endpoint, endpoint.models || [], selectedModel, filteredModels)
         ) : (
-          endpoint.models && renderEndpointModels(endpoint, endpoint.models, selectedModel)
+          <>
+            {/* Render modelSpecs for this endpoint */}
+            {endpointSpecs.map((spec: TModelSpec) => (
+              <ModelSpecItem key={spec.name} spec={spec} isSelected={selectedSpec === spec.name} />
+            ))}
+            {/* Render endpoint models */}
+            {filteredModels
+              ? renderEndpointModels(
+                  endpoint,
+                  endpoint.models || [],
+                  selectedModel,
+                  filteredModels,
+                  endpointIndex,
+                )
+              : endpoint.models &&
+                renderEndpointModels(
+                  endpoint,
+                  endpoint.models,
+                  selectedModel,
+                  undefined,
+                  endpointIndex,
+                )}
+          </>
         )}
       </Menu>
     );
@@ -184,7 +212,11 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
 }
 
 export function renderEndpoints(mappedEndpoints: Endpoint[]) {
-  return mappedEndpoints.map((endpoint) => (
-    <EndpointItem endpoint={endpoint} key={`endpoint-${endpoint.value}-item`} />
+  return mappedEndpoints.map((endpoint, index) => (
+    <EndpointItem
+      endpoint={endpoint}
+      endpointIndex={index}
+      key={`endpoint-${endpoint.value}-${index}`}
+    />
   ));
 }

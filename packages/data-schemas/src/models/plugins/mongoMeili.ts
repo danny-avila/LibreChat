@@ -1,6 +1,7 @@
 import _ from 'lodash';
 import { MeiliSearch } from 'meilisearch';
-import type { SearchResponse, Index } from 'meilisearch';
+import { parseTextParts } from 'librechat-data-provider';
+import type { SearchResponse, SearchParams, Index } from 'meilisearch';
 import type {
   CallbackWithoutResultAndOptionalError,
   FilterQuery,
@@ -26,11 +27,6 @@ interface MongoMeiliOptions {
 interface MeiliIndexable {
   [key: string]: unknown;
   _meiliIndex?: boolean;
-}
-
-interface ContentItem {
-  type: string;
-  text?: string;
 }
 
 interface SyncProgress {
@@ -75,7 +71,7 @@ export interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
   setMeiliIndexSettings(settings: Record<string, unknown>): Promise<unknown>;
   meiliSearch(
     q: string,
-    params?: Record<string, unknown>,
+    params?: SearchParams,
     populate?: boolean,
   ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>>;
 }
@@ -99,29 +95,6 @@ const getSyncConfig = () => ({
   batchSize: parseInt(process.env.MEILI_SYNC_BATCH_SIZE || '100', 10),
   delayMs: parseInt(process.env.MEILI_SYNC_DELAY_MS || '100', 10),
 });
-
-/**
- * Local implementation of parseTextParts to avoid dependency on librechat-data-provider
- * Extracts text content from an array of content items
- */
-const parseTextParts = (content: ContentItem[]): string => {
-  if (!Array.isArray(content)) {
-    return '';
-  }
-
-  return content
-    .filter((item) => item.type === 'text' && typeof item.text === 'string')
-    .map((item) => item.text)
-    .join(' ')
-    .trim();
-};
-
-/**
- * Local implementation to handle Bing convoId conversion
- */
-const cleanUpPrimaryKeyValue = (value: string): string => {
-  return value.replace(/--/g, '|');
-};
 
 /**
  * Validates the required options for configuring the mongoMeili plugin.
@@ -210,7 +183,9 @@ const createMeiliMongooseModel = ({
         );
 
         // Build query with resume capability
-        const query: FilterQuery<unknown> = {};
+        const query: FilterQuery<unknown> = {
+          expiredAt: { $exists: false }, // Do not sync TTL documents
+        };
         if (options?.resumeFromId) {
           query._id = { $gt: options.resumeFromId };
         }
@@ -386,16 +361,14 @@ const createMeiliMongooseModel = ({
     static async meiliSearch(
       this: SchemaWithMeiliMethods,
       q: string,
-      params: Record<string, unknown>,
+      params: SearchParams,
       populate: boolean,
     ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>> {
       const data = await index.search(q, params);
 
       if (populate) {
         const query: Record<string, unknown> = {};
-        query[primaryKey] = _.map(data.hits, (hit) =>
-          cleanUpPrimaryKeyValue(hit[primaryKey] as string),
-        );
+        query[primaryKey] = _.map(data.hits, (hit) => hit[primaryKey]);
 
         const projection = Object.keys(this.schema.obj).reduce<Record<string, number>>(
           (results, key) => {
@@ -459,6 +432,11 @@ const createMeiliMongooseModel = ({
       this: DocumentWithMeiliIndex,
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
+      // If this conversation or message has a TTL, don't index it
+      if (!_.isNil(this.expiredAt)) {
+        return next();
+      }
+
       const object = this.preprocessObjectForIndex!();
       const maxRetries = 3;
       let retryCount = 0;
@@ -644,6 +622,16 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
         logger.error(`[mongoMeili] Error checking index ${indexName}:`, error);
       }
     }
+
+    // Configure index settings to make 'user' field filterable
+    try {
+      await index.updateSettings({
+        filterableAttributes: ['user'],
+      });
+      logger.debug(`[mongoMeili] Updated index ${indexName} settings to make 'user' filterable`);
+    } catch (settingsError) {
+      logger.error(`[mongoMeili] Error updating index settings for ${indexName}:`, settingsError);
+    }
   })();
 
   // Collect attributes from the schema that should be indexed
@@ -653,6 +641,13 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       return schemaValue.meiliIndex ? [...results, key] : results;
     }, []),
   ];
+
+  // CRITICAL: Always include 'user' field for proper filtering
+  // This ensures existing deployments can filter by user after migration
+  if (schema.obj.user && !attributesToIndex.includes('user')) {
+    attributesToIndex.push('user');
+    logger.debug(`[mongoMeili] Added 'user' field to ${indexName} index attributes`);
+  }
 
   schema.loadClass(createMeiliMongooseModel({ index, attributesToIndex, syncOptions }));
 

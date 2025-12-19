@@ -1,5 +1,6 @@
-import { useRecoilValue } from 'recoil';
 import { useCallback, useMemo, memo } from 'react';
+import { useAtomValue } from 'jotai';
+import { useRecoilValue } from 'recoil';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
@@ -7,9 +8,10 @@ import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { useAttachments, useMessageActions } from '~/hooks';
+import { useAttachments, useLocalize, useMessageActions } from '~/hooks';
 import SubRow from '~/components/Chat/Messages/SubRow';
-import { cn, logger } from '~/utils';
+import { fontSizeAtom } from '~/store/fontSize';
+import { cn, getMessageAriaLabel, logger } from '~/utils';
 import store from '~/store';
 
 type ContentRenderProps = {
@@ -34,6 +36,7 @@ const ContentRender = memo(
     setCurrentEditId,
     isSubmittingFamily = false,
   }: ContentRenderProps) => {
+    const localize = useLocalize();
     const { attachments, searchResults } = useAttachments({
       messageId: msg?.messageId,
       attachments: msg?.attachments,
@@ -60,8 +63,8 @@ const ContentRender = memo(
       isMultiMessage,
       setCurrentEditId,
     });
+    const fontSize = useAtomValue(fontSizeAtom);
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
-    const fontSize = useRecoilValue(store.fontSize);
 
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const isLast = useMemo(
@@ -96,7 +99,10 @@ const ContentRender = memo(
       () =>
         showCardRender && !isLatestMessage
           ? () => {
-              logger.log(`Message Card click: Setting ${msg?.messageId} as latest message`);
+              logger.log(
+                'latest_message',
+                `Message Card click: Setting ${msg?.messageId} as latest message`,
+              );
               logger.dir(msg);
               setLatestMessage(msg!);
             }
@@ -125,7 +131,7 @@ const ContentRender = memo(
     return (
       <div
         id={msg.messageId}
-        aria-label={`message-${msg.depth}-${msg.messageId}`}
+        aria-label={getMessageAriaLabel(msg, localize)}
         className={cn(
           baseClasses.common,
           isCard ? baseClasses.card : baseClasses.chat,
@@ -173,6 +179,7 @@ const ContentRender = memo(
                 isSubmitting={isSubmitting}
                 searchResults={searchResults}
                 setSiblingIdx={setSiblingIdx}
+                isLatestMessage={isLatestMessage}
                 isCreatedByUser={msg.isCreatedByUser}
                 conversationId={conversation?.conversationId}
                 content={msg.content as Array<TMessageContentParts | undefined>}

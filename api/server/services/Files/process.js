@@ -15,6 +15,7 @@ const {
   checkOpenAIStorage,
   removeNullishValues,
   isAssistantsEndpoint,
+  getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
@@ -27,8 +28,8 @@ const {
 const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
 const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
-const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
+const { createFile, updateFileUsage, deleteFiles } = require('~/models');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
@@ -57,45 +58,6 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
 
     return uploadFunction({ req, file: sanitizedFile, file_id, ...restParams });
   };
-};
-
-/**
- *
- * @param {Array<MongoFile>} files
- * @param {Array<string>} [fileIds]
- * @returns
- */
-const processFiles = async (files, fileIds) => {
-  const promises = [];
-  const seen = new Set();
-
-  for (let file of files) {
-    const { file_id } = file;
-    if (seen.has(file_id)) {
-      continue;
-    }
-    seen.add(file_id);
-    promises.push(updateFileUsage({ file_id }));
-  }
-
-  if (!fileIds) {
-    const results = await Promise.all(promises);
-    // Filter out null results from failed updateFileUsage calls
-    return results.filter((result) => result != null);
-  }
-
-  for (let file_id of fileIds) {
-    if (seen.has(file_id)) {
-      continue;
-    }
-    seen.add(file_id);
-    promises.push(updateFileUsage({ file_id }));
-  }
-
-  // TODO: calculate token cost when image is first uploaded
-  const results = await Promise.all(promises);
-  // Filter out null results from failed updateFileUsage calls
-  return results.filter((result) => result != null);
 };
 
 /**
@@ -508,7 +470,10 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
-  if (agent_id && !tool_resource) {
+
+  let messageAttachment = !!metadata.message_file;
+
+  if (agent_id && !tool_resource && !messageAttachment) {
     throw new Error('No tool resource provided for agent file upload');
   }
 
@@ -516,17 +481,11 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     throw new Error('Image uploads are not supported for file search tool resources');
   }
 
-  let messageAttachment = !!metadata.message_file;
   if (!messageAttachment && !agent_id) {
     throw new Error('No agent ID provided for agent file upload');
   }
 
   const isImage = file.mimetype.startsWith('image');
-  if (!isImage && !tool_resource) {
-    /** Note: this needs to be removed when we can support files to providers */
-    throw new Error('No tool resource provided for non-image agent file upload');
-  }
-
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
@@ -552,7 +511,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       throw new Error('File search is not enabled for Agents');
     }
     // Note: File search processing continues to dual storage logic below
-  } else if (tool_resource === EToolResources.ocr) {
+  } else if (tool_resource === EToolResources.context) {
     const { file_id, temp_file_id = null } = metadata;
 
     /**
@@ -594,19 +553,29 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
 
-    const shouldUseOCR = fileConfig.checkType(
-      file.mimetype,
-      fileConfig.ocr?.supportedMimeTypes || [],
-    );
+    const shouldUseOCR =
+      appConfig?.ocr != null &&
+      fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
 
     if (shouldUseOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
       throw new Error('OCR capability is not enabled for Agents');
     } else if (shouldUseOCR) {
-      const { handleFileUpload: uploadOCR } = getStrategyFunctions(
-        appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
-      );
-      const { text, bytes, filepath: ocrFileURL } = await uploadOCR({ req, file, loadAuthValues });
-      return await createTextFile({ text, bytes, filepath: ocrFileURL });
+      try {
+        const { handleFileUpload: uploadOCR } = getStrategyFunctions(
+          appConfig?.ocr?.strategy ?? FileSources.mistral_ocr,
+        );
+        const {
+          text,
+          bytes,
+          filepath: ocrFileURL,
+        } = await uploadOCR({ req, file, loadAuthValues });
+        return await createTextFile({ text, bytes, filepath: ocrFileURL });
+      } catch (ocrError) {
+        logger.error(
+          `[processAgentFileUpload] OCR processing failed for file "${file.originalname}", falling back to text extraction:`,
+          ocrError,
+        );
+      }
     }
 
     const shouldUseSTT = fileConfig.checkType(
@@ -626,7 +595,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     );
 
     if (!shouldUseText) {
-      throw new Error(`File type ${file.mimetype} is not supported for OCR or text parsing`);
+      throw new Error(`File type ${file.mimetype} is not supported for text parsing.`);
     }
 
     const { text, bytes } = await parseText({ req, file, file_id });
@@ -987,7 +956,7 @@ async function saveBase64Image(
  */
 function filterFile({ req, image, isAvatar }) {
   const { file } = req;
-  const { endpoint, file_id, width, height } = req.body;
+  const { endpoint, endpointType, file_id, width, height } = req.body;
 
   if (!file_id && !isAvatar) {
     throw new Error('No file_id provided');
@@ -1009,9 +978,13 @@ function filterFile({ req, image, isAvatar }) {
   const appConfig = req.config;
   const fileConfig = mergeFileConfig(appConfig.fileConfig);
 
-  const { fileSizeLimit: sizeLimit, supportedMimeTypes } =
-    fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
-  const fileSizeLimit = isAvatar === true ? fileConfig.avatarSizeLimit : sizeLimit;
+  const endpointFileConfig = getEndpointFileConfig({
+    endpoint,
+    fileConfig,
+    endpointType,
+  });
+  const fileSizeLimit =
+    isAvatar === true ? fileConfig.avatarSizeLimit : endpointFileConfig.fileSizeLimit;
 
   if (file.size > fileSizeLimit) {
     throw new Error(
@@ -1021,7 +994,10 @@ function filterFile({ req, image, isAvatar }) {
     );
   }
 
-  const isSupportedMimeType = fileConfig.checkType(file.mimetype, supportedMimeTypes);
+  const isSupportedMimeType = fileConfig.checkType(
+    file.mimetype,
+    endpointFileConfig.supportedMimeTypes,
+  );
 
   if (!isSupportedMimeType) {
     throw new Error('Unsupported file type');
@@ -1042,7 +1018,6 @@ function filterFile({ req, image, isAvatar }) {
 
 module.exports = {
   filterFile,
-  processFiles,
   processFileURL,
   saveBase64Image,
   processImageFile,

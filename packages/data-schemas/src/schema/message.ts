@@ -21,6 +21,7 @@ const messageSchema: Schema<IMessage> = new Schema(
       index: true,
       required: true,
       default: null,
+      meiliIndex: true,
     },
     model: {
       type: String,
@@ -100,25 +101,6 @@ const messageSchema: Schema<IMessage> = new Schema(
       default: false,
     },
     files: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
-    plugin: {
-      type: {
-        latest: {
-          type: String,
-          required: false,
-        },
-        inputs: {
-          type: [mongoose.Schema.Types.Mixed],
-          required: false,
-          default: undefined,
-        },
-        outputs: {
-          type: String,
-          required: false,
-        },
-      },
-      default: undefined,
-    },
-    plugins: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
     content: {
       type: [{ type: mongoose.Schema.Types.Mixed }],
       default: undefined,
@@ -131,6 +113,7 @@ const messageSchema: Schema<IMessage> = new Schema(
     iconURL: {
       type: String,
     },
+    metadata: { type: mongoose.Schema.Types.Mixed },
     attachments: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
     /*
     attachments: {

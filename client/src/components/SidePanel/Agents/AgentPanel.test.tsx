@@ -37,21 +37,25 @@ jest.mock('librechat-data-provider', () => {
     dataService: {
       updateAgent: jest.fn(),
     },
-    Tools: {
+    Tools: actualModule.Tools || {
       execute_code: 'execute_code',
       file_search: 'file_search',
       web_search: 'web_search',
     },
-    Constants: {
+    Constants: actualModule.Constants || {
       EPHEMERAL_AGENT_ID: 'ephemeral',
     },
-    SystemRoles: {
+    SystemRoles: actualModule.SystemRoles || {
       ADMIN: 'ADMIN',
     },
-    EModelEndpoint: {
+    EModelEndpoint: actualModule.EModelEndpoint || {
       agents: 'agents',
-      chatGPTBrowser: 'chatGPTBrowser',
-      gptPlugins: 'gptPlugins',
+    },
+    ResourceType: actualModule.ResourceType || {
+      AGENT: 'agent',
+    },
+    PermissionBits: actualModule.PermissionBits || {
+      EDIT: 2,
     },
     isAssistantsEndpoint: jest.fn(() => false),
   };
@@ -97,6 +101,13 @@ jest.mock('~/hooks', () => ({
   useAuthContext: () => ({ user: { id: 'user-123', role: 'USER' } }),
 }));
 
+jest.mock('~/hooks/useResourcePermissions', () => ({
+  useResourcePermissions: () => ({
+    hasPermission: jest.fn(() => true),
+    isLoading: false,
+  }),
+}));
+
 jest.mock('~/Providers/AgentPanelContext', () => ({
   useAgentPanelContext: () => ({
     activePanel: 'builder',
@@ -109,6 +120,9 @@ jest.mock('~/Providers/AgentPanelContext', () => ({
 }));
 
 jest.mock('~/common', () => ({
+  isEphemeralAgent: (agentId: string | null | undefined): boolean => {
+    return agentId == null || agentId === '' || agentId === 'ephemeral';
+  },
   Panel: {
     model: 'model',
     builder: 'builder',
@@ -199,6 +213,10 @@ jest.mock('~/data-provider', () => {
   return {
     ...actual,
     useGetAgentByIdQuery: jest.fn(),
+    useGetExpandedAgentByIdQuery: jest.fn(() => ({
+      data: null,
+      isInitialLoading: false,
+    })),
     useUpdateAgentMutation: actual.useUpdateAgentMutation,
   };
 });
@@ -315,7 +333,8 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'com_assistants_update_success Test Agent',
+          message: 'com_assistants_update_success_name',
+          status: undefined,
         });
       });
     });
@@ -335,7 +354,8 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'com_assistants_update_success com_ui_agent',
+          message: 'com_assistants_update_success_name',
+          status: undefined,
         });
       });
     });
@@ -355,7 +375,8 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'com_assistants_update_success Test Agent',
+          message: 'com_assistants_update_success_name',
+          status: undefined,
         });
       });
     });

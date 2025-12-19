@@ -11,13 +11,19 @@ import {
   PermissionBits,
 } from 'librechat-data-provider';
 import type {
-  TPreset,
+  AgentListResponse,
   TEndpointsConfig,
   TStartupConfig,
-  AgentListResponse,
+  TPreset,
 } from 'librechat-data-provider';
 import type { ZodAny } from 'zod';
-import { getConvoSwitchLogic, getModelSpecIconURL, removeUnavailableTools, logger } from '~/utils';
+import {
+  clearModelForNonEphemeralAgent,
+  removeUnavailableTools,
+  getModelSpecIconURL,
+  getConvoSwitchLogic,
+  logger,
+} from '~/utils';
 import { useAuthContext, useAgentsMap, useDefaultConvo, useSubmitMessage } from '~/hooks';
 import { useChatContext, useChatFormContext } from '~/Providers';
 import { useGetAgentByIdQuery } from '~/data-provider';
@@ -125,13 +131,8 @@ export default function useQueryParams({
   const queryClient = useQueryClient();
   const { conversation, newConversation } = useChatContext();
 
-  // Extract agent_id from URL for proactive fetching
   const urlAgentId = searchParams.get('agent_id') || '';
-
-  // Use the existing query hook to fetch agent if present in URL
-  const { data: urlAgent } = useGetAgentByIdQuery(urlAgentId, {
-    enabled: !!urlAgentId, // Only fetch if agent_id exists in URL
-  });
+  const { data: urlAgent } = useGetAgentByIdQuery(urlAgentId);
 
   /**
    * Applies settings from URL query parameters to create a new conversation.
@@ -198,6 +199,12 @@ export default function useQueryParams({
         resetParams = { spec: null, iconURL: null, modelLabel: null };
         newPreset = { ...newPreset, ...resetParams };
       }
+
+      // Sync agent_id from newPreset to template, then clear model if non-ephemeral agent
+      if (newPreset.agent_id) {
+        template.agent_id = newPreset.agent_id;
+      }
+      clearModelForNonEphemeralAgent(template);
 
       const isModular = isCurrentModular && isNewModular && shouldSwitch;
       if (isExistingConversation && isModular) {

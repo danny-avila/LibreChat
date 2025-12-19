@@ -4,6 +4,7 @@ const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { generateShortLivedToken } = require('@librechat/api');
+const { resizeImageBuffer } = require('~/server/services/Files/images/resize');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
 
@@ -209,14 +210,24 @@ const deleteLocalFile = async (req, file) => {
 
   if (file.embedded && process.env.RAG_API_URL) {
     const jwtToken = generateShortLivedToken(req.user.id);
-    axios.delete(`${process.env.RAG_API_URL}/documents`, {
-      headers: {
-        Authorization: `Bearer ${jwtToken}`,
-        'Content-Type': 'application/json',
-        accept: 'application/json',
-      },
-      data: [file.file_id],
-    });
+    try {
+      await axios.delete(`${process.env.RAG_API_URL}/documents`, {
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+          'Content-Type': 'application/json',
+          accept: 'application/json',
+        },
+        data: [file.file_id],
+      });
+    } catch (error) {
+      if (error.response?.status === 404) {
+        logger.warn(
+          `[deleteLocalFile] Document ${file.file_id} not found in RAG API, may have been deleted already`,
+        );
+      } else {
+        logger.error('[deleteLocalFile] Error deleting document from RAG API:', error);
+      }
+    }
   }
 
   if (cleanFilepath.startsWith(`/uploads/${req.user.id}`)) {
@@ -286,7 +297,18 @@ async function uploadLocalFile({ req, file, file_id }) {
   await fs.promises.writeFile(newPath, inputBuffer);
   const filepath = path.posix.join('/', 'uploads', req.user.id, path.basename(newPath));
 
-  return { filepath, bytes };
+  let height, width;
+  if (file.mimetype && file.mimetype.startsWith('image/')) {
+    try {
+      const { width: imgWidth, height: imgHeight } = await resizeImageBuffer(inputBuffer, 'high');
+      height = imgHeight;
+      width = imgWidth;
+    } catch (error) {
+      logger.warn('[uploadLocalFile] Could not get image dimensions:', error.message);
+    }
+  }
+
+  return { filepath, bytes, height, width };
 }
 
 /**

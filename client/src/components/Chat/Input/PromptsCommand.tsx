@@ -2,14 +2,13 @@ import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
 import { AutoSizer, List } from 'react-virtualized';
 import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
 import { removeCharIfLast, detectVariables } from '~/utils';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
 import { usePromptGroupsContext } from '~/Providers';
-import { useLocalize, useHasAccess } from '~/hooks';
 import MentionItem from './MentionItem';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 const commandChar = '/';
@@ -21,12 +20,14 @@ const PopoverContainer = memo(
     isVariableDialogOpen,
     variableGroup,
     setVariableDialogOpen,
+    textAreaRef,
   }: {
     index: number;
     children: React.ReactNode;
     isVariableDialogOpen: boolean;
     variableGroup: TPromptGroup | null;
     setVariableDialogOpen: (isOpen: boolean) => void;
+    textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   }) => {
     const showPromptsPopover = useRecoilValue(store.showPromptsPopoverFamily(index));
     return (
@@ -34,7 +35,12 @@ const PopoverContainer = memo(
         {showPromptsPopover ? children : null}
         <VariableDialog
           open={isVariableDialogOpen}
-          onClose={() => setVariableDialogOpen(false)}
+          onClose={() => {
+            setVariableDialogOpen(false);
+            requestAnimationFrame(() => {
+              textAreaRef.current?.focus();
+            });
+          }}
           group={variableGroup}
         />
       </>
@@ -54,12 +60,7 @@ function PromptsCommand({
   submitPrompt: (textPrompt: string) => void;
 }) {
   const localize = useLocalize();
-  const hasAccess = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.USE,
-  });
-
-  const { allPromptGroups } = usePromptGroupsContext();
+  const { allPromptGroups, hasAccess } = usePromptGroupsContext();
   const { data, isLoading } = allPromptGroups;
 
   const [activeIndex, setActiveIndex] = useState(0);
@@ -173,6 +174,7 @@ function PromptsCommand({
       isVariableDialogOpen={isVariableDialogOpen}
       variableGroup={variableGroup}
       setVariableDialogOpen={setVariableDialogOpen}
+      textAreaRef={textAreaRef}
     >
       <div className="absolute bottom-28 z-10 w-full space-y-2">
         <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">

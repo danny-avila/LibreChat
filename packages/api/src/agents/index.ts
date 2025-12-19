@@ -1,4 +1,6 @@
-export * from './config';
+export * from './chain';
+export * from './initialize';
+export * from './legacy';
 export * from './memory';
 export * from './migration';
 export * from './resources';

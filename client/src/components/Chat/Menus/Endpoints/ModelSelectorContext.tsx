@@ -1,6 +1,6 @@
 import debounce from 'lodash/debounce';
 import React, { createContext, useContext, useState, useMemo } from 'react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
 import {
@@ -57,9 +57,27 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const agentsMap = useAgentsMapContext();
   const assistantsMap = useAssistantsMapContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const { endpoint, model, spec, agent_id, assistant_id, newConversation } =
+  const { endpoint, model, spec, agent_id, assistant_id, conversation, newConversation } =
     useModelSelectorChatContext();
-  const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
+  const modelSpecs = useMemo(() => {
+    const specs = startupConfig?.modelSpecs?.list ?? [];
+    if (!agentsMap) {
+      return specs;
+    }
+
+    /**
+     * Filter modelSpecs to only include agents the user has access to.
+     * Use agentsMap which already contains permission-filtered agents (consistent with other components).
+     */
+    return specs.filter((spec) => {
+      if (spec.preset?.endpoint === EModelEndpoint.agents && spec.preset?.agent_id) {
+        return spec.preset.agent_id in agentsMap;
+      }
+      /** Keep non-agent modelSpecs */
+      return true;
+    });
+  }, [startupConfig, agentsMap]);
+
   const permissionLevel = useAgentDefaultPermissionLevel();
   const { data: agents = null } = useListAgentsQuery(
     { requiredPermission: permissionLevel },
@@ -78,6 +96,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const { onSelectEndpoint, onSelectSpec } = useSelectMention({
     // presets,
     modelSpecs,
+    conversation,
     assistantsMap,
     endpointsConfig,
     newConversation,
@@ -85,10 +104,18 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   });
 
   // State
-  const [selectedValues, setSelectedValues] = useState<SelectedValues>({
-    endpoint: endpoint || '',
-    model: model || '',
-    modelSpec: spec || '',
+  const [selectedValues, setSelectedValues] = useState<SelectedValues>(() => {
+    let initialModel = model || '';
+    if (isAgentsEndpoint(endpoint) && agent_id) {
+      initialModel = agent_id;
+    } else if (isAssistantsEndpoint(endpoint) && assistant_id) {
+      initialModel = assistant_id;
+    }
+    return {
+      endpoint: endpoint || '',
+      model: initialModel,
+      modelSpec: spec || '',
+    };
   });
   useSelectorEffects({
     agentsMap,

@@ -1,4 +1,5 @@
 const undici = require('undici');
+const { get } = require('lodash');
 const fetch = require('node-fetch');
 const passport = require('passport');
 const client = require('openid-client');
@@ -13,6 +14,7 @@ const {
   safeStringify,
   findOpenIDUser,
   getBalanceConfig,
+  isEmailDomainAllowed,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
@@ -97,9 +99,14 @@ This violates RFC 7235 and may cause issues with strict OAuth clients. Removing 
 /** @typedef {Configuration | null}  */
 let openidConfig = null;
 
-//overload currenturl function because of express version 4 buggy req.host doesn't include port
-//More info https://github.com/panva/openid-client/pull/713
-
+/**
+ * Custom OpenID Strategy
+ *
+ * Note: Originally overrode currentUrl() to work around Express 4's req.host not including port.
+ * With Express 5, req.host now includes the port by default, but we continue to use DOMAIN_SERVER
+ * for consistency and explicit configuration control.
+ * More info: https://github.com/panva/openid-client/pull/713
+ */
 class CustomOpenIDStrategy extends OpenIDStrategy {
   currentUrl(req) {
     const hostAndProtocol = process.env.DOMAIN_SERVER;
@@ -183,7 +190,7 @@ const getUserInfo = async (config, accessToken, sub) => {
     const exchangedAccessToken = await exchangeAccessTokenIfNeeded(config, accessToken, sub);
     return await client.fetchUserInfo(config, exchangedAccessToken, sub);
   } catch (error) {
-    logger.warn(`[openidStrategy] getUserInfo: Error fetching user info: ${error}`);
+    logger.error('[openidStrategy] getUserInfo: Error fetching user info:', error);
     return null;
   }
 };
@@ -328,6 +335,12 @@ async function setupOpenId() {
         : 'OPENID_GENERATE_NONCE=false - Standard flow without explicit nonce or metadata',
     });
 
+    // Set of env variables that specify how to set if a user is an admin
+    // If not set, all users will be treated as regular users
+    const adminRole = process.env.OPENID_ADMIN_ROLE;
+    const adminRoleParameterPath = process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH;
+    const adminRoleTokenKind = process.env.OPENID_ADMIN_ROLE_TOKEN_KIND;
+
     const openidLogin = new CustomOpenIDStrategy(
       {
         config: openidConfig,
@@ -336,14 +349,34 @@ async function setupOpenId() {
         clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
         usePKCE,
       },
+      /**
+       * @param {import('openid-client').TokenEndpointResponseHelpers} tokenset
+       * @param {import('passport-jwt').VerifyCallback} done
+       */
       async (tokenset, done) => {
         try {
           const claims = tokenset.claims();
+          const userinfo = {
+            ...claims,
+            ...(await getUserInfo(openidConfig, tokenset.access_token, claims.sub)),
+          };
+
+          const appConfig = await getAppConfig();
+          /** Azure AD sometimes doesn't return email, use preferred_username as fallback */
+          const email = userinfo.email || userinfo.preferred_username || userinfo.upn;
+          if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+            logger.error(
+              `[OpenID Strategy] Authentication blocked - email domain not allowed [Email: ${email}]`,
+            );
+            return done(null, false, { message: 'Email domain not allowed' });
+          }
+
           const result = await findOpenIDUser({
-            openidId: claims.sub,
-            email: claims.email,
-            strategyName: 'openidStrategy',
             findUser,
+            email: email,
+            openidId: claims.sub,
+            idOnTheSource: claims.oid,
+            strategyName: 'openidStrategy',
           });
           let user = result.user;
           const error = result.error;
@@ -353,38 +386,42 @@ async function setupOpenId() {
               message: ErrorTypes.AUTH_FAILED,
             });
           }
-          const userinfo = {
-            ...claims,
-            ...(await getUserInfo(openidConfig, tokenset.access_token, claims.sub)),
-          };
+
           const fullName = getFullName(userinfo);
 
           if (requiredRole) {
+            const requiredRoles = requiredRole
+              .split(',')
+              .map((role) => role.trim())
+              .filter(Boolean);
             let decodedToken = '';
             if (requiredRoleTokenKind === 'access') {
               decodedToken = jwtDecode(tokenset.access_token);
             } else if (requiredRoleTokenKind === 'id') {
               decodedToken = jwtDecode(tokenset.id_token);
             }
-            const pathParts = requiredRoleParameterPath.split('.');
-            let found = true;
-            let roles = pathParts.reduce((o, key) => {
-              if (o === null || o === undefined || !(key in o)) {
-                found = false;
-                return [];
-              }
-              return o[key];
-            }, decodedToken);
 
-            if (!found) {
+            let roles = get(decodedToken, requiredRoleParameterPath);
+            if (!roles || (!Array.isArray(roles) && typeof roles !== 'string')) {
               logger.error(
-                `[openidStrategy] Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
+                `[openidStrategy] Key '${requiredRoleParameterPath}' not found or invalid type in ${requiredRoleTokenKind} token!`,
               );
+              const rolesList =
+                requiredRoles.length === 1
+                  ? `"${requiredRoles[0]}"`
+                  : `one of: ${requiredRoles.map((r) => `"${r}"`).join(', ')}`;
+              return done(null, false, {
+                message: `You must have ${rolesList} role to log in.`,
+              });
             }
 
-            if (!roles.includes(requiredRole)) {
+            if (!requiredRoles.some((role) => roles.includes(role))) {
+              const rolesList =
+                requiredRoles.length === 1
+                  ? `"${requiredRoles[0]}"`
+                  : `one of: ${requiredRoles.map((r) => `"${r}"`).join(', ')}`;
               return done(null, false, {
-                message: `You must have the "${requiredRole}" role to log in.`,
+                message: `You must have ${rolesList} role to log in.`,
               });
             }
           }
@@ -403,13 +440,12 @@ async function setupOpenId() {
               provider: 'openid',
               openidId: userinfo.sub,
               username,
-              email: userinfo.email || '',
+              email: email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
               idOnTheSource: userinfo.oid,
             };
 
-            const appConfig = await getAppConfig();
             const balanceConfig = getBalanceConfig(appConfig);
             user = await createUser(user, balanceConfig, true, true);
           } else {
@@ -418,6 +454,54 @@ async function setupOpenId() {
             user.username = username;
             user.name = fullName;
             user.idOnTheSource = userinfo.oid;
+            if (email && email !== user.email) {
+              user.email = email;
+              user.emailVerified = userinfo.email_verified || false;
+            }
+          }
+
+          if (adminRole && adminRoleParameterPath && adminRoleTokenKind) {
+            let adminRoleObject;
+            switch (adminRoleTokenKind) {
+              case 'access':
+                adminRoleObject = jwtDecode(tokenset.access_token);
+                break;
+              case 'id':
+                adminRoleObject = jwtDecode(tokenset.id_token);
+                break;
+              case 'userinfo':
+                adminRoleObject = userinfo;
+                break;
+              default:
+                logger.error(
+                  `[openidStrategy] Invalid admin role token kind: ${adminRoleTokenKind}. Must be one of 'access', 'id', or 'userinfo'.`,
+                );
+                return done(new Error('Invalid admin role token kind'));
+            }
+
+            const adminRoles = get(adminRoleObject, adminRoleParameterPath);
+
+            // Accept 3 types of values for the object extracted from adminRoleParameterPath:
+            // 1. A boolean value indicating if the user is an admin
+            // 2. A string with a single role name
+            // 3. An array of role names
+
+            if (
+              adminRoles &&
+              (adminRoles === true ||
+                adminRoles === adminRole ||
+                (Array.isArray(adminRoles) && adminRoles.includes(adminRole)))
+            ) {
+              user.role = 'ADMIN';
+              logger.info(
+                `[openidStrategy] User ${username} is an admin based on role: ${adminRole}`,
+              );
+            } else if (user.role === 'ADMIN') {
+              user.role = 'USER';
+              logger.info(
+                `[openidStrategy] User ${username} demoted from admin - role no longer present in token`,
+              );
+            }
           }
 
           if (!!userinfo && userinfo.picture && !user.avatar?.includes('manual=true')) {
@@ -438,7 +522,9 @@ async function setupOpenId() {
               userinfo.sub,
             );
             if (imageBuffer) {
-              const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
+              const { saveBuffer } = getStrategyFunctions(
+                appConfig?.fileStrategy ?? process.env.CDN_PROVIDER,
+              );
               const imagePath = await saveBuffer({
                 fileName,
                 userId: user._id.toString(),
@@ -462,7 +548,15 @@ async function setupOpenId() {
             },
           );
 
-          done(null, { ...user, tokenset });
+          done(null, {
+            ...user,
+            tokenset,
+            federatedTokens: {
+              access_token: tokenset.access_token,
+              refresh_token: tokenset.refresh_token,
+              expires_at: tokenset.expires_at,
+            },
+          });
         } catch (err) {
           logger.error('[openidStrategy] login failed', err);
           done(err);

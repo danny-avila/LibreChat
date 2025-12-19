@@ -10,9 +10,16 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
-const { isEnabled, ErrorController } = require('@librechat/api');
+const {
+  isEnabled,
+  ErrorController,
+  performStartupChecks,
+  handleJsonParseError,
+  initializeFileStorage,
+} = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
-const validateImageRequest = require('./middleware/validateImageRequest');
+const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
+const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions } = require('~/models/interface');
 const { checkMigrations } = require('./services/start/migration');
@@ -48,9 +55,11 @@ const startServer = async () => {
   app.set('trust proxy', trusted_proxy);
 
   await seedDatabase();
-
   const appConfig = await getAppConfig();
+  initializeFileStorage(appConfig);
+  await performStartupChecks(appConfig);
   await updateInterfacePermissions(appConfig);
+
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
 
@@ -73,6 +82,21 @@ const startServer = async () => {
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
+  app.use(handleJsonParseError);
+
+  /**
+   * Express 5 Compatibility: Make req.query writable for mongoSanitize
+   * In Express 5, req.query is read-only by default, but express-mongo-sanitize needs to modify it
+   */
+  app.use((req, _res, next) => {
+    Object.defineProperty(req, 'query', {
+      ...Object.getOwnPropertyDescriptor(req, 'query'),
+      value: req.query,
+      writable: true,
+    });
+    next();
+  });
+
   app.use(mongoSanitize());
   app.use(cors());
   app.use(cookieParser());
@@ -112,21 +136,18 @@ const startServer = async () => {
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);
-  app.use('/api/edit', routes.edit);
   app.use('/api/messages', routes.messages);
   app.use('/api/convos', routes.convos);
   app.use('/api/presets', routes.presets);
   app.use('/api/prompts', routes.prompts);
   app.use('/api/categories', routes.categories);
-  app.use('/api/tokenizer', routes.tokenizer);
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/balance', routes.balance);
   app.use('/api/models', routes.models);
-  app.use('/api/plugins', routes.plugins);
   app.use('/api/config', routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
-  app.use('/images/', validateImageRequest, routes.staticRoute);
+  app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
   app.use('/api/share', routes.share);
   app.use('/api/roles', routes.roles);
   app.use('/api/agents', routes.agents);
@@ -154,7 +175,12 @@ const startServer = async () => {
     res.send(updatedIndexHtml);
   });
 
-  app.listen(port, host, () => {
+  app.listen(port, host, async (err) => {
+    if (err) {
+      logger.error('Failed to start server:', err);
+      process.exit(1);
+    }
+
     if (host === '0.0.0.0') {
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
@@ -163,7 +189,9 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    initializeMCPs().then(() => checkMigrations());
+    await initializeMCPs();
+    await initializeOAuthReconnectManager();
+    await checkMigrations();
   });
 };
 
@@ -175,8 +203,8 @@ process.on('uncaughtException', (err) => {
     logger.error('There was an uncaught error:', err);
   }
 
-  if (err.message.includes('abort')) {
-    logger.warn('There was an uncatchable AbortController error.');
+  if (err.message && err.message?.toLowerCase()?.includes('abort')) {
+    logger.warn('There was an uncatchable abort error.');
     return;
   }
 
@@ -199,6 +227,17 @@ process.on('uncaughtException', (err) => {
   if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
     logger.error(
       '\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.',
+    );
+    return;
+  }
+
+  if (err.stack && err.stack.includes('@librechat/agents')) {
+    logger.error(
+      '\n\nAn error occurred in the agents system. The error has been logged and the app will continue running.',
+      {
+        message: err.message,
+        stack: err.stack,
+      },
     );
     return;
   }

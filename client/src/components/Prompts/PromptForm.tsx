@@ -130,7 +130,7 @@ const RightPanel = React.memo(
                   !canEdit
                 }
               >
-                <Rocket className="size-5 cursor-pointer text-white" />
+                <Rocket className="size-5 cursor-pointer text-white" aria-hidden="true" />
               </Button>
             )}
             <DeleteVersion
@@ -167,6 +167,7 @@ const PromptForm = () => {
   const params = useParams();
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const { hasAccess } = usePromptGroupsContext();
   const alwaysMakeProd = useRecoilValue(store.alwaysMakeProd);
   const promptId = params.promptId || '';
 
@@ -179,10 +180,12 @@ const PromptForm = () => {
   const [showSidePanel, setShowSidePanel] = useState(false);
   const sidePanelWidth = '320px';
 
-  const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(promptId);
+  const { data: group, isLoading: isLoadingGroup } = useGetPromptGroup(promptId, {
+    enabled: hasAccess && !!promptId,
+  });
   const { data: prompts = [], isLoading: isLoadingPrompts } = useGetPrompts(
     { groupId: promptId },
-    { enabled: !!promptId },
+    { enabled: hasAccess && !!promptId },
   );
 
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
@@ -384,6 +387,7 @@ const PromptForm = () => {
   return (
     <FormProvider {...methods}>
       <form className="mt-4 flex w-full" onSubmit={handleSubmit((data) => onSave(data.prompt))}>
+        <h1 className="sr-only">{localize('com_ui_edit_prompt_page')}</h1>
         <div className="relative w-full">
           <div
             className="h-full w-full"
@@ -419,7 +423,7 @@ const PromptForm = () => {
                         onClick={() => setShowSidePanel(true)}
                         aria-label={localize('com_endpoint_open_menu')}
                       >
-                        <Menu className="size-5" />
+                        <Menu className="size-5" aria-hidden="true" />
                       </Button>
                       <div className="hidden lg:block">
                         {editorMode === PromptsEditorMode.SIMPLE && (

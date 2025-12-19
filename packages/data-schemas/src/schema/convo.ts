@@ -19,11 +19,9 @@ const convoSchema: Schema<IConversation> = new Schema(
     user: {
       type: String,
       index: true,
+      meiliIndex: true,
     },
     messages: [{ type: Schema.Types.ObjectId, ref: 'Message' }],
-    agentOptions: {
-      type: Schema.Types.Mixed,
-    },
     ...conversationPreset,
     agent_id: {
       type: String,

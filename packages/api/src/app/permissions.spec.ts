@@ -1,15 +1,11 @@
+import { loadDefaultInterface } from '@librechat/data-schemas';
 import { SystemRoles, Permissions, PermissionTypes, roleDefaults } from 'librechat-data-provider';
 import type { TConfigDefaults, TCustomConfig } from 'librechat-data-provider';
-import type { AppConfig } from '~/types/config';
+import type { AppConfig } from '@librechat/data-schemas';
 import { updateInterfacePermissions } from './permissions';
-import { loadDefaultInterface } from './interface';
 
 const mockUpdateAccessPermissions = jest.fn();
 const mockGetRoleByName = jest.fn();
-
-jest.mock('~/memory', () => ({
-  isMemoryEnabled: jest.fn((config) => config?.enable === true),
-}));
 
 describe('updateInterfacePermissions - permissions', () => {
   beforeEach(() => {
@@ -58,6 +54,9 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -75,6 +74,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -84,6 +88,9 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -101,6 +108,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
@@ -160,6 +172,9 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: false,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
@@ -177,6 +192,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: false },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -186,6 +206,9 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: false,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
@@ -203,6 +226,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: false },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
@@ -262,6 +290,9 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -279,6 +310,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -288,6 +324,9 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -305,6 +344,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
@@ -377,6 +421,9 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -394,6 +441,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -403,6 +455,9 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -420,6 +475,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
@@ -479,6 +539,9 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -496,6 +559,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -505,6 +573,9 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -522,6 +593,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
@@ -587,6 +663,9 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -601,12 +680,20 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -621,6 +708,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
@@ -702,6 +794,9 @@ describe('updateInterfacePermissions - permissions', () => {
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -716,6 +811,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -725,6 +825,9 @@ describe('updateInterfacePermissions - permissions', () => {
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
         [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.READ]: true,
+        [Permissions.UPDATE]: true,
         [Permissions.OPT_OUT]: undefined,
       },
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
@@ -739,6 +842,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
@@ -926,11 +1034,17 @@ describe('updateInterfacePermissions - permissions', () => {
     // Check MEMORIES permissions use role defaults
     expect(userCall[1][PermissionTypes.MEMORIES]).toEqual({
       [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      [Permissions.READ]: true,
+      [Permissions.UPDATE]: true,
       [Permissions.OPT_OUT]: undefined,
     });
 
     expect(adminCall[1][PermissionTypes.MEMORIES]).toEqual({
       [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      [Permissions.READ]: true,
+      [Permissions.UPDATE]: true,
       [Permissions.OPT_OUT]: undefined,
     });
   });
@@ -1155,5 +1269,339 @@ describe('updateInterfacePermissions - permissions', () => {
     // New permissions that didn't exist should still be added
     expect(userCall[1]).toHaveProperty(PermissionTypes.AGENTS);
     expect(userCall[1]).toHaveProperty(PermissionTypes.MULTI_CONVO);
+  });
+
+  it('should disable all memory permissions when memory.disabled is true', async () => {
+    const config = {
+      interface: {
+        // Even if memories is not explicitly set to false in interface
+        prompts: true,
+        bookmarks: true,
+      },
+      memory: {
+        disabled: true,
+        // Other memory config doesn't matter when disabled
+        agent: {
+          id: 'test-agent-id',
+        },
+        personalize: true,
+      } as unknown as TCustomConfig['memory'],
+    };
+    const configDefaults = {
+      interface: {
+        memories: true, // Default is true
+      },
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const expectedMemoryPermissions = {
+      [Permissions.USE]: false,
+      [Permissions.CREATE]: false,
+      [Permissions.READ]: false,
+      [Permissions.UPDATE]: false,
+      [Permissions.OPT_OUT]: false, // Even OPT_OUT should be false when memory is disabled
+    };
+
+    // Check USER role call
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    expect(userCall[1][PermissionTypes.MEMORIES]).toEqual(expectedMemoryPermissions);
+
+    // Check ADMIN role call
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+    expect(adminCall[1][PermissionTypes.MEMORIES]).toEqual(expectedMemoryPermissions);
+  });
+
+  it('should enable memory permissions based on role defaults when memory is configured without disabled flag', async () => {
+    const config = {
+      interface: {
+        memories: true,
+      },
+      memory: {
+        // Memory is configured with an agent but not disabled
+        agent: {
+          provider: 'openai',
+          model: 'gpt-4',
+        },
+        personalize: true,
+      } as unknown as TCustomConfig['memory'],
+    };
+    const configDefaults = {
+      interface: {
+        memories: true,
+      },
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    // Check USER role call - should use role defaults for non-USE permissions
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    expect(userCall[1][PermissionTypes.MEMORIES]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.CREATE],
+      [Permissions.READ]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.READ],
+      [Permissions.UPDATE]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.UPDATE],
+      [Permissions.OPT_OUT]: true, // Should be true when personalize is enabled
+    });
+
+    // Check ADMIN role call
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+    expect(adminCall[1][PermissionTypes.MEMORIES]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]:
+        roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.MEMORIES]?.[Permissions.CREATE],
+      [Permissions.READ]:
+        roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.MEMORIES]?.[Permissions.READ],
+      [Permissions.UPDATE]:
+        roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.MEMORIES]?.[Permissions.UPDATE],
+      [Permissions.OPT_OUT]: true, // Should be true when personalize is enabled
+    });
+  });
+
+  it('should re-enable memory permissions when memory.disabled changes from true to false', async () => {
+    // Mock existing memory permissions that are disabled
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MEMORIES]: {
+          [Permissions.USE]: false,
+          [Permissions.CREATE]: false,
+          [Permissions.READ]: false,
+          [Permissions.UPDATE]: false,
+          [Permissions.OPT_OUT]: false,
+        },
+        // Other existing permissions
+        [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
+        [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
+      },
+    });
+
+    const config = {
+      interface: {
+        // Not explicitly configuring memories in interface
+        prompts: true,
+        bookmarks: true,
+      },
+      memory: {
+        disabled: false, // Memory is explicitly enabled (changed from true to false)
+        agent: {
+          id: 'test-agent-id',
+        },
+        personalize: true,
+      } as unknown as TCustomConfig['memory'],
+    };
+    const configDefaults = {
+      interface: {
+        memories: true,
+        prompts: true,
+        bookmarks: true,
+      },
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    // Check USER role call
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    // Memory permissions should be re-enabled
+    expect(userCall[1][PermissionTypes.MEMORIES]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.CREATE],
+      [Permissions.READ]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.READ],
+      [Permissions.UPDATE]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.UPDATE],
+      [Permissions.OPT_OUT]: true, // Should be true when personalize is enabled
+    });
+
+    // Check ADMIN role call
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+    expect(adminCall[1][PermissionTypes.MEMORIES]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]:
+        roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.MEMORIES]?.[Permissions.CREATE],
+      [Permissions.READ]:
+        roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.MEMORIES]?.[Permissions.READ],
+      [Permissions.UPDATE]:
+        roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.MEMORIES]?.[Permissions.UPDATE],
+      [Permissions.OPT_OUT]: true, // Should be true when personalize is enabled
+    });
+
+    // Verify the existing role data was passed to updateAccessPermissions
+    expect(userCall[2]).toMatchObject({
+      permissions: expect.objectContaining({
+        [PermissionTypes.MEMORIES]: expect.any(Object),
+      }),
+    });
+  });
+
+  it('should re-enable memory permissions when valid memory config exists without disabled field', async () => {
+    // Mock existing memory permissions that are disabled
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MEMORIES]: {
+          [Permissions.USE]: false,
+          [Permissions.CREATE]: false,
+          [Permissions.READ]: false,
+          [Permissions.UPDATE]: false,
+          [Permissions.OPT_OUT]: false,
+        },
+      },
+    });
+
+    const config = {
+      memory: {
+        // No disabled field, but valid config
+        agent: {
+          id: 'test-agent-id',
+          provider: 'openai',
+        },
+        personalize: false,
+      } as unknown as TCustomConfig['memory'],
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    // Check USER role call - memory should be re-enabled
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    expect(userCall[1][PermissionTypes.MEMORIES]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.CREATE],
+      [Permissions.READ]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.READ],
+      [Permissions.UPDATE]:
+        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEMORIES]?.[Permissions.UPDATE],
+      [Permissions.OPT_OUT]: undefined, // Should be undefined when personalize is false
+    });
+  });
+
+  it('should override existing memory permissions when memory.disabled is true', async () => {
+    // Mock existing memory permissions that are enabled
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MEMORIES]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.READ]: true,
+          [Permissions.UPDATE]: true,
+          [Permissions.OPT_OUT]: true,
+        },
+        // Other existing permissions
+        [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
+        [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
+      },
+    });
+
+    const config = {
+      interface: {
+        // Not explicitly configuring memories in interface
+        prompts: true,
+        bookmarks: true,
+      },
+      memory: {
+        disabled: true, // Memory is explicitly disabled
+        agent: {
+          id: 'test-agent-id',
+        },
+        personalize: true,
+      } as unknown as TCustomConfig['memory'],
+    };
+    const configDefaults = {
+      interface: {
+        memories: true, // Default would be true
+        prompts: true,
+        bookmarks: true,
+      },
+    } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const expectedMemoryPermissions = {
+      [Permissions.USE]: false,
+      [Permissions.CREATE]: false,
+      [Permissions.READ]: false,
+      [Permissions.UPDATE]: false,
+      [Permissions.OPT_OUT]: false,
+    };
+
+    // Check USER role call
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    // Memory permissions should be updated even though they already exist
+    expect(userCall[1][PermissionTypes.MEMORIES]).toEqual(expectedMemoryPermissions);
+    // Prompts should be updated (explicitly configured)
+    expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({ [Permissions.USE]: true });
+    // Bookmarks should be updated (explicitly configured)
+    expect(userCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
+
+    // Check ADMIN role call
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+    // Memory permissions should be updated even though they already exist
+    expect(adminCall[1][PermissionTypes.MEMORIES]).toEqual(expectedMemoryPermissions);
+    expect(adminCall[1][PermissionTypes.PROMPTS]).toEqual({ [Permissions.USE]: true });
+    expect(adminCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
+
+    // Verify the existing role data was passed to updateAccessPermissions
+    expect(userCall[2]).toMatchObject({
+      permissions: expect.objectContaining({
+        [PermissionTypes.MEMORIES]: expect.any(Object),
+      }),
+    });
+    expect(adminCall[2]).toMatchObject({
+      permissions: expect.objectContaining({
+        [PermissionTypes.MEMORIES]: expect.any(Object),
+      }),
+    });
   });
 });

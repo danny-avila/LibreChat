@@ -17,7 +17,7 @@ const { Files } = require('~/models');
  * @param {IUser} options.user - The user object
  * @param {AppConfig} options.appConfig - The app configuration object
  * @param {GraphRunnableConfig['configurable']} options.metadata - The metadata
- * @param {any} options.toolArtifact - The tool artifact containing structured data
+ * @param {{ [Tools.file_search]: { sources: Object[]; fileCitations: boolean } }} options.toolArtifact - The tool artifact containing structured data
  * @param {string} options.toolCallId - The tool call ID
  * @returns {Promise<Object|null>} The file search attachment or null
  */
@@ -29,12 +29,14 @@ async function processFileCitations({ user, appConfig, toolArtifact, toolCallId,
 
     if (user) {
       try {
-        const hasFileCitationsAccess = await checkAccess({
-          user,
-          permissionType: PermissionTypes.FILE_CITATIONS,
-          permissions: [Permissions.USE],
-          getRoleByName,
-        });
+        const hasFileCitationsAccess =
+          toolArtifact?.[Tools.file_search]?.fileCitations ??
+          (await checkAccess({
+            user,
+            permissionType: PermissionTypes.FILE_CITATIONS,
+            permissions: [Permissions.USE],
+            getRoleByName,
+          }));
 
         if (!hasFileCitationsAccess) {
           logger.debug(

@@ -1,5 +1,7 @@
 import { randomBytes } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
+import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
   registerClient,
   startAuthorization,
@@ -7,7 +9,6 @@ import {
   discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
-import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { FlowStateManager } from '~/flow/manager';
 import type {
@@ -17,6 +18,7 @@ import type {
   MCPOAuthTokens,
   OAuthMetadata,
 } from './types';
+import { sanitizeUrlForLogging } from '~/mcp/utils';
 
 /** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
@@ -26,24 +28,47 @@ export class MCPOAuthHandler {
   private static readonly FLOW_TTL = 10 * 60 * 1000; // 10 minutes
 
   /**
+   * Creates a fetch function with custom headers injected
+   */
+  private static createOAuthFetch(headers: Record<string, string>): FetchLike {
+    return async (url: string | URL, init?: RequestInit): Promise<Response> => {
+      const newHeaders = new Headers(init?.headers ?? {});
+      for (const [key, value] of Object.entries(headers)) {
+        newHeaders.set(key, value);
+      }
+      return fetch(url, {
+        ...init,
+        headers: newHeaders,
+      });
+    };
+  }
+
+  /**
    * Discovers OAuth metadata from the server
    */
-  private static async discoverMetadata(serverUrl: string): Promise<{
+  private static async discoverMetadata(
+    serverUrl: string,
+    oauthHeaders: Record<string, string>,
+  ): Promise<{
     metadata: OAuthMetadata;
     resourceMetadata?: OAuthProtectedResourceMetadata;
     authServerUrl: URL;
   }> {
-    logger.debug(`[MCPOAuth] discoverMetadata called with serverUrl: ${serverUrl}`);
+    logger.debug(
+      `[MCPOAuth] discoverMetadata called with serverUrl: ${sanitizeUrlForLogging(serverUrl)}`,
+    );
 
     let authServerUrl = new URL(serverUrl);
     let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
+
+    const fetchFn = this.createOAuthFetch(oauthHeaders);
 
     try {
       // Try to discover resource metadata first
       logger.debug(
         `[MCPOAuth] Attempting to discover protected resource metadata from ${serverUrl}`,
       );
-      resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl);
+      resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, {}, fetchFn);
 
       if (resourceMetadata?.authorization_servers?.length) {
         authServerUrl = new URL(resourceMetadata.authorization_servers[0]);
@@ -60,12 +85,56 @@ export class MCPOAuthHandler {
     }
 
     // Discover OAuth metadata
-    logger.debug(`[MCPOAuth] Discovering OAuth metadata from ${authServerUrl}`);
-    const rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl);
+    logger.debug(
+      `[MCPOAuth] Discovering OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
+    );
+    let rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl, {
+      fetchFn,
+    });
+
+    // If discovery failed and we're using a path-based URL, try the base URL
+    if (!rawMetadata && authServerUrl.pathname !== '/') {
+      const baseUrl = new URL(authServerUrl.origin);
+      logger.debug(
+        `[MCPOAuth] Discovery failed with path, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
+      );
+      rawMetadata = await discoverAuthorizationServerMetadata(baseUrl, {
+        fetchFn,
+      });
+    }
 
     if (!rawMetadata) {
-      logger.error(`[MCPOAuth] Failed to discover OAuth metadata from ${authServerUrl}`);
-      throw new Error('Failed to discover OAuth metadata');
+      /**
+       * No metadata discovered - create fallback metadata using default OAuth endpoint paths.
+       * This mirrors the MCP SDK's behavior where it falls back to /authorize, /token, /register
+       * when metadata discovery fails (e.g., servers without .well-known endpoints).
+       * See: https://github.com/modelcontextprotocol/sdk/blob/main/src/client/auth.ts
+       */
+      logger.warn(
+        `[MCPOAuth] No OAuth metadata discovered from ${sanitizeUrlForLogging(authServerUrl)}, using legacy fallback endpoints`,
+      );
+
+      const fallbackMetadata: OAuthMetadata = {
+        issuer: authServerUrl.toString(),
+        authorization_endpoint: new URL('/authorize', authServerUrl).toString(),
+        token_endpoint: new URL('/token', authServerUrl).toString(),
+        registration_endpoint: new URL('/register', authServerUrl).toString(),
+        response_types_supported: ['code'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        code_challenge_methods_supported: ['S256', 'plain'],
+        token_endpoint_auth_methods_supported: [
+          'client_secret_basic',
+          'client_secret_post',
+          'none',
+        ],
+      };
+
+      logger.debug(`[MCPOAuth] Using fallback metadata:`, fallbackMetadata);
+      return {
+        metadata: fallbackMetadata,
+        resourceMetadata,
+        authServerUrl,
+      };
     }
 
     logger.debug(`[MCPOAuth] OAuth metadata discovered successfully`);
@@ -85,15 +154,19 @@ export class MCPOAuthHandler {
   private static async registerOAuthClient(
     serverUrl: string,
     metadata: OAuthMetadata,
+    oauthHeaders: Record<string, string>,
     resourceMetadata?: OAuthProtectedResourceMetadata,
     redirectUri?: string,
   ): Promise<OAuthClientInformation> {
-    logger.debug(`[MCPOAuth] Starting client registration for ${serverUrl}, server metadata:`, {
-      grant_types_supported: metadata.grant_types_supported,
-      response_types_supported: metadata.response_types_supported,
-      token_endpoint_auth_methods_supported: metadata.token_endpoint_auth_methods_supported,
-      scopes_supported: metadata.scopes_supported,
-    });
+    logger.debug(
+      `[MCPOAuth] Starting client registration for ${sanitizeUrlForLogging(serverUrl)}, server metadata:`,
+      {
+        grant_types_supported: metadata.grant_types_supported,
+        response_types_supported: metadata.response_types_supported,
+        token_endpoint_auth_methods_supported: metadata.token_endpoint_auth_methods_supported,
+        scopes_supported: metadata.scopes_supported,
+      },
+    );
 
     /** Client metadata based on what the server supports */
     const clientMetadata = {
@@ -103,6 +176,8 @@ export class MCPOAuthHandler {
       response_types: ['code'] as string[],
       token_endpoint_auth_method: 'client_secret_basic',
       scope: undefined as string | undefined,
+      logo_uri: undefined as string | undefined,
+      tos_uri: undefined as string | undefined,
     };
 
     const supportedGrantTypes = metadata.grant_types_supported || ['authorization_code'];
@@ -114,7 +189,9 @@ export class MCPOAuthHandler {
         `[MCPOAuth] Server ${serverUrl} supports \`refresh_token\` grant type, adding to request`,
       );
     } else {
-      logger.debug(`[MCPOAuth] Server ${serverUrl} does not support \`refresh_token\` grant type`);
+      logger.debug(
+        `[MCPOAuth] Server ${sanitizeUrlForLogging(serverUrl)} does not support \`refresh_token\` grant type`,
+      );
     }
     clientMetadata.grant_types = requestedGrantTypes;
 
@@ -139,19 +216,26 @@ export class MCPOAuthHandler {
       clientMetadata.scope = availableScopes.join(' ');
     }
 
-    logger.debug(`[MCPOAuth] Registering client for ${serverUrl} with metadata:`, clientMetadata);
+    logger.debug(
+      `[MCPOAuth] Registering client for ${sanitizeUrlForLogging(serverUrl)} with metadata:`,
+      clientMetadata,
+    );
 
     const clientInfo = await registerClient(serverUrl, {
       metadata: metadata as unknown as SDKOAuthMetadata,
       clientMetadata,
+      fetchFn: this.createOAuthFetch(oauthHeaders),
     });
 
-    logger.debug(`[MCPOAuth] Client registered successfully for ${serverUrl}:`, {
-      client_id: clientInfo.client_id,
-      has_client_secret: !!clientInfo.client_secret,
-      grant_types: clientInfo.grant_types,
-      scope: clientInfo.scope,
-    });
+    logger.debug(
+      `[MCPOAuth] Client registered successfully for ${sanitizeUrlForLogging(serverUrl)}:`,
+      {
+        client_id: clientInfo.client_id,
+        has_client_secret: !!clientInfo.client_secret,
+        grant_types: clientInfo.grant_types,
+        scope: clientInfo.scope,
+      },
+    );
 
     return clientInfo;
   }
@@ -163,9 +247,12 @@ export class MCPOAuthHandler {
     serverName: string,
     serverUrl: string,
     userId: string,
-    config: MCPOptions['oauth'] | undefined,
+    oauthHeaders: Record<string, string>,
+    config?: MCPOptions['oauth'],
   ): Promise<{ authorizationUrl: string; flowId: string; flowMetadata: MCPOAuthFlowMetadata }> {
-    logger.debug(`[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${serverUrl}`);
+    logger.debug(
+      `[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${sanitizeUrlForLogging(serverUrl)}`,
+    );
 
     const flowId = this.generateFlowId(userId, serverName);
     const state = this.generateState();
@@ -176,6 +263,23 @@ export class MCPOAuthHandler {
       // Check if we have pre-configured OAuth settings
       if (config?.authorization_url && config?.token_url && config?.client_id) {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for ${serverName}`);
+
+        const skipCodeChallengeCheck =
+          config?.skip_code_challenge_check === true ||
+          process.env.MCP_SKIP_CODE_CHALLENGE_CHECK === 'true';
+        let codeChallengeMethodsSupported: string[];
+
+        if (config?.code_challenge_methods_supported !== undefined) {
+          codeChallengeMethodsSupported = config.code_challenge_methods_supported;
+        } else if (skipCodeChallengeCheck) {
+          codeChallengeMethodsSupported = ['S256', 'plain'];
+          logger.debug(
+            `[MCPOAuth] Code challenge check skip enabled, forcing S256 support for ${serverName}`,
+          );
+        } else {
+          codeChallengeMethodsSupported = ['S256', 'plain'];
+        }
+
         /** Metadata based on pre-configured settings */
         const metadata: OAuthMetadata = {
           authorization_endpoint: config.authorization_url,
@@ -191,10 +295,7 @@ export class MCPOAuthHandler {
             'client_secret_post',
           ],
           response_types_supported: config?.response_types_supported ?? ['code'],
-          code_challenge_methods_supported: config?.code_challenge_methods_supported ?? [
-            'S256',
-            'plain',
-          ],
+          code_challenge_methods_supported: codeChallengeMethodsSupported,
         };
         logger.debug(`[MCPOAuth] metadata for "${serverName}": ${JSON.stringify(metadata)}`);
         const clientInfo: OAuthClientInformation = {
@@ -226,7 +327,9 @@ export class MCPOAuthHandler {
           metadata,
         };
 
-        logger.debug(`[MCPOAuth] Authorization URL generated: ${authorizationUrl.toString()}`);
+        logger.debug(
+          `[MCPOAuth] Authorization URL generated: ${sanitizeUrlForLogging(authorizationUrl.toString())}`,
+        );
         return {
           authorizationUrl: authorizationUrl.toString(),
           flowId,
@@ -234,10 +337,17 @@ export class MCPOAuthHandler {
         };
       }
 
-      logger.debug(`[MCPOAuth] Starting auto-discovery of OAuth metadata from ${serverUrl}`);
-      const { metadata, resourceMetadata, authServerUrl } = await this.discoverMetadata(serverUrl);
+      logger.debug(
+        `[MCPOAuth] Starting auto-discovery of OAuth metadata from ${sanitizeUrlForLogging(serverUrl)}`,
+      );
+      const { metadata, resourceMetadata, authServerUrl } = await this.discoverMetadata(
+        serverUrl,
+        oauthHeaders,
+      );
 
-      logger.debug(`[MCPOAuth] OAuth metadata discovered, auth server URL: ${authServerUrl}`);
+      logger.debug(
+        `[MCPOAuth] OAuth metadata discovered, auth server URL: ${sanitizeUrlForLogging(authServerUrl)}`,
+      );
 
       /** Dynamic client registration based on the discovered metadata */
       const redirectUri = config?.redirect_uri || this.getDefaultRedirectUri(serverName);
@@ -246,6 +356,7 @@ export class MCPOAuthHandler {
       const clientInfo = await this.registerOAuthClient(
         authServerUrl.toString(),
         metadata,
+        oauthHeaders,
         resourceMetadata,
         redirectUri,
       );
@@ -276,7 +387,9 @@ export class MCPOAuthHandler {
         codeVerifier = authResult.codeVerifier;
 
         logger.debug(`[MCPOAuth] startAuthorization completed successfully`);
-        logger.debug(`[MCPOAuth] Authorization URL: ${authorizationUrl.toString()}`);
+        logger.debug(
+          `[MCPOAuth] Authorization URL: ${sanitizeUrlForLogging(authorizationUrl.toString())}`,
+        );
 
         /** Add state parameter with flowId to the authorization URL */
         authorizationUrl.searchParams.set('state', flowId);
@@ -337,6 +450,7 @@ export class MCPOAuthHandler {
     flowId: string,
     authorizationCode: string,
     flowManager: FlowStateManager<MCPOAuthTokens>,
+    oauthHeaders: Record<string, string>,
   ): Promise<MCPOAuthTokens> {
     try {
       /** Flow state which contains our metadata */
@@ -376,11 +490,13 @@ export class MCPOAuthHandler {
         codeVerifier: metadata.codeVerifier,
         authorizationCode,
         resource,
+        fetchFn: this.createOAuthFetch(oauthHeaders),
       });
 
-      logger.debug('[MCPOAuth] Raw tokens from exchange:', {
-        access_token: tokens.access_token ? '[REDACTED]' : undefined,
-        refresh_token: tokens.refresh_token ? '[REDACTED]' : undefined,
+      logger.debug('[MCPOAuth] Token exchange successful', {
+        flowId,
+        has_access_token: !!tokens.access_token,
+        has_refresh_token: !!tokens.refresh_token,
         expires_in: tokens.expires_in,
         token_type: tokens.token_type,
         scope: tokens.scope,
@@ -443,11 +559,45 @@ export class MCPOAuthHandler {
   }
 
   /**
+   * Processes and logs a token refresh response from an OAuth server.
+   * Normalizes the response to MCPOAuthTokens format and logs debug info about refresh token rotation.
+   */
+  private static processRefreshResponse(
+    tokens: Record<string, unknown>,
+    serverName: string,
+    source: string,
+  ): MCPOAuthTokens {
+    const hasNewRefreshToken = !!tokens.refresh_token;
+
+    logger.debug(`[MCPOAuth] Token refresh response (${source})`, {
+      serverName,
+      has_new_access_token: !!tokens.access_token,
+      has_new_refresh_token: hasNewRefreshToken,
+      refresh_token_rotated: hasNewRefreshToken,
+      expires_in: tokens.expires_in,
+    });
+
+    if (!hasNewRefreshToken) {
+      logger.debug(
+        `[MCPOAuth] OAuth server did not return new refresh_token for ${serverName} - existing refresh token remains valid (normal for non-rotating providers)`,
+      );
+    }
+
+    return {
+      ...tokens,
+      obtained_at: Date.now(),
+      expires_at:
+        typeof tokens.expires_in === 'number' ? Date.now() + tokens.expires_in * 1000 : undefined,
+    } as MCPOAuthTokens;
+  }
+
+  /**
    * Refreshes OAuth tokens using a refresh token
    */
   static async refreshOAuthTokens(
     refreshToken: string,
     metadata: { serverName: string; serverUrl?: string; clientInfo?: OAuthClientInformation },
+    oauthHeaders: Record<string, string>,
     config?: MCPOptions['oauth'],
   ): Promise<MCPOAuthTokens> {
     logger.debug(`[MCPOAuth] Refreshing tokens for ${metadata.serverName}`);
@@ -473,20 +623,33 @@ export class MCPOAuthHandler {
 
         /** Use the stored client information and metadata to determine the token URL */
         let tokenUrl: string;
+        let authMethods: string[] | undefined;
         if (config?.token_url) {
           tokenUrl = config.token_url;
+          authMethods = config.token_endpoint_auth_methods_supported;
         } else if (!metadata.serverUrl) {
           throw new Error('No token URL available for refresh');
         } else {
           /** Auto-discover OAuth configuration for refresh */
-          const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl);
+          const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl, {
+            fetchFn: this.createOAuthFetch(oauthHeaders),
+          });
           if (!oauthMetadata) {
-            throw new Error('Failed to discover OAuth metadata for token refresh');
-          }
-          if (!oauthMetadata.token_endpoint) {
+            /**
+             * No metadata discovered - use fallback /token endpoint.
+             * This mirrors the MCP SDK's behavior for legacy servers without .well-known endpoints.
+             */
+            logger.warn(
+              `[MCPOAuth] No OAuth metadata discovered for token refresh, using fallback /token endpoint`,
+            );
+            tokenUrl = new URL('/token', metadata.serverUrl).toString();
+            authMethods = ['client_secret_basic', 'client_secret_post', 'none'];
+          } else if (!oauthMetadata.token_endpoint) {
             throw new Error('No token endpoint found in OAuth metadata');
+          } else {
+            tokenUrl = oauthMetadata.token_endpoint;
+            authMethods = oauthMetadata.token_endpoint_auth_methods_supported;
           }
-          tokenUrl = oauthMetadata.token_endpoint;
         }
 
         const body = new URLSearchParams({
@@ -502,20 +665,43 @@ export class MCPOAuthHandler {
         const headers: HeadersInit = {
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
+          ...oauthHeaders,
         };
 
-        /** Use client_secret for authentication if available */
+        /** Handle authentication based on server's advertised methods */
         if (metadata.clientInfo.client_secret) {
-          const clientAuth = Buffer.from(
-            `${metadata.clientInfo.client_id}:${metadata.clientInfo.client_secret}`,
-          ).toString('base64');
-          headers['Authorization'] = `Basic ${clientAuth}`;
+          /** Default to client_secret_basic if no methods specified (per RFC 8414) */
+          const tokenAuthMethods = authMethods ?? ['client_secret_basic'];
+          const usesBasicAuth = tokenAuthMethods.includes('client_secret_basic');
+          const usesClientSecretPost = tokenAuthMethods.includes('client_secret_post');
+
+          if (usesBasicAuth) {
+            /** Use Basic auth */
+            logger.debug('[MCPOAuth] Using client_secret_basic authentication method');
+            const clientAuth = Buffer.from(
+              `${metadata.clientInfo.client_id}:${metadata.clientInfo.client_secret}`,
+            ).toString('base64');
+            headers['Authorization'] = `Basic ${clientAuth}`;
+          } else if (usesClientSecretPost) {
+            /** Use client_secret_post */
+            logger.debug('[MCPOAuth] Using client_secret_post authentication method');
+            body.append('client_id', metadata.clientInfo.client_id);
+            body.append('client_secret', metadata.clientInfo.client_secret);
+          } else {
+            /** No recognized method, default to Basic auth per RFC */
+            logger.debug('[MCPOAuth] No recognized auth method, defaulting to client_secret_basic');
+            const clientAuth = Buffer.from(
+              `${metadata.clientInfo.client_id}:${metadata.clientInfo.client_secret}`,
+            ).toString('base64');
+            headers['Authorization'] = `Basic ${clientAuth}`;
+          }
         } else {
           /** For public clients, client_id must be in the body */
+          logger.debug('[MCPOAuth] Using public client authentication (no secret)');
           body.append('client_id', metadata.clientInfo.client_id);
         }
 
-        logger.debug(`[MCPOAuth] Refresh request to: ${tokenUrl}`, {
+        logger.debug(`[MCPOAuth] Refresh request to: ${sanitizeUrlForLogging(tokenUrl)}`, {
           body: body.toString(),
           headers,
         });
@@ -534,12 +720,7 @@ export class MCPOAuthHandler {
         }
 
         const tokens = await response.json();
-
-        return {
-          ...tokens,
-          obtained_at: Date.now(),
-          expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
-        };
+        return this.processRefreshResponse(tokens, metadata.serverName, 'stored client info');
       }
 
       // Fallback: If we have pre-configured OAuth settings, use them
@@ -547,9 +728,6 @@ export class MCPOAuthHandler {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for token refresh`);
 
         const tokenUrl = new URL(config.token_url);
-        const clientAuth = config.client_secret
-          ? Buffer.from(`${config.client_id}:${config.client_secret}`).toString('base64')
-          : null;
 
         const body = new URLSearchParams({
           grant_type: 'refresh_token',
@@ -563,12 +741,47 @@ export class MCPOAuthHandler {
         const headers: HeadersInit = {
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
+          ...oauthHeaders,
         };
 
-        if (clientAuth) {
-          headers['Authorization'] = `Basic ${clientAuth}`;
+        /** Handle authentication based on configured methods */
+        if (config.client_secret) {
+          /** Default to client_secret_basic if no methods specified (per RFC 8414) */
+          const tokenAuthMethods = config.token_endpoint_auth_methods_supported ?? [
+            'client_secret_basic',
+          ];
+          const usesBasicAuth = tokenAuthMethods.includes('client_secret_basic');
+          const usesClientSecretPost = tokenAuthMethods.includes('client_secret_post');
+
+          if (usesBasicAuth) {
+            /** Use Basic auth */
+            logger.debug(
+              '[MCPOAuth] Using client_secret_basic authentication method (pre-configured)',
+            );
+            const clientAuth = Buffer.from(`${config.client_id}:${config.client_secret}`).toString(
+              'base64',
+            );
+            headers['Authorization'] = `Basic ${clientAuth}`;
+          } else if (usesClientSecretPost) {
+            /** Use client_secret_post */
+            logger.debug(
+              '[MCPOAuth] Using client_secret_post authentication method (pre-configured)',
+            );
+            body.append('client_id', config.client_id);
+            body.append('client_secret', config.client_secret);
+          } else {
+            /** No recognized method, default to Basic auth per RFC */
+            logger.debug(
+              '[MCPOAuth] No recognized auth method, defaulting to client_secret_basic (pre-configured)',
+            );
+            const clientAuth = Buffer.from(`${config.client_id}:${config.client_secret}`).toString(
+              'base64',
+            );
+            headers['Authorization'] = `Basic ${clientAuth}`;
+          }
         } else {
-          // Use client_id in body for public clients
+          /** For public clients, client_id must be in the body */
+          logger.debug('[MCPOAuth] Using public client authentication (no secret, pre-configured)');
           body.append('client_id', config.client_id);
         }
 
@@ -586,12 +799,7 @@ export class MCPOAuthHandler {
         }
 
         const tokens = await response.json();
-
-        return {
-          ...tokens,
-          obtained_at: Date.now(),
-          expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
-        };
+        return this.processRefreshResponse(tokens, metadata.serverName, 'pre-configured OAuth');
       }
 
       /** For auto-discovered OAuth, we need the server URL */
@@ -600,13 +808,23 @@ export class MCPOAuthHandler {
       }
 
       /** Auto-discover OAuth configuration for refresh */
-      const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl);
+      const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl, {
+        fetchFn: this.createOAuthFetch(oauthHeaders),
+      });
 
+      let tokenUrl: URL;
       if (!oauthMetadata?.token_endpoint) {
-        throw new Error('No token endpoint found in OAuth metadata');
+        /**
+         * No metadata or token_endpoint discovered - use fallback /token endpoint.
+         * This mirrors the MCP SDK's behavior for legacy servers without .well-known endpoints.
+         */
+        logger.warn(
+          `[MCPOAuth] No OAuth metadata or token endpoint found, using fallback /token endpoint`,
+        );
+        tokenUrl = new URL('/token', metadata.serverUrl);
+      } else {
+        tokenUrl = new URL(oauthMetadata.token_endpoint);
       }
-
-      const tokenUrl = new URL(oauthMetadata.token_endpoint);
 
       const body = new URLSearchParams({
         grant_type: 'refresh_token',
@@ -616,6 +834,7 @@ export class MCPOAuthHandler {
       const headers: HeadersInit = {
         'Content-Type': 'application/x-www-form-urlencoded',
         Accept: 'application/json',
+        ...oauthHeaders,
       };
 
       const response = await fetch(tokenUrl, {
@@ -632,15 +851,78 @@ export class MCPOAuthHandler {
       }
 
       const tokens = await response.json();
-
-      return {
-        ...tokens,
-        obtained_at: Date.now(),
-        expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
-      };
+      return this.processRefreshResponse(tokens, metadata.serverName, 'auto-discovered OAuth');
     } catch (error) {
       logger.error(`[MCPOAuth] Failed to refresh tokens for ${metadata.serverName}`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Revokes OAuth tokens at the authorization server (RFC 7009)
+   */
+  public static async revokeOAuthToken(
+    serverName: string,
+    token: string,
+    tokenType: 'refresh' | 'access',
+    metadata: {
+      serverUrl: string;
+      clientId: string;
+      clientSecret: string;
+      revocationEndpoint?: string;
+      revocationEndpointAuthMethodsSupported?: string[];
+    },
+    oauthHeaders: Record<string, string> = {},
+  ): Promise<void> {
+    // build the revoke URL, falling back to the server URL + /revoke if no revocation endpoint is provided
+    const revokeUrl: URL =
+      metadata.revocationEndpoint != null
+        ? new URL(metadata.revocationEndpoint)
+        : new URL('/revoke', metadata.serverUrl);
+
+    // detect auth method to use
+    const authMethods = metadata.revocationEndpointAuthMethodsSupported ?? [
+      'client_secret_basic', // RFC 8414 (https://datatracker.ietf.org/doc/html/rfc8414)
+    ];
+    const usesBasicAuth = authMethods.includes('client_secret_basic');
+    const usesClientSecretPost = authMethods.includes('client_secret_post');
+
+    // init the request headers
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      ...oauthHeaders,
+    };
+
+    // init the request body
+    const body = new URLSearchParams({ token });
+    body.set('token_type_hint', tokenType === 'refresh' ? 'refresh_token' : 'access_token');
+
+    // process auth method
+    if (usesBasicAuth) {
+      // encode the client id and secret and add to the headers
+      const credentials = Buffer.from(`${metadata.clientId}:${metadata.clientSecret}`).toString(
+        'base64',
+      );
+      headers['Authorization'] = `Basic ${credentials}`;
+    } else if (usesClientSecretPost) {
+      // add the client id and secret to the body
+      body.set('client_secret', metadata.clientSecret);
+      body.set('client_id', metadata.clientId);
+    }
+
+    // perform the revoke request
+    logger.info(
+      `[MCPOAuth] Revoking tokens for ${serverName} via ${sanitizeUrlForLogging(revokeUrl.toString())}`,
+    );
+    const response = await fetch(revokeUrl, {
+      method: 'POST',
+      body: body.toString(),
+      headers,
+    });
+
+    if (!response.ok) {
+      logger.error(`[MCPOAuth] Token revocation failed for ${serverName}: HTTP ${response.status}`);
+      throw new Error(`Token revocation failed: HTTP ${response.status}`);
     }
   }
 }

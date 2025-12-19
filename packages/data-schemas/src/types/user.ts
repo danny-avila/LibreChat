@@ -18,7 +18,7 @@ export interface IUser extends Document {
   githubId?: string;
   discordId?: string;
   appleId?: string;
-  plugins?: unknown[];
+  plugins?: string[];
   twoFactorEnabled?: boolean;
   totpSecret?: string;
   backupCodes?: Array<{
@@ -34,6 +34,11 @@ export interface IUser extends Document {
   personalization?: {
     memories?: boolean;
   };
+  favorites?: Array<{
+    agentId?: string;
+    model?: string;
+    endpoint?: string;
+  }>;
   createdAt?: Date;
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */

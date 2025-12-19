@@ -3,7 +3,8 @@ const fs = require('fs').promises;
 const FormData = require('form-data');
 const { Readable } = require('stream');
 const { logger } = require('@librechat/data-schemas');
-const { genAzureEndpoint } = require('@librechat/api');
+const { HttpsProxyAgent } = require('https-proxy-agent');
+const { genAzureEndpoint, logAxiosError } = require('@librechat/api');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const { getAppConfig } = require('~/server/services/Config');
 
@@ -33,6 +34,34 @@ const MIME_TO_EXTENSION_MAP = {
   'audio/flac': 'flac',
   'audio/x-flac': 'flac',
 };
+
+/**
+ * Validates and extracts ISO-639-1 language code from a locale string.
+ * @param {string} language - The language/locale string (e.g., "en-US", "en", "zh-CN")
+ * @returns {string|null} The ISO-639-1 language code (e.g., "en") or null if invalid
+ */
+function getValidatedLanguageCode(language) {
+  try {
+    if (!language) {
+      return null;
+    }
+
+    const normalizedLanguage = language.toLowerCase();
+    const isValidLocaleCode = /^[a-z]{2}(-[a-z]{2})?$/.test(normalizedLanguage);
+
+    if (isValidLocaleCode) {
+      return normalizedLanguage.split('-')[0];
+    }
+
+    logger.warn(
+      `[STT] Invalid language format "${language}". Expected ISO-639-1 locale code like "en-US" or "en". Skipping language parameter.`,
+    );
+    return null;
+  } catch (error) {
+    logger.error(`[STT] Error validating language code "${language}":`, error);
+    return null;
+  }
+}
 
 /**
  * Gets the file extension from the MIME type.
@@ -159,9 +188,11 @@ class STTService {
    * Prepares the request for the OpenAI STT provider.
    * @param {Object} sttSchema - The STT schema for OpenAI.
    * @param {Stream} audioReadStream - The audio data to be transcribed.
+   * @param {Object} audioFile - The audio file object (unused in OpenAI provider).
+   * @param {string} language - The language code for the transcription.
    * @returns {Array} An array containing the URL, data, and headers for the request.
    */
-  openAIProvider(sttSchema, audioReadStream) {
+  openAIProvider(sttSchema, audioReadStream, audioFile, language) {
     const url = sttSchema?.url || 'https://api.openai.com/v1/audio/transcriptions';
     const apiKey = extractEnvVariable(sttSchema.apiKey) || '';
 
@@ -169,6 +200,11 @@ class STTService {
       file: audioReadStream,
       model: sttSchema.model,
     };
+
+    const validLanguage = getValidatedLanguageCode(language);
+    if (validLanguage) {
+      data.language = validLanguage;
+    }
 
     const headers = {
       'Content-Type': 'multipart/form-data',
@@ -184,10 +220,11 @@ class STTService {
    * @param {Object} sttSchema - The STT schema for Azure OpenAI.
    * @param {Buffer} audioBuffer - The audio data to be transcribed.
    * @param {Object} audioFile - The audio file object containing originalname, mimetype, and size.
+   * @param {string} language - The language code for the transcription.
    * @returns {Array} An array containing the URL, data, and headers for the request.
    * @throws {Error} If the audio file size exceeds 25MB or the audio file format is not accepted.
    */
-  azureOpenAIProvider(sttSchema, audioBuffer, audioFile) {
+  azureOpenAIProvider(sttSchema, audioBuffer, audioFile, language) {
     const url = `${genAzureEndpoint({
       azureOpenAIApiInstanceName: extractEnvVariable(sttSchema?.instanceName),
       azureOpenAIApiDeploymentName: extractEnvVariable(sttSchema?.deploymentName),
@@ -211,8 +248,12 @@ class STTService {
       contentType: audioFile.mimetype,
     });
 
+    const validLanguage = getValidatedLanguageCode(language);
+    if (validLanguage) {
+      formData.append('language', validLanguage);
+    }
+
     const headers = {
-      'Content-Type': 'multipart/form-data',
       ...(apiKey && { 'api-key': apiKey }),
     };
 
@@ -229,10 +270,11 @@ class STTService {
    * @param {Object} requestData - The data required for the STT request.
    * @param {Buffer} requestData.audioBuffer - The audio data to be transcribed.
    * @param {Object} requestData.audioFile - The audio file object containing originalname, mimetype, and size.
+   * @param {string} requestData.language - The language code for the transcription.
    * @returns {Promise<string>} A promise that resolves to the transcribed text.
    * @throws {Error} If the provider is invalid, the response status is not 200, or the response data is missing.
    */
-  async sttRequest(provider, sttSchema, { audioBuffer, audioFile }) {
+  async sttRequest(provider, sttSchema, { audioBuffer, audioFile, language }) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
@@ -243,10 +285,22 @@ class STTService {
     const audioReadStream = Readable.from(audioBuffer);
     audioReadStream.path = `audio.${fileExtension}`;
 
-    const [url, data, headers] = strategy.call(this, sttSchema, audioReadStream, audioFile);
+    const [url, data, headers] = strategy.call(
+      this,
+      sttSchema,
+      audioReadStream,
+      audioFile,
+      language,
+    );
+
+    const options = { headers };
+
+    if (process.env.PROXY) {
+      options.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+    }
 
     try {
-      const response = await axios.post(url, data, { headers });
+      const response = await axios.post(url, data, options);
 
       if (response.status !== 200) {
         throw new Error('Invalid response from the STT API');
@@ -258,7 +312,7 @@ class STTService {
 
       return response.data.text.trim();
     } catch (error) {
-      logger.error(`STT request failed for provider ${provider}:`, error);
+      logAxiosError({ message: `STT request failed for provider ${provider}:`, error });
       throw error;
     }
   }
@@ -284,10 +338,11 @@ class STTService {
 
     try {
       const [provider, sttSchema] = await this.getProviderSchema(req);
-      const text = await this.sttRequest(provider, sttSchema, { audioBuffer, audioFile });
+      const language = req.body?.language || '';
+      const text = await this.sttRequest(provider, sttSchema, { audioBuffer, audioFile, language });
       res.json({ text });
     } catch (error) {
-      logger.error('An error occurred while processing the audio:', error);
+      logAxiosError({ message: 'An error occurred while processing the audio:', error });
       res.sendStatus(500);
     } finally {
       try {

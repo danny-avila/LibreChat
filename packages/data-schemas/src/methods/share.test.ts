@@ -427,13 +427,14 @@ describe('Share Methods', () => {
       expect(privateResults.links[0].title).toBe('Private Share');
     });
 
-    test('should handle search with mocked meiliSearch', async () => {
+    test('should handle search with mocked meiliSearch and user filter', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
 
       // Mock meiliSearch method
-      Conversation.meiliSearch = jest.fn().mockResolvedValue({
+      const meiliSearchMock = jest.fn().mockResolvedValue({
         hits: [{ conversationId: 'conv1' }],
       });
+      Conversation.meiliSearch = meiliSearchMock;
 
       await SharedLink.create([
         {
@@ -464,6 +465,9 @@ describe('Share Methods', () => {
 
       expect(result.links).toHaveLength(1);
       expect(result.links[0].title).toBe('Matching Share');
+
+      // Verify that meiliSearch was called with the correct user filter
+      expect(meiliSearchMock).toHaveBeenCalledWith('search term', { filter: `user = "${userId}"` });
     });
 
     test('should handle empty results', async () => {
@@ -473,6 +477,98 @@ describe('Share Methods', () => {
       expect(result.links).toHaveLength(0);
       expect(result.hasNextPage).toBe(false);
       expect(result.nextCursor).toBeUndefined();
+    });
+
+    test('should only return shares from search results for the current user', async () => {
+      const userId1 = new mongoose.Types.ObjectId().toString();
+      const userId2 = new mongoose.Types.ObjectId().toString();
+
+      // Mock meiliSearch to simulate finding conversations from both users
+      const meiliSearchMock = jest.fn().mockImplementation((searchTerm, params) => {
+        // Simulate MeiliSearch filtering by user
+        const filter = params?.filter;
+        if (filter && filter.includes(userId1)) {
+          return Promise.resolve({
+            hits: [{ conversationId: 'conv1' }, { conversationId: 'conv3' }],
+          });
+        } else if (filter && filter.includes(userId2)) {
+          return Promise.resolve({ hits: [{ conversationId: 'conv2' }] });
+        }
+        // Without filter, would return all conversations (security issue)
+        return Promise.resolve({
+          hits: [
+            { conversationId: 'conv1' },
+            { conversationId: 'conv2' },
+            { conversationId: 'conv3' },
+          ],
+        });
+      });
+      Conversation.meiliSearch = meiliSearchMock;
+
+      // Create shares for different users
+      await SharedLink.create([
+        {
+          shareId: 'share1',
+          conversationId: 'conv1',
+          user: userId1,
+          title: 'User 1 Share',
+          isPublic: true,
+        },
+        {
+          shareId: 'share2',
+          conversationId: 'conv2',
+          user: userId2,
+          title: 'User 2 Share',
+          isPublic: true,
+        },
+        {
+          shareId: 'share3',
+          conversationId: 'conv3',
+          user: userId1,
+          title: 'Another User 1 Share',
+          isPublic: true,
+        },
+      ]);
+
+      // Search as userId1
+      const result1 = await shareMethods.getSharedLinks(
+        userId1,
+        undefined,
+        10,
+        true,
+        'createdAt',
+        'desc',
+        'search term',
+      );
+
+      // Should only get shares from conversations belonging to userId1
+      expect(result1.links).toHaveLength(2);
+      expect(result1.links.every((link) => link.title.includes('User 1'))).toBe(true);
+
+      // Verify correct filter was used
+      expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
+        filter: `user = "${userId1}"`,
+      });
+
+      // Search as userId2
+      const result2 = await shareMethods.getSharedLinks(
+        userId2,
+        undefined,
+        10,
+        true,
+        'createdAt',
+        'desc',
+        'search term',
+      );
+
+      // Should only get shares from conversations belonging to userId2
+      expect(result2.links).toHaveLength(1);
+      expect(result2.links[0].title).toBe('User 2 Share');
+
+      // Verify correct filter was used for second user
+      expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
+        filter: `user = "${userId2}"`,
+      });
     });
 
     test('should only return shares for the specified user', async () => {
@@ -837,6 +933,107 @@ describe('Share Methods', () => {
 
       const user3Shares = await SharedLink.find({ user: userId3 });
       expect(user3Shares).toHaveLength(1);
+    });
+  });
+
+  describe('deleteConvoSharedLink', () => {
+    test('should delete all shared links for a specific conversation', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId1 = 'conv-to-delete';
+      const conversationId2 = 'conv-to-keep';
+
+      await SharedLink.create([
+        { shareId: 'share1', conversationId: conversationId1, user: userId, isPublic: true },
+        { shareId: 'share2', conversationId: conversationId1, user: userId, isPublic: false },
+        { shareId: 'share3', conversationId: conversationId2, user: userId, isPublic: true },
+      ]);
+
+      const result = await shareMethods.deleteConvoSharedLink(userId, conversationId1);
+
+      expect(result.deletedCount).toBe(2);
+      expect(result.message).toContain('successfully');
+
+      const remainingShares = await SharedLink.find({});
+      expect(remainingShares).toHaveLength(1);
+      expect(remainingShares[0].conversationId).toBe(conversationId2);
+    });
+
+    test('should only delete shares for the specified user and conversation', async () => {
+      const userId1 = new mongoose.Types.ObjectId().toString();
+      const userId2 = new mongoose.Types.ObjectId().toString();
+      const conversationId = 'shared-conv';
+
+      await SharedLink.create([
+        { shareId: 'share1', conversationId, user: userId1, isPublic: true },
+        { shareId: 'share2', conversationId, user: userId2, isPublic: true },
+        { shareId: 'share3', conversationId: 'other-conv', user: userId1, isPublic: true },
+      ]);
+
+      const result = await shareMethods.deleteConvoSharedLink(userId1, conversationId);
+
+      expect(result.deletedCount).toBe(1);
+
+      const remainingShares = await SharedLink.find({});
+      expect(remainingShares).toHaveLength(2);
+      expect(
+        remainingShares.some((s) => s.user === userId2 && s.conversationId === conversationId),
+      ).toBe(true);
+      expect(
+        remainingShares.some((s) => s.user === userId1 && s.conversationId === 'other-conv'),
+      ).toBe(true);
+    });
+
+    test('should handle when no shares exist for the conversation', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = 'nonexistent-conv';
+
+      const result = await shareMethods.deleteConvoSharedLink(userId, conversationId);
+
+      expect(result.deletedCount).toBe(0);
+      expect(result.message).toContain('successfully');
+    });
+
+    test('should throw error when userId is missing', async () => {
+      await expect(shareMethods.deleteConvoSharedLink('', 'conv123')).rejects.toThrow(
+        'Missing required parameters',
+      );
+    });
+
+    test('should throw error when conversationId is missing', async () => {
+      await expect(shareMethods.deleteConvoSharedLink('user123', '')).rejects.toThrow(
+        'Missing required parameters',
+      );
+    });
+
+    test('should delete multiple shared links for same conversation', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = 'conv-with-many-shares';
+
+      await SharedLink.create([
+        { shareId: 'share1', conversationId, user: userId, isPublic: true },
+        {
+          shareId: 'share2',
+          conversationId,
+          user: userId,
+          isPublic: true,
+          targetMessageId: 'msg1',
+        },
+        {
+          shareId: 'share3',
+          conversationId,
+          user: userId,
+          isPublic: true,
+          targetMessageId: 'msg2',
+        },
+        { shareId: 'share4', conversationId, user: userId, isPublic: false },
+      ]);
+
+      const result = await shareMethods.deleteConvoSharedLink(userId, conversationId);
+
+      expect(result.deletedCount).toBe(4);
+
+      const remainingShares = await SharedLink.find({ conversationId, user: userId });
+      expect(remainingShares).toHaveLength(0);
     });
   });
 

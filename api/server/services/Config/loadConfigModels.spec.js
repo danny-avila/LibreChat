@@ -1,8 +1,11 @@
-const { fetchModels } = require('~/server/services/ModelService');
+const { fetchModels } = require('@librechat/api');
 const loadConfigModels = require('./loadConfigModels');
 const { getAppConfig } = require('./app');
 
-jest.mock('~/server/services/ModelService');
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  fetchModels: jest.fn(),
+}));
 jest.mock('./app');
 
 const exampleConfig = {
@@ -254,8 +257,8 @@ describe('loadConfigModels', () => {
     // For groq and ollama, since the apiKey is "user_provided", models should not be fetched
     // Depending on your implementation's behavior regarding "default" models without fetching,
     // you may need to adjust the following assertions:
-    expect(result.groq).toBe(exampleConfig.endpoints.custom[2].models.default);
-    expect(result.ollama).toBe(exampleConfig.endpoints.custom[3].models.default);
+    expect(result.groq).toEqual(exampleConfig.endpoints.custom[2].models.default);
+    expect(result.ollama).toEqual(exampleConfig.endpoints.custom[3].models.default);
 
     // Verifying fetchModels was not called for groq and ollama
     expect(fetchModels).not.toHaveBeenCalledWith(

@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, memo } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { type TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
@@ -7,11 +8,11 @@ import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
+import { fontSizeAtom } from '~/store/fontSize';
 import { MessageContext } from '~/Providers';
-import { useMessageActions } from '~/hooks';
-import { cn, logger } from '~/utils';
+import { useLocalize, useMessageActions } from '~/hooks';
+import { cn, getMessageAriaLabel, logger } from '~/utils';
 import store from '~/store';
 
 type MessageRenderProps = {
@@ -36,6 +37,7 @@ const MessageRender = memo(
     setCurrentEditId,
     isSubmittingFamily = false,
   }: MessageRenderProps) => {
+    const localize = useLocalize();
     const {
       ask,
       edit,
@@ -58,8 +60,8 @@ const MessageRender = memo(
       isMultiMessage,
       setCurrentEditId,
     });
+    const fontSize = useAtomValue(fontSizeAtom);
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
-    const fontSize = useRecoilValue(store.fontSize);
 
     const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
     const hasNoChildren = !(msg?.children?.length ?? 0);
@@ -70,6 +72,9 @@ const MessageRender = memo(
     const isLatestMessage = msg?.messageId === latestMessage?.messageId;
     const showCardRender = isLast && !isSubmittingFamily && isCard;
     const isLatestCard = isCard && !isSubmittingFamily && isLatestMessage;
+
+    /** Only pass isSubmitting to the latest message to prevent unnecessary re-renders */
+    const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
     const iconData: TMessageIcon = useMemo(
       () => ({
@@ -94,7 +99,10 @@ const MessageRender = memo(
       () =>
         showCardRender && !isLatestMessage
           ? () => {
-              logger.log(`Message Card click: Setting ${msg?.messageId} as latest message`);
+              logger.log(
+                'latest_message',
+                `Message Card click: Setting ${msg?.messageId} as latest message`,
+              );
               logger.dir(msg);
               setLatestMessage(msg!);
             }
@@ -123,7 +131,7 @@ const MessageRender = memo(
     return (
       <div
         id={msg.messageId}
-        aria-label={`message-${msg.depth}-${msg.messageId}`}
+        aria-label={getMessageAriaLabel(msg, localize)}
         className={cn(
           baseClasses.common,
           isCard ? baseClasses.card : baseClasses.chat,
@@ -166,9 +174,10 @@ const MessageRender = memo(
                   messageId: msg.messageId,
                   conversationId: conversation?.conversationId,
                   isExpanded: false,
+                  isSubmitting: effectiveIsSubmitting,
+                  isLatestMessage,
                 }}
               >
-                {msg.plugin && <Plugin plugin={msg.plugin} />}
                 <MessageContent
                   ask={ask}
                   edit={edit}
@@ -177,7 +186,7 @@ const MessageRender = memo(
                   message={msg}
                   enterEdit={enterEdit}
                   error={!!(msg.error ?? false)}
-                  isSubmitting={isSubmitting}
+                  isSubmitting={effectiveIsSubmitting}
                   unfinished={msg.unfinished ?? false}
                   isCreatedByUser={msg.isCreatedByUser ?? true}
                   siblingIdx={siblingIdx ?? 0}
@@ -186,7 +195,7 @@ const MessageRender = memo(
               </MessageContext.Provider>
             </div>
 
-            {hasNoChildren && (isSubmittingFamily === true || isSubmitting) ? (
+            {hasNoChildren && (isSubmittingFamily === true || effectiveIsSubmitting) ? (
               <PlaceholderRow isCard={isCard} />
             ) : (
               <SubRow classes="text-xs">

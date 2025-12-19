@@ -7,6 +7,7 @@ import CategorySelector from '~/components/Prompts/Groups/CategorySelector';
 import VariablesDropdown from '~/components/Prompts/VariablesDropdown';
 import PromptVariables from '~/components/Prompts/PromptVariables';
 import Description from '~/components/Prompts/Description';
+import { usePromptGroupsContext } from '~/Providers';
 import { useLocalize, useHasAccess } from '~/hooks';
 import Command from '~/components/Prompts/Command';
 import { useCreatePrompt } from '~/data-provider';
@@ -37,10 +38,12 @@ const CreatePromptForm = ({
 }) => {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const hasAccess = useHasAccess({
+  const { hasAccess: hasUseAccess } = usePromptGroupsContext();
+  const hasCreateAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
     permission: Permissions.CREATE,
   });
+  const hasAccess = hasUseAccess && hasCreateAccess;
 
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout>;
@@ -101,6 +104,7 @@ const CreatePromptForm = ({
   return (
     <FormProvider {...methods}>
       <form onSubmit={handleSubmit(onSubmit)} className="w-full px-4 py-2">
+        <h1 className="sr-only">{localize('com_ui_create_prompt_page')}</h1>
         <div className="mb-1 flex flex-col items-center justify-between font-bold sm:text-xl md:mb-0 md:text-2xl">
           <div className="flex w-full flex-col items-center justify-between sm:flex-row">
             <Controller
@@ -108,14 +112,22 @@ const CreatePromptForm = ({
               control={control}
               rules={{ required: localize('com_ui_prompt_name_required') }}
               render={({ field }) => (
-                <div className="mb-1 flex items-center md:mb-0">
+                <div className="relative mb-1 flex flex-col md:mb-0">
                   <Input
                     {...field}
+                    id="prompt-name"
                     type="text"
-                    className="mr-2 w-full border border-border-medium p-2 text-2xl text-text-primary placeholder:text-text-tertiary dark:placeholder:text-text-secondary"
-                    placeholder={`${localize('com_ui_prompt_name')}*`}
+                    className="peer mr-2 w-full border border-border-medium p-2 text-2xl text-text-primary"
+                    placeholder=" "
                     tabIndex={0}
+                    aria-label={localize('com_ui_prompt_name')}
                   />
+                  <label
+                    htmlFor="prompt-name"
+                    className="pointer-events-none absolute -top-1 left-3 origin-[0] translate-y-3 scale-100 rounded bg-white px-1 text-base text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75 dark:bg-gray-850"
+                  >
+                    {localize('com_ui_prompt_name')}*
+                  </label>
                   <div
                     className={cn(
                       'mt-1 w-56 text-sm text-red-500',
@@ -148,6 +160,7 @@ const CreatePromptForm = ({
                       className="w-full rounded border border-border-medium px-2 py-1 focus:outline-none dark:bg-transparent dark:text-gray-200"
                       minRows={6}
                       tabIndex={0}
+                      aria-label={localize('com_ui_prompt_input_field')}
                     />
                     <div
                       className={`mt-1 text-sm text-red-500 ${

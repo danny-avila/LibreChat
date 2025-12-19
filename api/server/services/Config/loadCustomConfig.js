@@ -5,14 +5,12 @@ const keyBy = require('lodash/keyBy');
 const { loadYaml } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
-  CacheKeys,
   configSchema,
   paramSettings,
   EImageOutputType,
   agentParamSettings,
   validateSettingDefinitions,
 } = require('librechat-data-provider');
-const getLogStores = require('~/cache/getLogStores');
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const defaultConfigPath = path.resolve(projectRoot, 'librechat.yaml');
@@ -87,26 +85,32 @@ Please specify a correct \`imageOutputType\` value (case-sensitive).
     let errorMessage = `Invalid custom config file at ${configPath}:
 ${JSON.stringify(result.error, null, 2)}`;
 
-    if (i === 0) {
-      logger.error(errorMessage);
-      const speechError = result.error.errors.find(
-        (err) =>
-          err.code === 'unrecognized_keys' &&
-          (err.message?.includes('stt') || err.message?.includes('tts')),
-      );
+    logger.error(errorMessage);
+    const speechError = result.error.errors.find(
+      (err) =>
+        err.code === 'unrecognized_keys' &&
+        (err.message?.includes('stt') || err.message?.includes('tts')),
+    );
 
-      if (speechError) {
-        logger.warn(`
+    if (speechError) {
+      logger.warn(`
 The Speech-to-text and Text-to-speech configuration format has recently changed.
 If you're getting this error, please refer to the latest documentation:
 
 https://www.librechat.ai/docs/configuration/stt_tts`);
-      }
-
-      i++;
     }
 
-    return null;
+    if (process.env.CONFIG_BYPASS_VALIDATION === 'true') {
+      logger.warn(
+        'CONFIG_BYPASS_VALIDATION is enabled. Continuing with default configuration despite validation errors.',
+      );
+      return null;
+    }
+
+    logger.error(
+      'Exiting due to invalid configuration. Set CONFIG_BYPASS_VALIDATION=true to bypass this check.',
+    );
+    process.exit(1);
   } else {
     if (printConfig) {
       logger.info('Custom config file loaded:');
@@ -118,11 +122,6 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
   (customConfig.endpoints?.custom ?? [])
     .filter((endpoint) => endpoint.customParams)
     .forEach((endpoint) => parseCustomParams(endpoint.name, endpoint.customParams));
-
-  if (customConfig.cache) {
-    const cache = getLogStores(CacheKeys.STATIC_CONFIG);
-    await cache.set(CacheKeys.LIBRECHAT_YAML_CONFIG, customConfig);
-  }
 
   if (result.data.modelSpecs) {
     customConfig.modelSpecs = result.data.modelSpecs;

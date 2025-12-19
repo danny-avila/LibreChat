@@ -14,6 +14,7 @@ import { logger, getDefaultAgentFormValues } from '~/utils';
 import { useLocalize, useSetIndexOptions } from '~/hooks';
 import { useDeleteAgentMutation } from '~/data-provider';
 import { useChatContext } from '~/Providers';
+import { isEphemeralAgent } from '~/common';
 
 export default function DeleteButton({
   agent_id,
@@ -76,7 +77,7 @@ export default function DeleteButton({
     },
   });
 
-  if (!agent_id) {
+  if (isEphemeralAgent(agent_id)) {
     return null;
   }
 
@@ -86,7 +87,7 @@ export default function DeleteButton({
         <Button
           size="sm"
           variant="outline"
-          aria-label={localize('com_ui_delete') + ' ' + localize('com_ui_agent')}
+          aria-label={localize('com_ui_delete_agent')}
           type="button"
         >
           <div className="flex w-full items-center justify-center gap-2 text-red-500">
@@ -95,7 +96,7 @@ export default function DeleteButton({
         </Button>
       </OGDialogTrigger>
       <OGDialogTemplate
-        title={localize('com_ui_delete') + ' ' + localize('com_ui_agent')}
+        title={localize('com_ui_delete_agent')}
         className="max-w-[450px]"
         main={
           <>

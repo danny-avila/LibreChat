@@ -29,14 +29,23 @@ const toggleSwitchConfigs = [
     hoverCardText: undefined,
     key: 'hideSidePanel',
   },
+  {
+    stateAtom: store.keepScreenAwake,
+    localizationKey: 'com_nav_keep_screen_awake',
+    switchId: 'keepScreenAwake',
+    hoverCardText: undefined,
+    key: 'keepScreenAwake',
+  },
 ];
 
 export const ThemeSelector = ({
   theme,
   onChange,
+  portal = true,
 }: {
   theme: string;
   onChange: (value: string) => void;
+  portal?: boolean;
 }) => {
   const localize = useLocalize();
 
@@ -46,9 +55,11 @@ export const ThemeSelector = ({
     { value: 'light', label: localize('com_nav_theme_light') },
   ];
 
+  const labelId = 'theme-selector-label';
+
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_theme')}</div>
+      <div id={labelId}>{localize('com_nav_theme')}</div>
 
       <Dropdown
         value={theme}
@@ -57,6 +68,8 @@ export const ThemeSelector = ({
         sizeClasses="w-[180px]"
         testId="theme-selector"
         className="z-50"
+        aria-labelledby={labelId}
+        portal={portal}
       />
     </div>
   );
@@ -65,9 +78,11 @@ export const ThemeSelector = ({
 export const LangSelector = ({
   langcode,
   onChange,
+  portal = true,
 }: {
   langcode: string;
   onChange: (value: string) => void;
+  portal?: boolean;
 }) => {
   const localize = useLocalize();
 
@@ -112,16 +127,20 @@ export const LangSelector = ({
     { value: 'uk-UA', label: localize('com_nav_lang_ukrainian') },
   ];
 
+  const labelId = 'language-selector-label';
+
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_language')}</div>
+      <div id={labelId}>{localize('com_nav_language')}</div>
 
       <Dropdown
         value={langcode}
         onChange={onChange}
-        sizeClasses="[--anchor-max-height:256px]"
+        sizeClasses="[--anchor-max-height:256px] max-h-[60vh]"
         options={languageOptions}
         className="z-50"
+        aria-labelledby={labelId}
+        portal={portal}
       />
     </div>
   );

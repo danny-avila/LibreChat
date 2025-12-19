@@ -1,4 +1,5 @@
-import { useState, useMemo, memo } from 'react';
+import { useState, useMemo, memo, useRef } from 'react';
+import { PermissionBits, ResourceType } from 'librechat-data-provider';
 import { Menu as MenuIcon, Edit as EditIcon, EarthIcon, TextSearch } from 'lucide-react';
 import {
   DropdownMenu,
@@ -7,7 +8,6 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@librechat/client';
-import { PermissionBits } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useLocalize, useSubmitMessage, useCustomLink, useResourcePermissions } from '~/hooks';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
@@ -34,8 +34,10 @@ function ChatGroupItem({
   );
 
   // Check permissions for the promptGroup
-  const { hasPermission } = useResourcePermissions('promptGroup', group._id || '');
+  const { hasPermission } = useResourcePermissions(ResourceType.PROMPTGROUP, group._id || '');
   const canEdit = hasPermission(PermissionBits.EDIT);
+
+  const triggerButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const onCardClick: React.MouseEventHandler<HTMLButtonElement> = () => {
     const text = group.productionPrompt?.prompt;
@@ -53,28 +55,33 @@ function ChatGroupItem({
 
   return (
     <>
-      <ListCard
-        name={group.name}
-        category={group.category ?? ''}
-        onClick={onCardClick}
-        snippet={
-          typeof group.oneliner === 'string' && group.oneliner.length > 0
-            ? group.oneliner
-            : (group.productionPrompt?.prompt ?? '')
-        }
-      >
-        <div className="flex flex-row items-center gap-2">
-          {groupIsGlobal === true && (
-            <EarthIcon className="icon-md text-green-400" aria-label="Global prompt group" />
-          )}
+      <div className="relative my-2 items-stretch justify-between rounded-xl border border-border-light px-1 shadow-sm transition-all duration-300 ease-in-out hover:bg-surface-tertiary hover:shadow-lg">
+        <ListCard
+          name={group.name}
+          category={group.category ?? ''}
+          onClick={onCardClick}
+          snippet={
+            typeof group.oneliner === 'string' && group.oneliner.length > 0
+              ? group.oneliner
+              : (group.productionPrompt?.prompt ?? '')
+          }
+        ></ListCard>
+        {groupIsGlobal === true && (
+          <div className="absolute right-14 top-[16px]">
+            <EarthIcon
+              className="icon-md text-green-400"
+              aria-label={localize('com_ui_sr_global_prompt')}
+            />
+          </div>
+        )}
+        <div className="absolute right-0 top-0 mr-1 mt-2.5 items-start pl-2">
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button
+                ref={triggerButtonRef}
                 id={`prompt-actions-${group._id}`}
-                aria-label={`${group.name} - Actions Menu`}
-                aria-expanded="false"
-                aria-controls={`prompt-menu-${group._id}`}
-                aria-haspopup="menu"
+                type="button"
+                aria-label={localize('com_ui_sr_actions_menu', { 0: group.name })}
                 onClick={(e) => {
                   e.stopPropagation();
                 }}
@@ -83,14 +90,9 @@ function ChatGroupItem({
                     e.stopPropagation();
                   }
                 }}
-                className="z-50 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-medium bg-transparent p-0 text-sm font-medium transition-all duration-300 ease-in-out hover:border-border-heavy hover:bg-surface-hover focus:border-border-heavy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+                className="z-50 mr-2 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-medium bg-transparent p-0 text-sm font-medium transition-all duration-300 ease-in-out hover:border-border-heavy hover:bg-surface-hover focus:border-border-heavy focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
               >
                 <MenuIcon className="icon-md text-text-secondary" aria-hidden="true" />
-                <span className="sr-only">
-                  {localize('com_ui_sr_actions_menu', { 0: group.name }) +
-                    ' ' +
-                    localize('com_ui_prompt')}
-                </span>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -98,30 +100,35 @@ function ChatGroupItem({
               aria-label={`Available actions for ${group.name}`}
               className="z-50 w-fit rounded-xl"
               collisionPadding={2}
-              align="end"
+              align="start"
             >
               <DropdownMenuItem
-                role="menuitem"
                 onClick={(e) => {
                   e.stopPropagation();
                   setPreviewDialogOpen(true);
                 }}
-                className="w-full cursor-pointer rounded-lg text-text-secondary hover:bg-surface-hover focus:bg-surface-hover disabled:cursor-not-allowed"
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                }}
+                className="w-full cursor-pointer rounded-lg text-text-primary hover:bg-surface-hover focus:bg-surface-hover disabled:cursor-not-allowed"
               >
-                <TextSearch className="mr-2 h-4 w-4" aria-hidden="true" />
+                <TextSearch className="mr-2 h-4 w-4 text-text-primary" aria-hidden="true" />
                 <span>{localize('com_ui_preview')}</span>
               </DropdownMenuItem>
               {canEdit && (
                 <DropdownMenuGroup>
                   <DropdownMenuItem
                     disabled={!canEdit}
-                    className="cursor-pointer rounded-lg text-text-secondary hover:bg-surface-hover focus:bg-surface-hover disabled:cursor-not-allowed"
+                    className="cursor-pointer rounded-lg text-text-primary hover:bg-surface-hover focus:bg-surface-hover disabled:cursor-not-allowed"
                     onClick={(e) => {
                       e.stopPropagation();
                       onEditClick(e);
                     }}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                    }}
                   >
-                    <EditIcon className="mr-2 h-4 w-4" aria-hidden="true" />
+                    <EditIcon className="mr-2 h-4 w-4 text-text-primary" aria-hidden="true" />
                     <span>{localize('com_ui_edit')}</span>
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
@@ -129,8 +136,17 @@ function ChatGroupItem({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </ListCard>
-      <PreviewPrompt group={group} open={isPreviewDialogOpen} onOpenChange={setPreviewDialogOpen} />
+      </div>
+      <PreviewPrompt
+        group={group}
+        open={isPreviewDialogOpen}
+        onOpenChange={setPreviewDialogOpen}
+        onCloseAutoFocus={() => {
+          requestAnimationFrame(() => {
+            triggerButtonRef.current?.focus({ preventScroll: true });
+          });
+        }}
+      />
       <VariableDialog
         open={isVariableDialogOpen}
         onClose={() => setVariableDialogOpen(false)}

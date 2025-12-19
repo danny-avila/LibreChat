@@ -11,9 +11,32 @@ const {
   getProjectByName,
 } = require('./Project');
 const { removeAllPermissions } = require('~/server/services/PermissionService');
-const { getCachedTools } = require('~/server/services/Config');
+const { getMCPServerTools } = require('~/server/services/Config');
+const { Agent, AclEntry } = require('~/db/models');
 const { getActions } = require('./Action');
-const { Agent } = require('~/db/models');
+
+/**
+ * Extracts unique MCP server names from tools array
+ * Tools format: "toolName_mcp_serverName" or "sys__server__sys_mcp_serverName"
+ * @param {string[]} tools - Array of tool identifiers
+ * @returns {string[]} Array of unique MCP server names
+ */
+const extractMCPServerNames = (tools) => {
+  if (!tools || !Array.isArray(tools)) {
+    return [];
+  }
+  const serverNames = new Set();
+  for (const tool of tools) {
+    if (!tool || !tool.includes(mcp_delimiter)) {
+      continue;
+    }
+    const parts = tool.split(mcp_delimiter);
+    if (parts.length >= 2) {
+      serverNames.add(parts[parts.length - 1]);
+    }
+  }
+  return Array.from(serverNames);
+};
 
 /**
  * Create an agent with the provided data.
@@ -34,6 +57,7 @@ const createAgent = async (agentData) => {
       },
     ],
     category: agentData.category || 'general',
+    mcpServerNames: extractMCPServerNames(agentData.tools),
   };
 
   return (await Agent.create(initialAgentData)).toObject();
@@ -50,52 +74,67 @@ const createAgent = async (agentData) => {
 const getAgent = async (searchParameter) => await Agent.findOne(searchParameter).lean();
 
 /**
+ * Get multiple agent documents based on the provided search parameters.
+ *
+ * @param {Object} searchParameter - The search parameters to find agents.
+ * @returns {Promise<Agent[]>} Array of agent documents as plain objects.
+ */
+const getAgents = async (searchParameter) => await Agent.find(searchParameter).lean();
+
+/**
  * Load an agent based on the provided ID
  *
  * @param {Object} params
  * @param {ServerRequest} params.req
+ * @param {string} params.spec
  * @param {string} params.agent_id
  * @param {string} params.endpoint
  * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _m }) => {
+const loadEphemeralAgent = async ({ req, spec, agent_id, endpoint, model_parameters: _m }) => {
   const { model, ...model_parameters } = _m;
-  /** @type {Record<string, FunctionTool>} */
-  const availableTools = await getCachedTools({ userId: req.user.id, includeGlobal: true });
+  const modelSpecs = req.config?.modelSpecs?.list;
+  /** @type {TModelSpec | null} */
+  let modelSpec = null;
+  if (spec != null && spec !== '') {
+    modelSpec = modelSpecs?.find((s) => s.name === spec) || null;
+  }
   /** @type {TEphemeralAgent | null} */
   const ephemeralAgent = req.body.ephemeralAgent;
   const mcpServers = new Set(ephemeralAgent?.mcp);
+  const userId = req.user?.id; // note: userId cannot be undefined at runtime
+  if (modelSpec?.mcpServers) {
+    for (const mcpServer of modelSpec.mcpServers) {
+      mcpServers.add(mcpServer);
+    }
+  }
   /** @type {string[]} */
   const tools = [];
-  if (ephemeralAgent?.execute_code === true) {
+  if (ephemeralAgent?.execute_code === true || modelSpec?.executeCode === true) {
     tools.push(Tools.execute_code);
   }
-  if (ephemeralAgent?.file_search === true) {
+  if (ephemeralAgent?.file_search === true || modelSpec?.fileSearch === true) {
     tools.push(Tools.file_search);
   }
-  if (ephemeralAgent?.web_search === true) {
+  if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
     tools.push(Tools.web_search);
   }
 
   const addedServers = new Set();
   if (mcpServers.size > 0) {
-    for (const toolName of Object.keys(availableTools)) {
-      if (!toolName.includes(mcp_delimiter)) {
-        continue;
-      }
-      const mcpServer = toolName.split(mcp_delimiter)?.[1];
-      if (mcpServer && mcpServers.has(mcpServer)) {
-        addedServers.add(mcpServer);
-        tools.push(toolName);
-      }
-    }
-
     for (const mcpServer of mcpServers) {
       if (addedServers.has(mcpServer)) {
         continue;
       }
-      tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
+      const serverTools = await getMCPServerTools(userId, mcpServer);
+      if (!serverTools) {
+        tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
+        addedServers.add(mcpServer);
+        continue;
+      }
+      tools.push(...Object.keys(serverTools));
+      addedServers.add(mcpServer);
     }
   }
 
@@ -120,17 +159,18 @@ const loadEphemeralAgent = async ({ req, agent_id, endpoint, model_parameters: _
  *
  * @param {Object} params
  * @param {ServerRequest} params.req
+ * @param {string} params.spec
  * @param {string} params.agent_id
  * @param {string} params.endpoint
  * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const loadAgent = async ({ req, agent_id, endpoint, model_parameters }) => {
+const loadAgent = async ({ req, spec, agent_id, endpoint, model_parameters }) => {
   if (!agent_id) {
     return null;
   }
   if (agent_id === EPHEMERAL_AGENT_ID) {
-    return await loadEphemeralAgent({ req, agent_id, endpoint, model_parameters });
+    return await loadEphemeralAgent({ req, spec, agent_id, endpoint, model_parameters });
   }
   const agent = await getAgent({
     id: agent_id,
@@ -338,6 +378,13 @@ const updateAgent = async (searchParameter, updateData, options = {}) => {
     } = currentAgent.toObject();
     const { $push, $pull, $addToSet, ...directUpdates } = updateData;
 
+    // Sync mcpServerNames when tools are updated
+    if (directUpdates.tools !== undefined) {
+      const mcpServerNames = extractMCPServerNames(directUpdates.tools);
+      directUpdates.mcpServerNames = mcpServerNames;
+      updateData.mcpServerNames = mcpServerNames; // Also update the original updateData
+    }
+
     let actionsHash = null;
 
     // Generate actions hash if agent has actions
@@ -521,6 +568,37 @@ const deleteAgent = async (searchParameter) => {
     });
   }
   return agent;
+};
+
+/**
+ * Deletes all agents created by a specific user.
+ * @param {string} userId - The ID of the user whose agents should be deleted.
+ * @returns {Promise<void>} A promise that resolves when all user agents have been deleted.
+ */
+const deleteUserAgents = async (userId) => {
+  try {
+    const userAgents = await getAgents({ author: userId });
+
+    if (userAgents.length === 0) {
+      return;
+    }
+
+    const agentIds = userAgents.map((agent) => agent.id);
+    const agentObjectIds = userAgents.map((agent) => agent._id);
+
+    for (const agentId of agentIds) {
+      await removeAgentFromAllProjects(agentId);
+    }
+
+    await AclEntry.deleteMany({
+      resourceType: ResourceType.AGENT,
+      resourceId: { $in: agentObjectIds },
+    });
+
+    await Agent.deleteMany({ author: userId });
+  } catch (error) {
+    logger.error('[deleteUserAgents] General error:', error);
+  }
 };
 
 /**
@@ -835,10 +913,12 @@ const countPromotedAgents = async () => {
 
 module.exports = {
   getAgent,
+  getAgents,
   loadAgent,
   createAgent,
   updateAgent,
   deleteAgent,
+  deleteUserAgents,
   getListAgents,
   revertAgentVersion,
   updateAgentProjects,

@@ -21,7 +21,10 @@ export class FlowStateManager<T = unknown> {
     this.ttl = ttl;
     this.keyv = store;
     this.intervals = new Set();
-    this.setupCleanupHandlers();
+
+    if (!ci) {
+      this.setupCleanupHandlers();
+    }
   }
 
   private setupCleanupHandlers() {
@@ -40,6 +43,49 @@ export class FlowStateManager<T = unknown> {
 
   private getFlowKey(flowId: string, type: string): string {
     return `${type}:${flowId}`;
+  }
+
+  /**
+   * Normalizes an expiration timestamp to milliseconds.
+   * Detects whether the input is in seconds or milliseconds based on magnitude.
+   * Timestamps below 10 billion are assumed to be in seconds (valid until ~2286).
+   * @param timestamp - The expiration timestamp (in seconds or milliseconds)
+   * @returns The timestamp normalized to milliseconds
+   */
+  private normalizeExpirationTimestamp(timestamp: number): number {
+    const SECONDS_THRESHOLD = 1e10;
+    if (timestamp < SECONDS_THRESHOLD) {
+      return timestamp * 1000;
+    }
+    return timestamp;
+  }
+
+  /**
+   * Checks if a flow's token has expired based on its expires_at field
+   * @param flowState - The flow state to check
+   * @returns true if the token has expired, false otherwise (including if no expires_at exists)
+   */
+  private isTokenExpired(flowState: FlowState<T> | undefined): boolean {
+    if (!flowState?.result) {
+      return false;
+    }
+
+    if (typeof flowState.result !== 'object') {
+      return false;
+    }
+
+    if (!('expires_at' in flowState.result)) {
+      return false;
+    }
+
+    const expiresAt = (flowState.result as { expires_at: unknown }).expires_at;
+
+    if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
+      return false;
+    }
+
+    const normalizedExpiresAt = this.normalizeExpirationTimestamp(expiresAt);
+    return normalizedExpiresAt < Date.now();
   }
 
   /**
@@ -74,7 +120,7 @@ export class FlowStateManager<T = unknown> {
       createdAt: Date.now(),
     };
 
-    logger.debug('Creating initial flow state:', flowKey);
+    logger.debug(`[${flowKey}] Creating initial flow state`);
     await this.keyv.set(flowKey, initialState, this.ttl);
     return this.monitorFlow(flowKey, type, signal);
   }
@@ -151,7 +197,23 @@ export class FlowStateManager<T = unknown> {
     const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
 
     if (!flowState) {
+      logger.warn('[FlowStateManager] Cannot complete flow - flow state not found', {
+        flowId,
+        type,
+      });
       return false;
+    }
+
+    /** Prevent duplicate completion */
+    if (flowState.status === 'COMPLETED') {
+      logger.debug(
+        '[FlowStateManager] Flow already completed, skipping to prevent duplicate completion',
+        {
+          flowId,
+          type,
+        },
+      );
+      return true;
     }
 
     const updatedState: FlowState<T> = {
@@ -162,7 +224,53 @@ export class FlowStateManager<T = unknown> {
     };
 
     await this.keyv.set(flowKey, updatedState, this.ttl);
+
+    logger.debug('[FlowStateManager] Flow completed successfully', {
+      flowId,
+      type,
+    });
+
     return true;
+  }
+
+  /**
+   * Checks if a flow is stale based on its age and status
+   * @param flowId - The flow identifier
+   * @param type - The flow type
+   * @param staleThresholdMs - Age in milliseconds after which a non-pending flow is considered stale (default: 2 minutes)
+   * @returns Object with isStale boolean and age in milliseconds
+   */
+  async isFlowStale(
+    flowId: string,
+    type: string,
+    staleThresholdMs: number = 2 * 60 * 1000,
+  ): Promise<{ isStale: boolean; age: number; status?: string }> {
+    const flowKey = this.getFlowKey(flowId, type);
+    const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+
+    if (!flowState) {
+      return { isStale: false, age: 0 };
+    }
+
+    if (flowState.status === 'PENDING') {
+      return { isStale: false, age: 0, status: flowState.status };
+    }
+
+    const completedAt = flowState.completedAt || flowState.failedAt;
+    const createdAt = flowState.createdAt;
+
+    let flowAge = 0;
+    if (completedAt) {
+      flowAge = Date.now() - completedAt;
+    } else if (createdAt) {
+      flowAge = Date.now() - createdAt;
+    }
+
+    return {
+      isStale: flowAge > staleThresholdMs,
+      age: flowAge,
+      status: flowState.status,
+    };
   }
 
   /**
@@ -210,16 +318,16 @@ export class FlowStateManager<T = unknown> {
   ): Promise<T> {
     const flowKey = this.getFlowKey(flowId, type);
     let existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
-    if (existingState) {
-      logger.debug(`[${flowKey}] Flow already exists`);
+    if (existingState && !this.isTokenExpired(existingState)) {
+      logger.debug(`[${flowKey}] Flow already exists with valid token`);
       return this.monitorFlow(flowKey, type, signal);
     }
 
     await new Promise((resolve) => setTimeout(resolve, 250));
 
     existingState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
-    if (existingState) {
-      logger.debug(`[${flowKey}] Flow exists on 2nd check`);
+    if (existingState && !this.isTokenExpired(existingState)) {
+      logger.debug(`[${flowKey}] Flow exists on 2nd check with valid token`);
       return this.monitorFlow(flowKey, type, signal);
     }
 
@@ -239,6 +347,21 @@ export class FlowStateManager<T = unknown> {
     } catch (error) {
       await this.failFlow(flowId, type, error instanceof Error ? error : new Error(String(error)));
       throw error;
+    }
+  }
+
+  /**
+   * Deletes a flow state
+   */
+  async deleteFlow(flowId: string, type: string): Promise<boolean> {
+    const flowKey = this.getFlowKey(flowId, type);
+    try {
+      await this.keyv.delete(flowKey);
+      logger.debug(`[${flowKey}] Flow deleted`);
+      return true;
+    } catch (error) {
+      logger.error(`[${flowKey}] Error deleting flow:`, error);
+      return false;
     }
   }
 }

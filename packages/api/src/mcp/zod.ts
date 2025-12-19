@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { JsonSchemaType, ConvertJsonSchemaToZodOptions } from '~/types';
+import type { JsonSchemaType, ConvertJsonSchemaToZodOptions } from '@librechat/data-schemas';
 
 function isEmptyObjectSchema(jsonSchema?: JsonSchemaType): boolean {
   return (
@@ -350,7 +350,7 @@ export function convertJsonSchemaToZod(
     } else {
       zodSchema = z.string();
     }
-  } else if (schema.type === 'number') {
+  } else if (schema.type === 'number' || schema.type === 'integer' || schema.type === 'float') {
     zodSchema = z.number();
   } else if (schema.type === 'boolean') {
     zodSchema = z.boolean();

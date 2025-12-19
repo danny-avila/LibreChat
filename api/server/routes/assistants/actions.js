@@ -1,12 +1,12 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
+const { isActionDomainAllowed } = require('@librechat/api');
 const { actionDelimiter, EModelEndpoint, removeNullishValues } = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { updateAssistantDoc, getAssistant } = require('~/models/Assistant');
-const { isActionDomainAllowed } = require('~/server/services/domains');
 
 const router = express.Router();
 
@@ -154,6 +154,7 @@ router.post('/:assistant_id', async (req, res) => {
 router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
   try {
     const { assistant_id, action_id, model } = req.params;
+    req.body = req.body || {}; // Express 5: ensure req.body exists
     req.body.model = model;
     const { openai } = await getOpenAIClient({ req, res });
 

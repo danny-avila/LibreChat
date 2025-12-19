@@ -167,12 +167,6 @@
  */
 
 /**
- * @exports ConversationSummaryBufferMemory
- * @typedef {import('langchain/memory').ConversationSummaryBufferMemory} ConversationSummaryBufferMemory
- * @memberof typedefs
- */
-
-/**
  * @exports UsageMetadata
  * @typedef {import('@langchain/core/messages').UsageMetadata} UsageMetadata
  * @memberof typedefs
@@ -873,6 +867,13 @@
  * @typedef {import('@librechat/data-schemas').IMongoFile} MongoFile
  * @memberof typedefs
  */
+
+/**
+ * @exports ISession
+ * @typedef {import('@librechat/data-schemas').ISession} ISession
+ * @memberof typedefs
+ */
+
 /**
  * @exports IBalance
  * @typedef {import('@librechat/data-schemas').IBalance} IBalance
@@ -1047,7 +1048,7 @@
 
 /**
  * @exports TWebSearchKeys
- * @typedef {import('librechat-data-provider').TWebSearchKeys} TWebSearchKeys
+ * @typedef {import('@librechat/data-schemas').TWebSearchKeys} TWebSearchKeys
  * @memberof typedefs
  */
 
@@ -1096,13 +1097,13 @@
 
 /**
  * @exports AppConfig
- * @typedef {import('@librechat/api').AppConfig} AppConfig
+ * @typedef {import('@librechat/data-schemas').AppConfig} AppConfig
  * @memberof typedefs
  */
 
 /**
  * @exports JsonSchemaType
- * @typedef {import('@librechat/api').JsonSchemaType} JsonSchemaType
+ * @typedef {import('@librechat/data-schemas').JsonSchemaType} JsonSchemaType
  * @memberof typedefs
  */
 
@@ -1264,12 +1265,6 @@
  */
 
 /**
- * @exports OpenAISpecClient
- * @typedef {import('./app/clients/OpenAIClient')} OpenAISpecClient
- * @memberof typedefs
- */
-
-/**
  * @exports TAgentClient
  * @typedef {import('./server/controllers/agents/client')} TAgentClient
  * @memberof typedefs
@@ -1364,12 +1359,7 @@
 
 /**
  * @exports FunctionTool
- * @typedef {Object} FunctionTool
- * @property {'function'} type - The type of tool, 'function'.
- * @property {Object} function - The function definition.
- * @property {string} function.description - A description of what the function does.
- * @property {string} function.name - The name of the function to be called.
- * @property {Object} function.parameters - The parameters the function accepts, described as a JSON Schema object.
+ * @typedef {import('@librechat/data-schemas').FunctionTool} FunctionTool
  * @memberof typedefs
  */
 
@@ -1502,13 +1492,11 @@
  * @typedef {Object} EndpointServiceConfig
  * @property {string} openAIApiKey - The API key for OpenAI.
  * @property {string} azureOpenAIApiKey - The API key for Azure OpenAI.
- * @property {boolean} useAzurePlugins - Flag to indicate if Azure plugins are used.
  * @property {boolean} userProvidedOpenAI - Flag to indicate if OpenAI API key is user provided.
  * @property {string} googleKey - The Palm key.
  * @property {boolean|{userProvide: boolean}} [openAI] - Flag to indicate if OpenAI endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [assistant] - Flag to indicate if Assistant endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [azureOpenAI] - Flag to indicate if Azure OpenAI endpoint is user provided, or its configuration.
- * @property {boolean|{userProvide: boolean}} [chatGPTBrowser] - Flag to indicate if ChatGPT Browser endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [anthropic] - Flag to indicate if Anthropic endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [google] - Flag to indicate if Google endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean, userProvideURL: boolean, name: string}} [custom] - Custom Endpoint configuration.
@@ -1524,22 +1512,11 @@
  */
 
 /**
- * @exports GptPlugins
- * @typedef {Object} GptPlugins
- * @property {Plugin[]} plugins - An array of plugins available.
- * @property {string[]} availableAgents - Available agents, 'classic' or 'functions'.
- * @property {boolean} userProvide - A flag indicating if the user has provided the data.
- * @property {boolean} azure - A flag indicating if azure plugins are used.
- * @memberof typedefs
- */
-
-/**
  * @exports DefaultConfig
  * @typedef {Object} DefaultConfig
  * @property {boolean|{userProvide: boolean}} [openAI] - Flag to indicate if OpenAI endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [assistant] - Flag to indicate if Assistant endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [azureOpenAI] - Flag to indicate if Azure OpenAI endpoint is user provided, or its configuration.
- * @property {boolean|{userProvide: boolean}} [chatGPTBrowser] - Flag to indicate if ChatGPT Browser endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [anthropic] - Flag to indicate if Anthropic endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [google] - Flag to indicate if Google endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean, userProvideURL: boolean, name: string}} [custom] - Custom Endpoint configuration.
@@ -1832,7 +1809,7 @@
  * @param {onTokenProgress} opts.onProgress - Callback function to handle token progress
  * @param {AbortController} opts.abortController - AbortController instance
  * @param {Record<string, Record<string, string>>} [opts.userMCPAuthMap]
- * @returns {Promise<string>}
+ * @returns {Promise<{ content: Promise<MessageContentComplex[]>; metadata: Record<string, unknown>; }>}
  * @memberof typedefs
  */
 

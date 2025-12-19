@@ -1,15 +1,17 @@
 import React, { useMemo } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import { useMessageHelpers, useLocalize, useAttachments } from '~/hooks';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
+import { fontSizeAtom } from '~/store/fontSize';
 import SiblingSwitch from './SiblingSwitch';
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
-import { cn } from '~/utils';
+import { cn, getMessageAriaLabel } from '~/utils';
 import store from '~/store';
 
 export default function Message(props: TMessageProps) {
@@ -36,7 +38,7 @@ export default function Message(props: TMessageProps) {
     regenerateMessage,
   } = useMessageHelpers(props);
 
-  const fontSize = useRecoilValue(store.fontSize);
+  const fontSize = useAtomValue(fontSizeAtom);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const { children, messageId = null, isCreatedByUser } = message ?? {};
 
@@ -94,7 +96,7 @@ export default function Message(props: TMessageProps) {
         <div className="m-auto justify-center p-4 py-2 md:gap-6">
           <div
             id={messageId ?? ''}
-            aria-label={`message-${message.depth}-${messageId}`}
+            aria-label={getMessageAriaLabel(message, localize)}
             className={cn(baseClasses.common, baseClasses.chat, 'message-render')}
           >
             <div className="relative flex flex-shrink-0 flex-col items-center">
@@ -125,6 +127,7 @@ export default function Message(props: TMessageProps) {
                     setSiblingIdx={setSiblingIdx}
                     isCreatedByUser={message.isCreatedByUser}
                     conversationId={conversation?.conversationId}
+                    isLatestMessage={messageId === latestMessage?.messageId}
                     content={message.content as Array<TMessageContentParts | undefined>}
                   />
                 </div>

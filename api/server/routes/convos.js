@@ -12,6 +12,7 @@ const {
 const { getConvosByCursor, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
+const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
 const { deleteToolCalls } = require('~/models/ToolCall');
@@ -30,7 +31,8 @@ router.get('/', async (req, res) => {
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
   const search = req.query.search ? decodeURIComponent(req.query.search) : undefined;
-  const order = req.query.order || 'desc';
+  const sortBy = req.query.sortBy || 'createdAt';
+  const sortDirection = req.query.sortDirection || 'desc';
 
   let tags;
   if (req.query.tags) {
@@ -44,7 +46,8 @@ router.get('/', async (req, res) => {
       isArchived,
       tags,
       search,
-      order,
+      sortBy,
+      sortDirection,
     });
     res.status(200).json(result);
   } catch (error) {
@@ -124,7 +127,10 @@ router.delete('/', async (req, res) => {
 
   try {
     const dbResponse = await deleteConvos(req.user.id, filter);
-    await deleteToolCalls(req.user.id, filter.conversationId);
+    if (filter.conversationId) {
+      await deleteToolCalls(req.user.id, filter.conversationId);
+      await deleteConvoSharedLink(req.user.id, filter.conversationId);
+    }
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);
@@ -136,6 +142,7 @@ router.delete('/all', async (req, res) => {
   try {
     const dbResponse = await deleteConvos(req.user.id, {});
     await deleteToolCalls(req.user.id);
+    await deleteAllSharedLinks(req.user.id);
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);

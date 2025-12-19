@@ -19,7 +19,11 @@ async function getEndpointsConfig(req) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const cachedEndpointsConfig = await cache.get(CacheKeys.ENDPOINT_CONFIG);
   if (cachedEndpointsConfig) {
-    return cachedEndpointsConfig;
+    if (cachedEndpointsConfig.gptPlugins) {
+      await cache.delete(CacheKeys.ENDPOINT_CONFIG);
+    } else {
+      return cachedEndpointsConfig;
+    }
   }
 
   const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
@@ -109,7 +113,7 @@ async function getEndpointsConfig(req) {
  * @returns {Promise<boolean>}
  */
 const checkCapability = async (req, capability) => {
-  const isAgents = isAgentsEndpoint(req.body?.original_endpoint || req.body?.endpoint);
+  const isAgents = isAgentsEndpoint(req.body?.endpointType || req.body?.endpoint);
   const endpointsConfig = await getEndpointsConfig(req);
   const capabilities =
     isAgents || endpointsConfig?.[EModelEndpoint.agents]?.capabilities != null

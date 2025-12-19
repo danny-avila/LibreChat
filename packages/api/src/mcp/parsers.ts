@@ -1,4 +1,12 @@
+import crypto from 'node:crypto';
+import { Tools } from 'librechat-data-provider';
+import type { UIResource } from 'librechat-data-provider';
 import type * as t from './types';
+
+function generateResourceId(text: string): string {
+  return crypto.createHash('sha256').update(text).digest('hex').substring(0, 10);
+}
+
 const RECOGNIZED_PROVIDERS = new Set([
   'google',
   'anthropic',
@@ -53,17 +61,11 @@ function parseAsString(result: t.MCPToolCallResponse): string {
       }
       if (item.type === 'resource') {
         const resourceText = [];
-        if (item.resource.text != null && item.resource.text) {
+        if ('text' in item.resource && item.resource.text != null && item.resource.text) {
           resourceText.push(item.resource.text);
         }
         if (item.resource.uri) {
           resourceText.push(`Resource URI: ${item.resource.uri}`);
-        }
-        if (item.resource.name) {
-          resourceText.push(`Resource: ${item.resource.name}`);
-        }
-        if (item.resource.description) {
-          resourceText.push(`Description: ${item.resource.description}`);
         }
         if (item.resource.mimeType != null && item.resource.mimeType) {
           resourceText.push(`Type: ${item.resource.mimeType}`);
@@ -80,20 +82,12 @@ function parseAsString(result: t.MCPToolCallResponse): string {
 
 /**
  * Converts MCPToolCallResponse content into recognized content block types
- * Recognized types: "image", "image_url", "text", "json"
- *
- * @param {t.MCPToolCallResponse} result - The MCPToolCallResponse object
- * @param {string} provider - The provider name (google, anthropic, openai)
- * @returns {Array<Object>} Formatted content blocks
- */
-/**
- * Converts MCPToolCallResponse content into recognized content block types
  * First element: string or formatted content (excluding image_url)
- * Second element: image_url content if any
+ * Second element: Recognized types - "image", "image_url", "text", "json"
  *
- * @param {t.MCPToolCallResponse} result - The MCPToolCallResponse object
- * @param {string} provider - The provider name (google, anthropic, openai)
- * @returns {t.FormattedContentResult} Tuple of content and image_urls
+ * @param  result - The MCPToolCallResponse object
+ * @param provider - The provider name (google, anthropic, openai)
+ * @returns Tuple of content and image_urls
  */
 export function formatToolContent(
   result: t.MCPToolCallResponse,
@@ -111,7 +105,7 @@ export function formatToolContent(
   const formattedContent: t.FormattedContent[] = [];
   const imageUrls: t.FormattedContent[] = [];
   let currentTextBlock = '';
-  let uiResources: t.UIResource[] = [];
+  const uiResources: UIResource[] = [];
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
 
@@ -143,28 +137,36 @@ export function formatToolContent(
     },
 
     resource: (item) => {
-      if (item.resource.uri.startsWith('ui://')) {
-        uiResources.push(item.resource as t.UIResource);
-        return;
-      }
+      const isUiResource = item.resource.uri.startsWith('ui://');
+      const resourceText: string[] = [];
 
-      const resourceText = [];
-      if (item.resource.text != null && item.resource.text) {
+      if (isUiResource) {
+        const contentToHash =
+          'text' in item.resource && item.resource.text && typeof item.resource.text === 'string'
+            ? item.resource.text
+            : item.resource.uri;
+        const resourceId = generateResourceId(contentToHash);
+        const uiResource: UIResource = {
+          ...item.resource,
+          resourceId,
+        };
+        uiResources.push(uiResource);
+        resourceText.push(`UI Resource ID: ${resourceId}`);
+        resourceText.push(`UI Resource Marker: \\ui{${resourceId}}`);
+      } else if ('text' in item.resource && item.resource.text != null && item.resource.text) {
         resourceText.push(`Resource Text: ${item.resource.text}`);
       }
+
       if (item.resource.uri.length) {
         resourceText.push(`Resource URI: ${item.resource.uri}`);
-      }
-      if (item.resource.name) {
-        resourceText.push(`Resource: ${item.resource.name}`);
-      }
-      if (item.resource.description) {
-        resourceText.push(`Resource Description: ${item.resource.description}`);
       }
       if (item.resource.mimeType != null && item.resource.mimeType) {
         resourceText.push(`Resource MIME Type: ${item.resource.mimeType}`);
       }
-      currentTextBlock += (currentTextBlock ? '\n\n' : '') + resourceText.join('\n');
+
+      if (resourceText.length) {
+        currentTextBlock += (currentTextBlock ? '\n\n' : '') + resourceText.join('\n');
+      }
     },
   };
 
@@ -178,15 +180,37 @@ export function formatToolContent(
     }
   }
 
+  if (uiResources.length > 0) {
+    const uiInstructions = `
+
+UI Resource Markers Available:
+- Each resource above includes a stable ID and a marker hint like \`\\ui{abc123}\`
+- You should usually introduce what you're showing before placing the marker
+- For a single resource: \\ui{resource-id}
+- For multiple resources shown separately: \\ui{resource-id-a} \\ui{resource-id-b}
+- For multiple resources in a carousel: \\ui{resource-id-a,resource-id-b,resource-id-c}
+- The UI will be rendered inline where you place the marker
+- Format: \\ui{resource-id} or \\ui{id1,id2,id3} using the IDs provided above`;
+
+    currentTextBlock += uiInstructions;
+  }
+
   if (CONTENT_ARRAY_PROVIDERS.has(provider) && currentTextBlock) {
     formattedContent.push({ type: 'text', text: currentTextBlock });
   }
 
-  if (uiResources.length) {
-    formattedContent.push({ type: 'text', metadata: 'ui_resources', text: btoa(JSON.stringify(uiResources))});
+  let artifacts: t.Artifacts = undefined;
+  if (imageUrls.length) {
+    artifacts = { content: imageUrls };
   }
 
-  const artifacts = imageUrls.length ? { content: imageUrls } : undefined;
+  if (uiResources.length) {
+    artifacts = {
+      ...artifacts,
+      [Tools.ui_resources]: { data: uiResources },
+    };
+  }
+
   if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
     return [formattedContent, artifacts];
   }
