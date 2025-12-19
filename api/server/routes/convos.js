@@ -67,16 +67,17 @@ router.get('/:conversationId', async (req, res) => {
   }
 });
 
-router.post('/gen_title', async (req, res) => {
-  const { conversationId } = req.body;
+router.get('/gen_title/:conversationId', async (req, res) => {
+  const { conversationId } = req.params;
   const titleCache = getLogStores(CacheKeys.GEN_TITLE);
   const key = `${req.user.id}-${conversationId}`;
   let title = await titleCache.get(key);
 
   if (!title) {
-    // Retry every 1s for up to 20s
-    for (let i = 0; i < 20; i++) {
-      await sleep(1000);
+    // Exponential backoff: 500ms, 1s, 2s, 4s, 8s (total ~15.5s max wait)
+    const delays = [500, 1000, 2000, 4000, 8000];
+    for (const delay of delays) {
+      await sleep(delay);
       title = await titleCache.get(key);
       if (title) {
         break;
