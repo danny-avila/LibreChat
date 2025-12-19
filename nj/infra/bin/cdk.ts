@@ -45,6 +45,7 @@ const ecsStack = new EcsStack(app, "EcsStack", {
   librechatImage: "152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/librechat:latest",
   mongoImage: "152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/mongo:latest",
   postgresImage: "152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/pgvector:0.8.0-pg15-trixie",
+  certificateArn: "arn:aws:acm:us-east-1:152320432929:certificate/b795286d-3044-4e95-ba06-21e81fc5022e"
 });
 
 const apiGatewayStack = new ApigStack(app, "ApiGatewayStack", {
