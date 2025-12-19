@@ -1,7 +1,7 @@
 const express = require('express');
-const { unescapeLaTeX } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { ContentTypes } = require('librechat-data-provider');
+const { unescapeLaTeX, countTokens } = require('@librechat/api');
 const {
   saveConvo,
   getMessage,
@@ -14,7 +14,6 @@ const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
 const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
 const { getConvosQueried } = require('~/models/Conversation');
-const { countTokens } = require('~/server/utils');
 const { Message } = require('~/db/models');
 
 const router = express.Router();
