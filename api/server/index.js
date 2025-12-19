@@ -102,7 +102,31 @@ const startServer = async () => {
   await updateInterfacePermissions(appConfig);
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
-  let indexHTML = fs.readFileSync(indexPath, 'utf8');
+  let indexHTML = '';
+  
+  // In dev mode, index.html may not exist if frontend hasn't been built yet
+  try {
+    indexHTML = fs.readFileSync(indexPath, 'utf8');
+  } catch (err) {
+    if (process.env.NODE_ENV === 'development') {
+      logger.warn(`index.html not found at ${indexPath} - frontend may not be built yet. Using minimal fallback.`);
+      // Create a minimal HTML fallback for dev
+      indexHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LibreChat - Development Mode</title>
+</head>
+<body>
+  <div id="root"></div>
+  <p>⚠️ Frontend not built. Run <code>npm run build:client</code> or start Vite dev server separately.</p>
+</body>
+</html>`;
+    } else {
+      throw err;
+    }
+  }
 
   // In order to provide support to serving the application in a sub-directory
   // We need to update the base href if the DOMAIN_CLIENT is specified and not the root path

@@ -39,6 +39,7 @@
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "backend:experimental": "cross-env NODE_ENV=production node api/server/experimental.js",
     "backend:stop": "node config/stop-backend.js",
+    "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\" --kill-others",
     "build:data-provider": "cd packages/data-provider && npm run build",
     "build:api": "cd packages/api && npm run build",
     "build:data-schemas": "cd packages/data-schemas && npm run build",
@@ -101,9 +102,11 @@
   },
   "homepage": "https://librechat.ai/",
   "dependencies": {
-    "serverless-http": "^3.0.0"
+    "serverless-http": "^3.0.0",
+    "concurrently": "^9.0.0"
   },
   "devDependencies": {
+    "concurrently": "^8.2.0",
     "@axe-core/playwright": "^4.10.1",
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.3.1",
