@@ -100,6 +100,9 @@
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
   "homepage": "https://librechat.ai/",
+  "dependencies": {
+    "serverless-http": "^3.0.0"
+  },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.1",
     "@eslint/compat": "^1.2.6",
