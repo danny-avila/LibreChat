@@ -283,14 +283,7 @@ export default function useChatFunctions({
           }
         }
       } else {
-        initialResponse.content = [
-          {
-            type: ContentTypes.TEXT,
-            [ContentTypes.TEXT]: {
-              value: '',
-            },
-          },
-        ];
+        initialResponse.content = [];
       }
       setShowStopButton(true);
     }

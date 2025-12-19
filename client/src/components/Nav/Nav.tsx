@@ -3,8 +3,9 @@ import { useRecoilValue } from 'recoil';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Skeleton, useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
+import type { ConversationListResponse } from 'librechat-data-provider';
+import type { List } from 'react-virtualized';
 import {
   useLocalize,
   useHasAccess,
@@ -12,7 +13,7 @@ import {
   useLocalStorage,
   useNavScrolling,
 } from '~/hooks';
-import { useConversationsInfiniteQuery } from '~/data-provider';
+import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
 import SearchBar from './SearchBar';
 import NewChat from './NewChat';
@@ -63,6 +64,7 @@ const Nav = memo(
   }) => {
     const localize = useLocalize();
     const { isAuthenticated } = useAuthContext();
+    useTitleGeneration(isAuthenticated);
 
     const [navWidth, setNavWidth] = useState(NAV_WIDTH_DESKTOP);
     const isSmallScreen = useMediaQuery('(max-width: 768px)');
