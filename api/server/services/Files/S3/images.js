@@ -16,6 +16,7 @@ const defaultBasePath = 'images';
  * @param {Express.Multer.File} params.file - File object from Multer.
  * @param {string} params.file_id - Unique file identifier.
  * @param {any} params.endpoint - Endpoint identifier used in image processing.
+ * @param {boolean} [params.temporary] - If true, this file should be marked as temporary.
  * @param {string} [params.resolution='high'] - Desired image resolution.
  * @param {string} [params.basePath='images'] - Base path in the bucket.
  * @returns {Promise<{ filepath: string, bytes: number, width: number, height: number }>}
@@ -25,6 +26,7 @@ async function uploadImageToS3({
   file,
   file_id,
   endpoint,
+  temporary,
   resolution = 'high',
   basePath = defaultBasePath,
 }) {
@@ -59,6 +61,7 @@ async function uploadImageToS3({
       buffer: processedBuffer,
       fileName,
       basePath,
+      temporary,
     });
     await fs.promises.unlink(inputFilePath);
     const bytes = Buffer.byteLength(processedBuffer);
