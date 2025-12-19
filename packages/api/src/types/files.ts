@@ -29,12 +29,25 @@ export interface AudioProcessingResult {
   bytes: number;
 }
 
+/** Google video block format */
+export interface GoogleVideoBlock {
+  type: 'media';
+  mimeType: string;
+  data: string;
+}
+
+/** OpenRouter video block format */
+export interface OpenRouterVideoBlock {
+  type: 'video_url';
+  video_url: {
+    url: string;
+  };
+}
+
+export type VideoBlock = GoogleVideoBlock | OpenRouterVideoBlock;
+
 export interface VideoResult {
-  videos: Array<{
-    type: string;
-    mimeType: string;
-    data: string;
-  }>;
+  videos: VideoBlock[];
   files: Array<{
     file_id?: string;
     temp_file_id?: string;

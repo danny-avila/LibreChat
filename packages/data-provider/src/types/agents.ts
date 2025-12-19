@@ -33,11 +33,17 @@ export namespace Agents {
     image_url: string | { url: string; detail?: ImageDetail };
   };
 
+  export type MessageContentVideoUrl = {
+    type: ContentTypes.VIDEO_URL;
+    video_url: { url: string };
+  };
+
   export type MessageContentComplex =
     | ReasoningContentText
     | AgentUpdate
     | MessageContentText
     | MessageContentImageUrl
+    | MessageContentVideoUrl
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     | (Record<string, any> & { type?: ContentTypes | string })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -295,6 +301,7 @@ export namespace Agents {
     | ContentTypes.THINK
     | ContentTypes.TEXT
     | ContentTypes.IMAGE_URL
+    | ContentTypes.VIDEO_URL
     | string;
 }
 

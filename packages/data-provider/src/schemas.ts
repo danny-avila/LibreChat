@@ -71,11 +71,11 @@ const openAILikeProviders = new Set<string>([
 ]);
 
 export const isOpenAILikeProvider = (provider?: string | null): boolean => {
-  return openAILikeProviders.has(provider ?? '');
+  return openAILikeProviders.has((provider ?? '').toLowerCase());
 };
 
 export const isDocumentSupportedProvider = (provider?: string | null): boolean => {
-  return documentSupportedProviders.has(provider ?? '');
+  return documentSupportedProviders.has((provider ?? '').toLowerCase());
 };
 
 export const paramEndpoints = new Set<EModelEndpoint | string>([

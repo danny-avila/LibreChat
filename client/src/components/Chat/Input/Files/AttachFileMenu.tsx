@@ -9,6 +9,7 @@ import {
   TerminalSquareIcon,
 } from 'lucide-react';
 import {
+  Providers,
   EToolResources,
   EModelEndpoint,
   defaultAgentCapabilities,
@@ -84,7 +85,7 @@ const AttachFileMenu = ({
   );
 
   const handleUploadClick = (
-    fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal',
+    fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal' | 'openrouter_multimodal',
   ) => {
     if (!inputRef.current) {
       return;
@@ -98,6 +99,8 @@ const AttachFileMenu = ({
       inputRef.current.accept = 'image/*,.pdf,application/pdf';
     } else if (fileType === 'google_multimodal') {
       inputRef.current.accept = 'image/*,.pdf,application/pdf,video/*,audio/*';
+    } else if (fileType === 'openrouter_multimodal') {
+      inputRef.current.accept = 'image/*,.pdf,application/pdf,video/*';
     } else {
       inputRef.current.accept = '';
     }
@@ -107,7 +110,7 @@ const AttachFileMenu = ({
 
   const dropdownItems = useMemo(() => {
     const createMenuItems = (
-      onAction: (fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal') => void,
+      onAction: (fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal' | 'openrouter_multimodal') => void,
     ) => {
       const items: MenuItemProps[] = [];
 
@@ -120,9 +123,14 @@ const AttachFileMenu = ({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
             setToolResource(undefined);
-            onAction(
-              (provider || endpoint) === EModelEndpoint.google ? 'google_multimodal' : 'multimodal',
-            );
+            const currentProv = provider || endpoint;
+            let fileType: 'multimodal' | 'google_multimodal' | 'openrouter_multimodal' = 'multimodal';
+            if (currentProv === EModelEndpoint.google) {
+              fileType = 'google_multimodal';
+            } else if (currentProv?.toLowerCase() === Providers.OPENROUTER) {
+              fileType = 'openrouter_multimodal';
+            }
+            onAction(fileType);
           },
           icon: <FileImageIcon className="icon-md" />,
         });
