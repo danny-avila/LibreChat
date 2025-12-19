@@ -1,8 +1,11 @@
 import React, { memo, useCallback } from 'react';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { MultiSelect, MCPIcon } from '@librechat/client';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { useBadgeRowContext } from '~/Providers';
+import { useHasAccess } from '~/hooks';
+import { cn } from '~/utils';
 
 function MCPSelectContent() {
   const { conversationId, mcpServerManager } = useBadgeRowContext();
@@ -12,19 +15,24 @@ function MCPSelectContent() {
     mcpValues,
     isInitializing,
     placeholderText,
-    configuredServers,
     batchToggleServers,
     getConfigDialogProps,
     getServerStatusIconProps,
+    selectableServers,
   } = mcpServerManager;
 
   const renderSelectedValues = useCallback(
-    (values: string[], placeholder?: string) => {
+    (
+      values: string[],
+      placeholder?: string,
+      items?: (string | { label: string; value: string })[],
+    ) => {
       if (values.length === 0) {
-        return placeholder || localize('com_ui_select') + '...';
+        return placeholder || localize('com_ui_select_placeholder');
       }
       if (values.length === 1) {
-        return values[0];
+        const selectedItem = items?.find((i) => typeof i !== 'string' && i.value == values[0]);
+        return selectedItem && typeof selectedItem !== 'string' ? selectedItem.label : values[0];
       }
       return localize('com_ui_x_selected', { 0: values.length });
     },
@@ -74,11 +82,13 @@ function MCPSelectContent() {
   }
 
   const configDialogProps = getConfigDialogProps();
-
   return (
     <>
       <MultiSelect
-        items={configuredServers}
+        items={selectableServers.map((s) => ({
+          label: s.config.title || s.serverName,
+          value: s.serverName,
+        }))}
         selectedValues={mcpValues ?? []}
         setSelectedValues={batchToggleServers}
         renderSelectedValues={renderSelectedValues}
@@ -88,7 +98,10 @@ function MCPSelectContent() {
         className="badge-icon min-w-fit"
         selectIcon={<MCPIcon className="icon-md text-text-primary" />}
         selectItemsClassName="border border-blue-600/50 bg-blue-500/10 hover:bg-blue-700/10"
-        selectClassName="group relative inline-flex items-center justify-center md:justify-start gap-1.5 rounded-full border border-border-medium text-sm font-medium transition-all md:w-full size-9 p-2 md:p-3 bg-transparent shadow-sm hover:bg-surface-hover hover:shadow-md active:shadow-inner"
+        selectClassName={cn(
+          'group relative inline-flex items-center justify-center md:justify-start gap-1.5 rounded-full border border-border-medium text-sm font-medium transition-all',
+          'md:w-full size-9 p-2 md:p-3 bg-transparent shadow-sm hover:bg-surface-hover hover:shadow-md active:shadow-inner',
+        )}
       />
       {configDialogProps && (
         <MCPConfigDialog {...configDialogProps} conversationId={conversationId} />
@@ -99,9 +112,13 @@ function MCPSelectContent() {
 
 function MCPSelect() {
   const { mcpServerManager } = useBadgeRowContext();
-  const { configuredServers } = mcpServerManager;
+  const { selectableServers } = mcpServerManager;
+  const canUseMcp = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
+  });
 
-  if (!configuredServers || configuredServers.length === 0) {
+  if (!canUseMcp || !selectableServers || selectableServers.length === 0) {
     return null;
   }
 

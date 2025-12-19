@@ -146,6 +146,27 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')) {
         resourceType: ResourceType.PROMPTGROUP,
         permBits: RoleBits.OWNER,
       },
+      {
+        accessRoleId: AccessRoleIds.MCPSERVER_VIEWER,
+        name: 'com_ui_mcp_server_role_viewer',
+        description: 'com_ui_mcp_server_role_viewer_desc',
+        resourceType: ResourceType.MCPSERVER,
+        permBits: RoleBits.VIEWER,
+      },
+      {
+        accessRoleId: AccessRoleIds.MCPSERVER_EDITOR,
+        name: 'com_ui_mcp_server_role_editor',
+        description: 'com_ui_mcp_server_role_editor_desc',
+        resourceType: ResourceType.MCPSERVER,
+        permBits: RoleBits.EDITOR,
+      },
+      {
+        accessRoleId: AccessRoleIds.MCPSERVER_OWNER,
+        name: 'com_ui_mcp_server_role_owner',
+        description: 'com_ui_mcp_server_role_owner_desc',
+        resourceType: ResourceType.MCPSERVER,
+        permBits: RoleBits.OWNER,
+      },
     ];
 
     const result: Record<string, IAccessRole> = {};

@@ -65,7 +65,7 @@ function FeedbackOptionButton({
       aria-label={label}
       aria-pressed={active}
     >
-      <Icon size="19" bold={active} />
+      <Icon size="19" bold={active} aria-hidden="true" />
       <span>{label}</span>
     </button>
   );

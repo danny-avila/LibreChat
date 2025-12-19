@@ -23,6 +23,7 @@
   translate: 0 -0.5rem;
   margin-top: 4px;
   margin-right: -2px;
+  z-index: 100;
 }
 
 .popover-animate {
