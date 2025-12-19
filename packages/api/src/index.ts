@@ -9,6 +9,7 @@ export * from './mcp/connection';
 export * from './mcp/oauth';
 export * from './mcp/auth';
 export * from './mcp/zod';
+export * from './mcp/errors';
 /* Utilities */
 export * from './mcp/utils';
 export * from './utils';
