@@ -438,6 +438,21 @@ export default function useEventHandlers({
       } = submission;
 
       try {
+        // Handle early abort - aborted during tool loading before any messages saved
+        // Don't update conversation state, just reset UI and stay on new chat
+        if ((data as Record<string, unknown>).earlyAbort) {
+          console.log(
+            '[finalHandler] Early abort detected - no messages saved, staying on new chat',
+          );
+          setShowStopButton(false);
+          setIsSubmitting(false);
+          // Navigate to new chat if not already there
+          if (location.pathname !== `/c/${Constants.NEW_CONVO}`) {
+            navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
+          }
+          return;
+        }
+
         if (responseMessage?.attachments && responseMessage.attachments.length > 0) {
           // Process each attachment through the attachmentHandler
           responseMessage.attachments.forEach((attachment) => {

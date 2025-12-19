@@ -378,6 +378,14 @@ class GenerationJobManagerClass {
    * by the periodic cleanup job.
    */
   async completeJob(streamId: string, error?: string): Promise<void> {
+    const runtime = this.runtimeState.get(streamId);
+
+    // Abort the controller to signal all pending operations (e.g., OAuth flow monitors)
+    // that the job is done and they should clean up
+    if (runtime) {
+      runtime.abortController.abort();
+    }
+
     // Clear content state and run step buffer (Redis only)
     this.jobStore.clearContentState(streamId);
     this.runStepBuffers?.delete(streamId);
@@ -410,7 +418,7 @@ class GenerationJobManagerClass {
 
     if (!jobData) {
       logger.warn(`[GenerationJobManager] Cannot abort - job not found: ${streamId}`);
-      return { success: false, jobData: null, content: [], text: '', finalEvent: null };
+      return { success: false, jobData: null, content: [], finalEvent: null };
     }
 
     if (runtime) {
@@ -419,14 +427,18 @@ class GenerationJobManagerClass {
 
     // Get content before clearing state
     const content = (await this.jobStore.getContentParts(streamId)) ?? [];
-    const text = this.extractTextFromContent(content);
+
+    // Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
+    // In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation
+    const isEarlyAbort = content.length === 0 && !jobData.responseMessageId;
 
     // Create final event for abort
     const userMessageId = jobData.userMessage?.messageId;
 
     const abortFinalEvent: t.ServerSentEvent = {
       final: true,
-      conversation: { conversationId: jobData.conversationId },
+      // Don't include conversation for early aborts - it doesn't exist in DB
+      conversation: isEarlyAbort ? null : { conversationId: jobData.conversationId },
       title: 'New Chat',
       requestMessage: jobData.userMessage
         ? {
@@ -437,18 +449,21 @@ class GenerationJobManagerClass {
             isCreatedByUser: true,
           }
         : null,
-      responseMessage: {
-        messageId: jobData.responseMessageId ?? `${userMessageId ?? 'aborted'}_`,
-        parentMessageId: userMessageId,
-        conversationId: jobData.conversationId,
-        content,
-        text,
-        sender: jobData.sender ?? 'AI',
-        unfinished: true,
-        error: false,
-        isCreatedByUser: false,
-      },
+      responseMessage: isEarlyAbort
+        ? null
+        : {
+            messageId: jobData.responseMessageId ?? `${userMessageId ?? 'aborted'}_`,
+            parentMessageId: userMessageId,
+            conversationId: jobData.conversationId,
+            content,
+            sender: jobData.sender ?? 'AI',
+            unfinished: true,
+            error: false,
+            isCreatedByUser: false,
+          },
       aborted: true,
+      // Flag for early abort - no messages saved, frontend should go to new chat
+      earlyAbort: isEarlyAbort,
     } as unknown as t.ServerSentEvent;
 
     if (runtime) {
@@ -478,24 +493,8 @@ class GenerationJobManagerClass {
       success: true,
       jobData,
       content,
-      text,
       finalEvent: abortFinalEvent,
     };
-  }
-
-  /**
-   * Extract plain text from content parts array.
-   */
-  private extractTextFromContent(content: Agents.MessageContentComplex[]): string {
-    return content
-      .map((part) => {
-        if ('text' in part && typeof part.text === 'string') {
-          return part.text;
-        }
-        return '';
-      })
-      .join('')
-      .trim();
   }
 
   /**

@@ -56,8 +56,6 @@ export interface AbortResult {
   jobData: SerializableJobData | null;
   /** Aggregated content from the stream */
   content: Agents.MessageContentComplex[];
-  /** Plain text representation of content */
-  text: string;
   /** Final event to send to client */
   finalEvent: unknown;
 }
