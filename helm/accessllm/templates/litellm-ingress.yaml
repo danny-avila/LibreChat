@@ -1,0 +1,29 @@
+{{- if and .Values.litellm.enabled .Values.litellm.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: litellm-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: litellm
+    {{- include "accessllm.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.litellm.ingress.annotations | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+  - hosts:
+    - {{ .Values.litellm.ingress.host | quote }}
+    secretName: litellm-tls
+  rules:
+  - host: {{ .Values.litellm.ingress.host | quote }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: litellm
+            port:
+              number: 8000
+{{- end }}

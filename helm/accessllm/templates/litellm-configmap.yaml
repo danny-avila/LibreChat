@@ -1,0 +1,14 @@
+{{- if .Values.litellm.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: litellm
+    {{- include "accessllm.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    # LiteLLM configuration
+    model_list: []
+{{- end }}

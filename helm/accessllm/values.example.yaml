@@ -1,0 +1,226 @@
+# Default values for accessllm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+global:
+  environment: production
+
+image:
+  repository: fekihatelm/librechat-custom
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 3080
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "25m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: example.com
+      paths:
+        - path: /
+          pathType: Prefix
+    - host: www.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+   - secretName: librechat-tls
+     hosts:
+       - example.com
+       - www.example.com
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 1Gi
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+
+# Application Configuration (ConfigMap)
+config:
+  HOST: "0.0.0.0"
+  PORT: "3080"
+  NODE_ENV: "production"
+  DEBUG_LOGGING: "true"
+  DEBUG_CONSOLE: "false"
+  CONSOLE_JSON: "false"
+  DEBUG_PLUGINS: "true"
+  DEBUG_OPENAI: "false"
+  NO_INDEX: "true"
+  TRUST_PROXY: "true"
+  DOMAIN_CLIENT: "https://example.com"
+  DOMAIN_SERVER: "https://example.com"
+  ALLOW_EMAIL_LOGIN: "true"
+  ALLOW_REGISTRATION: "true"
+  ALLOW_SOCIAL_LOGIN: "false"
+  ALLOW_SOCIAL_REGISTRATION: "false"
+  ALLOW_ACCOUNT_DELETION: "true"
+  ALLOW_UNVERIFIED_EMAIL_LOGIN: "true"
+  SESSION_EXPIRY: "900000"
+  REFRESH_TOKEN_EXPIRY: "2592000000"
+  OPENAI_MODERATION: "false"
+  BAN_VIOLATIONS: "false"
+  APP_TITLE: "LibreChat"
+  CUSTOM_FOOTER: "[Footer Text](https://example.com)"
+  GOOGLE_CLIENT_ID: "your-google-client-id"
+  GOOGLE_CALLBACK_URL: "/oauth/google/callback"
+  BAN_DURATION: "7200000"
+  BAN_INTERVAL: "20"
+  LOGIN_VIOLATION_SCORE: "1"
+  REGISTRATION_VIOLATION_SCORE: "1"
+  CONCURRENT_VIOLATION_SCORE: "1"
+  MESSAGE_VIOLATION_SCORE: "1"
+  NON_BROWSER_VIOLATION_SCORE: "20"
+  LOGIN_MAX: "7"
+  LOGIN_WINDOW: "5"
+  REGISTER_MAX: "5"
+  REGISTER_WINDOW: "60"
+  LIMIT_CONCURRENT_MESSAGES: "true"
+  CONCURRENT_MESSAGE_MAX: "2"
+  LIMIT_MESSAGE_IP: "true"
+  MESSAGE_IP_MAX: "40"
+  MESSAGE_IP_WINDOW: "1"
+  LIMIT_MESSAGE_USER: "false"
+
+# Secrets (Placeholders - should be overridden in secure values files)
+secrets:
+  MONGO_ROOT_USER: "root"
+  MONGO_ROOT_PASS: "your-mongo-root-password"
+  LIBRECHAT_DB_USER: "librechat_user"
+  LIBRECHAT_DB_PASS_URL: "your-librechat-db-password"
+  POSTGRES_USER: "myuser"
+  POSTGRES_PASSWORD: "your-postgres-password"
+  POSTGRES_DB: "mydatabase"
+  LITELLM_MASTER_KEY: "sk_live_your-litellm-master-key"
+  LITELLM_SALT_KEY: "your-litellm-salt-key"
+  MEILI_MASTER_KEY: "your-meili-master-key"
+  JWT_SECRET: "your-jwt-secret"
+  JWT_REFRESH_SECRET: "your-jwt-refresh-secret"
+  CREDS_KEY: "your-creds-key-32-bytes-exact-len" # Must be 32 bytes
+  CREDS_IV: "your-creds-iv-16" # Must be 16 bytes
+  GOOGLE_CLIENT_SECRET: "your-google-client-secret"
+  RAG_OPENAI_API_KEY: "your-rag-openai-api-key"
+
+# Sub-components
+mongodb:
+  enabled: true
+  image: mongo:latest
+  persistence:
+    enabled: true
+    size: 10Gi
+
+meilisearch:
+  enabled: true
+  image: getmeili/meilisearch:v1.13.2
+  persistence:
+    enabled: true
+    size: 5Gi
+
+vectordb:
+  enabled: true
+  image: ankane/pgvector:latest
+  persistence:
+    enabled: true
+    size: 5Gi
+
+rag:
+  enabled: true
+  image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
+  port: 8000
+
+litellm:
+  enabled: true
+  image: ghcr.io/berriai/litellm:main-latest
+  ingress:
+    enabled: true
+    host: litellm.example.com
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/app-root: "/ui"
+
+# LibreChat YAML Configuration
+librechatYaml: |
+  version: 1.2.8
+  cache: false
+  interface:
+    agents: false
+    multiConvo: true
+  memory:
+    disabled: false
+    personalize: true
+    tokenLimit: 2000
+    messageWindowSize: 5
+    agent:
+      provider: "OpenAI_models"
+      model: "gpt-4o-mini"
+      instructions: |
+        Store information only in the specified validKeys categories.
+        Focus on explicitly stated preferences and important facts.
+        Delete outdated or corrected information promptly.
+  endpoints:
+    agents:
+      disableBuilder: true
+      capabilities: ["file_search","context","tools"]
+    custom:
+      - name: "OpenAI_models"
+        apiKey: "your-openai-api-key"
+        baseURL: "http://litellm:8000/v1"
+        models:
+          default: ["gpt-4o-mini"]
+          fetch: true
+        titleConvo: true
+        titleModel: "current_model"
+        modelDisplayLabel: "OpenAi"
+      - name: "Anthropic_models"
+        apiKey: "your-anthropic-api-key"
+        baseURL: "http://litellm:8000/v1"
+        models:
+          default: ["claude-haiku-4-5"]
+          fetch: true
+        titleConvo: true
+        titleModel: "current_model"
+        modelDisplayLabel: "Anthropic"
+  mcpServers:
+    mcpsemanticscholar:
+      type: stdio
+      command: npx
+      args:
+        - "-y"
+        - "@smithery/cli@latest"
+        - "run"
+        - "@hamid-vakilzadeh/mcpsemanticscholar"
+        - "--config"
+        - "{}"
+        - "--key"
+        - "your-mcp-key"
