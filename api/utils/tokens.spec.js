@@ -1357,5 +1357,3 @@ describe('GLM Model Tests (Zhipu AI)', () => {
     });
   });
 });
-  });
-});

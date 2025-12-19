@@ -666,3 +666,6 @@ export const tiktokenModels = new Set([
   'gpt-3.5-turbo',
   'gpt-3.5-turbo-0301',
 ]);
+
+// Export Bedrock inference profile functions and mappings
+export { detectBedrockInferenceProfileModel, loadBedrockInferenceProfileMappings, BEDROCK_INFERENCE_PROFILE_MAPPINGS };
