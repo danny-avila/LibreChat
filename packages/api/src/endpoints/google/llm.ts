@@ -30,7 +30,48 @@ export const knownGoogleParams = new Set([
   'baseUrl',
   'location',
   'authOptions',
+  'thinkingLevel',
+  'mediaResolution',
 ]);
+
+/**
+ * Checks if the model is a Gemini 3 model
+ */
+function isGemini3Model(model: string): boolean {
+  return /gemini-3/i.test(model);
+}
+
+/**
+ * Checks if the model is a Gemini 3 Flash model (has 4 levels: minimal, low, medium, high)
+ */
+function isGemini3Flash(model: string): boolean {
+  return /gemini-3.*flash/i.test(model);
+}
+
+/**
+ * Validates thinkingLevel for the specific Gemini 3 model.
+ * Pro models only support 'low' and 'high'.
+ * Flash models support 'minimal', 'low', 'medium', and 'high'.
+ */
+function validateThinkingLevel(model: string, level: string | undefined): string | undefined {
+  if (!level || level === '') {
+    return undefined; // Use model default
+  }
+
+  const isFlash = isGemini3Flash(model);
+  const validLevels = isFlash ? ['minimal', 'low', 'medium', 'high'] : ['low', 'high']; // Pro only has 2 levels
+
+  if (validLevels.includes(level)) {
+    return level;
+  }
+
+  // Fallback: map invalid levels for Pro
+  if (!isFlash && (level === 'minimal' || level === 'medium')) {
+    return 'low'; // Pro doesn't have minimal/medium
+  }
+
+  return undefined;
+}
 
 /**
  * Applies default parameters to the target object only if the field is undefined
@@ -152,6 +193,8 @@ export function getGoogleConfig(
     web_search,
     thinking = googleSettings.thinking.default,
     thinkingBudget = googleSettings.thinkingBudget.default,
+    thinkingLevel,
+    mediaResolution,
     ...modelOptions
   } = options.modelOptions || {};
 
@@ -193,19 +236,53 @@ export function getGoogleConfig(
     );
   }
 
-  const shouldEnableThinking =
-    thinking && thinkingBudget != null && (thinkingBudget > 0 || thinkingBudget === -1);
+  const modelName = modelOptions?.model ?? '';
+  const isGemini3 = isGemini3Model(modelName);
 
-  if (shouldEnableThinking && provider === Providers.GOOGLE) {
-    (llmConfig as GoogleClientOptions).thinkingConfig = {
-      thinkingBudget: thinking ? thinkingBudget : googleSettings.thinkingBudget.default,
+  // Gemini 3 models use thinkingLevel, Gemini 2.5 models use thinkingBudget
+  if (isGemini3 && thinking) {
+    const validatedLevel = validateThinkingLevel(modelName, thinkingLevel ?? undefined);
+    // Cast to Record for thinkingLevel support - upstream types need updating
+    const thinkingConfig: Record<string, unknown> = {
       includeThoughts: Boolean(thinking),
     };
-  } else if (shouldEnableThinking && provider === Providers.VERTEXAI) {
-    (llmConfig as VertexAIClientOptions).thinkingBudget = thinking
-      ? thinkingBudget
-      : googleSettings.thinkingBudget.default;
-    (llmConfig as VertexAIClientOptions).includeThoughts = Boolean(thinking);
+    // Only include thinkingLevel if explicitly set - otherwise let model use default
+    if (validatedLevel) {
+      thinkingConfig.thinkingLevel = validatedLevel;
+    }
+
+    if (provider === Providers.GOOGLE) {
+      (llmConfig as GoogleClientOptions).thinkingConfig =
+        thinkingConfig as GoogleClientOptions['thinkingConfig'];
+    } else if (provider === Providers.VERTEXAI) {
+      // Vertex AI also needs thinkingConfig for Gemini 3 models
+      (
+        llmConfig as VertexAIClientOptions & { thinkingConfig?: Record<string, unknown> }
+      ).thinkingConfig = thinkingConfig;
+      // Also set top-level includeThoughts for compatibility with LangChain's Vertex AI client
+      (llmConfig as VertexAIClientOptions).includeThoughts = Boolean(thinking);
+    }
+  } else {
+    // Gemini 2.5 and earlier models use thinkingBudget
+    const shouldEnableThinking =
+      thinking && thinkingBudget != null && (thinkingBudget > 0 || thinkingBudget === -1);
+
+    if (shouldEnableThinking && provider === Providers.GOOGLE) {
+      (llmConfig as GoogleClientOptions).thinkingConfig = {
+        thinkingBudget: thinking ? thinkingBudget : googleSettings.thinkingBudget.default,
+        includeThoughts: Boolean(thinking),
+      };
+    } else if (shouldEnableThinking && provider === Providers.VERTEXAI) {
+      (llmConfig as VertexAIClientOptions).thinkingBudget = thinking
+        ? thinkingBudget
+        : googleSettings.thinkingBudget.default;
+      (llmConfig as VertexAIClientOptions).includeThoughts = Boolean(thinking);
+    }
+  }
+
+  // Gemini 3 models support mediaResolution for vision processing quality
+  if (isGemini3 && mediaResolution) {
+    (llmConfig as Record<string, unknown>).mediaResolution = mediaResolution;
   }
 
   /*

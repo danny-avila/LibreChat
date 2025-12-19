@@ -7,6 +7,8 @@ export enum ContentTypes {
   IMAGE_URL = 'image_url',
   AGENT_UPDATE = 'agent_update',
   ERROR = 'error',
+  /** Google / Vertex AI reasoning content */
+  REASONING = 'reasoning',
 }
 
 export enum StepTypes {

@@ -101,11 +101,15 @@ export default function useStepHandler({
     }
     /** Prevent overwriting an existing content part with a different type */
     const existingType = (updatedContent[index]?.type as string | undefined) ?? '';
+    // Allow REASONING -> THINK conversion (Google/Vertex AI reasoning gets converted to think for UI)
+    const isReasoningToThink =
+      existingType === ContentTypes.THINK && contentType === ContentTypes.REASONING;
     if (
       existingType &&
       existingType !== contentType &&
       !contentType.startsWith(existingType) &&
-      !existingType.startsWith(contentType)
+      !existingType.startsWith(contentType) &&
+      !isReasoningToThink
     ) {
       console.warn('Content type mismatch', { existingType, contentType, index });
       return message;
@@ -146,6 +150,19 @@ export default function useStepHandler({
       const update: ReasoningDeltaUpdate = {
         type: ContentTypes.THINK,
         think: (currentContent.think || '') + contentPart.think,
+      };
+
+      updatedContent[index] = update;
+    } else if (
+      contentType.startsWith(ContentTypes.REASONING) &&
+      'reasoning' in contentPart &&
+      typeof contentPart.reasoning === 'string'
+    ) {
+      // Google/Vertex AI sends REASONING type - convert to THINK for UI rendering
+      const currentContent = updatedContent[index] as ReasoningDeltaUpdate;
+      const update: ReasoningDeltaUpdate = {
+        type: ContentTypes.THINK,
+        think: (currentContent.think || '') + contentPart.reasoning,
       };
 
       updatedContent[index] = update;
