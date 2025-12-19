@@ -311,22 +311,22 @@ export const maxTokensMap: Record<string, Record<string, number>> = {
 };
 
 /**
- * Finds the first matching pattern in the tokens map.
- * Searches in reverse order to match more specific patterns first.
+ * Finds the most specific matching pattern in the tokens map.
+ * Matches the longest key that the model name starts with.
  *
- * Note: This relies on the insertion order of keys in the tokensMap object.
- * More specific patterns must be defined later in the object to be matched first.
- * If the order of keys is changed, the matching behavior may be affected.
+ * @param modelName - The model name to match against patterns.
+ * @param tokensMap - Map of model patterns to token limits.
+ * @returns The matched pattern key or null if no match found.
  */
 export function findMatchingPattern(
   modelName: string,
   tokensMap: Record<string, number>,
 ): string | null {
-  const keys = Object.keys(tokensMap);
   const lowerModelName = modelName.toLowerCase();
-  for (let i = keys.length - 1; i >= 0; i--) {
-    const modelKey = keys[i];
-    if (lowerModelName.startsWith(modelKey)) {
+  // Sort keys by length descending to match most specific (longest) pattern first
+  const keys = Object.keys(tokensMap).sort((a, b) => b.length - a.length);
+  for (const modelKey of keys) {
+    if (lowerModelName.startsWith(modelKey.toLowerCase())) {
       return modelKey;
     }
   }
