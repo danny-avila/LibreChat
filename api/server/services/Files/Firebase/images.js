@@ -15,6 +15,7 @@ const { saveBufferToFirebase } = require('./crud');
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
  * @param {EModelEndpoint} params.endpoint - The params object.
+ * @param {boolean} [params.temporary] - If true, this file should be marked as temporary.
  * @param {string} [params.resolution='high'] - Optional. The desired resolution for the image resizing. Default is 'high'.
  *
  * @returns {Promise<{ filepath: string, bytes: number, width: number, height: number}>}
@@ -24,7 +25,14 @@ const { saveBufferToFirebase } = require('./crud');
  *            - width: The width of the converted image.
  *            - height: The height of the converted image.
  */
-async function uploadImageToFirebase({ req, file, file_id, endpoint, resolution = 'high' }) {
+async function uploadImageToFirebase({
+  req,
+  file,
+  file_id,
+  endpoint,
+  temporary,
+  resolution = 'high',
+}) {
   const appConfig = req.config;
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
@@ -51,7 +59,12 @@ async function uploadImageToFirebase({ req, file, file_id, endpoint, resolution 
     }
   }
 
-  const downloadURL = await saveBufferToFirebase({ userId, buffer: webPBuffer, fileName });
+  const downloadURL = await saveBufferToFirebase({
+    userId,
+    buffer: webPBuffer,
+    fileName,
+    temporary,
+  });
 
   await fs.promises.unlink(inputFilePath);
 
