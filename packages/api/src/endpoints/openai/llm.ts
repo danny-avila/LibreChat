@@ -1,4 +1,4 @@
-import { EModelEndpoint, removeNullishValues } from 'librechat-data-provider';
+import { EModelEndpoint, ReasoningEffort, removeNullishValues } from 'librechat-data-provider';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { SettingDefinition } from 'librechat-data-provider';
 import type { AzureOpenAIInput } from '@langchain/openai';
@@ -149,6 +149,14 @@ export function getOpenAILLMConfig({
     ...modelOptions
   } = _modelOptions;
 
+  const supportsXHighReasoning =
+    typeof modelOptions.model === 'string' && modelOptions.model.toLowerCase().startsWith('gpt-5.2');
+
+  const normalizedReasoningEffort =
+    reasoning_effort === ReasoningEffort.xhigh && !supportsXHighReasoning
+      ? undefined
+      : reasoning_effort;
+
   const llmConfig = Object.assign(
     {
       streaming,
@@ -221,19 +229,19 @@ export function getOpenAILLMConfig({
   }
 
   if (
-    hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
+    hasReasoningParams({ reasoning_effort: normalizedReasoningEffort, reasoning_summary }) &&
     (llmConfig.useResponsesApi === true ||
       (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI))
   ) {
     llmConfig.reasoning = removeNullishValues(
       {
-        effort: reasoning_effort,
+        effort: normalizedReasoningEffort,
         summary: reasoning_summary,
       },
       true,
     ) as OpenAI.Reasoning;
-  } else if (hasReasoningParams({ reasoning_effort })) {
-    llmConfig.reasoning_effort = reasoning_effort;
+  } else if (hasReasoningParams({ reasoning_effort: normalizedReasoningEffort })) {
+    llmConfig.reasoning_effort = normalizedReasoningEffort;
   }
 
   if (llmConfig.max_tokens != null) {

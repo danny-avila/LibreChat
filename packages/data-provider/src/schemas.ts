@@ -108,6 +108,12 @@ export const getModelKey = (endpoint: EModelEndpoint | string, model: string) =>
     );
     return (provider ?? parts[0]) as BedrockProviders;
   }
+
+  const normalizedModel = model?.toLowerCase?.() ?? model;
+  if (typeof normalizedModel === 'string' && normalizedModel.startsWith('gpt-5.2')) {
+    return 'gpt-5.2';
+  }
+
   return model;
 };
 
@@ -166,6 +172,7 @@ export enum ReasoningEffort {
   low = 'low',
   medium = 'medium',
   high = 'high',
+  xhigh = 'xhigh',
 }
 
 export enum ReasoningSummary {

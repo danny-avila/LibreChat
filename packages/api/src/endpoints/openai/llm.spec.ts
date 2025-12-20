@@ -413,6 +413,63 @@ describe('getOpenAILLMConfig', () => {
         summary: ReasoningSummary.detailed,
       });
     });
+
+    it.each(['gpt-5.2-pro', 'GPT-5.2', 'Gpt-5.2-Pro', 'gpt-5.2-MINI'])(
+      'should allow xhigh reasoning_effort for gpt-5.2 variant: %s',
+      (model) => {
+        const result = getOpenAILLMConfig({
+          apiKey: 'test-api-key',
+          streaming: true,
+          endpoint: EModelEndpoint.openAI,
+          modelOptions: {
+            model,
+            reasoning_effort: ReasoningEffort.xhigh,
+            useResponsesApi: true,
+          },
+        });
+
+        expect(result.llmConfig.model).toBe(model);
+        expect(result.llmConfig.reasoning).toEqual({
+          effort: ReasoningEffort.xhigh,
+        });
+      },
+    );
+
+    it('should preserve standard reasoning_effort values on gpt-5.2 models', () => {
+      const reasoningEfforts = [ReasoningEffort.high, ReasoningEffort.medium, ReasoningEffort.low];
+
+      reasoningEfforts.forEach((effort) => {
+        const result = getOpenAILLMConfig({
+          apiKey: 'test-api-key',
+          streaming: true,
+          endpoint: EModelEndpoint.openAI,
+          modelOptions: {
+            model: 'gpt-5.2',
+            reasoning_effort: effort,
+            useResponsesApi: true,
+          },
+        });
+
+        expect(result.llmConfig.reasoning).toEqual({
+          effort,
+        });
+      });
+    });
+
+    it('should ignore xhigh reasoning_effort for non-gpt-5.2 models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: {
+          model: 'gpt-5.1',
+          reasoning_effort: ReasoningEffort.xhigh,
+        },
+      });
+
+      expect(result.llmConfig.reasoning).toBeUndefined();
+      expect(result.llmConfig.reasoning_effort).toBeUndefined();
+    });
   });
 
   describe('Default and Add Parameters', () => {
