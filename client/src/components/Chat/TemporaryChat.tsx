@@ -44,10 +44,10 @@ export function TemporaryChat() {
             aria-label={localize(temporaryBadge.label)}
             aria-pressed={isTemporary}
             className={cn(
-              'inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light text-text-primary transition-all ease-in-out hover:bg-surface-tertiary',
+              'inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light text-text-primary transition-all ease-in-out hover:bg-surface-active',
               isTemporary
                 ? 'bg-surface-active shadow-md'
-                : 'bg-transparent shadow-sm hover:bg-surface-hover hover:shadow-md',
+                : 'bg-transparent shadow-sm hover:bg-surface-active-alt',
               'active:shadow-inner',
             )}
           >
