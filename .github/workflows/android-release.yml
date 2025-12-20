@@ -1,0 +1,60 @@
+name: Android Release APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: YahaviApp
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: YahaviApp/package-lock.json
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Patch Android libraries (jcenter removal + SDK levels)
+        run: |
+          chmod +x scripts/fix-android-libs.sh
+          ./scripts/fix-android-libs.sh
+
+      - name: Build release APK
+        run: |
+          cd android
+          export ORG_GRADLE_PROJECT_nodeExecutable="$(which node)"
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yahavi-app-release-apk
+          path: YahaviApp/android/app/build/outputs/apk/release/app-release.apk
