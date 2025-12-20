@@ -6,9 +6,44 @@ const { logger } = require('~/config');
 class WoodlandProductHistory extends Tool {
   static DEFAULT_API_VERSION = '2024-07-01';
   static DEFAULT_QUERY_TYPE = 'simple';
-  static DEFAULT_TOP = 20;
+  static DEFAULT_TOP = 5;
   static DEFAULT_SELECT = '*';
   static DEFAULT_VECTOR_K = 15;
+  static MAX_CONTENT_LENGTH = 2000; // Truncate content to avoid token overflow
+
+  // Canonical casing maps for Azure Search case-sensitive eq filters
+  static CANONICAL_COLORS = {
+    yellow: 'Yellow',
+    orange: 'Orange',
+    black: 'Black',
+    red: 'Red',
+    blue: 'Blue',
+    green: 'Green',
+    grey: 'Grey',
+    gray: 'Grey',
+    white: 'White',
+  };
+
+  static CANONICAL_SHAPES = {
+    tapered: 'Tapered',
+    taper: 'Tapered',
+    straight: 'Straight',
+    square: 'Straight', // square bags are straight-sided
+  };
+
+  static OPENING_SYNONYMS = {
+    opening: 'intake',
+    inlet: 'intake',
+    diameter: 'intake',
+    blower: 'intake',
+  };
+
+  // Regex patterns for NLP extraction
+  static COLOR_PATTERN = /\b(yellow|orange|black|red|blue|green|grey|gray|white)\b/gi;
+  static SHAPE_PATTERN = /\b(tapered|taper|straight|square)\b/gi;
+  static OPENING_PATTERN = /\b(\d+(?:\.\d+)?)[\s-]*(inch|in|"|inches?)(?:\s*(intake|opening|inlet|diameter|blower))?\b/gi;
+  static OPENING_PATTERN_ALT = /\b(?:intake|opening|inlet|diameter)[\s:]*(?:of\s*)?(\d+(?:\.\d+)?)[\s-]*(inch|in|"|inches?)?\b/gi;
+  static ENGINE_PATTERN = /\b(tecumseh|vanguard|intek|briggs|honda|kohler|xr\s*\d+)[\s-]*(\d+(?:\.\d+)?\s*hp)?\b/gi;
 
   constructor(fields = {}) {
     super();
@@ -117,15 +152,28 @@ class WoodlandProductHistory extends Tool {
     });
   }
 
-  _buildFilter(input) {
+  _buildFilter(input, options = {}) {
+    const { useContains = false } = options;
     const filters = [];
-    const add = (field, value) => {
+    
+    const addExact = (field, value) => {
       if (!value) return;
       const sanitized = String(value).replace(/'/g, "''").trim();
       if (!sanitized) return;
       filters.push(`${field} eq '${sanitized}'`);
     };
-    add('rake_model', input.rakeModel);
+    
+    const addContains = (field, value) => {
+      if (!value) return;
+      const sanitized = String(value).replace(/'/g, "''").trim();
+      if (!sanitized) return;
+      // Use search.ismatch for partial text matching
+      filters.push(`search.ismatch('${sanitized}', '${field}')`);
+    };
+    
+    const add = useContains ? addContains : addExact;
+    
+    addExact('rake_model', input.rakeModel); // Always exact for model
     add('engine_model', input.engineModel);
     add('deck_hose', input.deckHose);
     add('collector_bag', input.collectorBag);
@@ -153,6 +201,7 @@ class WoodlandProductHistory extends Tool {
       }
     };
 
+    // Priority 1: Explicit Airtable URL fields
     const airtableCandidates = [
       doc.airtable_url,
       doc.airtableUrl,
@@ -160,8 +209,31 @@ class WoodlandProductHistory extends Tool {
       doc.airtableLink,
       doc.airtable_record_url,
       doc.airtableRecordUrl,
+      doc.record_url,
+      doc.recordUrl,
     ];
     airtableCandidates.forEach((value) => push(value, true));
+
+    // Priority 2: Construct Airtable URL from record_id if no URL found yet
+    if (prioritized.length === 0) {
+      const recordId = doc.record_id || doc.recordId || doc.airtable_record_id || doc.airtableRecordId;
+      const tableId = doc.table_id || doc.tableId || doc.airtable_table_id;
+      const baseId = doc.base_id || doc.baseId || doc.airtable_base_id || 
+                     process.env.AIRTABLE_PRODUCT_HISTORY_BASE_ID || 
+                     process.env.AIRTABLE_BASE_ID;
+      
+      if (recordId && baseId) {
+        // Construct Airtable record URL: https://airtable.com/{baseId}/{tableId}/{recordId}
+        const tableIdPart = tableId || 'tbl'; // Default table prefix if not specified
+        const airtableUrl = `https://airtable.com/${baseId}/${tableIdPart}/${recordId}`;
+        push(airtableUrl, true);
+        logger.debug('[woodland-ai-product-history] Constructed Airtable URL from record_id', {
+          recordId,
+          baseId,
+          url: airtableUrl,
+        });
+      }
+    }
 
     ['document_url', 'source_url', 'url'].forEach((key) => push(doc[key]));
     Object.keys(doc).forEach((key) => {
@@ -187,19 +259,116 @@ class WoodlandProductHistory extends Tool {
   }
 
   _shapeDocument(doc) {
-    const { primaryUrl, supplementalUrls } = this._collectUrls(doc);
-    const bagDetails = this._deriveBagDetails(doc.collector_bag ?? doc.collectorBag);
-    const blowerOpening = this._deriveBlowerOpening(doc.deck_hose ?? doc.deckHose);
-    const normalized = this._normalizeAttributes(doc, {
-      bagDetails,
-      blowerOpening,
-    });
+    // Extract and truncate content field - this contains all the Airtable product details
+    let content = typeof doc.content === 'string' ? doc.content.trim() : '';
+    if (content.length > WoodlandProductHistory.MAX_CONTENT_LENGTH) {
+      content = content.substring(0, WoodlandProductHistory.MAX_CONTENT_LENGTH) + '...';
+    }
 
+    // Build minimal output to avoid token overflow
     return {
-      ...doc,
-      citations: [primaryUrl, ...supplementalUrls].filter(Boolean),
-      normalized_product: normalized,
+      rake_model: doc.rake_model || doc.model,
+      engine_model: doc.engine_model,
+      deck_hose: doc.deck_hose,
+      collector_bag: doc.collector_bag,
+      blower_color: doc.blower_color,
+      content: content || undefined,
     };
+  }
+
+  /**
+   * Calculate a match score based on how many requested attributes match the document.
+   * Higher score = more attributes matched.
+   * @param {Object} doc - Shaped document
+   * @param {Object} requestedAttrs - User-requested attributes
+   * @returns {Object} { score: number, matches: string[], mismatches: string[] }
+   */
+  _calculateAttributeMatchScore(doc, requestedAttrs) {
+    const matches = [];
+    const mismatches = [];
+    let score = 0;
+    
+    // Derive bag details from collector_bag field
+    const bagDetails = this._deriveBagDetails(doc.collector_bag);
+    
+    const compareAttr = (docValue, requestedValue, attrName, weight = 1) => {
+      if (!requestedValue) return; // Not requested
+      if (!docValue) {
+        mismatches.push(`${attrName}: expected "${requestedValue}", got none`);
+        return;
+      }
+      
+      const docLower = String(docValue).toLowerCase().trim();
+      const reqLower = String(requestedValue).toLowerCase().trim();
+      
+      // Exact match
+      if (docLower === reqLower) {
+        score += weight;
+        matches.push(`${attrName}: "${requestedValue}"`);
+        return;
+      }
+      
+      // Partial match (contains)
+      if (docLower.includes(reqLower) || reqLower.includes(docLower)) {
+        score += weight * 0.7;
+        matches.push(`${attrName}: partial "${requestedValue}" in "${docValue}"`);
+        return;
+      }
+      
+      mismatches.push(`${attrName}: expected "${requestedValue}", got "${docValue}"`);
+    };
+    
+    // Check each attribute (weighted by importance)
+    compareAttr(doc.engine_model, requestedAttrs.engineModel, 'engine_model', 2);
+    compareAttr(doc.deck_hose, requestedAttrs.deckHose, 'deck_hose', 2);
+    compareAttr(doc.blower_color, requestedAttrs.blowerColor, 'blower_color', 1.5);
+    compareAttr(bagDetails?.color, requestedAttrs.bagColor, 'bag_color', 1.5);
+    compareAttr(bagDetails?.shape, requestedAttrs.bagShape, 'bag_shape', 1.5);
+    compareAttr(doc.collector_bag, requestedAttrs.collectorBag, 'collector_bag', 2);
+    
+    return { score, matches, mismatches };
+  }
+
+  /**
+   * Score and rank results based on attribute matches.
+   * @param {Array} results - Array of shaped documents
+   * @param {Object} requestedAttrs - User-requested attributes
+   * @returns {Array} Results with _matchScore added and sorted by score
+   */
+  _rankByAttributeMatch(results, requestedAttrs) {
+    if (!Array.isArray(results) || results.length === 0) return results;
+    
+    const hasRequestedAttrs = Object.values(requestedAttrs || {}).some(Boolean);
+    if (!hasRequestedAttrs) return results;
+    
+    const scored = results.map((doc) => {
+      const matchInfo = this._calculateAttributeMatchScore(doc, requestedAttrs);
+      return {
+        ...doc,
+        _matchScore: matchInfo.score,
+        _matchDetails: matchInfo,
+      };
+    });
+    
+    // Sort by match score (desc), then by search score (desc)
+    scored.sort((a, b) => {
+      const scoreDiff = (b._matchScore || 0) - (a._matchScore || 0);
+      if (Math.abs(scoreDiff) > 0.01) return scoreDiff;
+      return (b['@search.score'] || 0) - (a['@search.score'] || 0);
+    });
+    
+    // Log ranking results for debugging
+    logger.debug('[woodland-ai-product-history] Attribute ranking results', {
+      requestedAttrs,
+      topResults: scored.slice(0, 3).map((d) => ({
+        model: d.rake_model,
+        matchScore: d._matchScore,
+        searchScore: d['@search.score'],
+        matches: d._matchDetails?.matches,
+      })),
+    });
+    
+    return scored;
   }
 
   _deriveBagDetails(rawValue) {
@@ -533,8 +702,8 @@ class WoodlandProductHistory extends Tool {
   }
 
   /**
-   * If a fallback model is specified, fetch its record and merge missing groups/fields
-   * into the shaped result. Annotate merged entries via a source label for clarity.
+   * If a fallback model is specified, fetch its record and merge content
+   * into the shaped result.
    */
   async _maybeMergeFallbackParts(shaped, originalDoc) {
     try {
@@ -562,55 +731,14 @@ class WoodlandProductHistory extends Tool {
 
       const fbShaped = this._shapeDocument({ ...fbDoc });
 
-      // Merge logic: for any empty group or missing field in shaped, pull from fallback
+      // Simple merge: append fallback content if primary is missing details
       const merged = { ...shaped };
-      merged.normalized_product = { ...shaped.normalized_product };
-
-      const srcLabel = `(sourced from ${fallbackModel})`;
-
-      // Merge groups
-      const groups = merged.normalized_product.groups || {};
-      const fbGroups = fbShaped.normalized_product.groups || {};
-      Object.keys(fbGroups).forEach((gk) => {
-        const current = groups[gk];
-        const fbVal = fbGroups[gk];
-        const isEmpty = !Array.isArray(current) || current.length === 0;
-        if (isEmpty && Array.isArray(fbVal) && fbVal.length > 0) {
-          // annotate entries with source label
-          groups[gk] = fbVal.map((e) => ({ ...e, value: `${e.value} ${srcLabel}`.trim() }));
-        }
-      });
-      merged.normalized_product.groups = groups;
-
-      // Merge primary fields (if missing)
-      const fields = merged.normalized_product.fields || {};
-      const fbFields = fbShaped.normalized_product.fields || {};
-      Object.keys(fbFields).forEach((fk) => {
-        const cur = fields[fk];
-        const fb = fbFields[fk];
-        if (cur == null && fb != null) {
-          if (typeof fb === 'object' && fb.value) {
-            fields[fk] = { ...fb, value: `${fb.value} ${srcLabel}`.trim() };
-          } else if (typeof fb === 'string') {
-            fields[fk] = `${fb} ${srcLabel}`.trim();
-          } else {
-            fields[fk] = fb;
-          }
-        }
-      });
-      merged.normalized_product.fields = fields;
-
-      // Tag annotation for visibility
-      const tags = Array.isArray(merged.normalized_product.tags)
-        ? merged.normalized_product.tags
-        : [];
-      merged.normalized_product.tags = [...tags, `fallback:${fallbackModel}`];
-
-      // Add citation for fallback record if available
-      const fbCitation = fbShaped.citations?.[0];
-      if (fbCitation && !merged.citations?.includes(fbCitation)) {
-        merged.citations = [...(merged.citations || []), fbCitation];
+      if (fbShaped.content && (!shaped.content || shaped.content.length < 100)) {
+        merged.content = shaped.content 
+          ? `${shaped.content}\n\n--- Additional parts from ${fallbackModel} ---\n${fbShaped.content}`
+          : fbShaped.content;
       }
+      merged.fallback_model = fallbackModel;
 
       return merged;
     } catch (e) {
@@ -644,6 +772,193 @@ class WoodlandProductHistory extends Tool {
     return Boolean(this.semanticConfiguration && this.queryLanguage);
   }
 
+  /**
+   * Extract structured attributes from natural-language query text.
+   * Returns inferred values for blowerColor, bagShape, bagColor, blowerOpening, engineModel.
+   */
+  _inferStructuredFromQuery(query) {
+    if (!query || typeof query !== 'string') {
+      return {};
+    }
+    const text = query.toLowerCase();
+    const inferred = {};
+
+    // Extract colors - look for context clues
+    const colorMatches = text.match(WoodlandProductHistory.COLOR_PATTERN) || [];
+    const uniqueColors = [...new Set(colorMatches.map((c) => c.toLowerCase()))];
+
+    // Assign colors based on context
+    uniqueColors.forEach((color) => {
+      const canonical = WoodlandProductHistory.CANONICAL_COLORS[color];
+      if (!canonical) return;
+
+      // Check for blower/housing context
+      if (/blower|housing/.test(text) && !inferred.blowerColor) {
+        const blowerPattern = new RegExp(`(${color})\\s*(blower|housing)|blower\\s*(housing)?\\s*(${color})|(${color})\\s+blower`, 'i');
+        if (blowerPattern.test(query)) {
+          inferred.blowerColor = canonical;
+        }
+      }
+
+      // Check for bag context
+      if (/bag/.test(text) && !inferred.bagColor) {
+        const bagPattern = new RegExp(`(${color})\\s*bag|bag\\s*(${color})`, 'i');
+        if (bagPattern.test(query)) {
+          inferred.bagColor = canonical;
+        }
+      }
+    });
+
+    // If only one color and no specific context, try to infer from position
+    if (uniqueColors.length === 1 && !inferred.blowerColor && !inferred.bagColor) {
+      const singleColor = WoodlandProductHistory.CANONICAL_COLORS[uniqueColors[0]];
+      if (/blower|housing/.test(text)) {
+        inferred.blowerColor = singleColor;
+      } else if (/bag/.test(text)) {
+        inferred.bagColor = singleColor;
+      }
+    }
+
+    // Extract bag shape
+    const shapeMatches = text.match(WoodlandProductHistory.SHAPE_PATTERN);
+    if (shapeMatches && shapeMatches.length > 0) {
+      const shape = shapeMatches[0].toLowerCase();
+      inferred.bagShape = WoodlandProductHistory.CANONICAL_SHAPES[shape];
+    }
+
+    // Extract blower opening/intake size
+    let openingMatch = WoodlandProductHistory.OPENING_PATTERN.exec(query);
+    WoodlandProductHistory.OPENING_PATTERN.lastIndex = 0; // Reset regex
+    if (!openingMatch) {
+      openingMatch = WoodlandProductHistory.OPENING_PATTERN_ALT.exec(query);
+      WoodlandProductHistory.OPENING_PATTERN_ALT.lastIndex = 0;
+    }
+    if (openingMatch) {
+      const size = openingMatch[1];
+      inferred.blowerOpening = `${size} inch`;
+    }
+
+    // Extract engine model
+    const engineMatch = WoodlandProductHistory.ENGINE_PATTERN.exec(query);
+    WoodlandProductHistory.ENGINE_PATTERN.lastIndex = 0;
+    if (engineMatch) {
+      const brand = engineMatch[1];
+      const hp = engineMatch[2] || '';
+      const normalizedBrand = brand.charAt(0).toUpperCase() + brand.slice(1).toLowerCase();
+      inferred.engineModel = `${normalizedBrand} ${hp}`.trim();
+    }
+
+    logger.debug('[woodland-ai-product-history] _inferStructuredFromQuery', {
+      query: query.substring(0, 100),
+      inferred,
+    });
+
+    return inferred;
+  }
+
+  /**
+   * Normalize a value to canonical casing for Azure Search eq filters.
+   */
+  _normalizeToCanonical(value, type) {
+    if (!value || typeof value !== 'string') return value;
+    const lower = value.toLowerCase().trim();
+
+    switch (type) {
+      case 'color':
+        return WoodlandProductHistory.CANONICAL_COLORS[lower] || value;
+      case 'shape':
+        return WoodlandProductHistory.CANONICAL_SHAPES[lower] || value;
+      default:
+        return value;
+    }
+  }
+
+  /**
+   * Normalize all filter-relevant input values to canonical casing.
+   */
+  _normalizeInputValues(input) {
+    const normalized = { ...input };
+
+    if (input.blowerColor) {
+      normalized.blowerColor = this._normalizeToCanonical(input.blowerColor, 'color');
+    }
+    if (input.bagColor) {
+      normalized.bagColor = this._normalizeToCanonical(input.bagColor, 'color');
+    }
+    if (input.bagShape) {
+      normalized.bagShape = this._normalizeToCanonical(input.bagShape, 'shape');
+    }
+
+    // Normalize blower opening format
+    if (input.blowerOpening) {
+      const match = input.blowerOpening.match(/(\d+(?:\.\d+)?)/)
+      if (match) {
+        normalized.blowerOpening = `${match[1]} inch`;
+      }
+    }
+
+    return normalized;
+  }
+
+  /**
+   * Build filter variants for retry logic - returns array of filter strings to try.
+   * Starts with full exact filter, then tries partial matches, then drops filters progressively.
+   */
+  _buildFilterVariants(input) {
+    const variants = [];
+    const seen = new Set();
+    
+    const addVariant = (filter, description) => {
+      if (!filter || seen.has(filter)) return;
+      seen.add(filter);
+      variants.push({ filter, description });
+    };
+    
+    // Strategy 1: Full exact match
+    const fullFilter = this._buildFilter(input);
+    addVariant(fullFilter, 'full exact filter');
+    
+    // Strategy 2: Full filter with partial matching (search.ismatch)
+    const fullContainsFilter = this._buildFilter(input, { useContains: true });
+    addVariant(fullContainsFilter, 'full partial match filter');
+
+    // Strategy 3: Without blowerColor (often most restrictive for exact match)
+    if (input.blowerColor) {
+      const withoutBlower = { ...input, blowerColor: undefined };
+      addVariant(this._buildFilter(withoutBlower), 'without blowerColor exact');
+      addVariant(this._buildFilter(withoutBlower, { useContains: true }), 'without blowerColor partial');
+    }
+
+    // Strategy 4: Core attributes only (collector_bag + deck_hose)
+    if (input.collectorBag || input.deckHose) {
+      const coreOnly = { 
+        collectorBag: input.collectorBag, 
+        deckHose: input.deckHose,
+        engineModel: input.engineModel 
+      };
+      addVariant(this._buildFilter(coreOnly), 'core attributes exact');
+      addVariant(this._buildFilter(coreOnly, { useContains: true }), 'core attributes partial');
+    }
+
+    // Strategy 5: Engine + deck_hose only
+    if (input.engineModel && input.deckHose) {
+      const engineDeck = { engineModel: input.engineModel, deckHose: input.deckHose };
+      addVariant(this._buildFilter(engineDeck), 'engine+deck exact');
+      addVariant(this._buildFilter(engineDeck, { useContains: true }), 'engine+deck partial');
+    }
+
+    // Strategy 6: Only rakeModel if present
+    if (input.rakeModel) {
+      const onlyModel = { rakeModel: input.rakeModel };
+      addVariant(this._buildFilter(onlyModel), 'only rakeModel');
+    }
+
+    // Final: no filter
+    variants.push({ filter: undefined, description: 'no filter (fallback)' });
+
+    return variants;
+  }
+
   async _call(data) {
     const parsed = this.schema.safeParse(data);
     if (!parsed.success) {
@@ -652,17 +967,63 @@ class WoodlandProductHistory extends Tool {
 
     const input = parsed.data;
     const top = Number.isFinite(input.top) ? Math.floor(input.top) : this.topDefault;
-    const enriched = { ...input };
-    if (!enriched.deckHose && input.blowerOpening) {
-      enriched.deckHose = input.blowerOpening;
+
+    // Step 1: Infer attributes from query text (NLP extraction)
+    const inferredFromQuery = this._inferStructuredFromQuery(input.query);
+
+    // Step 2: Merge inferred values with explicit input (explicit takes precedence)
+    const merged = {
+      ...input,
+      blowerColor: input.blowerColor || inferredFromQuery.blowerColor,
+      bagColor: input.bagColor || inferredFromQuery.bagColor,
+      bagShape: input.bagShape || inferredFromQuery.bagShape,
+      blowerOpening: input.blowerOpening || inferredFromQuery.blowerOpening,
+      engineModel: input.engineModel || inferredFromQuery.engineModel,
+    };
+
+    // Step 3: Normalize all values to canonical casing
+    const normalized = this._normalizeInputValues(merged);
+
+    logger.info('[woodland-ai-product-history] Attribute extraction complete', {
+      explicit: {
+        blowerColor: input.blowerColor,
+        bagColor: input.bagColor,
+        bagShape: input.bagShape,
+        blowerOpening: input.blowerOpening,
+        engineModel: input.engineModel,
+      },
+      inferred: inferredFromQuery,
+      normalized: {
+        blowerColor: normalized.blowerColor,
+        bagColor: normalized.bagColor,
+        bagShape: normalized.bagShape,
+        blowerOpening: normalized.blowerOpening,
+        engineModel: normalized.engineModel,
+      },
+    });
+
+    const enriched = { ...normalized };
+    if (!enriched.deckHose && normalized.blowerOpening) {
+      enriched.deckHose = normalized.blowerOpening;
     }
-    if (!enriched.collectorBag && (input.bagShape || input.bagColor)) {
-      const bagParts = [input.bagShape, input.bagColor].filter(Boolean);
+    if (!enriched.collectorBag && (normalized.bagShape || normalized.bagColor)) {
+      const bagParts = [normalized.bagShape, normalized.bagColor].filter(Boolean);
       if (bagParts.length) {
         enriched.collectorBag = bagParts.join(' ');
       }
     }
     const filter = this._buildFilter(enriched);
+
+    logger.info('[woodland-ai-product-history] Final OData filter', {
+      filter: filter || '(none)',
+      enrichedAttributes: {
+        rakeModel: enriched.rakeModel,
+        engineModel: enriched.engineModel,
+        deckHose: enriched.deckHose,
+        collectorBag: enriched.collectorBag,
+        blowerColor: enriched.blowerColor,
+      },
+    });
     const fallbackTerms = this._collectTerms(
       enriched.rakeModel,
       enriched.engineModel,
@@ -715,18 +1076,40 @@ class WoodlandProductHistory extends Tool {
     }
 
     try {
-      let results = await this._performSearch(queryString, options);
+      let results = [];
 
-      if (results.length === 0 && options.filter) {
-        const retryOptions = { ...options };
-        delete retryOptions.filter;
-        logger.info(
-          '[woodland-ai-product-history] No results with filter, retrying without filter',
-        );
-        results = await this._performSearch(queryString, retryOptions);
+      // Build filter variants for retry logic
+      const filterVariants = this._buildFilterVariants(enriched);
+      logger.debug('[woodland-ai-product-history] Filter variants for retry', {
+        variantCount: filterVariants.length,
+        variants: filterVariants.map((v) => v.description),
+      });
+
+      // Try each filter variant until we get results
+      for (const variant of filterVariants) {
+        const attemptOptions = { ...options, filter: variant.filter };
+        logger.info('[woodland-ai-product-history] Attempting search', {
+          strategy: variant.description,
+          filter: variant.filter || '(none)',
+        });
+
+        results = await this._performSearch(queryString, attemptOptions);
+
+        if (results.length > 0) {
+          logger.info('[woodland-ai-product-history] Search succeeded', {
+            strategy: variant.description,
+            resultCount: results.length,
+          });
+          break;
+        }
+
+        logger.info('[woodland-ai-product-history] No results, trying next variant', {
+          triedStrategy: variant.description,
+        });
       }
 
-      if (results.length === 0 && queryString !== '*' && !options.filter) {
+      // Final fallback: wildcard search
+      if (results.length === 0 && queryString !== '*') {
         logger.info(
           '[woodland-ai-product-history] No results with query terms, retrying with wildcard',
         );
@@ -737,7 +1120,30 @@ class WoodlandProductHistory extends Tool {
         return 'NEEDS_HUMAN_REVIEW: No reviewed records found.';
       }
 
-      results.sort((a, b) => (b['@search.score'] || 0) - (a['@search.score'] || 0));
+      // Rank results by attribute match score (more important than search score)
+      const requestedAttrs = {
+        engineModel: normalized.engineModel,
+        deckHose: enriched.deckHose,
+        blowerColor: normalized.blowerColor,
+        bagColor: normalized.bagColor,
+        bagShape: normalized.bagShape,
+        collectorBag: enriched.collectorBag,
+      };
+      
+      results = this._rankByAttributeMatch(results, requestedAttrs);
+      
+      // Add model differentiation info if multiple models have same top score
+      const topScore = results[0]?._matchScore || 0;
+      const topMatches = results.filter((r) => Math.abs((r._matchScore || 0) - topScore) < 0.1);
+      
+      if (topMatches.length > 1) {
+        logger.info('[woodland-ai-product-history] Multiple models with same match score', {
+          count: topMatches.length,
+          models: topMatches.map((m) => m.rake_model),
+          missingDifferentiators: topMatches[0]?._matchDetails?.mismatches || [],
+        });
+      }
+      
       return JSON.stringify(results.slice(0, top));
     } catch (error) {
       logger.error('[woodland-ai-product-history] Search request failed', error);
