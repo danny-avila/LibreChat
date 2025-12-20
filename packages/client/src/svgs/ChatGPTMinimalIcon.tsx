@@ -12,6 +12,7 @@ export default function ChatGPTMinimalIcon() {
       strokeWidth="2"
       strokeLinecap="round"
       className="lucide lucide-bot"
+      aria-hidden="true"
     >
       <rect width="18" height="10" x="3" y="11" rx="2" />
       <circle cx="12" cy="5" r="2" />

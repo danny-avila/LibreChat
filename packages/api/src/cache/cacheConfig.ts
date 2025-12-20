@@ -85,6 +85,40 @@ const cacheConfig = {
   DEBUG_MEMORY_CACHE: isEnabled(process.env.DEBUG_MEMORY_CACHE),
 
   BAN_DURATION: math(process.env.BAN_DURATION, 7200000), // 2 hours
+
+  /**
+   * Number of keys to delete in each batch during Redis DEL operations.
+   * In cluster mode, keys are deleted individually in parallel chunks to avoid CROSSSLOT errors.
+   * In single-node mode, keys are deleted in batches using DEL with arrays.
+   * Lower values reduce memory usage but increase number of Redis calls.
+   * @default 1000
+   */
+  REDIS_DELETE_CHUNK_SIZE: math(process.env.REDIS_DELETE_CHUNK_SIZE, 1000),
+
+  /**
+   * Number of keys to update in each batch during Redis SET operations.
+   * In cluster mode, keys are updated individually in parallel chunks to avoid CROSSSLOT errors.
+   * In single-node mode, keys are updated in batches using transactions (multi/exec).
+   * Lower values reduce memory usage but increase number of Redis calls.
+   * @default 1000
+   */
+  REDIS_UPDATE_CHUNK_SIZE: math(process.env.REDIS_UPDATE_CHUNK_SIZE, 1000),
+
+  /**
+   * COUNT hint for Redis SCAN operations when scanning keys by pattern.
+   * This is a hint to Redis about how many keys to scan in each iteration.
+   * Higher values can reduce round trips but increase memory usage and latency per call.
+   * Note: Redis may return more or fewer keys than this count depending on internal heuristics.
+   * @default 1000
+   */
+  REDIS_SCAN_COUNT: math(process.env.REDIS_SCAN_COUNT, 1000),
+
+  /**
+   * TTL in milliseconds for MCP registry read-through cache.
+   * This cache reduces redundant lookups within a single request flow.
+   * @default 5000 (5 seconds)
+   */
+  MCP_REGISTRY_CACHE_TTL: math(process.env.MCP_REGISTRY_CACHE_TTL, 5000),
 };
 
 export { cacheConfig };

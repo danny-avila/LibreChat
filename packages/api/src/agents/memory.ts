@@ -250,6 +250,7 @@ export class BasicToolEndHandler implements EventHandler {
   constructor(callback?: ToolEndCallback) {
     this.callback = callback;
   }
+
   handle(
     event: string,
     data: StreamEventData | undefined,

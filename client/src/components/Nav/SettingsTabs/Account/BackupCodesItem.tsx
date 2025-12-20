@@ -171,7 +171,7 @@ const BackupCodesItem: React.FC = () => {
                     {isLoading ? (
                       <Spinner className="mr-2" />
                     ) : (
-                      <RefreshCcw className="mr-2 h-4 w-4" />
+                      <RefreshCcw className="mr-2 h-4 w-4" aria-hidden="true" />
                     )}
                     {isLoading
                       ? localize('com_ui_regenerating')

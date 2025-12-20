@@ -11,6 +11,7 @@ const {
   mcpToolPattern,
   loadWebSearchAuth,
 } = require('@librechat/api');
+const { getMCPServersRegistry } = require('~/config');
 const {
   Tools,
   Constants,
@@ -317,14 +318,22 @@ const loadTools = async ({
       requestedTools[tool] = async () => {
         toolContextMap[tool] = `# \`${tool}\`:
 Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
-1. **Execute immediately without preface** when using \`${tool}\`.
-2. **After the search, begin with a brief summary** that directly addresses the query without headers or explaining your process.
-3. **Structure your response clearly** using Markdown formatting (Level 2 headers for sections, lists for multiple points, tables for comparisons).
-4. **Cite sources properly** according to the citation anchor format, utilizing group anchors when appropriate.
-5. **Tailor your approach to the query type** (academic, news, coding, etc.) while maintaining an expert, journalistic, unbiased tone.
-6. **Provide comprehensive information** with specific details, examples, and as much relevant context as possible from search results.
-7. **Avoid moralizing language.**
-`.trim();
+
+**Execute immediately without preface.** After search, provide a brief summary addressing the query directly, then structure your response with clear Markdown formatting (## headers, lists, tables). Cite sources properly, tailor tone to query type, and provide comprehensive details.
+
+**CITATION FORMAT - UNICODE ESCAPE SEQUENCES ONLY:**
+Use these EXACT escape sequences (copy verbatim): \\ue202 (before each anchor), \\ue200 (group start), \\ue201 (group end), \\ue203 (highlight start), \\ue204 (highlight end)
+
+Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|news|image|ref, index=0,1,2...
+
+**Examples (copy these exactly):**
+- Single: "Statement.\\ue202turn0search0"
+- Multiple: "Statement.\\ue202turn0search0\\ue202turn0news1"
+- Group: "Statement. \\ue200\\ue202turn0search0\\ue202turn0news1\\ue201"
+- Highlight: "\\ue203Cited text.\\ue204\\ue202turn0search0"
+- Image: "See photo\\ue202turn0image0."
+
+**CRITICAL:** Output escape sequences EXACTLY as shown. Do NOT substitute with † or other symbols. Place anchors AFTER punctuation. Cite every non-obvious fact/quote. NEVER use markdown links, [1], footnotes, or HTML tags.`.trim();
         return createSearchTool({
           ...result.authResult,
           onSearchResults,
@@ -339,7 +348,10 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         /** Placeholder used for UI purposes */
         continue;
       }
-      if (serverName && options.req?.config?.mcpConfig?.[serverName] == null) {
+      const serverConfig = serverName
+        ? await getMCPServersRegistry().getServerConfig(serverName, user)
+        : null;
+      if (!serverConfig) {
         logger.warn(
           `MCP server "${serverName}" for "${toolName}" tool is not configured${agent?.id != null && agent.id ? ` but attached to "${agent.id}"` : ''}`,
         );
@@ -350,6 +362,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
           {
             type: 'all',
             serverName,
+            config: serverConfig,
           },
         ];
         continue;
@@ -360,6 +373,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         type: 'single',
         toolKey: tool,
         serverName,
+        config: serverConfig,
       });
       continue;
     }
@@ -423,6 +437,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
           model: agent?.model ?? model,
           serverName: config.serverName,
           provider: agent?.provider ?? endpoint,
+          config: config.config,
         };
 
         if (config.type === 'all' && toolConfigs.length === 1) {
