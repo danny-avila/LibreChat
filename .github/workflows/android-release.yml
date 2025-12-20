@@ -58,3 +58,4 @@ jobs:
         with:
           name: yahavi-app-release-apk
           path: YahaviApp/android/app/build/outputs/apk/release/app-release.apk
+
