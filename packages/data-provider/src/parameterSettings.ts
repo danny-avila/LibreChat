@@ -720,6 +720,28 @@ const openAICol2: SettingsConfiguration = [
   librechat.fileTokenLimit,
 ];
 
+const gpt52ReasoningEffort: SettingDefinition = {
+  ...openAIParams.reasoning_effort,
+  options: [...(openAIParams.reasoning_effort.options ?? []), ReasoningEffort.xhigh],
+  enumMappings: {
+    ...openAIParams.reasoning_effort.enumMappings,
+    [ReasoningEffort.xhigh]: 'com_ui_xhigh',
+  },
+};
+
+const replaceSettingsWithOverrides = (
+  settings: SettingsConfiguration,
+  overrides: Record<string, SettingDefinition>,
+) => settings.map((setting) => overrides[setting.key] ?? setting);
+
+const gpt52OpenAI = replaceSettingsWithOverrides(openAI, {
+  reasoning_effort: gpt52ReasoningEffort,
+});
+
+const gpt52OpenAICol2 = replaceSettingsWithOverrides(openAICol2, {
+  reasoning_effort: gpt52ReasoningEffort,
+});
+
 const anthropicConfig: SettingsConfiguration = [
   librechat.modelLabel,
   librechat.promptPrefix,
@@ -880,8 +902,11 @@ const bedrockGeneralCol2: SettingsConfiguration = [
 
 export const paramSettings: Record<string, SettingsConfiguration | undefined> = {
   [EModelEndpoint.openAI]: openAI,
+  [`${EModelEndpoint.openAI}-gpt-5.2`]: gpt52OpenAI,
   [EModelEndpoint.azureOpenAI]: openAI,
+  [`${EModelEndpoint.azureOpenAI}-gpt-5.2`]: gpt52OpenAI,
   [EModelEndpoint.custom]: openAI,
+  [`${EModelEndpoint.custom}-gpt-5.2`]: gpt52OpenAI,
   [EModelEndpoint.anthropic]: anthropicConfig,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: bedrockAnthropic,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.MistralAI}`]: bedrockMistral,
@@ -898,6 +923,11 @@ const openAIColumns = {
   col2: openAICol2,
 };
 
+const gpt52OpenAIColumns = {
+  col1: openAICol1,
+  col2: gpt52OpenAICol2,
+};
+
 const bedrockGeneralColumns = {
   col1: bedrockGeneralCol1,
   col2: bedrockGeneralCol2,
@@ -912,8 +942,11 @@ export const presetSettings: Record<
   | undefined
 > = {
   [EModelEndpoint.openAI]: openAIColumns,
+  [`${EModelEndpoint.openAI}-gpt-5.2`]: gpt52OpenAIColumns,
   [EModelEndpoint.azureOpenAI]: openAIColumns,
+  [`${EModelEndpoint.azureOpenAI}-gpt-5.2`]: gpt52OpenAIColumns,
   [EModelEndpoint.custom]: openAIColumns,
+  [`${EModelEndpoint.custom}-gpt-5.2`]: gpt52OpenAIColumns,
   [EModelEndpoint.anthropic]: {
     col1: anthropicCol1,
     col2: anthropicCol2,

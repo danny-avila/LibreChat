@@ -1,4 +1,4 @@
-import { anthropicSettings } from './schemas';
+import { anthropicSettings, EModelEndpoint, getModelKey } from './schemas';
 
 describe('anthropicSettings', () => {
   describe('maxOutputTokens.reset()', () => {
@@ -337,5 +337,26 @@ describe('anthropicSettings', () => {
         expect(set(128000, 'claude-3-opus')).toBe(128000);
       });
     });
+  });
+});
+
+describe('getModelKey (settings key)', () => {
+  it("should normalize 'gpt-5.2*' variants to the shared 'gpt-5.2' settings key", () => {
+    expect(getModelKey(EModelEndpoint.openAI, 'gpt-5.2')).toBe('gpt-5.2');
+    expect(getModelKey(EModelEndpoint.openAI, 'gpt-5.2-pro')).toBe('gpt-5.2');
+    expect(getModelKey(EModelEndpoint.openAI, 'GPT-5.2-mini')).toBe('gpt-5.2');
+  });
+
+  it('should not affect non-gpt-5.2 models', () => {
+    expect(getModelKey(EModelEndpoint.openAI, 'gpt-5.1')).toBe('gpt-5.1');
+    expect(getModelKey(EModelEndpoint.openAI, 'gpt-4')).toBe('gpt-4');
+    expect(getModelKey(EModelEndpoint.openAI, 'claude-3-5-sonnet-latest')).toBe(
+      'claude-3-5-sonnet-latest',
+    );
+  });
+
+  it('should handle nullish models without throwing', () => {
+    expect(getModelKey(EModelEndpoint.openAI, undefined as unknown as string)).toBeUndefined();
+    expect(getModelKey(EModelEndpoint.openAI, null as unknown as string)).toBeNull();
   });
 });
