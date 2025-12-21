@@ -17,10 +17,8 @@ jobs:
 
       - name: Detect lockfile
         id: lockcheck
-        shell: bash
-                working-directory: .
         run: |
-          if [ -f "YahaviApp/package-lock.json" ]; then
+          if [ -f "package-lock.json" ]; then
             echo "has_lock=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_lock=false" >> "$GITHUB_OUTPUT"
@@ -32,7 +30,7 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: YahaviApp/package-lock.json
+          cache-dependency-path: 
 
       - name: Set up Node (no cache)
         if: steps.lockcheck.outputs.has_lock != 'true'
@@ -75,4 +73,5 @@ jobs:
         with:
           name: yahavi-app-release-apk
           path: YahaviApp/android/app/build/outputs/apk/release/app-release.apk
+
 
