@@ -18,6 +18,7 @@ jobs:
       - name: Detect lockfile
         id: lockcheck
         shell: bash
+                working-directory: .
         run: |
           if [ -f "YahaviApp/package-lock.json" ]; then
             echo "has_lock=true" >> "$GITHUB_OUTPUT"
@@ -74,3 +75,4 @@ jobs:
         with:
           name: yahavi-app-release-apk
           path: YahaviApp/android/app/build/outputs/apk/release/app-release.apk
+
