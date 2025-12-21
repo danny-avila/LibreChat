@@ -243,7 +243,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           delete userMessage.image_urls;
         }
 
-        if (!job.abortController.signal.aborted) {
+        // Check abort state BEFORE calling completeJob (which triggers abort signal for cleanup)
+        const wasAbortedBeforeComplete = job.abortController.signal.aborted;
+        const isNewConvo = !reqConversationId || reqConversationId === 'new';
+        const shouldGenerateTitle =
+          addTitle &&
+          parentMessageId === Constants.NO_PARENT &&
+          isNewConvo &&
+          !wasAbortedBeforeComplete;
+
+        if (!wasAbortedBeforeComplete) {
           const finalEvent = {
             final: true,
             conversation,
@@ -280,14 +289,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             context: 'api/server/controllers/agents/request.js - resumable user message',
           });
         }
-
-        // Skip title generation if job was aborted
-        const newConvo = !reqConversationId;
-        const shouldGenerateTitle =
-          addTitle &&
-          parentMessageId === Constants.NO_PARENT &&
-          newConvo &&
-          !job.abortController.signal.aborted;
 
         if (shouldGenerateTitle) {
           addTitle(req, {
@@ -390,7 +391,8 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
   let client = null;
   let cleanupHandlers = [];
 
-  const newConvo = !reqConversationId;
+  // Match the same logic used for conversationId generation above
+  const isNewConvo = !reqConversationId || reqConversationId === 'new';
   const userId = req.user.id;
 
   // Create handler to avoid capturing the entire parent scope
@@ -638,7 +640,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
     }
 
     // Add title if needed - extract minimal data
-    if (addTitle && parentMessageId === Constants.NO_PARENT && newConvo) {
+    if (addTitle && parentMessageId === Constants.NO_PARENT && isNewConvo) {
       addTitle(req, {
         text,
         response: { ...response },
