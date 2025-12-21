@@ -1,5 +1,4 @@
 name: Android Release APK
-
 on:
   workflow_dispatch:
   push:
@@ -8,28 +7,24 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: YahaviApp
-        shell: bash
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Check whether package-lock.json exists
       - name: Detect lockfile
         id: lockcheck
         shell: bash
         run: |
-          if [ -f "package-lock.json" ]; then
+          if [ -f "YahaviApp/package-lock.json" ]; then
             echo "has_lock=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_lock=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Setup Node WITH npm cache only when lockfile exists
       - name: Set up Node (cached)
         if: steps.lockcheck.outputs.has_lock == 'true'
         uses: actions/setup-node@v4
@@ -38,7 +33,6 @@ jobs:
           cache: npm
           cache-dependency-path: YahaviApp/package-lock.json
 
-      # Setup Node WITHOUT cache if lockfile missing (prevents your error)
       - name: Set up Node (no cache)
         if: steps.lockcheck.outputs.has_lock != 'true'
         uses: actions/setup-node@v4
@@ -59,9 +53,6 @@ jobs:
             platforms;android-35
             build-tools;35.0.0
 
-      # Install deps:
-      # - npm ci if lockfile exists (best practice)
-      # - npm install otherwise (won't fail)
       - name: Install JS dependencies (npm ci)
         if: steps.lockcheck.outputs.has_lock == 'true'
         run: npm ci
@@ -75,14 +66,10 @@ jobs:
           chmod +x scripts/fix-android-libs.sh
           ./scripts/fix-android-libs.sh
 
-      - name: Build release APK
-        run: |
-          cd android
-          export ORG_GRADLE_PROJECT_nodeExecutable="$(which node)"
-          chmod +x gradlew
-          ./gradlew assembleRelease
+      - name: Build Android release
+        run: ./gradlew assembleRelease
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: yahavi-app-release-apk
