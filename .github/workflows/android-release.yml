@@ -50,8 +50,7 @@ jobs:
             build-tools;35.0.0
 
       - name: Install JS dependencies (npm ci)
-        if: steps.lockcheck.outputs.has_lock == 'true'
-              
+                if: steps.lockcheck.outputs.has_lock == 'true'
                 run: cd YahaviApp && npm ci
 
       - name: Install JS dependencies (npm install)
@@ -73,6 +72,7 @@ jobs:
         with:
           name: yahavi-app-release-apk
           path: YahaviApp/android/app/build/outputs/apk/release/app-release.apk
+
 
 
 
