@@ -66,7 +66,7 @@ export default function NewChat({
               data-testid="close-sidebar-button"
               aria-label={localize('com_nav_close_sidebar')}
               aria-expanded={true}
-              className="rounded-full border-none bg-transparent p-2 duration-0 hover:bg-surface-active-alt md:rounded-xl"
+              className="rounded-full border-none bg-transparent duration-0 hover:bg-surface-active-alt md:rounded-xl"
               onClick={handleToggleNav}
             >
               <Sidebar aria-hidden="true" className="max-md:hidden" />
@@ -88,7 +88,7 @@ export default function NewChat({
                 variant="outline"
                 data-testid="nav-new-chat-button"
                 aria-label={localize('com_ui_new_chat')}
-                className="rounded-full border-none bg-transparent p-2 duration-0 hover:bg-surface-active-alt md:rounded-xl"
+                className="rounded-full border-none bg-transparent duration-0 hover:bg-surface-active-alt md:rounded-xl"
                 onClick={clickHandler}
               >
                 <NewChatIcon className="icon-lg text-text-primary" />

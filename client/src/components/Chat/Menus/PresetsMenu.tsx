@@ -49,16 +49,22 @@ const PresetsMenu: FC = () => {
       <Trigger asChild>
         <TooltipAnchor
           ref={presetsMenuTriggerRef}
-          id="presets-button"
-          aria-label={localize('com_endpoint_examples')}
           description={localize('com_endpoint_examples')}
-          tabIndex={0}
-          role="button"
-          data-testid="presets-button"
-          className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
-        >
-          <BookCopy size={16} aria-hidden="true" />
-        </TooltipAnchor>
+          render={
+            <Button
+              size="icon"
+              variant="outline"
+              tabIndex={0}
+              id="presets-button"
+              data-testid="presets-button"
+              aria-label={localize('com_endpoint_examples')}
+              className="rounded-xl p-2 duration-0 hover:bg-surface-active-alt max-md:hidden"
+              // className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+            >
+              <BookCopy className="icon-md" aria-hidden="true" />
+            </Button>
+          }
+        ></TooltipAnchor>
       </Trigger>
       <Portal>
         <div
