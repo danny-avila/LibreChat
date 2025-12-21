@@ -1,6 +1,5 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { ArrowUpLeft } from 'lucide-react';
-import { useSetRecoilState } from 'recoil';
 import {
   Button,
   Input,
@@ -33,10 +32,10 @@ import {
   getEndpointFileConfig,
   type TFile,
 } from 'librechat-data-provider';
+import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useFileMapContext, useChatContext } from '~/Providers';
 import { useLocalize, useUpdateFiles } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
-import store from '~/store';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -49,7 +48,8 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [{ pageIndex, pageSize }, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
-  const setShowFiles = useSetRecoilState(store.showFiles);
+  const [showFilesModal, setShowFilesModal] = useState(false);
+  const manageFilesRef = useRef<HTMLButtonElement>(null);
 
   const pagination = useMemo(
     () => ({
@@ -301,9 +301,10 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
       <div className="flex items-center justify-between">
         <Button
+          ref={manageFilesRef}
           variant="outline"
           size="sm"
-          onClick={() => setShowFiles(true)}
+          onClick={() => setShowFilesModal(true)}
           aria-label={localize('com_sidepanel_manage_files')}
         >
           <ArrowUpLeft className="h-4 w-4" aria-hidden="true" />
@@ -334,6 +335,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           </Button>
         </div>
       </div>
+      <MyFilesModal
+        open={showFilesModal}
+        onOpenChange={setShowFilesModal}
+        triggerRef={manageFilesRef}
+      />
     </div>
   );
 }
