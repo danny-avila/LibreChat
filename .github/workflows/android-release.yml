@@ -7,9 +7,6 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: YahaviApp
 
     steps:
       - name: Checkout
@@ -54,18 +51,22 @@ jobs:
 
       - name: Install JS dependencies (npm ci)
         if: steps.lockcheck.outputs.has_lock == 'true'
+                working_directory: YahaviApp
         run: npm ci
 
       - name: Install JS dependencies (npm install)
+              working_directory: YahaviApp
         if: steps.lockcheck.outputs.has_lock != 'true'
         run: npm install
 
       - name: Patch Android libraries (jcenter removal + SDK levels)
+              working_directory: YahaviApp
         run: |
           chmod +x scripts/fix-android-libs.sh
           ./scripts/fix-android-libs.sh
 
       - name: Build Android release
+              working_directory: YahaviApp
         run: ./gradlew assembleRelease
 
       - name: Upload APK
@@ -73,5 +74,6 @@ jobs:
         with:
           name: yahavi-app-release-apk
           path: YahaviApp/android/app/build/outputs/apk/release/app-release.apk
+
 
 
