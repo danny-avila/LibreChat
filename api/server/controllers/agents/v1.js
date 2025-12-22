@@ -79,12 +79,20 @@ const refreshListAvatars = async (agents, userId) => {
 
   await Promise.all(
     agents.map(async (agent) => {
-      if (agent?.avatar?.source !== FileSources.s3 || !agent?.avatar?.filepath) {
+      if (!agent?.avatar?.filepath) {
         return;
       }
 
       try {
-        const newPath = await refreshS3Url(agent.avatar);
+        let newPath;
+        if (agent.avatar.source === FileSources.s3) {
+          newPath = await refreshS3Url(agent.avatar);
+        } else if (agent.avatar.source === FileSources.azure_blob) {
+          newPath = await refreshAzureUrl(agent.avatar);
+        } else {
+          return;
+        }
+
         if (newPath && newPath !== agent.avatar.filepath) {
           agent.avatar = { ...agent.avatar, filepath: newPath };
         }
@@ -186,14 +194,20 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
 
     agent.version = agent.versions ? agent.versions.length : 0;
 
-    if (agent.avatar && agent.avatar?.source === FileSources.s3) {
+    if (agent.avatar && (agent.avatar?.source === FileSources.s3 || agent.avatar?.source === FileSources.azure_blob)) {
       try {
+        let newPath;
+        if (agent.avatar.source === FileSources.s3) {
+          newPath = await refreshS3Url(agent.avatar);
+        } else {
+          newPath = await refreshAzureUrl(agent.avatar);
+        }
         agent.avatar = {
           ...agent.avatar,
-          filepath: await refreshS3Url(agent.avatar),
+          filepath: newPath,
         };
       } catch (e) {
-        logger.warn('[/Agents/:id] Failed to refresh S3 URL', e);
+        logger.warn('[/Agents/:id] Failed to refresh signed URL', e);
       }
     }
 
