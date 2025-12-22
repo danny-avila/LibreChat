@@ -185,7 +185,7 @@ const ContentRender = memo(
               />
             </div>
 
-            {(isSubmitting || isSubmitting) && !(msg.children?.length ?? 0) ? (
+            {isLast && isSubmitting && !(msg.children?.length ?? 0) ? (
               <PlaceholderRow isCard={isCard} />
             ) : (
               <SubRow classes="text-xs">

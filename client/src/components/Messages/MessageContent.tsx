@@ -48,12 +48,7 @@ export default function MessageContent(props: TMessageProps) {
         {showSibling ? (
           <div className="m-auto my-2 flex justify-center p-4 py-2 md:gap-6">
             <div className="flex w-full flex-row flex-wrap justify-between gap-1 md:max-w-5xl md:flex-nowrap md:gap-2 lg:max-w-5xl xl:max-w-6xl">
-              <ContentRender
-                {...props}
-                message={message}
-                isSubmitting={isSubmitting}
-                isCard
-              />
+              <ContentRender {...props} message={message} isSubmitting={isSubmitting} isCard />
               <ContentRender
                 {...props}
                 isMultiMessage
@@ -65,7 +60,7 @@ export default function MessageContent(props: TMessageProps) {
           </div>
         ) : (
           <div className="m-auto justify-center p-4 py-2 md:gap-6">
-            <ContentRender {...props} />
+            <ContentRender {...props} isSubmitting={isSubmitting} />
           </div>
         )}
       </MessageContainer>
