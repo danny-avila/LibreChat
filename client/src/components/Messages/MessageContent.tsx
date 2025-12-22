@@ -32,7 +32,7 @@ export default function MessageContent(props: TMessageProps) {
     handleScroll,
     siblingMessage,
     latestMultiMessage,
-    isSubmittingFamily,
+    isSubmitting,
   } = useMessageProcess({ message: props.message });
   const { message, currentEditId, setCurrentEditId } = props;
 
@@ -51,7 +51,7 @@ export default function MessageContent(props: TMessageProps) {
               <ContentRender
                 {...props}
                 message={message}
-                isSubmittingFamily={isSubmittingFamily}
+                isSubmitting={isSubmitting}
                 isCard
               />
               <ContentRender
@@ -59,7 +59,7 @@ export default function MessageContent(props: TMessageProps) {
                 isMultiMessage
                 isCard
                 message={siblingMessage ?? latestMultiMessage ?? undefined}
-                isSubmittingFamily={isSubmittingFamily}
+                isSubmitting={isSubmitting}
               />
             </div>
           </div>

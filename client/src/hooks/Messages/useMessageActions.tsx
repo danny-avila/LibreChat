@@ -40,11 +40,11 @@ export default function useMessageActions(props: TMessageActions) {
     ask,
     index,
     regenerate,
+    isSubmitting,
     latestMessage,
     handleContinue,
     setLatestMessage,
     conversation: rootConvo,
-    isSubmitting: isSubmittingRoot,
   } = useChatContext();
   const { conversation: addedConvo } = useAddedChatContext();
   const conversation = useMemo(
@@ -105,11 +105,6 @@ export default function useMessageActions(props: TMessageActions) {
       return agentsMap[agentId];
     }
   }, [agentsMap, conversation?.agent_id, conversation?.endpoint, message?.model]);
-
-  const isSubmitting = useMemo(
-    () => (isMultiMessage === true ? isSubmittingAdditional : isSubmittingRoot),
-    [isMultiMessage, isSubmittingAdditional, isSubmittingRoot],
-  );
 
   const regenerateMessage = useCallback(() => {
     if ((isSubmitting && isCreatedByUser === true) || !message) {

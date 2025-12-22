@@ -12,14 +12,8 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
   const [siblingMessage, setSiblingMessage] = useState<TMessage | null>(null);
   const hasNoChildren = useMemo(() => (message?.children?.length ?? 0) === 0, [message]);
 
-  const {
-    index,
-    conversation,
-    latestMessage,
-    setAbortScroll,
-    setLatestMessage,
-    isSubmittingFamily,
-  } = useMessagesViewContext();
+  const { index, conversation, latestMessage, setAbortScroll, setLatestMessage, isSubmitting } =
+    useMessagesViewContext();
   const latestMultiMessage = useRecoilValue(store.latestMessageFamily(index + 1));
 
   useEffect(() => {
@@ -72,17 +66,17 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
       throttle(() => {
         logger.log(
           'message_scrolling',
-          `useMessageProcess: setting abort scroll to ${isSubmittingFamily}, handleScroll event`,
+          `useMessageProcess: setting abort scroll to ${isSubmitting}, handleScroll event`,
           event,
         );
-        if (isSubmittingFamily) {
+        if (isSubmitting) {
           setAbortScroll(true);
         } else {
           setAbortScroll(false);
         }
       }, 500)();
     },
-    [isSubmittingFamily, setAbortScroll],
+    [isSubmitting, setAbortScroll],
   );
 
   const showSibling = useMemo(
@@ -109,10 +103,10 @@ export default function useMessageProcess({ message }: { message?: TMessage | nu
   return {
     showSibling,
     handleScroll,
+    isSubmitting,
     conversation,
     siblingMessage,
     setSiblingMessage,
-    isSubmittingFamily,
     latestMultiMessage,
   };
 }

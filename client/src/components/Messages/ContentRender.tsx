@@ -18,7 +18,7 @@ type ContentRenderProps = {
   message?: TMessage;
   isCard?: boolean;
   isMultiMessage?: boolean;
-  isSubmittingFamily?: boolean;
+  isSubmitting?: boolean;
 } & Pick<
   TMessageProps,
   'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
@@ -34,7 +34,7 @@ const ContentRender = memo(
     currentEditId,
     isMultiMessage = false,
     setCurrentEditId,
-    isSubmittingFamily = false,
+    isSubmitting = false,
   }: ContentRenderProps) => {
     const localize = useLocalize();
     const { attachments, searchResults } = useAttachments({
@@ -49,7 +49,6 @@ const ContentRender = memo(
       enterEdit,
       conversation,
       messageLabel,
-      isSubmitting,
       latestMessage,
       handleContinue,
       copyToClipboard,
@@ -73,8 +72,8 @@ const ContentRender = memo(
       [msg?.children, msg?.depth, latestMessage?.depth],
     );
     const isLatestMessage = msg?.messageId === latestMessage?.messageId;
-    const showCardRender = isLast && !isSubmittingFamily && isCard;
-    const isLatestCard = isCard && !isSubmittingFamily && isLatestMessage;
+    const showCardRender = isLast && !isSubmitting && isCard;
+    const isLatestCard = isCard && !isSubmitting && isLatestMessage;
 
     const iconData: TMessageIcon = useMemo(
       () => ({
@@ -186,7 +185,7 @@ const ContentRender = memo(
               />
             </div>
 
-            {(isSubmittingFamily || isSubmitting) && !(msg.children?.length ?? 0) ? (
+            {(isSubmitting || isSubmitting) && !(msg.children?.length ?? 0) ? (
               <PlaceholderRow isCard={isCard} />
             ) : (
               <SubRow classes="text-xs">

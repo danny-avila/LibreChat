@@ -19,7 +19,7 @@ type MessageRenderProps = {
   message?: TMessage;
   isCard?: boolean;
   isMultiMessage?: boolean;
-  isSubmittingFamily?: boolean;
+  isSubmitting?: boolean;
 } & Pick<
   TMessageProps,
   'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
@@ -35,7 +35,7 @@ const MessageRender = memo(
     currentEditId,
     isMultiMessage = false,
     setCurrentEditId,
-    isSubmittingFamily = false,
+    isSubmitting = false,
   }: MessageRenderProps) => {
     const localize = useLocalize();
     const {
@@ -47,7 +47,6 @@ const MessageRender = memo(
       enterEdit,
       conversation,
       messageLabel,
-      isSubmitting,
       latestMessage,
       handleContinue,
       copyToClipboard,
@@ -70,8 +69,8 @@ const MessageRender = memo(
       [hasNoChildren, msg?.depth, latestMessage?.depth],
     );
     const isLatestMessage = msg?.messageId === latestMessage?.messageId;
-    const showCardRender = isLast && !isSubmittingFamily && isCard;
-    const isLatestCard = isCard && !isSubmittingFamily && isLatestMessage;
+    const showCardRender = isLast && !isSubmitting && isCard;
+    const isLatestCard = isCard && !isSubmitting && isLatestMessage;
 
     /** Only pass isSubmitting to the latest message to prevent unnecessary re-renders */
     const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
@@ -195,7 +194,7 @@ const MessageRender = memo(
               </MessageContext.Provider>
             </div>
 
-            {hasNoChildren && (isSubmittingFamily === true || effectiveIsSubmitting) ? (
+            {hasNoChildren && (isSubmitting === true || effectiveIsSubmitting) ? (
               <PlaceholderRow isCard={isCard} />
             ) : (
               <SubRow classes="text-xs">

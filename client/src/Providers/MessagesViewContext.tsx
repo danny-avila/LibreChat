@@ -8,7 +8,6 @@ interface MessagesViewContextValue {
 
   /** Submission and control states */
   isSubmitting: ReturnType<typeof useChatContext>['isSubmitting'];
-  isSubmittingFamily: boolean;
   abortScroll: ReturnType<typeof useChatContext>['abortScroll'];
   setAbortScroll: ReturnType<typeof useChatContext>['setAbortScroll'];
 
@@ -61,10 +60,9 @@ export function MessagesViewProvider({ children }: { children: React.ReactNode }
   /** Memoize submission states */
   const submissionStates = useMemo(
     () => ({
-      isSubmitting,
       abortScroll,
+      isSubmitting,
       setAbortScroll,
-      isSubmittingFamily: isSubmitting,
     }),
     [isSubmitting, abortScroll, setAbortScroll],
   );
@@ -123,11 +121,10 @@ export function useMessagesConversation() {
 
 /** Hook for components that only need submission states */
 export function useMessagesSubmission() {
-  const { isSubmitting, isSubmittingFamily, abortScroll, setAbortScroll } =
-    useMessagesViewContext();
+  const { isSubmitting, abortScroll, setAbortScroll } = useMessagesViewContext();
   return useMemo(
-    () => ({ isSubmitting, isSubmittingFamily, abortScroll, setAbortScroll }),
-    [isSubmitting, isSubmittingFamily, abortScroll, setAbortScroll],
+    () => ({ isSubmitting, abortScroll, setAbortScroll }),
+    [isSubmitting, abortScroll, setAbortScroll],
   );
 }
 

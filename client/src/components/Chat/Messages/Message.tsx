@@ -33,9 +33,9 @@ export default function Message(props: TMessageProps) {
     showSibling,
     conversation,
     handleScroll,
+    isSubmitting,
     siblingMessage,
     latestMultiMessage,
-    isSubmittingFamily,
   } = useMessageProcess({ message: props.message });
   const { message, currentEditId, setCurrentEditId } = props;
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
@@ -57,18 +57,13 @@ export default function Message(props: TMessageProps) {
                 maximizeChatSpace ? 'w-full max-w-full' : 'md:max-w-5xl xl:max-w-6xl',
               )}
             >
-              <MessageRender
-                {...props}
-                message={message}
-                isSubmittingFamily={isSubmittingFamily}
-                isCard
-              />
+              <MessageRender {...props} message={message} isSubmitting={isSubmitting} isCard />
               <MessageRender
                 {...props}
                 isMultiMessage
                 isCard
+                isSubmitting={isSubmitting}
                 message={siblingMessage ?? latestMultiMessage ?? undefined}
-                isSubmittingFamily={isSubmittingFamily}
               />
             </div>
           </div>
