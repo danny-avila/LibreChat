@@ -120,7 +120,7 @@ const AttachFileMenu = ({
           onClick: () => {
             setToolResource(undefined);
             const currentProv = provider || endpoint;
-            let fileType: Omit<FileUploadType, 'image' | 'document'> = 'image_document';
+            let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
             if (
               currentProv === Providers.GOOGLE ||
               currentProv?.toLowerCase() === Providers.OPENROUTER
