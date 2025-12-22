@@ -60,6 +60,8 @@ export default function useStepHandler({
   const toolCallIdMap = useRef(new Map<string, string | undefined>());
   const messageMap = useRef(new Map<string, TMessage>());
   const stepMap = useRef(new Map<string, Agents.RunStep>());
+  /** Maps stepIndex -> array of content indices that share that stepIndex (parallel siblings) */
+  const stepIndexMap = useRef(new Map<number, number[]>());
 
   const calculateContentIndex = (
     baseIndex: number,
@@ -79,6 +81,19 @@ export default function useStepHandler({
       }
     }
     return baseIndex + initialContent.length;
+  };
+
+  /**
+   * Gets the siblingIndex for a content part if it has parallel siblings.
+   * Returns undefined if the content index has no siblings (single execution path).
+   */
+  const getSiblingIndex = (contentIndex: number): number | undefined => {
+    for (const [, siblings] of stepIndexMap.current) {
+      if (siblings.length > 1 && siblings.includes(contentIndex)) {
+        return siblings.indexOf(contentIndex);
+      }
+    }
+    return undefined;
   };
 
   const updateContent = (
@@ -196,6 +211,13 @@ export default function useStepHandler({
       };
     }
 
+    // Apply siblingIndex if this content part has parallel siblings
+    const siblingIndex = getSiblingIndex(index);
+    if (siblingIndex != null && updatedContent[index]) {
+      (updatedContent[index] as TMessageContentParts & { siblingIndex?: number }).siblingIndex =
+        siblingIndex;
+    }
+
     return { ...message, content: updatedContent as TMessageContentParts[] };
   };
 
@@ -229,6 +251,18 @@ export default function useStepHandler({
         }
 
         stepMap.current.set(runStep.id, runStep);
+
+        // Track parallel siblings via stepIndex
+        const { stepIndex } = runStep;
+        if (stepIndex != null) {
+          const contentIndex = runStep.index + initialContent.length;
+          const siblings = stepIndexMap.current.get(stepIndex) ?? [];
+          if (!siblings.includes(contentIndex)) {
+            siblings.push(contentIndex);
+            stepIndexMap.current.set(stepIndex, siblings);
+          }
+        }
+
         let response = messageMap.current.get(responseMessageId);
 
         if (!response) {
@@ -487,6 +521,7 @@ export default function useStepHandler({
         toolCallIdMap.current.clear();
         messageMap.current.clear();
         stepMap.current.clear();
+        stepIndexMap.current.clear();
       };
     },
     [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages],
@@ -496,6 +531,7 @@ export default function useStepHandler({
     toolCallIdMap.current.clear();
     messageMap.current.clear();
     stepMap.current.clear();
+    stepIndexMap.current.clear();
   }, []);
 
   /**

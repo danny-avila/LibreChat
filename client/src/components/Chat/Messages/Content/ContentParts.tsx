@@ -12,6 +12,7 @@ import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import { mapAttachments } from '~/utils/map';
 import Container from './Container';
+import { cn } from '~/utils';
 import Part from './Part';
 
 type ContentPartsProps = {
@@ -53,9 +54,59 @@ const ContentParts = memo(
 
     const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
+    /**
+     * Group content parts by siblingIndex for side-by-side rendering.
+     * Parts with the same siblingIndex are parallel content from multi-agent runs.
+     */
+    const groupedContent = useMemo(() => {
+      if (!content) {
+        return [];
+      }
+
+      type ContentGroup = {
+        type: 'single' | 'siblings';
+        parts: Array<{ part: TMessageContentParts; idx: number }>;
+      };
+
+      const groups: ContentGroup[] = [];
+      let currentSiblingGroup: ContentGroup | null = null;
+
+      content.forEach((part, idx) => {
+        if (!part) {
+          return;
+        }
+
+        const siblingIndex = (part as TMessageContentParts & { siblingIndex?: number })
+          .siblingIndex;
+
+        if (siblingIndex != null) {
+          // This part has a siblingIndex - group with other siblings
+          if (!currentSiblingGroup) {
+            currentSiblingGroup = { type: 'siblings', parts: [] };
+          }
+          currentSiblingGroup.parts.push({ part, idx });
+        } else {
+          // No siblingIndex - render as single
+          if (currentSiblingGroup) {
+            groups.push(currentSiblingGroup);
+            currentSiblingGroup = null;
+          }
+          groups.push({ type: 'single', parts: [{ part, idx }] });
+        }
+      });
+
+      // Push any remaining sibling group
+      if (currentSiblingGroup) {
+        groups.push(currentSiblingGroup);
+      }
+
+      return groups;
+    }, [content]);
+
     if (!content) {
       return null;
     }
+
     if (edit === true && enterEdit && setSiblingIdx) {
       return (
         <>
@@ -99,6 +150,36 @@ const ContentParts = memo(
     /** Show cursor placeholder when content is empty but actively submitting */
     const showEmptyCursor = content.length === 0 && effectiveIsSubmitting;
 
+    const renderPart = (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
+      const toolCallId = (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+      const partAttachments = attachmentMap[toolCallId];
+
+      return (
+        <MessageContext.Provider
+          key={`provider-${messageId}-${idx}`}
+          value={{
+            messageId,
+            isExpanded: true,
+            conversationId,
+            partIndex: idx,
+            nextType: content[idx + 1]?.type,
+            isSubmitting: effectiveIsSubmitting,
+            isLatestMessage,
+          }}
+        >
+          <Part
+            part={part}
+            attachments={partAttachments}
+            isSubmitting={effectiveIsSubmitting}
+            key={`part-${messageId}-${idx}`}
+            isCreatedByUser={isCreatedByUser}
+            isLast={isLastPart}
+            showCursor={isLastPart && isLast}
+          />
+        </MessageContext.Provider>
+      );
+    };
+
     return (
       <>
         <SearchContext.Provider value={{ searchResults }}>
@@ -109,38 +190,26 @@ const ContentParts = memo(
               <EmptyText />
             </Container>
           )}
-          {content.map((part, idx) => {
-            if (!part) {
-              return null;
+          {groupedContent.map((group, groupIdx) => {
+            const isLastGroup = groupIdx === groupedContent.length - 1;
+
+            if (group.type === 'single') {
+              const { part, idx } = group.parts[0];
+              return renderPart(part, idx, isLastGroup && idx === content.length - 1);
             }
 
-            const toolCallId =
-              (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
-            const partAttachments = attachmentMap[toolCallId];
-
+            // Render sibling group side-by-side
             return (
-              <MessageContext.Provider
-                key={`provider-${messageId}-${idx}`}
-                value={{
-                  messageId,
-                  isExpanded: true,
-                  conversationId,
-                  partIndex: idx,
-                  nextType: content[idx + 1]?.type,
-                  isSubmitting: effectiveIsSubmitting,
-                  isLatestMessage,
-                }}
+              <div
+                key={`sibling-group-${messageId}-${groupIdx}`}
+                className={cn('flex w-full flex-col gap-3 md:flex-row', 'sibling-content-group')}
               >
-                <Part
-                  part={part}
-                  attachments={partAttachments}
-                  isSubmitting={effectiveIsSubmitting}
-                  key={`part-${messageId}-${idx}`}
-                  isCreatedByUser={isCreatedByUser}
-                  isLast={idx === content.length - 1}
-                  showCursor={idx === content.length - 1 && isLast}
-                />
-              </MessageContext.Provider>
+                {group.parts.map(({ part, idx }, partIdx) => (
+                  <div key={`sibling-${messageId}-${idx}`} className="min-w-0 flex-1">
+                    {renderPart(part, idx, isLastGroup && partIdx === group.parts.length - 1)}
+                  </div>
+                ))}
+              </div>
             );
           })}
         </SearchContext.Provider>
