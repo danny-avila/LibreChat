@@ -110,7 +110,13 @@ const AttachFileMenu = ({
     const createMenuItems = (onAction: (fileType?: FileUploadType) => void) => {
       const items: MenuItemProps[] = [];
 
-      const currentProvider = provider || endpoint;
+      let currentProvider = provider || endpoint;
+
+      // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
+      if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
+        currentProvider = Providers.OPENROUTER;
+      }
+
       if (
         isDocumentSupportedProvider(endpointType) ||
         isDocumentSupportedProvider(currentProvider)
@@ -119,12 +125,8 @@ const AttachFileMenu = ({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
             setToolResource(undefined);
-            const currentProv = provider || endpoint;
             let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
-            if (
-              currentProv === Providers.GOOGLE ||
-              currentProv?.toLowerCase() === Providers.OPENROUTER
-            ) {
+            if (currentProvider === Providers.GOOGLE || currentProvider === Providers.OPENROUTER) {
               fileType = 'image_document_video_audio';
             }
             onAction(fileType);

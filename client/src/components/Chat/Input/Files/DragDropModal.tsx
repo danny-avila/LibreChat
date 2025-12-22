@@ -56,7 +56,12 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
 
   const options = useMemo(() => {
     const _options: FileOption[] = [];
-    const currentProvider = provider || endpoint;
+    let currentProvider = provider || endpoint;
+
+    // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
+    if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
+      currentProvider = Providers.OPENROUTER;
+    }
 
     /** Helper to get inferred MIME type for a file */
     const getFileType = (file: File) => inferMimeType(file.name, file.type);
@@ -64,8 +69,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     // Check if provider supports document upload
     if (isDocumentSupportedProvider(endpointType) || isDocumentSupportedProvider(currentProvider)) {
       const supportsImageDocVideoAudio =
-        currentProvider === EModelEndpoint.google ||
-        currentProvider?.toLowerCase() === Providers.OPENROUTER;
+        currentProvider === EModelEndpoint.google || currentProvider === Providers.OPENROUTER;
       const validFileTypes = supportsImageDocVideoAudio
         ? files.every((file) => {
             const type = getFileType(file);
