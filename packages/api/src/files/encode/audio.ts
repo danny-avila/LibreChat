@@ -79,6 +79,18 @@ export async function encodeAndFormatAudios(
         mimeType: file.type,
         data: content,
       });
+    } else if (provider === Providers.OPENROUTER) {
+      const [, format] = file.type.split('/');
+      if (!format) {
+        throw new Error(`Invalid audio MIME type: ${file.type}`);
+      }
+      result.audios.push({
+        type: 'input_audio',
+        input_audio: {
+          data: content,
+          format,
+        },
+      });
     }
 
     result.files.push(metadata);

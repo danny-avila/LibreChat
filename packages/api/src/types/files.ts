@@ -113,12 +113,26 @@ export interface DocumentResult {
   }>;
 }
 
-export interface AudioResult {
-  audios: Array<{
-    type: string;
-    mimeType: string;
+/** Google audio block format */
+export interface GoogleAudioBlock {
+  type: 'media';
+  mimeType: string;
+  data: string;
+}
+
+/** OpenRouter audio block format */
+export interface OpenRouterAudioBlock {
+  type: 'input_audio';
+  input_audio: {
     data: string;
-  }>;
+    format: string;
+  };
+}
+
+export type AudioBlock = GoogleAudioBlock | OpenRouterAudioBlock;
+
+export interface AudioResult {
+  audios: AudioBlock[];
   files: Array<{
     file_id?: string;
     temp_file_id?: string;

@@ -38,12 +38,21 @@ export namespace Agents {
     video_url: { url: string };
   };
 
+  export type MessageContentInputAudio = {
+    type: ContentTypes.INPUT_AUDIO;
+    input_audio: {
+      data: string;
+      format: string;
+    };
+  };
+
   export type MessageContentComplex =
     | ReasoningContentText
     | AgentUpdate
     | MessageContentText
     | MessageContentImageUrl
     | MessageContentVideoUrl
+    | MessageContentInputAudio
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     | (Record<string, any> & { type?: ContentTypes | string })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -302,6 +311,7 @@ export namespace Agents {
     | ContentTypes.TEXT
     | ContentTypes.IMAGE_URL
     | ContentTypes.VIDEO_URL
+    | ContentTypes.INPUT_AUDIO
     | string;
 }
 
