@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogTemplate } from '@librechat/client';
 import {
+  Providers,
   inferMimeType,
   EToolResources,
   EModelEndpoint,
@@ -62,8 +63,10 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
 
     // Check if provider supports document upload
     if (isDocumentSupportedProvider(endpointType) || isDocumentSupportedProvider(currentProvider)) {
-      const isGoogleProvider = currentProvider === EModelEndpoint.google;
-      const validFileTypes = isGoogleProvider
+      const supportsImageDocVideoAudio =
+        currentProvider === EModelEndpoint.google ||
+        currentProvider?.toLowerCase() === Providers.OPENROUTER;
+      const validFileTypes = supportsImageDocVideoAudio
         ? files.every((file) => {
             const type = getFileType(file);
             return (
