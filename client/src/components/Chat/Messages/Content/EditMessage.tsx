@@ -4,11 +4,13 @@ import { useRecoilState, useRecoilValue } from 'recoil';
 import { TextareaAutosize, TooltipAnchor } from '@librechat/client';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
-import { useMessagesOperations, useMessagesConversation, useAddedChatContext } from '~/Providers';
+import { useMessagesOperations, useMessagesConversation } from '~/Providers';
 import { cn, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
 import store from '~/store';
+
+const ADDED_INDEX = 1;
 
 const EditMessage = ({
   text,
@@ -19,13 +21,12 @@ const EditMessage = ({
   siblingIdx,
   setSiblingIdx,
 }: TEditProps) => {
-  const { addedIndex } = useAddedChatContext();
   const saveButtonRef = useRef<HTMLButtonElement | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const { conversation } = useMessagesConversation();
   const { getMessages, setMessages } = useMessagesOperations();
   const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
-    store.latestMessageFamily(addedIndex),
+    store.latestMessageFamily(ADDED_INDEX),
   );
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);

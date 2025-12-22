@@ -46,7 +46,7 @@ export default function useMessageActions(props: TMessageActions) {
     conversation: rootConvo,
     isSubmitting: isSubmittingRoot,
   } = useChatContext();
-  const { conversation: addedConvo, isSubmitting: isSubmittingAdditional } = useAddedChatContext();
+  const { conversation: addedConvo } = useAddedChatContext();
   const conversation = useMemo(
     () => (isMultiMessage === true ? addedConvo : rootConvo),
     [isMultiMessage, addedConvo, rootConvo],

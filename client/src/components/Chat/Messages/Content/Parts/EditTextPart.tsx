@@ -7,11 +7,13 @@ import { Lightbulb, MessageSquare } from 'lucide-react';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
 import type { Agents } from 'librechat-data-provider';
 import type { TEditProps } from '~/common';
-import { useMessagesOperations, useMessagesConversation, useAddedChatContext } from '~/Providers';
+import { useMessagesOperations, useMessagesConversation } from '~/Providers';
 import Container from '~/components/Chat/Messages/Content/Container';
 import { cn, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
+
+const ADDED_INDEX = 1;
 
 const EditTextPart = ({
   part,
@@ -25,11 +27,10 @@ const EditTextPart = ({
   part: Agents.MessageContentText | Agents.ReasoningDeltaUpdate;
 }) => {
   const localize = useLocalize();
-  const { addedIndex } = useAddedChatContext();
   const { conversation } = useMessagesConversation();
   const { ask, getMessages, setMessages } = useMessagesOperations();
   const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
-    store.latestMessageFamily(addedIndex),
+    store.latestMessageFamily(ADDED_INDEX),
   );
 
   const { conversationId = '' } = conversation ?? {};

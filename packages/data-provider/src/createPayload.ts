@@ -5,6 +5,7 @@ import * as s from './schemas';
 export default function createPayload(submission: t.TSubmission) {
   const {
     isEdited,
+    addedConvo,
     userMessage,
     isContinued,
     isTemporary,
@@ -38,6 +39,7 @@ export default function createPayload(submission: t.TSubmission) {
     conversationId,
     isContinued: !!(isEdited && isContinued),
     ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
+    addedConvo,
   };
 
   return { server, payload };

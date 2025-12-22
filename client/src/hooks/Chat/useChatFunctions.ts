@@ -89,6 +89,7 @@ export default function useChatFunctions({
       isEdited = false,
       overrideMessages,
       overrideFiles,
+      addedConvo,
     } = {},
   ) => {
     setShowStopButton(false);
@@ -312,6 +313,7 @@ export default function useChatFunctions({
       isTemporary,
       ephemeralAgent,
       editedContent,
+      addedConvo,
     };
 
     if (isRegenerate) {
