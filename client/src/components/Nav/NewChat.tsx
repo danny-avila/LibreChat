@@ -72,7 +72,7 @@ export default function NewChat({
               <Sidebar aria-hidden="true" className="max-md:hidden" />
               <MobileSidebar
                 aria-hidden="true"
-                className="m-1 inline-flex size-10 items-center justify-center md:hidden"
+                className="icon-lg m-1 inline-flex items-center justify-center md:hidden"
               />
             </Button>
           }
