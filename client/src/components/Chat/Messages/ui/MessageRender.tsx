@@ -164,6 +164,7 @@ const MessageRender = memo(
             'relative flex w-11/12 flex-col',
             msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
           )}
+          data-testid={msg.isCreatedByUser ? 'user-message' : 'assistant-message'}
         >
           <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
 

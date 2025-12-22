@@ -109,6 +109,7 @@ export default function Message(props: TMessageProps) {
                 'relative flex w-11/12 flex-col',
                 isCreatedByUser ? 'user-turn' : 'agent-turn',
               )}
+              data-testid={isCreatedByUser ? 'user-message' : 'assistant-message'}
             >
               <h2 className={cn('select-none font-semibold text-text-primary', fontSize)}>
                 {name}

@@ -66,6 +66,7 @@ export default function Message(props: TMessageProps) {
             </div>
             <div
               className={cn('relative flex w-11/12 flex-col', isCreatedByUser ? '' : 'agent-turn')}
+              data-testid={isCreatedByUser ? 'user-message' : 'assistant-message'}
             >
               <div className={cn('select-none font-semibold', fontSize)}>{messageLabel}</div>
               <div className="flex-col gap-1 md:gap-3">
