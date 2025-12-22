@@ -61,8 +61,9 @@ AWS Bedrock custom inference profiles have ARNs that don't contain model name in
 
 ### 8. Documentation
 
-**File: `config/bedrock-inference-profiles.md`**
+All documentation has been consolidated into this `SOLUTION_SUMMARY.md` file, including:
 - Comprehensive guide for configuring custom inference profiles
+- Step-by-step creation instructions using AWS CLI and Python
 - Troubleshooting and examples
 - Environment variable configuration instructions
 
@@ -75,6 +76,184 @@ To use custom inference profiles, set the `BEDROCK_INFERENCE_PROFILE_MAPPINGS` e
 ```bash
 export BEDROCK_INFERENCE_PROFILE_MAPPINGS='{
   "arn:aws:bedrock:us-west-2:007376685526:application-inference-profile/if7f34w3k1mv": "anthropic.claude-3-sonnet-20240229-v1:0"
+}'
+```
+
+### Creating Custom Inference Profiles
+
+**Important**: Custom inference profiles can only be created via API calls (AWS CLI, SDK, etc.) and cannot be created from the AWS Console.
+
+#### Prerequisites
+
+Before creating custom inference profiles, ensure you have:
+
+1. **AWS CLI installed and configured** with appropriate permissions
+2. **AWS credentials** with Bedrock permissions (`bedrock:CreateInferenceProfile`)
+3. **Python 3.7+ with boto3** (if using Python method)
+4. **Knowledge of the foundation model ARN** you want to wrap
+
+#### Method 1: Using AWS CLI (Recommended)
+
+**Step 1: List Available Foundation Models**
+
+```bash
+# List all available foundation models
+aws bedrock list-foundation-models
+
+# Filter for specific model types (e.g., Claude models)
+aws bedrock list-foundation-models --query "modelSummaries[?contains(modelId, 'claude')]"
+```
+
+**Step 2: Create the Custom Inference Profile**
+
+```bash
+export PROFILE_ARN=$(aws bedrock list-inference-profiles | jq -r '.inferenceProfileSummaries[0].inferenceProfileArn')
+
+aws bedrock create-inference-profile \
+  --inference-profile-name "MyLibreChatProfile" \
+  --description "Custom inference profile for LibreChat application" \
+  --model-source copyFrom="$PROFILE_ARN"
+```
+
+**Step 3: Verify Creation**
+
+```bash
+# List your inference profiles
+aws bedrock list-inference-profiles
+
+# Get details of your specific profile
+aws bedrock get-inference-profile \
+  --inference-profile-name "MyLibreChatProfile"
+```
+
+#### Method 2: Using Python Script
+
+**Step 1: Install Required Dependencies**
+
+```bash
+pip install boto3
+```
+
+**Step 2: Create Python Script**
+
+Create a file named `create_inference_profile.py`:
+
+```python
+import os
+import boto3
+import json
+
+AWS_REGION='us-west-2'
+
+def create_inference_profile():
+    # Initialize the Bedrock client
+    bedrock = boto3.client(service_name='bedrock', region_name=AWS_REGION)
+    resp = bedrock.list_inference_profiles()
+    profile_arn = resp["inferenceProfileSummaries"][0]["inferenceProfileArn"]
+
+    # Define the parameters for the inference profile
+    inference_profile_name = 'MyLibreChatProfile'
+    description = 'Custom inference profile for LibreChat application'
+
+    tags = [
+        {'key': 'Project', 'value': 'LibreChat'},
+        {'key': 'Environment', 'value': 'Production'},
+        {'key': 'Owner', 'value': 'your-username'}
+    ]
+
+    try:
+        # Call the create_inference_profile API
+        response = bedrock.create_inference_profile(
+            inferenceProfileName=inference_profile_name,
+            description=description,
+            modelSource={
+                'copyFrom': profile_arn  # Use 'copyFrom' to specify the model ARN
+            },
+            tags=tags
+        )
+
+        print(f"✅ Application inference profile '{inference_profile_name}' created successfully!")
+        print(f"📋 Profile ARN: {response['inferenceProfileArn']}")
+        print(f"🔗 Profile Name: {response['inferenceProfileName']}")
+
+        return response['inferenceProfileArn']
+
+    except Exception as e:
+        print(f"❌ Error creating application inference profile: {e}")
+        return None
+
+if __name__ == "__main__":
+    create_inference_profile()
+```
+
+**Step 3: Run the Script**
+
+```bash
+python create_inference_profile.py
+```
+
+### Adding Models to LibreChat
+
+1. Add your custom inference profile ARNs to the `BEDROCK_AWS_MODELS` environment variable:
+
+```bash
+export BEDROCK_AWS_MODELS="arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/rf3zeruqfake,arn:aws:bedrock:us-west-2:123456789123:application-inference-profile/abc123def456"
+```
+
+2. Configure the mappings as shown above.
+
+## Features Supported
+
+When properly configured, custom inference profiles will support:
+
+- **Thinking/Reasoning**: For Claude models that support it
+- **Temperature, TopP, TopK**: All parameter controls
+- **Prompt Caching**: When enabled
+- **Max Tokens**: Proper token limits
+- **All other LibreChat features**: Based on the underlying model capabilities
+
+## Troubleshooting
+
+### Model Not Recognized
+
+If your custom inference profile is not being recognized:
+
+1. Ensure the ARN is correctly added to `BEDROCK_AWS_MODELS`
+2. Verify the mapping in `BEDROCK_INFERENCE_PROFILE_MAPPINGS` points to the correct underlying model
+3. Check that the underlying model is supported by LibreChat
+
+### Missing Features
+
+If features like thinking or temperature controls are missing:
+
+1. Verify the underlying model supports these features
+2. Check that the mapping is correct
+3. Ensure the ARN format is valid
+
+### Common Creation Errors
+
+1. **"Access Denied" Error:**
+   - Ensure your IAM user/role has `bedrock:CreateInferenceProfile` permission
+   - Check that you're in the correct AWS region
+
+2. **"Model Not Found" Error:**
+   - Verify the foundation model ARN is correct
+   - Ensure the model is available in your region
+
+3. **"Profile Name Already Exists" Error:**
+   - Use a unique name for your inference profile
+   - Check existing profiles: `aws bedrock list-inference-profiles`
+
+## Example Configuration
+
+```bash
+# Environment variables
+export BEDROCK_AWS_ACCESS_KEY_ID="your-access-key"
+export BEDROCK_AWS_SECRET_ACCESS_KEY="your-secret-key"
+export BEDROCK_AWS_DEFAULT_REGION="us-east-1"
+export BEDROCK_AWS_MODELS="arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/abc123def456"
+export BEDROCK_INFERENCE_PROFILE_MAPPINGS='{
+  "arn:aws:bedrock:us-east-1:123456789123:application-inference-profile/abc123def456": "anthropic.claude-3-7-sonnet-20250219-v1:0"
 }'
 ```
 
@@ -118,9 +297,9 @@ The system will now correctly:
 
 All tests pass:
 - ✅ Token limit issue: RESOLVED
-- ✅ Provider detection issue: RESOLVED  
+- ✅ Provider detection issue: RESOLVED
 - ✅ Model detection: WORKING
 - ✅ Environment configuration: WORKING
 - ✅ Server connectivity: WORKING
 
-The implementation is production-ready and users can now use AWS Bedrock custom inference profiles without any issues. 
+The implementation is production-ready and users can now use AWS Bedrock custom inference profiles without any issues.
