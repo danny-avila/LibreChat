@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
@@ -42,6 +42,8 @@ export default function Conversation({
   const [titleInput, setTitleInput] = useState(title || '');
   const [renaming, setRenaming] = useState(false);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
+  // Lazy-load ConvoOptions to avoid running heavy hooks for all conversations
+  const [hasInteracted, setHasInteracted] = useState(false);
 
   const previousTitle = useRef(title);
 
@@ -100,6 +102,12 @@ export default function Conversation({
     setRenaming(false);
   };
 
+  const handleMouseEnter = useCallback(() => {
+    if (!hasInteracted) {
+      setHasInteracted(true);
+    }
+  }, [hasInteracted]);
+
   const handleNavigation = (ctrlOrMetaKey: boolean) => {
     if (ctrlOrMetaKey) {
       toggleNav();
@@ -148,6 +156,8 @@ export default function Conversation({
       aria-label={localize('com_ui_conversation_label', {
         title: title || localize('com_ui_untitled'),
       })}
+      onMouseEnter={handleMouseEnter}
+      onFocus={handleMouseEnter}
       onClick={(e) => {
         if (renaming) {
           return;
@@ -230,7 +240,8 @@ export default function Conversation({
         // but not sure what its original purpose was, so leaving the property commented out until it can be cleared safe to delete.
         // aria-hidden={!(isPopoverActive || isActiveConvo)}
       >
-        {!renaming && <ConvoOptions {...convoOptionsProps} />}
+        {/* Only render ConvoOptions when user interacts (hover/focus) or for active conversation */}
+        {!renaming && (hasInteracted || isActiveConvo) && <ConvoOptions {...convoOptionsProps} />}
       </div>
     </div>
   );

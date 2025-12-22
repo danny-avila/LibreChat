@@ -1,3 +1,4 @@
+import { startTransition } from 'react';
 import { TooltipAnchor, Button, Sidebar } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -17,9 +18,13 @@ export default function OpenSidebar({
   const localize = useLocalize();
 
   const handleClick = () => {
-    setNavVisible((prev) => {
-      localStorage.setItem('navVisible', JSON.stringify(!prev));
-      return !prev;
+    // Use startTransition to mark this as a non-urgent update
+    // This prevents blocking the main thread during the cascade of re-renders
+    startTransition(() => {
+      setNavVisible((prev) => {
+        localStorage.setItem('navVisible', JSON.stringify(!prev));
+        return !prev;
+      });
     });
     // Delay focus until after the sidebar animation completes (200ms)
     setTimeout(() => {
