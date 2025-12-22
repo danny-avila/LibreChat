@@ -37,6 +37,8 @@ import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 
+type FileUploadType = 'image' | 'document' | 'image_document' | 'image_document_video_audio';
+
 interface AttachFileMenuProps {
   agentId?: string | null;
   endpoint?: string | null;
@@ -84,9 +86,7 @@ const AttachFileMenu = ({
     ephemeralAgent,
   );
 
-  const handleUploadClick = (
-    fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal' | 'openrouter_multimodal',
-  ) => {
+  const handleUploadClick = (fileType?: FileUploadType) => {
     if (!inputRef.current) {
       return;
     }
@@ -95,12 +95,10 @@ const AttachFileMenu = ({
       inputRef.current.accept = 'image/*';
     } else if (fileType === 'document') {
       inputRef.current.accept = '.pdf,application/pdf';
-    } else if (fileType === 'multimodal') {
+    } else if (fileType === 'image_document') {
       inputRef.current.accept = 'image/*,.pdf,application/pdf';
-    } else if (fileType === 'google_multimodal') {
+    } else if (fileType === 'image_document_video_audio') {
       inputRef.current.accept = 'image/*,.pdf,application/pdf,video/*,audio/*';
-    } else if (fileType === 'openrouter_multimodal') {
-      inputRef.current.accept = 'image/*,.pdf,application/pdf,video/*';
     } else {
       inputRef.current.accept = '';
     }
@@ -109,9 +107,7 @@ const AttachFileMenu = ({
   };
 
   const dropdownItems = useMemo(() => {
-    const createMenuItems = (
-      onAction: (fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal' | 'openrouter_multimodal') => void,
-    ) => {
+    const createMenuItems = (onAction: (fileType?: FileUploadType) => void) => {
       const items: MenuItemProps[] = [];
 
       const currentProvider = provider || endpoint;
@@ -124,11 +120,12 @@ const AttachFileMenu = ({
           onClick: () => {
             setToolResource(undefined);
             const currentProv = provider || endpoint;
-            let fileType: 'multimodal' | 'google_multimodal' | 'openrouter_multimodal' = 'multimodal';
-            if (currentProv === EModelEndpoint.google) {
-              fileType = 'google_multimodal';
-            } else if (currentProv?.toLowerCase() === Providers.OPENROUTER) {
-              fileType = 'openrouter_multimodal';
+            let fileType: Omit<FileUploadType, 'image' | 'document'> = 'image_document';
+            if (
+              currentProv === Providers.GOOGLE ||
+              currentProv?.toLowerCase() === Providers.OPENROUTER
+            ) {
+              fileType = 'image_document_video_audio';
             }
             onAction(fileType);
           },
