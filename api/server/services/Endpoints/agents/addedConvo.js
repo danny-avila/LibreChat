@@ -49,6 +49,7 @@ const processAddedConvo = async ({
   allowedProviders,
   agentConfigs,
   primaryAgentId,
+  primaryAgent,
   userMCPAuthMap,
 }) => {
   const addedConvo = endpointOption.addedConvo;
@@ -63,7 +64,7 @@ const processAddedConvo = async ({
   }
 
   try {
-    const addedAgent = await loadAddedAgent({ req, conversation: addedConvo });
+    const addedAgent = await loadAddedAgent({ req, conversation: addedConvo, primaryAgent });
     if (!addedAgent) {
       return { userMCPAuthMap };
     }

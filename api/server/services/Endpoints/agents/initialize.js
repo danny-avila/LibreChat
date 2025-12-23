@@ -247,6 +247,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     allowedProviders,
     agentConfigs,
     primaryAgentId: primaryConfig.id,
+    primaryAgent,
     userMCPAuthMap,
   });
 

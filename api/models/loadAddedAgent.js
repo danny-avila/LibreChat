@@ -3,8 +3,9 @@ const { getCustomEndpointConfig } = require('@librechat/api');
 const {
   Tools,
   Constants,
-  getResponseSender,
   isAgentsEndpoint,
+  getResponseSender,
+  isEphemeralAgentId,
   encodeEphemeralAgentId,
 } = require('librechat-data-provider');
 const { mcp_all, mcp_delimiter, EPHEMERAL_AGENT_ID } = Constants;
@@ -38,9 +39,10 @@ const setGetAgent = (fn) => {
  * @param {Object} params
  * @param {import('express').Request} params.req
  * @param {import('librechat-data-provider').TConversation} params.conversation - The added conversation
+ * @param {import('librechat-data-provider').Agent} [params.primaryAgent] - The primary agent (used to duplicate tools when both are ephemeral)
  * @returns {Promise<import('librechat-data-provider').Agent|null>} The agent config as a plain object, or null if invalid.
  */
-const loadAddedAgent = async ({ req, conversation }) => {
+const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
   if (!conversation) {
     return null;
   }
@@ -69,6 +71,39 @@ const loadAddedAgent = async ({ req, conversation }) => {
   if (!endpoint || !model) {
     logger.warn('[loadAddedAgent] Missing required endpoint or model for ephemeral agent');
     return null;
+  }
+
+  // If both primary and added agents are ephemeral, duplicate tools from primary agent
+  const primaryIsEphemeral = primaryAgent && isEphemeralAgentId(primaryAgent.id);
+  if (primaryIsEphemeral && Array.isArray(primaryAgent.tools)) {
+    // Get display name using getResponseSender
+    const appConfig = req.config;
+    let endpointConfig = appConfig?.endpoints?.[endpoint];
+    if (!isAgentsEndpoint(endpoint) && !endpointConfig) {
+      try {
+        endpointConfig = getCustomEndpointConfig({ endpoint, appConfig });
+      } catch (err) {
+        logger.error('[loadAddedAgent] Error getting custom endpoint config', err);
+      }
+    }
+
+    const sender = getResponseSender({
+      endpoint,
+      model,
+      modelLabel: rest.modelLabel,
+      modelDisplayLabel: endpointConfig?.modelDisplayLabel,
+    });
+
+    const ephemeralId = encodeEphemeralAgentId({ endpoint, model, sender, index: 1 });
+
+    return {
+      id: ephemeralId,
+      instructions: promptPrefix || '',
+      provider: endpoint,
+      model_parameters: {},
+      model,
+      tools: [...primaryAgent.tools],
+    };
   }
 
   // Extract ephemeral agent options from conversation if present
