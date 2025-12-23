@@ -62,6 +62,8 @@ export default function useStepHandler({
   const stepMap = useRef(new Map<string, Agents.RunStep>());
   /** Maps stepIndex -> array of content indices that share that stepIndex (parallel siblings) */
   const stepIndexMap = useRef(new Map<number, number[]>());
+  /** Maps content index -> agentId for tracking which agent generated which content */
+  const agentIdMap = useRef(new Map<number, string>());
 
   const calculateContentIndex = (
     baseIndex: number,
@@ -218,6 +220,12 @@ export default function useStepHandler({
         siblingIndex;
     }
 
+    // Apply agentId if tracked for this content index
+    const agentId = agentIdMap.current.get(index);
+    if (agentId && updatedContent[index]) {
+      (updatedContent[index] as TMessageContentParts & { agentId?: string }).agentId = agentId;
+    }
+
     return { ...message, content: updatedContent as TMessageContentParts[] };
   };
 
@@ -252,15 +260,21 @@ export default function useStepHandler({
 
         stepMap.current.set(runStep.id, runStep);
 
-        // Track parallel siblings via stepIndex
-        const { stepIndex } = runStep;
+        // Track parallel siblings via stepIndex and agentId
+        const { stepIndex, agentId } = runStep;
+        const contentIndex = runStep.index + initialContent.length;
+
         if (stepIndex != null) {
-          const contentIndex = runStep.index + initialContent.length;
           const siblings = stepIndexMap.current.get(stepIndex) ?? [];
           if (!siblings.includes(contentIndex)) {
             siblings.push(contentIndex);
             stepIndexMap.current.set(stepIndex, siblings);
           }
+        }
+
+        // Track agentId for this content index
+        if (agentId) {
+          agentIdMap.current.set(contentIndex, agentId);
         }
 
         let response = messageMap.current.get(responseMessageId);
@@ -522,6 +536,7 @@ export default function useStepHandler({
         messageMap.current.clear();
         stepMap.current.clear();
         stepIndexMap.current.clear();
+        agentIdMap.current.clear();
       };
     },
     [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages],
@@ -532,6 +547,7 @@ export default function useStepHandler({
     messageMap.current.clear();
     stepMap.current.clear();
     stepIndexMap.current.clear();
+    agentIdMap.current.clear();
   }, []);
 
   /**

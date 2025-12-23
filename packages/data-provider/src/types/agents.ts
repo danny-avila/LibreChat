@@ -166,6 +166,7 @@ export namespace Agents {
     type: StepTypes;
     id: string; // #new
     runId?: string; // #new
+    agentId?: string; // #new
     index: number; // #new
     stepIndex?: number; // #new
     stepDetails: StepDetails;

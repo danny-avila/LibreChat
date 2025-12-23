@@ -216,10 +216,11 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
   if (
     [EModelEndpoint.openAI, EModelEndpoint.bedrock, EModelEndpoint.azureOpenAI].includes(endpoint)
   ) {
-    if (chatGptLabel) {
-      return chatGptLabel;
-    } else if (modelLabel) {
+    if (modelLabel) {
       return modelLabel;
+    } else if (chatGptLabel) {
+      // @deprecated - prefer modelLabel
+      return chatGptLabel;
     } else if (model && extractOmniVersion(model)) {
       return extractOmniVersion(model);
     } else if (model && (model.includes('mistral') || model.includes('codestral'))) {
@@ -255,6 +256,7 @@ export const getResponseSender = (endpointOption: t.TEndpointOption): string => 
     if (modelLabel) {
       return modelLabel;
     } else if (chatGptLabel) {
+      // @deprecated - prefer modelLabel
       return chatGptLabel;
     } else if (model && extractOmniVersion(model)) {
       return extractOmniVersion(model);
@@ -413,4 +415,92 @@ export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUse
   }
 
   return result;
+}
+
+/**
+ * Parsed ephemeral agent ID result
+ */
+export type ParsedEphemeralAgentId = {
+  endpoint: string;
+  model: string;
+  sender?: string;
+};
+
+/**
+ * Encodes an ephemeral agent ID from endpoint, model, and optional sender.
+ * Uses __ to replace : (reserved in graph node names) and ___ to separate sender.
+ *
+ * Format: endpoint__model or endpoint__model___sender (if sender exists)
+ *
+ * @example
+ * encodeEphemeralAgentId({ endpoint: 'openAI', model: 'gpt-4o' })
+ * // => 'openAI__gpt-4o'
+ *
+ * @example
+ * encodeEphemeralAgentId({ endpoint: 'openAI', model: 'gpt-4o', sender: 'GPT-4o' })
+ * // => 'openAI__gpt-4o___GPT-4o'
+ *
+ * @example
+ * encodeEphemeralAgentId({ endpoint: 'anthropic', model: 'claude-3:opus', sender: 'Claude' })
+ * // => 'anthropic__claude-3__opus___Claude'
+ */
+export function encodeEphemeralAgentId({
+  endpoint,
+  model,
+  sender,
+}: {
+  endpoint: string;
+  model: string;
+  sender?: string;
+}): string {
+  const base = `${endpoint}:${model}`.replace(/:/g, '__');
+  if (sender) {
+    // Use ___ as separator before sender to distinguish from __ in model names
+    return `${base}___${sender.replace(/:/g, '__')}`;
+  }
+  return base;
+}
+
+/**
+ * Parses an ephemeral agent ID back into its components.
+ * Returns undefined if the ID doesn't match the expected format.
+ *
+ * Format: endpoint__model or endpoint__model___sender
+ * - ___ (triple underscore) separates model from optional sender
+ * - __ (double underscore) replaces : in endpoint/model names
+ *
+ * @example
+ * parseEphemeralAgentId('openAI__gpt-5.1')
+ * // => { endpoint: 'openAI', model: 'gpt-5.1' }
+ *
+ * @example
+ * parseEphemeralAgentId('anthropic__claude-3__opus')
+ * // => { endpoint: 'anthropic', model: 'claude-3:opus' }
+ *
+ * @example
+ * parseEphemeralAgentId('openAI__gpt-4o___GPT-4o')
+ * // => { endpoint: 'openAI', model: 'gpt-4o', sender: 'GPT-4o' }
+ */
+export function parseEphemeralAgentId(agentId: string): ParsedEphemeralAgentId | undefined {
+  if (!agentId.includes('__')) {
+    return undefined;
+  }
+
+  // First check for sender (separated by ___)
+  let sender: string | undefined;
+  let mainPart = agentId;
+  if (agentId.includes('___')) {
+    const [before, after] = agentId.split('___');
+    mainPart = before;
+    // Restore colons in sender if any
+    sender = after?.replace(/__/g, ':');
+  }
+
+  const [endpoint, ...modelParts] = mainPart.split('__');
+  if (!endpoint || modelParts.length === 0) {
+    return undefined;
+  }
+  // Restore colons in model name (model names can contain colons like claude-3:opus)
+  const model = modelParts.join(':');
+  return { endpoint, model, sender };
 }

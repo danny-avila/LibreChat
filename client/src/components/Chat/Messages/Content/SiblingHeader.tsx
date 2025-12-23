@@ -1,0 +1,103 @@
+import { useMemo } from 'react';
+import { EModelEndpoint, parseEphemeralAgentId } from 'librechat-data-provider';
+import type { TMessage, Agent } from 'librechat-data-provider';
+import MessageIcon from '~/components/Share/MessageIcon';
+import { useAgentsMapContext } from '~/Providers';
+
+type SiblingHeaderProps = {
+  /** The agentId from the content part (could be real agent ID or endpoint__model format) */
+  agentId?: string;
+  /** Fallback message info for primary agent (when agentId is not available) */
+  messageModel?: string | null;
+  messageAgentId?: string | null;
+  messageEndpoint?: string | null;
+  /** message.sender - pre-computed display name for the message */
+  messageSender?: string | null;
+};
+
+/**
+ * Header component for sibling content parts in parallel agent responses.
+ * Displays the agent/model icon and name for each parallel response.
+ */
+export default function SiblingHeader({
+  agentId,
+  messageModel,
+  messageAgentId,
+  messageEndpoint,
+  messageSender,
+}: SiblingHeaderProps) {
+  const agentsMap = useAgentsMapContext();
+
+  const { displayName, displayEndpoint, displayModel, agent } = useMemo(() => {
+    // First, try to look up as a real agent
+    if (agentId) {
+      const foundAgent = agentsMap?.[agentId] as Agent | undefined;
+      if (foundAgent) {
+        return {
+          displayName: foundAgent.name,
+          displayEndpoint: EModelEndpoint.agents,
+          displayModel: foundAgent.model,
+          agent: foundAgent,
+        };
+      }
+
+      // Try to parse as ephemeral agent ID (endpoint__model___sender format)
+      const parsed = parseEphemeralAgentId(agentId);
+      if (parsed) {
+        return {
+          displayName: parsed.sender || parsed.model || 'AI',
+          displayEndpoint: parsed.endpoint,
+          displayModel: parsed.model,
+          agent: undefined,
+        };
+      }
+
+      // agentId exists but couldn't be parsed as ephemeral - use it as-is for display
+      return {
+        displayName: agentId,
+        displayEndpoint: EModelEndpoint.agents,
+        displayModel: undefined,
+        agent: undefined,
+      };
+    }
+
+    // Fallback to message-level info for primary agent
+    if (messageAgentId) {
+      const foundAgent = agentsMap?.[messageAgentId] as Agent | undefined;
+      if (foundAgent) {
+        return {
+          displayName: foundAgent.name,
+          displayEndpoint: EModelEndpoint.agents,
+          displayModel: foundAgent.model,
+          agent: foundAgent,
+        };
+      }
+    }
+
+    // Use message sender/model/endpoint as last resort
+    return {
+      displayName: messageSender || messageModel || 'Agent',
+      displayEndpoint: messageEndpoint || EModelEndpoint.agents,
+      displayModel: messageModel || undefined,
+      agent: undefined,
+    };
+  }, [agentId, agentsMap, messageAgentId, messageModel, messageEndpoint, messageSender]);
+
+  return (
+    <div className="mb-2 flex items-center gap-2 border-b border-border-light pb-2">
+      <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
+        <MessageIcon
+          message={
+            {
+              endpoint: displayEndpoint,
+              model: displayModel,
+              isCreatedByUser: false,
+            } as TMessage
+          }
+          agent={agent || undefined}
+        />
+      </div>
+      <span className="text-sm font-medium text-text-primary">{displayName}</span>
+    </div>
+  );
+}

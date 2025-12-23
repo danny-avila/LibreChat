@@ -468,6 +468,8 @@ export type PartMetadata = {
   expires_at?: number;
   /** Index indicating parallel sibling content (same stepIndex in multi-agent runs) */
   siblingIndex?: number;
+  /** The agent ID that generated this content part */
+  agentId?: string;
 };
 
 export type ContentPart = (

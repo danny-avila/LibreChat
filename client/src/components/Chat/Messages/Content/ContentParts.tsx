@@ -11,6 +11,7 @@ import { EditTextPart, EmptyText } from './Parts';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import { mapAttachments } from '~/utils/map';
+import SiblingHeader from './SiblingHeader';
 import Container from './Container';
 import { cn } from '~/utils';
 import Part from './Part';
@@ -32,6 +33,12 @@ type ContentPartsProps = {
     | ((value: number) => void | React.Dispatch<React.SetStateAction<number>>)
     | null
     | undefined;
+  /** Message-level model/endpoint/agent for sibling header fallback */
+  messageModel?: string | null;
+  messageEndpoint?: string | null;
+  messageAgentId?: string | null;
+  /** message.sender - pre-computed display name */
+  messageSender?: string | null;
 };
 
 const ContentParts = memo(
@@ -49,6 +56,10 @@ const ContentParts = memo(
     enterEdit,
     siblingIdx,
     setSiblingIdx,
+    messageModel,
+    messageEndpoint,
+    messageAgentId,
+    messageSender,
   }: ContentPartsProps) => {
     const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
 
@@ -56,7 +67,8 @@ const ContentParts = memo(
 
     /**
      * Group content parts by siblingIndex for side-by-side rendering.
-     * Parts with the same siblingIndex are parallel content from multi-agent runs.
+     * Parts with consecutive siblingIndex values (0, 1, 2...) are parallel content from the same step.
+     * A new group starts when siblingIndex resets to 0 or when we encounter a part without siblingIndex.
      */
     const groupedContent = useMemo(() => {
       if (!content) {
@@ -70,6 +82,7 @@ const ContentParts = memo(
 
       const groups: ContentGroup[] = [];
       let currentSiblingGroup: ContentGroup | null = null;
+      let lastSiblingIndex = -1;
 
       content.forEach((part, idx) => {
         if (!part) {
@@ -80,11 +93,20 @@ const ContentParts = memo(
           .siblingIndex;
 
         if (siblingIndex != null) {
-          // This part has a siblingIndex - group with other siblings
+          // Check if this is a new sibling group (siblingIndex resets to 0 or goes backwards)
+          const isNewGroup = siblingIndex <= lastSiblingIndex;
+
+          if (isNewGroup && currentSiblingGroup) {
+            // Push the previous group and start a new one
+            groups.push(currentSiblingGroup);
+            currentSiblingGroup = null;
+          }
+
           if (!currentSiblingGroup) {
             currentSiblingGroup = { type: 'siblings', parts: [] };
           }
           currentSiblingGroup.parts.push({ part, idx });
+          lastSiblingIndex = siblingIndex;
         } else {
           // No siblingIndex - render as single
           if (currentSiblingGroup) {
@@ -92,6 +114,7 @@ const ContentParts = memo(
             currentSiblingGroup = null;
           }
           groups.push({ type: 'single', parts: [{ part, idx }] });
+          lastSiblingIndex = -1;
         }
       });
 
@@ -198,17 +221,47 @@ const ContentParts = memo(
               return renderPart(part, idx, isLastGroup && idx === content.length - 1);
             }
 
-            // Render sibling group side-by-side
+            // If sibling group has only 1 part, render as single to avoid layout shift during streaming
+            if (group.parts.length === 1) {
+              const { part, idx } = group.parts[0];
+              return renderPart(part, idx, isLastGroup && idx === content.length - 1);
+            }
+
+            // Render sibling group side-by-side (only when we have 2+ siblings)
+            // For sibling groups, check if this group contains the last content part
+            const groupContainsLastContent = group.parts.some(
+              ({ idx }) => idx === content.length - 1,
+            );
+            const isLastPartInMessage = isLastGroup && groupContainsLastContent;
+
             return (
               <div
                 key={`sibling-group-${messageId}-${groupIdx}`}
                 className={cn('flex w-full flex-col gap-3 md:flex-row', 'sibling-content-group')}
               >
-                {group.parts.map(({ part, idx }, partIdx) => (
-                  <div key={`sibling-${messageId}-${idx}`} className="min-w-0 flex-1">
-                    {renderPart(part, idx, isLastGroup && partIdx === group.parts.length - 1)}
-                  </div>
-                ))}
+                {group.parts.map(({ part, idx }) => {
+                  const agentId = (part as TMessageContentParts & { agentId?: string }).agentId;
+                  // Only pass message-level fallbacks for parts without their own agentId
+                  // (i.e., the primary agent's content). Added agents have their own agentId
+                  // which encodes their endpoint/model info.
+                  const useMessageFallbacks = !agentId;
+
+                  return (
+                    <div
+                      key={`sibling-${messageId}-${idx}`}
+                      className="min-w-0 flex-1 rounded-lg border border-border-light p-3"
+                    >
+                      <SiblingHeader
+                        agentId={agentId}
+                        messageModel={useMessageFallbacks ? messageModel : undefined}
+                        messageEndpoint={useMessageFallbacks ? messageEndpoint : undefined}
+                        messageAgentId={useMessageFallbacks ? messageAgentId : undefined}
+                        messageSender={useMessageFallbacks ? messageSender : undefined}
+                      />
+                      {renderPart(part, idx, isLastPartInMessage)}
+                    </div>
+                  );
+                })}
               </div>
             );
           })}

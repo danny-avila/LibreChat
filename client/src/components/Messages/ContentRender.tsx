@@ -182,6 +182,10 @@ const ContentRender = memo(
                 isCreatedByUser={msg.isCreatedByUser}
                 conversationId={conversation?.conversationId}
                 content={msg.content as Array<TMessageContentParts | undefined>}
+                messageModel={msg.model}
+                messageEndpoint={msg.endpoint}
+                messageAgentId={agent?.id}
+                messageSender={msg.sender}
               />
             </div>
 

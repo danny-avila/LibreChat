@@ -1,5 +1,12 @@
 const { logger } = require('@librechat/data-schemas');
-const { Tools, Constants } = require('librechat-data-provider');
+const { getCustomEndpointConfig } = require('@librechat/api');
+const {
+  Tools,
+  Constants,
+  getResponseSender,
+  isAgentsEndpoint,
+  encodeEphemeralAgentId,
+} = require('librechat-data-provider');
 const { mcp_all, mcp_delimiter, EPHEMERAL_AGENT_ID } = Constants;
 const { getMCPServerTools } = require('~/server/services/Config');
 
@@ -130,8 +137,30 @@ const loadAddedAgent = async ({ req, conversation }) => {
     }
   }
 
+  // Get endpoint config for modelDisplayLabel (same pattern as initialize.js)
+  const appConfig = req.config;
+  let endpointConfig = appConfig?.endpoints?.[endpoint];
+  if (!isAgentsEndpoint(endpoint) && !endpointConfig) {
+    try {
+      endpointConfig = getCustomEndpointConfig({ endpoint, appConfig });
+    } catch (err) {
+      logger.error('[loadAddedAgent] Error getting custom endpoint config', err);
+    }
+  }
+
+  // Compute display name using getResponseSender (same logic used for main agent)
+  const sender = getResponseSender({
+    endpoint,
+    model,
+    modelLabel: rest.modelLabel,
+    modelDisplayLabel: endpointConfig?.modelDisplayLabel,
+  });
+
+  /** Encoded ephemeral agent ID with endpoint, model, and computed sender for display */
+  const ephemeralId = encodeEphemeralAgentId({ endpoint, model, sender });
+
   const result = {
-    id: ADDED_AGENT_ID,
+    id: ephemeralId,
     instructions: promptPrefix || '',
     provider: endpoint,
     model_parameters,
