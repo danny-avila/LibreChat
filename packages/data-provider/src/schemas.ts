@@ -22,6 +22,7 @@ export enum EModelEndpoint {
   anthropic = 'anthropic',
   assistants = 'assistants',
   azureAssistants = 'azureAssistants',
+  e2bAssistants = 'e2bAssistants',
   agents = 'agents',
   custom = 'custom',
   bedrock = 'bedrock',
