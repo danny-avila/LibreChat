@@ -294,12 +294,11 @@ export default function useStepHandler({
 
           // For edit scenarios, initialContent IS the complete starting content (not to be merged)
           // For resume scenarios (no editedContent), initialContent is empty and we use existingContent
-          // For parallel mode, start fresh since server provides all content with globally unique indices
+          // For parallel mode, use existingContent (placeholders with agentIds) so both columns show;
+          // updateContent will overwrite agentIds with correct values from server's contentAgentMap
           const existingContent = responseMessage?.content ?? [];
           let mergedContent: TMessageContentParts[] = existingContent;
-          if (isParallelMode.current) {
-            mergedContent = [];
-          } else if (initialContent.length > 0) {
+          if (initialContent.length > 0 && !isParallelMode.current) {
             mergedContent = initialContent;
           }
 
