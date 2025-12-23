@@ -3,10 +3,11 @@ import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetAssistantDocsQuery, useGetEndpointsQuery } from '~/data-provider';
 import { getIconEndpoint, getEntity } from '~/utils';
-import { useSubmitMessage } from '~/hooks';
+import { useSubmitMessage, useLocalize } from '~/hooks';
 import { ZapIcon } from 'lucide-react';
 
 const ConversationStarters = () => {
+  const localize = useLocalize();
   const { conversation } = useChatContext();
   const agentsMap = useAgentsMapContext();
   const assistantMap = useAssistantsMapContext();
@@ -58,12 +59,12 @@ const ConversationStarters = () => {
   }
 
   return (
-    <div className="mt-4 flex flex-col justify-center gap-2 px-2 mb-5">
-      <div className='flex flex-row ml-5 gap-2 w-full'>
-        <ZapIcon className='text-gray-400 size-4 mt-[2px]' />
-        <p className='text-gray-400 text-[13px] font-medium pb-2'>Suggestions:</p>
+    <div className="mb-5 mt-4 flex flex-col justify-center gap-2 px-2">
+      <div className='ml-5 flex w-full flex-row gap-2'>
+        <ZapIcon className='mt-[2px] size-4 text-gray-400' />
+        <p className='pb-2 text-[13px] font-medium text-gray-400'>{localize('com_ui_suggestions')}</p>
       </div>
-      <div className='flex flex-row flex-wrap gap-2 justify-center'>
+      <div className='flex flex-row flex-wrap justify-center gap-2'>
         {conversation_starters
           .slice(0, Constants.MAX_CONVO_STARTERS)
           .map((text: string, index: number) => (
@@ -72,9 +73,7 @@ const ConversationStarters = () => {
               onClick={() => sendConversationStarter(text)}
               className="relative flex w-[48%] cursor-pointer gap-2 rounded-2xl px-3 pb-2 pt-2 text-start align-top text-[17px] shadow-[0_0_2px_0_rgba(0,0,0,0.05),0_4px_6px_0_rgba(0,0,0,0.02)] transition-colors duration-300 ease-in-out fade-in hover:bg-surface-tertiary"
             >
-              <p className="line-clamp-3 overflow-hidden text-text-secondary">
-                {text}
-              </p>
+              <p className="line-clamp-3 overflow-hidden text-text-secondary">{text}</p>
             </button>
           ))}
       </div>
