@@ -181,6 +181,197 @@ describe('Token Methods - Detailed Tests', () => {
 
       expect(found).toBeNull();
     });
+
+    test('should find most recent token with sort option', async () => {
+      const recentUserId = new mongoose.Types.ObjectId();
+
+      // Create tokens with different timestamps
+      const oldDate = new Date(Date.now() - 7200000); // 2 hours ago
+      const midDate = new Date(Date.now() - 3600000); // 1 hour ago
+      const newDate = new Date(); // now
+
+      await Token.create([
+        {
+          token: 'old-token',
+          userId: recentUserId,
+          email: 'recent@example.com',
+          createdAt: oldDate,
+          expiresAt: new Date(oldDate.getTime() + 86400000),
+        },
+        {
+          token: 'mid-token',
+          userId: recentUserId,
+          email: 'recent@example.com',
+          createdAt: midDate,
+          expiresAt: new Date(midDate.getTime() + 86400000),
+        },
+        {
+          token: 'new-token',
+          userId: recentUserId,
+          email: 'recent@example.com',
+          createdAt: newDate,
+          expiresAt: new Date(newDate.getTime() + 86400000),
+        },
+      ]);
+
+      // Find most recent token for the user with sort option
+      const found = await methods.findToken(
+        { userId: recentUserId.toString() },
+        { sort: { createdAt: -1 } },
+      );
+
+      expect(found).toBeDefined();
+      expect(found?.token).toBe('new-token');
+      expect(found?.createdAt.getTime()).toBe(newDate.getTime());
+    });
+
+    test('should find oldest token with ascending sort', async () => {
+      const sortUserId = new mongoose.Types.ObjectId();
+
+      const oldDate = new Date(Date.now() - 7200000);
+      const midDate = new Date(Date.now() - 3600000);
+      const newDate = new Date();
+
+      await Token.create([
+        {
+          token: 'sort-old',
+          userId: sortUserId,
+          email: 'sort@example.com',
+          createdAt: oldDate,
+          expiresAt: new Date(oldDate.getTime() + 86400000),
+        },
+        {
+          token: 'sort-mid',
+          userId: sortUserId,
+          email: 'sort@example.com',
+          createdAt: midDate,
+          expiresAt: new Date(midDate.getTime() + 86400000),
+        },
+        {
+          token: 'sort-new',
+          userId: sortUserId,
+          email: 'sort@example.com',
+          createdAt: newDate,
+          expiresAt: new Date(newDate.getTime() + 86400000),
+        },
+      ]);
+
+      // Find oldest token with ascending sort
+      const found = await methods.findToken(
+        { userId: sortUserId.toString() },
+        { sort: { createdAt: 1 } },
+      );
+
+      expect(found).toBeDefined();
+      expect(found?.token).toBe('sort-old');
+      expect(found?.createdAt.getTime()).toBe(oldDate.getTime());
+    });
+
+    test('should handle multiple sort criteria', async () => {
+      const multiSortUserId = new mongoose.Types.ObjectId();
+      const sameDate = new Date();
+
+      await Token.create([
+        {
+          token: 'token-a',
+          userId: multiSortUserId,
+          email: 'z@example.com',
+          createdAt: sameDate,
+          expiresAt: new Date(sameDate.getTime() + 86400000),
+        },
+        {
+          token: 'token-b',
+          userId: multiSortUserId,
+          email: 'a@example.com',
+          createdAt: sameDate,
+          expiresAt: new Date(sameDate.getTime() + 86400000),
+        },
+        {
+          token: 'token-c',
+          userId: multiSortUserId,
+          email: 'm@example.com',
+          createdAt: new Date(Date.now() - 1000), // slightly older
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+      ]);
+
+      // Sort by createdAt descending, then by email ascending
+      const found = await methods.findToken(
+        { userId: multiSortUserId.toString() },
+        { sort: { createdAt: -1, email: 1 } },
+      );
+
+      expect(found).toBeDefined();
+      // Should get token-b (same recent date but 'a@example.com' comes first alphabetically)
+      expect(found?.token).toBe('token-b');
+      expect(found?.email).toBe('a@example.com');
+    });
+
+    test('should find token with projection option', async () => {
+      const projectionUserId = new mongoose.Types.ObjectId();
+
+      await Token.create({
+        token: 'projection-token',
+        userId: projectionUserId,
+        email: 'projection@example.com',
+        identifier: 'oauth-projection',
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 86400000),
+      });
+
+      // Find token with projection to only include specific fields
+      const found = await methods.findToken(
+        { userId: projectionUserId.toString() },
+        { projection: { token: 1, email: 1 } },
+      );
+
+      expect(found).toBeDefined();
+      expect(found?.token).toBe('projection-token');
+      expect(found?.email).toBe('projection@example.com');
+      // Note: _id is usually included by default unless explicitly excluded
+    });
+
+    test('should respect combined query options', async () => {
+      const combinedUserId = new mongoose.Types.ObjectId();
+
+      // Create multiple tokens with different attributes
+      await Token.create([
+        {
+          token: 'combined-1',
+          userId: combinedUserId,
+          email: 'combined1@example.com',
+          createdAt: new Date(Date.now() - 7200000),
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+        {
+          token: 'combined-2',
+          userId: combinedUserId,
+          email: 'combined2@example.com',
+          createdAt: new Date(Date.now() - 3600000),
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+        {
+          token: 'combined-3',
+          userId: combinedUserId,
+          email: 'combined3@example.com',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+      ]);
+
+      // Use multiple query options together
+      const found = await methods.findToken(
+        { userId: combinedUserId.toString() },
+        {
+          sort: { createdAt: -1 },
+          projection: { token: 1, createdAt: 1 },
+        },
+      );
+
+      expect(found).toBeDefined();
+      expect(found?.token).toBe('combined-3'); // Most recent
+      expect(found?.createdAt).toBeDefined();
+    });
   });
 
   describe('updateToken', () => {
@@ -226,6 +417,41 @@ describe('Token Methods - Detailed Tests', () => {
       );
 
       expect(updated).toBeNull();
+    });
+
+    test('should update expiresAt when expiresIn is provided', async () => {
+      const beforeUpdate = Date.now();
+      const newExpiresIn = 7200;
+
+      const updated = await methods.updateToken(
+        { token: 'update-token' },
+        { expiresIn: newExpiresIn },
+      );
+
+      const afterUpdate = Date.now();
+
+      expect(updated).toBeDefined();
+      expect(updated?.expiresAt).toBeDefined();
+
+      const expectedMinExpiry = beforeUpdate + newExpiresIn * 1000;
+      const expectedMaxExpiry = afterUpdate + newExpiresIn * 1000;
+
+      expect(updated!.expiresAt.getTime()).toBeGreaterThanOrEqual(expectedMinExpiry);
+      expect(updated!.expiresAt.getTime()).toBeLessThanOrEqual(expectedMaxExpiry);
+    });
+
+    test('should not modify expiresAt when expiresIn is not provided', async () => {
+      const original = await Token.findOne({ token: 'update-token' });
+      const originalExpiresAt = original!.expiresAt.getTime();
+
+      const updated = await methods.updateToken(
+        { token: 'update-token' },
+        { email: 'changed@example.com' },
+      );
+
+      expect(updated).toBeDefined();
+      expect(updated?.email).toBe('changed@example.com');
+      expect(updated!.expiresAt.getTime()).toBe(originalExpiresAt);
     });
   });
 
@@ -424,6 +650,173 @@ describe('Token Methods - Detailed Tests', () => {
       expect(remainingTokens.find((t) => t.token === 'email-verify-token-1')).toBeDefined();
       expect(remainingTokens.find((t) => t.token === 'email-verify-token-3')).toBeDefined();
       expect(remainingTokens.find((t) => t.token === 'email-verify-token-2')).toBeUndefined();
+    });
+  });
+
+  describe('Email Normalization', () => {
+    let normUserId: mongoose.Types.ObjectId;
+
+    beforeEach(async () => {
+      normUserId = new mongoose.Types.ObjectId();
+
+      // Create token with lowercase email (as stored in DB)
+      await Token.create({
+        token: 'norm-token-1',
+        userId: normUserId,
+        email: 'john.doe@example.com',
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 3600000),
+      });
+    });
+
+    describe('findToken email normalization', () => {
+      test('should find token by email with different case (case-insensitive)', async () => {
+        const foundUpper = await methods.findToken({ email: 'JOHN.DOE@EXAMPLE.COM' });
+        const foundMixed = await methods.findToken({ email: 'John.Doe@Example.COM' });
+        const foundLower = await methods.findToken({ email: 'john.doe@example.com' });
+
+        expect(foundUpper).toBeDefined();
+        expect(foundUpper?.token).toBe('norm-token-1');
+
+        expect(foundMixed).toBeDefined();
+        expect(foundMixed?.token).toBe('norm-token-1');
+
+        expect(foundLower).toBeDefined();
+        expect(foundLower?.token).toBe('norm-token-1');
+      });
+
+      test('should find token by email with leading/trailing whitespace', async () => {
+        const foundWithSpaces = await methods.findToken({ email: '  john.doe@example.com  ' });
+        const foundWithTabs = await methods.findToken({ email: '\tjohn.doe@example.com\t' });
+
+        expect(foundWithSpaces).toBeDefined();
+        expect(foundWithSpaces?.token).toBe('norm-token-1');
+
+        expect(foundWithTabs).toBeDefined();
+        expect(foundWithTabs?.token).toBe('norm-token-1');
+      });
+
+      test('should find token by email with both case difference and whitespace', async () => {
+        const found = await methods.findToken({ email: '  JOHN.DOE@EXAMPLE.COM  ' });
+
+        expect(found).toBeDefined();
+        expect(found?.token).toBe('norm-token-1');
+      });
+
+      test('should find token with combined email and other criteria', async () => {
+        const found = await methods.findToken({
+          userId: normUserId.toString(),
+          email: 'John.Doe@Example.COM',
+        });
+
+        expect(found).toBeDefined();
+        expect(found?.token).toBe('norm-token-1');
+      });
+    });
+
+    describe('deleteTokens email normalization', () => {
+      test('should delete token by email with different case', async () => {
+        const result = await methods.deleteTokens({ email: 'JOHN.DOE@EXAMPLE.COM' });
+
+        expect(result.deletedCount).toBe(1);
+
+        const remaining = await Token.find({});
+        expect(remaining).toHaveLength(0);
+      });
+
+      test('should delete token by email with whitespace', async () => {
+        const result = await methods.deleteTokens({ email: '  john.doe@example.com  ' });
+
+        expect(result.deletedCount).toBe(1);
+
+        const remaining = await Token.find({});
+        expect(remaining).toHaveLength(0);
+      });
+
+      test('should delete token by email with case and whitespace combined', async () => {
+        const result = await methods.deleteTokens({ email: '  John.Doe@EXAMPLE.COM  ' });
+
+        expect(result.deletedCount).toBe(1);
+
+        const remaining = await Token.find({});
+        expect(remaining).toHaveLength(0);
+      });
+
+      test('should only delete matching token when using normalized email', async () => {
+        // Create additional token with different email
+        await Token.create({
+          token: 'norm-token-2',
+          userId: new mongoose.Types.ObjectId(),
+          email: 'jane.doe@example.com',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        });
+
+        const result = await methods.deleteTokens({ email: 'JOHN.DOE@EXAMPLE.COM' });
+
+        expect(result.deletedCount).toBe(1);
+
+        const remaining = await Token.find({});
+        expect(remaining).toHaveLength(1);
+        expect(remaining[0].email).toBe('jane.doe@example.com');
+      });
+    });
+
+    describe('Email verification flow with normalization', () => {
+      test('should handle OpenID provider email case mismatch scenario', async () => {
+        /**
+         * Simulate the exact bug scenario:
+         * 1. User registers with email stored as lowercase
+         * 2. OpenID provider returns email with different casing
+         * 3. System should still find and delete the correct token
+         */
+        const userId = new mongoose.Types.ObjectId();
+
+        // Token created during registration (email stored lowercase)
+        await Token.create({
+          token: 'verification-token',
+          userId: userId,
+          email: 'user@company.com',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 86400000),
+        });
+
+        // OpenID provider returns email with different case
+        const emailFromProvider = 'User@Company.COM';
+
+        // Should find the token despite case mismatch
+        const found = await methods.findToken({ email: emailFromProvider });
+        expect(found).toBeDefined();
+        expect(found?.token).toBe('verification-token');
+
+        // Should delete the token despite case mismatch
+        const deleted = await methods.deleteTokens({ email: emailFromProvider });
+        expect(deleted.deletedCount).toBe(1);
+      });
+
+      test('should handle resend verification email with case mismatch', async () => {
+        const userId = new mongoose.Types.ObjectId();
+
+        // Old verification token
+        await Token.create({
+          token: 'old-verification',
+          userId: userId,
+          email: 'john.smith@enterprise.com',
+          createdAt: new Date(Date.now() - 3600000),
+          expiresAt: new Date(Date.now() + 82800000),
+        });
+
+        // User requests resend with different email casing
+        const userInputEmail = '  John.Smith@ENTERPRISE.COM  ';
+
+        // Delete old tokens for this email
+        const deleted = await methods.deleteTokens({ email: userInputEmail });
+        expect(deleted.deletedCount).toBe(1);
+
+        // Verify token was actually deleted
+        const remaining = await Token.find({ userId });
+        expect(remaining).toHaveLength(0);
+      });
     });
   });
 });

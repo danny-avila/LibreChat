@@ -1,5 +1,7 @@
 import { randomBytes } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
+import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
   registerClient,
   startAuthorization,
@@ -7,7 +9,6 @@ import {
   discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
-import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { FlowStateManager } from '~/flow/manager';
 import type {
@@ -27,9 +28,28 @@ export class MCPOAuthHandler {
   private static readonly FLOW_TTL = 10 * 60 * 1000; // 10 minutes
 
   /**
+   * Creates a fetch function with custom headers injected
+   */
+  private static createOAuthFetch(headers: Record<string, string>): FetchLike {
+    return async (url: string | URL, init?: RequestInit): Promise<Response> => {
+      const newHeaders = new Headers(init?.headers ?? {});
+      for (const [key, value] of Object.entries(headers)) {
+        newHeaders.set(key, value);
+      }
+      return fetch(url, {
+        ...init,
+        headers: newHeaders,
+      });
+    };
+  }
+
+  /**
    * Discovers OAuth metadata from the server
    */
-  private static async discoverMetadata(serverUrl: string): Promise<{
+  private static async discoverMetadata(
+    serverUrl: string,
+    oauthHeaders: Record<string, string>,
+  ): Promise<{
     metadata: OAuthMetadata;
     resourceMetadata?: OAuthProtectedResourceMetadata;
     authServerUrl: URL;
@@ -41,12 +61,14 @@ export class MCPOAuthHandler {
     let authServerUrl = new URL(serverUrl);
     let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
 
+    const fetchFn = this.createOAuthFetch(oauthHeaders);
+
     try {
       // Try to discover resource metadata first
       logger.debug(
         `[MCPOAuth] Attempting to discover protected resource metadata from ${serverUrl}`,
       );
-      resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl);
+      resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, {}, fetchFn);
 
       if (resourceMetadata?.authorization_servers?.length) {
         authServerUrl = new URL(resourceMetadata.authorization_servers[0]);
@@ -66,13 +88,42 @@ export class MCPOAuthHandler {
     logger.debug(
       `[MCPOAuth] Discovering OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
     );
-    const rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl);
+    const rawMetadata = await discoverAuthorizationServerMetadata(authServerUrl, {
+      fetchFn,
+    });
 
     if (!rawMetadata) {
-      logger.error(
-        `[MCPOAuth] Failed to discover OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
+      /**
+       * No metadata discovered - create fallback metadata using default OAuth endpoint paths.
+       * This mirrors the MCP SDK's behavior where it falls back to /authorize, /token, /register
+       * when metadata discovery fails (e.g., servers without .well-known endpoints).
+       * See: https://github.com/modelcontextprotocol/sdk/blob/main/src/client/auth.ts
+       */
+      logger.warn(
+        `[MCPOAuth] No OAuth metadata discovered from ${sanitizeUrlForLogging(authServerUrl)}, using legacy fallback endpoints`,
       );
-      throw new Error('Failed to discover OAuth metadata');
+
+      const fallbackMetadata: OAuthMetadata = {
+        issuer: authServerUrl.toString(),
+        authorization_endpoint: new URL('/authorize', authServerUrl).toString(),
+        token_endpoint: new URL('/token', authServerUrl).toString(),
+        registration_endpoint: new URL('/register', authServerUrl).toString(),
+        response_types_supported: ['code'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        code_challenge_methods_supported: ['S256', 'plain'],
+        token_endpoint_auth_methods_supported: [
+          'client_secret_basic',
+          'client_secret_post',
+          'none',
+        ],
+      };
+
+      logger.debug(`[MCPOAuth] Using fallback metadata:`, fallbackMetadata);
+      return {
+        metadata: fallbackMetadata,
+        resourceMetadata,
+        authServerUrl,
+      };
     }
 
     logger.debug(`[MCPOAuth] OAuth metadata discovered successfully`);
@@ -92,6 +143,7 @@ export class MCPOAuthHandler {
   private static async registerOAuthClient(
     serverUrl: string,
     metadata: OAuthMetadata,
+    oauthHeaders: Record<string, string>,
     resourceMetadata?: OAuthProtectedResourceMetadata,
     redirectUri?: string,
   ): Promise<OAuthClientInformation> {
@@ -159,6 +211,7 @@ export class MCPOAuthHandler {
     const clientInfo = await registerClient(serverUrl, {
       metadata: metadata as unknown as SDKOAuthMetadata,
       clientMetadata,
+      fetchFn: this.createOAuthFetch(oauthHeaders),
     });
 
     logger.debug(
@@ -181,7 +234,8 @@ export class MCPOAuthHandler {
     serverName: string,
     serverUrl: string,
     userId: string,
-    config: MCPOptions['oauth'] | undefined,
+    oauthHeaders: Record<string, string>,
+    config?: MCPOptions['oauth'],
   ): Promise<{ authorizationUrl: string; flowId: string; flowMetadata: MCPOAuthFlowMetadata }> {
     logger.debug(
       `[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${sanitizeUrlForLogging(serverUrl)}`,
@@ -196,6 +250,23 @@ export class MCPOAuthHandler {
       // Check if we have pre-configured OAuth settings
       if (config?.authorization_url && config?.token_url && config?.client_id) {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for ${serverName}`);
+
+        const skipCodeChallengeCheck =
+          config?.skip_code_challenge_check === true ||
+          process.env.MCP_SKIP_CODE_CHALLENGE_CHECK === 'true';
+        let codeChallengeMethodsSupported: string[];
+
+        if (config?.code_challenge_methods_supported !== undefined) {
+          codeChallengeMethodsSupported = config.code_challenge_methods_supported;
+        } else if (skipCodeChallengeCheck) {
+          codeChallengeMethodsSupported = ['S256', 'plain'];
+          logger.debug(
+            `[MCPOAuth] Code challenge check skip enabled, forcing S256 support for ${serverName}`,
+          );
+        } else {
+          codeChallengeMethodsSupported = ['S256', 'plain'];
+        }
+
         /** Metadata based on pre-configured settings */
         const metadata: OAuthMetadata = {
           authorization_endpoint: config.authorization_url,
@@ -211,10 +282,7 @@ export class MCPOAuthHandler {
             'client_secret_post',
           ],
           response_types_supported: config?.response_types_supported ?? ['code'],
-          code_challenge_methods_supported: config?.code_challenge_methods_supported ?? [
-            'S256',
-            'plain',
-          ],
+          code_challenge_methods_supported: codeChallengeMethodsSupported,
         };
         logger.debug(`[MCPOAuth] metadata for "${serverName}": ${JSON.stringify(metadata)}`);
         const clientInfo: OAuthClientInformation = {
@@ -259,7 +327,10 @@ export class MCPOAuthHandler {
       logger.debug(
         `[MCPOAuth] Starting auto-discovery of OAuth metadata from ${sanitizeUrlForLogging(serverUrl)}`,
       );
-      const { metadata, resourceMetadata, authServerUrl } = await this.discoverMetadata(serverUrl);
+      const { metadata, resourceMetadata, authServerUrl } = await this.discoverMetadata(
+        serverUrl,
+        oauthHeaders,
+      );
 
       logger.debug(
         `[MCPOAuth] OAuth metadata discovered, auth server URL: ${sanitizeUrlForLogging(authServerUrl)}`,
@@ -272,6 +343,7 @@ export class MCPOAuthHandler {
       const clientInfo = await this.registerOAuthClient(
         authServerUrl.toString(),
         metadata,
+        oauthHeaders,
         resourceMetadata,
         redirectUri,
       );
@@ -365,6 +437,7 @@ export class MCPOAuthHandler {
     flowId: string,
     authorizationCode: string,
     flowManager: FlowStateManager<MCPOAuthTokens>,
+    oauthHeaders: Record<string, string>,
   ): Promise<MCPOAuthTokens> {
     try {
       /** Flow state which contains our metadata */
@@ -404,11 +477,13 @@ export class MCPOAuthHandler {
         codeVerifier: metadata.codeVerifier,
         authorizationCode,
         resource,
+        fetchFn: this.createOAuthFetch(oauthHeaders),
       });
 
-      logger.debug('[MCPOAuth] Raw tokens from exchange:', {
-        access_token: tokens.access_token ? '[REDACTED]' : undefined,
-        refresh_token: tokens.refresh_token ? '[REDACTED]' : undefined,
+      logger.debug('[MCPOAuth] Token exchange successful', {
+        flowId,
+        has_access_token: !!tokens.access_token,
+        has_refresh_token: !!tokens.refresh_token,
         expires_in: tokens.expires_in,
         token_type: tokens.token_type,
         scope: tokens.scope,
@@ -476,6 +551,7 @@ export class MCPOAuthHandler {
   static async refreshOAuthTokens(
     refreshToken: string,
     metadata: { serverName: string; serverUrl?: string; clientInfo?: OAuthClientInformation },
+    oauthHeaders: Record<string, string>,
     config?: MCPOptions['oauth'],
   ): Promise<MCPOAuthTokens> {
     logger.debug(`[MCPOAuth] Refreshing tokens for ${metadata.serverName}`);
@@ -504,19 +580,30 @@ export class MCPOAuthHandler {
         let authMethods: string[] | undefined;
         if (config?.token_url) {
           tokenUrl = config.token_url;
+          authMethods = config.token_endpoint_auth_methods_supported;
         } else if (!metadata.serverUrl) {
           throw new Error('No token URL available for refresh');
         } else {
           /** Auto-discover OAuth configuration for refresh */
-          const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl);
+          const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl, {
+            fetchFn: this.createOAuthFetch(oauthHeaders),
+          });
           if (!oauthMetadata) {
-            throw new Error('Failed to discover OAuth metadata for token refresh');
-          }
-          if (!oauthMetadata.token_endpoint) {
+            /**
+             * No metadata discovered - use fallback /token endpoint.
+             * This mirrors the MCP SDK's behavior for legacy servers without .well-known endpoints.
+             */
+            logger.warn(
+              `[MCPOAuth] No OAuth metadata discovered for token refresh, using fallback /token endpoint`,
+            );
+            tokenUrl = new URL('/token', metadata.serverUrl).toString();
+            authMethods = ['client_secret_basic', 'client_secret_post', 'none'];
+          } else if (!oauthMetadata.token_endpoint) {
             throw new Error('No token endpoint found in OAuth metadata');
+          } else {
+            tokenUrl = oauthMetadata.token_endpoint;
+            authMethods = oauthMetadata.token_endpoint_auth_methods_supported;
           }
-          tokenUrl = oauthMetadata.token_endpoint;
-          authMethods = oauthMetadata.token_endpoint_auth_methods_supported;
         }
 
         const body = new URLSearchParams({
@@ -532,6 +619,7 @@ export class MCPOAuthHandler {
         const headers: HeadersInit = {
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
+          ...oauthHeaders,
         };
 
         /** Handle authentication based on server's advertised methods */
@@ -612,6 +700,7 @@ export class MCPOAuthHandler {
         const headers: HeadersInit = {
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
+          ...oauthHeaders,
         };
 
         /** Handle authentication based on configured methods */
@@ -683,13 +772,23 @@ export class MCPOAuthHandler {
       }
 
       /** Auto-discover OAuth configuration for refresh */
-      const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl);
+      const oauthMetadata = await discoverAuthorizationServerMetadata(metadata.serverUrl, {
+        fetchFn: this.createOAuthFetch(oauthHeaders),
+      });
 
+      let tokenUrl: URL;
       if (!oauthMetadata?.token_endpoint) {
-        throw new Error('No token endpoint found in OAuth metadata');
+        /**
+         * No metadata or token_endpoint discovered - use fallback /token endpoint.
+         * This mirrors the MCP SDK's behavior for legacy servers without .well-known endpoints.
+         */
+        logger.warn(
+          `[MCPOAuth] No OAuth metadata or token endpoint found, using fallback /token endpoint`,
+        );
+        tokenUrl = new URL('/token', metadata.serverUrl);
+      } else {
+        tokenUrl = new URL(oauthMetadata.token_endpoint);
       }
-
-      const tokenUrl = new URL(oauthMetadata.token_endpoint);
 
       const body = new URLSearchParams({
         grant_type: 'refresh_token',
@@ -699,6 +798,7 @@ export class MCPOAuthHandler {
       const headers: HeadersInit = {
         'Content-Type': 'application/x-www-form-urlencoded',
         Accept: 'application/json',
+        ...oauthHeaders,
       };
 
       const response = await fetch(tokenUrl, {
@@ -741,6 +841,7 @@ export class MCPOAuthHandler {
       revocationEndpoint?: string;
       revocationEndpointAuthMethodsSupported?: string[];
     },
+    oauthHeaders: Record<string, string> = {},
   ): Promise<void> {
     // build the revoke URL, falling back to the server URL + /revoke if no revocation endpoint is provided
     const revokeUrl: URL =
@@ -758,6 +859,7 @@ export class MCPOAuthHandler {
     // init the request headers
     const headers: Record<string, string> = {
       'Content-Type': 'application/x-www-form-urlencoded',
+      ...oauthHeaders,
     };
 
     // init the request body

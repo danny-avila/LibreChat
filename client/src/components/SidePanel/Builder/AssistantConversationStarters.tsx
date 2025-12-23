@@ -59,6 +59,10 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
 
   const hasReachedMax = field.value.length >= Constants.MAX_CONVO_STARTERS;
 
+  const addConversationStarterLabel = hasReachedMax
+    ? localize('com_assistants_max_starters_reached')
+    : localize('com_ui_add');
+
   return (
     <div className="relative">
       <label className={labelClass} htmlFor="conversation_starters">
@@ -108,11 +112,8 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
               >
                 <TooltipAnchor
                   side="top"
-                  description={
-                    hasReachedMax
-                      ? localize('com_assistants_max_starters_reached')
-                      : localize('com_ui_add')
-                  }
+                  description={addConversationStarterLabel}
+                  aria-label={addConversationStarterLabel}
                   className="flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
                   onClick={handleAddStarter}
                   disabled={hasReachedMax}
@@ -140,6 +141,7 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
             <TooltipAnchor
               side="top"
               description={localize('com_ui_delete')}
+              aria-label={localize('com_ui_delete')}
               className="absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
               onClick={() => handleDeleteStarter(index)}
             >

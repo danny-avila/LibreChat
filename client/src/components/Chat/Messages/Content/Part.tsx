@@ -1,5 +1,6 @@
 import {
   Tools,
+  Constants,
   ContentTypes,
   ToolCallTypes,
   imageGenTools,
@@ -10,6 +11,7 @@ import type { TMessageContentParts, TAttachment } from 'librechat-data-provider'
 import { OpenAIImageGen, EmptyText, Reasoning, ExecuteCode, AgentUpdate, Text } from './Parts';
 import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
+import AgentHandoff from './AgentHandoff';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
 import WebSearch from './WebSearch';
@@ -57,12 +59,16 @@ const Part = memo(
         </>
       );
     } else if (part.type === ContentTypes.TEXT) {
-      const text = typeof part.text === 'string' ? part.text : part.text.value;
+      const text = typeof part.text === 'string' ? part.text : part.text?.value;
 
       if (typeof text !== 'string') {
         return null;
       }
       if (part.tool_call_ids != null && !text) {
+        return null;
+      }
+      /** Skip rendering if text is only whitespace to avoid empty Container */
+      if (!isLast && text.length > 0 && /^\s*$/.test(text)) {
         return null;
       }
       return (
@@ -71,11 +77,11 @@ const Part = memo(
         </Container>
       );
     } else if (part.type === ContentTypes.THINK) {
-      const reasoning = typeof part.think === 'string' ? part.think : part.think.value;
+      const reasoning = typeof part.think === 'string' ? part.think : part.think?.value;
       if (typeof reasoning !== 'string') {
         return null;
       }
-      return <Reasoning reasoning={reasoning} />;
+      return <Reasoning reasoning={reasoning} isLast={isLast ?? false} />;
     } else if (part.type === ContentTypes.TOOL_CALL) {
       const toolCall = part[ContentTypes.TOOL_CALL];
 
@@ -119,6 +125,14 @@ const Part = memo(
             isLast={isLast}
           />
         );
+      } else if (isToolCall && toolCall.name?.startsWith(Constants.LC_TRANSFER_TO_)) {
+        return (
+          <AgentHandoff
+            args={toolCall.args ?? ''}
+            name={toolCall.name || ''}
+            output={toolCall.output ?? ''}
+          />
+        );
       } else if (isToolCall) {
         return (
           <ToolCall
@@ -130,6 +144,7 @@ const Part = memo(
             attachments={attachments}
             auth={toolCall.auth}
             expires_at={toolCall.expires_at}
+            isLast={isLast}
           />
         );
       } else if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
@@ -178,6 +193,7 @@ const Part = memo(
             args={toolCall.function.arguments as string}
             name={toolCall.function.name}
             output={toolCall.function.output}
+            isLast={isLast}
           />
         );
       }

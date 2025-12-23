@@ -1,8 +1,8 @@
-import { v4 } from 'uuid';
 import { useCallback, useRef } from 'react';
+import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   QueryKeys,
   Constants,
@@ -13,7 +13,12 @@ import {
   tConvoUpdateSchema,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { TMessage, TConversation, EventSubmission } from 'librechat-data-provider';
+import type {
+  TMessage,
+  TConversation,
+  EventSubmission,
+  TStartupConfig,
+} from 'librechat-data-provider';
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { TGenTitleMutation } from '~/data-provider';
@@ -31,11 +36,12 @@ import {
 } from '~/utils';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
-import store, { useApplyNewAgentTemplate } from '~/store';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
+import { useApplyAgentTemplate } from '~/hooks/Agents';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
+import store from '~/store';
 
 type TSyncData = {
   sync: boolean;
@@ -81,12 +87,14 @@ const createErrorMessage = ({
   let isValidContentPart = false;
   if (latestContent.length > 0) {
     const latestContentPart = latestContent[latestContent.length - 1];
-    const latestPartValue = latestContentPart?.[latestContentPart.type ?? ''];
-    isValidContentPart =
-      latestContentPart.type !== ContentTypes.TEXT ||
-      (latestContentPart.type === ContentTypes.TEXT && typeof latestPartValue === 'string')
-        ? true
-        : latestPartValue?.value !== '';
+    if (latestContentPart != null) {
+      const latestPartValue = latestContentPart[latestContentPart.type ?? ''];
+      isValidContentPart =
+        latestContentPart.type !== ContentTypes.TEXT ||
+        (latestContentPart.type === ContentTypes.TEXT && typeof latestPartValue === 'string')
+          ? true
+          : latestPartValue?.value !== '';
+    }
   }
   if (
     latestMessage?.conversationId &&
@@ -172,7 +180,7 @@ export default function useEventHandlers({
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
-  const applyAgentTemplate = useApplyNewAgentTemplate();
+  const applyAgentTemplate = useApplyAgentTemplate();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
   const navigate = useNavigate();
   const location = useLocation();
@@ -339,6 +347,7 @@ export default function useEventHandlers({
 
       setShowStopButton(true);
       if (resetLatestMessage) {
+        logger.log('latest_message', 'syncHandler: resetting latest message');
         resetLatestMessage();
       }
     },
@@ -355,6 +364,7 @@ export default function useEventHandlers({
 
   const createdHandler = useCallback(
     (data: TResData, submission: EventSubmission) => {
+      queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
       const { messages, userMessage, isRegenerate = false, isTemporary = false } = submission;
       const initialResponse = {
         ...submission.initialResponse,
@@ -410,14 +420,17 @@ export default function useEventHandlers({
       }
 
       if (conversationId) {
-        applyAgentTemplate(
-          conversationId,
-          submission.conversation.conversationId,
-          submission.ephemeralAgent,
-        );
+        applyAgentTemplate({
+          targetId: conversationId,
+          sourceId: submission.conversation?.conversationId,
+          ephemeralAgent: submission.ephemeralAgent,
+          specName: submission.conversation?.spec,
+          startupConfig: queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]),
+        });
       }
 
       if (resetLatestMessage) {
+        logger.log('latest_message', 'createdHandler: resetting latest message');
         resetLatestMessage();
       }
       scrollToEnd(() => setAbortScroll(false));
@@ -444,139 +457,145 @@ export default function useEventHandlers({
         isTemporary = false,
       } = submission;
 
-      if (responseMessage?.attachments && responseMessage.attachments.length > 0) {
-        // Process each attachment through the attachmentHandler
-        responseMessage.attachments.forEach((attachment) => {
-          const attachmentData = {
-            ...attachment,
-            messageId: responseMessage.messageId,
-          };
+      try {
+        if (responseMessage?.attachments && responseMessage.attachments.length > 0) {
+          // Process each attachment through the attachmentHandler
+          responseMessage.attachments.forEach((attachment) => {
+            const attachmentData = {
+              ...attachment,
+              messageId: responseMessage.messageId,
+            };
 
-          attachmentHandler({
-            data: attachmentData,
-            submission: submission as EventSubmission,
+            attachmentHandler({
+              data: attachmentData,
+              submission: submission as EventSubmission,
+            });
           });
-        });
-      }
+        }
 
-      setShowStopButton(false);
-      setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
+        setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
 
-      const currentMessages = getMessages();
-      /* Early return if messages are empty; i.e., the user navigated away */
-      if (!currentMessages || currentMessages.length === 0) {
-        setIsSubmitting(false);
-        return;
-      }
+        const currentMessages = getMessages();
+        /* Early return if messages are empty; i.e., the user navigated away */
+        if (!currentMessages || currentMessages.length === 0) {
+          return;
+        }
 
-      /* a11y announcements */
-      announcePolite({ message: 'end', isStatus: true });
-      announcePolite({ message: getAllContentText(responseMessage) });
+        /* a11y announcements */
+        announcePolite({ message: 'end', isStatus: true });
+        announcePolite({ message: getAllContentText(responseMessage) });
 
-      const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
+        const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
 
-      const setFinalMessages = (id: string | null, _messages: TMessage[]) => {
-        setMessages(_messages);
-        queryClient.setQueryData<TMessage[]>([QueryKeys.messages, id], _messages);
-      };
+        const setFinalMessages = (id: string | null, _messages: TMessage[]) => {
+          setMessages(_messages);
+          queryClient.setQueryData<TMessage[]>([QueryKeys.messages, id], _messages);
+        };
 
-      const hasNoResponse =
-        responseMessage?.content?.[0]?.['text']?.value ===
-          submission.initialResponse?.content?.[0]?.['text']?.value ||
-        !!responseMessage?.content?.[0]?.['tool_call']?.auth;
+        const hasNoResponse =
+          responseMessage?.content?.[0]?.['text']?.value ===
+            submission.initialResponse?.content?.[0]?.['text']?.value ||
+          !!responseMessage?.content?.[0]?.['tool_call']?.auth;
 
-      /** Handle edge case where stream is cancelled before any response, which creates a blank page */
-      if (!conversation.conversationId && hasNoResponse) {
-        const currentConvoId =
-          (submissionConvo.conversationId ?? conversation.conversationId) || Constants.NEW_CONVO;
+        /** Handle edge case where stream is cancelled before any response, which creates a blank page */
+        if (!conversation.conversationId && hasNoResponse) {
+          const currentConvoId =
+            (submissionConvo.conversationId ?? conversation.conversationId) || Constants.NEW_CONVO;
+          if (isNewConvo && submissionConvo.conversationId) {
+            removeConvoFromAllQueries(queryClient, submissionConvo.conversationId);
+          }
+
+          const isNewChat =
+            location.pathname === `/c/${Constants.NEW_CONVO}` &&
+            currentConvoId === Constants.NEW_CONVO;
+
+          setFinalMessages(currentConvoId, isNewChat ? [] : [...messages]);
+          setDraft({ id: currentConvoId, value: requestMessage?.text });
+          if (isNewChat) {
+            navigate(`/c/${Constants.NEW_CONVO}`, { replace: true, state: { focusChat: true } });
+          }
+          return;
+        }
+
+        /* Update messages; if assistants endpoint, client doesn't receive responseMessage */
+        let finalMessages: TMessage[] = [];
+        if (runMessages) {
+          finalMessages = [...runMessages];
+        } else if (isRegenerate && responseMessage) {
+          finalMessages = [...messages, responseMessage];
+        } else if (requestMessage != null && responseMessage != null) {
+          finalMessages = [...messages, requestMessage, responseMessage];
+        }
+        if (finalMessages.length > 0) {
+          setFinalMessages(conversation.conversationId, finalMessages);
+        } else if (
+          isAssistantsEndpoint(submissionConvo.endpoint) &&
+          (!submissionConvo.conversationId ||
+            submissionConvo.conversationId === Constants.NEW_CONVO)
+        ) {
+          queryClient.setQueryData<TMessage[]>(
+            [QueryKeys.messages, conversation.conversationId],
+            [...currentMessages],
+          );
+        }
+
         if (isNewConvo && submissionConvo.conversationId) {
           removeConvoFromAllQueries(queryClient, submissionConvo.conversationId);
         }
 
-        const isNewChat =
-          location.pathname === `/c/${Constants.NEW_CONVO}` &&
-          currentConvoId === Constants.NEW_CONVO;
+        /* Refresh title */
+        if (
+          genTitle &&
+          isNewConvo &&
+          !isTemporary &&
+          requestMessage &&
+          requestMessage.parentMessageId === Constants.NO_PARENT
+        ) {
+          setTimeout(() => {
+            genTitle.mutate({ conversationId: conversation.conversationId as string });
+          }, 2500);
+        }
 
-        setFinalMessages(currentConvoId, isNewChat ? [] : [...messages]);
-        setDraft({ id: currentConvoId, value: requestMessage?.text });
+        if (setConversation && isAddedRequest !== true) {
+          setConversation((prevState) => {
+            const update = {
+              ...prevState,
+              ...(conversation as TConversation),
+            };
+            if (prevState?.model != null && prevState.model !== submissionConvo.model) {
+              update.model = prevState.model;
+            }
+            const cachedConvo = queryClient.getQueryData<TConversation>([
+              QueryKeys.conversation,
+              conversation.conversationId,
+            ]);
+            if (!cachedConvo) {
+              queryClient.setQueryData(
+                [QueryKeys.conversation, conversation.conversationId],
+                update,
+              );
+            }
+            return update;
+          });
+
+          if (conversation.conversationId && submission.ephemeralAgent) {
+            applyAgentTemplate({
+              targetId: conversation.conversationId,
+              sourceId: submissionConvo.conversationId,
+              ephemeralAgent: submission.ephemeralAgent,
+              specName: submission.conversation?.spec,
+              startupConfig: queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]),
+            });
+          }
+
+          if (location.pathname === `/c/${Constants.NEW_CONVO}`) {
+            navigate(`/c/${conversation.conversationId}`, { replace: true });
+          }
+        }
+      } finally {
+        setShowStopButton(false);
         setIsSubmitting(false);
-        if (isNewChat) {
-          navigate(`/c/${Constants.NEW_CONVO}`, { replace: true, state: { focusChat: true } });
-        }
-        return;
       }
-
-      /* Update messages; if assistants endpoint, client doesn't receive responseMessage */
-      let finalMessages: TMessage[] = [];
-      if (runMessages) {
-        finalMessages = [...runMessages];
-      } else if (isRegenerate && responseMessage) {
-        finalMessages = [...messages, responseMessage];
-      } else if (requestMessage != null && responseMessage != null) {
-        finalMessages = [...messages, requestMessage, responseMessage];
-      }
-      if (finalMessages.length > 0) {
-        setFinalMessages(conversation.conversationId, finalMessages);
-      } else if (
-        isAssistantsEndpoint(submissionConvo.endpoint) &&
-        (!submissionConvo.conversationId || submissionConvo.conversationId === Constants.NEW_CONVO)
-      ) {
-        queryClient.setQueryData<TMessage[]>(
-          [QueryKeys.messages, conversation.conversationId],
-          [...currentMessages],
-        );
-      }
-
-      if (isNewConvo && submissionConvo.conversationId) {
-        removeConvoFromAllQueries(queryClient, submissionConvo.conversationId);
-      }
-
-      /* Refresh title */
-      if (
-        genTitle &&
-        isNewConvo &&
-        !isTemporary &&
-        requestMessage &&
-        requestMessage.parentMessageId === Constants.NO_PARENT
-      ) {
-        setTimeout(() => {
-          genTitle.mutate({ conversationId: conversation.conversationId as string });
-        }, 2500);
-      }
-
-      if (setConversation && isAddedRequest !== true) {
-        setConversation((prevState) => {
-          const update = {
-            ...prevState,
-            ...(conversation as TConversation),
-          };
-          if (prevState?.model != null && prevState.model !== submissionConvo.model) {
-            update.model = prevState.model;
-          }
-          const cachedConvo = queryClient.getQueryData<TConversation>([
-            QueryKeys.conversation,
-            conversation.conversationId,
-          ]);
-          if (!cachedConvo) {
-            queryClient.setQueryData([QueryKeys.conversation, conversation.conversationId], update);
-          }
-          return update;
-        });
-
-        if (conversation.conversationId && submission.ephemeralAgent) {
-          applyAgentTemplate(
-            conversation.conversationId,
-            submissionConvo.conversationId,
-            submission.ephemeralAgent,
-          );
-        }
-
-        if (location.pathname === `/c/${Constants.NEW_CONVO}`) {
-          navigate(`/c/${conversation.conversationId}`, { replace: true });
-        }
-      }
-
-      setIsSubmitting(false);
     },
     [
       navigate,
@@ -709,26 +728,37 @@ export default function useEventHandlers({
         messages[messages.length - 2] != null
       ) {
         let requestMessage = messages[messages.length - 2];
-        const responseMessage = messages[messages.length - 1];
-        if (requestMessage.messageId !== responseMessage.parentMessageId) {
+        const _responseMessage = messages[messages.length - 1];
+        if (requestMessage.messageId !== _responseMessage.parentMessageId) {
           // the request message is the parent of response, which we search for backwards
           for (let i = messages.length - 3; i >= 0; i--) {
-            if (messages[i].messageId === responseMessage.parentMessageId) {
+            if (messages[i].messageId === _responseMessage.parentMessageId) {
               requestMessage = messages[i];
               break;
             }
           }
         }
-        finalHandler(
-          {
-            conversation: {
-              conversationId,
+        /** Sanitize content array to remove undefined parts from interrupted streaming */
+        const responseMessage = {
+          ..._responseMessage,
+          content: _responseMessage.content?.filter((part) => part != null),
+        };
+        try {
+          finalHandler(
+            {
+              conversation: {
+                conversationId,
+              },
+              requestMessage,
+              responseMessage,
             },
-            requestMessage,
-            responseMessage,
-          },
-          submission,
-        );
+            submission,
+          );
+        } catch (error) {
+          console.error('Error in finalHandler during abort:', error);
+          setShowStopButton(false);
+          setIsSubmitting(false);
+        }
         return;
       } else if (!isAssistantsEndpoint(endpoint)) {
         const convoId = conversationId || `_${v4()}`;
@@ -796,13 +826,14 @@ export default function useEventHandlers({
       }
     },
     [
-      finalHandler,
-      newConversation,
-      setIsSubmitting,
       token,
-      cancelHandler,
       getMessages,
       setMessages,
+      finalHandler,
+      cancelHandler,
+      newConversation,
+      setIsSubmitting,
+      setShowStopButton,
     ],
   );
 

@@ -56,12 +56,16 @@ const BaseOptionsSchema = z.object({
       response_types_supported: z.array(z.string()).optional(),
       /** Supported code challenge methods (defaults to ['S256', 'plain']) */
       code_challenge_methods_supported: z.array(z.string()).optional(),
+      /** Skip code challenge validation and force S256 (useful for providers like AWS Cognito that support S256 but don't advertise it) */
+      skip_code_challenge_check: z.boolean().optional(),
       /** OAuth revocation endpoint (optional - can be auto-discovered) */
       revocation_endpoint: z.string().url().optional(),
       /** OAuth revocation endpoint authentication methods supported (optional - can be auto-discovered) */
       revocation_endpoint_auth_methods_supported: z.array(z.string()).optional(),
     })
     .optional(),
+  /** Custom headers to send with OAuth requests (registration, discovery, token exchange, etc.) */
+  oauth_headers: z.record(z.string(), z.string()).optional(),
   customUserVars: z
     .record(
       z.string(),

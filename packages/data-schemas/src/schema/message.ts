@@ -21,6 +21,7 @@ const messageSchema: Schema<IMessage> = new Schema(
       index: true,
       required: true,
       default: null,
+      meiliIndex: true,
     },
     model: {
       type: String,
@@ -131,6 +132,7 @@ const messageSchema: Schema<IMessage> = new Schema(
     iconURL: {
       type: String,
     },
+    metadata: { type: mongoose.Schema.Types.Mixed },
     attachments: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
     /*
     attachments: {

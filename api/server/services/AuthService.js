@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, checkEmailConfig } = require('@librechat/api');
+const { isEnabled, checkEmailConfig, isEmailDomainAllowed } = require('@librechat/api');
 const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
   findUser,
@@ -20,7 +20,6 @@ const {
   deleteUserById,
   generateRefreshToken,
 } = require('~/models');
-const { isEmailDomainAllowed } = require('~/server/services/domains');
 const { registerSchema } = require('~/strategies/validators');
 const { getAppConfig } = require('~/server/services/Config');
 const { sendEmail } = require('~/server/utils');
@@ -130,7 +129,7 @@ const verifyEmail = async (req) => {
     return { message: 'Email already verified', status: 'success' };
   }
 
-  let emailVerificationData = await findToken({ email: decodedEmail });
+  let emailVerificationData = await findToken({ email: decodedEmail }, { sort: { createdAt: -1 } });
 
   if (!emailVerificationData) {
     logger.warn(`[verifyEmail] [No email verification data found] [Email: ${decodedEmail}]`);
@@ -177,7 +176,7 @@ const registerUser = async (user, additionalData = {}) => {
     return { status: 404, message: errorMessage };
   }
 
-  const { email, password, name, username } = user;
+  const { email, password, name, username, provider } = user;
 
   let newUserId;
   try {
@@ -208,7 +207,7 @@ const registerUser = async (user, additionalData = {}) => {
 
     const salt = bcrypt.genSaltSync(10);
     const newUserData = {
-      provider: 'local',
+      provider: provider ?? 'local',
       email,
       username,
       name,
@@ -320,9 +319,12 @@ const requestPasswordReset = async (req) => {
  * @returns
  */
 const resetPassword = async (userId, token, password) => {
-  let passwordResetToken = await findToken({
-    userId,
-  });
+  let passwordResetToken = await findToken(
+    {
+      userId,
+    },
+    { sort: { createdAt: -1 } },
+  );
 
   if (!passwordResetToken) {
     return new Error('Invalid or expired password reset token');
@@ -410,7 +412,7 @@ const setAuthTokens = async (userId, res, _session = null) => {
  * @param {string} [userId] - Optional MongoDB user ID for image path validation
  * @returns {String} - access token
  */
-const setOpenIDAuthTokens = (tokenset, res, userId) => {
+const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
   try {
     if (!tokenset) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
@@ -425,11 +427,25 @@ const setOpenIDAuthTokens = (tokenset, res, userId) => {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
       return;
     }
-    if (!tokenset.access_token || !tokenset.refresh_token) {
-      logger.error('[setOpenIDAuthTokens] No access or refresh token found in tokenset');
+    if (!tokenset.access_token) {
+      logger.error('[setOpenIDAuthTokens] No access token found in tokenset');
       return;
     }
-    res.cookie('refreshToken', tokenset.refresh_token, {
+
+    const refreshToken = tokenset.refresh_token || existingRefreshToken;
+
+    if (!refreshToken) {
+      logger.error('[setOpenIDAuthTokens] No refresh token available');
+      return;
+    }
+
+    res.cookie('refreshToken', refreshToken, {
+      expires: expirationDate,
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'strict',
+    });
+    res.cookie('openid_access_token', tokenset.access_token, {
       expires: expirationDate,
       httpOnly: true,
       secure: isProduction,
