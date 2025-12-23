@@ -20,8 +20,8 @@ import {
   useDeleteSharedLinkMutation,
 } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
-import { useLocalize } from '~/hooks';
 import { buildShareLinkUrl } from '~/utils';
+import { useLocalize } from '~/hooks';
 
 export default function SharedLinkButton({
   share,

@@ -9,7 +9,6 @@ import SharedLinkButton from './SharedLinkButton';
 import { buildShareLinkUrl, cn } from '~/utils';
 import store from '~/store';
 
-
 export default function ShareButton({
   conversationId,
   open,
