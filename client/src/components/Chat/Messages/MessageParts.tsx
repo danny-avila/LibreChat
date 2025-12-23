@@ -129,10 +129,6 @@ export default function Message(props: TMessageProps) {
                     conversationId={conversation?.conversationId}
                     isLatestMessage={messageId === latestMessage?.messageId}
                     content={message.content as Array<TMessageContentParts | undefined>}
-                    messageModel={message.model}
-                    messageEndpoint={message.endpoint}
-                    messageAgentId={agent?.id}
-                    messageSender={message.sender}
                   />
                 </div>
                 {isLast && isSubmitting ? (
