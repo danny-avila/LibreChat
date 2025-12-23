@@ -171,7 +171,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
 
     if (process.env.SESSION_EXPIRY !== undefined && process.env.SESSION_EXPIRY !== '') {
       try {
-        const evaluated = parseInt(REFRESH_TOKEN_EXPIRY, 10);
+        const evaluated = parseInt(process.env.SESSION_EXPIRY, 10);
         if (evaluated) {
           expires = evaluated;
         }

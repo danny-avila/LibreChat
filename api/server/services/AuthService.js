@@ -420,7 +420,7 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
     }
     const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
  
-    const expiryInMilliseconds = Number.isInteger(parseInt(REFRESH_TOKEN_EXPIRY)
+    const expiryInMilliseconds = Number.isInteger(parseInt(REFRESH_TOKEN_EXPIRY, 10))
       ? parseInt(REFRESH_TOKEN_EXPIRY, 10)
       : 1000 * 60 * 60 * 24 * 7; // 7 days default
 
