@@ -47,7 +47,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
    * Use definition for agents endpoint for ephemeral agents
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
-  const { conversationId, agentId, endpoint, endpointType } = useDragDropContext();
+  const { conversationId, agentId, endpoint, endpointType, useResponsesApi } = useDragDropContext();
   const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId ?? ''));
   const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
     agentId,
@@ -66,8 +66,15 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     /** Helper to get inferred MIME type for a file */
     const getFileType = (file: File) => inferMimeType(file.name, file.type);
 
+    const isAzureWithResponsesApi =
+      currentProvider === EModelEndpoint.azureOpenAI && useResponsesApi;
+
     // Check if provider supports document upload
-    if (isDocumentSupportedProvider(endpointType) || isDocumentSupportedProvider(currentProvider)) {
+    if (
+      isDocumentSupportedProvider(endpointType) ||
+      isDocumentSupportedProvider(currentProvider) ||
+      isAzureWithResponsesApi
+    ) {
       const supportsImageDocVideoAudio =
         currentProvider === EModelEndpoint.google || currentProvider === Providers.OPENROUTER;
       const validFileTypes = supportsImageDocVideoAudio
