@@ -1,5 +1,16 @@
-import { ContentTypes, QueryKeys, Constants } from 'librechat-data-provider';
-import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import {
+  ContentTypes,
+  QueryKeys,
+  Constants,
+  getResponseSender,
+  encodeEphemeralAgentId,
+} from 'librechat-data-provider';
+import type {
+  TMessage,
+  TConversation,
+  TEndpointsConfig,
+  TMessageContentParts,
+} from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import type { LocalizeFunction } from '~/common';
 import _ from 'lodash';
@@ -177,4 +188,50 @@ export const getMessageAriaLabel = (message: TMessage, localize: LocalizeFunctio
   return !_.isNil(message.depth)
     ? localize('com_endpoint_message_new', { 0: message.depth + 1 })
     : localize('com_endpoint_message');
+};
+
+/**
+ * Creates initial content parts for dual message display with sibling grouping.
+ * Sets up primary and added agent content parts with appropriate siblingIndex and agentId.
+ *
+ * @param addedConvo - The added conversation configuration
+ * @param endpointsConfig - Endpoints configuration for getting model display labels
+ * @returns Array of content parts with siblingIndex for side-by-side rendering
+ */
+export const createDualMessageContent = (
+  addedConvo: TConversation,
+  endpointsConfig?: TEndpointsConfig,
+): TMessageContentParts[] => {
+  const primaryContent = {
+    type: ContentTypes.TEXT as const,
+    [ContentTypes.TEXT]: '',
+    siblingIndex: 0,
+  };
+
+  const addedEndpoint = addedConvo.endpoint;
+  const addedModel = addedConvo.model ?? '';
+  const addedEndpointType = addedConvo.endpointType;
+  const addedSender = addedEndpoint
+    ? getResponseSender({
+        model: addedModel,
+        endpoint: addedEndpoint,
+        endpointType: addedEndpointType,
+        modelDisplayLabel: endpointsConfig?.[addedEndpoint]?.modelDisplayLabel,
+      })
+    : '';
+  const addedAgentId = encodeEphemeralAgentId({
+    endpoint: addedEndpoint ?? '',
+    model: addedModel,
+    sender: addedSender,
+    index: 1,
+  });
+
+  const addedContent = {
+    type: ContentTypes.TEXT as const,
+    [ContentTypes.TEXT]: '',
+    siblingIndex: 1,
+    agentId: addedAgentId,
+  };
+
+  return [primaryContent, addedContent] as TMessageContentParts[];
 };

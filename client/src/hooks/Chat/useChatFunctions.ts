@@ -1,5 +1,6 @@
 import { v4 } from 'uuid';
 import { cloneDeep } from 'lodash';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Constants,
@@ -25,11 +26,10 @@ import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import { logger, createDualMessageContent } from '~/utils';
 import store, { useGetEphemeralAgent } from '~/store';
 import useUserKey from '~/hooks/Input/useUserKey';
-import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '~/hooks';
-import { logger } from '~/utils';
 
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
@@ -283,6 +283,9 @@ export default function useChatFunctions({
             contentPart[ContentTypes.TEXT] = part[ContentTypes.TEXT];
           }
         }
+      } else if (addedConvo) {
+        // Set up dual message display with sibling content parts
+        initialResponse.content = createDualMessageContent(addedConvo, endpointsConfig);
       } else {
         initialResponse.content = [];
       }

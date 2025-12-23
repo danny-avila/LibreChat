@@ -242,8 +242,34 @@ export default function useStepHandler({
       }
 
       let initialContent: TMessageContentParts[] = [];
+      // For addedConvo, we set up initial content with siblingIndex/agentId but DON'T use it
+      // for index offsetting since server indices (0, 1) match our content indices directly
+      const hasAddedConvo = submission?.addedConvo != null;
       if (submission?.editedContent != null) {
         initialContent = submission?.initialResponse?.content ?? initialContent;
+      }
+
+      // Pre-populate maps from initial response content for addedConvo scenarios
+      // This ensures siblingIndex and agentId are preserved from the start
+      if (hasAddedConvo) {
+        const addedContent = submission?.initialResponse?.content ?? [];
+        addedContent.forEach((part, idx) => {
+          const partWithMeta = part as TMessageContentParts & {
+            siblingIndex?: number;
+            agentId?: string;
+          };
+          if (partWithMeta.siblingIndex != null) {
+            // Use stepIndex 0 for all initial sibling content
+            const siblings = stepIndexMap.current.get(0) ?? [];
+            if (!siblings.includes(idx)) {
+              siblings.push(idx);
+              stepIndexMap.current.set(0, siblings);
+            }
+          }
+          if (partWithMeta.agentId) {
+            agentIdMap.current.set(idx, partWithMeta.agentId);
+          }
+        });
       }
 
       if (event === 'on_run_step') {
