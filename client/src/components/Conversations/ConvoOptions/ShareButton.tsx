@@ -6,8 +6,8 @@ import { useGetSharedLinkQuery } from 'librechat-data-provider/react-query';
 import { OGDialogTemplate, Button, Spinner, OGDialog } from '@librechat/client';
 import { useLocalize, useCopyToClipboard } from '~/hooks';
 import SharedLinkButton from './SharedLinkButton';
-import { cn } from '~/utils';
 import store from '~/store';
+import { buildShareLinkUrl, cn } from '~/utils';
 
 export default function ShareButton({
   conversationId,
@@ -40,8 +40,7 @@ export default function ShareButton({
 
   useEffect(() => {
     if (share?.shareId !== undefined) {
-      const link = `${window.location.protocol}//${window.location.host}/share/${share.shareId}`;
-      setSharedLink(link);
+      setSharedLink(buildShareLinkUrl(share.shareId));
     }
   }, [share]);
 
