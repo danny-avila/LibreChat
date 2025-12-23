@@ -62,7 +62,9 @@ const ConversationStarters = () => {
     <div className="mb-5 mt-4 flex flex-col justify-center gap-2 px-2">
       <div className="ml-5 flex w-full flex-row gap-2">
         <ZapIcon className="mt-[2px] size-4 text-gray-400" />
-        <p className="pb-2 text-[13px] font-medium text-gray-400">{localize('com_ui_suggestions')}</p>
+        <p className="pb-2 text-[13px] font-medium text-gray-400">
+          {localize('com_ui_suggestions')}
+        </p>
       </div>
       <div className="flex flex-row flex-wrap justify-center gap-2">
         {conversation_starters
