@@ -11,7 +11,7 @@ import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import { useAttachments, useLocalize, useMessageActions } from '~/hooks';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { fontSizeAtom } from '~/store/fontSize';
-import { cn, getMessageAriaLabel, logger } from '~/utils';
+import { cn, getMessageAriaLabel } from '~/utils';
 import store from '~/store';
 
 type ContentRenderProps = {
@@ -52,7 +52,6 @@ const ContentRender = memo(
       latestMessage,
       handleContinue,
       copyToClipboard,
-      setLatestMessage,
       regenerateMessage,
       handleFeedback,
     } = useMessageActions({
@@ -71,9 +70,10 @@ const ContentRender = memo(
         !(msg?.children?.length ?? 0) && (msg?.depth === latestMessage?.depth || msg?.depth === -1),
       [msg?.children, msg?.depth, latestMessage?.depth],
     );
+    const hasNoChildren = !(msg?.children?.length ?? 0);
     const isLatestMessage = msg?.messageId === latestMessage?.messageId;
-    const showCardRender = isLast && !isSubmitting && isCard;
-    const isLatestCard = isCard && !isSubmitting && isLatestMessage;
+    /** Only pass isSubmitting to the latest message to prevent unnecessary re-renders */
+    const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
     const iconData: TMessageIcon = useMemo(
       () => ({
@@ -94,21 +94,6 @@ const ContentRender = memo(
       ],
     );
 
-    const clickHandler = useMemo(
-      () =>
-        showCardRender && !isLatestMessage
-          ? () => {
-              logger.log(
-                'latest_message',
-                `Message Card click: Setting ${msg?.messageId} as latest message`,
-              );
-              logger.dir(msg);
-              setLatestMessage(msg!);
-            }
-          : undefined,
-      [showCardRender, isLatestMessage, msg, setLatestMessage],
-    );
-
     if (!msg) {
       return null;
     }
@@ -122,8 +107,6 @@ const ContentRender = memo(
     };
 
     const conditionalClasses = {
-      latestCard: isLatestCard ? 'bg-surface-secondary' : '',
-      cardRender: showCardRender ? 'cursor-pointer transition-colors duration-300' : '',
       focus: 'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
     };
 
@@ -134,24 +117,10 @@ const ContentRender = memo(
         className={cn(
           baseClasses.common,
           isCard ? baseClasses.card : baseClasses.chat,
-          conditionalClasses.latestCard,
-          conditionalClasses.cardRender,
           conditionalClasses.focus,
           'message-render',
         )}
-        onClick={clickHandler}
-        onKeyDown={(e) => {
-          if ((e.key === 'Enter' || e.key === ' ') && clickHandler) {
-            clickHandler();
-          }
-        }}
-        role={showCardRender ? 'button' : undefined}
-        tabIndex={showCardRender ? 0 : undefined}
       >
-        {isLatestCard && (
-          <div className="absolute right-0 top-0 m-2 h-3 w-3 rounded-full bg-text-primary" />
-        )}
-
         <div className="relative flex flex-shrink-0 flex-col items-center">
           <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
             <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
@@ -175,21 +144,16 @@ const ContentRender = memo(
                 siblingIdx={siblingIdx}
                 messageId={msg.messageId}
                 attachments={attachments}
-                isSubmitting={isSubmitting}
                 searchResults={searchResults}
                 setSiblingIdx={setSiblingIdx}
                 isLatestMessage={isLatestMessage}
+                isSubmitting={effectiveIsSubmitting}
                 isCreatedByUser={msg.isCreatedByUser}
                 conversationId={conversation?.conversationId}
                 content={msg.content as Array<TMessageContentParts | undefined>}
-                messageModel={msg.model}
-                messageEndpoint={msg.endpoint}
-                messageAgentId={agent?.id}
-                messageSender={msg.sender}
               />
             </div>
-
-            {isLast && isSubmitting && !(msg.children?.length ?? 0) ? (
+            {isLast && hasNoChildren && effectiveIsSubmitting ? (
               <PlaceholderRow isCard={isCard} />
             ) : (
               <SubRow classes="text-xs">

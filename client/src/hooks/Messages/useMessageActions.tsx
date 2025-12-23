@@ -43,7 +43,6 @@ export default function useMessageActions(props: TMessageActions) {
     isSubmitting,
     latestMessage,
     handleContinue,
-    setLatestMessage,
     conversation: rootConvo,
   } = useChatContext();
   const { conversation: addedConvo } = useAddedChatContext();
@@ -173,7 +172,6 @@ export default function useMessageActions(props: TMessageActions) {
     latestMessage,
     handleContinue,
     copyToClipboard,
-    setLatestMessage,
     regenerateMessage,
     handleFeedback,
     feedback,

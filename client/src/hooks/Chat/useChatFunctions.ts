@@ -69,6 +69,7 @@ export default function useChatFunctions({
   const getEphemeralAgent = useGetEphemeralAgent();
   const isTemporary = useRecoilValue(store.isTemporary);
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
+  const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
 
@@ -294,6 +295,7 @@ export default function useChatFunctions({
       } else {
         initialResponse.content = [];
       }
+      setIsSubmitting(true);
       setShowStopButton(true);
     }
 
