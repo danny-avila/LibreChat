@@ -419,9 +419,11 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
       return;
     }
     const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
-    const expiryInMilliseconds = REFRESH_TOKEN_EXPIRY
-      ? eval(REFRESH_TOKEN_EXPIRY)
+ 
+    const expiryInMilliseconds = Number.isInteger(parseInt(REFRESH_TOKEN_EXPIRY, 10))
+      ? parseInt(REFRESH_TOKEN_EXPIRY, 10)
       : 1000 * 60 * 60 * 24 * 7; // 7 days default
+
     const expirationDate = new Date(Date.now() + expiryInMilliseconds);
     if (tokenset == null) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');

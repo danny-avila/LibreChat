@@ -92,6 +92,15 @@ module.exports = {
         logger.debug(`[saveConvo] ${metadata.context}`);
       }
 
+      // Security check: if a conversation with this ID already exists, but for a different user, deny the request.
+      const existingConvo = await searchConversation(conversationId);
+      if (existingConvo && existingConvo.user.toString() !== req.user.id.toString()) {
+        logger.debug(
+          `[saveConvo] User ${req.user.id} attempted to save a conversation with ID ${conversationId} which is already owned by user ${existingConvo.user}. Denying request.`,
+        );
+        throw new Error('Could not update conversation. User attempted to save a conversation with an ID belonging to another user');
+      }
+
       const messages = await getMessages({ conversationId }, '_id');
       const update = { ...convo, messages, user: req.user.id };
 

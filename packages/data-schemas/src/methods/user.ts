@@ -168,10 +168,10 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     }
 
     let expires = 1000 * 60 * 15;
-
+    
     if (process.env.SESSION_EXPIRY !== undefined && process.env.SESSION_EXPIRY !== '') {
       try {
-        const evaluated = eval(process.env.SESSION_EXPIRY);
+        const evaluated = parseInt(process.env.SESSION_EXPIRY, 10);
         if (evaluated) {
           expires = evaluated;
         }
