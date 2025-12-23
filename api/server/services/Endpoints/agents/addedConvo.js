@@ -52,6 +52,12 @@ const processAddedConvo = async ({
   userMCPAuthMap,
 }) => {
   const addedConvo = endpointOption.addedConvo;
+  logger.debug('[processAddedConvo] Called with addedConvo:', {
+    hasAddedConvo: addedConvo != null,
+    addedConvoEndpoint: addedConvo?.endpoint,
+    addedConvoModel: addedConvo?.model,
+    addedConvoAgentId: addedConvo?.agent_id,
+  });
   if (addedConvo == null) {
     return { userMCPAuthMap };
   }

@@ -18,6 +18,7 @@ const {
   EModelEndpoint,
   isParamEndpoint,
   isAgentsEndpoint,
+  isEphemeralAgentId,
   supportsBalanceCheck,
 } = require('librechat-data-provider');
 const {
@@ -969,7 +970,7 @@ class BaseClient {
     const hasNonEphemeralAgent =
       isAgentsEndpoint(this.options.endpoint) &&
       endpointOptions?.agent_id &&
-      endpointOptions.agent_id !== Constants.EPHEMERAL_AGENT_ID;
+      !isEphemeralAgentId(endpointOptions.agent_id);
     if (hasNonEphemeralAgent) {
       exceptions.add('model');
     }

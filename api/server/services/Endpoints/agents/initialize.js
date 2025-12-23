@@ -7,10 +7,10 @@ const {
   createSequentialChainEdges,
 } = require('@librechat/api');
 const {
-  Constants,
   EModelEndpoint,
   isAgentsEndpoint,
   getResponseSender,
+  isEphemeralAgentId,
 } = require('librechat-data-provider');
 const {
   createToolEndCallback,
@@ -303,10 +303,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     endpointType: endpointOption.endpointType,
     resendFiles: primaryConfig.resendFiles ?? true,
     maxContextTokens: primaryConfig.maxContextTokens,
-    endpoint:
-      primaryConfig.id === Constants.EPHEMERAL_AGENT_ID
-        ? primaryConfig.endpoint
-        : EModelEndpoint.agents,
+    endpoint: isEphemeralAgentId(primaryConfig.id) ? primaryConfig.endpoint : EModelEndpoint.agents,
   });
 
   return { client, userMCPAuthMap };

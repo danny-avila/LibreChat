@@ -10,7 +10,12 @@ import type { TranslationKeys } from '~/hooks';
 import { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 
 export function isEphemeralAgent(agentId: string | null | undefined): boolean {
-  return agentId == null || agentId === '' || agentId === Constants.EPHEMERAL_AGENT_ID;
+  return (
+    agentId == null ||
+    agentId === '' ||
+    agentId === Constants.EPHEMERAL_AGENT_ID ||
+    !agentId.startsWith('agent_')
+  );
 }
 
 export interface ConfigFieldDetail {

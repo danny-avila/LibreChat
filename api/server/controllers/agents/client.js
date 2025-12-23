@@ -37,14 +37,13 @@ const {
   EModelEndpoint,
   PermissionTypes,
   isAgentsEndpoint,
-  AgentCapabilities,
+  isEphemeralAgentId,
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
-const { checkCapability } = require('~/server/services/Config');
 const { getConvoFiles } = require('~/models/Conversation');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
@@ -551,10 +550,9 @@ class AgentClient extends BaseClient {
         agent: prelimAgent,
         allowedProviders,
         endpointOption: {
-          endpoint:
-            prelimAgent.id !== Constants.EPHEMERAL_AGENT_ID
-              ? EModelEndpoint.agents
-              : memoryConfig.agent?.provider,
+          endpoint: !isEphemeralAgentId(prelimAgent.id)
+            ? EModelEndpoint.agents
+            : memoryConfig.agent?.provider,
         },
       },
       {
@@ -891,12 +889,10 @@ class AgentClient extends BaseClient {
        */
       const runAgents = async (messages) => {
         const agents = [this.options.agent];
-        if (
-          this.agentConfigs &&
-          this.agentConfigs.size > 0 &&
-          ((this.options.agent.edges?.length ?? 0) > 0 ||
-            (await checkCapability(this.options.req, AgentCapabilities.chain)))
-        ) {
+        // Include additional agents when:
+        // - agentConfigs has agents (from addedConvo parallel execution or agent handoffs)
+        // - Agents without incoming edges become start nodes and run in parallel automatically
+        if (this.agentConfigs && this.agentConfigs.size > 0) {
           agents.push(...this.agentConfigs.values());
         }
 

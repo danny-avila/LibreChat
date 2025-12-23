@@ -424,73 +424,87 @@ export type ParsedEphemeralAgentId = {
   endpoint: string;
   model: string;
   sender?: string;
+  index?: number;
 };
 
 /**
- * Encodes an ephemeral agent ID from endpoint, model, and optional sender.
+ * Encodes an ephemeral agent ID from endpoint, model, optional sender, and optional index.
  * Uses __ to replace : (reserved in graph node names) and ___ to separate sender.
  *
- * Format: endpoint__model or endpoint__model___sender (if sender exists)
- *
- * @example
- * encodeEphemeralAgentId({ endpoint: 'openAI', model: 'gpt-4o' })
- * // => 'openAI__gpt-4o'
+ * Format: endpoint__model___sender or endpoint__model___sender____index (if index provided)
  *
  * @example
  * encodeEphemeralAgentId({ endpoint: 'openAI', model: 'gpt-4o', sender: 'GPT-4o' })
  * // => 'openAI__gpt-4o___GPT-4o'
  *
  * @example
- * encodeEphemeralAgentId({ endpoint: 'anthropic', model: 'claude-3:opus', sender: 'Claude' })
- * // => 'anthropic__claude-3__opus___Claude'
+ * encodeEphemeralAgentId({ endpoint: 'openAI', model: 'gpt-4o', sender: 'GPT-4o', index: 1 })
+ * // => 'openAI__gpt-4o___GPT-4o____1'
  */
 export function encodeEphemeralAgentId({
   endpoint,
   model,
   sender,
+  index,
 }: {
   endpoint: string;
   model: string;
   sender?: string;
+  index?: number;
 }): string {
   const base = `${endpoint}:${model}`.replace(/:/g, '__');
+  let result = base;
   if (sender) {
     // Use ___ as separator before sender to distinguish from __ in model names
-    return `${base}___${sender.replace(/:/g, '__')}`;
+    result = `${base}___${sender.replace(/:/g, '__')}`;
   }
-  return base;
+  if (index != null) {
+    // Use ____ (4 underscores) as separator for index
+    result = `${result}____${index}`;
+  }
+  return result;
 }
 
 /**
  * Parses an ephemeral agent ID back into its components.
  * Returns undefined if the ID doesn't match the expected format.
  *
- * Format: endpoint__model or endpoint__model___sender
+ * Format: endpoint__model___sender or endpoint__model___sender____index
+ * - ____ (4 underscores) separates optional index suffix
  * - ___ (triple underscore) separates model from optional sender
  * - __ (double underscore) replaces : in endpoint/model names
  *
  * @example
- * parseEphemeralAgentId('openAI__gpt-5.1')
- * // => { endpoint: 'openAI', model: 'gpt-5.1' }
- *
- * @example
- * parseEphemeralAgentId('anthropic__claude-3__opus')
- * // => { endpoint: 'anthropic', model: 'claude-3:opus' }
- *
- * @example
  * parseEphemeralAgentId('openAI__gpt-4o___GPT-4o')
  * // => { endpoint: 'openAI', model: 'gpt-4o', sender: 'GPT-4o' }
+ *
+ * @example
+ * parseEphemeralAgentId('openAI__gpt-4o___GPT-4o____1')
+ * // => { endpoint: 'openAI', model: 'gpt-4o', sender: 'GPT-4o', index: 1 }
  */
 export function parseEphemeralAgentId(agentId: string): ParsedEphemeralAgentId | undefined {
   if (!agentId.includes('__')) {
     return undefined;
   }
 
-  // First check for sender (separated by ___)
+  // First check for index suffix (separated by ____)
+  let index: number | undefined;
+  let workingId = agentId;
+  if (agentId.includes('____')) {
+    const lastIndexSep = agentId.lastIndexOf('____');
+    const indexStr = agentId.slice(lastIndexSep + 4);
+    const parsedIndex = parseInt(indexStr, 10);
+    if (!isNaN(parsedIndex)) {
+      index = parsedIndex;
+      workingId = agentId.slice(0, lastIndexSep);
+    }
+  }
+
+  // Check for sender (separated by ___)
   let sender: string | undefined;
-  let mainPart = agentId;
-  if (agentId.includes('___')) {
-    const [before, after] = agentId.split('___');
+  let mainPart = workingId;
+  if (workingId.includes('___')) {
+    const [before, after] = workingId.split('___');
     mainPart = before;
     // Restore colons in sender if any
     sender = after?.replace(/__/g, ':');
@@ -502,5 +516,13 @@ export function parseEphemeralAgentId(agentId: string): ParsedEphemeralAgentId |
   }
   // Restore colons in model name (model names can contain colons like claude-3:opus)
   const model = modelParts.join(':');
-  return { endpoint, model, sender };
+  return { endpoint, model, sender, index };
+}
+
+/**
+ * Checks if an agent ID represents an ephemeral (non-saved) agent.
+ * Real agent IDs always start with "agent_", so anything else is ephemeral.
+ */
+export function isEphemeralAgentId(agentId: string | null | undefined): boolean {
+  return !agentId?.startsWith('agent_');
 }

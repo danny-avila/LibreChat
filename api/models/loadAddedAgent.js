@@ -156,8 +156,8 @@ const loadAddedAgent = async ({ req, conversation }) => {
     modelDisplayLabel: endpointConfig?.modelDisplayLabel,
   });
 
-  /** Encoded ephemeral agent ID with endpoint, model, and computed sender for display */
-  const ephemeralId = encodeEphemeralAgentId({ endpoint, model, sender });
+  /** Encoded ephemeral agent ID with endpoint, model, sender, and index=1 to distinguish from primary */
+  const ephemeralId = encodeEphemeralAgentId({ endpoint, model, sender, index: 1 });
 
   const result = {
     id: ephemeralId,
