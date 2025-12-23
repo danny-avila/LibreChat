@@ -33,12 +33,6 @@ type ContentPartsProps = {
     | ((value: number) => void | React.Dispatch<React.SetStateAction<number>>)
     | null
     | undefined;
-  /** Message-level model/endpoint/agent for sibling header fallback */
-  messageModel?: string | null;
-  messageEndpoint?: string | null;
-  messageAgentId?: string | null;
-  /** message.sender - pre-computed display name */
-  messageSender?: string | null;
 };
 
 const ContentParts = memo(
@@ -56,74 +50,59 @@ const ContentParts = memo(
     enterEdit,
     siblingIdx,
     setSiblingIdx,
-    messageModel,
-    messageEndpoint,
-    messageAgentId,
-    messageSender,
   }: ContentPartsProps) => {
     const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
 
     const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
     /**
-     * Group content parts by siblingIndex for side-by-side rendering.
-     * Parts with consecutive siblingIndex values (0, 1, 2...) are parallel content from the same step.
-     * A new group starts when siblingIndex resets to 0 or when we encounter a part without siblingIndex.
+     * Partition content into columns by agentId for parallel agent rendering.
+     * Each unique agentId gets its own column, containing all that agent's content.
+     * Parts without agentId are rendered sequentially (non-parallel mode).
      */
-    const groupedContent = useMemo(() => {
+    const { hasParallelContent, columns, sequentialParts } = useMemo(() => {
       if (!content) {
-        return [];
+        return { hasParallelContent: false, columns: [], sequentialParts: [] };
       }
 
-      type ContentGroup = {
-        type: 'single' | 'siblings';
-        parts: Array<{ part: TMessageContentParts; idx: number }>;
-      };
-
-      const groups: ContentGroup[] = [];
-      let currentSiblingGroup: ContentGroup | null = null;
-      let lastSiblingIndex = -1;
+      // Collect parts by agentId (agent column)
+      const columnMap = new Map<string, Array<{ part: TMessageContentParts; idx: number }>>();
+      const sequential: Array<{ part: TMessageContentParts; idx: number }> = [];
+      // Track order agents appeared for consistent column ordering
+      const agentOrder: string[] = [];
 
       content.forEach((part, idx) => {
         if (!part) {
           return;
         }
 
-        const siblingIndex = (part as TMessageContentParts & { siblingIndex?: number })
-          .siblingIndex;
+        const partMeta = part as TMessageContentParts & { agentId?: string };
+        const agentId = partMeta.agentId;
 
-        if (siblingIndex != null) {
-          // Check if this is a new sibling group (siblingIndex resets to 0 or goes backwards)
-          const isNewGroup = siblingIndex <= lastSiblingIndex;
-
-          if (isNewGroup && currentSiblingGroup) {
-            // Push the previous group and start a new one
-            groups.push(currentSiblingGroup);
-            currentSiblingGroup = null;
+        if (agentId) {
+          if (!columnMap.has(agentId)) {
+            columnMap.set(agentId, []);
+            agentOrder.push(agentId);
           }
-
-          if (!currentSiblingGroup) {
-            currentSiblingGroup = { type: 'siblings', parts: [] };
-          }
-          currentSiblingGroup.parts.push({ part, idx });
-          lastSiblingIndex = siblingIndex;
+          columnMap.get(agentId)!.push({ part, idx });
         } else {
-          // No siblingIndex - render as single
-          if (currentSiblingGroup) {
-            groups.push(currentSiblingGroup);
-            currentSiblingGroup = null;
-          }
-          groups.push({ type: 'single', parts: [{ part, idx }] });
-          lastSiblingIndex = -1;
+          sequential.push({ part, idx });
         }
       });
 
-      // Push any remaining sibling group
-      if (currentSiblingGroup) {
-        groups.push(currentSiblingGroup);
-      }
+      // Convert to sorted array of columns (maintain order agents appeared)
+      const sortedColumns = agentOrder.map((agentId) => ({
+        agentId,
+        parts: columnMap.get(agentId)!,
+      }));
 
-      return groups;
+      return {
+        // Render in column mode if ANY parts have agentId (even if just one agent so far)
+        // This ensures streaming content displays while waiting for other agents
+        hasParallelContent: sortedColumns.length >= 1,
+        columns: sortedColumns,
+        sequentialParts: sequential,
+      };
     }, [content]);
 
     if (!content) {
@@ -213,58 +192,34 @@ const ContentParts = memo(
               <EmptyText />
             </Container>
           )}
-          {groupedContent.map((group, groupIdx) => {
-            const isLastGroup = groupIdx === groupedContent.length - 1;
-
-            if (group.type === 'single') {
-              const { part, idx } = group.parts[0];
-              return renderPart(part, idx, isLastGroup && idx === content.length - 1);
-            }
-
-            // If sibling group has only 1 part, render as single to avoid layout shift during streaming
-            if (group.parts.length === 1) {
-              const { part, idx } = group.parts[0];
-              return renderPart(part, idx, isLastGroup && idx === content.length - 1);
-            }
-
-            // Render sibling group side-by-side (only when we have 2+ siblings)
-            // For sibling groups, check if this group contains the last content part
-            const groupContainsLastContent = group.parts.some(
-              ({ idx }) => idx === content.length - 1,
-            );
-            const isLastPartInMessage = isLastGroup && groupContainsLastContent;
-
-            return (
-              <div
-                key={`sibling-group-${messageId}-${groupIdx}`}
-                className={cn('flex w-full flex-col gap-3 md:flex-row', 'sibling-content-group')}
-              >
-                {group.parts.map(({ part, idx }) => {
-                  const agentId = (part as TMessageContentParts & { agentId?: string }).agentId;
-                  // Only pass message-level fallbacks for parts without their own agentId
-                  // (i.e., the primary agent's content). Added agents have their own agentId
-                  // which encodes their endpoint/model info.
-                  const useMessageFallbacks = !agentId;
-
-                  return (
-                    <div
-                      key={`sibling-${messageId}-${idx}`}
-                      className="min-w-0 flex-1 rounded-lg border border-border-light p-3"
-                    >
-                      <SiblingHeader
-                        agentId={agentId}
-                        messageModel={useMessageFallbacks ? messageModel : undefined}
-                        messageEndpoint={useMessageFallbacks ? messageEndpoint : undefined}
-                        messageAgentId={useMessageFallbacks ? messageAgentId : undefined}
-                        messageSender={useMessageFallbacks ? messageSender : undefined}
-                      />
-                      {renderPart(part, idx, isLastPartInMessage)}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
+          {hasParallelContent ? (
+            // Parallel mode: render columns side-by-side, each column contains all agent's content
+            <div
+              key={`parallel-columns-${messageId}`}
+              className={cn('flex w-full flex-col gap-3 md:flex-row', 'sibling-content-group')}
+            >
+              {columns.map(({ agentId, parts: columnParts }, colIdx) => {
+                return (
+                  <div
+                    key={`column-${messageId}-${agentId || colIdx}`}
+                    className="min-w-0 flex-1 rounded-lg border border-border-light p-3"
+                  >
+                    <SiblingHeader agentId={agentId} />
+                    {columnParts.map(({ part, idx }) => {
+                      const isLastInColumn = idx === columnParts[columnParts.length - 1]?.idx;
+                      const isLastContent = idx === content.length - 1;
+                      return renderPart(part, idx, isLastInColumn && isLastContent);
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            // Sequential mode: render parts normally (non-parallel)
+            sequentialParts.map(({ part, idx }) =>
+              renderPart(part, idx, idx === content.length - 1),
+            )
+          )}
         </SearchContext.Provider>
       </>
     );

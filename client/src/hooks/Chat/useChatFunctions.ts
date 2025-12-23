@@ -283,9 +283,14 @@ export default function useChatFunctions({
             contentPart[ContentTypes.TEXT] = part[ContentTypes.TEXT];
           }
         }
-      } else if (addedConvo) {
-        // Set up dual message display with sibling content parts
-        initialResponse.content = createDualMessageContent(addedConvo, endpointsConfig);
+      } else if (addedConvo && conversation) {
+        // Pre-populate placeholders for smooth UI - these will be overridden/extended
+        // as SSE events arrive with actual content, preserving the agent-based agentId
+        initialResponse.content = createDualMessageContent(
+          conversation,
+          addedConvo,
+          endpointsConfig,
+        );
       } else {
         initialResponse.content = [];
       }

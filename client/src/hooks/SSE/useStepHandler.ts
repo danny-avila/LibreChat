@@ -60,43 +60,45 @@ export default function useStepHandler({
   const toolCallIdMap = useRef(new Map<string, string | undefined>());
   const messageMap = useRef(new Map<string, TMessage>());
   const stepMap = useRef(new Map<string, Agents.RunStep>());
-  /** Maps stepIndex -> array of content indices that share that stepIndex (parallel siblings) */
-  const stepIndexMap = useRef(new Map<number, number[]>());
-  /** Maps content index -> agentId for tracking which agent generated which content */
-  const agentIdMap = useRef(new Map<number, string>());
-
-  const calculateContentIndex = (
-    baseIndex: number,
-    initialContent: TMessageContentParts[],
-    incomingContentType: string,
-    existingContent?: TMessageContentParts[],
-  ): number => {
-    /** Only apply -1 adjustment for TEXT or THINK types when they match existing content */
-    if (
-      initialContent.length > 0 &&
-      (incomingContentType === ContentTypes.TEXT || incomingContentType === ContentTypes.THINK)
-    ) {
-      const targetIndex = baseIndex + initialContent.length - 1;
-      const existingType = existingContent?.[targetIndex]?.type;
-      if (existingType === incomingContentType) {
-        return targetIndex;
-      }
-    }
-    return baseIndex + initialContent.length;
-  };
+  /** Maps content index -> agentId for parallel agent attribution */
+  const contentAgentMap = useRef(new Map<number, string>());
+  /** Tracks if we're in parallel mode (multiple agents) - only true when addedConvo exists */
+  const isParallelMode = useRef(false);
+  /** Tracks all unique agentIds seen in this request */
+  const seenAgentIds = useRef(new Set<string>());
 
   /**
-   * Gets the siblingIndex for a content part if it has parallel siblings.
-   * Returns undefined if the content index has no siblings (single execution path).
+   * Calculate content index for a run step.
+   * In parallel mode, the server already assigns globally unique indices.
+   * In single-agent mode, we offset by initialContent length.
    */
-  const getSiblingIndex = (contentIndex: number): number | undefined => {
-    for (const [, siblings] of stepIndexMap.current) {
-      if (siblings.length > 1 && siblings.includes(contentIndex)) {
-        return siblings.indexOf(contentIndex);
+  const calculateContentIndex = useCallback(
+    (
+      serverIndex: number,
+      initialContent: TMessageContentParts[],
+      incomingContentType: string,
+      existingContent?: TMessageContentParts[],
+    ): number => {
+      // In parallel mode, server provides globally unique indices - use directly
+      if (isParallelMode.current) {
+        return serverIndex;
       }
-    }
-    return undefined;
-  };
+
+      /** Only apply -1 adjustment for TEXT or THINK types when they match existing content */
+      if (
+        initialContent.length > 0 &&
+        (incomingContentType === ContentTypes.TEXT || incomingContentType === ContentTypes.THINK)
+      ) {
+        const targetIndex = serverIndex + initialContent.length - 1;
+        const existingType = existingContent?.[targetIndex]?.type;
+        if (existingType === incomingContentType) {
+          return targetIndex;
+        }
+      }
+      return serverIndex + initialContent.length;
+    },
+    [],
+  );
 
   const updateContent = (
     message: TMessage,
@@ -213,16 +215,9 @@ export default function useStepHandler({
       };
     }
 
-    // Apply siblingIndex if this content part has parallel siblings
-    const siblingIndex = getSiblingIndex(index);
-    if (siblingIndex != null && updatedContent[index]) {
-      (updatedContent[index] as TMessageContentParts & { siblingIndex?: number }).siblingIndex =
-        siblingIndex;
-    }
-
-    // Apply agentId if tracked for this content index
-    const agentId = agentIdMap.current.get(index);
-    if (agentId && updatedContent[index]) {
+    // Apply agentId to content part for parallel execution attribution
+    const agentId = contentAgentMap.current.get(index);
+    if (agentId && updatedContent[index] && isParallelMode.current) {
       (updatedContent[index] as TMessageContentParts & { agentId?: string }).agentId = agentId;
     }
 
@@ -242,34 +237,16 @@ export default function useStepHandler({
       }
 
       let initialContent: TMessageContentParts[] = [];
-      // For addedConvo, we set up initial content with siblingIndex/agentId but DON'T use it
-      // for index offsetting since server indices (0, 1) match our content indices directly
-      const hasAddedConvo = submission?.addedConvo != null;
+      // For editedContent scenarios, use the initial response content for index offsetting
       if (submission?.editedContent != null) {
         initialContent = submission?.initialResponse?.content ?? initialContent;
       }
 
-      // Pre-populate maps from initial response content for addedConvo scenarios
-      // This ensures siblingIndex and agentId are preserved from the start
+      // For addedConvo, enable parallel mode
+      // The server provides globally unique indices and agentId with each step
+      const hasAddedConvo = submission?.addedConvo != null;
       if (hasAddedConvo) {
-        const addedContent = submission?.initialResponse?.content ?? [];
-        addedContent.forEach((part, idx) => {
-          const partWithMeta = part as TMessageContentParts & {
-            siblingIndex?: number;
-            agentId?: string;
-          };
-          if (partWithMeta.siblingIndex != null) {
-            // Use stepIndex 0 for all initial sibling content
-            const siblings = stepIndexMap.current.get(0) ?? [];
-            if (!siblings.includes(idx)) {
-              siblings.push(idx);
-              stepIndexMap.current.set(0, siblings);
-            }
-          }
-          if (partWithMeta.agentId) {
-            agentIdMap.current.set(idx, partWithMeta.agentId);
-          }
-        });
+        isParallelMode.current = true;
       }
 
       if (event === 'on_run_step') {
@@ -286,21 +263,23 @@ export default function useStepHandler({
 
         stepMap.current.set(runStep.id, runStep);
 
-        // Track parallel siblings via stepIndex and agentId
-        const { stepIndex, agentId } = runStep;
-        const contentIndex = runStep.index + initialContent.length;
+        // Track agentId for this content index
+        const { agentId } = runStep;
 
-        if (stepIndex != null) {
-          const siblings = stepIndexMap.current.get(stepIndex) ?? [];
-          if (!siblings.includes(contentIndex)) {
-            siblings.push(contentIndex);
-            stepIndexMap.current.set(stepIndex, siblings);
-          }
+        // Track all unique agentIds - parallel mode is only enabled via addedConvo,
+        // not just because the server sends agentId (which it does for single agents too)
+        if (agentId) {
+          seenAgentIds.current.add(agentId);
         }
 
-        // Track agentId for this content index
+        // In parallel mode, server provides globally unique indices
+        // In single-agent mode, offset by initialContent length
+        const contentIndex = isParallelMode.current
+          ? runStep.index
+          : runStep.index + initialContent.length;
+
         if (agentId) {
-          agentIdMap.current.set(contentIndex, agentId);
+          contentAgentMap.current.set(contentIndex, agentId);
         }
 
         let response = messageMap.current.get(responseMessageId);
@@ -315,8 +294,14 @@ export default function useStepHandler({
 
           // For edit scenarios, initialContent IS the complete starting content (not to be merged)
           // For resume scenarios (no editedContent), initialContent is empty and we use existingContent
+          // For parallel mode, start fresh since server provides all content with globally unique indices
           const existingContent = responseMessage?.content ?? [];
-          const mergedContent = initialContent.length > 0 ? initialContent : existingContent;
+          let mergedContent: TMessageContentParts[] = existingContent;
+          if (isParallelMode.current) {
+            mergedContent = [];
+          } else if (initialContent.length > 0) {
+            mergedContent = initialContent;
+          }
 
           response = {
             ...responseMessage,
@@ -362,9 +347,8 @@ export default function useStepHandler({
               },
             };
 
-            /** Tool calls don't need index adjustment */
-            const currentIndex = runStep.index + initialContent.length;
-            updatedResponse = updateContent(updatedResponse, currentIndex, contentPart);
+            // Use the pre-calculated contentIndex which handles parallel agent indexing
+            updatedResponse = updateContent(updatedResponse, contentIndex, contentPart);
           });
 
           messageMap.current.set(responseMessageId, updatedResponse);
@@ -506,8 +490,10 @@ export default function useStepHandler({
               contentPart.tool_call.expires_at = runStepDelta.delta.expires_at;
             }
 
-            /** Tool calls don't need index adjustment */
-            const currentIndex = runStep.index + initialContent.length;
+            // In parallel mode, use server's index directly; otherwise offset by initialContent
+            const currentIndex = isParallelMode.current
+              ? runStep.index
+              : runStep.index + initialContent.length;
             updatedResponse = updateContent(updatedResponse, currentIndex, contentPart);
           });
 
@@ -544,8 +530,10 @@ export default function useStepHandler({
             tool_call: result.tool_call,
           };
 
-          /** Tool calls don't need index adjustment */
-          const currentIndex = runStep.index + initialContent.length;
+          // In parallel mode, use server's index directly; otherwise offset by initialContent
+          const currentIndex = isParallelMode.current
+            ? runStep.index
+            : runStep.index + initialContent.length;
           updatedResponse = updateContent(updatedResponse, currentIndex, contentPart, true);
 
           messageMap.current.set(responseMessageId, updatedResponse);
@@ -561,19 +549,21 @@ export default function useStepHandler({
         toolCallIdMap.current.clear();
         messageMap.current.clear();
         stepMap.current.clear();
-        stepIndexMap.current.clear();
-        agentIdMap.current.clear();
+        contentAgentMap.current.clear();
+        seenAgentIds.current.clear();
+        isParallelMode.current = false;
       };
     },
-    [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages],
+    [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages, calculateContentIndex],
   );
 
   const clearStepMaps = useCallback(() => {
     toolCallIdMap.current.clear();
     messageMap.current.clear();
     stepMap.current.clear();
-    stepIndexMap.current.clear();
-    agentIdMap.current.clear();
+    contentAgentMap.current.clear();
+    seenAgentIds.current.clear();
+    isParallelMode.current = false;
   }, []);
 
   /**

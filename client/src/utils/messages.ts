@@ -191,23 +191,44 @@ export const getMessageAriaLabel = (message: TMessage, localize: LocalizeFunctio
 };
 
 /**
- * Creates initial content parts for dual message display with sibling grouping.
- * Sets up primary and added agent content parts with appropriate siblingIndex and agentId.
+ * Creates initial content parts for dual message display with agent-based grouping.
+ * Sets up primary and added agent content parts with agentId for column rendering.
  *
+ * @param primaryConvo - The primary conversation configuration
  * @param addedConvo - The added conversation configuration
  * @param endpointsConfig - Endpoints configuration for getting model display labels
- * @returns Array of content parts with siblingIndex for side-by-side rendering
+ * @returns Array of content parts with agentId for side-by-side rendering
  */
 export const createDualMessageContent = (
+  primaryConvo: TConversation,
   addedConvo: TConversation,
   endpointsConfig?: TEndpointsConfig,
 ): TMessageContentParts[] => {
+  // Primary agent ID (no index suffix)
+  const primaryEndpoint = primaryConvo.endpoint;
+  const primaryModel = primaryConvo.model ?? '';
+  const primaryEndpointType = primaryConvo.endpointType;
+  const primarySender = primaryEndpoint
+    ? getResponseSender({
+        model: primaryModel,
+        endpoint: primaryEndpoint,
+        endpointType: primaryEndpointType,
+        modelDisplayLabel: endpointsConfig?.[primaryEndpoint]?.modelDisplayLabel,
+      })
+    : '';
+  const primaryAgentId = encodeEphemeralAgentId({
+    endpoint: primaryEndpoint ?? '',
+    model: primaryModel,
+    sender: primarySender,
+  });
+
   const primaryContent = {
     type: ContentTypes.TEXT as const,
     [ContentTypes.TEXT]: '',
-    siblingIndex: 0,
+    agentId: primaryAgentId,
   };
 
+  // Added agent ID (with index: 1 suffix)
   const addedEndpoint = addedConvo.endpoint;
   const addedModel = addedConvo.model ?? '';
   const addedEndpointType = addedConvo.endpointType;
@@ -229,7 +250,6 @@ export const createDualMessageContent = (
   const addedContent = {
     type: ContentTypes.TEXT as const,
     [ContentTypes.TEXT]: '',
-    siblingIndex: 1,
     agentId: addedAgentId,
   };
 
