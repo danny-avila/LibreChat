@@ -31,7 +31,7 @@ describe('AgentConversationStarters', () => {
 
   it('adds a new starter', () => {
     const { onChange } = setup([]);
-    const input = screen.getByTestId('add-starter-input');
+    const input = screen.getByPlaceholderText(/conversation starter/i);
     fireEvent.change(input, { target: { value: 'New Starter' } });
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
     expect(onChange).toHaveBeenCalledWith(['New Starter']);
