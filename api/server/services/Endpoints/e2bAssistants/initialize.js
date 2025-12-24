@@ -36,26 +36,26 @@ class E2BClientManager {
     try {
       logger.info(`[E2B] Creating sandbox for user ${userId}, conversation ${conversationId}, template: ${template}`);
       
-      // 根据E2B Code Interpreter SDK文档构建配置
-      // Sandbox.create() 接受的参数：apiKey, template, timeoutMs, metadata
-      const apiOpts = {
-        apiKey: this.apiKey,
-        template: template || this.defaultConfig.template,
-        timeoutMs: assistantConfig.timeout_ms || this.defaultConfig.timeoutMs,
-      };
-      
       // 添加网络访问配置
       if (assistantConfig.has_internet_access) {
         // 注意：网络访问在模板级别配置，这里只是记录
         logger.info(`[E2B] Internet access enabled for this sandbox`);
       }
       
-      // E2B Code Interpreter SDK v2.3.3 正确用法
-      const sandbox = await Sandbox.create(apiOpts);
+      // E2B Code Interpreter SDK v2.8.4 正确用法
+      // 显式传参方式：Sandbox.create(template, opts)
+      // 第一个参数是template字符串
+      // 第二个参数是选项对象（包含apiKey、timeoutMs等）
+      const sandboxOpts = {
+        apiKey: this.apiKey,
+        timeoutMs: assistantConfig.timeout_ms || this.defaultConfig.timeoutMs,
+      };
+      
+      const sandbox = await Sandbox.create(template, sandboxOpts);
       
       const key = `${userId}:${conversationId}`;
       this.sandboxes.set(key, {
-        id: sandbox.sandboxID,
+        id: sandbox.sandboxId, // 修正：使用正确的属性名（小写d）
         template,
         sandbox,
         userId,
@@ -64,7 +64,7 @@ class E2BClientManager {
         config: assistantConfig,
       });
       
-      logger.info(`[E2B] Sandbox created successfully: ${sandbox.sandboxID}`);
+      logger.info(`[E2B] Sandbox created successfully: ${sandbox.sandboxId}`);
       return sandbox;
     } catch (error) {
       logger.error('[E2B] Error creating sandbox:', error);
@@ -132,7 +132,7 @@ class E2BClientManager {
         ...(options.envVars || {}),
       };
       
-      // E2B SDK v2 正确用法 - 使用 runCode
+      // E2B SDK v2.8.4 正确用法 - 使用 runCode
       const result = await sandboxData.sandbox.runCode(code, {
         language: 'python',
         envs: Object.keys(envVars).length > 0 ? envVars : undefined,
@@ -153,14 +153,14 @@ class E2BClientManager {
       
       logger.info(`[E2B] Code execution completed in sandbox ${sandboxData.id}`);
       
-      // 格式化返回结果
+      // 修正：根据E2B v2结构，stdout和stderr在logs对象中
       return {
         success: !result.error,
-        stdout: result.stdout || [],
-        stderr: result.stderr || [],
+        stdout: result.logs?.stdout || [], // 从logs对象获取
+        stderr: result.logs?.stderr || [], // 从logs对象获取
         results: result.results || [],
         error: result.error ? result.error.message : null,
-        logs: result.logs || [],
+        logs: result.logs || [], // 保留完整的logs对象
         exitCode: result.exitCode || 0,
         runtime: result.runtime || 0,
       };
@@ -172,7 +172,7 @@ class E2BClientManager {
 
   /**
    * 上传文件到沙箱
-   * 使用E2B SDK v2.8.4 filesystem API
+   * 使用E2B SDK v2.8.4 files API
    * 支持多种数据格式：string, ArrayBuffer, Blob, ReadableStream
    * @param {string} userId 
    * @param {string} conversationId 
@@ -190,9 +190,8 @@ class E2BClientManager {
     try {
       logger.info(`[E2B] Uploading file ${path} to sandbox ${sandboxData.id}`);
       
-      // E2B SDK v2.8.4 正确用法 - 使用 filesystem.write
-      // 支持多种格式：string, ArrayBuffer, Blob, ReadableStream
-      const writeInfo = await sandboxData.sandbox.filesystem.write(path, content);
+      // 修正：使用 sandbox.files 而不是 sandbox.filesystem
+      const writeInfo = await sandboxData.sandbox.files.write(path, content);
       
       logger.info(`[E2B] File uploaded successfully to sandbox ${sandboxData.id}`);
       return {
@@ -208,7 +207,7 @@ class E2BClientManager {
 
   /**
    * 从沙箱下载文件
-   * 使用E2B SDK v2.8.4 filesystem API
+   * 使用E2B SDK v2.8.4 files API
    * @param {string} userId 
    * @param {string} conversationId 
    * @param {string} path - 文件路径
@@ -225,9 +224,8 @@ class E2BClientManager {
     try {
       logger.info(`[E2B] Downloading file ${path} from sandbox ${sandboxData.id} as ${format}`);
       
-      // E2B SDK v2.8.4 正确用法 - 使用 filesystem.read
-      // 支持多种格式：text, bytes, blob, stream
-      const content = await sandboxData.sandbox.filesystem.read(path, { format });
+      // 修正：使用 sandbox.files 而不是 sandbox.filesystem
+      const content = await sandboxData.sandbox.files.read(path, { format });
       
       logger.info(`[E2B] File downloaded successfully from sandbox ${sandboxData.id}`);
       return content;
@@ -239,7 +237,7 @@ class E2BClientManager {
 
   /**
    * 检查文件或目录是否存在
-   * 使用E2B SDK v2.8.4 filesystem API
+   * 使用E2B SDK v2.8.4 files API
    * @param {string} userId 
    * @param {string} conversationId 
    * @param {string} path - 文件或目录路径
@@ -253,7 +251,8 @@ class E2BClientManager {
     }
     
     try {
-      const exists = await sandboxData.sandbox.filesystem.exists(path);
+      // 修正：使用 sandbox.files
+      const exists = await sandboxData.sandbox.files.exists(path);
       return exists;
     } catch (error) {
       logger.error(`[E2B] Error checking file existence ${path}:`, error);
@@ -263,7 +262,7 @@ class E2BClientManager {
 
   /**
    * 获取文件或目录信息
-   * 使用E2B SDK v2.8.4 filesystem API
+   * 使用E2B SDK v2.8.4 files API
    * @param {string} userId 
    * @param {string} conversationId 
    * @param {string} path - 文件或目录路径
@@ -277,7 +276,8 @@ class E2BClientManager {
     }
     
     try {
-      const info = await sandboxData.sandbox.filesystem.getInfo(path);
+      // 修正：使用 sandbox.files
+      const info = await sandboxData.sandbox.files.getInfo(path);
       
       return {
         name: info.name,
@@ -295,7 +295,7 @@ class E2BClientManager {
 
   /**
    * 创建目录
-   * 使用E2B SDK v2.8.4 filesystem API
+   * 使用E2B SDK v2.8.4 files API
    * @param {string} userId 
    * @param {string} conversationId 
    * @param {string} path - 目录路径
@@ -310,7 +310,9 @@ class E2BClientManager {
     
     try {
       logger.info(`[E2B] Creating directory ${path} in sandbox ${sandboxData.id}`);
-      const created = await sandboxData.sandbox.filesystem.makeDir(path);
+      
+      // 修正：使用 sandbox.files
+      const created = await sandboxData.sandbox.files.makeDir(path);
       
       if (created) {
         logger.info(`[E2B] Directory created successfully: ${path}`);
@@ -325,7 +327,7 @@ class E2BClientManager {
 
   /**
    * 删除文件或目录
-   * 使用E2B SDK v2.8.4 filesystem API
+   * 使用E2B SDK v2.8.4 files API
    * @param {string} userId 
    * @param {string} conversationId 
    * @param {string} path - 文件或目录路径
@@ -340,7 +342,9 @@ class E2BClientManager {
     
     try {
       logger.info(`[E2B] Deleting file/directory ${path} from sandbox ${sandboxData.id}`);
-      await sandboxData.sandbox.filesystem.remove(path);
+      
+      // 修正：使用 sandbox.files
+      await sandboxData.sandbox.files.remove(path);
       
       logger.info(`[E2B] File/directory deleted successfully: ${path}`);
     } catch (error) {
@@ -351,7 +355,7 @@ class E2BClientManager {
 
   /**
    * 列出沙箱中的文件
-   * 使用E2B SDK v2.8.4 filesystem API
+   * 使用E2B SDK v2.8.4 files API
    * @param {string} userId 
    * @param {string} conversationId 
    * @param {string} path - 目录路径
@@ -367,8 +371,8 @@ class E2BClientManager {
     try {
       logger.info(`[E2B] Listing files in sandbox ${sandboxData.id} at path ${path}`);
       
-      // E2B SDK v2.8.4 正确用法 - 使用 filesystem.list
-      const files = await sandboxData.sandbox.filesystem.list(path);
+      // 修正：使用 sandbox.files
+      const files = await sandboxData.sandbox.files.list(path);
       
       // 格式化文件列表
       const fileList = files.map(file => ({
@@ -385,6 +389,236 @@ class E2BClientManager {
     } catch (error) {
       logger.error(`[E2B] Error listing files in sandbox ${sandboxData.id}:`, error);
       throw new Error(`Failed to list files: ${error.message}`);
+    }
+  }
+
+  /**
+   * 获取沙箱信息
+   * 使用E2B SDK v2.8.4 getInfo API
+   * @param {string} userId 
+   * @param {string} conversationId 
+   * @returns {Promise<Object>} 沙箱信息
+   */
+  async getSandboxInfo(userId, conversationId) {
+    const sandboxData = await this.getSandbox(userId, conversationId);
+    
+    if (!sandboxData || !sandboxData.sandbox) {
+      throw new Error('Sandbox not found for this conversation');
+    }
+    
+    try {
+      logger.info(`[E2B] Getting sandbox info for ${sandboxData.id}`);
+      
+      const info = await sandboxData.sandbox.getInfo();
+      
+      return {
+        sandboxId: sandboxData.id,
+        sandboxDomain: sandboxData.sandbox.sandboxDomain,
+        template: sandboxData.template,
+        isRunning: await sandboxData.sandbox.isRunning(),
+        createdAt: sandboxData.createdAt,
+      };
+    } catch (error) {
+      logger.error(`[E2B] Error getting sandbox info ${sandboxData.id}:`, error);
+      throw new Error(`Failed to get sandbox info: ${error.message}`);
+    }
+  }
+
+  /**
+   * 获取沙箱指标
+   * 使用E2B SDK v2.8.4 getMetrics API
+   * @param {string} userId 
+   * @param {string} conversationId 
+   * @returns {Promise<Array>} 指标列表
+   */
+  async getSandboxMetrics(userId, conversationId) {
+    const sandboxData = await this.getSandbox(userId, conversationId);
+    
+    if (!sandboxData || !sandboxData.sandbox) {
+      throw new Error('Sandbox not found for this conversation');
+    }
+    
+    try {
+      logger.info(`[E2B] Getting sandbox metrics for ${sandboxData.id}`);
+      
+      const metrics = await sandboxData.sandbox.getMetrics();
+      
+      return metrics;
+    } catch (error) {
+      logger.error(`[E2B] Error getting sandbox metrics ${sandboxData.id}:`, error);
+      throw new Error(`Failed to get sandbox metrics: ${error.message}`);
+    }
+  }
+
+  /**
+   * 检查沙箱是否运行
+   * 使用E2B SDK v2.8.4 isRunning API
+   * @param {string} userId 
+   * @param {string} conversationId 
+   * @returns {Promise<boolean>} 是否运行
+   */
+  async isSandboxRunning(userId, conversationId) {
+    const sandboxData = await this.getSandbox(userId, conversationId);
+    
+    if (!sandboxData || !sandboxData.sandbox) {
+      return false;
+    }
+    
+    try {
+      return await sandboxData.sandbox.isRunning();
+    } catch (error) {
+      logger.error(`[E2B] Error checking sandbox running status ${sandboxData.id}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * 设置沙箱超时
+   * 使用E2B SDK v2.8.4 setTimeout API
+   * @param {string} userId 
+   * @param {string} conversationId 
+   * @param {number} timeoutMs - 超时时间（毫秒）
+   * @returns {Promise<void>}
+   */
+  async setSandboxTimeout(userId, conversationId, timeoutMs) {
+    const sandboxData = await this.getSandbox(userId, conversationId);
+    
+    if (!sandboxData || !sandboxData.sandbox) {
+      throw new Error('Sandbox not found for this conversation');
+    }
+    
+    try {
+      logger.info(`[E2B] Setting sandbox timeout to ${timeoutMs}ms (${timeoutMs / 1000}s)`);
+      await sandboxData.sandbox.setTimeout(timeoutMs);
+    } catch (error) {
+      logger.error(`[E2B] Error setting sandbox timeout ${sandboxData.id}:`, error);
+      throw new Error(`Failed to set sandbox timeout: ${error.message}`);
+    }
+  }
+
+  /**
+   * 获取文件上传URL
+   * 使用E2B SDK v2.8.4 uploadUrl API
+   * @param {string} userId 
+   * @param {string} conversationId 
+   * @param {string} path - 文件路径（可选）
+   * @returns {Promise<string>} 上传URL
+   */
+  async getUploadUrl(userId, conversationId, path = undefined) {
+    const sandboxData = await this.getSandbox(userId, conversationId);
+    
+    if (!sandboxData || !sandboxData.sandbox) {
+      throw new Error('Sandbox not found for this conversation');
+    }
+    
+    try {
+      logger.info(`[E2B] Getting upload URL for ${sandboxData.id}`);
+      const url = await sandboxData.sandbox.uploadUrl(path);
+      return url;
+    } catch (error) {
+      logger.error(`[E2B] Error getting upload URL ${sandboxData.id}:`, error);
+      throw new Error(`Failed to get upload URL: ${error.message}`);
+    }
+  }
+
+  /**
+   * 获取文件下载URL
+   * 使用E2B SDK v2.8.4 downloadUrl API
+   * @param {string} userId 
+   * @param {string} conversationId 
+   * @param {string} path - 文件路径
+   * @returns {Promise<string>} 下载URL
+   */
+  async getDownloadUrl(userId, conversationId, path) {
+    const sandboxData = await this.getSandbox(userId, conversationId);
+    
+    if (!sandboxData || !sandboxData.sandbox) {
+      throw new Error('Sandbox not found for this conversation');
+    }
+    
+    try {
+      logger.info(`[E2B] Getting download URL for ${path} from sandbox ${sandboxData.id}`);
+      const url = await sandboxData.sandbox.downloadUrl(path);
+      return url;
+    } catch (error) {
+      logger.error(`[E2B] Error getting download URL ${sandboxData.id}:`, error);
+      throw new Error(`Failed to get download URL: ${error.message}`);
+    }
+  }
+
+  /**
+   * 获取沙箱主机地址（用于从外部访问沙箱服务）
+   * 使用E2B SDK v2.8.4 getHost API
+   * @param {string} userId 
+   * @param {string} conversationId 
+   * @param {number} port - 端口号
+   * @returns {Promise<string>} 主机地址
+   */
+  async getSandboxHost(userId, conversationId, port) {
+    const sandboxData = await this.getSandbox(userId, conversationId);
+    
+    if (!sandboxData || !sandboxData.sandbox) {
+      throw new Error('Sandbox not found for this conversation');
+    }
+    
+    try {
+      logger.info(`[E2B] Getting host address for sandbox ${sandboxData.id} on port ${port}`);
+      const host = sandboxData.sandbox.getHost(port);
+      return host;
+    } catch (error) {
+      logger.error(`[E2B] Error getting sandbox host ${sandboxData.id}:`, error);
+      throw new Error(`Failed to get sandbox host: ${error.message}`);
+    }
+  }
+
+  /**
+   * 获取MCP Token（如果启用了MCP）
+   * 使用E2B SDK v2.8.4 betaGetMcpToken API
+   * @param {string} userId 
+   * @param {string} conversationId 
+   * @returns {Promise<string|undefined>} MCP Token
+   */
+  async getMcpToken(userId, conversationId) {
+    const sandboxData = await this.getSandbox(userId, conversationId);
+    
+    if (!sandboxData || !sandboxData.sandbox) {
+      throw new Error('Sandbox not found for this conversation');
+    }
+    
+    try {
+      // 修正：使用 betaGetMcpToken
+      const token = await sandboxData.sandbox.betaGetMcpToken();
+      if (token) {
+        logger.info(`[E2B] MCP token found for sandbox ${sandboxData.id}`);
+      }
+      return token;
+    } catch (error) {
+      logger.error(`[E2B] Error getting MCP token ${sandboxData.id}:`, error);
+      return undefined;
+    }
+  }
+
+  /**
+   * 获取MCP URL
+   * 使用E2B SDK v2.8.4 betaGetMcpUrl API
+   * @param {string} userId 
+   * @param {string} conversationId 
+   * @returns {string>} MCP URL
+   */
+  async getMcpUrl(userId, conversationId) {
+    const sandboxData = await this.getSandbox(userId, conversationId);
+    
+    if (!sandboxData || !sandboxData.sandbox) {
+      throw new Error('Sandbox not found for this conversation');
+    }
+    
+    try {
+      // 修正：使用 betaGetMcpUrl
+      logger.info(`[E2B] Getting MCP URL for sandbox ${sandboxData.id}`);
+      return sandboxData.sandbox.betaGetMcpUrl();
+    } catch (error) {
+      logger.error(`[E2B] Error getting MCP URL ${sandboxData.id}:`, error);
+      throw new Error(`Failed to get MCP URL: ${error.message}`);
     }
   }
 
