@@ -17,7 +17,6 @@ export default function useAgentsMap({
     },
   );
 
-  // TODO: Look up deeper in project for agents usage, i.e. , make sure that conversation starters are retreived as well
   const agentsMap = useMemo<TAgentsMap | undefined>(() => {
     return mappedAgents !== null ? mappedAgents : undefined;
   }, [mappedAgents]);

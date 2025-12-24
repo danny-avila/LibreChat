@@ -170,7 +170,6 @@ describe('ConversationStarters', () => {
     expect(mainContainer).toBeInTheDocument();
 
     // Check suggestions header
-    // expect(screen.getByText('com_ui_agent_version_history')).toBeInTheDocument();
     const suggestionsText = screen.getByText('com_ui_suggestions');
     expect(suggestionsText).toHaveClass('text-gray-400', 'text-[13px]', 'font-medium', 'pb-2');
 
@@ -208,5 +207,26 @@ describe('ConversationStarters', () => {
     const { container } = render(<ConversationStarters />);
 
     expect(container.firstChild).toBeNull();
+  });
+
+  it('should call submitMessage with correct text when conversation starter is clicked', () => {
+    const mockStarters = ['Test starter 1', 'Test starter 2'];
+
+    (getEntity as jest.Mock).mockReturnValue({
+      entity: { id: 'entity-1', conversation_starters: mockStarters },
+      isAgent: false,
+    });
+
+    render(<ConversationStarters />);
+
+    const secondButton = screen.getByText('Test starter 2').closest('button');
+    expect(secondButton).toBeInTheDocument();
+
+    // Simulate click on the first conversation starter button
+    secondButton?.click();
+
+    // Vertify submitMessage was called with the correct text
+    expect(mockSubmitMessage).toHaveBeenCalledTimes(1);
+    expect(mockSubmitMessage).toHaveBeenCalledWith({ text: 'Test starter 2' });
   });
 });
