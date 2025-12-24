@@ -9,8 +9,9 @@ const {
   appendAgentIdSuffix,
   encodeEphemeralAgentId,
 } = require('librechat-data-provider');
-const { mcp_all, mcp_delimiter, EPHEMERAL_AGENT_ID } = Constants;
 const { getMCPServerTools } = require('~/server/services/Config');
+
+const { mcp_all, mcp_delimiter } = Constants;
 
 /**
  * Constant for added conversation agent ID
@@ -49,7 +50,7 @@ const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
   }
 
   // If there's an agent_id, load the existing agent
-  if (conversation.agent_id && conversation.agent_id !== EPHEMERAL_AGENT_ID) {
+  if (conversation.agent_id && !isEphemeralAgentId(conversation.agent_id)) {
     if (!getAgent) {
       throw new Error('getAgent not initialized - call setGetAgent first');
     }
