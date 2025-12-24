@@ -27,7 +27,7 @@ jest.mock('~/hooks', () => ({
 }));
 
 jest.mock('lucide-react', () => ({
-  ZapIcon: () => <div data-testid="zap-icon">ZapIcon</div>,
+  ZapIcon: () => <div data-testid="zap-icon" />,
 }));
 
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
