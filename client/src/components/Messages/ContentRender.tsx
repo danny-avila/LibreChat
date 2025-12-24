@@ -3,15 +3,15 @@ import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
+import { useAttachments, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { useAttachments, useLocalize, useMessageActions } from '~/hooks';
 import SubRow from '~/components/Chat/Messages/SubRow';
-import { fontSizeAtom } from '~/store/fontSize';
 import { cn, getMessageAriaLabel } from '~/utils';
+import { fontSizeAtom } from '~/store/fontSize';
 import store from '~/store';
 
 type ContentRenderProps = {
@@ -89,39 +89,7 @@ const ContentRender = memo(
       ],
     );
 
-    // Get contentMetadataMap from message for parallel content rendering
-    const contentMetadataMap = useMemo(() => {
-      const metadataObj = msg?.contentMetadataMap;
-      if (!metadataObj) {
-        return undefined;
-      }
-      // Convert plain object to Map for efficient lookup
-      return new Map(Object.entries(metadataObj).map(([key, value]) => [parseInt(key, 10), value]));
-    }, [msg]);
-
-    // Check if message has parallel content - use contentMetadataMap (O(1)) when available
-    const hasParallelContent = useMemo(() => {
-      // Fast path: check contentMetadataMap first
-      if (contentMetadataMap && contentMetadataMap.size > 0) {
-        for (const meta of contentMetadataMap.values()) {
-          if (meta.groupId != null) {
-            return true;
-          }
-        }
-        return false;
-      }
-      // Legacy fallback: scan content parts for embedded groupId
-      const content = msg?.content;
-      if (!content || !Array.isArray(content)) {
-        return false;
-      }
-      for (const part of content) {
-        if (part && (part as TMessageContentParts & { groupId?: number }).groupId != null) {
-          return true;
-        }
-      }
-      return false;
-    }, [msg?.content, contentMetadataMap]);
+    const { contentMetadataMap, hasParallelContent } = useContentMetadata(msg);
 
     if (!msg) {
       return null;
@@ -188,6 +156,7 @@ const ContentRender = memo(
                 searchResults={searchResults}
                 setSiblingIdx={setSiblingIdx}
                 isLatestMessage={isLatestMessage}
+                hasParallelContent={hasParallelContent}
                 contentMetadataMap={contentMetadataMap}
                 isSubmitting={effectiveIsSubmitting}
                 isCreatedByUser={msg.isCreatedByUser}

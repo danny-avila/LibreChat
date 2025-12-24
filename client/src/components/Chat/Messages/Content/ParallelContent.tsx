@@ -1,5 +1,10 @@
 import { memo, useMemo } from 'react';
-import type { TMessageContentParts, SearchResultData, TAttachment } from 'librechat-data-provider';
+import type {
+  TMessageContentParts,
+  TContentMetadata,
+  SearchResultData,
+  TAttachment,
+} from 'librechat-data-provider';
 import { SearchContext } from '~/Providers';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
@@ -20,11 +25,6 @@ export type ParallelSection = {
   columns: ParallelColumn[];
 };
 
-type ContentMetadata = {
-  agentId?: string;
-  groupId?: number;
-};
-
 /**
  * Groups content parts by groupId for parallel rendering.
  * Parts with same groupId are displayed in columns, grouped by agentId.
@@ -35,7 +35,7 @@ type ContentMetadata = {
  */
 export function groupParallelContent(
   content: Array<TMessageContentParts | undefined> | undefined,
-  contentMetadataMap?: Map<number, ContentMetadata>,
+  contentMetadataMap?: Map<number, TContentMetadata>,
 ): { parallelSections: ParallelSection[]; sequentialParts: PartWithIndex[] } {
   if (!content) {
     return { parallelSections: [], sequentialParts: [] };
@@ -115,36 +115,6 @@ export function groupParallelContent(
   return { parallelSections: sections, sequentialParts: noGroup };
 }
 
-/**
- * Check if content has any parallel parts (parts with groupId).
- * Uses contentMetadataMap if available (O(1) check), otherwise scans content.
- */
-export function hasParallelParts(
-  content: Array<TMessageContentParts | undefined> | undefined,
-  contentMetadataMap?: Map<number, ContentMetadata>,
-): boolean {
-  // O(1) check: if metadata map exists and has entries, we have parallel content
-  if (contentMetadataMap && contentMetadataMap.size > 0) {
-    for (const metadata of contentMetadataMap.values()) {
-      if (metadata.groupId != null) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // Legacy fallback: scan content for embedded groupId
-  if (!content) {
-    return false;
-  }
-  for (const part of content) {
-    if (part && (part as TMessageContentParts & { groupId?: number }).groupId != null) {
-      return true;
-    }
-  }
-  return false;
-}
-
 type ParallelColumnsProps = {
   columns: ParallelColumn[];
   groupId: number;
@@ -205,7 +175,7 @@ export const ParallelColumns = memo(function ParallelColumns({
 
 type ParallelContentRendererProps = {
   content: Array<TMessageContentParts | undefined>;
-  contentMetadataMap?: Map<number, ContentMetadata>;
+  contentMetadataMap?: Map<number, TContentMetadata>;
   messageId: string;
   conversationId?: string | null;
   attachments?: TAttachment[];

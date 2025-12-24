@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import type { TMessageContentParts, TContentMetadata } from 'librechat-data-provider';
+import type { TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
-import { useMessageHelpers, useLocalize, useAttachments } from '~/hooks';
+import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } from '~/hooks';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
 import { fontSizeAtom } from '~/store/fontSize';
@@ -75,39 +75,7 @@ export default function Message(props: TMessageProps) {
     ],
   );
 
-  // Get contentMetadataMap from message for parallel content rendering
-  const contentMetadataMap = useMemo((): Map<number, TContentMetadata> | undefined => {
-    const metadataObj = message?.contentMetadataMap;
-    if (!metadataObj) {
-      return undefined;
-    }
-    // Convert plain object to Map for efficient lookup
-    return new Map(Object.entries(metadataObj).map(([key, value]) => [parseInt(key, 10), value]));
-  }, [message]);
-
-  // Check if message has parallel content - use contentMetadataMap (O(1)) when available
-  const hasParallelContent = useMemo(() => {
-    // Fast path: check contentMetadataMap first
-    if (contentMetadataMap && contentMetadataMap.size > 0) {
-      for (const meta of contentMetadataMap.values()) {
-        if (meta.groupId != null) {
-          return true;
-        }
-      }
-      return false;
-    }
-    // Legacy fallback: scan content parts for embedded groupId
-    const content = message?.content;
-    if (!content || !Array.isArray(content)) {
-      return false;
-    }
-    for (const part of content) {
-      if (part && (part as TMessageContentParts & { groupId?: number }).groupId != null) {
-        return true;
-      }
-    }
-    return false;
-  }, [message?.content, contentMetadataMap]);
+  const { contentMetadataMap, hasParallelContent } = useContentMetadata(message);
 
   if (!message) {
     return null;
@@ -172,6 +140,7 @@ export default function Message(props: TMessageProps) {
                     searchResults={searchResults}
                     messageId={message.messageId}
                     setSiblingIdx={setSiblingIdx}
+                    hasParallelContent={hasParallelContent}
                     contentMetadataMap={contentMetadataMap}
                     isCreatedByUser={message.isCreatedByUser}
                     conversationId={conversation?.conversationId}

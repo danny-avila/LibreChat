@@ -8,7 +8,7 @@ import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { useLocalize, useMessageActions } from '~/hooks';
+import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { cn, getMessageAriaLabel } from '~/utils';
 import { fontSizeAtom } from '~/store/fontSize';
@@ -85,19 +85,7 @@ const MessageRender = memo(
       ],
     );
 
-    // Check if message has parallel content (groupId) - if so, hide outer label since columns have their own headers
-    const hasParallelContent = useMemo(() => {
-      const content = msg?.content;
-      if (!content || !Array.isArray(content)) {
-        return false;
-      }
-      for (const part of content) {
-        if (part && (part as { groupId?: number }).groupId != null) {
-          return true;
-        }
-      }
-      return false;
-    }, [msg?.content]);
+    const { hasParallelContent } = useContentMetadata(msg);
 
     if (!msg) {
       return null;

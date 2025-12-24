@@ -2,23 +2,19 @@ import { memo, useMemo, useCallback } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
+  TContentMetadata,
   SearchResultData,
   TAttachment,
   Agents,
 } from 'librechat-data-provider';
 import { MessageContext, SearchContext } from '~/Providers';
-import { ParallelContentRenderer, hasParallelParts, type PartWithIndex } from './ParallelContent';
+import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
+import { mapAttachments } from '~/utils';
 import { EditTextPart, EmptyText } from './Parts';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
-import { mapAttachments } from '~/utils/map';
 import Container from './Container';
 import Part from './Part';
-
-type ContentMetadata = {
-  agentId?: string;
-  groupId?: number;
-};
 
 type ContentPartsProps = {
   content: Array<TMessageContentParts | undefined> | undefined;
@@ -37,8 +33,10 @@ type ContentPartsProps = {
     | ((value: number) => void | React.Dispatch<React.SetStateAction<number>>)
     | null
     | undefined;
+  /** Whether the message has parallel content (content with groupId) */
+  hasParallelContent?: boolean;
   /** Optional metadata map for parallel content (new approach - O(1) lookup) */
-  contentMetadataMap?: Map<number, ContentMetadata>;
+  contentMetadataMap?: Map<number, TContentMetadata>;
 };
 
 /**
@@ -64,19 +62,11 @@ const ContentParts = memo(function ContentParts({
   conversationId,
   isCreatedByUser,
   isLatestMessage,
+  hasParallelContent,
   contentMetadataMap,
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
-
-  /**
-   * Quick check: does content have parallel parts (groupId)?
-   * Uses contentMetadataMap for O(1) check when available.
-   */
-  const hasParallelContent = useMemo(
-    () => hasParallelParts(content, contentMetadataMap),
-    [content, contentMetadataMap],
-  );
 
   /**
    * Render a single content part with proper context.
