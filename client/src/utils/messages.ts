@@ -204,17 +204,22 @@ export const createDualMessageContent = (
   addedConvo: TConversation,
   endpointsConfig?: TEndpointsConfig,
 ): TMessageContentParts[] => {
-  // Primary agent ID (no index suffix)
-  const primaryEndpoint = primaryConvo.endpoint ?? '';
-  const primaryModel = primaryConvo.model ?? '';
-  const primarySender = getResponseSender({
-    modelDisplayLabel: endpointsConfig?.[primaryEndpoint]?.modelDisplayLabel,
-  });
-  const primaryAgentId = encodeEphemeralAgentId({
-    endpoint: primaryEndpoint ?? '',
-    model: primaryModel,
-    sender: primarySender,
-  });
+  // For real agents, use agent_id directly; otherwise create ephemeral ID
+  let primaryAgentId: string;
+  if (primaryConvo.agent_id) {
+    primaryAgentId = primaryConvo.agent_id;
+  } else {
+    const primaryEndpoint = primaryConvo.endpoint ?? '';
+    const primaryModel = primaryConvo.model ?? '';
+    const primarySender = getResponseSender({
+      modelDisplayLabel: endpointsConfig?.[primaryEndpoint]?.modelDisplayLabel,
+    });
+    primaryAgentId = encodeEphemeralAgentId({
+      endpoint: primaryEndpoint,
+      model: primaryModel,
+      sender: primarySender,
+    });
+  }
 
   // Both agents run in parallel, so they share the same groupId
   const parallelGroupId = 1;
@@ -227,24 +232,29 @@ export const createDualMessageContent = (
     groupId: parallelGroupId,
   };
 
-  // Added agent ID (with index: 1 suffix)
-  const addedEndpoint = addedConvo.endpoint;
-  const addedModel = addedConvo.model ?? '';
-  const addedEndpointType = addedConvo.endpointType;
-  const addedSender = addedEndpoint
-    ? getResponseSender({
-        model: addedModel,
-        endpoint: addedEndpoint,
-        endpointType: addedEndpointType,
-        modelDisplayLabel: endpointsConfig?.[addedEndpoint]?.modelDisplayLabel,
-      })
-    : '';
-  const addedAgentId = encodeEphemeralAgentId({
-    endpoint: addedEndpoint ?? '',
-    model: addedModel,
-    sender: addedSender,
-    index: 1,
-  });
+  // For added agent, use agent_id if available; otherwise create ephemeral ID with index
+  let addedAgentId: string;
+  if (addedConvo.agent_id) {
+    addedAgentId = addedConvo.agent_id;
+  } else {
+    const addedEndpoint = addedConvo.endpoint;
+    const addedModel = addedConvo.model ?? '';
+    const addedEndpointType = addedConvo.endpointType;
+    const addedSender = addedEndpoint
+      ? getResponseSender({
+          model: addedModel,
+          endpoint: addedEndpoint,
+          endpointType: addedEndpointType,
+          modelDisplayLabel: endpointsConfig?.[addedEndpoint]?.modelDisplayLabel,
+        })
+      : '';
+    addedAgentId = encodeEphemeralAgentId({
+      endpoint: addedEndpoint ?? '',
+      model: addedModel,
+      sender: addedSender,
+      index: 1,
+    });
+  }
 
   // Use empty type - placeholder to establish agentId/groupId
   const addedContent = {
