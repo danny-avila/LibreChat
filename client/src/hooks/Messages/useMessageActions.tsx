@@ -22,7 +22,6 @@ export type TMessageActions = Pick<
   TMessageProps,
   'message' | 'currentEditId' | 'setCurrentEditId'
 > & {
-  isMultiMessage?: boolean;
   searchResults?: { [key: string]: SearchResultData };
 };
 
@@ -30,25 +29,12 @@ export default function useMessageActions(props: TMessageActions) {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
-  const { message, currentEditId, setCurrentEditId, isMultiMessage, searchResults } = props;
+  const { message, currentEditId, setCurrentEditId, searchResults } = props;
 
-  const {
-    ask,
-    index,
-    regenerate,
-    isSubmitting,
-    latestMessage,
-    handleContinue,
-    conversation: rootConvo,
-  } = useChatContext();
+  const { ask, index, regenerate, isSubmitting, conversation, latestMessage, handleContinue } =
+    useChatContext();
 
   const getAddedConvo = useGetAddedConvo();
-
-  const conversation = useMemo(
-    () => (isMultiMessage === true ? getAddedConvo() : rootConvo),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isMultiMessage, rootConvo],
-  );
 
   const agentsMap = useAgentsMapContext();
   const assistantMap = useAssistantsMapContext();

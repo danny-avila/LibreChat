@@ -16,8 +16,6 @@ import store from '~/store';
 
 type ContentRenderProps = {
   message?: TMessage;
-  isCard?: boolean;
-  isMultiMessage?: boolean;
   isSubmitting?: boolean;
 } & Pick<
   TMessageProps,
@@ -27,12 +25,10 @@ type ContentRenderProps = {
 const ContentRender = memo(
   ({
     message: msg,
-    isCard = false,
     siblingIdx,
     siblingCount,
     setSiblingIdx,
     currentEditId,
-    isMultiMessage = false,
     setCurrentEditId,
     isSubmitting = false,
   }: ContentRenderProps) => {
@@ -58,7 +54,6 @@ const ContentRender = memo(
       message: msg,
       searchResults,
       currentEditId,
-      isMultiMessage,
       setCurrentEditId,
     });
     const fontSize = useAtomValue(fontSizeAtom);
@@ -144,7 +139,6 @@ const ContentRender = memo(
 
     const baseClasses = {
       common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu ',
-      card: 'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4',
       chat: getChatWidthClass(),
     };
 
@@ -158,7 +152,7 @@ const ContentRender = memo(
         aria-label={getMessageAriaLabel(msg, localize)}
         className={cn(
           baseClasses.common,
-          isCard ? baseClasses.card : baseClasses.chat,
+          baseClasses.chat,
           conditionalClasses.focus,
           'message-render',
         )}
@@ -202,7 +196,7 @@ const ContentRender = memo(
               />
             </div>
             {isLast && hasNoChildren && effectiveIsSubmitting ? (
-              <PlaceholderRow isCard={isCard} />
+              <PlaceholderRow />
             ) : (
               <SubRow classes="text-xs">
                 <SiblingSwitch

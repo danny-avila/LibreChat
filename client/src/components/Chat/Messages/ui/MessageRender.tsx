@@ -17,8 +17,6 @@ import store from '~/store';
 
 type MessageRenderProps = {
   message?: TMessage;
-  isCard?: boolean;
-  isMultiMessage?: boolean;
   isSubmitting?: boolean;
 } & Pick<
   TMessageProps,
@@ -28,12 +26,10 @@ type MessageRenderProps = {
 const MessageRender = memo(
   ({
     message: msg,
-    isCard = false,
     siblingIdx,
     siblingCount,
     setSiblingIdx,
     currentEditId,
-    isMultiMessage = false,
     setCurrentEditId,
     isSubmitting = false,
   }: MessageRenderProps) => {
@@ -55,7 +51,6 @@ const MessageRender = memo(
     } = useMessageActions({
       message: msg,
       currentEditId,
-      isMultiMessage,
       setCurrentEditId,
     });
     const fontSize = useAtomValue(fontSizeAtom);
@@ -120,7 +115,6 @@ const MessageRender = memo(
 
     const baseClasses = {
       common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu ',
-      card: 'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4',
       chat: getChatWidthClass(),
     };
 
@@ -134,7 +128,7 @@ const MessageRender = memo(
         aria-label={getMessageAriaLabel(msg, localize)}
         className={cn(
           baseClasses.common,
-          isCard ? baseClasses.card : baseClasses.chat,
+          baseClasses.chat,
           conditionalClasses.focus,
           'message-render',
         )}
@@ -186,7 +180,7 @@ const MessageRender = memo(
               </MessageContext.Provider>
             </div>
             {isLast && hasNoChildren && effectiveIsSubmitting ? (
-              <PlaceholderRow isCard={isCard} />
+              <PlaceholderRow />
             ) : (
               <SubRow classes="text-xs">
                 <SiblingSwitch
