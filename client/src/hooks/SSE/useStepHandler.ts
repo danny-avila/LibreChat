@@ -60,12 +60,10 @@ export default function useStepHandler({
   const toolCallIdMap = useRef(new Map<string, string | undefined>());
   const messageMap = useRef(new Map<string, TMessage>());
   const stepMap = useRef(new Map<string, Agents.RunStep>());
-  /** Maps content index -> agentId for parallel agent attribution */
-  const contentAgentMap = useRef(new Map<number, string>());
+  /** Maps content index -> { agentId, groupId } for parallel agent attribution */
+  const contentMetaMap = useRef(new Map<number, { agentId?: string; groupId?: number }>());
   /** Tracks if we're in parallel mode (multiple agents) - only true when addedConvo exists */
   const isParallelMode = useRef(false);
-  /** Tracks all unique agentIds seen in this request */
-  const seenAgentIds = useRef(new Set<string>());
 
   /**
    * Calculate content index for a run step.
@@ -215,10 +213,17 @@ export default function useStepHandler({
       };
     }
 
-    // Apply agentId to content part for parallel execution attribution
-    const agentId = contentAgentMap.current.get(index);
-    if (agentId && updatedContent[index] && isParallelMode.current) {
-      (updatedContent[index] as TMessageContentParts & { agentId?: string }).agentId = agentId;
+    // Apply agentId and groupId to content part for parallel execution attribution
+    const meta = contentMetaMap.current.get(index);
+    if (meta && updatedContent[index] && isParallelMode.current) {
+      if (meta.agentId) {
+        (updatedContent[index] as TMessageContentParts & { agentId?: string }).agentId =
+          meta.agentId;
+      }
+      if (meta.groupId != null) {
+        (updatedContent[index] as TMessageContentParts & { groupId?: number }).groupId =
+          meta.groupId;
+      }
     }
 
     return { ...message, content: updatedContent as TMessageContentParts[] };
@@ -263,14 +268,8 @@ export default function useStepHandler({
 
         stepMap.current.set(runStep.id, runStep);
 
-        // Track agentId for this content index
-        const { agentId } = runStep;
-
-        // Track all unique agentIds - parallel mode is only enabled via addedConvo,
-        // not just because the server sends agentId (which it does for single agents too)
-        if (agentId) {
-          seenAgentIds.current.add(agentId);
-        }
+        // Track agentId and groupId for this content index
+        const { agentId, groupId } = runStep as Agents.RunStep & { groupId?: number };
 
         // In parallel mode, server provides globally unique indices
         // In single-agent mode, offset by initialContent length
@@ -278,8 +277,9 @@ export default function useStepHandler({
           ? runStep.index
           : runStep.index + initialContent.length;
 
-        if (agentId) {
-          contentAgentMap.current.set(contentIndex, agentId);
+        // Store metadata for parallel execution attribution
+        if (agentId || groupId != null) {
+          contentMetaMap.current.set(contentIndex, { agentId, groupId });
         }
 
         let response = messageMap.current.get(responseMessageId);
@@ -548,8 +548,7 @@ export default function useStepHandler({
         toolCallIdMap.current.clear();
         messageMap.current.clear();
         stepMap.current.clear();
-        contentAgentMap.current.clear();
-        seenAgentIds.current.clear();
+        contentMetaMap.current.clear();
         isParallelMode.current = false;
       };
     },
@@ -560,8 +559,7 @@ export default function useStepHandler({
     toolCallIdMap.current.clear();
     messageMap.current.clear();
     stepMap.current.clear();
-    contentAgentMap.current.clear();
-    seenAgentIds.current.clear();
+    contentMetaMap.current.clear();
     isParallelMode.current = false;
   }, []);
 

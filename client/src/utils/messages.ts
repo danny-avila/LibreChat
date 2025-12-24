@@ -222,10 +222,15 @@ export const createDualMessageContent = (
     sender: primarySender,
   });
 
+  // Both agents run in parallel, so they share the same groupId
+  const parallelGroupId = 1;
+
+  // Use empty type - these are just placeholders to establish agentId/groupId
+  // The actual type will be set when real content arrives from the server
   const primaryContent = {
-    type: ContentTypes.TEXT as const,
-    [ContentTypes.TEXT]: '',
+    type: '' as const,
     agentId: primaryAgentId,
+    groupId: parallelGroupId,
   };
 
   // Added agent ID (with index: 1 suffix)
@@ -247,11 +252,14 @@ export const createDualMessageContent = (
     index: 1,
   });
 
+  // Use empty type - placeholder to establish agentId/groupId
   const addedContent = {
-    type: ContentTypes.TEXT as const,
-    [ContentTypes.TEXT]: '',
+    type: '' as const,
     agentId: addedAgentId,
+    groupId: parallelGroupId,
   };
 
-  return [primaryContent, addedContent] as TMessageContentParts[];
+  // Cast through unknown since these are placeholder objects with empty type
+  // that will be replaced by real content with proper types from the server
+  return [primaryContent, addedContent] as unknown as TMessageContentParts[];
 };

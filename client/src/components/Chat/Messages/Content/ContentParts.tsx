@@ -55,55 +55,100 @@ const ContentParts = memo(
 
     const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
+    type PartWithIndex = { part: TMessageContentParts; idx: number };
+    type ParallelSection = {
+      groupId: number;
+      columns: Array<{ agentId: string; parts: PartWithIndex[] }>;
+    };
+
     /**
-     * Partition content into columns by agentId for parallel agent rendering.
-     * Each unique agentId gets its own column, containing all that agent's content.
-     * Parts without agentId are rendered sequentially (non-parallel mode).
+     * Quick check: does any content part have a groupId?
+     * This is a fast O(n) scan with early exit - avoids expensive grouping logic 90% of the time.
      */
-    const { hasParallelContent, columns, sequentialParts } = useMemo(() => {
+    const hasParallelContent = useMemo(() => {
       if (!content) {
-        return { hasParallelContent: false, columns: [], sequentialParts: [] };
+        return false;
+      }
+      for (const part of content) {
+        if (part && (part as TMessageContentParts & { groupId?: number }).groupId != null) {
+          return true;
+        }
+      }
+      return false;
+    }, [content]);
+
+    /**
+     * Only compute parallel sections when we actually have parallel content.
+     * This expensive grouping logic is skipped for 90% of messages.
+     */
+    const { parallelSections, sequentialParts } = useMemo(() => {
+      if (!content || !hasParallelContent) {
+        // Fast path: no grouping needed, just wrap parts with indices
+        const parts: PartWithIndex[] = [];
+        if (content) {
+          content.forEach((part, idx) => {
+            if (part) {
+              parts.push({ part, idx });
+            }
+          });
+        }
+        return { parallelSections: [], sequentialParts: parts };
       }
 
-      // Collect parts by agentId (agent column)
-      const columnMap = new Map<string, Array<{ part: TMessageContentParts; idx: number }>>();
-      const sequential: Array<{ part: TMessageContentParts; idx: number }> = [];
-      // Track order agents appeared for consistent column ordering
-      const agentOrder: string[] = [];
+      // Slow path: group content by groupId for parallel rendering
+      const groupMap = new Map<number, PartWithIndex[]>();
+      const noGroup: PartWithIndex[] = [];
 
       content.forEach((part, idx) => {
         if (!part) {
           return;
         }
 
-        const partMeta = part as TMessageContentParts & { agentId?: string };
-        const agentId = partMeta.agentId;
+        const groupId = (part as TMessageContentParts & { groupId?: number }).groupId;
 
-        if (agentId) {
+        if (groupId != null) {
+          if (!groupMap.has(groupId)) {
+            groupMap.set(groupId, []);
+          }
+          groupMap.get(groupId)!.push({ part, idx });
+        } else {
+          noGroup.push({ part, idx });
+        }
+      });
+
+      // Build parallel sections with columns grouped by agentId
+      const sections: ParallelSection[] = [];
+      for (const [groupId, parts] of groupMap) {
+        const columnMap = new Map<string, PartWithIndex[]>();
+        const agentOrder: string[] = [];
+
+        for (const { part, idx } of parts) {
+          const agentId =
+            (part as TMessageContentParts & { agentId?: string }).agentId || 'unknown';
           if (!columnMap.has(agentId)) {
             columnMap.set(agentId, []);
             agentOrder.push(agentId);
           }
           columnMap.get(agentId)!.push({ part, idx });
-        } else {
-          sequential.push({ part, idx });
         }
+
+        const columns = agentOrder.map((agentId) => ({
+          agentId,
+          parts: columnMap.get(agentId)!,
+        }));
+
+        sections.push({ groupId, columns });
+      }
+
+      // Sort sections by the minimum index in each section
+      sections.sort((a, b) => {
+        const aMin = Math.min(...a.columns.flatMap((c) => c.parts.map((p) => p.idx)));
+        const bMin = Math.min(...b.columns.flatMap((c) => c.parts.map((p) => p.idx)));
+        return aMin - bMin;
       });
 
-      // Convert to sorted array of columns (maintain order agents appeared)
-      const sortedColumns = agentOrder.map((agentId) => ({
-        agentId,
-        parts: columnMap.get(agentId)!,
-      }));
-
-      return {
-        // Render in column mode if ANY parts have agentId (even if just one agent so far)
-        // This ensures streaming content displays while waiting for other agents
-        hasParallelContent: sortedColumns.length >= 1,
-        columns: sortedColumns,
-        sequentialParts: sequential,
-      };
-    }, [content]);
+      return { parallelSections: sections, sequentialParts: noGroup };
+    }, [content, hasParallelContent]);
 
     if (!content) {
       return null;
@@ -182,6 +227,28 @@ const ContentParts = memo(
       );
     };
 
+    // Split sequential parts into before/between/after parallel sections
+    const getSequentialSegments = () => {
+      if (!hasParallelContent || parallelSections.length === 0) {
+        return { before: sequentialParts, after: [] };
+      }
+
+      // Find boundary indices for parallel sections
+      const allParallelIndices = parallelSections.flatMap((s) =>
+        s.columns.flatMap((c) => c.parts.map((p) => p.idx)),
+      );
+      const minParallelIdx = Math.min(...allParallelIndices);
+      const maxParallelIdx = Math.max(...allParallelIndices);
+
+      return {
+        before: sequentialParts.filter(({ idx }) => idx < minParallelIdx),
+        after: sequentialParts.filter(({ idx }) => idx > maxParallelIdx),
+      };
+    };
+
+    const { before: sequentialBefore, after: sequentialAfter } = getSequentialSegments();
+    const lastContentIdx = content.length - 1;
+
     return (
       <>
         <SearchContext.Provider value={{ searchResults }}>
@@ -193,32 +260,53 @@ const ContentParts = memo(
             </Container>
           )}
           {hasParallelContent ? (
-            // Parallel mode: render columns side-by-side, each column contains all agent's content
-            <div
-              key={`parallel-columns-${messageId}`}
-              className={cn('flex w-full flex-col gap-3 md:flex-row', 'sibling-content-group')}
-            >
-              {columns.map(({ agentId, parts: columnParts }, colIdx) => {
-                return (
-                  <div
-                    key={`column-${messageId}-${agentId || colIdx}`}
-                    className="min-w-0 flex-1 rounded-lg border border-border-light p-3"
-                  >
-                    <SiblingHeader agentId={agentId} />
-                    {columnParts.map(({ part, idx }) => {
-                      const isLastInColumn = idx === columnParts[columnParts.length - 1]?.idx;
-                      const isLastContent = idx === content.length - 1;
-                      return renderPart(part, idx, isLastInColumn && isLastContent);
-                    })}
-                  </div>
-                );
-              })}
-            </div>
+            <>
+              {/* Sequential content BEFORE parallel sections */}
+              {sequentialBefore.map(({ part, idx }) => renderPart(part, idx, false))}
+
+              {/* Parallel sections - each group renders as columns */}
+              {parallelSections.map(({ groupId, columns }) => (
+                <div
+                  key={`parallel-group-${messageId}-${groupId}`}
+                  className={cn('flex w-full flex-col gap-3 md:flex-row', 'sibling-content-group')}
+                >
+                  {columns.map(({ agentId, parts: columnParts }, colIdx) => {
+                    // Check if first part is an empty-type placeholder (will be replaced by real content)
+                    const firstPart = columnParts[0]?.part;
+                    const showPlaceholderCursor =
+                      effectiveIsSubmitting && firstPart && !firstPart.type;
+
+                    return (
+                      <div
+                        key={`column-${messageId}-${groupId}-${agentId || colIdx}`}
+                        className="min-w-0 flex-1 rounded-lg border border-border-light p-3"
+                      >
+                        <SiblingHeader agentId={agentId} />
+                        {showPlaceholderCursor ? (
+                          <Container>
+                            <EmptyText />
+                          </Container>
+                        ) : (
+                          columnParts.map(({ part, idx }) => {
+                            const isLastInColumn = idx === columnParts[columnParts.length - 1]?.idx;
+                            const isLastContent = idx === lastContentIdx;
+                            return renderPart(part, idx, isLastInColumn && isLastContent);
+                          })
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+
+              {/* Sequential content AFTER parallel sections */}
+              {sequentialAfter.map(({ part, idx }) =>
+                renderPart(part, idx, idx === lastContentIdx),
+              )}
+            </>
           ) : (
             // Sequential mode: render parts normally (non-parallel)
-            sequentialParts.map(({ part, idx }) =>
-              renderPart(part, idx, idx === content.length - 1),
-            )
+            sequentialParts.map(({ part, idx }) => renderPart(part, idx, idx === lastContentIdx))
           )}
         </SearchContext.Provider>
       </>
