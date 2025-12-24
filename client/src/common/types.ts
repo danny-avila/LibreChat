@@ -1,5 +1,5 @@
 import { RefObject } from 'react';
-import { Constants, FileSources, EModelEndpoint } from 'librechat-data-provider';
+import { FileSources, EModelEndpoint, isEphemeralAgentId } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type * as InputNumberPrimitive from 'rc-input-number';
 import type { SetterOrUpdater, RecoilState } from 'recoil';
@@ -10,12 +10,7 @@ import type { TranslationKeys } from '~/hooks';
 import { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 
 export function isEphemeralAgent(agentId: string | null | undefined): boolean {
-  return (
-    agentId == null ||
-    agentId === '' ||
-    agentId === Constants.EPHEMERAL_AGENT_ID ||
-    !agentId.startsWith('agent_')
-  );
+  return isEphemeralAgentId(agentId);
 }
 
 export interface ConfigFieldDetail {

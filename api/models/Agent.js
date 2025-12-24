@@ -9,9 +9,10 @@ const {
   actionDelimiter,
   isAgentsEndpoint,
   getResponseSender,
+  isEphemeralAgentId,
   encodeEphemeralAgentId,
 } = require('librechat-data-provider');
-const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_all, mcp_delimiter } =
+const { GLOBAL_PROJECT_NAME, mcp_all, mcp_delimiter } =
   require('librechat-data-provider').Constants;
 const {
   removeAgentFromAllProjects,
@@ -198,7 +199,7 @@ const loadAgent = async ({ req, spec, agent_id, endpoint, model_parameters }) =>
   if (!agent_id) {
     return null;
   }
-  if (agent_id === EPHEMERAL_AGENT_ID) {
+  if (isEphemeralAgentId(agent_id)) {
     return await loadEphemeralAgent({ req, spec, _agent_id: agent_id, endpoint, model_parameters });
   }
   const agent = await getAgent({
