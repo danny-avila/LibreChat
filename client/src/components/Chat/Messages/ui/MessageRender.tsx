@@ -179,7 +179,7 @@ const MessageRender = memo(
                 />
               </MessageContext.Provider>
             </div>
-            {isLast && hasNoChildren && effectiveIsSubmitting ? (
+            {hasNoChildren && effectiveIsSubmitting ? (
               <PlaceholderRow />
             ) : (
               <SubRow classes="text-xs">

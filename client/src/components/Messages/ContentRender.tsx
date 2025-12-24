@@ -195,7 +195,7 @@ const ContentRender = memo(
                 content={msg.content as Array<TMessageContentParts | undefined>}
               />
             </div>
-            {isLast && hasNoChildren && effectiveIsSubmitting ? (
+            {hasNoChildren && effectiveIsSubmitting ? (
               <PlaceholderRow />
             ) : (
               <SubRow classes="text-xs">
