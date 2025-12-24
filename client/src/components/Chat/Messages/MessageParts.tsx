@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TMessageContentParts, TContentMetadata } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import { useMessageHelpers, useLocalize, useAttachments } from '~/hooks';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
@@ -75,8 +75,28 @@ export default function Message(props: TMessageProps) {
     ],
   );
 
-  // Check if message has parallel content (groupId) - if so, hide outer label since columns have their own headers
+  // Get contentMetadataMap from message for parallel content rendering
+  const contentMetadataMap = useMemo((): Map<number, TContentMetadata> | undefined => {
+    const metadataObj = message?.contentMetadataMap;
+    if (!metadataObj) {
+      return undefined;
+    }
+    // Convert plain object to Map for efficient lookup
+    return new Map(Object.entries(metadataObj).map(([key, value]) => [parseInt(key, 10), value]));
+  }, [message]);
+
+  // Check if message has parallel content - use contentMetadataMap (O(1)) when available
   const hasParallelContent = useMemo(() => {
+    // Fast path: check contentMetadataMap first
+    if (contentMetadataMap && contentMetadataMap.size > 0) {
+      for (const meta of contentMetadataMap.values()) {
+        if (meta.groupId != null) {
+          return true;
+        }
+      }
+      return false;
+    }
+    // Legacy fallback: scan content parts for embedded groupId
     const content = message?.content;
     if (!content || !Array.isArray(content)) {
       return false;
@@ -87,7 +107,7 @@ export default function Message(props: TMessageProps) {
       }
     }
     return false;
-  }, [message?.content]);
+  }, [message?.content, contentMetadataMap]);
 
   if (!message) {
     return null;
@@ -152,6 +172,7 @@ export default function Message(props: TMessageProps) {
                     searchResults={searchResults}
                     messageId={message.messageId}
                     setSiblingIdx={setSiblingIdx}
+                    contentMetadataMap={contentMetadataMap}
                     isCreatedByUser={message.isCreatedByUser}
                     conversationId={conversation?.conversationId}
                     isLatestMessage={messageId === latestMessage?.messageId}

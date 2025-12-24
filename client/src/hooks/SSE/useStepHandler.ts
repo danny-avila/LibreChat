@@ -62,13 +62,10 @@ export default function useStepHandler({
   const stepMap = useRef(new Map<string, Agents.RunStep>());
   /** Maps content index -> { agentId, groupId } for parallel agent attribution */
   const contentMetaMap = useRef(new Map<number, { agentId?: string; groupId?: number }>());
-  /** Tracks if we're in parallel mode (multiple agents) - only true when addedConvo exists */
-  const isParallelMode = useRef(false);
 
   /**
    * Calculate content index for a run step.
-   * In parallel mode, the server already assigns globally unique indices.
-   * In single-agent mode, we offset by initialContent length.
+   * For edited content scenarios, offset by initialContent length.
    */
   const calculateContentIndex = useCallback(
     (
@@ -77,11 +74,6 @@ export default function useStepHandler({
       incomingContentType: string,
       existingContent?: TMessageContentParts[],
     ): number => {
-      // In parallel mode, server provides globally unique indices - use directly
-      if (isParallelMode.current) {
-        return serverIndex;
-      }
-
       /** Only apply -1 adjustment for TEXT or THINK types when they match existing content */
       if (
         initialContent.length > 0 &&
@@ -213,19 +205,6 @@ export default function useStepHandler({
       };
     }
 
-    // Apply agentId and groupId to content part for parallel execution attribution
-    const meta = contentMetaMap.current.get(index);
-    if (meta && updatedContent[index] && isParallelMode.current) {
-      if (meta.agentId) {
-        (updatedContent[index] as TMessageContentParts & { agentId?: string }).agentId =
-          meta.agentId;
-      }
-      if (meta.groupId != null) {
-        (updatedContent[index] as TMessageContentParts & { groupId?: number }).groupId =
-          meta.groupId;
-      }
-    }
-
     return { ...message, content: updatedContent as TMessageContentParts[] };
   };
 
@@ -247,13 +226,6 @@ export default function useStepHandler({
         initialContent = submission?.initialResponse?.content ?? initialContent;
       }
 
-      // For addedConvo, enable parallel mode
-      // The server provides globally unique indices and agentId with each step
-      const hasAddedConvo = submission?.addedConvo != null;
-      if (hasAddedConvo) {
-        isParallelMode.current = true;
-      }
-
       if (event === 'on_run_step') {
         const runStep = data as Agents.RunStep;
         let responseMessageId = runStep.runId ?? '';
@@ -268,14 +240,11 @@ export default function useStepHandler({
 
         stepMap.current.set(runStep.id, runStep);
 
-        // Track agentId and groupId for this content index
+        // Track agentId and groupId for this content index (mirrors backend createContentAggregator)
         const { agentId, groupId } = runStep as Agents.RunStep & { groupId?: number };
 
-        // In parallel mode, server provides globally unique indices
-        // In single-agent mode, offset by initialContent length
-        const contentIndex = isParallelMode.current
-          ? runStep.index
-          : runStep.index + initialContent.length;
+        // Calculate content index - use server index, offset by initialContent for edit scenarios
+        const contentIndex = runStep.index + initialContent.length;
 
         // Store metadata for parallel execution attribution
         if (agentId || groupId != null) {
@@ -298,7 +267,9 @@ export default function useStepHandler({
           // updateContent will overwrite agentIds with correct values from server's contentAgentMap
           const existingContent = responseMessage?.content ?? [];
           let mergedContent: TMessageContentParts[] = existingContent;
-          if (initialContent.length > 0 && !isParallelMode.current) {
+          // Use initialContent only for non-parallel single-agent scenarios
+          const hasParallelContent = contentMetaMap.current.size > 0;
+          if (initialContent.length > 0 && !hasParallelContent) {
             mergedContent = initialContent;
           }
 
@@ -408,7 +379,15 @@ export default function useStepHandler({
             contentPart.type || '',
             response.content,
           );
-          const updatedResponse = updateContent(response, currentIndex, contentPart);
+          let updatedResponse = updateContent(response, currentIndex, contentPart);
+
+          // Add contentMetadataMap to message for O(1) parallel content detection
+          if (contentMetaMap.current.size > 0) {
+            updatedResponse = {
+              ...updatedResponse,
+              contentMetadataMap: Object.fromEntries(contentMetaMap.current),
+            };
+          }
 
           messageMap.current.set(responseMessageId, updatedResponse);
           const currentMessages = getMessages() || [];
@@ -444,7 +423,15 @@ export default function useStepHandler({
             contentPart.type || '',
             response.content,
           );
-          const updatedResponse = updateContent(response, currentIndex, contentPart);
+          let updatedResponse = updateContent(response, currentIndex, contentPart);
+
+          // Add contentMetadataMap to message for O(1) parallel content detection
+          if (contentMetaMap.current.size > 0) {
+            updatedResponse = {
+              ...updatedResponse,
+              contentMetadataMap: Object.fromEntries(contentMetaMap.current),
+            };
+          }
 
           messageMap.current.set(responseMessageId, updatedResponse);
           const currentMessages = getMessages() || [];
@@ -489,10 +476,8 @@ export default function useStepHandler({
               contentPart.tool_call.expires_at = runStepDelta.delta.expires_at;
             }
 
-            // In parallel mode, use server's index directly; otherwise offset by initialContent
-            const currentIndex = isParallelMode.current
-              ? runStep.index
-              : runStep.index + initialContent.length;
+            // Use server's index, offset by initialContent for edit scenarios
+            const currentIndex = runStep.index + initialContent.length;
             updatedResponse = updateContent(updatedResponse, currentIndex, contentPart);
           });
 
@@ -529,10 +514,8 @@ export default function useStepHandler({
             tool_call: result.tool_call,
           };
 
-          // In parallel mode, use server's index directly; otherwise offset by initialContent
-          const currentIndex = isParallelMode.current
-            ? runStep.index
-            : runStep.index + initialContent.length;
+          // Use server's index, offset by initialContent for edit scenarios
+          const currentIndex = runStep.index + initialContent.length;
           updatedResponse = updateContent(updatedResponse, currentIndex, contentPart, true);
 
           messageMap.current.set(responseMessageId, updatedResponse);
@@ -549,7 +532,6 @@ export default function useStepHandler({
         messageMap.current.clear();
         stepMap.current.clear();
         contentMetaMap.current.clear();
-        isParallelMode.current = false;
       };
     },
     [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages, calculateContentIndex],
@@ -560,7 +542,6 @@ export default function useStepHandler({
     messageMap.current.clear();
     stepMap.current.clear();
     contentMetaMap.current.clear();
-    isParallelMode.current = false;
   }, []);
 
   /**

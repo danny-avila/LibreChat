@@ -171,6 +171,7 @@ class AgentClient extends BaseClient {
       contentParts,
       collectedUsage,
       artifactPromises,
+      contentMetadataMap,
       maxContextTokens,
       ...clientOptions
     } = options;
@@ -183,6 +184,8 @@ class AgentClient extends BaseClient {
     this.collectedUsage = collectedUsage;
     /** @type {ArtifactPromises} */
     this.artifactPromises = artifactPromises;
+    /** @type {Map<number, { agentId?: string; groupId?: number }>} */
+    this.contentMetadataMap = contentMetadataMap;
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
     /** @type {string} */
@@ -691,7 +694,21 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
-    const metadata = this.agentIdMap ? { agentIdMap: this.agentIdMap } : undefined;
+
+    // Build metadata object with contentMetadataMap for parallel content rendering
+    let metadata;
+    if (this.contentMetadataMap && this.contentMetadataMap.size > 0) {
+      // Convert Map to plain object for JSON serialization
+      const contentMetadataObj = Object.fromEntries(this.contentMetadataMap);
+      metadata = { contentMetadataMap: contentMetadataObj };
+
+      // Also include legacy agentIdMap for backwards compatibility
+      if (this.agentIdMap) {
+        metadata.agentIdMap = this.agentIdMap;
+      }
+    } else if (this.agentIdMap) {
+      metadata = { agentIdMap: this.agentIdMap };
+    }
 
     return { completion, metadata };
   }

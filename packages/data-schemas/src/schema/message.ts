@@ -106,6 +106,12 @@ const messageSchema: Schema<IMessage> = new Schema(
       default: undefined,
       meiliIndex: true,
     },
+    /**
+     * Metadata map for parallel content rendering.
+     * Key is content part index (as string), value contains agentId and/or groupId.
+     * Present only for multi-agent or parallel execution scenarios.
+     */
+    contentMetadataMap: { type: mongoose.Schema.Types.Mixed, default: undefined },
     thread_id: {
       type: String,
     },

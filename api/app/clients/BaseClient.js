@@ -702,6 +702,8 @@ class BaseClient {
       this.abortController.requestCompleted = true;
     }
 
+    const { contentMetadataMap, ...restMetadata } = metadata ?? {};
+
     /** @type {TMessage} */
     const responseMessage = {
       messageId: responseMessageId,
@@ -715,7 +717,8 @@ class BaseClient {
       iconURL: this.options.iconURL,
       endpoint: this.options.endpoint,
       ...(this.metadata ?? {}),
-      metadata,
+      metadata: Object.keys(restMetadata).length > 0 ? restMetadata : undefined,
+      contentMetadataMap,
     };
 
     if (typeof completion === 'string') {

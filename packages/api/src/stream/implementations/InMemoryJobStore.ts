@@ -9,6 +9,7 @@ import type { IJobStore, SerializableJobData, JobStatus } from '~/stream/interfa
  */
 interface ContentState {
   contentParts: Agents.MessageContentComplex[];
+  contentMetadataMap?: Map<number, { agentId?: string; groupId?: number }>;
   graphRef: WeakRef<StandardGraph> | null;
 }
 
@@ -247,12 +248,19 @@ export class InMemoryJobStore implements IJobStore {
   /**
    * Set content parts reference for a job.
    */
-  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void {
+  setContentParts(
+    streamId: string,
+    contentParts: Agents.MessageContentComplex[],
+    contentMetadataMap?: Map<number, { agentId?: string; groupId?: number }>,
+  ): void {
     const existing = this.contentState.get(streamId);
     if (existing) {
       existing.contentParts = contentParts;
+      if (contentMetadataMap) {
+        existing.contentMetadataMap = contentMetadataMap;
+      }
     } else {
-      this.contentState.set(streamId, { contentParts, graphRef: null });
+      this.contentState.set(streamId, { contentParts, contentMetadataMap, graphRef: null });
     }
   }
 
@@ -260,8 +268,21 @@ export class InMemoryJobStore implements IJobStore {
    * Get content parts for a job.
    * Returns live content from stored reference.
    */
-  async getContentParts(streamId: string): Promise<Agents.MessageContentComplex[] | null> {
-    return this.contentState.get(streamId)?.contentParts ?? null;
+  async getContentParts(streamId: string): Promise<{
+    content: Agents.MessageContentComplex[];
+    contentMetadataMap?: Record<number, { agentId?: string; groupId?: number }>;
+  } | null> {
+    const state = this.contentState.get(streamId);
+    if (!state?.contentParts) {
+      return null;
+    }
+    return {
+      content: state.contentParts,
+      contentMetadataMap:
+        state.contentMetadataMap && state.contentMetadataMap.size > 0
+          ? Object.fromEntries(state.contentMetadataMap)
+          : undefined,
+    };
   }
 
   /**

@@ -193,6 +193,8 @@ export namespace Agents {
     runSteps: RunStep[];
     /** Aggregated content parts - can be MessageContentComplex[] or ContentPart[] */
     aggregatedContent?: MessageContentComplex[];
+    /** Metadata map for parallel content (agentId, groupId by content index) */
+    contentMetadataMap?: Record<number, { agentId?: string; groupId?: number }>;
     userMessage?: UserMessageMeta;
     responseMessageId?: string;
     conversationId?: string;

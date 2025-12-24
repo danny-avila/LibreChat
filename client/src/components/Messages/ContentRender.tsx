@@ -94,8 +94,28 @@ const ContentRender = memo(
       ],
     );
 
-    // Check if message has parallel content (groupId) - if so, hide outer label since columns have their own headers
+    // Get contentMetadataMap from message for parallel content rendering
+    const contentMetadataMap = useMemo(() => {
+      const metadataObj = msg?.contentMetadataMap;
+      if (!metadataObj) {
+        return undefined;
+      }
+      // Convert plain object to Map for efficient lookup
+      return new Map(Object.entries(metadataObj).map(([key, value]) => [parseInt(key, 10), value]));
+    }, [msg]);
+
+    // Check if message has parallel content - use contentMetadataMap (O(1)) when available
     const hasParallelContent = useMemo(() => {
+      // Fast path: check contentMetadataMap first
+      if (contentMetadataMap && contentMetadataMap.size > 0) {
+        for (const meta of contentMetadataMap.values()) {
+          if (meta.groupId != null) {
+            return true;
+          }
+        }
+        return false;
+      }
+      // Legacy fallback: scan content parts for embedded groupId
       const content = msg?.content;
       if (!content || !Array.isArray(content)) {
         return false;
@@ -106,7 +126,7 @@ const ContentRender = memo(
         }
       }
       return false;
-    }, [msg?.content]);
+    }, [msg?.content, contentMetadataMap]);
 
     if (!msg) {
       return null;
@@ -174,6 +194,7 @@ const ContentRender = memo(
                 searchResults={searchResults}
                 setSiblingIdx={setSiblingIdx}
                 isLatestMessage={isLatestMessage}
+                contentMetadataMap={contentMetadataMap}
                 isSubmitting={effectiveIsSubmitting}
                 isCreatedByUser={msg.isCreatedByUser}
                 conversationId={conversation?.conversationId}
@@ -191,8 +212,8 @@ const ContentRender = memo(
                 />
                 <HoverButtons
                   index={index}
-                  isEditing={edit}
                   message={msg}
+                  isEditing={edit}
                   enterEdit={enterEdit}
                   isSubmitting={isSubmitting}
                   conversation={conversation ?? null}

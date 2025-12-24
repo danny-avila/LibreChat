@@ -35,6 +35,11 @@ export interface IMessage extends Document {
   };
   plugins?: unknown[];
   content?: unknown[];
+  /**
+   * Metadata map for parallel content rendering.
+   * Key is content part index (as string), value contains agentId and/or groupId.
+   */
+  contentMetadataMap?: Record<string, { agentId?: string; groupId?: number }>;
   thread_id?: string;
   iconURL?: string;
   metadata?: Record<string, unknown>;
