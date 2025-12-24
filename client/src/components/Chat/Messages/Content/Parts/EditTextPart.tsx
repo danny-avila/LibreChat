@@ -9,6 +9,7 @@ import type { Agents } from 'librechat-data-provider';
 import type { TEditProps } from '~/common';
 import { useMessagesOperations, useMessagesConversation } from '~/Providers';
 import Container from '~/components/Chat/Messages/Content/Container';
+import { useGetAddedConvo } from '~/hooks/Chat';
 import { cn, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -35,6 +36,8 @@ const EditTextPart = ({
   );
 
   const chatDirection = useRecoilValue(store.chatDirection);
+
+  const getAddedConvo = useGetAddedConvo();
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const updateMessageContentMutation = useUpdateMessageContentMutation(conversationId ?? '');
@@ -83,6 +86,7 @@ const EditTextPart = ({
         editedMessageId: messageId,
         isRegenerate: true,
         isEdited: true,
+        addedConvo: getAddedConvo() || undefined,
       },
     );
 

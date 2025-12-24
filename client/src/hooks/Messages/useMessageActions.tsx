@@ -1,24 +1,20 @@
-import { useRecoilValue } from 'recoil';
 import { useCallback, useMemo, useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import { useUpdateFeedbackMutation } from 'librechat-data-provider/react-query';
 import {
-  isAssistantsEndpoint,
-  isAgentsEndpoint,
-  TUpdateFeedbackRequest,
-  getTagByKey,
   TFeedback,
-  toMinimalFeedback,
+  getTagByKey,
+  isAgentsEndpoint,
   SearchResultData,
+  toMinimalFeedback,
+  isAssistantsEndpoint,
+  TUpdateFeedbackRequest,
 } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
-import {
-  useChatContext,
-  useAddedChatContext,
-  useAssistantsMapContext,
-  useAgentsMapContext,
-} from '~/Providers';
+import { useChatContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useCopyToClipboard from './useCopyToClipboard';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -45,10 +41,13 @@ export default function useMessageActions(props: TMessageActions) {
     handleContinue,
     conversation: rootConvo,
   } = useChatContext();
-  const { conversation: addedConvo } = useAddedChatContext();
+
+  const getAddedConvo = useGetAddedConvo();
+
   const conversation = useMemo(
-    () => (isMultiMessage === true ? addedConvo : rootConvo),
-    [isMultiMessage, addedConvo, rootConvo],
+    () => (isMultiMessage === true ? getAddedConvo() : rootConvo),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isMultiMessage, rootConvo],
   );
 
   const agentsMap = useAgentsMapContext();
@@ -110,8 +109,8 @@ export default function useMessageActions(props: TMessageActions) {
       return;
     }
 
-    regenerate(message);
-  }, [isSubmitting, isCreatedByUser, message, regenerate]);
+    regenerate(message, { addedConvo: getAddedConvo() });
+  }, [isSubmitting, isCreatedByUser, message, regenerate, getAddedConvo]);
 
   const copyToClipboard = useCopyToClipboard({ text, content, searchResults });
 

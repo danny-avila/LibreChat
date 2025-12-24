@@ -2,6 +2,7 @@ import { v4 } from 'uuid';
 import { cloneDeep } from 'lodash';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
 import {
   Constants,
   QueryKeys,
@@ -13,7 +14,6 @@ import {
   replaceSpecialVars,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
 import type {
   TMessage,
   TSubmission,
@@ -339,12 +339,15 @@ export default function useChatFunctions({
     logger.dir('message_stream', submission, { depth: null });
   };
 
-  const regenerate = ({ parentMessageId }) => {
+  const regenerate = ({ parentMessageId }, options?: { addedConvo?: TConversation | null }) => {
     const messages = getMessages();
     const parentMessage = messages?.find((element) => element.messageId == parentMessageId);
 
     if (parentMessage && parentMessage.isCreatedByUser) {
-      ask({ ...parentMessage }, { isRegenerate: true });
+      ask(
+        { ...parentMessage },
+        { isRegenerate: true, addedConvo: options?.addedConvo ?? undefined },
+      );
     } else {
       console.error(
         'Failed to regenerate the message: parentMessage not found or not created by user.',
