@@ -33,13 +33,13 @@ export default function createPayload(submission: t.TSubmission) {
     ...userMessage,
     ...endpointOption,
     endpoint,
+    addedConvo,
     isTemporary,
     isRegenerate,
     editedContent,
     conversationId,
     isContinued: !!(isEdited && isContinued),
     ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
-    addedConvo,
   };
 
   return { server, payload };
