@@ -1,8 +1,10 @@
 import {
-  ContentTypes,
   QueryKeys,
   Constants,
+  ContentTypes,
   getResponseSender,
+  isEphemeralAgentId,
+  appendAgentIdSuffix,
   encodeEphemeralAgentId,
 } from 'librechat-data-provider';
 import type {
@@ -204,18 +206,21 @@ export const createDualMessageContent = (
   addedConvo: TConversation,
   endpointsConfig?: TEndpointsConfig,
 ): TMessageContentParts[] => {
-  // For real agents, use agent_id directly; otherwise create ephemeral ID
+  // For real agents (agent_id starts with "agent_"), use agent_id directly
+  // Otherwise create ephemeral ID from endpoint/model
   let primaryAgentId: string;
-  if (primaryConvo.agent_id) {
+  if (primaryConvo.agent_id && !isEphemeralAgentId(primaryConvo.agent_id)) {
     primaryAgentId = primaryConvo.agent_id;
   } else {
-    const primaryEndpoint = primaryConvo.endpoint ?? '';
+    const primaryEndpoint = primaryConvo.endpoint;
     const primaryModel = primaryConvo.model ?? '';
     const primarySender = getResponseSender({
-      modelDisplayLabel: endpointsConfig?.[primaryEndpoint]?.modelDisplayLabel,
+      modelDisplayLabel: primaryEndpoint
+        ? endpointsConfig?.[primaryEndpoint]?.modelDisplayLabel
+        : undefined,
     });
     primaryAgentId = encodeEphemeralAgentId({
-      endpoint: primaryEndpoint,
+      endpoint: primaryEndpoint ?? '',
       model: primaryModel,
       sender: primarySender,
     });
@@ -232,19 +237,18 @@ export const createDualMessageContent = (
     groupId: parallelGroupId,
   };
 
-  // For added agent, use agent_id if available; otherwise create ephemeral ID with index
+  // For added agent, use agent_id if it's a real agent (starts with "agent_")
+  // Otherwise create ephemeral ID with index suffix
+  // Always append index suffix for added agent to distinguish from primary (even if same agent_id)
   let addedAgentId: string;
-  if (addedConvo.agent_id) {
-    addedAgentId = addedConvo.agent_id;
+  if (addedConvo.agent_id && !isEphemeralAgentId(addedConvo.agent_id)) {
+    // Append suffix to distinguish from primary agent (matches ephemeral format)
+    addedAgentId = appendAgentIdSuffix(addedConvo.agent_id, 1);
   } else {
     const addedEndpoint = addedConvo.endpoint;
     const addedModel = addedConvo.model ?? '';
-    const addedEndpointType = addedConvo.endpointType;
     const addedSender = addedEndpoint
       ? getResponseSender({
-          model: addedModel,
-          endpoint: addedEndpoint,
-          endpointType: addedEndpointType,
           modelDisplayLabel: endpointsConfig?.[addedEndpoint]?.modelDisplayLabel,
         })
       : '';

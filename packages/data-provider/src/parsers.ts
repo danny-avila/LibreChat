@@ -526,3 +526,28 @@ export function parseEphemeralAgentId(agentId: string): ParsedEphemeralAgentId |
 export function isEphemeralAgentId(agentId: string | null | undefined): boolean {
   return !agentId?.startsWith('agent_');
 }
+
+/**
+ * Strips the index suffix (____N) from an agent ID if present.
+ * Works with both ephemeral and real agent IDs.
+ *
+ * @example
+ * stripAgentIdSuffix('agent_abc123____1') // => 'agent_abc123'
+ * stripAgentIdSuffix('openAI__gpt-4o___GPT-4o____1') // => 'openAI__gpt-4o___GPT-4o'
+ * stripAgentIdSuffix('agent_abc123') // => 'agent_abc123' (unchanged)
+ */
+export function stripAgentIdSuffix(agentId: string): string {
+  return agentId.replace(/____\d+$/, '');
+}
+
+/**
+ * Appends an index suffix (____N) to an agent ID.
+ * Used to distinguish parallel agents with the same base ID.
+ *
+ * @example
+ * appendAgentIdSuffix('agent_abc123', 1) // => 'agent_abc123____1'
+ * appendAgentIdSuffix('openAI__gpt-4o___GPT-4o', 1) // => 'openAI__gpt-4o___GPT-4o____1'
+ */
+export function appendAgentIdSuffix(agentId: string, index: number): string {
+  return `${agentId}____${index}`;
+}

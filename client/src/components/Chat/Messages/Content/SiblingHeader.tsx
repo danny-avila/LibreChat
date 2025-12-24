@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { EModelEndpoint, parseEphemeralAgentId } from 'librechat-data-provider';
+import { EModelEndpoint, parseEphemeralAgentId, stripAgentIdSuffix } from 'librechat-data-provider';
 import type { TMessage, Agent } from 'librechat-data-provider';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { useAgentsMapContext } from '~/Providers';
@@ -19,7 +19,10 @@ export default function SiblingHeader({ agentId }: SiblingHeaderProps) {
   const { displayName, displayEndpoint, displayModel, agent } = useMemo(() => {
     // First, try to look up as a real agent
     if (agentId) {
-      const foundAgent = agentsMap?.[agentId] as Agent | undefined;
+      // Strip ____N suffix if present (used to distinguish parallel agents with same ID)
+      const baseAgentId = stripAgentIdSuffix(agentId);
+
+      const foundAgent = agentsMap?.[baseAgentId] as Agent | undefined;
       if (foundAgent) {
         return {
           displayName: foundAgent.name,
@@ -42,7 +45,7 @@ export default function SiblingHeader({ agentId }: SiblingHeaderProps) {
 
       // agentId exists but couldn't be parsed as ephemeral - use it as-is for display
       return {
-        displayName: agentId,
+        displayName: baseAgentId,
         displayEndpoint: EModelEndpoint.agents,
         displayModel: undefined,
         agent: undefined,

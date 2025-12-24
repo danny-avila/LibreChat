@@ -6,6 +6,7 @@ const {
   isAgentsEndpoint,
   getResponseSender,
   isEphemeralAgentId,
+  appendAgentIdSuffix,
   encodeEphemeralAgentId,
 } = require('librechat-data-provider');
 const { mcp_all, mcp_delimiter, EPHEMERAL_AGENT_ID } = Constants;
@@ -62,6 +63,9 @@ const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
     }
 
     agent.version = agent.versions ? agent.versions.length : 0;
+    // Append suffix to distinguish from primary agent (matches ephemeral format)
+    // This is needed when both agents have the same ID or for consistent parallel content attribution
+    agent.id = appendAgentIdSuffix(agent.id, 1);
     return agent;
   }
 
