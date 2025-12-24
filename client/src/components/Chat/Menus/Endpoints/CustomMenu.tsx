@@ -82,7 +82,7 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
                     className={cn(
                       'peer flex h-10 w-full items-center justify-center rounded-lg border-none bg-transparent px-2 text-base',
                       'sm:h-8 sm:text-sm',
-                      'focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-border-xheavy',
+                      'focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-primary',
                     )}
                   />
                   {comboboxLabel && (

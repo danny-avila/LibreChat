@@ -58,7 +58,7 @@ const SettingsButton = ({
         'text-text-secondary transition-colors duration-150',
         'hover:bg-surface-tertiary hover:text-text-primary',
         'focus-visible:bg-surface-tertiary focus-visible:text-text-primary',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy focus-visible:ring-offset-1',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
         className,
       )}
       aria-label={`${text} ${endpoint.label}`}
