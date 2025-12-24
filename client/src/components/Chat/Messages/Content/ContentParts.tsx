@@ -120,19 +120,31 @@ const ContentParts = memo(
       const sections: ParallelSection[] = [];
       for (const [groupId, parts] of groupMap) {
         const columnMap = new Map<string, PartWithIndex[]>();
-        const agentOrder: string[] = [];
 
         for (const { part, idx } of parts) {
           const agentId =
             (part as TMessageContentParts & { agentId?: string }).agentId || 'unknown';
           if (!columnMap.has(agentId)) {
             columnMap.set(agentId, []);
-            agentOrder.push(agentId);
           }
           columnMap.get(agentId)!.push({ part, idx });
         }
 
-        const columns = agentOrder.map((agentId) => ({
+        // Sort columns: primary agent (no ____N suffix) first, added agents (with suffix) second
+        // This ensures consistent column ordering regardless of which agent responds first
+        const sortedAgentIds = Array.from(columnMap.keys()).sort((a, b) => {
+          const aHasSuffix = a.includes('____');
+          const bHasSuffix = b.includes('____');
+          if (aHasSuffix && !bHasSuffix) {
+            return 1;
+          } // a has suffix, b doesn't → b first
+          if (!aHasSuffix && bHasSuffix) {
+            return -1;
+          } // a doesn't have suffix, b does → a first
+          return 0; // both have or both don't have suffix → keep original order
+        });
+
+        const columns = sortedAgentIds.map((agentId) => ({
           agentId,
           parts: columnMap.get(agentId)!,
         }));
