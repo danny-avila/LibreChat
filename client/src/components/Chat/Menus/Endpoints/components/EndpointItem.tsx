@@ -213,7 +213,7 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
               side="top"
               render={
                 <span className="flex items-center">
-                  <MousePointerClick className="size-4 text-text-tertiary" aria-hidden="true" />
+                  <MousePointerClick className="size-4 text-text-secondary" aria-hidden="true" />
                 </span>
               }
             />
