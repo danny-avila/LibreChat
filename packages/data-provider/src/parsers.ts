@@ -197,7 +197,7 @@ const extractOmniVersion = (modelStr: string): string => {
   return '';
 };
 
-export const getResponseSender = (endpointOption: t.TEndpointOption): string => {
+export const getResponseSender = (endpointOption: Partial<t.TEndpointOption>): string => {
   const {
     model: _m,
     endpoint: _e,

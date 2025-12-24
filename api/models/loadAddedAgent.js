@@ -88,8 +88,6 @@ const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
     }
 
     const sender = getResponseSender({
-      endpoint,
-      model,
       modelLabel: rest.modelLabel,
       modelDisplayLabel: endpointConfig?.modelDisplayLabel,
     });
@@ -185,8 +183,6 @@ const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
 
   // Compute display name using getResponseSender (same logic used for main agent)
   const sender = getResponseSender({
-    endpoint,
-    model,
     modelLabel: rest.modelLabel,
     modelDisplayLabel: endpointConfig?.modelDisplayLabel,
   });

@@ -205,17 +205,11 @@ export const createDualMessageContent = (
   endpointsConfig?: TEndpointsConfig,
 ): TMessageContentParts[] => {
   // Primary agent ID (no index suffix)
-  const primaryEndpoint = primaryConvo.endpoint;
+  const primaryEndpoint = primaryConvo.endpoint ?? '';
   const primaryModel = primaryConvo.model ?? '';
-  const primaryEndpointType = primaryConvo.endpointType;
-  const primarySender = primaryEndpoint
-    ? getResponseSender({
-        model: primaryModel,
-        endpoint: primaryEndpoint,
-        endpointType: primaryEndpointType,
-        modelDisplayLabel: endpointsConfig?.[primaryEndpoint]?.modelDisplayLabel,
-      })
-    : '';
+  const primarySender = getResponseSender({
+    modelDisplayLabel: endpointsConfig?.[primaryEndpoint]?.modelDisplayLabel,
+  });
   const primaryAgentId = encodeEphemeralAgentId({
     endpoint: primaryEndpoint ?? '',
     model: primaryModel,

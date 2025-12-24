@@ -161,8 +161,6 @@ const loadEphemeralAgent = async ({ req, spec, _agent_id, endpoint, model_parame
   }
 
   const sender = getResponseSender({
-    model,
-    endpoint,
     modelLabel: model_parameters?.modelLabel,
     modelDisplayLabel: endpointConfig?.modelDisplayLabel,
   });

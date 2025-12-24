@@ -94,16 +94,38 @@ const ContentRender = memo(
       ],
     );
 
+    // Check if message has parallel content (groupId) - if so, hide outer label since columns have their own headers
+    const hasParallelContent = useMemo(() => {
+      const content = msg?.content;
+      if (!content || !Array.isArray(content)) {
+        return false;
+      }
+      for (const part of content) {
+        if (part && (part as TMessageContentParts & { groupId?: number }).groupId != null) {
+          return true;
+        }
+      }
+      return false;
+    }, [msg?.content]);
+
     if (!msg) {
       return null;
     }
 
+    const getChatWidthClass = () => {
+      if (maximizeChatSpace) {
+        return 'w-full max-w-full md:px-5 lg:px-1 xl:px-5';
+      }
+      if (hasParallelContent) {
+        return 'md:max-w-[58rem] xl:max-w-[70rem]';
+      }
+      return 'md:max-w-[47rem] xl:max-w-[55rem]';
+    };
+
     const baseClasses = {
       common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu ',
       card: 'relative w-full gap-1 rounded-lg border border-border-medium bg-surface-primary-alt p-2 md:w-1/2 md:gap-3 md:p-4',
-      chat: maximizeChatSpace
-        ? 'w-full max-w-full md:px-5 lg:px-1 xl:px-5'
-        : 'md:max-w-[47rem] xl:max-w-[55rem]',
+      chat: getChatWidthClass(),
     };
 
     const conditionalClasses = {
@@ -121,19 +143,24 @@ const ContentRender = memo(
           'message-render',
         )}
       >
-        <div className="relative flex flex-shrink-0 flex-col items-center">
-          <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-            <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
+        {!hasParallelContent && (
+          <div className="relative flex flex-shrink-0 flex-col items-center">
+            <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+              <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
+            </div>
           </div>
-        </div>
+        )}
 
         <div
           className={cn(
-            'relative flex w-11/12 flex-col',
+            'relative flex flex-col',
+            hasParallelContent ? 'w-full' : 'w-11/12',
             msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
           )}
         >
-          <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+          {!hasParallelContent && (
+            <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
+          )}
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">

@@ -7,25 +7,13 @@ import { useAgentsMapContext } from '~/Providers';
 type SiblingHeaderProps = {
   /** The agentId from the content part (could be real agent ID or endpoint__model format) */
   agentId?: string;
-  /** Fallback message info for primary agent (when agentId is not available) */
-  messageModel?: string | null;
-  messageAgentId?: string | null;
-  messageEndpoint?: string | null;
-  /** message.sender - pre-computed display name for the message */
-  messageSender?: string | null;
 };
 
 /**
  * Header component for sibling content parts in parallel agent responses.
  * Displays the agent/model icon and name for each parallel response.
  */
-export default function SiblingHeader({
-  agentId,
-  messageModel,
-  messageAgentId,
-  messageEndpoint,
-  messageSender,
-}: SiblingHeaderProps) {
+export default function SiblingHeader({ agentId }: SiblingHeaderProps) {
   const agentsMap = useAgentsMapContext();
 
   const { displayName, displayEndpoint, displayModel, agent } = useMemo(() => {
@@ -61,27 +49,14 @@ export default function SiblingHeader({
       };
     }
 
-    // Fallback to message-level info for primary agent
-    if (messageAgentId) {
-      const foundAgent = agentsMap?.[messageAgentId] as Agent | undefined;
-      if (foundAgent) {
-        return {
-          displayName: foundAgent.name,
-          displayEndpoint: EModelEndpoint.agents,
-          displayModel: foundAgent.model,
-          agent: foundAgent,
-        };
-      }
-    }
-
-    // Use message sender/model/endpoint as last resort
+    // Use message model/endpoint as last resort
     return {
-      displayName: messageSender || messageModel || 'Agent',
-      displayEndpoint: messageEndpoint || EModelEndpoint.agents,
-      displayModel: messageModel || undefined,
+      displayName: 'Agent',
+      displayEndpoint: EModelEndpoint.agents,
+      displayModel: undefined,
       agent: undefined,
     };
-  }, [agentId, agentsMap, messageAgentId, messageModel, messageEndpoint, messageSender]);
+  }, [agentId, agentsMap]);
 
   return (
     <div className="mb-2 flex items-center gap-2 border-b border-border-light pb-2">
