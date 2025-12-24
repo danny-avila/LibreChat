@@ -149,16 +149,15 @@ export default function useMessageActions(props: TMessageActions) {
     edit,
     index,
     agent,
+    feedback,
     assistant,
     enterEdit,
     conversation,
     messageLabel,
-    isSubmitting,
     latestMessage,
+    handleFeedback,
     handleContinue,
     copyToClipboard,
     regenerateMessage,
-    handleFeedback,
-    feedback,
   };
 }

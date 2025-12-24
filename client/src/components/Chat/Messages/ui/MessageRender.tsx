@@ -44,10 +44,10 @@ const MessageRender = memo(
       conversation,
       messageLabel,
       latestMessage,
+      handleFeedback,
       handleContinue,
       copyToClipboard,
       regenerateMessage,
-      handleFeedback,
     } = useMessageActions({
       message: msg,
       currentEditId,

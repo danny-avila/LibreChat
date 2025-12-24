@@ -47,9 +47,9 @@ const ContentRender = memo(
       messageLabel,
       latestMessage,
       handleContinue,
+      handleFeedback,
       copyToClipboard,
       regenerateMessage,
-      handleFeedback,
     } = useMessageActions({
       message: msg,
       searchResults,
