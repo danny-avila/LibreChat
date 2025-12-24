@@ -350,8 +350,8 @@ function disposeClient(client) {
     if (client.agentConfigs) {
       client.agentConfigs = null;
     }
-    if (client.agentIdMap) {
-      client.agentIdMap = null;
+    if (client.contentMetadataMap) {
+      client.contentMetadataMap = null;
     }
     if (client.artifactPromises) {
       client.artifactPromises = null;
