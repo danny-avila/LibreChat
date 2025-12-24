@@ -5,27 +5,44 @@ interface IE2BAssistantData {
   id: string;
   name: string;
   description?: string;
-  prompt: string; // 改名为prompt避免与Mongoose字段冲突
+  prompt: string;
   avatar?: {
     filepath: string;
     source: string;
   };
-  author: Types.ObjectId; // 使用Types.ObjectId
+  author: Types.ObjectId;
+  
+  // E2B特定配置
   e2b_sandbox_template: string;
   e2b_config: {
     timeout_ms: number;
     max_memory_mb: number;
     max_cpu_percent: number;
   };
+  
+  // 代码执行
   code_execution_mode: 'interactive' | 'batch';
   allowed_libraries: string[];
+  
+  // LLM配置
   model: string;
+  
+  // 文件和工具
   file_ids?: string[];
   conversation_starters?: string[];
+  
+  // 访问控制 - 由协作人员实现
   is_public: boolean;
   access_level: number;
+  
   createdAt?: string;
   updatedAt?: string;
+  
+  // E2B特有字段 - 根据用户要求
+  env_vars: Map<string, string>;
+  has_internet_access: boolean;
+  is_persistent: boolean;
+  metadata: Record<string, unknown>;
 }
 
 const e2bAssistantSchema = new Schema<IE2BAssistantData>(
@@ -106,6 +123,29 @@ const e2bAssistantSchema = new Schema<IE2BAssistantData>(
     access_level: {
       type: Number,
       default: 0,
+    },
+    
+    // E2B特有字段 - 根据用户要求
+    env_vars: {
+      type: Map,
+      of: String,
+      default: new Map(),
+      description: '环境变量，会在沙箱启动时注入',
+    },
+    has_internet_access: {
+      type: Boolean,
+      default: true,
+      description: '控制沙箱是否可以访问外网',
+    },
+    is_persistent: {
+      type: Boolean,
+      default: false,
+      description: '决定沙箱是否持久化',
+    },
+    metadata: {
+      type: Schema.Types.Mixed,
+      default: {},
+      description: '自定义元数据，方便添加实验性功能',
     },
   },
   {

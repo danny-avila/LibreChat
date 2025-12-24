@@ -2,8 +2,10 @@ const { logger } = require('@librechat/data-schemas');
 const { Sandbox } = require('@e2b/code-interpreter');
 
 /**
- * E2B Client Manager
+ * E2B Client Manager - 使用E2B SDK v2
  * 管理E2B沙箱的生命周期
+ * 
+ * SDK参考: https://github.com/e2b-dev/code-interpreter
  */
 class E2BClientManager {
   constructor() {
@@ -21,6 +23,7 @@ class E2BClientManager {
 
   /**
    * 创建新的沙箱实例
+   * 使用E2B SDK v2 API
    * @param {string} template - 沙箱模板名称
    * @param {string} userId - 用户ID
    * @param {string} conversationId - 对话ID
@@ -28,22 +31,18 @@ class E2BClientManager {
    */
   async createSandbox(template = this.defaultConfig.template, userId, conversationId) {
     try {
-      logger.info(`[E2B] Creating sandbox for user ${userId}, conversation ${conversationId}`);
+      logger.info(`[E2B] Creating sandbox for user ${userId}, conversation ${conversationId}, template: ${template}`);
       
+      // E2B SDK v2 正确用法
       const sandbox = await Sandbox.create({
         template,
         apiKey: this.apiKey,
         timeoutMs: this.defaultConfig.timeoutMs,
-        // 环境变量配置
-        env: {
-          MAX_MEMORY_MB: this.defaultConfig.maxMemoryMB.toString(),
-          MAX_CPU_PERCENT: this.defaultConfig.maxCpuPercent.toString(),
-        },
       });
       
       const key = `${userId}:${conversationId}`;
       this.sandboxes.set(key, {
-        id: sandbox.id,
+        id: sandbox.sandboxID,
         template,
         sandbox,
         userId,
@@ -51,7 +50,7 @@ class E2BClientManager {
         createdAt: new Date(),
       });
       
-      logger.info(`[E2B] Sandbox created successfully: ${sandbox.id}`);
+      logger.info(`[E2B] Sandbox created successfully: ${sandbox.sandboxID}`);
       return sandbox;
     } catch (error) {
       logger.error('[E2B] Error creating sandbox:', error);
@@ -96,6 +95,7 @@ class E2BClientManager {
 
   /**
    * 在沙箱中执行Python代码
+   * 使用E2B SDK v2 process.start API
    * @param {string} userId 
    * @param {string} conversationId 
    * @param {string} code - Python代码
@@ -110,7 +110,13 @@ class E2BClientManager {
     
     try {
       logger.info(`[E2B] Executing code in sandbox ${sandboxData.id}`);
-      const result = await sandboxData.sandbox.runCode(code, 'python');
+      
+      // E2B SDK v2 正确用法 - 使用 process.start 运行Python
+      const result = await sandboxData.sandbox.process.start({
+        cmd: 'python',
+        cwd: '/home/user',
+      });
+      
       logger.info(`[E2B] Code execution completed in sandbox ${sandboxData.id}`);
       return result;
     } catch (error) {
@@ -121,6 +127,7 @@ class E2BClientManager {
 
   /**
    * 上传文件到沙箱
+   * 使用E2B SDK v2 filesystem API
    * @param {string} userId 
    * @param {string} conversationId 
    * @param {string} content - 文件内容
@@ -136,9 +143,12 @@ class E2BClientManager {
     
     try {
       logger.info(`[E2B] Uploading file ${filename} to sandbox ${sandboxData.id}`);
-      const result = await sandboxData.sandbox.writeFile(content, filename);
+      
+      // E2B SDK v2 正确用法 - 使用 filesystem.write
+      await sandboxData.sandbox.filesystem.write(filename, content);
+      
       logger.info(`[E2B] File uploaded successfully to sandbox ${sandboxData.id}`);
-      return result;
+      return { filename, success: true };
     } catch (error) {
       logger.error(`[E2B] Error uploading file to sandbox ${sandboxData.id}:`, error);
       throw new Error(`File upload failed: ${error.message}`);
@@ -147,10 +157,11 @@ class E2BClientManager {
 
   /**
    * 从沙箱下载文件
+   * 使用E2B SDK v2 filesystem API
    * @param {string} userId 
    * @param {string} conversationId 
    * @param {string} filename - 文件名
-   * @returns {Promise<Object>} 文件内容
+   * @returns {Promise<string>} 文件内容
    */
   async downloadFile(userId, conversationId, filename) {
     const sandboxData = await this.getSandbox(userId, conversationId);
@@ -161,7 +172,10 @@ class E2BClientManager {
     
     try {
       logger.info(`[E2B] Downloading file ${filename} from sandbox ${sandboxData.id}`);
-      const content = await sandboxData.sandbox.readFile(filename);
+      
+      // E2B SDK v2 正确用法 - 使用 filesystem.read
+      const content = await sandboxData.sandbox.filesystem.read(filename);
+      
       logger.info(`[E2B] File downloaded successfully from sandbox ${sandboxData.id}`);
       return content;
     } catch (error) {
@@ -172,12 +186,13 @@ class E2BClientManager {
 
   /**
    * 列出沙箱中的文件
+   * 使用E2B SDK v2 filesystem API
    * @param {string} userId 
    * @param {string} conversationId 
    * @param {string} path - 目录路径
    * @returns {Promise<Array>} 文件列表
    */
-  async listFiles(userId, conversationId, path = '/') {
+  async listFiles(userId, conversationId, path = '/home/user') {
     const sandboxData = await this.getSandbox(userId, conversationId);
     
     if (!sandboxData || !sandboxData.sandbox) {
@@ -186,9 +201,18 @@ class E2BClientManager {
     
     try {
       logger.info(`[E2B] Listing files in sandbox ${sandboxData.id} at path ${path}`);
-      const files = await sandboxData.sandbox.listFiles(path);
-      logger.info(`[E2B] Listed ${files.length} files in sandbox ${sandboxData.id}`);
-      return files;
+      
+      // E2B SDK v2 正确用法 - 使用 filesystem.list
+      const files = await sandboxData.sandbox.filesystem.list(path);
+      
+      const fileList = files.map(file => ({
+        name: file.name,
+        path: file.path,
+        isDirectory: file.isDirectory,
+      }));
+      
+      logger.info(`[E2B] Listed ${fileList.length} files in sandbox ${sandboxData.id}`);
+      return fileList;
     } catch (error) {
       logger.error(`[E2B] Error listing files in sandbox ${sandboxData.id}:`, error);
       throw new Error(`Failed to list files: ${error.message}`);

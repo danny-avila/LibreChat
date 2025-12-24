@@ -8,8 +8,7 @@ export interface IE2BAssistant {
     filepath: string;
     source: string;
   };
-  author: string;
-  
+  author: string;  
   // E2B配置
   e2b_sandbox_template: string;
   e2b_config: {
@@ -35,4 +34,10 @@ export interface IE2BAssistant {
   
   createdAt?: string;
   updatedAt?: string;
+  
+  // E2B特有字段 - 根据用户要求
+  env_vars: Map<string, string>;
+  has_internet_access: boolean;
+  is_persistent: boolean;
+  metadata: Record<string, unknown>;
 }
