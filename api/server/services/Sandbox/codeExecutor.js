@@ -4,6 +4,12 @@ const { logger } = require('@librechat/data-schemas');
 /**
  * E2B Code Executor Service
  * 负责在E2B沙箱中执行代码并处理结果
+ * 
+ * 优化项：
+ * - 支持环境变量注入
+ * - 支持多种文件格式（text, bytes, blob, stream）
+ * - 增强的错误处理和日志
+ * - 支持图表检测和输出
  */
 
 class CodeExecutor {
@@ -12,27 +18,24 @@ class CodeExecutor {
    * @param {string} userId 
    * @param {string} conversationId 
    * @param {string} code - Python代码
+   * @param {Object} options - 执行选项（环境变量、超时等）
    * @returns {Promise<Object>} 执行结果
    */
-  async execute(userId, conversationId, code) {
+  async execute(userId, conversationId, code, options = {}) {
     try {
       logger.info(`[CodeExecutor] Executing code for user ${userId}, conversation ${conversationId}`);
       
-      const result = await e2bClientManager.executeCode(userId, conversationId, code);
+      const result = await e2bClientManager.executeCode(userId, conversationId, code, options);
       
       // 解析E2B执行结果
       const response = {
         success: !result.error,
-        stdout: result.stdout || '',
-        stderr: result.stderr || '',
+        stdout: this._formatOutput(result.stdout),
+        stderr: this._formatOutput(result.stderr),
         exitCode: result.exitCode || 0,
         runtime: result.runtime || 0,
+        error: result.error || null,
       };
-      
-      if (result.error) {
-        response.success = false;
-        response.error = result.error.message || 'Execution error';
-      }
       
       logger.info(`[CodeExecutor] Code execution completed. Exit code: ${response.exitCode}`);
       return response;
@@ -47,15 +50,16 @@ class CodeExecutor {
    * @param {string} userId 
    * @param {string} conversationId 
    * @param {Array<string>} codeBlocks - 代码块数组
+   * @param {Object} options - 执行选项
    * @returns {Promise<Array>} 执行结果数组
    */
-  async executeBatch(userId, conversationId, codeBlocks) {
+  async executeBatch(userId, conversationId, codeBlocks, options = {}) {
     const results = [];
     
     for (let i = 0; i < codeBlocks.length; i++) {
       const code = codeBlocks[i];
       try {
-        const result = await this.execute(userId, conversationId, code);
+        const result = await this.execute(userId, conversationId, code, options);
         results.push({
           index: i,
           ...result,
@@ -87,7 +91,16 @@ class CodeExecutor {
     
     if (hasVisualization && result.success) {
       logger.info('[CodeExecutor] Visualization detected in output');
-      // TODO: 提取图表图像（需要文件系统支持）
+      
+      // 尝试提取图表文件
+      try {
+        const plotFiles = await this._findPlotFiles(userId, conversationId);
+        if (plotFiles.length > 0) {
+          result.visualizations = plotFiles;
+        }
+      } catch (error) {
+        logger.warn('[CodeExecutor] Failed to find plot files:', error);
+      }
     }
     
     return {
@@ -106,6 +119,10 @@ class CodeExecutor {
       'matplotlib.pyplot',
       'seaborn',
       'plotly',
+      'sns.heatmap',
+      'plt.show',
+      'plt.savefig',
+      'plt.savefig',
       'sns.heatmap',
     ];
     
@@ -126,12 +143,18 @@ class CodeExecutor {
       'eval',
       'compile',
       '__import__',
+      'os.system',
+      'subprocess.run',
+      'subprocess.call',
+      'subprocess.popen',
+      'open',
     ];
     
     for (const func of dangerousFunctions) {
       if (code.includes(func + '(')) {
         issues.push({
           type: 'security',
+          level: 'critical',
           message: `Dangerous function detected: ${func}`,
         });
       }
@@ -139,15 +162,20 @@ class CodeExecutor {
     
     // 检查导入语句
     const importRegex = /^import\s+/gm;
-    const imports = code.match(importRegex);
+    const fromRegex = /^from\s+/gm;
+    const imports = code.match(importRegex) || [];
+    const fromImports = code.match(fromRegex) || [];
     
-    if (imports) {
-      const restrictedLibraries = ['os', 'subprocess', 'sys'];
-      for (const imp of imports) {
+    if (imports.length > 0 || fromImports.length > 0) {
+      const restrictedLibraries = ['os', 'subprocess', 'sys', 'pickle', 'shutil', 'tempfile'];
+      const allImports = [...imports, ...fromImports];
+      
+      for (const imp of allImports) {
         for (const lib of restrictedLibraries) {
-          if (imp.includes(`import ${lib}`)) {
+          if (imp.includes(`import ${lib}`) || imp.includes(`from ${lib}`)) {
             issues.push({
               type: 'security',
+              level: 'warning',
               message: `Restricted library import detected: ${lib}`,
             });
           }
@@ -155,10 +183,127 @@ class CodeExecutor {
       }
     }
     
+    // 检查无限循环风险
+    if (code.includes('while True:') || code.includes('while 1:')) {
+      issues.push({
+        type: 'security',
+        level: 'warning',
+        message: 'Potential infinite loop detected',
+      });
+    }
+    
+    // 检查文件操作
+    if (code.includes('open(') || code.includes('open("')) {
+      issues.push({
+        type: 'security',
+        level: 'warning',
+        message: 'File opening operation detected',
+      });
+    }
+    
     return {
-      valid: issues.length === 0,
+      valid: issues.filter(i => i.level === 'critical').length === 0,
       issues,
     };
+  }
+
+  /**
+   * 上传文件到沙箱
+   * @param {string} userId
+   * @param {string} conversationId
+   * @param {string|Buffer|ArrayBuffer} content - 文件内容
+   * @param {string} path - 文件路径
+   * @returns {Promise<Object>}
+   */
+  async uploadFile(userId, conversationId, content, path) {
+    try {
+      logger.info(`[CodeExecutor] Uploading file ${path} to sandbox`);
+      const result = await e2bClientManager.uploadFile(userId, conversationId, content, path);
+      
+      return {
+        success: true,
+        ...result,
+      };
+    } catch (error) {
+      logger.error('[CodeExecutor] Error uploading file:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 从沙箱下载文件
+   * @param {string} userId
+   * @param {string} conversationId
+   * @param {string} path - 文件路径
+   * @param {string} format - 返回格式（'text', 'bytes', 'blob', 'stream'）
+   * @returns {Promise<string|Buffer>}
+   */
+  async downloadFile(userId, conversationId, path, format = 'text') {
+    try {
+      logger.info(`[CodeExecutor] Downloading file ${path} from sandbox`);
+      const content = await e2bClientManager.downloadFile(userId, conversationId, path, format);
+      
+      return content;
+    } catch (error) {
+      logger.error('[CodeExecutor] Error downloading file:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 列出沙箱中的文件
+   * @param {string} userId
+   * @param {string} conversationId
+   * @param {string} path - 目录路径
+   * @returns {Promise<Array>}
+   */
+  async listFiles(userId, conversationId, path = '/home/user') {
+    try {
+      logger.info(`[CodeExecutor] Listing files in sandbox at ${path}`);
+      const files = await e2bClientManager.listFiles(userId, conversationId, path);
+      
+      return files;
+    } catch (error) {
+      logger.error('[CodeExecutor] Error listing files:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 查找图表文件
+   * @private
+   */
+  async _findPlotFiles(userId, conversationId, path = '/home/user') {
+    try {
+      const files = await e2bClientManager.listFiles(userId, conversationId, path);
+      const plotExtensions = ['.png', '.jpg', '.jpeg', '.svg', '.pdf', '.gif'];
+      
+      return files
+        .filter(file => !file.isDirectory && plotExtensions.some(ext => file.name.endsWith(ext)))
+        .map(file => ({
+          name: file.name,
+          path: file.path,
+          type: file.name.split('.').pop(),
+          size: file.size,
+        }));
+    } catch (error) {
+      logger.warn(`[CodeExecutor] Failed to find plot files: ${error.message}`);
+      return [];
+    }
+  }
+
+  /**
+   * 格式化输出
+   * @private
+   */
+  _formatOutput(output) {
+    if (!output) return '';
+    
+    if (Array.isArray(output)) {
+      return output.map(item => item.message || item.line || item).join('\n');
+    }
+    
+    return String(output);
   }
 }
 
