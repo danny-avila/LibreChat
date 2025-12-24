@@ -51,19 +51,19 @@ type ContentPartsProps = {
  * if parallel rendering is needed, avoiding scanning all content parts.
  */
 const ContentParts = memo(function ContentParts({
+  edit,
+  isLast,
   content,
   messageId,
-  conversationId,
-  attachments,
-  searchResults,
-  isCreatedByUser,
-  isLast,
-  isSubmitting,
-  isLatestMessage,
-  edit,
   enterEdit,
   siblingIdx,
+  attachments,
+  isSubmitting,
   setSiblingIdx,
+  searchResults,
+  conversationId,
+  isCreatedByUser,
+  isLatestMessage,
   contentMetadataMap,
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
