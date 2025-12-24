@@ -381,6 +381,21 @@ export type EditArtifactOptions = MutationOptions<
   Error
 >;
 
+export type TBranchMessageRequest = {
+  messageId: string;
+  agentId: string;
+  model?: string;
+};
+
+export type TBranchMessageResponse = types.TMessage;
+
+export type BranchMessageOptions = MutationOptions<
+  TBranchMessageResponse,
+  TBranchMessageRequest,
+  unknown,
+  Error
+>;
+
 export type TLogoutResponse = {
   message: string;
   redirect?: string;

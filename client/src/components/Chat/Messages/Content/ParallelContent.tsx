@@ -151,6 +151,7 @@ type ParallelColumnsProps = {
   messageId: string;
   isSubmitting: boolean;
   lastContentIdx: number;
+  conversationId?: string | null;
   renderPart: (part: TMessageContentParts, idx: number, isLastPart: boolean) => React.ReactNode;
 };
 
@@ -161,6 +162,7 @@ export const ParallelColumns = memo(function ParallelColumns({
   columns,
   groupId,
   messageId,
+  conversationId,
   isSubmitting,
   lastContentIdx,
   renderPart,
@@ -177,7 +179,12 @@ export const ParallelColumns = memo(function ParallelColumns({
             key={`column-${messageId}-${groupId}-${agentId || colIdx}`}
             className="min-w-0 flex-1 rounded-lg border border-border-light p-3"
           >
-            <SiblingHeader agentId={agentId} />
+            <SiblingHeader
+              agentId={agentId}
+              messageId={messageId}
+              isSubmitting={isSubmitting}
+              conversationId={conversationId}
+            />
             {showPlaceholderCursor ? (
               <Container>
                 <EmptyText />
@@ -261,9 +268,10 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
           columns={columns}
           groupId={groupId}
           messageId={messageId}
-          isSubmitting={isSubmitting}
-          lastContentIdx={lastContentIdx}
           renderPart={renderPart}
+          isSubmitting={isSubmitting}
+          conversationId={conversationId}
+          lastContentIdx={lastContentIdx}
         />
       ))}
 
