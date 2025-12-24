@@ -10,6 +10,7 @@ import { createMCPServerModel } from './mcpServer';
 import { createRoleModel } from './role';
 import { createActionModel } from './action';
 import { createAssistantModel } from './assistant';
+import { createE2BAssistantModel } from './e2bAssistant';
 import { createFileModel } from './file';
 import { createBannerModel } from './banner';
 import { createProjectModel } from './project';
@@ -44,6 +45,7 @@ export function createModels(mongoose: typeof import('mongoose')) {
     Role: createRoleModel(mongoose),
     Action: createActionModel(mongoose),
     Assistant: createAssistantModel(mongoose),
+    E2BAssistant: createE2BAssistantModel(mongoose),
     File: createFileModel(mongoose),
     Banner: createBannerModel(mongoose),
     Project: createProjectModel(mongoose),

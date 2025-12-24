@@ -2,6 +2,7 @@ export { default as actionSchema } from './action';
 export { default as agentSchema } from './agent';
 export { default as agentCategorySchema } from './agentCategory';
 export { default as assistantSchema } from './assistant';
+export { default as e2bAssistantSchema } from './e2bAssistant';
 export { default as balanceSchema } from './balance';
 export { default as bannerSchema } from './banner';
 export { default as categoriesSchema } from './categories';

@@ -14,6 +14,7 @@ export * from './agentCategory';
 export * from './role';
 export * from './action';
 export * from './assistant';
+export * from './e2bAssistant';
 export * from './file';
 export * from './share';
 export * from './pluginAuth';
