@@ -1,4 +1,5 @@
 import { KeyRoundIcon } from 'lucide-react';
+import { useRef } from 'react';
 import { AuthType, AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller, useWatch } from 'react-hook-form';
 import {
@@ -23,7 +24,8 @@ export default function Action({
 }) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
-  const { control, setValue, getValues } = methods;
+  const { control, setValue } = methods;
+  const apiKeyButtonRef = useRef<HTMLButtonElement>(null);
   const {
     onSubmit,
     isDialogOpen,
@@ -33,9 +35,11 @@ export default function Action({
   } = useSearchApiKeyForm({
     onSubmit: () => {
       setValue(AgentCapabilities.web_search, true, { shouldDirty: true });
+      setTimeout(() => apiKeyButtonRef.current?.focus(), 100);
     },
     onRevoke: () => {
       setValue(AgentCapabilities.web_search, false, { shouldDirty: true });
+      setTimeout(() => apiKeyButtonRef.current?.focus(), 100);
     },
   });
 
@@ -62,6 +66,7 @@ export default function Action({
             render={({ field }) => (
               <Checkbox
                 {...field}
+                id="web-search-checkbox"
                 checked={
                   webSearchIsEnabled ? webSearchIsEnabled : isToolAuthenticated && field.value
                 }
@@ -69,33 +74,37 @@ export default function Action({
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value.toString()}
                 disabled={webSearchIsEnabled ? false : !isToolAuthenticated}
-                aria-label={localize('com_ui_web_search')}
+                aria-labelledby="web-search-label"
               />
             )}
           />
-          <button
-            type="button"
-            className="flex items-center space-x-2"
-            onClick={() => {
-              const value = !getValues(AgentCapabilities.web_search);
-              handleCheckboxChange(value);
-            }}
+          <label
+            id="web-search-label"
+            htmlFor="web-search-checkbox"
+            className="form-check-label text-token-text-primary cursor-pointer"
           >
-            <label
-              className="form-check-label text-token-text-primary w-full cursor-pointer"
-              htmlFor={AgentCapabilities.web_search}
-            >
-              {localize('com_ui_web_search')}
-            </label>
-          </button>
+            {localize('com_ui_web_search')}
+          </label>
           <div className="ml-2 flex gap-2">
-            {isUserProvided && (isToolAuthenticated || webSearchIsEnabled) && (
-              <button type="button" onClick={() => setIsDialogOpen(true)}>
+            {isUserProvided && (
+              <button
+                ref={apiKeyButtonRef}
+                type="button"
+                onClick={() => setIsDialogOpen(true)}
+                aria-label={localize('com_ui_add_web_search_api_keys')}
+                aria-haspopup="dialog"
+              >
                 <KeyRoundIcon className="h-5 w-5 text-text-primary" />
               </button>
             )}
-            <HoverCardTrigger>
-              <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
+            <HoverCardTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center"
+                aria-label={localize('com_agents_search_info')}
+              >
+                <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
+              </button>
             </HoverCardTrigger>
           </div>
           <HoverCardPortal>
@@ -116,6 +125,7 @@ export default function Action({
         register={keyFormMethods.register}
         isToolAuthenticated={isToolAuthenticated}
         handleSubmit={keyFormMethods.handleSubmit}
+        triggerRef={apiKeyButtonRef}
       />
     </>
   );

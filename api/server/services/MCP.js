@@ -10,6 +10,7 @@ const {
 const {
   sendEvent,
   MCPOAuthHandler,
+  isMCPDomainAllowed,
   normalizeServerName,
   convertWithResolvedRefs,
 } = require('@librechat/api');
@@ -20,12 +21,16 @@ const {
   ContentTypes,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
-const { getMCPManager, getFlowStateManager, getOAuthReconnectionManager } = require('~/config');
+const {
+  getOAuthReconnectionManager,
+  getMCPServersRegistry,
+  getFlowStateManager,
+  getMCPManager,
+} = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
-const { mcpServersRegistry } = require('@librechat/api');
 
 /**
  * @param {object} params
@@ -219,10 +224,34 @@ async function reconnectServer({ res, user, index, signal, serverName, userMCPAu
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {number} [params.index]
  * @param {AbortSignal} [params.signal]
+ * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
-async function createMCPTools({ res, user, index, signal, serverName, provider, userMCPAuthMap }) {
+async function createMCPTools({
+  res,
+  user,
+  index,
+  signal,
+  config,
+  provider,
+  serverName,
+  userMCPAuthMap,
+}) {
+  // Early domain validation before reconnecting server (avoid wasted work on disallowed domains)
+  // Use getAppConfig() to support per-user/role domain restrictions
+  const serverConfig =
+    config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id));
+  if (serverConfig?.url) {
+    const appConfig = await getAppConfig({ role: user?.role });
+    const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
+    const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
+    if (!isDomainAllowed) {
+      logger.warn(`[MCP][${serverName}] Domain not allowed, skipping all tools`);
+      return [];
+    }
+  }
+
   const result = await reconnectServer({ res, user, index, signal, serverName, userMCPAuthMap });
   if (!result || !result.tools) {
     logger.warn(`[MCP][${serverName}] Failed to reinitialize MCP server.`);
@@ -238,6 +267,7 @@ async function createMCPTools({ res, user, index, signal, serverName, provider, 
       userMCPAuthMap,
       availableTools: result.availableTools,
       toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
+      config: serverConfig,
     });
     if (toolInstance) {
       serverTools.push(toolInstance);
@@ -259,6 +289,7 @@ async function createMCPTools({ res, user, index, signal, serverName, provider, 
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {LCAvailableTools} [params.availableTools]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+ * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTool({
@@ -270,8 +301,23 @@ async function createMCPTool({
   provider,
   userMCPAuthMap,
   availableTools,
+  config,
 }) {
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
+
+  // Runtime domain validation: check if the server's domain is still allowed
+  // Use getAppConfig() to support per-user/role domain restrictions
+  const serverConfig =
+    config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id));
+  if (serverConfig?.url) {
+    const appConfig = await getAppConfig({ role: user?.role });
+    const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
+    const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
+    if (!isDomainAllowed) {
+      logger.warn(`[MCP][${serverName}] Domain no longer allowed, skipping tool: ${toolName}`);
+      return undefined;
+    }
+  }
 
   /** @type {LCTool | undefined} */
   let toolDefinition = availableTools?.[toolKey]?.function;
@@ -435,8 +481,7 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
  * @returns {Object} Object containing mcpConfig, appConnections, userConnections, and oauthServers
  */
 async function getMCPSetupData(userId) {
-  const config = await getAppConfig();
-  const mcpConfig = config?.mcpConfig;
+  const mcpConfig = await getMCPServersRegistry().getAllServerConfigs(userId);
 
   if (!mcpConfig) {
     throw new Error('MCP config not found');
@@ -446,12 +491,15 @@ async function getMCPSetupData(userId) {
   /** @type {Map<string, import('@librechat/api').MCPConnection>} */
   let appConnections = new Map();
   try {
-    appConnections = (await mcpManager.appConnections?.getAll()) || new Map();
+    // Use getLoaded() instead of getAll() to avoid forcing connection creation
+    // getAll() creates connections for all servers, which is problematic for servers
+    // that require user context (e.g., those with {{LIBRECHAT_USER_ID}} placeholders)
+    appConnections = (await mcpManager.appConnections?.getLoaded()) || new Map();
   } catch (error) {
     logger.error(`[MCP][User: ${userId}] Error getting app connections:`, error);
   }
   const userConnections = mcpManager.getUserConnections(userId) || new Map();
-  const oauthServers = await mcpServersRegistry.getOAuthServers();
+  const oauthServers = await getMCPServersRegistry().getOAuthServers(userId);
 
   return {
     mcpConfig,
@@ -524,24 +572,26 @@ async function checkOAuthFlowStatus(userId, serverName) {
  * Get connection status for a specific MCP server
  * @param {string} userId - The user ID
  * @param {string} serverName - The server name
- * @param {Map} appConnections - App-level connections
- * @param {Map} userConnections - User-level connections
+ * @param {import('@librechat/api').ParsedServerConfig} config - The server configuration
+ * @param {Map<string, import('@librechat/api').MCPConnection>} appConnections - App-level connections
+ * @param {Map<string, import('@librechat/api').MCPConnection>} userConnections - User-level connections
  * @param {Set} oauthServers - Set of OAuth servers
  * @returns {Object} Object containing requiresOAuth and connectionState
  */
 async function getServerConnectionStatus(
   userId,
   serverName,
+  config,
   appConnections,
   userConnections,
   oauthServers,
 ) {
-  const getConnectionState = () =>
-    appConnections.get(serverName)?.connectionState ??
-    userConnections.get(serverName)?.connectionState ??
-    'disconnected';
+  const connection = appConnections.get(serverName) || userConnections.get(serverName);
+  const isStaleOrDoNotExist = connection ? connection?.isStale(config.updatedAt) : true;
 
-  const baseConnectionState = getConnectionState();
+  const baseConnectionState = isStaleOrDoNotExist
+    ? 'disconnected'
+    : connection?.connectionState || 'disconnected';
   let finalConnectionState = baseConnectionState;
 
   // connection state overrides specific to OAuth servers

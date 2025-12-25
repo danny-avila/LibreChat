@@ -10,7 +10,9 @@ const {
   sanitizeTitle,
   resolveHeaders,
   createSafeUser,
+  initializeAgent,
   getBalanceConfig,
+  getProviderConfig,
   memoryInstructions,
   getTransactionsConfig,
   createMemoryProcessor,
@@ -38,17 +40,16 @@ const {
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { getProviderConfig } = require('~/server/services/Endpoints');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { checkCapability } = require('~/server/services/Config');
+const { getConvoFiles } = require('~/models/Conversation');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
+const db = require('~/models');
 
 const omitTitleOptions = new Set([
   'stream',
@@ -542,18 +543,28 @@ class AgentClient extends BaseClient {
       );
     }
 
-    const agent = await initializeAgent({
-      req: this.options.req,
-      res: this.options.res,
-      agent: prelimAgent,
-      allowedProviders,
-      endpointOption: {
-        endpoint:
-          prelimAgent.id !== Constants.EPHEMERAL_AGENT_ID
-            ? EModelEndpoint.agents
-            : memoryConfig.agent?.provider,
+    const agent = await initializeAgent(
+      {
+        req: this.options.req,
+        res: this.options.res,
+        agent: prelimAgent,
+        allowedProviders,
+        endpointOption: {
+          endpoint:
+            prelimAgent.id !== Constants.EPHEMERAL_AGENT_ID
+              ? EModelEndpoint.agents
+              : memoryConfig.agent?.provider,
+        },
       },
-    });
+      {
+        getConvoFiles,
+        getFiles: db.getFiles,
+        getUserKey: db.getUserKey,
+        updateFilesUsage: db.updateFilesUsage,
+        getUserKeyValues: db.getUserKeyValues,
+        getToolFilesByIds: db.getToolFilesByIds,
+      },
+    );
 
     if (!agent) {
       logger.warn(
@@ -588,9 +599,9 @@ class AgentClient extends BaseClient {
       messageId,
       conversationId,
       memoryMethods: {
-        setMemory,
-        deleteMemory,
-        getFormattedMemories,
+        setMemory: db.setMemory,
+        deleteMemory: db.deleteMemory,
+        getFormattedMemories: db.getFormattedMemories,
       },
       res: this.options.res,
     });
@@ -1040,7 +1051,7 @@ class AgentClient extends BaseClient {
       throw new Error('Run not initialized');
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
-    const { req, res, agent } = this.options;
+    const { req, agent } = this.options;
     const appConfig = req.config;
     let endpoint = agent.endpoint;
 
@@ -1097,11 +1108,12 @@ class AgentClient extends BaseClient {
 
     const options = await titleProviderConfig.getOptions({
       req,
-      res,
-      optionsOnly: true,
-      overrideEndpoint: endpoint,
-      overrideModel: clientOptions.model,
-      endpointOption: { model_parameters: clientOptions },
+      endpoint,
+      model_parameters: clientOptions,
+      db: {
+        getUserKey: db.getUserKey,
+        getUserKeyValues: db.getUserKeyValues,
+      },
     });
 
     let provider = options.provider ?? titleProviderConfig.overrideProvider ?? agent.provider;
