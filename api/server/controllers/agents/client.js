@@ -99,61 +99,19 @@ function logToolError(graph, error, toolId) {
 const AGENT_SUFFIX_PATTERN = /____(\d+)$/;
 
 /**
- * Determines the primary agent ID from a message's content parts.
- * The primary agent is the one without a suffix (____N), or if all have suffixes,
- * the one with the lowest suffix number.
+ * Filters conversation history to primary agent content and applies agent labeling.
+ * - Includes unattributed content (no agentId) and primary agent content
+ * - Primary agent: ID without suffix, or lowest suffix number (____N pattern)
+ * - Strips agentId/groupId metadata from filtered content
  *
- * @param {Array<TMessageContentParts>} content - The message content array
- * @returns {string | null} The primary agent ID, or null if none found
- */
-function getPrimaryAgentFromContent(content) {
-  if (!content || !Array.isArray(content)) {
-    return null;
-  }
-
-  let primaryAgentId = null;
-  let lowestSuffixIndex = Infinity;
-
-  for (const part of content) {
-    const agentId = part?.agentId;
-    if (!agentId) {
-      continue;
-    }
-
-    const suffixMatch = agentId.match(AGENT_SUFFIX_PATTERN);
-    if (!suffixMatch) {
-      // No suffix means this is the primary agent
-      return agentId;
-    }
-
-    const suffixIndex = parseInt(suffixMatch[1], 10);
-    if (suffixIndex < lowestSuffixIndex) {
-      lowestSuffixIndex = suffixIndex;
-      primaryAgentId = agentId;
-    }
-  }
-
-  return primaryAgentId;
-}
-
-/**
- * Processes conversation history for agent context:
- * 1. Filters content to only include primary agent parts when content has agentId metadata
- * 2. For multi-agent scenarios, also applies agent labeling for identity clarity
- *
- * Content parts without attribution (no agentId) are always included.
- * The primary agent in historical messages is determined by the agent ID without a suffix,
- * or the one with the lowest suffix number (____N pattern).
- *
- * @param {TMessage[]} orderedMessages - The ordered conversation messages
- * @param {Agent} primaryAgent - The primary agent configuration
- * @param {Map<string, Agent>} agentConfigs - Map of additional agent configurations
- * @returns {TMessage[]} Messages processed for agent context
+ * @param {TMessage[]} orderedMessages - Conversation messages in order
+ * @param {Agent} primaryAgent - Primary agent configuration
+ * @param {Map<string, Agent>} agentConfigs - Additional agent configurations
+ * @returns {TMessage[]} Processed messages with filtered content
  */
 function processMultiAgentHistory(orderedMessages, primaryAgent, agentConfigs) {
   const hasMultipleAgents = (primaryAgent.edges?.length ?? 0) > 0 || (agentConfigs?.size ?? 0) > 0;
 
-  // Build agent names map only if we have multiple agents (for labeling)
   /** @type {Record<string, string> | null} */
   let agentNames = null;
   if (hasMultipleAgents) {
@@ -165,95 +123,78 @@ function processMultiAgentHistory(orderedMessages, primaryAgent, agentConfigs) {
     }
   }
 
-  // Quick scan: check if any message needs processing
-  // Process if message content has parts with agentId metadata
-  let needsProcessing = false;
-  for (let i = 0; i < orderedMessages.length; i++) {
-    const message = orderedMessages[i];
-    if (!message.isCreatedByUser && Array.isArray(message.content)) {
-      // Check if any content part has agentId
-      const hasAgentMetadata = message.content.some((part) => part?.agentId);
-      if (hasAgentMetadata) {
-        needsProcessing = true;
+  /** @type {TMessage[]} */
+  const processedMessages = [];
+  let anyProcessed = false;
+
+  for (const message of orderedMessages) {
+    if (message.isCreatedByUser || !Array.isArray(message.content)) {
+      processedMessages.push(message);
+      continue;
+    }
+
+    // Single pass: find primary agent and filter content simultaneously
+    let primaryAgentId = null;
+    let lowestSuffixIndex = Infinity;
+    let hasAgentMetadata = false;
+
+    for (const part of message.content) {
+      const agentId = part?.agentId;
+      if (!agentId) {
+        continue;
+      }
+      hasAgentMetadata = true;
+
+      const suffixMatch = agentId.match(AGENT_SUFFIX_PATTERN);
+      if (!suffixMatch) {
+        primaryAgentId = agentId;
         break;
       }
-    }
-  }
-
-  // Fast path: no processing needed
-  if (!needsProcessing) {
-    return orderedMessages;
-  }
-
-  const processedMessages = [];
-
-  for (let i = 0; i < orderedMessages.length; i++) {
-    const message = orderedMessages[i];
-
-    // Skip user messages - no processing needed
-    if (message.isCreatedByUser) {
-      processedMessages.push(message);
-      continue;
+      const suffixIndex = parseInt(suffixMatch[1], 10);
+      if (suffixIndex < lowestSuffixIndex) {
+        lowestSuffixIndex = suffixIndex;
+        primaryAgentId = agentId;
+      }
     }
 
-    // Check if message has content that can be processed
-    if (!Array.isArray(message.content)) {
-      processedMessages.push(message);
-      continue;
-    }
-
-    // Check if any content part has agentId metadata
-    const hasAgentMetadata = message.content.some((part) => part?.agentId);
     if (!hasAgentMetadata) {
       processedMessages.push(message);
       continue;
     }
 
-    try {
-      // Determine the primary agent ID for this specific message from content parts
-      // The primary is always the "first column" - the agent without suffix or lowest suffix
-      const messagePrimaryAgentId = getPrimaryAgentFromContent(message.content);
+    anyProcessed = true;
 
-      // Filter content to only include primary agent parts (or unattributed parts)
+    try {
+      /** @type {Array<TMessageContentParts>} */
       const filteredContent = [];
+      /** @type {Record<number, string>} */
       const agentIdMap = {};
 
-      for (let idx = 0; idx < message.content.length; idx++) {
-        const part = message.content[idx];
-        // Get agentId from content part
+      for (const part of message.content) {
         const agentId = part?.agentId;
-
-        // Include content if:
-        // 1. No agentId attribution (unattributed content)
-        // 2. AgentId matches the message's primary agent
-        if (!agentId || agentId === messagePrimaryAgentId) {
+        if (!agentId || agentId === primaryAgentId) {
           const newIndex = filteredContent.length;
-          filteredContent.push(part);
-
-          // Track agentId for labeling
+          const { agentId: _a, groupId: _g, ...cleanPart } = part;
+          filteredContent.push(cleanPart);
           if (agentId) {
             agentIdMap[newIndex] = agentId;
           }
         }
       }
 
-      // Apply agent labeling if we have multiple agents
-      let finalContent = filteredContent;
-      if (Object.keys(agentIdMap).length > 0 && agentNames) {
-        finalContent = labelContentByAgent(filteredContent, agentIdMap, agentNames);
-      }
+      const finalContent =
+        Object.keys(agentIdMap).length > 0 && agentNames
+          ? labelContentByAgent(filteredContent, agentIdMap, agentNames)
+          : filteredContent;
 
-      processedMessages.push({
-        ...message,
-        content: finalContent,
-      });
+      processedMessages.push({ ...message, content: finalContent });
     } catch (error) {
       logger.error('[AgentClient] Error processing multi-agent message:', error);
       processedMessages.push(message);
     }
   }
 
-  return processedMessages;
+  return anyProcessed ? processedMessages : orderedMessages;
 }
 
 class AgentClient extends BaseClient {
