@@ -384,7 +384,6 @@ export type EditArtifactOptions = MutationOptions<
 export type TBranchMessageRequest = {
   messageId: string;
   agentId: string;
-  model?: string;
 };
 
 export type TBranchMessageResponse = types.TMessage;

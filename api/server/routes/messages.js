@@ -120,12 +120,11 @@ router.get('/', async (req, res) => {
  * @route POST /branch
  * @param {string} req.body.messageId - The ID of the source message
  * @param {string} req.body.agentId - The agentId to filter content by
- * @param {string} req.body.model - The model for token counting (optional)
  * @returns {TMessage} The newly created branch message
  */
 router.post('/branch', async (req, res) => {
   try {
-    const { messageId, agentId, model } = req.body;
+    const { messageId, agentId } = req.body;
     const userId = req.user.id;
 
     if (!messageId || !agentId) {
@@ -173,14 +172,6 @@ router.post('/branch', async (req, res) => {
       return res.status(400).json({ error: 'No content found for the specified agentId' });
     }
 
-    // Calculate token count for filtered content
-    let tokenCount = 0;
-    for (const part of filteredContent) {
-      if (part.type === ContentTypes.TEXT && part.text) {
-        tokenCount += await countTokens(part.text, model);
-      }
-    }
-
     // Create the new branch message
     const newMessageId = uuidv4();
     const newMessage = {
@@ -193,8 +184,6 @@ router.post('/branch', async (req, res) => {
       sender: sourceMessage.sender,
       iconURL: sourceMessage.iconURL,
       content: filteredContent,
-      text: '', // Content-based messages use empty text
-      tokenCount,
       unfinished: false,
       error: false,
       user: userId,
