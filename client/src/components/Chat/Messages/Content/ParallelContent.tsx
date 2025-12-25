@@ -130,18 +130,6 @@ export function groupParallelContent(
     return aMin - bMin;
   });
 
-  // Log output structure
-  const sectionsSummary = sections.map((s) => {
-    const colsSummary = s.columns
-      .map((c) => `${c.agentId}:[${c.parts.map((p) => p.idx).join(',')}]`)
-      .join(', ');
-    return `groupId=${s.groupId} columns={${colsSummary}}`;
-  });
-  const noGroupSummary = noGroup.map((p) => p.idx).join(',');
-  console.log(
-    `[groupParallelContent] Output: ${sections.length} sections [${sectionsSummary.join('; ')}], sequential=[${noGroupSummary}]`,
-  );
-
   return { parallelSections: sections, sequentialParts: noGroup };
 }
 
