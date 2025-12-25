@@ -99,17 +99,16 @@ function logToolError(graph, error, toolId) {
 const AGENT_SUFFIX_PATTERN = /____(\d+)$/;
 
 /**
- * Filters conversation history to primary agent content and applies agent labeling.
- * - Includes unattributed content (no agentId) and primary agent content
- * - Primary agent: ID without suffix, or lowest suffix number (____N pattern)
- * - Strips agentId/groupId metadata from filtered content
+ * Creates a mapMethod for getMessagesForConversation that processes agent content.
+ * - Strips agentId/groupId metadata from all content
+ * - For multi-agent: filters to primary agent content only (no suffix or lowest suffix)
+ * - For multi-agent: applies agent labels to content
  *
- * @param {TMessage[]} orderedMessages - Conversation messages in order
  * @param {Agent} primaryAgent - Primary agent configuration
- * @param {Map<string, Agent>} agentConfigs - Additional agent configurations
- * @returns {TMessage[]} Processed messages with filtered content
+ * @param {Map<string, Agent>} [agentConfigs] - Additional agent configurations
+ * @returns {(message: TMessage) => TMessage} Map method for processing messages
  */
-function processMultiAgentHistory(orderedMessages, primaryAgent, agentConfigs) {
+function createMultiAgentMapper(primaryAgent, agentConfigs) {
   const hasMultipleAgents = (primaryAgent.edges?.length ?? 0) > 0 || (agentConfigs?.size ?? 0) > 0;
 
   /** @type {Record<string, string> | null} */
@@ -123,46 +122,43 @@ function processMultiAgentHistory(orderedMessages, primaryAgent, agentConfigs) {
     }
   }
 
-  /** @type {TMessage[]} */
-  const processedMessages = [];
-  let anyProcessed = false;
-
-  for (const message of orderedMessages) {
+  return (message) => {
     if (message.isCreatedByUser || !Array.isArray(message.content)) {
-      processedMessages.push(message);
-      continue;
+      return message;
     }
 
-    // Single pass: find primary agent and filter content simultaneously
+    // Find primary agent ID (no suffix, or lowest suffix number) - only needed for multi-agent
     let primaryAgentId = null;
-    let lowestSuffixIndex = Infinity;
     let hasAgentMetadata = false;
 
-    for (const part of message.content) {
-      const agentId = part?.agentId;
-      if (!agentId) {
-        continue;
-      }
-      hasAgentMetadata = true;
+    if (hasMultipleAgents) {
+      let lowestSuffixIndex = Infinity;
+      for (const part of message.content) {
+        const agentId = part?.agentId;
+        if (!agentId) {
+          continue;
+        }
+        hasAgentMetadata = true;
 
-      const suffixMatch = agentId.match(AGENT_SUFFIX_PATTERN);
-      if (!suffixMatch) {
-        primaryAgentId = agentId;
-        break;
+        const suffixMatch = agentId.match(AGENT_SUFFIX_PATTERN);
+        if (!suffixMatch) {
+          primaryAgentId = agentId;
+          break;
+        }
+        const suffixIndex = parseInt(suffixMatch[1], 10);
+        if (suffixIndex < lowestSuffixIndex) {
+          lowestSuffixIndex = suffixIndex;
+          primaryAgentId = agentId;
+        }
       }
-      const suffixIndex = parseInt(suffixMatch[1], 10);
-      if (suffixIndex < lowestSuffixIndex) {
-        lowestSuffixIndex = suffixIndex;
-        primaryAgentId = agentId;
-      }
+    } else {
+      // Single agent: just check if any metadata exists
+      hasAgentMetadata = message.content.some((part) => part?.agentId || part?.groupId);
     }
 
     if (!hasAgentMetadata) {
-      processedMessages.push(message);
-      continue;
+      return message;
     }
-
-    anyProcessed = true;
 
     try {
       /** @type {Array<TMessageContentParts>} */
@@ -172,11 +168,12 @@ function processMultiAgentHistory(orderedMessages, primaryAgent, agentConfigs) {
 
       for (const part of message.content) {
         const agentId = part?.agentId;
-        if (!agentId || agentId === primaryAgentId) {
+        // For single agent: include all parts; for multi-agent: filter to primary
+        if (!hasMultipleAgents || !agentId || agentId === primaryAgentId) {
           const newIndex = filteredContent.length;
           const { agentId: _a, groupId: _g, ...cleanPart } = part;
           filteredContent.push(cleanPart);
-          if (agentId) {
+          if (agentId && hasMultipleAgents) {
             agentIdMap[newIndex] = agentId;
           }
         }
@@ -187,14 +184,12 @@ function processMultiAgentHistory(orderedMessages, primaryAgent, agentConfigs) {
           ? labelContentByAgent(filteredContent, agentIdMap, agentNames)
           : filteredContent;
 
-      processedMessages.push({ ...message, content: finalContent });
+      return { ...message, content: finalContent };
     } catch (error) {
       logger.error('[AgentClient] Error processing multi-agent message:', error);
-      processedMessages.push(message);
+      return message;
     }
-  }
-
-  return anyProcessed ? processedMessages : orderedMessages;
+  };
 }
 
 class AgentClient extends BaseClient {
@@ -332,17 +327,12 @@ class AgentClient extends BaseClient {
     { instructions = null, additional_instructions = null },
     opts,
   ) {
-    let orderedMessages = this.constructor.getMessagesForConversation({
+    const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
       summary: this.shouldSummarize,
+      mapMethod: createMultiAgentMapper(this.options.agent, this.agentConfigs),
     });
-
-    orderedMessages = processMultiAgentHistory(
-      orderedMessages,
-      this.options.agent,
-      this.agentConfigs,
-    );
 
     let payload;
     /** @type {number | undefined} */
