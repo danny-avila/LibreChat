@@ -131,7 +131,6 @@ router.post('/branch', async (req, res) => {
       return res.status(400).json({ error: 'messageId and agentId are required' });
     }
 
-    // Get the source message
     const sourceMessage = await getMessage({ user: userId, messageId });
     if (!sourceMessage) {
       return res.status(404).json({ error: 'Source message not found' });
@@ -156,6 +155,7 @@ router.post('/branch', async (req, res) => {
     }
 
     // Filter content to only include parts attributed to the specified agentId
+    // Also strip agentId and groupId metadata since the branch is now standalone
     const filteredContent = [];
 
     for (const part of sourceMessage.content) {
@@ -164,7 +164,9 @@ router.post('/branch', async (req, res) => {
 
       // Only include content that is explicitly attributed to this agentId
       if (contentAgentId === agentId) {
-        filteredContent.push(part);
+        // Strip parallel content metadata from the branched content
+        const { agentId: _a, groupId: _g, ...cleanPart } = part;
+        filteredContent.push(cleanPart);
       }
     }
 
