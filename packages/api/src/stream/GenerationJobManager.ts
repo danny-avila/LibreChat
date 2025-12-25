@@ -238,8 +238,8 @@ class GenerationJobManagerClass {
         if (currentRuntime.allSubscribersLeftHandlers) {
           this.jobStore
             .getContentParts(streamId)
-            .then((content) => {
-              const parts = content ?? [];
+            .then((result) => {
+              const parts = result?.content ?? [];
               for (const handler of currentRuntime.allSubscribersLeftHandlers ?? []) {
                 try {
                   handler(parts);
@@ -426,7 +426,8 @@ class GenerationJobManagerClass {
     }
 
     // Get content before clearing state
-    const content = (await this.jobStore.getContentParts(streamId)) ?? [];
+    const result = await this.jobStore.getContentParts(streamId);
+    const content = result?.content ?? [];
 
     // Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
     // In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation
@@ -765,7 +766,8 @@ class GenerationJobManagerClass {
       return null;
     }
 
-    const aggregatedContent = (await this.jobStore.getContentParts(streamId)) ?? [];
+    const result = await this.jobStore.getContentParts(streamId);
+    const aggregatedContent = result?.content ?? [];
     const runSteps = await this.jobStore.getRunSteps(streamId);
 
     logger.debug(`[GenerationJobManager] getResumeState:`, {
@@ -872,7 +874,8 @@ class GenerationJobManagerClass {
       return null;
     }
 
-    const aggregatedContent = (await this.jobStore.getContentParts(streamId)) ?? [];
+    const result = await this.jobStore.getContentParts(streamId);
+    const aggregatedContent = result?.content ?? [];
 
     return {
       active: jobData.status === 'running',

@@ -1,5 +1,10 @@
 const { logger } = require('@librechat/data-schemas');
-const { Constants, isAgentsEndpoint, ResourceType } = require('librechat-data-provider');
+const {
+  Constants,
+  ResourceType,
+  isAgentsEndpoint,
+  isEphemeralAgentId,
+} = require('librechat-data-provider');
 const { canAccessResource } = require('./canAccessResource');
 const { getAgent } = require('~/models/Agent');
 
@@ -13,7 +18,8 @@ const { getAgent } = require('~/models/Agent');
  */
 const resolveAgentIdFromBody = async (agentCustomId) => {
   // Handle ephemeral agents - they don't need permission checks
-  if (agentCustomId === Constants.EPHEMERAL_AGENT_ID) {
+  // Real agent IDs always start with "agent_", so anything else is ephemeral
+  if (isEphemeralAgentId(agentCustomId)) {
     return null; // No permission check needed for ephemeral agents
   }
 
@@ -62,7 +68,8 @@ const canAccessAgentFromBody = (options) => {
       }
 
       // Skip permission checks for ephemeral agents
-      if (agentId === Constants.EPHEMERAL_AGENT_ID) {
+      // Real agent IDs always start with "agent_", so anything else is ephemeral
+      if (isEphemeralAgentId(agentId)) {
         return next();
       }
 

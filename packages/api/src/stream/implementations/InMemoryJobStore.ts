@@ -260,8 +260,16 @@ export class InMemoryJobStore implements IJobStore {
    * Get content parts for a job.
    * Returns live content from stored reference.
    */
-  async getContentParts(streamId: string): Promise<Agents.MessageContentComplex[] | null> {
-    return this.contentState.get(streamId)?.contentParts ?? null;
+  async getContentParts(streamId: string): Promise<{
+    content: Agents.MessageContentComplex[];
+  } | null> {
+    const state = this.contentState.get(streamId);
+    if (!state?.contentParts) {
+      return null;
+    }
+    return {
+      content: state.contentParts,
+    };
   }
 
   /**
