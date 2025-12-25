@@ -260,14 +260,14 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
  * @returns {Assistant[]} - The filtered list of assistants.
  */
 function filterAssistants({ assistants, userId, assistantsConfig }) {
-  const { supportedIds, excludedIds, privateAssistants } = assistantsConfig;
-  if (privateAssistants) {
-    return assistants.filter((assistant) => userId === assistant.metadata?.author);
-  } else if (supportedIds?.length) {
+  const { supportedIds, excludedIds } = assistantsConfig;
+
+  if (supportedIds?.length) {
     return assistants.filter((assistant) => supportedIds.includes(assistant.id));
   } else if (excludedIds?.length) {
     return assistants.filter((assistant) => !excludedIds.includes(assistant.id));
   }
+
   return assistants;
 }
 

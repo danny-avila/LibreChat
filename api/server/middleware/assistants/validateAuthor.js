@@ -27,7 +27,9 @@ const validateAuthor = async ({ req, openai, overrideEndpoint, overrideAssistant
     return;
   }
 
-  if (!assistantsConfig.privateAssistants) {
+  // 只有在明确设置 privateAssistants: false 时才跳过作者验证
+  // 默认情况（undefined）和 true 都需要验证作者
+  if (assistantsConfig.privateAssistants === false) {
     return;
   }
 

@@ -241,14 +241,26 @@ function filterAssistantDocs({ documents, userId, assistantsConfig = {} }) {
     return document;
   };
 
-  if (privateAssistants) {
-    return documents.filter((doc) => userId === doc.user.toString()).map(removeUserId);
-  } else if (supportedIds?.length) {
-    return documents.filter((doc) => supportedIds.includes(doc.assistant_id)).map(removeUserId);
-  } else if (excludedIds?.length) {
-    return documents.filter((doc) => !excludedIds.includes(doc.assistant_id)).map(removeUserId);
+  // 默认只显示用户自己创建的助手
+  const userDocs = documents.filter((doc) => userId === doc.user.toString());
+  
+  if (privateAssistants === false) {
+    // 如果明确配置 privateAssistants 为 false，则显示所有助手（受其他过滤器限制）
+    if (supportedIds?.length) {
+      return documents.filter((doc) => supportedIds.includes(doc.assistant_id)).map(removeUserId);
+    } else if (excludedIds?.length) {
+      return documents.filter((doc) => !excludedIds.includes(doc.assistant_id)).map(removeUserId);
+    }
+    return documents.map(removeUserId);
   }
-  return documents.map(removeUserId);
+  
+  // 默认情况或 privateAssistants 为 true 时，只显示用户创建的助手
+  if (supportedIds?.length) {
+    return userDocs.filter((doc) => supportedIds.includes(doc.assistant_id)).map(removeUserId);
+  } else if (excludedIds?.length) {
+    return userDocs.filter((doc) => !excludedIds.includes(doc.assistant_id)).map(removeUserId);
+  }
+  return userDocs.map(removeUserId);
 }
 
 /**
@@ -262,7 +274,7 @@ const getAssistantDocuments = async (req, res) => {
     const endpoint = req.query?.endpoint;
     const assistantsConfig = appConfig.endpoints?.[endpoint];
     const documents = await getAssistants(
-      {},
+      { user: req.user.id },
       {
         user: 1,
         assistant_id: 1,
