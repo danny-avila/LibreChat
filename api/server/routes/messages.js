@@ -170,6 +170,7 @@ router.post('/branch', async (req, res) => {
       messageId: newMessageId,
       conversationId: sourceMessage.conversationId,
       parentMessageId: sourceMessage.parentMessageId,
+      attachments: sourceMessage.attachments,
       isCreatedByUser: false,
       model: sourceMessage.model,
       endpoint: sourceMessage.endpoint,
