@@ -91,9 +91,14 @@
 
 ---
 
-## Phase 2: Agent核心逻辑（待开始）
+## Phase 2: Agent核心逻辑（进行中 ⏳）
 
-### ⬜ Agent类实现
+### ✅ 提示词和工具
+- [x] 创建 `prompts.js` - 系统提示词（System Prompt）生成
+- [x] 实现 `getSystemPrompt()` - 生成数据分析专用的 System Message
+- [x] 实现 `getToolsDefinitions()` - 定义传给 LLM 的函数声明
+
+### ⏳ Agent类实现
 - [ ] 创建 `api/server/services/Agents/e2bAgent/` 目录
 - [ ] 实现 `index.js` - E2BDataAnalystAgent主类
 - [ ] 实现消息处理流程：
@@ -103,10 +108,7 @@
   - `executeToolCalls()` - 执行工具调用
   - `cleanup()` - 清理资源
 
-### ⬜ 提示词和工具
-- [ ] 创建 `prompts.js` - 系统提示词（System Prompt）生成
-- [ ] 实现 `getSystemPrompt()` - 生成数据分析专用的 System Message
-- [ ] 实现 `getToolsDefinitions()` - 定义传给 LLM 的函数声明
+### ⏳ 工具实现
 - [ ] 创建 `tools.js` - 对接 CodeExecutor 和 FileHandler 的工具函数实现
 - [ ] 实现工具函数：
   - `execute_code` - 执行Python代码
