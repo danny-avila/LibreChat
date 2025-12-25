@@ -230,9 +230,10 @@ export default function useStepHandler({
     }
     const metadata = {
       agentId: runStep.agentId,
-      // Use groupId if available, otherwise default to 1 when agentId is present
-      // This ensures parallel content from multiple agents shares the same groupId
-      groupId: runStep.groupId ?? (runStep.agentId ? 1 : undefined),
+      // Only set groupId when explicitly provided by the server
+      // Sequential handoffs have agentId but no groupId
+      // Parallel execution has both agentId AND groupId
+      groupId: runStep.groupId,
     };
     return metadata;
   };
