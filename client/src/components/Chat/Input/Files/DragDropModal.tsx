@@ -137,6 +137,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     endpoint,
     endpointType,
     capabilities,
+    useResponsesApi,
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
   ]);

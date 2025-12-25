@@ -217,6 +217,7 @@ const AttachFileMenu = ({
     provider,
     endpointType,
     capabilities,
+    useResponsesApi,
     setToolResource,
     setEphemeralAgent,
     sharePointEnabled,
