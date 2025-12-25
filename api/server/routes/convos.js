@@ -6,6 +6,7 @@ const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
 const {
   createImportLimiters,
+  validateConvoAccess,
   createForkLimiters,
   configMiddleware,
 } = require('~/server/middleware');
@@ -151,17 +152,39 @@ router.delete('/all', async (req, res) => {
   }
 });
 
-router.post('/update', async (req, res) => {
-  const update = req.body.arg;
+/** Maximum allowed length for conversation titles */
+const MAX_CONVO_TITLE_LENGTH = 1024;
 
-  if (!update.conversationId) {
+/**
+ * Updates a conversation's title.
+ * @route POST /update
+ * @param {string} req.body.arg.conversationId - The conversation ID to update.
+ * @param {string} req.body.arg.title - The new title for the conversation.
+ * @returns {object} 201 - The updated conversation object.
+ */
+router.post('/update', validateConvoAccess, async (req, res) => {
+  const { conversationId, title } = req.body.arg ?? {};
+
+  if (!conversationId) {
     return res.status(400).json({ error: 'conversationId is required' });
   }
 
+  if (title === undefined) {
+    return res.status(400).json({ error: 'title is required' });
+  }
+
+  if (typeof title !== 'string') {
+    return res.status(400).json({ error: 'title must be a string' });
+  }
+
+  const sanitizedTitle = title.trim().slice(0, MAX_CONVO_TITLE_LENGTH);
+
   try {
-    const dbResponse = await saveConvo(req, update, {
-      context: `POST /api/convos/update ${update.conversationId}`,
-    });
+    const dbResponse = await saveConvo(
+      req,
+      { conversationId, title: sanitizedTitle },
+      { context: `POST /api/convos/update ${conversationId}` },
+    );
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error updating conversation', error);
