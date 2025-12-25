@@ -970,8 +970,8 @@ export class MCPOAuthHandler {
       });
 
       const headers: HeadersInit = {
-        'Content-Type': 'application/x-www-form-urlencoded',
         Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
         ...oauthHeaders,
       };
 

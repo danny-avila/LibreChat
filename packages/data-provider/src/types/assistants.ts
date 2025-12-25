@@ -166,6 +166,7 @@ export type AgentModelParameters = {
   top_p: AgentParameterValue;
   frequency_penalty: AgentParameterValue;
   presence_penalty: AgentParameterValue;
+  useResponsesApi?: boolean;
 };
 
 export interface AgentBaseResource {

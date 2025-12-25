@@ -278,7 +278,6 @@ describe('AttachFileMenu', () => {
       { name: 'OpenAI', endpoint: EModelEndpoint.openAI },
       { name: 'Anthropic', endpoint: EModelEndpoint.anthropic },
       { name: 'Google', endpoint: EModelEndpoint.google },
-      { name: 'Azure OpenAI', endpoint: EModelEndpoint.azureOpenAI },
       { name: 'Custom', endpoint: EModelEndpoint.custom },
     ];
 
@@ -300,6 +299,45 @@ describe('AttachFileMenu', () => {
 
         expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
       });
+    });
+
+    it('should show Upload to Provider for Azure OpenAI with useResponsesApi', () => {
+      mockUseAgentToolPermissions.mockReturnValue({
+        fileSearchAllowedByAgent: false,
+        codeAllowedByAgent: false,
+        provider: EModelEndpoint.azureOpenAI,
+      });
+
+      renderAttachFileMenu({
+        endpoint: EModelEndpoint.azureOpenAI,
+        endpointType: EModelEndpoint.azureOpenAI,
+        useResponsesApi: true,
+      });
+
+      const button = screen.getByRole('button', { name: /attach file options/i });
+      fireEvent.click(button);
+
+      expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
+    });
+
+    it('should NOT show Upload to Provider for Azure OpenAI without useResponsesApi', () => {
+      mockUseAgentToolPermissions.mockReturnValue({
+        fileSearchAllowedByAgent: false,
+        codeAllowedByAgent: false,
+        provider: EModelEndpoint.azureOpenAI,
+      });
+
+      renderAttachFileMenu({
+        endpoint: EModelEndpoint.azureOpenAI,
+        endpointType: EModelEndpoint.azureOpenAI,
+        useResponsesApi: false,
+      });
+
+      const button = screen.getByRole('button', { name: /attach file options/i });
+      fireEvent.click(button);
+
+      expect(screen.queryByText('Upload to Provider')).not.toBeInTheDocument();
+      expect(screen.getByText('Upload Image')).toBeInTheDocument();
     });
   });
 

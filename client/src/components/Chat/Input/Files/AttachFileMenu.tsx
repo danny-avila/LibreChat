@@ -46,6 +46,7 @@ interface AttachFileMenuProps {
   conversationId: string;
   endpointType?: EModelEndpoint;
   endpointFileConfig?: EndpointFileConfig;
+  useResponsesApi?: boolean;
 }
 
 const AttachFileMenu = ({
@@ -55,6 +56,7 @@ const AttachFileMenu = ({
   endpointType,
   conversationId,
   endpointFileConfig,
+  useResponsesApi,
 }: AttachFileMenuProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
@@ -117,9 +119,13 @@ const AttachFileMenu = ({
         currentProvider = Providers.OPENROUTER;
       }
 
+      const isAzureWithResponsesApi =
+        currentProvider === EModelEndpoint.azureOpenAI && useResponsesApi;
+
       if (
         isDocumentSupportedProvider(endpointType) ||
-        isDocumentSupportedProvider(currentProvider)
+        isDocumentSupportedProvider(currentProvider) ||
+        isAzureWithResponsesApi
       ) {
         items.push({
           label: localize('com_ui_upload_provider'),
@@ -211,6 +217,7 @@ const AttachFileMenu = ({
     provider,
     endpointType,
     capabilities,
+    useResponsesApi,
     setToolResource,
     setEphemeralAgent,
     sharePointEnabled,
