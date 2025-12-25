@@ -1,6 +1,6 @@
 # E2B Data Analyst Agent 开发任务清单
 
-## 今日已完成 (2025-12-23)
+## 2025-12-23 已完成任务 ✅
 
 ### ✅ 基础工作
 - [x] 分析LibreChat代码库结构
@@ -38,47 +38,56 @@
 
 ---
 
-## Phase 1: 基础设施搭建（进行中）
+## 2025-12-24 已完成任务 ✅
 
-### ⏳ 端点集成
-- [ ] 在 `api/server/middleware/buildEndpointOption.js` 中注册E2B Assistants构建函数
-- [ ] 在 `api/server/services/Config/getEndpointsConfig.js` 添加E2B配置处理
-- [ ] 在 `packages/data-provider/src/config.ts` 添加E2B模型配置
-- [ ] 在 `packages/data-provider/src/file-config.ts` 添加E2B文件支持
-- [ ] 在 `packages/data-provider/src/config.ts` 添加E2B到EndpointURLs
+### ✅ E2B SDK 深度集成 (v2.8.4 适配)
+- [x] 安装 E2B SDK: `npm install @e2b/code-interpreter`
+- [x] **重构 `initialize.js` (E2B 客户端管理器)**:
+  - [x] 修正属性名为 `sandboxId` (小写d) 以对齐 SDK 源码
+  - [x] 修正 `Sandbox.create(template, opts)` 的显式传参方式
+  - [x] 切换至 `.files` 模块 (取代旧版 filesystem) 实现文件操作
+  - [x] 适配 `result.logs.stdout/stderr` 嵌套数据结构
+  - [x] 实现 `betaGetMcpToken` 和 `betaGetMcpUrl` (适配 Beta 前缀)
+  - [x] 完成优雅关闭逻辑 (SIGTERM/SIGINT 自动清理)
+- [x] **重构 `codeExecutor.js` (代码执行服务)**:
+  - [x] 实现 Python 代码安全分级校验 (Critical/Warning)
+  - [x] **重大突破**: 实现从 `results` 数组中自动提取 Base64 格式的图表 (PNG/JPEG/SVG)
+  - [x] 实现多代码块批量执行逻辑 (`executeBatch`)
+  - [x] 适配 v2.8.4 的日志格式化处理
 
-### ⏳ E2B模型层
-- [ ] 创建 `packages/data-schemas/src/schema/e2bAssistant.ts` - E2B Assistant Schema
-- [ ] 创建 `packages/data-schemas/src/models/e2bAssistant.ts` - E2B Assistant Model
-- [ ] 创建 `packages/data-schemas/src/types/e2bAssistant.ts` - TypeScript类型定义
-- [ ] 在 `packages/data-schemas/src/index.ts` 中注册新模型
+### ✅ 数据库与全系统集成
+- [x] 创建 `packages/data-schemas/src/schema/e2bAssistant.ts` - E2B Assistant Schema
+- [x] 创建 `packages/data-schemas/src/models/e2bAssistant.ts` - E2BAssistant Model
+- [x] 创建 `packages/data-schemas/src/types/e2bAssistant.ts` - TypeScript 类型定义
+- [x] 在 `packages/data-schemas/src/index.ts` 中注册新模型
+- [x] 在 `api/server/middleware/buildEndpointOption.js` 中注册 E2B 构建函数
 
-### ⏳ API模型层
-- [ ] 创建 `api/models/E2BAssistant.js` - E2B Assistant数据模型
-- [ ] 实现 CRUD操作函数：
-  - `createE2BAssistantDoc()` - 创建Assistant
-  - `getE2BAssistantDocs()` - 获取Assistant列表
-  - `getE2BAssistantDoc()` - 获取单个Assistant
-  - `updateE2BAssistantDoc()` - 更新Assistant
-  - `deleteE2BAssistantDoc()` - 删除Assistant
-- [ ] 在 `api/models/index.js` 中注册新模型
+---
 
-### ⏳ 沙箱服务层
-- [ ] 安装E2B SDK: `npm install @e2b/code-interpreter`
-- [ ] 在 `api/server/services/Sandbox/` 目录下创建服务：
-  - `codeExecutor.js` - 代码执行服务
-  - `fileHandler.js` - 文件处理服务
-- [ ] 实现 `CodeExecutor` 类：
-  - `executeCode()` - 执行Python代码
-  - `uploadFile()` - 上传文件
-  - `downloadFile()` - 下载文件
-  - `listFiles()` - 列出文件
-  - `loadDataset()` - 加载数据集
+## Phase 1: 基础设施搭建（已完成 ✅）
 
-### ⏳ E2B SDK集成
-- [ ] 在 `api/server/services/Endpoints/e2bAssistants/initialize.js` 中集成实际E2B SDK
-- [ ] 替换TODO标记的模拟代码为真实的E2B SDK调用
-- [ ] 测试沙箱创建和销毁
+### ✅ 端点集成
+- [x] 在 `api/server/services/Config/getEndpointsConfig.js` 添加 E2B 配置处理
+- [x] 在 `packages/data-provider/src/config.ts` 添加 E2B 模型配置
+- [x] 在 `packages/data-provider/src/file-config.ts` 添加 E2B 文件支持
+- [x] 在 `packages/data-provider/src/config.ts` 添加 E2B 到 EndpointURLs
+
+### ✅ API 模型层 (CRUD 实现)
+- [x] 创建 `api/models/E2BAssistant.js` - E2B Assistant 业务层数据模型
+- [x] 实现 CRUD 操作函数：
+  - `createE2BAssistantDoc()` - 创建 Assistant
+  - `getE2BAssistantDocs()` - 获取 Assistant 列表
+  - `getE2BAssistantDoc()` - 获取单个 Assistant
+  - `updateE2BAssistantDoc()` - 更新 Assistant
+  - `deleteE2BAssistantDoc()` - 删除 Assistant
+- [x] 在 `api/models/index.js` 中注册新模型
+
+### ✅ 沙箱服务层完善
+- [x] 创建 `api/server/services/Sandbox/fileHandler.js`：
+  - [x] `syncFilesToSandbox()` - 同步本地 uploads 到云端 (支持 S3/Azure/Local)
+  - [x] `persistArtifacts()` - 将沙箱生成的成果持久化到系统存储并创建 DB 记录
+- [x] 在 `codeExecutor.js` 中补全 `loadDataset()` 逻辑 (已包含在 executeCode 流程中)
+- [x] 增强 `codeExecutor.js`：实现安全校验与多格式图表提取
 
 ---
 
@@ -95,19 +104,19 @@
   - `cleanup()` - 清理资源
 
 ### ⬜ 提示词和工具
-- [ ] 创建 `prompts.js` - 系统提示词生成
-- [ ] 实现 `getSystemPrompt()` - 生成系统提示词
-- [ ] 实现 `getToolsDefinitions()` - 获取工具定义
-- [ ] 创建 `tools.js` - 工具函数实现
+- [ ] 创建 `prompts.js` - 系统提示词（System Prompt）生成
+- [ ] 实现 `getSystemPrompt()` - 生成数据分析专用的 System Message
+- [ ] 实现 `getToolsDefinitions()` - 定义传给 LLM 的函数声明
+- [ ] 创建 `tools.js` - 对接 CodeExecutor 和 FileHandler 的工具函数实现
 - [ ] 实现工具函数：
   - `execute_code` - 执行Python代码
   - `upload_file` - 上传文件
   - `download_file` - 下载文件
 
-### ⬜ LLM集成
-- [ ] 集成OpenAI LLM客户端
-- [ ] 实现工具调用逻辑
-- [ ] 实现对话上下文管理
+### ⬜ LLM 与上下文集成
+- [ ] 集成 OpenAI/Anthropic LLM 客户端
+- [ ] 实现多轮对话的工具调用循环（Thought -> Action -> Observation）
+- [ ] 实现沙箱状态在对话中的持久化
 
 ---
 
@@ -175,38 +184,6 @@
 
 ---
 
-## 待提交内容
-
-### 下次提交计划
-完成后将提交以下内容：
-
-```bash
-# Phase 1 提交
-git add packages/data-provider/src/schemas.ts
-git add api/server/services/Endpoints/e2bAssistants/
-git add packages/data-schemas/src/schema/e2bAssistant.ts
-git add packages/data-schemas/src/models/e2bAssistant.ts
-git add packages/data-schemas/src/types/e2bAssistant.ts
-git add api/models/E2BAssistant.js
-git add api/server/services/Sandbox/
-git commit -m "feat(e2b): Complete Phase 1 - E2B infrastructure setup"
-
-# Phase 2 提交
-git add api/server/services/Agents/e2bAgent/
-git commit -m "feat(e2b): Complete Phase 2 - E2B Data Analyst Agent core"
-
-# Phase 3 提交
-git add api/server/routes/e2bAssistants/
-git add api/server/middleware/
-git commit -m "feat(e2b): Complete Phase 3 - E2B Assistants API layer"
-
-# Phase 4 提交
-git add api/tests/e2b/
-git commit -m "feat(e2b): Complete Phase 4 - Error handling and optimization"
-```
-
----
-
 ## 环境配置
 
 ### 需要的环境变量
@@ -217,11 +194,6 @@ E2B_SANDBOX_TEMPLATE=python3-data-analysis
 E2B_DEFAULT_TIMEOUT_MS=300000
 E2B_DEFAULT_MAX_MEMORY_MB=2048
 E2B_DEFAULT_MAX_CPU_PERCENT=80
-```
-
-### 需要安装的依赖
-```bash
-npm install @e2b/code-interpreter
 ```
 
 ---
@@ -286,5 +258,6 @@ npm install @e2b/code-interpreter
 ---
 
 **创建日期**: 2025-12-23  
-**最后更新**: 2025-12-23  
-**当前分支**: feature/e2b-integration
+**最后更新**: 2025-12-24  
+**当前状态**: 后端核心引擎适配完成，具备代码运行与图表捕获能力。
+**当前分支**: `feature/e2b-integration`

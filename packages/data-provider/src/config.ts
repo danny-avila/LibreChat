@@ -972,6 +972,7 @@ export const alternateName = {
   [EModelEndpoint.openAI]: 'OpenAI',
   [EModelEndpoint.assistants]: 'Assistants',
   [EModelEndpoint.agents]: 'My Agents',
+  [EModelEndpoint.e2bAssistants]: 'E2B Data Analyst',
   [EModelEndpoint.azureAssistants]: 'Azure Assistants',
   [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
   [EModelEndpoint.google]: 'Google',
@@ -1130,6 +1131,7 @@ export const EndpointURLs = {
   [EModelEndpoint.assistants]: `${apiBaseUrl()}/api/assistants/v2/chat`,
   [EModelEndpoint.azureAssistants]: `${apiBaseUrl()}/api/assistants/v1/chat`,
   [EModelEndpoint.agents]: `${apiBaseUrl()}/api/${EModelEndpoint.agents}/chat`,
+  [EModelEndpoint.e2bAssistants]: `${apiBaseUrl()}/api/e2b-assistants/chat`,
 } as const;
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
@@ -1140,6 +1142,7 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.custom,
   EModelEndpoint.agents,
   EModelEndpoint.bedrock,
+  EModelEndpoint.e2bAssistants,
 ]);
 
 export const supportsBalanceCheck = {
@@ -1152,6 +1155,7 @@ export const supportsBalanceCheck = {
   [EModelEndpoint.azureOpenAI]: true,
   [EModelEndpoint.bedrock]: true,
   [EModelEndpoint.google]: true,
+  [EModelEndpoint.e2bAssistants]: true,
 };
 
 export const visionModels = [

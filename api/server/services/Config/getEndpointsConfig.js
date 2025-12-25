@@ -93,6 +93,22 @@ async function getEndpointsConfig(req) {
     };
   }
 
+  if (
+    mergedConfig[EModelEndpoint.e2bAssistants] &&
+    appConfig?.endpoints?.[EModelEndpoint.e2bAssistants]
+  ) {
+    const { disableBuilder, capabilities, allowedLibraries, sandboxTemplate, ..._rest } =
+      appConfig.endpoints[EModelEndpoint.e2bAssistants];
+
+    mergedConfig[EModelEndpoint.e2bAssistants] = {
+      ...mergedConfig[EModelEndpoint.e2bAssistants],
+      disableBuilder,
+      capabilities,
+      allowedLibraries,
+      sandboxTemplate,
+    };
+  }
+
   if (mergedConfig[EModelEndpoint.bedrock] && appConfig?.endpoints?.[EModelEndpoint.bedrock]) {
     const { availableRegions } = appConfig.endpoints[EModelEndpoint.bedrock];
     mergedConfig[EModelEndpoint.bedrock] = {
