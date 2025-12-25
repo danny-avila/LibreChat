@@ -609,17 +609,6 @@ export type TAttachment =
       Pick<TFile, 'conversationId'> &
       TAttachmentMetadata);
 
-/**
- * Metadata for parallel content rendering.
- * Maps content part index to agent/group information.
- */
-export type TContentMetadata = {
-  /** Agent ID that produced this content (present for all MultiAgentGraph runs) */
-  agentId?: string;
-  /** Group ID for parallel execution (same groupId = same parallel group/column) */
-  groupId?: number;
-};
-
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
   content?: TMessageContentParts[];
@@ -629,12 +618,6 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   attachments?: TAttachment[];
   clientTimestamp?: string;
   feedback?: TFeedback;
-  /**
-   * Metadata map for parallel content rendering.
-   * Key is content part index, value contains agentId and/or groupId.
-   * Present only for multi-agent or parallel execution scenarios.
-   */
-  contentMetadataMap?: Record<number, TContentMetadata>;
 };
 
 export const coerceNumber = z.union([z.number(), z.string()]).transform((val) => {

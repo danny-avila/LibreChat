@@ -76,7 +76,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const collectedUsage = [];
   /** @type {ArtifactPromises} */
   const artifactPromises = [];
-  const { contentParts, aggregateContent, contentMetadataMap } = createContentAggregator();
+  const { contentParts, aggregateContent } = createContentAggregator();
   const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
   const eventHandlers = getDefaultHandlers({
     res,
@@ -297,7 +297,6 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     collectedUsage,
     aggregateContent,
     artifactPromises,
-    contentMetadataMap,
     agent: primaryConfig,
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,

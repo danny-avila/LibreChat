@@ -1,10 +1,5 @@
 import { memo, useMemo } from 'react';
-import type {
-  TMessageContentParts,
-  TContentMetadata,
-  SearchResultData,
-  TAttachment,
-} from 'librechat-data-provider';
+import type { TMessageContentParts, SearchResultData, TAttachment } from 'librechat-data-provider';
 import { SearchContext } from '~/Providers';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
@@ -30,18 +25,18 @@ export type ParallelSection = {
  * Parts with same groupId are displayed in columns, grouped by agentId.
  *
  * @param content - Array of content parts
- * @param contentMetadataMap - Optional map of content index to metadata (new approach)
  * @returns Object containing parallel sections and sequential parts
  */
 export function groupParallelContent(
   content: Array<TMessageContentParts | undefined> | undefined,
-  contentMetadataMap?: Map<number, TContentMetadata>,
 ): { parallelSections: ParallelSection[]; sequentialParts: PartWithIndex[] } {
   if (!content) {
     return { parallelSections: [], sequentialParts: [] };
   }
 
   const groupMap = new Map<number, PartWithIndex[]>();
+  // Track placeholder agentIds per groupId (parts with empty type that establish columns)
+  const placeholderAgents = new Map<number, Set<string>>();
   const noGroup: PartWithIndex[] = [];
 
   content.forEach((part, idx) => {
@@ -49,12 +44,22 @@ export function groupParallelContent(
       return;
     }
 
-    // Try to get metadata from map first (new approach), fall back to embedded metadata (legacy)
-    const metadata = contentMetadataMap?.get(idx);
-    const groupId =
-      metadata?.groupId ?? (part as TMessageContentParts & { groupId?: number }).groupId;
+    // Read metadata directly from content part (TMessageContentParts includes ContentMetadata)
+    const { groupId } = part;
+
+    // Check for placeholder (empty type) before narrowing - access agentId via casting
+    const partAgentId = (part as { agentId?: string }).agentId;
 
     if (groupId != null) {
+      // Track placeholder parts (empty type) to establish columns for pending agents
+      if (!part.type && partAgentId) {
+        if (!placeholderAgents.has(groupId)) {
+          placeholderAgents.set(groupId, new Set());
+        }
+        placeholderAgents.get(groupId)!.add(partAgentId);
+        return; // Don't add to groupMap - we'll handle these separately
+      }
+
       if (!groupMap.has(groupId)) {
         groupMap.set(groupId, []);
       }
@@ -64,23 +69,34 @@ export function groupParallelContent(
     }
   });
 
+  // Collect all groupIds (from both real content and placeholders)
+  const allGroupIds = new Set([...groupMap.keys(), ...placeholderAgents.keys()]);
+
   // Build parallel sections with columns grouped by agentId
   const sections: ParallelSection[] = [];
-  for (const [groupId, parts] of groupMap) {
+  for (const groupId of allGroupIds) {
     const columnMap = new Map<string, PartWithIndex[]>();
+    const parts = groupMap.get(groupId) ?? [];
 
     for (const { part, idx } of parts) {
-      // Try metadata map first, fall back to embedded agentId
-      const metadata = contentMetadataMap?.get(idx);
-      const agentId =
-        metadata?.agentId ??
-        (part as TMessageContentParts & { agentId?: string }).agentId ??
-        'unknown';
+      // Read agentId directly from content part (TMessageContentParts includes ContentMetadata)
+      const agentId = part.agentId ?? 'unknown';
 
       if (!columnMap.has(agentId)) {
         columnMap.set(agentId, []);
       }
       columnMap.get(agentId)!.push({ part, idx });
+    }
+
+    // Add empty columns for placeholder agents that don't have real content yet
+    const groupPlaceholders = placeholderAgents.get(groupId);
+    if (groupPlaceholders) {
+      for (const placeholderAgentId of groupPlaceholders) {
+        if (!columnMap.has(placeholderAgentId)) {
+          // Empty array signals this column should show loading state
+          columnMap.set(placeholderAgentId, []);
+        }
+      }
     }
 
     // Sort columns: primary agent (no ____N suffix) first, added agents (with suffix) second
@@ -105,12 +121,26 @@ export function groupParallelContent(
     sections.push({ groupId, columns });
   }
 
-  // Sort sections by the minimum index in each section
+  // Sort sections by the minimum index in each section (sections with only placeholders go last)
   sections.sort((a, b) => {
-    const aMin = Math.min(...a.columns.flatMap((c) => c.parts.map((p) => p.idx)));
-    const bMin = Math.min(...b.columns.flatMap((c) => c.parts.map((p) => p.idx)));
+    const aParts = a.columns.flatMap((c) => c.parts.map((p) => p.idx));
+    const bParts = b.columns.flatMap((c) => c.parts.map((p) => p.idx));
+    const aMin = aParts.length > 0 ? Math.min(...aParts) : Infinity;
+    const bMin = bParts.length > 0 ? Math.min(...bParts) : Infinity;
     return aMin - bMin;
   });
+
+  // Log output structure
+  const sectionsSummary = sections.map((s) => {
+    const colsSummary = s.columns
+      .map((c) => `${c.agentId}:[${c.parts.map((p) => p.idx).join(',')}]`)
+      .join(', ');
+    return `groupId=${s.groupId} columns={${colsSummary}}`;
+  });
+  const noGroupSummary = noGroup.map((p) => p.idx).join(',');
+  console.log(
+    `[groupParallelContent] Output: ${sections.length} sections [${sectionsSummary.join('; ')}], sequential=[${noGroupSummary}]`,
+  );
 
   return { parallelSections: sections, sequentialParts: noGroup };
 }
@@ -140,9 +170,8 @@ export const ParallelColumns = memo(function ParallelColumns({
   return (
     <div className={cn('flex w-full flex-col gap-3 md:flex-row', 'sibling-content-group')}>
       {columns.map(({ agentId, parts: columnParts }, colIdx) => {
-        // Check if first part is an empty-type placeholder (will be replaced by real content)
-        const firstPart = columnParts[0]?.part;
-        const showPlaceholderCursor = isSubmitting && firstPart && !firstPart.type;
+        // Show loading cursor if column has no content parts yet (empty array from placeholder)
+        const showLoadingCursor = isSubmitting && columnParts.length === 0;
 
         return (
           <div
@@ -155,7 +184,7 @@ export const ParallelColumns = memo(function ParallelColumns({
               isSubmitting={isSubmitting}
               conversationId={conversationId}
             />
-            {showPlaceholderCursor ? (
+            {showLoadingCursor ? (
               <Container>
                 <EmptyText />
               </Container>
@@ -175,7 +204,6 @@ export const ParallelColumns = memo(function ParallelColumns({
 
 type ParallelContentRendererProps = {
   content: Array<TMessageContentParts | undefined>;
-  contentMetadataMap?: Map<number, TContentMetadata>;
   messageId: string;
   conversationId?: string | null;
   attachments?: TAttachment[];
@@ -190,7 +218,6 @@ type ParallelContentRendererProps = {
  */
 export const ParallelContentRenderer = memo(function ParallelContentRenderer({
   content,
-  contentMetadataMap,
   messageId,
   conversationId,
   attachments,
@@ -199,8 +226,8 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
   renderPart,
 }: ParallelContentRendererProps) {
   const { parallelSections, sequentialParts } = useMemo(
-    () => groupParallelContent(content, contentMetadataMap),
-    [content, contentMetadataMap],
+    () => groupParallelContent(content),
+    [content],
   );
 
   const lastContentIdx = content.length - 1;

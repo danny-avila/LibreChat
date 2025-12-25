@@ -10,6 +10,7 @@ import type {
   Agents,
   TMessage,
   PartMetadata,
+  ContentMetadata,
   EventSubmission,
   TMessageContentParts,
 } from 'librechat-data-provider';
@@ -60,8 +61,6 @@ export default function useStepHandler({
   const toolCallIdMap = useRef(new Map<string, string | undefined>());
   const messageMap = useRef(new Map<string, TMessage>());
   const stepMap = useRef(new Map<string, Agents.RunStep>());
-  /** Maps content index -> { agentId, groupId } for parallel agent attribution */
-  const contentMetaMap = useRef(new Map<number, { agentId?: string; groupId?: number }>());
 
   /**
    * Calculate content index for a run step.
@@ -90,11 +89,14 @@ export default function useStepHandler({
     [],
   );
 
+  /** Metadata to propagate onto content parts for parallel rendering - uses ContentMetadata from data-provider */
+
   const updateContent = (
     message: TMessage,
     index: number,
     contentPart: Agents.MessageContentComplex,
     finalUpdate = false,
+    metadata?: ContentMetadata,
   ) => {
     const contentType = contentPart.type ?? '';
     if (!contentType) {
@@ -108,6 +110,7 @@ export default function useStepHandler({
     if (!updatedContent[index]) {
       updatedContent[index] = { type: contentPart.type as AllContentTypes };
     }
+
     /** Prevent overwriting an existing content part with a different type */
     const existingType = (updatedContent[index]?.type as string | undefined) ?? '';
     if (
@@ -205,7 +208,33 @@ export default function useStepHandler({
       };
     }
 
+    // Apply metadata to the content part for parallel rendering
+    // This must happen AFTER all content updates to avoid being overwritten
+    if (metadata?.agentId != null || metadata?.groupId != null) {
+      const part = updatedContent[index] as TMessageContentParts & ContentMetadata;
+      if (metadata.agentId != null) {
+        part.agentId = metadata.agentId;
+      }
+      if (metadata.groupId != null) {
+        part.groupId = metadata.groupId;
+      }
+    }
+
     return { ...message, content: updatedContent as TMessageContentParts[] };
+  };
+
+  /** Extract metadata from runStep for parallel content rendering */
+  const getStepMetadata = (runStep: Agents.RunStep | undefined): ContentMetadata | undefined => {
+    if (!runStep?.agentId && runStep?.groupId == null) {
+      return undefined;
+    }
+    const metadata = {
+      agentId: runStep.agentId,
+      // Use groupId if available, otherwise default to 1 when agentId is present
+      // This ensures parallel content from multiple agents shares the same groupId
+      groupId: runStep.groupId ?? (runStep.agentId ? 1 : undefined),
+    };
+    return metadata;
   };
 
   const stepHandler = useCallback(
@@ -240,16 +269,8 @@ export default function useStepHandler({
 
         stepMap.current.set(runStep.id, runStep);
 
-        // Track agentId and groupId for this content index (mirrors backend createContentAggregator)
-        const { agentId, groupId } = runStep as Agents.RunStep & { groupId?: number };
-
         // Calculate content index - use server index, offset by initialContent for edit scenarios
         const contentIndex = runStep.index + initialContent.length;
-
-        // Store metadata for parallel execution attribution
-        if (agentId || groupId != null) {
-          contentMetaMap.current.set(contentIndex, { agentId, groupId });
-        }
 
         let response = messageMap.current.get(responseMessageId);
 
@@ -263,15 +284,9 @@ export default function useStepHandler({
 
           // For edit scenarios, initialContent IS the complete starting content (not to be merged)
           // For resume scenarios (no editedContent), initialContent is empty and we use existingContent
-          // For parallel mode, use existingContent (placeholders with agentIds) so both columns show;
-          // updateContent will overwrite agentIds with correct values from server's contentAgentMap
           const existingContent = responseMessage?.content ?? [];
-          let mergedContent: TMessageContentParts[] = existingContent;
-          // Use initialContent only for non-parallel single-agent scenarios
-          const hasParallelContent = contentMetaMap.current.size > 0;
-          if (initialContent.length > 0 && !hasParallelContent) {
-            mergedContent = initialContent;
-          }
+          const mergedContent: TMessageContentParts[] =
+            initialContent.length > 0 ? initialContent : existingContent;
 
           response = {
             ...responseMessage,
@@ -318,7 +333,13 @@ export default function useStepHandler({
             };
 
             // Use the pre-calculated contentIndex which handles parallel agent indexing
-            updatedResponse = updateContent(updatedResponse, contentIndex, contentPart);
+            updatedResponse = updateContent(
+              updatedResponse,
+              contentIndex,
+              contentPart,
+              false,
+              getStepMetadata(runStep),
+            );
           });
 
           messageMap.current.set(responseMessageId, updatedResponse);
@@ -344,7 +365,17 @@ export default function useStepHandler({
         if (response) {
           // Agent updates don't need index adjustment
           const currentIndex = agent_update.index + initialContent.length;
-          const updatedResponse = updateContent(response, currentIndex, data);
+          // Agent updates carry their own agentId - use default groupId if agentId is present
+          const agentUpdateMeta: ContentMetadata | undefined = agent_update.agentId
+            ? { agentId: agent_update.agentId, groupId: 1 }
+            : undefined;
+          const updatedResponse = updateContent(
+            response,
+            currentIndex,
+            data,
+            false,
+            agentUpdateMeta,
+          );
           messageMap.current.set(responseMessageId, updatedResponse);
           const currentMessages = getMessages() || [];
           setMessages([...currentMessages.slice(0, -1), updatedResponse]);
@@ -379,16 +410,13 @@ export default function useStepHandler({
             contentPart.type || '',
             response.content,
           );
-          let updatedResponse = updateContent(response, currentIndex, contentPart);
-
-          // Add contentMetadataMap to message for O(1) parallel content detection
-          if (contentMetaMap.current.size > 0) {
-            updatedResponse = {
-              ...updatedResponse,
-              contentMetadataMap: Object.fromEntries(contentMetaMap.current),
-            };
-          }
-
+          const updatedResponse = updateContent(
+            response,
+            currentIndex,
+            contentPart,
+            false,
+            getStepMetadata(runStep),
+          );
           messageMap.current.set(responseMessageId, updatedResponse);
           const currentMessages = getMessages() || [];
           setMessages([...currentMessages.slice(0, -1), updatedResponse]);
@@ -423,16 +451,13 @@ export default function useStepHandler({
             contentPart.type || '',
             response.content,
           );
-          let updatedResponse = updateContent(response, currentIndex, contentPart);
-
-          // Add contentMetadataMap to message for O(1) parallel content detection
-          if (contentMetaMap.current.size > 0) {
-            updatedResponse = {
-              ...updatedResponse,
-              contentMetadataMap: Object.fromEntries(contentMetaMap.current),
-            };
-          }
-
+          const updatedResponse = updateContent(
+            response,
+            currentIndex,
+            contentPart,
+            false,
+            getStepMetadata(runStep),
+          );
           messageMap.current.set(responseMessageId, updatedResponse);
           const currentMessages = getMessages() || [];
           setMessages([...currentMessages.slice(0, -1), updatedResponse]);
@@ -478,7 +503,13 @@ export default function useStepHandler({
 
             // Use server's index, offset by initialContent for edit scenarios
             const currentIndex = runStep.index + initialContent.length;
-            updatedResponse = updateContent(updatedResponse, currentIndex, contentPart);
+            updatedResponse = updateContent(
+              updatedResponse,
+              currentIndex,
+              contentPart,
+              false,
+              getStepMetadata(runStep),
+            );
           });
 
           messageMap.current.set(responseMessageId, updatedResponse);
@@ -516,7 +547,13 @@ export default function useStepHandler({
 
           // Use server's index, offset by initialContent for edit scenarios
           const currentIndex = runStep.index + initialContent.length;
-          updatedResponse = updateContent(updatedResponse, currentIndex, contentPart, true);
+          updatedResponse = updateContent(
+            updatedResponse,
+            currentIndex,
+            contentPart,
+            true,
+            getStepMetadata(runStep),
+          );
 
           messageMap.current.set(responseMessageId, updatedResponse);
           const updatedMessages = messages.map((msg) =>
@@ -531,7 +568,6 @@ export default function useStepHandler({
         toolCallIdMap.current.clear();
         messageMap.current.clear();
         stepMap.current.clear();
-        contentMetaMap.current.clear();
       };
     },
     [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages, calculateContentIndex],
@@ -541,7 +577,6 @@ export default function useStepHandler({
     toolCallIdMap.current.clear();
     messageMap.current.clear();
     stepMap.current.clear();
-    contentMetaMap.current.clear();
   }, []);
 
   /**

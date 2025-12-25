@@ -148,11 +148,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     // Store reference to client's contentParts - graph will be set when run is created
     if (client?.contentParts) {
-      GenerationJobManager.setContentParts(
-        streamId,
-        client.contentParts,
-        client.contentMetadataMap,
-      );
+      GenerationJobManager.setContentParts(streamId, client.contentParts);
     }
 
     let userMessage;
@@ -510,11 +506,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
 
     // Store content parts reference for abort
     if (client?.contentParts) {
-      GenerationJobManager.setContentParts(
-        streamId,
-        client.contentParts,
-        client.contentMetadataMap,
-      );
+      GenerationJobManager.setContentParts(streamId, client.contentParts);
     }
 
     const closeHandler = createCloseHandler(job.abortController);

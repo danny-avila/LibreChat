@@ -428,7 +428,6 @@ class GenerationJobManagerClass {
     // Get content before clearing state
     const result = await this.jobStore.getContentParts(streamId);
     const content = result?.content ?? [];
-    const contentMetadataMap = result?.contentMetadataMap;
 
     // Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
     // In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation
@@ -458,7 +457,6 @@ class GenerationJobManagerClass {
             parentMessageId: userMessageId,
             conversationId: jobData.conversationId,
             content,
-            contentMetadataMap,
             sender: jobData.sender ?? 'AI',
             unfinished: true,
             error: false,
@@ -740,16 +738,12 @@ class GenerationJobManagerClass {
   /**
    * Set reference to the graph's contentParts array.
    */
-  setContentParts(
-    streamId: string,
-    contentParts: Agents.MessageContentComplex[],
-    contentMetadataMap?: Map<number, { agentId?: string; groupId?: number }>,
-  ): void {
+  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void {
     // Use runtime state check for performance (sync check)
     if (!this.runtimeState.has(streamId)) {
       return;
     }
-    this.jobStore.setContentParts(streamId, contentParts, contentMetadataMap);
+    this.jobStore.setContentParts(streamId, contentParts);
   }
 
   /**
@@ -774,7 +768,6 @@ class GenerationJobManagerClass {
 
     const result = await this.jobStore.getContentParts(streamId);
     const aggregatedContent = result?.content ?? [];
-    const contentMetadataMap = result?.contentMetadataMap;
     const runSteps = await this.jobStore.getRunSteps(streamId);
 
     logger.debug(`[GenerationJobManager] getResumeState:`, {
@@ -786,7 +779,6 @@ class GenerationJobManagerClass {
     return {
       runSteps,
       aggregatedContent,
-      contentMetadataMap,
       userMessage: jobData.userMessage,
       responseMessageId: jobData.responseMessageId,
       conversationId: jobData.conversationId,

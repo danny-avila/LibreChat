@@ -468,9 +468,14 @@ export type PartMetadata = {
   expires_at?: number;
   /** Index indicating parallel sibling content (same stepIndex in multi-agent runs) */
   siblingIndex?: number;
-  /** The agent ID that generated this content part */
+  /** Agent ID for parallel agent rendering - identifies which agent produced this content */
   agentId?: string;
+  /** Group ID for parallel content - parts with same groupId are displayed in columns */
+  groupId?: number;
 };
+
+/** Metadata for parallel content rendering - subset of PartMetadata */
+export type ContentMetadata = Pick<PartMetadata, 'agentId' | 'groupId'>;
 
 export type ContentPart = (
   | CodeToolCall
@@ -486,18 +491,18 @@ export type ContentPart = (
 export type TextData = (Text & PartMetadata) | undefined;
 
 export type TMessageContentParts =
-  | {
+  | ({
       type: ContentTypes.ERROR;
       text?: string | TextData;
       error?: string;
-    }
-  | { type: ContentTypes.THINK; think?: string | TextData }
-  | {
+    } & ContentMetadata)
+  | ({ type: ContentTypes.THINK; think?: string | TextData } & ContentMetadata)
+  | ({
       type: ContentTypes.TEXT;
       text?: string | TextData;
       tool_call_ids?: string[];
-    }
-  | {
+    } & ContentMetadata)
+  | ({
       type: ContentTypes.TOOL_CALL;
       tool_call: (
         | CodeToolCall
@@ -507,10 +512,10 @@ export type TMessageContentParts =
         | Agents.AgentToolCall
       ) &
         PartMetadata;
-    }
-  | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata }
-  | Agents.AgentUpdate
-  | Agents.MessageContentImageUrl;
+    } & ContentMetadata)
+  | ({ type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata } & ContentMetadata)
+  | (Agents.AgentUpdate & ContentMetadata)
+  | (Agents.MessageContentImageUrl & ContentMetadata);
 
 export type StreamContentData = TMessageContentParts & {
   /** The index of the current content part */

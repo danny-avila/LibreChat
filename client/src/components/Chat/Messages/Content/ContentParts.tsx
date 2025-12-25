@@ -2,7 +2,6 @@ import { memo, useMemo, useCallback } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
-  TContentMetadata,
   SearchResultData,
   TAttachment,
   Agents,
@@ -33,10 +32,6 @@ type ContentPartsProps = {
     | ((value: number) => void | React.Dispatch<React.SetStateAction<number>>)
     | null
     | undefined;
-  /** Whether the message has parallel content (content with groupId) */
-  hasParallelContent?: boolean;
-  /** Optional metadata map for parallel content (new approach - O(1) lookup) */
-  contentMetadataMap?: Map<number, TContentMetadata>;
 };
 
 /**
@@ -44,9 +39,6 @@ type ContentPartsProps = {
  *
  * For 90% of messages (single-agent, no parallel execution), this renders sequentially.
  * For multi-agent parallel execution, it uses ParallelContentRenderer to show columns.
- *
- * Optimization: When contentMetadataMap is provided, we can do O(1) lookup to determine
- * if parallel rendering is needed, avoiding scanning all content parts.
  */
 const ContentParts = memo(function ContentParts({
   edit,
@@ -62,8 +54,6 @@ const ContentParts = memo(function ContentParts({
   conversationId,
   isCreatedByUser,
   isLatestMessage,
-  hasParallelContent,
-  contentMetadataMap,
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
@@ -161,12 +151,12 @@ const ContentParts = memo(function ContentParts({
   const showEmptyCursor = content.length === 0 && effectiveIsSubmitting;
   const lastContentIdx = content.length - 1;
 
-  // Parallel content: use dedicated renderer with columns
+  // Parallel content: use dedicated renderer with columns (TMessageContentParts includes ContentMetadata)
+  const hasParallelContent = content.some((part) => part?.groupId != null);
   if (hasParallelContent) {
     return (
       <ParallelContentRenderer
         content={content}
-        contentMetadataMap={contentMetadataMap}
         messageId={messageId}
         conversationId={conversationId}
         attachments={attachments}

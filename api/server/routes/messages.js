@@ -143,8 +143,14 @@ router.post('/branch', async (req, res) => {
       return res.status(400).json({ error: 'Cannot branch from user messages' });
     }
 
-    // Validate the message has content and contentMetadataMap
-    if (!Array.isArray(sourceMessage.content) || !sourceMessage.contentMetadataMap) {
+    // Validate the message has content with agentId metadata
+    if (!Array.isArray(sourceMessage.content)) {
+      return res.status(400).json({ error: 'Message does not have content' });
+    }
+
+    // Check if any content part has agentId metadata
+    const hasAgentMetadata = sourceMessage.content.some((part) => part?.agentId);
+    if (!hasAgentMetadata) {
       return res
         .status(400)
         .json({ error: 'Message does not have parallel content with attributions' });
@@ -152,15 +158,14 @@ router.post('/branch', async (req, res) => {
 
     // Filter content to only include parts attributed to the specified agentId
     const filteredContent = [];
-    const contentMetadataMap = sourceMessage.contentMetadataMap;
 
-    for (let idx = 0; idx < sourceMessage.content.length; idx++) {
-      const metadata = contentMetadataMap[idx];
-      const contentAgentId = metadata?.agentId;
+    for (const part of sourceMessage.content) {
+      // Read agentId directly from content part
+      const contentAgentId = part?.agentId;
 
       // Only include content that is explicitly attributed to this agentId
       if (contentAgentId === agentId) {
-        filteredContent.push(sourceMessage.content[idx]);
+        filteredContent.push(part);
       }
     }
 
@@ -176,7 +181,7 @@ router.post('/branch', async (req, res) => {
       }
     }
 
-    // Create the new branch message (no contentMetadataMap since this is single-agent content)
+    // Create the new branch message
     const newMessageId = uuidv4();
     const newMessage = {
       messageId: newMessageId,

@@ -75,7 +75,7 @@ export default function Message(props: TMessageProps) {
     ],
   );
 
-  const { contentMetadataMap, hasParallelContent } = useContentMetadata(message);
+  const { hasParallelContent } = useContentMetadata(message);
 
   if (!message) {
     return null;
@@ -140,8 +140,6 @@ export default function Message(props: TMessageProps) {
                     searchResults={searchResults}
                     messageId={message.messageId}
                     setSiblingIdx={setSiblingIdx}
-                    hasParallelContent={hasParallelContent}
-                    contentMetadataMap={contentMetadataMap}
                     isCreatedByUser={message.isCreatedByUser}
                     conversationId={conversation?.conversationId}
                     isLatestMessage={messageId === latestMessage?.messageId}

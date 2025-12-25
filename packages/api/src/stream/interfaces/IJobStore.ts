@@ -66,8 +66,6 @@ export interface AbortResult {
 export interface ResumeState {
   runSteps: Agents.RunStep[];
   aggregatedContent: Agents.MessageContentComplex[];
-  /** Metadata map for parallel content (agentId, groupId by content index) */
-  contentMetadataMap?: Record<number, { agentId?: string; groupId?: number }>;
   userMessage?: SerializableJobData['userMessage'];
   responseMessageId?: string;
   conversationId?: string;
@@ -157,13 +155,8 @@ export interface IJobStore {
    *
    * @param streamId - The stream identifier
    * @param contentParts - The content parts array
-   * @param contentMetadataMap - Optional metadata map for parallel content
    */
-  setContentParts(
-    streamId: string,
-    contentParts: Agents.MessageContentComplex[],
-    contentMetadataMap?: Map<number, { agentId?: string; groupId?: number }>,
-  ): void;
+  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void;
 
   /**
    * Get aggregated content for a job.
@@ -172,11 +165,10 @@ export interface IJobStore {
    * Redis: Reconstructs from stored chunks
    *
    * @param streamId - The stream identifier
-   * @returns Content parts with optional metadata map, or null if not available
+   * @returns Content parts or null if not available
    */
   getContentParts(streamId: string): Promise<{
     content: Agents.MessageContentComplex[];
-    contentMetadataMap?: Record<number, { agentId?: string; groupId?: number }>;
   } | null>;
 
   /**

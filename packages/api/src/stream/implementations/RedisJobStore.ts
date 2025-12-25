@@ -22,8 +22,6 @@ const KEYS = {
   chunks: (streamId: string) => `stream:{${streamId}}:chunks`,
   /** Run steps: stream:{streamId}:runsteps */
   runSteps: (streamId: string) => `stream:{${streamId}}:runsteps`,
-  /** Content metadata map: stream:{streamId}:contentmeta */
-  contentMeta: (streamId: string) => `stream:{${streamId}}:contentmeta`,
   /** Running jobs set for cleanup (global set - single slot) */
   runningJobs: 'stream:running',
   /** User's active jobs set: stream:user:{userId}:jobs */
@@ -91,15 +89,6 @@ export class RedisJobStore implements IJobStore {
    * Uses WeakRef to allow garbage collection when graph is no longer needed.
    */
   private localGraphCache = new Map<string, WeakRef<StandardGraph>>();
-
-  /**
-   * Local cache for content metadata (agentId, groupId by content index).
-   * Stored separately since graph doesn't expose this - it comes from createContentAggregator.
-   */
-  private localMetadataCache = new Map<
-    string,
-    Map<number, { agentId?: string; groupId?: number }>
-  >();
 
   /** Cleanup interval in ms (1 minute) */
   private cleanupIntervalMs = 60000;
@@ -238,7 +227,6 @@ export class RedisJobStore implements IJobStore {
   async deleteJob(streamId: string): Promise<void> {
     // Clear local caches
     this.localGraphCache.delete(streamId);
-    this.localMetadataCache.delete(streamId);
 
     // Note: userJobs cleanup is handled lazily via self-healing in getActiveJobIdsByUser
     // In cluster mode, separate runningJobs (global) from stream-specific keys (same slot)
@@ -302,7 +290,6 @@ export class RedisJobStore implements IJobStore {
       if (!job) {
         await this.redis.srem(KEYS.runningJobs, streamId);
         this.localGraphCache.delete(streamId);
-        this.localMetadataCache.delete(streamId);
         cleaned++;
         continue;
       }
@@ -311,7 +298,6 @@ export class RedisJobStore implements IJobStore {
       if (job.status !== 'running') {
         await this.redis.srem(KEYS.runningJobs, streamId);
         this.localGraphCache.delete(streamId);
-        this.localMetadataCache.delete(streamId);
         cleaned++;
         continue;
       }
@@ -396,7 +382,6 @@ export class RedisJobStore implements IJobStore {
     }
     // Clear local caches
     this.localGraphCache.clear();
-    this.localMetadataCache.clear();
     // Don't close the Redis connection - it's shared
     logger.info('[RedisJobStore] Destroyed');
   }
@@ -418,26 +403,12 @@ export class RedisJobStore implements IJobStore {
   }
 
   /**
-   * Store content metadata in Redis.
-   * Content parts themselves are reconstructed from chunks, but metadata
-   * is stored directly for fast retrieval (both locally and in Redis for cross-instance).
+   * No-op for Redis - content parts are reconstructed from chunks.
+   * Metadata (agentId, groupId) is embedded directly on content parts by the agent runtime.
    */
-  setContentParts(
-    streamId: string,
-    _contentParts: Agents.MessageContentComplex[],
-    contentMetadataMap?: Map<number, { agentId?: string; groupId?: number }>,
-  ): void {
-    // Content parts are reconstructed from chunks, but we store metadata
-    if (contentMetadataMap && contentMetadataMap.size > 0) {
-      // Cache locally for same-instance fast path
-      this.localMetadataCache.set(streamId, contentMetadataMap);
-      // Also save to Redis for cross-instance retrieval
-      const key = KEYS.contentMeta(streamId);
-      const data = JSON.stringify(Object.fromEntries(contentMetadataMap));
-      this.redis.set(key, data, 'EX', this.ttl.running).catch((err) => {
-        logger.error(`[RedisJobStore] Failed to save content metadata for ${streamId}:`, err);
-      });
-    }
+  setContentParts(_streamId: string, _contentParts: Agents.MessageContentComplex[]): void {
+    // Content parts are reconstructed from chunks during getContentParts
+    // No separate storage needed
   }
 
   /**
@@ -448,11 +419,10 @@ export class RedisJobStore implements IJobStore {
    * For cross-instance reconnects, we reconstruct from Redis Streams.
    *
    * @param streamId - The stream identifier
-   * @returns Content parts array with optional metadata map, or null if not found
+   * @returns Content parts array or null if not found
    */
   async getContentParts(streamId: string): Promise<{
     content: Agents.MessageContentComplex[];
-    contentMetadataMap?: Record<number, { agentId?: string; groupId?: number }>;
   } | null> {
     // 1. Try local graph cache first (fast path for same-instance reconnect)
     const graphRef = this.localGraphCache.get(streamId);
@@ -461,20 +431,13 @@ export class RedisJobStore implements IJobStore {
       if (graph) {
         const localParts = graph.getContentParts();
         if (localParts && localParts.length > 0) {
-          // Get metadata from local cache (set via setContentParts)
-          const localMetadata = this.localMetadataCache.get(streamId);
           return {
             content: localParts,
-            contentMetadataMap:
-              localMetadata && localMetadata.size > 0
-                ? Object.fromEntries(localMetadata)
-                : undefined,
           };
         }
       } else {
         // WeakRef was collected, remove from cache
         this.localGraphCache.delete(streamId);
-        this.localMetadataCache.delete(streamId);
       }
     }
 
@@ -485,7 +448,7 @@ export class RedisJobStore implements IJobStore {
     }
 
     // Use the same content aggregator as live streaming
-    const { contentParts, aggregateContent, contentMetadataMap } = createContentAggregator();
+    const { contentParts, aggregateContent } = createContentAggregator();
 
     // Valid event types for content aggregation
     const validEvents = new Set([
@@ -518,10 +481,6 @@ export class RedisJobStore implements IJobStore {
 
     return {
       content: filtered,
-      contentMetadataMap:
-        contentMetadataMap && contentMetadataMap.size > 0
-          ? Object.fromEntries(contentMetadataMap)
-          : undefined,
     };
   }
 
@@ -569,7 +528,6 @@ export class RedisJobStore implements IJobStore {
   clearContentState(streamId: string): void {
     // Clear local caches immediately
     this.localGraphCache.delete(streamId);
-    this.localMetadataCache.delete(streamId);
 
     // Fire and forget - async cleanup for Redis
     this.clearContentStateAsync(streamId).catch((err) => {
@@ -584,7 +542,6 @@ export class RedisJobStore implements IJobStore {
     const pipeline = this.redis.pipeline();
     pipeline.del(KEYS.chunks(streamId));
     pipeline.del(KEYS.runSteps(streamId));
-    pipeline.del(KEYS.contentMeta(streamId));
     await pipeline.exec();
   }
 

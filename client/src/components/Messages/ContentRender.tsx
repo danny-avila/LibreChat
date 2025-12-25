@@ -89,7 +89,7 @@ const ContentRender = memo(
       ],
     );
 
-    const { contentMetadataMap, hasParallelContent } = useContentMetadata(msg);
+    const { hasParallelContent } = useContentMetadata(msg);
 
     if (!msg) {
       return null;
@@ -156,8 +156,6 @@ const ContentRender = memo(
                 searchResults={searchResults}
                 setSiblingIdx={setSiblingIdx}
                 isLatestMessage={isLatestMessage}
-                hasParallelContent={hasParallelContent}
-                contentMetadataMap={contentMetadataMap}
                 isSubmitting={effectiveIsSubmitting}
                 isCreatedByUser={msg.isCreatedByUser}
                 conversationId={conversation?.conversationId}

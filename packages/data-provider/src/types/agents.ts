@@ -169,6 +169,8 @@ export namespace Agents {
     agentId?: string; // #new
     index: number; // #new
     stepIndex?: number; // #new
+    /** Group ID for parallel content - parts with same groupId are displayed in columns */
+    groupId?: number; // #new
     stepDetails: StepDetails;
     usage: null | object;
   };
@@ -193,8 +195,6 @@ export namespace Agents {
     runSteps: RunStep[];
     /** Aggregated content parts - can be MessageContentComplex[] or ContentPart[] */
     aggregatedContent?: MessageContentComplex[];
-    /** Metadata map for parallel content (agentId, groupId by content index) */
-    contentMetadataMap?: Record<number, { agentId?: string; groupId?: number }>;
     userMessage?: UserMessageMeta;
     responseMessageId?: string;
     conversationId?: string;
