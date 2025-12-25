@@ -51,6 +51,7 @@ export function math(str: string | number | undefined, fallbackValue?: number): 
     if (fallback) {
       return fallbackValue;
     }
-    throw error;
+    const originalMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`[math] Error while evaluating mathematical expression: ${originalMessage}`);
   }
 }
