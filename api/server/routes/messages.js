@@ -136,17 +136,14 @@ router.post('/branch', async (req, res) => {
       return res.status(404).json({ error: 'Source message not found' });
     }
 
-    // Only allow branching from non-user messages
     if (sourceMessage.isCreatedByUser) {
       return res.status(400).json({ error: 'Cannot branch from user messages' });
     }
 
-    // Validate the message has content with agentId metadata
     if (!Array.isArray(sourceMessage.content)) {
       return res.status(400).json({ error: 'Message does not have content' });
     }
 
-    // Check if any content part has agentId metadata
     const hasAgentMetadata = sourceMessage.content.some((part) => part?.agentId);
     if (!hasAgentMetadata) {
       return res
@@ -154,17 +151,10 @@ router.post('/branch', async (req, res) => {
         .json({ error: 'Message does not have parallel content with attributions' });
     }
 
-    // Filter content to only include parts attributed to the specified agentId
-    // Also strip agentId and groupId metadata since the branch is now standalone
+    /** @type {Array<import('librechat-data-provider').TMessageContentParts>} */
     const filteredContent = [];
-
     for (const part of sourceMessage.content) {
-      // Read agentId directly from content part
-      const contentAgentId = part?.agentId;
-
-      // Only include content that is explicitly attributed to this agentId
-      if (contentAgentId === agentId) {
-        // Strip parallel content metadata from the branched content
+      if (part?.agentId === agentId) {
         const { agentId: _a, groupId: _g, ...cleanPart } = part;
         filteredContent.push(cleanPart);
       }
@@ -174,8 +164,8 @@ router.post('/branch', async (req, res) => {
       return res.status(400).json({ error: 'No content found for the specified agentId' });
     }
 
-    // Create the new branch message
     const newMessageId = uuidv4();
+    /** @type {import('librechat-data-provider').TMessage} */
     const newMessage = {
       messageId: newMessageId,
       conversationId: sourceMessage.conversationId,
