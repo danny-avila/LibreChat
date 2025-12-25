@@ -33,6 +33,11 @@ import store from '~/store';
 const BookmarkNav = lazy(() => import('./Bookmarks/BookmarkNav'));
 const AccountSettings = lazy(() => import('./AccountSettings'));
 
+export const NAV_WIDTH = {
+  MOBILE: 320,
+  DESKTOP: 260,
+} as const;
+
 const SearchBarSkeleton = memo(() => (
   <div className={cn('flex h-10 items-center py-2')}>
     <Skeleton className="h-10 w-full rounded-lg" />
@@ -210,7 +215,7 @@ const Nav = memo(
 
     // Always render sidebar to avoid mount/unmount costs
     // Use transform for GPU-accelerated animation (no layout thrashing)
-    const sidebarWidth = isSmallScreen ? 320 : 260;
+    const sidebarWidth = isSmallScreen ? NAV_WIDTH.MOBILE : NAV_WIDTH.DESKTOP;
 
     // Sidebar content (shared between mobile and desktop)
     const sidebarContent = (

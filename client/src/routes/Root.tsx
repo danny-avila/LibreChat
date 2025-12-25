@@ -17,8 +17,8 @@ import {
   FileMapContext,
 } from '~/Providers';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
+import { Nav, MobileNav, NAV_WIDTH } from '~/components/Nav';
 import { TermsAndConditionsModal } from '~/components/ui';
-import { Nav, MobileNav } from '~/components/Nav';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
 
@@ -81,7 +81,9 @@ export default function Root() {
                     style={
                       isSmallScreen
                         ? {
-                            transform: navVisible ? 'translateX(320px)' : 'translateX(0)',
+                            transform: navVisible
+                              ? `translateX(${NAV_WIDTH.MOBILE}px)`
+                              : 'translateX(0)',
                             transition: 'transform 0.2s ease-out',
                           }
                         : undefined
