@@ -8,6 +8,15 @@ import {
 } from './oidc';
 
 /**
+ * Pre-computed regex for matching the Graph token placeholder.
+ * Escapes curly braces in the placeholder string for safe regex use.
+ */
+const GRAPH_TOKEN_REGEX = new RegExp(
+  GRAPH_TOKEN_PLACEHOLDER.replace(/[{}]/g, '\\$&'),
+  'g',
+);
+
+/**
  * Response from a Graph API token exchange.
  */
 export interface GraphTokenResponse {
@@ -131,7 +140,7 @@ export async function resolveGraphTokenPlaceholder(
     );
 
     if (graphTokenResponse?.access_token) {
-      return value.replace(new RegExp(GRAPH_TOKEN_PLACEHOLDER.replace(/[{}]/g, '\\$&'), 'g'), graphTokenResponse.access_token);
+      return value.replace(GRAPH_TOKEN_REGEX, graphTokenResponse.access_token);
     }
 
     logger.warn('[resolveGraphTokenPlaceholder] Graph token exchange did not return an access token');
@@ -163,7 +172,12 @@ export async function resolveGraphTokensInRecord(
 
   const resolved: Record<string, string> = {};
   for (const [key, value] of Object.entries(record)) {
-    resolved[key] = await resolveGraphTokenPlaceholder(value, options);
+    if (typeof value === 'string') {
+      resolved[key] = await resolveGraphTokenPlaceholder(value, options);
+    } else {
+      // Preserve non-string values without attempting placeholder resolution
+      resolved[key] = value as unknown as string;
+    }
   }
   return resolved;
 }
