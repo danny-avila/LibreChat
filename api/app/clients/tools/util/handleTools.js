@@ -11,6 +11,7 @@ const {
   mcpToolPattern,
   loadWebSearchAuth,
 } = require('@librechat/api');
+const { getMCPServersRegistry } = require('~/config');
 const {
   Tools,
   Constants,
@@ -347,7 +348,10 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
         /** Placeholder used for UI purposes */
         continue;
       }
-      if (serverName && options.req?.config?.mcpConfig?.[serverName] == null) {
+      const serverConfig = serverName
+        ? await getMCPServersRegistry().getServerConfig(serverName, user)
+        : null;
+      if (!serverConfig) {
         logger.warn(
           `MCP server "${serverName}" for "${toolName}" tool is not configured${agent?.id != null && agent.id ? ` but attached to "${agent.id}"` : ''}`,
         );
@@ -358,6 +362,7 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
           {
             type: 'all',
             serverName,
+            config: serverConfig,
           },
         ];
         continue;
@@ -368,6 +373,7 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
         type: 'single',
         toolKey: tool,
         serverName,
+        config: serverConfig,
       });
       continue;
     }
@@ -428,9 +434,11 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
           user: safeUser,
           userMCPAuthMap,
           res: options.res,
+          streamId: options.req?._resumableStreamId || null,
           model: agent?.model ?? model,
           serverName: config.serverName,
           provider: agent?.provider ?? endpoint,
+          config: config.config,
         };
 
         if (config.type === 'all' && toolConfigs.length === 1) {

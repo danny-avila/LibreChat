@@ -70,7 +70,7 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
                 </HoverCard>
                 {errors[authField] && (
                   <span role="alert" className="mt-1 text-sm text-red-400">
-                    {errors[authField].message as string}
+                    {errors?.[authField]?.message ?? ''}
                   </span>
                 )}
               </div>

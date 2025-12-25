@@ -387,6 +387,7 @@ const PromptForm = () => {
   return (
     <FormProvider {...methods}>
       <form className="mt-4 flex w-full" onSubmit={handleSubmit((data) => onSave(data.prompt))}>
+        <h1 className="sr-only">{localize('com_ui_edit_prompt_page')}</h1>
         <div className="relative w-full">
           <div
             className="h-full w-full"

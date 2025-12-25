@@ -166,11 +166,40 @@ export namespace Agents {
     type: StepTypes;
     id: string; // #new
     runId?: string; // #new
+    agentId?: string; // #new
     index: number; // #new
     stepIndex?: number; // #new
+    /** Group ID for parallel content - parts with same groupId are displayed in columns */
+    groupId?: number; // #new
     stepDetails: StepDetails;
     usage: null | object;
   };
+
+  /** Content part for aggregated message content */
+  export interface ContentPart {
+    type: string;
+    text?: string;
+    [key: string]: unknown;
+  }
+
+  /** User message metadata for rebuilding submission on reconnect */
+  export interface UserMessageMeta {
+    messageId: string;
+    parentMessageId?: string;
+    conversationId?: string;
+    text?: string;
+  }
+
+  /** State data sent to reconnecting clients */
+  export interface ResumeState {
+    runSteps: RunStep[];
+    /** Aggregated content parts - can be MessageContentComplex[] or ContentPart[] */
+    aggregatedContent?: MessageContentComplex[];
+    userMessage?: UserMessageMeta;
+    responseMessageId?: string;
+    conversationId?: string;
+    sender?: string;
+  }
   /**
    * Represents a run step delta i.e. any changed fields on a run step during
    * streaming.
@@ -333,7 +362,7 @@ export type ActionMetadataRuntime = ActionMetadata & {
 };
 
 export type MCP = {
-  mcp_id: string;
+  serverName: string;
   metadata: MCPMetadata;
 } & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id?: string });
 

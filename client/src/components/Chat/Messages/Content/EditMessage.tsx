@@ -1,10 +1,11 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import { TextareaAutosize, TooltipAnchor } from '@librechat/client';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
-import { useMessagesOperations, useMessagesConversation, useAddedChatContext } from '~/Providers';
+import { useMessagesOperations, useMessagesConversation } from '~/Providers';
+import { useGetAddedConvo } from '~/hooks/Chat';
 import { cn, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
@@ -19,14 +20,10 @@ const EditMessage = ({
   siblingIdx,
   setSiblingIdx,
 }: TEditProps) => {
-  const { addedIndex } = useAddedChatContext();
   const saveButtonRef = useRef<HTMLButtonElement | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const { conversation } = useMessagesConversation();
   const { getMessages, setMessages } = useMessagesOperations();
-  const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
-    store.latestMessageFamily(addedIndex),
-  );
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -36,6 +33,8 @@ const EditMessage = ({
 
   const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
   const isRTL = chatDirection === 'rtl';
+
+  const getAddedConvo = useGetAddedConvo();
 
   const { register, handleSubmit, setValue } = useForm({
     defaultValues: {
@@ -62,6 +61,7 @@ const EditMessage = ({
         },
         {
           overrideFiles: message.files,
+          addedConvo: getAddedConvo() || undefined,
         },
       );
 
@@ -80,6 +80,7 @@ const EditMessage = ({
           editedMessageId: messageId,
           isRegenerate: true,
           isEdited: true,
+          addedConvo: getAddedConvo() || undefined,
         },
       );
 
@@ -100,10 +101,6 @@ const EditMessage = ({
       text: data.text,
       messageId,
     });
-
-    if (message.messageId === latestMultiMessage?.messageId) {
-      setLatestMultiMessage({ ...latestMultiMessage, text: data.text });
-    }
 
     const isInMessages = messages.some((message) => message.messageId === messageId);
     if (!isInMessages) {

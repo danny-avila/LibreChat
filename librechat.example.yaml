@@ -94,8 +94,29 @@ interface:
     groups: true
     roles: true
   marketplace:
-      use: false
+    use: false
   fileCitations: true
+  mcpServers:
+    # MCP Servers configuration
+    # Controls user permissions for MCP (Model Context Protocol) server management
+    # - use: Allow users to use configured MCP servers
+    # - create: Allow users to create and manage new MCP servers
+    # - share: Allow users to share MCP servers with other users
+    use: false
+    create: false
+    share: false
+    # Creation / edit MCP server config Dialog config example
+    # trustCheckbox:
+    #   label:
+    #     en: 'I understand and I want to continue'
+    #     de: 'Ich verstehe und möchte fortfahren'
+    #     de-DE: 'Ich verstehe und möchte fortfahren' # You can narrow translation to regions like (de-DE or de-CH)
+    #   subLabel:
+    #     en: |
+    #       Librechat hasn't reviewed this MCP server. Attackers may attempt to steal your data or trick the model into taking unintended actions, including destroying data. <a href="https://google.de" target="_blank"><strong>Learn more.</strong></a>
+    #     de: |
+    #       LibreChat hat diesen MCP-Server nicht überprüft. Angreifer könnten versuchen, Ihre Daten zu stehlen oder das Modell zu unbeabsichtigten Aktionen zu verleiten, einschließlich der Zerstörung von Daten. <a href="https://google.de" target="_blank"><strong>Mehr erfahren.</strong></a>
+
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 
@@ -162,6 +183,16 @@ actions:
     - 'swapi.dev'
     - 'librechat.ai'
     - 'google.com'
+
+# MCP Server domain restrictions for remote transports (SSE, WebSocket, HTTP)
+# Stdio transports (local processes) are not restricted.
+# If not configured, all domains are allowed (permissive default).
+# Supports wildcards: '*.example.com' matches 'api.example.com', 'staging.example.com', etc.
+# mcpSettings:
+#   allowedDomains:
+#     - 'localhost'
+#     - '*.example.com'
+#     - 'trusted-mcp-provider.com'
 
 # Example MCP Servers Object Structure
 # mcpServers:
@@ -291,7 +322,7 @@ endpoints:
       apiKey: '${OPENROUTER_KEY}'
       baseURL: 'https://openrouter.ai/api/v1'
       headers:
-          x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
+        x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
       models:
         default: ['meta-llama/llama-3-70b-instruct']
         fetch: true
@@ -308,9 +339,10 @@ endpoints:
       apiKey: '${HELICONE_KEY}'
       baseURL: 'https://ai-gateway.helicone.ai'
       headers:
-          x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
+        x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
       models:
-        default: ['gpt-4o-mini', 'claude-4.5-sonnet', 'llama-3.1-8b-instruct', 'gemini-2.5-flash-lite']
+        default:
+          ['gpt-4o-mini', 'claude-4.5-sonnet', 'llama-3.1-8b-instruct', 'gemini-2.5-flash-lite']
         fetch: true
       titleConvo: true
       titleModel: 'gpt-4o-mini'
