@@ -1,4 +1,4 @@
-import { useState, useId, useMemo } from 'react';
+import { useState, useId, useMemo, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { CrossCircledIcon } from '@radix-ui/react-icons';
 import { DropdownPopup, TooltipAnchor } from '@librechat/client';
@@ -27,17 +27,20 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
 
   const bookmarks = useMemo(() => data?.filter((tag) => tag.count > 0) ?? [], [data]);
 
-  const handleTagClick = (tag: string) => {
-    if (tags.includes(tag)) {
-      setTags(tags.filter((t) => t !== tag));
-    } else {
-      setTags([...tags, tag]);
-    }
-  };
+  const handleTagClick = useCallback(
+    (tag: string) => {
+      if (tags.includes(tag)) {
+        setTags(tags.filter((t) => t !== tag));
+      } else {
+        setTags([...tags, tag]);
+      }
+    },
+    [tags, setTags],
+  );
 
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
     setTags([]);
-  };
+  }, [setTags]);
 
   const dropdownItems: t.MenuItemProps[] = useMemo(() => {
     const items: t.MenuItemProps[] = [
@@ -75,7 +78,7 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
     }
 
     return items;
-  }, [bookmarks, tags, localize]);
+  }, [bookmarks, tags, localize, handleTagClick, handleClear]);
 
   return (
     <DropdownPopup
