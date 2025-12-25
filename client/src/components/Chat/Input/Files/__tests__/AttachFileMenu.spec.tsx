@@ -512,7 +512,7 @@ describe('AttachFileMenu', () => {
   });
 
   describe('Google Provider Special Case', () => {
-    it('should use google_multimodal file type for Google provider', () => {
+    it('should use image_document_video_audio file type for Google provider', () => {
       mockUseAgentToolPermissions.mockReturnValue({
         fileSearchAllowedByAgent: false,
         codeAllowedByAgent: false,
@@ -536,7 +536,7 @@ describe('AttachFileMenu', () => {
       // The file input should have been clicked (indirectly tested through the implementation)
     });
 
-    it('should use multimodal file type for non-Google providers', () => {
+    it('should use image_document file type for non-Google providers', () => {
       mockUseAgentToolPermissions.mockReturnValue({
         fileSearchAllowedByAgent: false,
         codeAllowedByAgent: false,
@@ -555,7 +555,7 @@ describe('AttachFileMenu', () => {
       expect(uploadProviderButton).toBeInTheDocument();
       fireEvent.click(uploadProviderButton);
 
-      // Implementation detail - multimodal type is used
+      // Implementation detail - image_document type is used
     });
   });
 

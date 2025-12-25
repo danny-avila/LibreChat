@@ -9,6 +9,7 @@ import {
   TerminalSquareIcon,
 } from 'lucide-react';
 import {
+  Providers,
   EToolResources,
   EModelEndpoint,
   defaultAgentCapabilities,
@@ -35,6 +36,8 @@ import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
+
+type FileUploadType = 'image' | 'document' | 'image_document' | 'image_document_video_audio';
 
 interface AttachFileMenuProps {
   agentId?: string | null;
@@ -83,9 +86,7 @@ const AttachFileMenu = ({
     ephemeralAgent,
   );
 
-  const handleUploadClick = (
-    fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal',
-  ) => {
+  const handleUploadClick = (fileType?: FileUploadType) => {
     if (!inputRef.current) {
       return;
     }
@@ -94,9 +95,9 @@ const AttachFileMenu = ({
       inputRef.current.accept = 'image/*';
     } else if (fileType === 'document') {
       inputRef.current.accept = '.pdf,application/pdf';
-    } else if (fileType === 'multimodal') {
+    } else if (fileType === 'image_document') {
       inputRef.current.accept = 'image/*,.pdf,application/pdf';
-    } else if (fileType === 'google_multimodal') {
+    } else if (fileType === 'image_document_video_audio') {
       inputRef.current.accept = 'image/*,.pdf,application/pdf,video/*,audio/*';
     } else {
       inputRef.current.accept = '';
@@ -106,12 +107,16 @@ const AttachFileMenu = ({
   };
 
   const dropdownItems = useMemo(() => {
-    const createMenuItems = (
-      onAction: (fileType?: 'image' | 'document' | 'multimodal' | 'google_multimodal') => void,
-    ) => {
+    const createMenuItems = (onAction: (fileType?: FileUploadType) => void) => {
       const items: MenuItemProps[] = [];
 
-      const currentProvider = provider || endpoint;
+      let currentProvider = provider || endpoint;
+
+      // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
+      if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
+        currentProvider = Providers.OPENROUTER;
+      }
+
       if (
         isDocumentSupportedProvider(endpointType) ||
         isDocumentSupportedProvider(currentProvider)
@@ -120,9 +125,11 @@ const AttachFileMenu = ({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
             setToolResource(undefined);
-            onAction(
-              (provider || endpoint) === EModelEndpoint.google ? 'google_multimodal' : 'multimodal',
-            );
+            let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
+            if (currentProvider === Providers.GOOGLE || currentProvider === Providers.OPENROUTER) {
+              fileType = 'image_document_video_audio';
+            }
+            onAction(fileType);
           },
           icon: <FileImageIcon className="icon-md" />,
         });

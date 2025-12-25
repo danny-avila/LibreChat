@@ -515,7 +515,9 @@ export type TMessageContentParts =
     } & ContentMetadata)
   | ({ type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata } & ContentMetadata)
   | (Agents.AgentUpdate & ContentMetadata)
-  | (Agents.MessageContentImageUrl & ContentMetadata);
+  | (Agents.MessageContentImageUrl & ContentMetadata)
+  | (Agents.MessageContentVideoUrl & ContentMetadata)
+  | (Agents.MessageContentInputAudio & ContentMetadata);
 
 export type StreamContentData = TMessageContentParts & {
   /** The index of the current content part */
