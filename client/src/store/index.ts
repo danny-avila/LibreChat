@@ -12,9 +12,11 @@ import lang from './language';
 import settings from './settings';
 import misc from './misc';
 import isTemporary from './temporary';
+import * as tokenUsage from './tokenUsage';
 export * from './agents';
 export * from './mcp';
 export * from './favorites';
+export * from './tokenUsage';
 
 export default {
   ...artifacts,
@@ -31,4 +33,5 @@ export default {
   ...settings,
   ...misc,
   ...isTemporary,
+  ...tokenUsage,
 };

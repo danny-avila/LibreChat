@@ -1,4 +1,5 @@
 const { getModelMaxTokens } = require('@librechat/api');
+const { TOKEN_DEFAULTS } = require('librechat-data-provider');
 const BaseClient = require('../BaseClient');
 
 class FakeClient extends BaseClient {
@@ -41,7 +42,9 @@ class FakeClient extends BaseClient {
     }
 
     this.maxContextTokens =
-      this.options.maxContextTokens ?? getModelMaxTokens(this.modelOptions.model) ?? 4097;
+      this.options.maxContextTokens ??
+      getModelMaxTokens(this.modelOptions.model) ??
+      TOKEN_DEFAULTS.LEGACY_CONTEXT_FALLBACK;
   }
   buildMessages() {}
   getTokenCount(str) {

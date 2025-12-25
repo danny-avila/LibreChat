@@ -7,6 +7,7 @@ import {
   isAgentsEndpoint,
   replaceSpecialVars,
   providerEndpointMap,
+  TOKEN_DEFAULTS,
 } from 'librechat-data-provider';
 import type {
   AgentToolResources,
@@ -240,7 +241,7 @@ export async function initializeAgent(
       providerEndpointMap[provider as keyof typeof providerEndpointMap],
       options.endpointTokenConfig,
     ),
-    18000,
+    TOKEN_DEFAULTS.AGENT_CONTEXT_FALLBACK,
   );
 
   if (
@@ -293,7 +294,7 @@ export async function initializeAgent(
     agent.additional_instructions = artifactsPromptResult ?? undefined;
   }
 
-  const agentMaxContextNum = Number(agentMaxContextTokens) || 18000;
+  const agentMaxContextNum = Number(agentMaxContextTokens) || TOKEN_DEFAULTS.AGENT_CONTEXT_FALLBACK;
   const maxOutputTokensNum = Number(maxOutputTokens) || 0;
 
   const finalAttachments: IMongoFile[] = (primedAttachments ?? [])
@@ -308,7 +309,9 @@ export async function initializeAgent(
     userMCPAuthMap,
     toolContextMap: toolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,
-    maxContextTokens: Math.round((agentMaxContextNum - maxOutputTokensNum) * 0.9),
+    maxContextTokens: Math.round(
+      (agentMaxContextNum - maxOutputTokensNum) * TOKEN_DEFAULTS.CONTEXT_SAFETY_MARGIN,
+    ),
   };
 
   return initializedAgent;
