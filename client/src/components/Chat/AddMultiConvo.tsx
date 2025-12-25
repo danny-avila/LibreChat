@@ -16,7 +16,7 @@ function AddMultiConvo() {
     setAddedConvo({
       ...convo,
       title: '',
-    } as TConversation);
+    });
 
     const textarea = document.getElementById(mainTextareaId);
     if (textarea) {
@@ -34,15 +34,16 @@ function AddMultiConvo() {
 
   return (
     <TooltipAnchor
-      description={localize('com_ui_add_multi_conversation')}
-      role="button"
-      tabIndex={0}
+      id="add-multi-conversation-button"
       aria-label={localize('com_ui_add_multi_conversation')}
+      description={localize('com_ui_add_multi_conversation')}
+      tabIndex={0}
+      role="button"
       onClick={clickHandler}
-      data-testid="add-multi-convo-button"
-      className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+      data-testid="parameters-button"
+      className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
     >
-      <PlusCircle className="icon-lg" aria-hidden="true" />
+      <PlusCircle size={16} aria-hidden="true" />
     </TooltipAnchor>
   );
 }
