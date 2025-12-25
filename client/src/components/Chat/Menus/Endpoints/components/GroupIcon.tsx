@@ -17,13 +17,13 @@ const GroupIcon: React.FC<GroupIconProps> = ({ iconURL, groupName }) => {
     setImageError(true);
   };
 
-  // Check if the iconURL is a URL or a built-in icon key
-  if (!iconURL.includes('http')) {
+  // Check if the iconURL is a built-in icon key
+  if (iconURL in icons) {
     const Icon: IconType = (icons[iconURL] ?? icons.unknown) as IconType;
     return <Icon size={20} context="menu-item" className="icon-md shrink-0 text-text-primary" />;
   }
 
-  if (imageError || !iconURL) {
+  if (imageError) {
     const DefaultIcon: IconType = icons.unknown as IconType;
     return (
       <div className="relative" style={{ width: 20, height: 20, margin: '2px' }}>
