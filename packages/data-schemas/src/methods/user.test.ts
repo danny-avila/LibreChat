@@ -31,11 +31,10 @@ describe('User Methods', () => {
     } as IUser;
 
     afterEach(() => {
-      delete process.env.SESSION_EXPIRY;
       delete process.env.JWT_SECRET;
     });
 
-    it('should default to 15 minutes when SESSION_EXPIRY is not set', async () => {
+    it('should default to 15 minutes when expiresIn is not provided', async () => {
       process.env.JWT_SECRET = 'test-secret';
       mockSignPayload.mockResolvedValue('mocked-token');
 
@@ -49,16 +48,15 @@ describe('User Methods', () => {
           email: mockUser.email,
         },
         secret: 'test-secret',
-        expirationTime: 900, // 15 minutes in seconds
+        expirationTime: 900, // 15 minutes in seconds (DEFAULT_SESSION_EXPIRY / 1000)
       });
     });
 
-    it('should default to 15 minutes when SESSION_EXPIRY is empty string', async () => {
-      process.env.SESSION_EXPIRY = '';
+    it('should default to 15 minutes when expiresIn is undefined', async () => {
       process.env.JWT_SECRET = 'test-secret';
       mockSignPayload.mockResolvedValue('mocked-token');
 
-      await userMethods.generateToken(mockUser);
+      await userMethods.generateToken(mockUser, undefined);
 
       expect(mockSignPayload).toHaveBeenCalledWith({
         payload: {
@@ -68,7 +66,7 @@ describe('User Methods', () => {
           email: mockUser.email,
         },
         secret: 'test-secret',
-        expirationTime: 900, // 15 minutes in seconds
+        expirationTime: 900, // 15 minutes in seconds (DEFAULT_SESSION_EXPIRY / 1000)
       });
     });
 
