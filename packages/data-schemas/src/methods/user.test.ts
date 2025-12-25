@@ -90,7 +90,7 @@ describe('User Methods', () => {
       });
     });
 
-    it('should default to 15 minutes when expiresIn is 0', async () => {
+    it('should use 0 when expiresIn is 0', async () => {
       process.env.JWT_SECRET = 'test-secret';
       mockSignPayload.mockResolvedValue('mocked-token');
 
