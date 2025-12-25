@@ -1,3 +1,5 @@
+import type { TUser } from 'librechat-data-provider';
+import type { GraphTokenResolver, GraphTokenOptions } from './graph';
 import {
   containsGraphTokenPlaceholder,
   recordContainsGraphTokenPlaceholder,
@@ -5,10 +7,7 @@ import {
   resolveGraphTokenPlaceholder,
   resolveGraphTokensInRecord,
   preProcessGraphTokens,
-  type GraphTokenResolver,
-  type GraphTokenOptions,
 } from './graph';
-import type { TUser } from 'librechat-data-provider';
 
 // Mock the logger
 jest.mock('@librechat/data-schemas', () => ({
