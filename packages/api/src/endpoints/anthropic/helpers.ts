@@ -4,10 +4,21 @@ import { EModelEndpoint, anthropicSettings } from 'librechat-data-provider';
 import { matchModelName } from '~/utils/tokens';
 
 /**
- * @param {string} modelName
- * @returns {boolean}
+ * Detects if a model is a Claude model that supports advanced features
+ * @param {string} modelName - The model name or ARN
+ * @returns {boolean} - Whether the model supports advanced features
  */
-function checkPromptCacheSupport(modelName: string): boolean {
+function isClaudeModelWithAdvancedFeatures(modelName: string): boolean {
+  // Handle AWS Bedrock custom inference profile ARNs
+  const inferenceProfilePattern =
+    /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+  if (inferenceProfilePattern.test(modelName)) {
+    // For custom inference profiles, we need to check the underlying model
+    // This would ideally be done by querying the AWS Bedrock API
+    // For now, we'll assume it supports advanced features if configured
+    return true;
+  }
+
   const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic) ?? '';
   if (
     modelMatch.includes('claude-3-5-sonnet-latest') ||
@@ -27,6 +38,14 @@ function checkPromptCacheSupport(modelName: string): boolean {
 }
 
 /**
+ * @param {string} modelName
+ * @returns {boolean}
+ */
+function checkPromptCacheSupport(modelName: string): boolean {
+  return isClaudeModelWithAdvancedFeatures(modelName);
+}
+
+/**
  * Gets the appropriate headers for Claude models with cache control
  * @param {string} model The model name
  * @param {boolean} supportsCacheControl Whether the model supports cache control
@@ -38,6 +57,17 @@ function getClaudeHeaders(
 ): Record<string, string> | undefined {
   if (!supportsCacheControl) {
     return undefined;
+  }
+
+  // Handle AWS Bedrock custom inference profile ARNs
+  const inferenceProfilePattern =
+    /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+  if (inferenceProfilePattern.test(model)) {
+    // For custom inference profiles, use default headers
+    // The actual model capabilities would be determined by the underlying model
+    return {
+      'anthropic-beta': 'prompt-caching-2024-07-31',
+    };
   }
 
   if (/claude-3[-.]5-sonnet/.test(model)) {
@@ -83,10 +113,16 @@ function configureReasoning(
   const updatedOptions = { ...anthropicInput };
   const currentMaxTokens = updatedOptions.max_tokens ?? updatedOptions.maxTokens;
 
+  // Handle AWS Bedrock custom inference profile ARNs
+  const inferenceProfilePattern =
+    /^arn:aws:bedrock:[^:]+:\d+:application-inference-profile\/[^:]+$/;
+  const isCustomInferenceProfile = inferenceProfilePattern.test(updatedOptions?.model ?? '');
+
   if (
     extendedOptions.thinking &&
     updatedOptions?.model &&
-    (/claude-3[-.]7/.test(updatedOptions.model) ||
+    (isCustomInferenceProfile ||
+      /claude-3[-.]7/.test(updatedOptions.model) ||
       /claude-(?:sonnet|opus|haiku)-[4-9]/.test(updatedOptions.model))
   ) {
     updatedOptions.thinking = {
@@ -129,4 +165,4 @@ function configureReasoning(
   return updatedOptions;
 }
 
-export { checkPromptCacheSupport, getClaudeHeaders, configureReasoning };
+export { checkPromptCacheSupport, getClaudeHeaders, configureReasoning, isClaudeModelWithAdvancedFeatures };
