@@ -1,26 +1,37 @@
 const { EModelEndpoint } = require('librechat-data-provider');
-const { initializeClient, e2bClientManager } = require('./initialize');
+const { initializeClient: initE2B, e2bClientManager } = require('./initialize');
 const { getE2BAssistantDocs } = require('~/models/E2BAssistant');
 const { buildOptions } = require('./buildOptions');
+const OpenAI = require('openai');
 
 /**
  * Initializes the E2B Assistants client.
- * For E2B, this primarily returns the client manager and necessary context.
+ * Returns both the E2B manager and a standard OpenAI client for inference.
  * 
  * @param {Object} params
- * @param {ServerRequest} params.req
- * @param {ServerResponse} params.res
  * @returns {Promise<Object>} The initialized client context
  */
-// initializeClient is already imported from ./initialize, so we just export it
-// and maintain other exports.
+const initializeClient = async ({ req, res }) => {
+  // 1. Get E2B Client Manager
+  const { e2bClient } = await initE2B({ req, res });
+
+  // 2. Initialize OpenAI Client for the Agent's brain
+  // In a real scenario, we should get the API key from config or user provided keys
+  // For now, using process.env as a fallback, matching the helpers.js pattern
+  const apiKey = process.env.OPENAI_API_KEY;
+  const openai = new OpenAI({
+    apiKey,
+    baseURL: process.env.OPENAI_BASE_URL || undefined,
+  });
+
+  return {
+    e2bClient,
+    openai,
+  };
+};
 
 /**
  * Lists available E2B assistants (agents).
- * 
- * @param {Object} params
- * @param {string} params.userId
- * @returns {Promise<Array>} List of assistants
  */
 const listAssistants = async ({ userId }) => {
   // Retrieve assistants from local DB

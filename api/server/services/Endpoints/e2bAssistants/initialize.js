@@ -49,6 +49,7 @@ class E2BClientManager {
       const sandboxOpts = {
         apiKey: this.apiKey,
         timeoutMs: assistantConfig.timeout_ms || this.defaultConfig.timeoutMs,
+        secure: false, // 禁用安全访问以解决 400 兼容性问题
       };
       
       const sandbox = await Sandbox.create(template, sandboxOpts);

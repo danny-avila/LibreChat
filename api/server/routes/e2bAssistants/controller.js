@@ -6,6 +6,8 @@ const {
   updateE2BAssistantDoc, 
   deleteE2BAssistantDoc 
 } = require('~/models/E2BAssistant');
+const E2BDataAnalystAgent = require('~/server/services/Agents/e2bAgent');
+const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 
 /**
  * Creates an E2B Assistant.
@@ -37,6 +39,7 @@ const createAssistant = async (req, res) => {
       name,
       description,
       instructions,
+      prompt: instructions, // Map instructions to prompt for Schema validation
       author: req.user.id,
       model: model || 'gpt-4o', // Default model
       model_parameters: model_parameters || {},
@@ -191,24 +194,29 @@ const chat = async (req, res) => {
     }
     const assistant = assistants[0];
 
-    // TODO: Implement actual Agent logic here
-    // For now, return a mock response to verify routing
-    
-    // Use setTimeout to simulate async processing if needed, or just return directly.
-    // Ideally this should stream the response, but for MVP standard JSON is easier to debug first.
-    // LibreChat usually expects streaming or specific message format.
-    
-    // Assuming simple JSON response for now (or text/event-stream if we implement streaming)
-    // We'll mimic a simple message object
+    // Initialize OpenAI client
+    const { openai } = await getOpenAIClient({ req, res });
+
+    const agent = new E2BDataAnalystAgent({
+      req,
+      res,
+      openai,
+      userId: req.user.id,
+      conversationId: conversationId || nanoid(),
+      assistant,
+    });
+
+    const result = await agent.processMessage(text);
     
     const responseMessage = {
       messageId: nanoid(),
       conversationId: conversationId || nanoid(),
       parentMessageId,
-      sender: 'E2B Agent',
-      text: `[Mock Response] I am ${assistant.name}. I received your message: "${text}".\n\nMy sandbox template is: ${assistant.e2b_sandbox_template}.`,
+      sender: assistant.name || 'E2B Agent',
+      text: result.text,
       isCreatedByUser: false,
       error: false,
+      intermediateSteps: result.intermediateSteps,
     };
 
     res.json(responseMessage);
