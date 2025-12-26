@@ -1,4 +1,5 @@
 import { useContext, useMemo, useState } from 'react';
+import DOMPurify from 'dompurify';
 import useSWR from 'swr';
 import { Md5 } from 'ts-md5';
 import { ThemeContext, isDark } from '@librechat/client';
@@ -130,10 +131,17 @@ export const useMermaid = ({
       // Render to SVG
       const { svg } = await mermaidInstance.render(diagramId, content);
 
-      // Store as last valid content
-      setValidContent(svg);
+      // Sanitize SVG output with DOMPurify for additional security
+      const purify = DOMPurify();
+      const sanitizedSvg = purify.sanitize(svg, {
+        USE_PROFILES: { svg: true, svgFilters: true },
+        ADD_TAGS: ['use'], // Allow <use> for mermaid internal references
+      });
 
-      return svg;
+      // Store as last valid content
+      setValidContent(sanitizedSvg);
+
+      return sanitizedSvg;
     } catch (error) {
       console.error('Mermaid rendering error:', error);
 
