@@ -9,7 +9,14 @@ import {
   RotateCcw,
   ChevronDown,
 } from 'lucide-react';
-import { Clipboard, CheckMark, OGDialog, OGDialogContent, OGDialogTitle } from '@librechat/client';
+import {
+  Spinner,
+  OGDialog,
+  Clipboard,
+  CheckMark,
+  OGDialogTitle,
+  OGDialogContent,
+} from '@librechat/client';
 import { useLocalize, useDebouncedMermaid } from '~/hooks';
 import cn from '~/utils/cn';
 
@@ -486,7 +493,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
             onMouseLeave={handleMouseLeave}
           >
             <div className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded border border-border-light bg-surface-secondary px-2 py-1 text-xs text-text-secondary">
-              <div className="h-3 w-3 animate-spin rounded-full border border-gray-500 border-t-blue-500" />
+              <Spinner className="h-3 w-3" />
             </div>
             <div
               className="flex items-center justify-center"
@@ -517,7 +524,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     return (
       <div className="w-full overflow-hidden rounded-md border border-border-light">
         <div className="flex items-center gap-2 rounded-t-md bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200">
-          <div className="h-3 w-3 animate-spin rounded-full border-2 border-gray-500 border-t-blue-400" />
+          <Spinner className="h-3 w-3 text-gray-200" />
           <span>{localize('com_ui_mermaid')}</span>
         </div>
         <pre
