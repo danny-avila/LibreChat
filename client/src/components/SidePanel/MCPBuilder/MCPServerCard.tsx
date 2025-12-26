@@ -80,7 +80,7 @@ export default function MCPServerCard({
       <div
         className={cn(
           'group flex items-center gap-3 rounded-lg px-3 py-2.5',
-          'border border-border-light bg-surface-primary',
+          'border border-border-light bg-transparent',
         )}
         aria-label={`${displayName} - ${getStatusText()}`}
       >
