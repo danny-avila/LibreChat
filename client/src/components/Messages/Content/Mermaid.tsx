@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback, memo } from 'react';
 import copy from 'copy-to-clipboard';
-import { Clipboard, CheckMark } from '@librechat/client';
-import { RefreshCw, ChevronDown, ChevronUp, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import {
+  ZoomIn,
+  Expand,
+  ZoomOut,
+  ChevronUp,
+  RefreshCw,
+  RotateCcw,
+  ChevronDown,
+} from 'lucide-react';
+import { Clipboard, CheckMark, OGDialog, OGDialogContent, OGDialogTitle } from '@librechat/client';
 import { useLocalize, useDebouncedMermaid } from '~/hooks';
 import cn from '~/utils/cn';
 
@@ -24,10 +32,19 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   const [isCopied, setIsCopied] = useState(false);
   const [showCode, setShowCode] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  // Separate showCode state for dialog to avoid re-renders
+  const [dialogShowCode, setDialogShowCode] = useState(false);
   const lastValidSvgRef = useRef<string | null>(null);
+  const expandButtonRef = useRef<HTMLButtonElement>(null);
 
   // Zoom and pan state
   const [zoom, setZoom] = useState(1);
+  // Dialog zoom and pan state (separate from inline view)
+  const [dialogZoom, setDialogZoom] = useState(1);
+  const [dialogPan, setDialogPan] = useState({ x: 0, y: 0 });
+  const [isDialogPanning, setIsDialogPanning] = useState(false);
+  const dialogPanStartRef = useRef({ x: 0, y: 0 });
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0 });
@@ -117,6 +134,60 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     setPan({ x: 0, y: 0 });
   }, []);
 
+  // Dialog zoom handlers
+  const handleDialogZoomIn = useCallback(() => {
+    setDialogZoom((prev) => Math.min(prev + ZOOM_STEP, MAX_ZOOM));
+  }, []);
+
+  const handleDialogZoomOut = useCallback(() => {
+    setDialogZoom((prev) => Math.max(prev - ZOOM_STEP, MIN_ZOOM));
+  }, []);
+
+  const handleDialogResetZoom = useCallback(() => {
+    setDialogZoom(1);
+    setDialogPan({ x: 0, y: 0 });
+  }, []);
+
+  const handleDialogWheel = useCallback((e: React.WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+      setDialogZoom((prev) => Math.min(Math.max(prev + delta, MIN_ZOOM), MAX_ZOOM));
+    }
+  }, []);
+
+  const handleDialogMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const isButton = target.tagName === 'BUTTON' || target.closest('button');
+      if (e.button === 0 && !isButton) {
+        setIsDialogPanning(true);
+        dialogPanStartRef.current = { x: e.clientX - dialogPan.x, y: e.clientY - dialogPan.y };
+      }
+    },
+    [dialogPan],
+  );
+
+  const handleDialogMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (isDialogPanning) {
+        setDialogPan({
+          x: e.clientX - dialogPanStartRef.current.x,
+          y: e.clientY - dialogPanStartRef.current.y,
+        });
+      }
+    },
+    [isDialogPanning],
+  );
+
+  const handleDialogMouseUp = useCallback(() => {
+    setIsDialogPanning(false);
+  }, []);
+
+  const handleDialogMouseLeave = useCallback(() => {
+    setIsDialogPanning(false);
+  }, []);
+
   // Mouse wheel zoom
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (e.ctrlKey || e.metaKey) {
@@ -161,11 +232,33 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   }, []);
 
   // Header component (shared across states)
-  const Header = ({ showActions = false }: { showActions?: boolean }) => (
+  const Header = ({
+    showActions = false,
+    showExpandButton = false,
+  }: {
+    showActions?: boolean;
+    showExpandButton?: boolean;
+  }) => (
     <div className="relative flex items-center justify-between rounded-tl-md rounded-tr-md bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200">
       <span>{localize('com_ui_mermaid')}</span>
       {showActions && (
         <div className="ml-auto flex gap-2">
+          {showExpandButton && (
+            <button
+              ref={expandButtonRef}
+              type="button"
+              className="flex items-center gap-1 rounded-sm focus:outline focus:outline-white"
+              onClick={() => {
+                setDialogShowCode(false);
+                setDialogZoom(1);
+                setDialogPan({ x: 0, y: 0 });
+                setIsDialogOpen(true);
+              }}
+              title={localize('com_ui_expand')}
+            >
+              <Expand className="h-4 w-4" />
+            </button>
+          )}
           <button
             type="button"
             className="flex items-center gap-1 rounded-sm focus:outline focus:outline-white"
@@ -242,6 +335,127 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     </div>
   );
 
+  // Dialog zoom controls
+  const dialogZoomControls = (
+    <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1 rounded-md border border-border-light bg-surface-secondary p-1 shadow-lg">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleDialogZoomOut();
+        }}
+        disabled={dialogZoom <= MIN_ZOOM}
+        className="rounded p-1.5 text-text-secondary hover:bg-surface-hover disabled:opacity-40 disabled:hover:bg-transparent"
+        title={localize('com_ui_zoom_out')}
+      >
+        <ZoomOut className="h-4 w-4" />
+      </button>
+      <span className="min-w-[3rem] text-center text-xs text-text-secondary">
+        {Math.round(dialogZoom * 100)}%
+      </span>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleDialogZoomIn();
+        }}
+        disabled={dialogZoom >= MAX_ZOOM}
+        className="rounded p-1.5 text-text-secondary hover:bg-surface-hover disabled:opacity-40 disabled:hover:bg-transparent"
+        title={localize('com_ui_zoom_in')}
+      >
+        <ZoomIn className="h-4 w-4" />
+      </button>
+      <div className="mx-1 h-4 w-px bg-border-medium" />
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleDialogResetZoom();
+        }}
+        disabled={dialogZoom === 1 && dialogPan.x === 0 && dialogPan.y === 0}
+        className="rounded p-1.5 text-text-secondary hover:bg-surface-hover disabled:opacity-40 disabled:hover:bg-transparent"
+        title={localize('com_ui_reset_zoom')}
+      >
+        <RotateCcw className="h-4 w-4" />
+      </button>
+    </div>
+  );
+
+  // Full-screen dialog - rendered inline, not as function component to avoid recreation
+  const expandedDialog = (
+    <OGDialog open={isDialogOpen} onOpenChange={setIsDialogOpen} triggerRef={expandButtonRef}>
+      <OGDialogContent className="h-[85vh] max-h-[85vh] w-[90vw] max-w-[90vw] border-border-light bg-surface-primary p-0">
+        <OGDialogTitle className="flex items-center justify-between rounded-t-md bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200">
+          <span>{localize('com_ui_mermaid')}</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-sm focus:outline focus:outline-white"
+              onClick={() => setDialogShowCode((prev) => !prev)}
+            >
+              {dialogShowCode ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
+              )}
+              {dialogShowCode ? localize('com_ui_hide_code') : localize('com_ui_show_code')}
+            </button>
+            <button
+              type="button"
+              className="flex gap-2 rounded-sm focus:outline focus:outline-white"
+              onClick={() => {
+                copy(children.trim(), { format: 'text/plain' });
+              }}
+            >
+              <Clipboard />
+              {localize('com_ui_copy_code')}
+            </button>
+          </div>
+        </OGDialogTitle>
+        {dialogShowCode && (
+          <div className="border-b border-border-medium bg-surface-secondary p-4">
+            <pre className="max-h-[150px] overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
+              {children}
+            </pre>
+          </div>
+        )}
+        <div
+          className={cn(
+            'relative flex-1 overflow-hidden p-4',
+            'bg-surface-primary-alt',
+            isDialogPanning ? 'cursor-grabbing' : 'cursor-grab',
+          )}
+          style={{ height: dialogShowCode ? 'calc(85vh - 200px)' : 'calc(85vh - 50px)' }}
+          onWheel={handleDialogWheel}
+          onMouseDown={handleDialogMouseDown}
+          onMouseMove={handleDialogMouseMove}
+          onMouseUp={handleDialogMouseUp}
+          onMouseLeave={handleDialogMouseLeave}
+        >
+          <div
+            className="flex h-full w-full items-center justify-center"
+            style={{
+              transform: `translate(${dialogPan.x}px, ${dialogPan.y}px)`,
+              transition: isDialogPanning ? 'none' : 'transform 0.1s ease-out',
+            }}
+          >
+            <img
+              src={blobUrl}
+              alt="Mermaid diagram"
+              className="max-h-full max-w-full select-none object-contain"
+              style={{
+                transform: `scale(${dialogZoom})`,
+                transformOrigin: 'center center',
+              }}
+              draggable={false}
+            />
+          </div>
+          {dialogZoomControls}
+        </div>
+      </OGDialogContent>
+    </OGDialog>
+  );
+
   // Loading state - show last valid diagram with loading indicator, or spinner
   if (isLoading) {
     // If we have a previous valid render, show it with a subtle loading indicator
@@ -256,7 +470,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
               'rounded-b-md bg-surface-primary-alt',
               isPanning ? 'cursor-grabbing' : 'cursor-grab',
             )}
-            style={{ minHeight: '200px', maxHeight: '600px' }}
+            style={{ minHeight: '250px', maxHeight: '600px' }}
             onWheel={handleWheel}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
@@ -295,7 +509,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     return (
       <div className="w-full overflow-hidden rounded-md border border-border-light">
         <Header />
-        <div className="flex min-h-[200px] items-center justify-center rounded-b-md bg-surface-primary-alt p-4">
+        <div className="flex min-h-[250px] items-center justify-center rounded-b-md bg-surface-primary-alt p-4">
           <div className="text-center">
             <div className="mx-auto mb-2 h-6 w-6 animate-spin rounded-full border-2 border-border-medium border-t-blue-500" />
             <div className="text-sm text-text-secondary">
@@ -350,52 +564,55 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   }
 
   return (
-    <div className="w-full overflow-hidden rounded-md border border-border-light">
-      <Header showActions />
-      {showCode && (
-        <div className="border-b border-border-medium bg-surface-secondary p-4">
-          <pre className="overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
-            {children}
-          </pre>
-        </div>
-      )}
-      <div
-        ref={containerRef}
-        className={cn(
-          'relative overflow-hidden p-4',
-          'bg-surface-primary-alt',
-          !showCode && 'rounded-b-md',
-          isPanning ? 'cursor-grabbing' : 'cursor-grab',
+    <>
+      {expandedDialog}
+      <div className="w-full overflow-hidden rounded-md border border-border-light">
+        <Header showActions showExpandButton />
+        {showCode && (
+          <div className="border-b border-border-medium bg-surface-secondary p-4">
+            <pre className="overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
+              {children}
+            </pre>
+          </div>
         )}
-        style={{ minHeight: '200px', maxHeight: '600px' }}
-        onWheel={handleWheel}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
-      >
         <div
-          className="flex items-center justify-center"
-          style={{
-            transform: `translate(${pan.x}px, ${pan.y}px)`,
-            transition: isPanning ? 'none' : 'transform 0.1s ease-out',
-          }}
+          ref={containerRef}
+          className={cn(
+            'relative overflow-hidden p-4',
+            'bg-surface-primary-alt',
+            !showCode && 'rounded-b-md',
+            isPanning ? 'cursor-grabbing' : 'cursor-grab',
+          )}
+          style={{ minHeight: '250px', maxHeight: '600px' }}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseLeave}
         >
-          <img
-            src={blobUrl}
-            alt="Mermaid diagram"
-            className="max-w-full select-none"
+          <div
+            className="flex min-h-[200px] items-center justify-center"
             style={{
-              maxHeight: '500px',
-              transform: `scale(${zoom})`,
-              transformOrigin: 'center center',
+              transform: `translate(${pan.x}px, ${pan.y}px)`,
+              transition: isPanning ? 'none' : 'transform 0.1s ease-out',
             }}
-            draggable={false}
-          />
+          >
+            <img
+              src={blobUrl}
+              alt="Mermaid diagram"
+              className="max-w-full select-none"
+              style={{
+                maxHeight: '500px',
+                transform: `scale(${zoom})`,
+                transformOrigin: 'center center',
+              }}
+              draggable={false}
+            />
+          </div>
+          {zoomControls}
         </div>
-        {zoomControls}
       </div>
-    </div>
+    </>
   );
 });
 
