@@ -66,33 +66,39 @@
 
 ## 2025-12-25 已完成任务 ✅
 
-### ✅ 核心服务重构与优化
+### ✅ Agent 逻辑起步
+- [x] 实现 `prompts.js` - 定义 Data Analyst Agent 的系统提示词及工具函数声明
+
+---
+
+## 2025-12-26 已完成任务 ✅
+
+### ✅ 核心服务重构与深度优化
 - [x] **重构 `fileHandler.js` (文件处理服务)**:
   - [x] 实现对 LibreChat 多存储后端（Local, S3, Azure Blob）的全面支持
-  - [x] 使用 `getDownloadStream` 取代直接的 `fs` 操作，增强系统抽象一致性
-  - [x] 实现 `persistArtifacts` 逻辑，支持将沙箱生成的文件持久化至系统存储并创建 DB 记录
-  - [x] 引入 `Promise.allSettled` 实现文件同步与持久化的并发处理，提升性能
+  - [x] 实现 `persistArtifacts` 逻辑，支持将沙箱生成的成果持久化并同步创建 DB 记录
+  - [x] 增加对内存 Buffer (Base64) 的直接持久化支持，优化图表保存流程
 - [x] **优化 `codeExecutor.js` (代码执行服务)**:
-  - [x] 增强图表提取逻辑，支持多格式图片及其 MIME 类型识别
-  - [x] 强化安全校验，拦截危险函数调用及无限循环风险
+  - [x] 增强图表提取逻辑，支持多格式图片及其 MIME 类型自动识别
+  - [x] 强化安全校验与日志格式化处理
 
-### ✅ 单元测试验证
-- [x] 编写并跑通 `api/tests/e2b/codeExecutor.test.js`:
-  - 验证代码执行输出、图表捕获、安全拦截及错误处理
-- [x] 编写并跑通 `api/tests/e2b/fileHandler.test.js`:
-  - 验证跨存储策略的文件同步、成果物持久化及并发逻辑
-- [x] 修正 Jest 配置 (`jest.config.js`) 以适配 E2B SDK 相关的 ESM 模块转换
+### ✅ Agent 核心类与工具实现
+- [x] **实现 `index.js` (E2BDataAnalystAgent)**: 基于 ReAct 循环的多轮对话核心类
+- [x] **实现 `tools.js`**: 封装 `execute_code`, `upload_file`, `download_file` 为 Agent 可用工具
+- [x] 将 Agent 逻辑完整集成至 Controller 端的 `chat` 方法
 
-### ✅ Agent 逻辑与系统初始化规范化
-- [x] 实现 `prompts.js` - 定义系统提示词及工具声明
-- [x] 重构 `initialize.js` - 实现标准的 `initializeClient` 导出，对齐 LibreChat 架构
-- [x] 更新 `Endpoints/e2bAssistants/index.js` - 完整导出 `buildOptions`, `initializeClient`, `listAssistants`
-- [x] 验证 `helpers.js` 与 `buildEndpointOption.js` 的集成兼容性
+### ✅ 系统初始化规范化
+- [x] **规范化 `initialize.js`**: 实现标准的 `initializeClient` 导出，确保 singleton 状态管理与端点架构对齐
+- [x] **完善 `index.js` (Endpoint 入口)**: 导出 `buildOptions` 及包含 OpenAI 客户端的初始化环境
 
-### ✅ Phase 3 - API层（已完成 ✅）
-- [x] 实现 `api/server/routes/e2bAssistants/controller.js` (CRUD + Chat 集成)
-- [x] 实现 `api/server/routes/e2bAssistants/index.js` (路由定义与中间件)
-- [x] 在 `api/server/routes/index.js` 和 `api/server/index.js` 中完成挂载
+### ✅ 自动化与集成测试验证
+- [x] 编写并跑通 `api/tests/e2b/codeExecutor.test.js` 和 `fileHandler.test.js` 单元测试
+- [x] **实现并跑通端到端集成测试 (`manual_integration.js` / `real_integration.js`)**:
+  - 验证 **Controller -> Agent -> LLM (Mocked) -> E2B Sandbox (Mocked)** 逻辑闭环
+  - 验证 **真实环境集成 (Real DB + OpenAI + E2B Cloud)**：确认 Agent 具备真实云端执行与错误重试能力
+
+### ✅ Phase 3 - API层（全面完成 ✅）
+- [x] 实现 CRUD 控制器、路由定义、中间件配置及全系统挂载
 
 ---
 
@@ -142,10 +148,6 @@
 ### ⬜ 资源管理与监控
 - [ ] 实现代码执行指标收集
 - [ ] 添加执行时间与内存监控
-
-### ⬜ 测试
-- [ ] 编写集成测试：完整对话流程
-- [ ] 编写端到端测试
 
 ---
 
