@@ -73,7 +73,7 @@ export const useMermaid = ({
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(7);
     return `${id}-${timestamp}-${random}`;
-  }, [id, cacheKey]);
+  }, [id]);
 
   // Build mermaid configuration
   const mermaidConfig = useMemo((): MermaidConfig => {
@@ -102,13 +102,19 @@ export const useMermaid = ({
         throw new Error('Failed to load mermaid library');
       }
 
-      // Validate syntax first (faster than rendering)
-      const isValid = await mermaidInstance.parse(content, {
-        suppressErrors: true,
-      });
+      // Validate syntax first and capture detailed error
+      try {
+        await mermaidInstance.parse(content);
+      } catch (parseError) {
+        // Extract meaningful error message from mermaid's parse error
+        let errorMessage = 'Invalid mermaid syntax';
+        if (parseError instanceof Error) {
+          errorMessage = parseError.message;
+        } else if (typeof parseError === 'string') {
+          errorMessage = parseError;
+        }
 
-      if (!isValid) {
-        throw new Error('Invalid mermaid syntax');
+        throw new Error(errorMessage);
       }
 
       // Initialize with config

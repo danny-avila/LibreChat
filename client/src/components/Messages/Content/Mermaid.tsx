@@ -331,7 +331,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
           </pre>
           {showCode && (
             <div className="mt-4 border-t border-border-medium pt-4">
-              <div className="mb-2 text-xs text-text-tertiary">
+              <div className="mb-2 text-xs text-text-secondary">
                 {localize('com_ui_mermaid_source')}
               </div>
               <pre className="overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
