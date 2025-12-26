@@ -6,7 +6,6 @@ import { matchSorter } from 'match-sorter';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   Table,
-  Input,
   Label,
   Button,
   Switch,
@@ -18,6 +17,7 @@ import {
   TableBody,
   TrashIcon,
   TableCell,
+  FilterInput,
   TableHeader,
   TooltipAnchor,
   useToastContext,
@@ -241,22 +241,12 @@ export default function MemoryViewer() {
   return (
     <div className="flex h-full w-full flex-col">
       <div role="region" aria-label={localize('com_ui_memories')} className="mt-2 space-y-2">
-        <div className="relative">
-          <Input
-            id="memory-search"
-            placeholder=" "
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            aria-label={localize('com_ui_memories_filter')}
-            className="peer"
-          />
-          <Label
-            htmlFor="memory-search"
-            className="pointer-events-none absolute -top-1 left-3 w-auto origin-[0] translate-y-3 scale-100 rounded bg-background px-1 text-base text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75"
-          >
-            {localize('com_ui_memories_filter')}
-          </Label>
-        </div>
+        <FilterInput
+          inputId="memory-search"
+          label={localize('com_ui_memories_filter')}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
         {/* Memory Usage and Toggle Display */}
         {(memData?.tokenLimit || hasOptOutAccess) && (
           <div

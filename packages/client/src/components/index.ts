@@ -9,6 +9,7 @@ export * from './DropdownMenu';
 export * from './HoverCard';
 export * from './Input';
 export * from './InputNumber';
+export * from './FilterInput';
 export * from './Label';
 export * from './OriginalDialog';
 export * from './QuestionMark';
