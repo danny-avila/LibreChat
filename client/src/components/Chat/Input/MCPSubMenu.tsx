@@ -1,10 +1,9 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronRight } from 'lucide-react';
-import { PinIcon } from '@librechat/client';
+import { MCPIcon, PinIcon } from '@librechat/client';
 import MCPServerMenuItem from '~/components/MCP/MCPServerMenuItem';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
-import StackedMCPIcons from '~/components/MCP/StackedMCPIcons';
 import { useBadgeRowContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -36,13 +35,6 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
       placement: 'right',
     });
 
-    const selectedServers = useMemo(() => {
-      if (!mcpValues || mcpValues.length === 0) {
-        return [];
-      }
-      return selectableServers.filter((s) => mcpValues.includes(s.serverName));
-    }, [selectableServers, mcpValues]);
-
     // Don't render if no MCP servers are configured
     if (!selectableServers || selectableServers.length === 0) {
       return null;
@@ -67,14 +59,9 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
             }
           >
             <div className="flex items-center gap-2">
-              <StackedMCPIcons
-                selectedServers={selectedServers}
-                maxIcons={3}
-                iconSize="sm"
-                variant="submenu"
-              />
-              <span className="flex-1">{placeholder || placeholderText}</span>
-              <ChevronRight className="h-3 w-3" aria-hidden="true" />
+              <MCPIcon className="h-5 w-5 flex-shrink-0 text-text-primary" aria-hidden="true" />
+              <span>{placeholder || placeholderText}</span>
+              <ChevronRight className="h-3 w-3 flex-shrink-0" aria-hidden="true" />
             </div>
             <button
               type="button"
@@ -101,7 +88,7 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
             aria-label={localize('com_ui_mcp_servers')}
             className={cn(
               'animate-popover-left z-50 ml-3 flex min-w-[260px] max-w-[320px] flex-col rounded-xl',
-              'border border-border-light bg-surface-secondary p-1.5 shadow-lg',
+              'border border-border-light bg-presentation p-1.5 shadow-lg',
             )}
           >
             <div className="flex max-h-[320px] flex-col gap-1 overflow-y-auto">

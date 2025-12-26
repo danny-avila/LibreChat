@@ -1,4 +1,4 @@
-import React, { memo, useState, useMemo } from 'react';
+import React, { memo, useMemo, useCallback, useRef } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
@@ -25,9 +25,25 @@ function MCPSelectContent() {
     getServerStatusIconProps,
   } = mcpServerManager;
 
-  const [isOpen, setIsOpen] = useState(false);
+  const menuStore = Ariakit.useMenuStore({ focusLoop: true });
+  const isOpen = menuStore.useState('open');
+  const focusedElementRef = useRef<HTMLElement | null>(null);
 
   const selectedCount = mcpValues?.length ?? 0;
+
+  // Wrap toggleServerSelection to preserve focus after state update
+  const handleToggle = useCallback(
+    (serverName: string) => {
+      // Save currently focused element
+      focusedElementRef.current = document.activeElement as HTMLElement;
+      toggleServerSelection(serverName);
+      // Restore focus after React re-renders
+      requestAnimationFrame(() => {
+        focusedElementRef.current?.focus();
+      });
+    },
+    [toggleServerSelection],
+  );
 
   const selectedServers = useMemo(() => {
     if (!mcpValues || mcpValues.length === 0) {
@@ -55,7 +71,7 @@ function MCPSelectContent() {
 
   return (
     <>
-      <Ariakit.MenuProvider open={isOpen} setOpen={setIsOpen}>
+      <Ariakit.MenuProvider store={menuStore}>
         <TooltipAnchor
           description={placeholderText}
           disabled={isOpen}
@@ -90,7 +106,7 @@ function MCPSelectContent() {
           aria-label={localize('com_ui_mcp_servers')}
           className={cn(
             'z-50 flex min-w-[260px] max-w-[320px] flex-col rounded-xl',
-            'border border-border-light bg-surface-secondary p-1.5 shadow-lg',
+            'border border-border-light bg-presentation p-1.5 shadow-lg',
             'origin-top opacity-0 transition-[opacity,transform] duration-200 ease-out',
             'data-[enter]:scale-100 data-[enter]:opacity-100',
             'scale-95 data-[leave]:scale-95 data-[leave]:opacity-0',
@@ -105,7 +121,7 @@ function MCPSelectContent() {
                 connectionStatus={connectionStatus}
                 isInitializing={isInitializing}
                 statusIconProps={getServerStatusIconProps(server.serverName)}
-                onToggle={toggleServerSelection}
+                onToggle={handleToggle}
               />
             ))}
           </div>

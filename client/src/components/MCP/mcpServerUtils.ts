@@ -39,16 +39,17 @@ export function getSelectedServerIcons(
   }
 
   // Add one default icon entry if any server uses default icon
+  // Custom icons are prioritized first, default icon comes last
   const allIcons: SelectedIconInfo[] =
     defaultServerNames.length > 0
       ? [
+          ...customIcons,
           {
             key: '_default_',
             serverName: defaultServerNames[0],
             iconPath: null,
             displayName: 'MCP',
           },
-          ...customIcons,
         ]
       : customIcons;
 

@@ -47,17 +47,23 @@ export default function StackedMCPIcons({
   );
 
   if (icons.length === 0) {
-    return <MCPIcon className={cn('flex-shrink-0 text-text-primary', sizeConfig.md.icon)} />;
+    return (
+      <MCPIcon
+        aria-hidden="true"
+        className={cn('flex-shrink-0 text-text-primary', sizeConfig.md.icon)}
+      />
+    );
   }
 
   const sizes = sizeConfig[iconSize];
   const colors = variantConfig[variant];
 
   return (
-    <div className="flex items-center">
+    <div className="flex items-center" aria-hidden="true">
       {icons.map((icon, index) => (
         <div
           key={icon.key}
+          title={icon.displayName}
           className={cn(
             'relative flex items-center justify-center rounded-full border',
             colors.border,
@@ -66,7 +72,6 @@ export default function StackedMCPIcons({
             index > 0 && sizes.overlap,
           )}
           style={{ zIndex: icons.length - index }}
-          title={icon.displayName}
         >
           {icon.iconPath ? (
             <img
