@@ -17,9 +17,23 @@ function formatBytes(bytes: number): string {
     return '0 Bytes';
   }
   const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  const index = Math.min(i, sizes.length - 1);
+  return parseFloat((bytes / Math.pow(k, index)).toFixed(2)) + ' ' + sizes[index];
+}
+
+/**
+ * Escapes special XML characters in a string.
+ */
+function escapeXml(value: unknown): string {
+  const str = String(value);
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 /**
@@ -38,7 +52,7 @@ function formatAsMarkdown(metadata: Record<string, unknown>): string {
  */
 function formatAsXml(metadata: Record<string, unknown>): string {
   const items = Object.entries(metadata)
-    .map(([key, value]) => `  <${key}>${value}</${key}>`)
+    .map(([key, value]) => `  <${key}>${escapeXml(value)}</${key}>`)
     .join('\n');
   return `<file_metadata>\n${items}\n</file_metadata>`;
 }
@@ -166,9 +180,6 @@ export async function extractFileContext({
   const metadataConfig = fileConfig.metadata;
 
   // Check if we have any work to do
-  const hasTextFiles = attachments.some(
-    (file) => (file.source ?? FileSources.local) === FileSources.text && file.text,
-  );
   const hasMetadataEnabled = metadataConfig?.enabled === true;
 
   if (!fileTokenLimit && !hasMetadataEnabled) {
@@ -189,6 +200,21 @@ export async function extractFileContext({
     }
     if (metadataBlocks.length > 0) {
       metadataText = metadataBlocks.join('\n\n');
+
+      // Apply token limits to metadata text to avoid consuming excessive context
+      if (fileTokenLimit) {
+        const { text: limitedMetadataText, wasTruncated } = await processTextWithTokenLimit({
+          text: metadataText,
+          tokenLimit: fileTokenLimit,
+          tokenCountFn,
+        });
+
+        if (wasTruncated) {
+          logger.debug('[extractFileContext] Metadata text truncated due to token limits');
+        }
+
+        metadataText = limitedMetadataText;
+      }
     }
   }
 

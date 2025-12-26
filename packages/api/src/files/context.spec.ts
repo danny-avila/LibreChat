@@ -99,6 +99,30 @@ describe('formatFileMetadata', () => {
       expect(result).toContain('<type>application/pdf</type>');
       expect(result).toContain('</file_metadata>');
     });
+
+    it('should escape special XML characters in values', () => {
+      const file = createMockFile({ filename: 'file<script>.pdf' });
+      const result = formatFileMetadata(file, {
+        enabled: true,
+        fields: [FileMetadataFields.filename],
+        format: 'xml',
+      });
+
+      expect(result).toContain('&lt;script&gt;');
+      expect(result).not.toContain('<script>');
+    });
+
+    it('should escape ampersands and quotes in XML', () => {
+      const file = createMockFile({ filename: 'test & "file".pdf' });
+      const result = formatFileMetadata(file, {
+        enabled: true,
+        fields: [FileMetadataFields.filename],
+        format: 'xml',
+      });
+
+      expect(result).toContain('&amp;');
+      expect(result).toContain('&quot;');
+    });
   });
 
   describe('opt-in fields', () => {
@@ -231,6 +255,18 @@ describe('formatFileMetadata', () => {
 
       const parsed = JSON.parse(result);
       expect(parsed.size_human).toBe('1 GB');
+    });
+
+    it('should format TB correctly', () => {
+      const file = createMockFile({ bytes: 1099511627776 }); // 1 TB
+      const result = formatFileMetadata(file, {
+        enabled: true,
+        fields: [FileMetadataFields.bytes],
+        format: 'json',
+      });
+
+      const parsed = JSON.parse(result);
+      expect(parsed.size_human).toBe('1 TB');
     });
   });
 });

@@ -407,12 +407,12 @@ export enum FileMetadataFields {
   filename = 'filename',
   type = 'type',
   bytes = 'bytes',
-  source = 'source',
   width = 'width',
   height = 'height',
   createdAt = 'createdAt',
   updatedAt = 'updatedAt',
   // Opt-in fields (use with caution - may expose internal details)
+  source = 'source',
   filepath = 'filepath',
   conversationId = 'conversationId',
   file_id = 'file_id',
