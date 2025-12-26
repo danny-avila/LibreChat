@@ -58,8 +58,8 @@ export default function MCPServerList({
           <p className="text-sm text-text-secondary">{localize('com_ui_no_mcp_servers_match')}</p>
         ) : (
           <>
-            <p className="text-sm text-text-secondary">{localize('com_ui_no_mcp_servers')}</p>
-            <p className="mt-1 text-xs text-text-tertiary">
+            <p className="text-sm text-text-primary">{localize('com_ui_no_mcp_servers')}</p>
+            <p className="mt-1 text-xs text-text-secondary">
               {localize('com_ui_add_first_mcp_server')}
             </p>
           </>
