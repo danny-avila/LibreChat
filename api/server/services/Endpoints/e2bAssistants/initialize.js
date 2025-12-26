@@ -673,6 +673,20 @@ class E2BClientManager {
 // 单例模式
 const e2bClientManager = new E2BClientManager();
 
+/**
+ * 标准初始化函数 - 适配 LibreChat 端点架构
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {ServerResponse} params.res
+ * @returns {Promise<Object>} 初始化后的客户端环境
+ */
+const initializeClient = async ({ req, res }) => {
+  // 返回管理器作为客户端实例
+  return {
+    e2bClient: e2bClientManager,
+  };
+};
+
 // 优雅关闭处理
 process.on('SIGTERM', async () => {
   logger.info('[E2B] SIGTERM received, cleaning up sandboxes...');
@@ -684,4 +698,7 @@ process.on('SIGINT', async () => {
   await e2bClientManager.cleanup();
 });
 
-module.exports = e2bClientManager;
+module.exports = {
+  initializeClient,
+  e2bClientManager,
+};

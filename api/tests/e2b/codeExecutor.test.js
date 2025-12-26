@@ -1,5 +1,5 @@
 const codeExecutor = require('~/server/services/Sandbox/codeExecutor');
-const e2bClientManager = require('~/server/services/Endpoints/e2bAssistants/initialize');
+const { e2bClientManager } = require('~/server/services/Endpoints/e2bAssistants/initialize');
 
 // Mock the external SDK to prevent ESM loading issues
 jest.mock('@e2b/code-interpreter', () => ({
@@ -8,7 +8,16 @@ jest.mock('@e2b/code-interpreter', () => ({
   },
 }));
 
-jest.mock('~/server/services/Endpoints/e2bAssistants/initialize');
+jest.mock('~/server/services/Endpoints/e2bAssistants/initialize', () => ({
+  e2bClientManager: {
+    executeCode: jest.fn(),
+    uploadFile: jest.fn(),
+    downloadFile: jest.fn(),
+    listFiles: jest.fn(),
+  },
+  initializeClient: jest.fn(),
+}));
+
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     info: jest.fn(),

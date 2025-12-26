@@ -1,3 +1,13 @@
+// Mock initialize.js to return the object structure
+jest.mock('~/server/services/Endpoints/e2bAssistants/initialize', () => ({
+  e2bClientManager: {
+    uploadFile: jest.fn(),
+    downloadFile: jest.fn(),
+    executeCode: jest.fn(),
+  },
+  initializeClient: jest.fn(),
+}));
+
 // Mock the codeExecutor module first to prevent it from loading initialize.js
 jest.mock('~/server/services/Sandbox/codeExecutor', () => ({
   uploadFile: jest.fn(),

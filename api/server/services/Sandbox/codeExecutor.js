@@ -1,4 +1,4 @@
-const e2bClientManager = require('../Endpoints/e2bAssistants/initialize');
+const { e2bClientManager } = require('../Endpoints/e2bAssistants/initialize');
 const { logger } = require('@librechat/data-schemas');
 
 /**

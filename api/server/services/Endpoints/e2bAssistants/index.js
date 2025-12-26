@@ -1,5 +1,5 @@
 const { EModelEndpoint } = require('librechat-data-provider');
-const e2bClientManager = require('./initialize');
+const { initializeClient, e2bClientManager } = require('./initialize');
 const { getE2BAssistantDocs } = require('~/models/E2BAssistant');
 
 /**
@@ -11,14 +11,8 @@ const { getE2BAssistantDocs } = require('~/models/E2BAssistant');
  * @param {ServerResponse} params.res
  * @returns {Promise<Object>} The initialized client context
  */
-const initializeClient = async ({ req, res }) => {
-  // Ensure the user has access/permissions if needed
-  // Return the manager which handles sandboxes
-  return {
-    e2bClient: e2bClientManager,
-    // Add other context needed for the controller
-  };
-};
+// initializeClient is already imported from ./initialize, so we just export it
+// and maintain other exports.
 
 /**
  * Lists available E2B assistants (agents).
