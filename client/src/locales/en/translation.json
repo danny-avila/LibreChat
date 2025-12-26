@@ -155,6 +155,7 @@
   "com_auth_discord_login": "Continue with Discord",
   "com_auth_email": "Email",
   "com_auth_email_address": "Email address",
+  "com_auth_email_placeholder": "email@example.com",
   "com_auth_email_max_length": "Email should not be longer than 120 characters",
   "com_auth_email_min_length": "Email must be at least 6 characters",
   "com_auth_email_pattern": "You must enter a valid email address",
