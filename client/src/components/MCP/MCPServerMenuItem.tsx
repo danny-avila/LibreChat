@@ -1,5 +1,6 @@
 import * as Ariakit from '@ariakit/react';
-import { MCPIcon, Checkbox, TooltipAnchor } from '@librechat/client';
+import { Check } from 'lucide-react';
+import { MCPIcon } from '@librechat/client';
 import type { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 import type { MCPServerStatusIconProps } from './MCPServerStatusIcon';
 import MCPServerStatusIcon from './MCPServerStatusIcon';
@@ -33,18 +34,21 @@ export default function MCPServerMenuItem({
   const displayName = server.config?.title || server.serverName;
   const statusColor = getStatusColor(server.serverName, connectionStatus, isInitializing);
   const statusTextKey = getStatusTextKey(server.serverName, connectionStatus, isInitializing);
+  const statusText = localize(statusTextKey as Parameters<typeof localize>[0]);
   const showActionButton = shouldShowActionButton(statusIconProps);
 
+  // Include status in aria-label so screen readers announce it
+  const accessibleLabel = `${displayName}, ${statusText}`;
+
   return (
-    <Ariakit.MenuItem
+    <Ariakit.MenuItemCheckbox
       hideOnClick={false}
-      onClick={(event) => {
-        event.preventDefault();
-        onToggle(server.serverName);
-      }}
-      role="menuitemcheckbox"
-      aria-checked={isSelected}
-      aria-label={displayName}
+      name="mcp-servers"
+      value={server.serverName}
+      checked={isSelected}
+      setValueOnChange={false}
+      onChange={() => onToggle(server.serverName)}
+      aria-label={accessibleLabel}
       className={cn(
         'group flex w-full cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2',
         'outline-none transition-all duration-150',
@@ -65,10 +69,9 @@ export default function MCPServerMenuItem({
             <MCPIcon className="h-5 w-5 text-text-secondary" />
           </div>
         )}
-        {/* Status dot - always shows tooltip for accessibility */}
-        <TooltipAnchor
-          description={localize(statusTextKey as Parameters<typeof localize>[0])}
-          side="top"
+        {/* Status dot - decorative, status is announced via aria-label on MenuItem */}
+        <div
+          aria-hidden="true"
           className={cn(
             'absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface-secondary',
             statusColor,
@@ -93,15 +96,18 @@ export default function MCPServerMenuItem({
         </div>
       )}
 
-      {/* Selection Indicator - decorative, state conveyed by aria-checked on MenuItem */}
-      <span aria-hidden="true" className="flex flex-shrink-0 items-center">
-        <Checkbox
-          checked={isSelected}
-          tabIndex={-1}
-          aria-label={displayName}
-          className="pointer-events-none"
-        />
+      {/* Selection Indicator - purely visual, state conveyed by aria-checked on MenuItem */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          'flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-sm border',
+          isSelected
+            ? 'border-primary bg-primary text-primary-foreground'
+            : 'border-border-xheavy bg-transparent',
+        )}
+      >
+        {isSelected && <Check className="h-4 w-4" />}
       </span>
-    </Ariakit.MenuItem>
+    </Ariakit.MenuItemCheckbox>
   );
 }
