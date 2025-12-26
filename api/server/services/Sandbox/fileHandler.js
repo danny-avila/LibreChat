@@ -108,13 +108,19 @@ class FileHandler {
 
     const processArtifact = async (artifact) => {
       try {
-        logger.info(`[FileHandler] Persisting artifact ${artifact.path} from sandbox`);
+        logger.info(`[FileHandler] Persisting artifact ${artifact.name} from sandbox`);
         
-        // 1. Download artifact from sandbox
-        const content = await codeExecutor.downloadFile(userId, conversationId, artifact.path, 'buffer');
+        let content;
+        if (artifact.content) {
+          // If content is already provided (e.g. Base64 plots)
+          content = Buffer.from(artifact.content, 'base64');
+        } else {
+          // 1. Download artifact from sandbox
+          content = await codeExecutor.downloadFile(userId, conversationId, artifact.path, 'buffer');
+        }
         
         // 2. Determine storage strategy (Local/S3/Azure)
-        const isImage = artifact.path.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i);
+        const isImage = artifact.name.match(/\.(png|jpg|jpeg|gif|svg|webp)$/i);
         const source = getFileStrategy(appConfig, { isImage: !!isImage });
         const strategy = getStrategyFunctions(source);
 
