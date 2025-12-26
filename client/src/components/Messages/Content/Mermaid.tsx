@@ -198,7 +198,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
 
   // Zoom controls - inline JSX to avoid stale closure issues
   const zoomControls = (
-    <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-md bg-gray-800/90 p-1 shadow-lg">
+    <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-md border border-border-light bg-surface-secondary p-1 shadow-lg">
       <button
         type="button"
         onClick={(e) => {
@@ -206,12 +206,12 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
           handleZoomOut();
         }}
         disabled={zoom <= MIN_ZOOM}
-        className="rounded p-1.5 text-gray-300 hover:bg-gray-700 disabled:opacity-40 disabled:hover:bg-transparent"
+        className="rounded p-1.5 text-text-secondary hover:bg-surface-hover disabled:opacity-40 disabled:hover:bg-transparent"
         title={localize('com_ui_zoom_out')}
       >
         <ZoomOut className="h-4 w-4" />
       </button>
-      <span className="min-w-[3rem] text-center text-xs text-gray-300">
+      <span className="min-w-[3rem] text-center text-xs text-text-secondary">
         {Math.round(zoom * 100)}%
       </span>
       <button
@@ -221,12 +221,12 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
           handleZoomIn();
         }}
         disabled={zoom >= MAX_ZOOM}
-        className="rounded p-1.5 text-gray-300 hover:bg-gray-700 disabled:opacity-40 disabled:hover:bg-transparent"
+        className="rounded p-1.5 text-text-secondary hover:bg-surface-hover disabled:opacity-40 disabled:hover:bg-transparent"
         title={localize('com_ui_zoom_in')}
       >
         <ZoomIn className="h-4 w-4" />
       </button>
-      <div className="mx-1 h-4 w-px bg-gray-600" />
+      <div className="mx-1 h-4 w-px bg-border-medium" />
       <button
         type="button"
         onClick={(e) => {
@@ -234,7 +234,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
           handleResetZoom();
         }}
         disabled={zoom === 1 && pan.x === 0 && pan.y === 0}
-        className="rounded p-1.5 text-gray-300 hover:bg-gray-700 disabled:opacity-40 disabled:hover:bg-transparent"
+        className="rounded p-1.5 text-text-secondary hover:bg-surface-hover disabled:opacity-40 disabled:hover:bg-transparent"
         title={localize('com_ui_reset_zoom')}
       >
         <RotateCcw className="h-4 w-4" />
@@ -247,13 +247,13 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     // If we have a previous valid render, show it with a subtle loading indicator
     if (lastValidSvgRef.current && blobUrl) {
       return (
-        <div className="w-full rounded-md bg-gray-900 text-xs text-white/80">
+        <div className="w-full overflow-hidden rounded-md border border-border-light">
           <Header showActions />
           <div
             ref={containerRef}
             className={cn(
               'relative overflow-hidden p-4',
-              'rounded-b-md bg-white dark:bg-gray-800',
+              'rounded-b-md bg-surface-primary-alt',
               isPanning ? 'cursor-grabbing' : 'cursor-grab',
             )}
             style={{ minHeight: '200px', maxHeight: '600px' }}
@@ -263,7 +263,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
           >
-            <div className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded bg-gray-800/80 px-2 py-1 text-xs text-gray-300">
+            <div className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded border border-border-light bg-surface-secondary px-2 py-1 text-xs text-text-secondary">
               <div className="h-3 w-3 animate-spin rounded-full border border-gray-500 border-t-blue-500" />
             </div>
             <div
@@ -293,14 +293,12 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
 
     // No previous render, show full loading state
     return (
-      <div className="w-full rounded-md bg-gray-900 text-xs text-white/80">
+      <div className="w-full overflow-hidden rounded-md border border-border-light">
         <Header />
-        <div className="flex min-h-[200px] items-center justify-center rounded-b-md bg-white p-4 dark:bg-gray-800">
+        <div className="flex min-h-[200px] items-center justify-center rounded-b-md bg-surface-primary-alt p-4">
           <div className="text-center">
-            <div className="mx-auto mb-2 h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500 dark:border-gray-600" />
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              {localize('com_ui_mermaid_rendering')}
-            </div>
+            <div className="mx-auto mb-2 h-6 w-6 animate-spin rounded-full border-2 border-border-medium border-t-blue-500" />
+            <div className="text-sm text-text-tertiary">{localize('com_ui_mermaid_rendering')}</div>
           </div>
         </div>
       </div>
@@ -310,25 +308,31 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   // Error state
   if (error) {
     return (
-      <div className="w-full rounded-md bg-gray-900 text-xs text-white/80">
+      <div className="w-full overflow-hidden rounded-md border border-border-light">
         <Header showActions />
-        <div className="rounded-b-md border border-red-500/30 bg-red-500/10 p-4">
+        <div className="rounded-b-md border-t border-red-500/30 bg-red-500/10 p-4">
           <div className="mb-2 flex items-center justify-between">
-            <span className="font-semibold text-red-400">{localize('com_ui_mermaid_failed')}</span>
+            <span className="font-semibold text-red-500 dark:text-red-400">
+              {localize('com_ui_mermaid_failed')}
+            </span>
             <button
               type="button"
               onClick={handleRetry}
-              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface-hover"
             >
               <RefreshCw className="h-3 w-3" />
               {localize('com_ui_retry')}
             </button>
           </div>
-          <pre className="overflow-auto text-xs text-red-300">{error.message}</pre>
+          <pre className="overflow-auto text-xs text-red-600 dark:text-red-300">
+            {error.message}
+          </pre>
           {showCode && (
-            <div className="mt-4 border-t border-gray-700 pt-4">
-              <div className="mb-2 text-xs text-gray-400">{localize('com_ui_mermaid_source')}</div>
-              <pre className="overflow-auto whitespace-pre-wrap text-xs text-gray-300">
+            <div className="mt-4 border-t border-border-medium pt-4">
+              <div className="mb-2 text-xs text-text-tertiary">
+                {localize('com_ui_mermaid_source')}
+              </div>
+              <pre className="overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
                 {children}
               </pre>
             </div>
@@ -344,18 +348,20 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   }
 
   return (
-    <div className="w-full rounded-md bg-gray-900 text-xs text-white/80">
+    <div className="w-full overflow-hidden rounded-md border border-border-light">
       <Header showActions />
       {showCode && (
-        <div className="border-b border-gray-700 bg-gray-800 p-4">
-          <pre className="overflow-auto whitespace-pre-wrap text-xs text-gray-300">{children}</pre>
+        <div className="border-b border-border-medium bg-surface-secondary p-4">
+          <pre className="overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
+            {children}
+          </pre>
         </div>
       )}
       <div
         ref={containerRef}
         className={cn(
           'relative overflow-hidden p-4',
-          'bg-white dark:bg-gray-800',
+          'bg-surface-primary-alt',
           !showCode && 'rounded-b-md',
           isPanning ? 'cursor-grabbing' : 'cursor-grab',
         )}
