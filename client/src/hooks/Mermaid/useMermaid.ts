@@ -82,8 +82,15 @@ export const useMermaid = ({
     return {
       startOnLoad: false,
       theme: (customTheme as MermaidConfig['theme']) || defaultTheme,
-      securityLevel: 'strict',
+      // Spread custom config but override security settings after
       ...config,
+      // Security hardening - these MUST come last to prevent override
+      securityLevel: 'strict', // Highest security: disables click, sanitizes text
+      secure: ['secure', 'sandbox', 'loose'].includes(config?.securityLevel as string)
+        ? undefined
+        : undefined,
+      maxTextSize: config?.maxTextSize ?? 50000, // Limit text size to prevent DoS
+      maxEdges: config?.maxEdges ?? 500, // Limit edges to prevent DoS
     };
   }, [customTheme, isDarkMode, config]);
 
