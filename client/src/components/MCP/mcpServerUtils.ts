@@ -2,6 +2,8 @@ import type { MCPServerStatus } from 'librechat-data-provider';
 import type { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 import type { MCPServerStatusIconProps } from './MCPServerStatusIcon';
 
+export type { MCPServerStatus };
+
 export interface SelectedIconInfo {
   key: string;
   serverName: string;
@@ -59,13 +61,25 @@ export function getSelectedServerIcons(
   return { icons: visibleIcons, overflowCount, defaultServerNames };
 }
 
+/**
+ * Unified status color system following UX best practices:
+ * - Green: Connected/Active (success)
+ * - Blue: Connecting/In-progress (processing)
+ * - Amber: Needs user action (OAuth required, config missing)
+ * - Gray: Disconnected/Inactive (neutral - server is simply off)
+ * - Red: Error (failed, needs retry)
+ *
+ * Key insight: "Disconnected" is neutral (gray), not a warning.
+ * Amber is reserved for states requiring user intervention.
+ */
 export function getStatusColor(
   serverName: string,
   connectionStatus?: ConnectionStatusMap,
   isInitializing?: (serverName: string) => boolean,
 ): string {
+  // In-progress states: blue
   if (isInitializing?.(serverName)) {
-    return 'bg-amber-500';
+    return 'bg-blue-500';
   }
 
   const status = connectionStatus?.[serverName];
@@ -73,14 +87,34 @@ export function getStatusColor(
     return 'bg-gray-400';
   }
 
-  const colorMap: Record<string, string> = {
-    connected: 'bg-green-500',
-    connecting: 'bg-amber-500',
-    disconnected: 'bg-orange-500',
-    error: 'bg-red-500',
-  };
+  const { connectionState, requiresOAuth } = status;
 
-  return colorMap[status.connectionState] || 'bg-gray-400';
+  // Connecting: blue (in progress)
+  if (connectionState === 'connecting') {
+    return 'bg-blue-500';
+  }
+
+  // Connected: green (success)
+  if (connectionState === 'connected') {
+    return 'bg-green-500';
+  }
+
+  // Error: red
+  if (connectionState === 'error') {
+    return 'bg-red-500';
+  }
+
+  // Disconnected: check if needs action or just inactive
+  if (connectionState === 'disconnected') {
+    // Needs OAuth = amber (requires user action)
+    if (requiresOAuth) {
+      return 'bg-amber-500';
+    }
+    // Simply disconnected = gray (neutral/inactive)
+    return 'bg-gray-400';
+  }
+
+  return 'bg-gray-400';
 }
 
 export function getStatusTextKey(
@@ -97,6 +131,13 @@ export function getStatusTextKey(
     return 'com_nav_mcp_status_unknown';
   }
 
+  const { connectionState, requiresOAuth } = status;
+
+  // Special case: disconnected but needs OAuth shows different text
+  if (connectionState === 'disconnected' && requiresOAuth) {
+    return 'com_nav_mcp_status_needs_auth';
+  }
+
   const keyMap: Record<string, string> = {
     connected: 'com_nav_mcp_status_connected',
     connecting: 'com_nav_mcp_status_connecting',
@@ -104,7 +145,27 @@ export function getStatusTextKey(
     error: 'com_nav_mcp_status_error',
   };
 
-  return keyMap[status.connectionState] || 'com_nav_mcp_status_unknown';
+  return keyMap[connectionState] || 'com_nav_mcp_status_unknown';
+}
+
+/**
+ * Determines if a server requires user action to connect.
+ * Used to show action buttons and amber status color.
+ */
+export function serverNeedsAction(
+  serverStatus?: MCPServerStatus,
+  _hasCustomUserVars?: boolean,
+): boolean {
+  if (!serverStatus) return false;
+  const { connectionState, requiresOAuth } = serverStatus;
+
+  // Needs OAuth authentication
+  if (connectionState === 'disconnected' && requiresOAuth) return true;
+
+  // Has error - needs retry
+  if (connectionState === 'error') return true;
+
+  return false;
 }
 
 /**
