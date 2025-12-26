@@ -135,7 +135,15 @@ export const useMermaid = ({
       const purify = DOMPurify();
       const sanitizedSvg = purify.sanitize(svg, {
         USE_PROFILES: { svg: true, svgFilters: true },
-        ADD_TAGS: ['use'], // Allow <use> for mermaid internal references
+        // Allow additional elements used by mermaid for text rendering
+        ADD_TAGS: ['foreignObject', 'use', 'switch'],
+        ADD_ATTR: [
+          'dominant-baseline',
+          'text-anchor',
+          'requiredFeatures',
+          'systemLanguage',
+          'xmlns:xlink',
+        ],
       });
 
       // Store as last valid content
