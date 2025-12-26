@@ -6,6 +6,7 @@ const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options')
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const initCustom = require('~/server/services/Endpoints/custom/initialize');
 const initGoogle = require('~/server/services/Endpoints/google/initialize');
+const initE2BAssistants = require('~/server/services/Endpoints/e2bAssistants');
 
 /** Check if the provider is a known custom provider
  * @param {string | undefined} [provider] - The provider string
@@ -26,6 +27,7 @@ const providerConfigMap = {
   [EModelEndpoint.azureOpenAI]: initOpenAI,
   [EModelEndpoint.anthropic]: initAnthropic,
   [EModelEndpoint.bedrock]: getBedrockOptions,
+  [EModelEndpoint.e2bAssistants]: initE2BAssistants,
 };
 
 /**

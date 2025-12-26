@@ -7,6 +7,10 @@ const {
 const {
   initializeClient: initAzureClient,
 } = require('~/server/services/Endpoints/azureAssistants');
+const {
+  initializeClient: initE2BClient,
+  listAssistants: listE2BAssistants,
+} = require('~/server/services/Endpoints/e2bAssistants');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getEndpointsConfig } = require('~/server/services/Config');
 
@@ -196,6 +200,8 @@ async function getOpenAIClient({ req, res, endpointOption, initAppClient, overri
     result = await initializeClient({ req, res, version, endpointOption, initAppClient });
   } else if (endpoint === EModelEndpoint.azureAssistants) {
     result = await initAzureClient({ req, res, version, endpointOption, initAppClient });
+  } else if (endpoint === EModelEndpoint.e2bAssistants) {
+    result = await initE2BClient({ req, res, version, endpointOption, initAppClient });
   }
 
   return result;
@@ -234,6 +240,13 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
   } else if (endpoint === EModelEndpoint.azureAssistants) {
     const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
+  } else if (endpoint === EModelEndpoint.e2bAssistants) {
+    const assistants = await listE2BAssistants({ userId: req.user.id });
+    body = {
+      object: 'list',
+      data: assistants,
+      has_more: false,
+    };
   }
 
   if (req.user.role === SystemRoles.ADMIN) {

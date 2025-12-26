@@ -39,6 +39,11 @@ module.exports = {
     [EModelEndpoint.bedrock]: generateConfig(
       process.env.BEDROCK_AWS_SECRET_ACCESS_KEY ?? process.env.BEDROCK_AWS_DEFAULT_REGION,
     ),
+    [EModelEndpoint.e2bAssistants]: generateConfig(
+      process.env.E2B_API_KEY,
+      undefined,
+      EModelEndpoint.e2bAssistants,
+    ),
     /* key will be part of separate config */
     [EModelEndpoint.agents]: generateConfig('true', undefined, EModelEndpoint.agents),
   },

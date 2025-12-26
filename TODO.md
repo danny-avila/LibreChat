@@ -40,8 +40,12 @@
 
 ## 2025-12-24 已完成任务 ✅
 
+
+
 ### ✅ E2B SDK 深度集成 (v2.8.4 适配)
+
 - [x] 安装 E2B SDK: `npm install @e2b/code-interpreter`
+
 - [x] **重构 `initialize.js` (E2B 客户端管理器)**:
   - [x] 修正属性名为 `sandboxId` (小写d) 以对齐 SDK 源码
   - [x] 修正 `Sandbox.create(template, opts)` 的显式传参方式
@@ -49,22 +53,73 @@
   - [x] 适配 `result.logs.stdout/stderr` 嵌套数据结构
   - [x] 实现 `betaGetMcpToken` 和 `betaGetMcpUrl` (适配 Beta 前缀)
   - [x] 完成优雅关闭逻辑 (SIGTERM/SIGINT 自动清理)
+
 - [x] **重构 `codeExecutor.js` (代码执行服务)**:
   - [x] 实现 Python 代码安全分级校验 (Critical/Warning)
   - [x] **重大突破**: 实现从 `results` 数组中自动提取 Base64 格式的图表 (PNG/JPEG/SVG)
   - [x] 实现多代码块批量执行逻辑 (`executeBatch`)
   - [x] 适配 v2.8.4 的日志格式化处理
 
+
+
 ### ✅ 数据库与全系统集成
+
 - [x] 创建 `packages/data-schemas/src/schema/e2bAssistant.ts` - E2B Assistant Schema
 - [x] 创建 `packages/data-schemas/src/models/e2bAssistant.ts` - E2BAssistant Model
 - [x] 创建 `packages/data-schemas/src/types/e2bAssistant.ts` - TypeScript 类型定义
 - [x] 在 `packages/data-schemas/src/index.ts` 中注册新模型
 - [x] 在 `api/server/middleware/buildEndpointOption.js` 中注册 E2B 构建函数
 
+
+
 ---
 
+
+
+## 2025-12-25 已完成任务 ✅
+
+
+
+### ✅ 核心服务重构与优化
+
+- [x] **重构 `fileHandler.js` (文件处理服务)**:
+
+  - [x] 实现对 LibreChat 多存储后端（Local, S3, Azure Blob）的全面支持
+  - [x] 使用 `getDownloadStream` 取代直接的 `fs` 操作，增强系统抽象一致性
+  - [x] 实现 `persistArtifacts` 逻辑，支持将沙箱生成的文件持久化至系统存储并创建 DB 记录
+  - [x] 引入 `Promise.allSettled` 实现文件同步与持久化的并发处理，提升性能
+
+- [x] **优化 `codeExecutor.js` (代码执行服务)**:
+  - [x] 增强图表提取逻辑，支持多格式图片及其 MIME 类型识别
+  - [x] 强化安全校验，拦截危险函数调用及无限循环风险
+
+
+
+### ✅ 单元测试验证
+
+- [x] 编写并跑通 `api/tests/e2b/codeExecutor.test.js`:
+  - 验证代码执行输出、图表捕获、安全拦截及错误处理
+
+- [x] 编写并跑通 `api/tests/e2b/fileHandler.test.js`:
+  - 验证跨存储策略的文件同步、成果物持久化及并发逻辑
+
+- [x] 修正 Jest 配置 (`jest.config.js`) 以适配 E2B SDK 相关的 ESM 模块转换
+
+
+
+### ✅ Agent 逻辑起步
+
+- [x] 实现 `prompts.js` - 定义 Data Analyst Agent 的系统提示词及工具函数 (execute_code, upload_file, download_file) 声明
+
+
+
+---
+
+
+
 ## Phase 1: 基础设施搭建（已完成 ✅）
+
+
 
 ### ✅ 端点集成
 - [x] 在 `api/server/services/Config/getEndpointsConfig.js` 添加 E2B 配置处理
@@ -93,13 +148,20 @@
 
 ## Phase 2: Agent核心逻辑（进行中 ⏳）
 
-### ✅ 提示词和工具
+### ✅ 提示词和工具定义
 - [x] 创建 `prompts.js` - 系统提示词（System Prompt）生成
 - [x] 实现 `getSystemPrompt()` - 生成数据分析专用的 System Message
 - [x] 实现 `getToolsDefinitions()` - 定义传给 LLM 的函数声明
 
-### ⏳ Agent类实现
+### ✅ 核心系统集成
+- [x] 创建 `api/server/services/Endpoints/e2bAssistants/index.js` - 端点入口
+- [x] 在 `api/server/services/Endpoints/index.js` 注册 E2B 端点
+- [x] 在 `api/server/services/Config/EndpointService.js` 添加 E2B 配置
+- [x] 在 `api/server/controllers/assistants/helpers.js` 添加 E2B 支持 (初始化与列表获取)
+
+### ⏳ Agent类与工具实现
 - [ ] 创建 `api/server/services/Agents/e2bAgent/` 目录
+- [ ] **实现 `tools.js`** - 对接 CodeExecutor 和 FileHandler 的工具函数实现 (execute_code, upload_file, download_file)
 - [ ] 实现 `index.js` - E2BDataAnalystAgent主类
 - [ ] 实现消息处理流程：
   - `processMessage()` - 处理用户消息
@@ -107,13 +169,6 @@
   - `generateLLMResponse()` - 生成LLM响应
   - `executeToolCalls()` - 执行工具调用
   - `cleanup()` - 清理资源
-
-### ⏳ 工具实现
-- [ ] 创建 `tools.js` - 对接 CodeExecutor 和 FileHandler 的工具函数实现
-- [ ] 实现工具函数：
-  - `execute_code` - 执行Python代码
-  - `upload_file` - 上传文件
-  - `download_file` - 下载文件
 
 ### ⬜ LLM 与上下文集成
 - [ ] 集成 OpenAI/Anthropic LLM 客户端
