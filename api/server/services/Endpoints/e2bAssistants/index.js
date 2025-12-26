@@ -1,6 +1,7 @@
 const { EModelEndpoint } = require('librechat-data-provider');
 const { initializeClient, e2bClientManager } = require('./initialize');
 const { getE2BAssistantDocs } = require('~/models/E2BAssistant');
+const { buildOptions } = require('./buildOptions');
 
 /**
  * Initializes the E2B Assistants client.
@@ -38,6 +39,7 @@ const listAssistants = async ({ userId }) => {
 };
 
 module.exports = {
+  buildOptions,
   initializeClient,
   listAssistants,
   e2bClientManager,
