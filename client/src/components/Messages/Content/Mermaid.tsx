@@ -49,6 +49,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
+  const streamingCodeRef = useRef<HTMLPreElement>(null);
 
   // Get SVG from debounced hook (handles streaming gracefully)
   const { svg, isLoading, error } = useDebouncedMermaid({
@@ -57,6 +58,13 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     theme,
     key: retryCount,
   });
+
+  // Auto-scroll streaming code to bottom
+  useEffect(() => {
+    if (isLoading && streamingCodeRef.current) {
+      streamingCodeRef.current.scrollTop = streamingCodeRef.current.scrollHeight;
+    }
+  }, [children, isLoading]);
 
   // Store last valid SVG for showing during updates
   useEffect(() => {
@@ -505,18 +513,19 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
       );
     }
 
-    // No previous render, show full loading state
+    // No previous render, show streaming code
     return (
       <div className="w-full overflow-hidden rounded-md border border-border-light">
-        <Header />
-        <div className="flex min-h-[250px] items-center justify-center rounded-b-md bg-surface-primary-alt p-4">
-          <div className="text-center">
-            <div className="mx-auto mb-2 h-6 w-6 animate-spin rounded-full border-2 border-border-medium border-t-blue-500" />
-            <div className="text-sm text-text-secondary">
-              {localize('com_ui_mermaid_rendering')}
-            </div>
-          </div>
+        <div className="flex items-center gap-2 rounded-t-md bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200">
+          <div className="h-3 w-3 animate-spin rounded-full border-2 border-gray-500 border-t-blue-400" />
+          <span>{localize('com_ui_mermaid')}</span>
         </div>
+        <pre
+          ref={streamingCodeRef}
+          className="max-h-[350px] min-h-[150px] overflow-auto whitespace-pre-wrap rounded-b-md bg-surface-primary-alt p-4 font-mono text-xs text-text-secondary"
+        >
+          {children}
+        </pre>
       </div>
     );
   }
