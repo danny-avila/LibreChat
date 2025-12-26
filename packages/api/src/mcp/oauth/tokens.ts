@@ -34,10 +34,71 @@ interface GetTokensParams {
 }
 
 export class MCPTokenStorage {
+  private static encryptTokens = true;
+
+  static setEncryptionPreference(shouldEncrypt: boolean): void {
+    this.encryptTokens = shouldEncrypt;
+  }
+
   static getLogPrefix(userId: string, serverName: string): string {
     return isSystemUserId(userId)
       ? `[MCP][${serverName}]`
       : `[MCP][User: ${userId}][${serverName}]`;
+  }
+
+  private static buildMetadata(base?: unknown): Map<string, unknown> {
+    let metadata: Map<string, unknown>;
+
+    if (base instanceof Map) {
+      metadata = new Map(base);
+    } else if (base && typeof base === 'object') {
+      metadata = new Map(Object.entries(base as Record<string, unknown>));
+    } else {
+      metadata = new Map();
+    }
+
+    metadata.set('encrypted', this.encryptTokens);
+    return metadata;
+  }
+
+  private static isTokenEncrypted(metadata?: unknown): boolean {
+    if (!metadata) {
+      return true;
+    }
+
+    if (metadata instanceof Map) {
+      const value = metadata.get('encrypted');
+      if (typeof value === 'boolean') {
+        return value;
+      }
+      if (typeof value === 'string') {
+        return value === 'true';
+      }
+      return true;
+    }
+
+    if (typeof metadata === 'object') {
+      const value = (metadata as Record<string, unknown>).encrypted;
+      if (typeof value === 'boolean') {
+        return value;
+      }
+      if (typeof value === 'string') {
+        return value === 'true';
+      }
+    }
+
+    return true;
+  }
+
+  private static async decodeToken(
+    token: string,
+    metadata?: Map<string, unknown> | Record<string, unknown> | null,
+  ): Promise<string> {
+    const encrypted = this.isTokenEncrypted(metadata);
+    if (!encrypted) {
+      return token;
+    }
+    return await decryptV2(token);
   }
 
   /**
@@ -61,9 +122,12 @@ export class MCPTokenStorage {
 
     try {
       const identifier = `mcp:${serverName}`;
+      const shouldEncrypt = this.encryptTokens;
 
       // Encrypt and store access token
-      const encryptedAccessToken = await encryptV2(tokens.access_token);
+      const storedAccessToken = shouldEncrypt
+        ? await encryptV2(tokens.access_token)
+        : tokens.access_token;
 
       logger.debug(
         `${logPrefix} Token expires_in: ${'expires_in' in tokens ? tokens.expires_in : 'N/A'}, expires_at: ${'expires_at' in tokens ? tokens.expires_at : 'N/A'}`,
@@ -107,8 +171,9 @@ export class MCPTokenStorage {
         userId,
         type: 'mcp_oauth',
         identifier,
-        token: encryptedAccessToken,
+        token: storedAccessToken,
         expiresIn: expiresIn > 0 ? expiresIn : 365 * 24 * 60 * 60, // Default to 1 year if negative
+        metadata: this.buildMetadata(existingTokens?.accessToken?.metadata ?? null),
       };
 
       // Check if token already exists and update if it does
@@ -137,7 +202,9 @@ export class MCPTokenStorage {
         logger.debug(
           `${logPrefix} New refresh token received from OAuth server, will store/update`,
         );
-        const encryptedRefreshToken = await encryptV2(tokens.refresh_token);
+        const storedRefreshToken = shouldEncrypt
+          ? await encryptV2(tokens.refresh_token)
+          : tokens.refresh_token;
         const extendedTokens = tokens as ExtendedOAuthTokens;
         const refreshTokenExpiry = extendedTokens.refresh_token_expires_in
           ? new Date(Date.now() + extendedTokens.refresh_token_expires_in * 1000)
@@ -150,8 +217,9 @@ export class MCPTokenStorage {
           userId,
           type: 'mcp_oauth_refresh',
           identifier: `${identifier}:refresh`,
-          token: encryptedRefreshToken,
+          token: storedRefreshToken,
           expiresIn: refreshExpiresIn > 0 ? refreshExpiresIn : 365 * 24 * 60 * 60,
+          metadata: this.buildMetadata(existingTokens?.refreshToken?.metadata ?? null),
         };
 
         // Check if refresh token already exists and update if it does
@@ -188,15 +256,19 @@ export class MCPTokenStorage {
           client_id: clientInfo.client_id,
           has_client_secret: !!clientInfo.client_secret,
         });
-        const encryptedClientInfo = await encryptV2(JSON.stringify(clientInfo));
+        const clientInfoPayload = JSON.stringify(clientInfo);
+        const storedClientInfo = shouldEncrypt
+          ? await encryptV2(clientInfoPayload)
+          : clientInfoPayload;
+        const clientInfoMetadata = this.buildMetadata(metadata ?? null);
 
         const clientInfoData = {
           userId,
           type: 'mcp_oauth_client',
           identifier: `${identifier}:client`,
-          token: encryptedClientInfo,
+          token: storedClientInfo,
           expiresIn: 365 * 24 * 60 * 60,
-          metadata,
+          metadata: clientInfoMetadata,
         };
 
         // Check if client info already exists and update if it does
@@ -295,7 +367,10 @@ export class MCPTokenStorage {
 
         try {
           logger.info(`${logPrefix} Attempting to refresh token`);
-          const decryptedRefreshToken = await decryptV2(refreshTokenData.token);
+          const decryptedRefreshToken = await this.decodeToken(
+            refreshTokenData.token,
+            refreshTokenData.metadata ?? null,
+          );
 
           /** Client information if available */
           let clientInfo;
@@ -307,7 +382,10 @@ export class MCPTokenStorage {
               identifier: `${identifier}:client`,
             });
             if (clientInfoData) {
-              const decryptedClientInfo = await decryptV2(clientInfoData.token);
+              const decryptedClientInfo = await this.decodeToken(
+                clientInfoData.token,
+                clientInfoData.metadata ?? null,
+              );
               clientInfo = JSON.parse(decryptedClientInfo);
               logger.debug(`${logPrefix} Retrieved client info:`, {
                 client_id: clientInfo.client_id,
@@ -372,7 +450,10 @@ export class MCPTokenStorage {
         return null;
       }
 
-      const decryptedAccessToken = await decryptV2(accessTokenData.token);
+      const decryptedAccessToken = await this.decodeToken(
+        accessTokenData.token,
+        accessTokenData.metadata ?? null,
+      );
 
       /** Get refresh token if available */
       const refreshTokenData = await findToken({
@@ -389,7 +470,10 @@ export class MCPTokenStorage {
       };
 
       if (refreshTokenData) {
-        tokens.refresh_token = await decryptV2(refreshTokenData.token);
+        tokens.refresh_token = await this.decodeToken(
+          refreshTokenData.token,
+          refreshTokenData.metadata ?? null,
+        );
       }
 
       logger.debug(`${logPrefix} Loaded existing OAuth tokens from storage`);
@@ -423,7 +507,7 @@ export class MCPTokenStorage {
       return null;
     }
 
-    const tokenData = await decryptV2(clientInfoData.token);
+    const tokenData = await this.decodeToken(clientInfoData.token, clientInfoData.metadata ?? null);
     const clientInfo = JSON.parse(tokenData);
 
     // get metadata from the token as a plain object. While it's defined as a Map in the database type, it's a plain object at runtime.
