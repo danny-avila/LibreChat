@@ -298,7 +298,9 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
         <div className="flex min-h-[200px] items-center justify-center rounded-b-md bg-surface-primary-alt p-4">
           <div className="text-center">
             <div className="mx-auto mb-2 h-6 w-6 animate-spin rounded-full border-2 border-border-medium border-t-blue-500" />
-            <div className="text-sm text-text-tertiary">{localize('com_ui_mermaid_rendering')}</div>
+            <div className="text-sm text-text-secondary">
+              {localize('com_ui_mermaid_rendering')}
+            </div>
           </div>
         </div>
       </div>

@@ -89,16 +89,34 @@ export const useDebouncedMermaid = ({
   content,
   id,
   theme,
-  delay = 300,
+  delay = 500,
   minLength = 15,
   key = 0,
 }: UseDebouncedMermaidOptions) => {
   const [debouncedContent, setDebouncedContent] = useState(content);
   const [shouldRender, setShouldRender] = useState(false);
   const [errorCount, setErrorCount] = useState(0);
+  const [forceRender, setForceRender] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout>();
+  const prevKeyRef = useRef(key);
+
+  // When key changes (retry), force immediate render
+  useEffect(() => {
+    if (key !== prevKeyRef.current) {
+      prevKeyRef.current = key;
+      setForceRender(true);
+      setDebouncedContent(content);
+      setShouldRender(true);
+      setErrorCount(0);
+    }
+  }, [key, content]);
 
   useEffect(() => {
+    // Skip debounce logic if force render is active
+    if (forceRender) {
+      return;
+    }
+
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
@@ -122,12 +140,7 @@ export const useDebouncedMermaid = ({
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [content, delay, minLength, key]);
-
-  // Reset error count when key changes (retry)
-  useEffect(() => {
-    setErrorCount(0);
-  }, [key]);
+  }, [content, delay, minLength, forceRender]);
 
   const result = useMermaid({
     content: shouldRender ? debouncedContent : '',
@@ -141,11 +154,12 @@ export const useDebouncedMermaid = ({
       setErrorCount((prev) => prev + 1);
     } else if (result.svg) {
       setErrorCount(0);
+      setForceRender(false);
     }
   }, [result.error, result.svg]);
 
-  // Only show error after multiple failures AND if we should be rendering
-  const shouldShowError = shouldRender && errorCount > 2 && result.error;
+  // Show error after multiple failures OR if forced render (retry) with error
+  const shouldShowError = shouldRender && result.error && (errorCount > 2 || forceRender);
 
   return {
     ...result,
