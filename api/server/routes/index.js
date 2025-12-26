@@ -1,4 +1,5 @@
 const accessPermissions = require('./accessPermissions');
+const e2bAssistants = require('./e2bAssistants');
 const assistants = require('./assistants');
 const categories = require('./categories');
 const endpoints = require('./endpoints');
@@ -51,5 +52,6 @@ module.exports = {
   assistants,
   categories,
   staticRoute,
+  e2bAssistants,
   accessPermissions,
 };

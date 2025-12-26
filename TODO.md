@@ -146,7 +146,34 @@
 
 ---
 
-## Phase 2: Agent核心逻辑（进行中 ⏳）
+## Phase 3: API层（优先开发 🚀 -> 已完成 ✅）
+
+### ✅ 控制器实现
+- [x] 创建 `api/server/routes/e2bAssistants/` 目录
+- [x] 实现 `controller.js` - API控制器
+- [x] 实现控制器方法：
+  - `createAssistant()` - 创建Assistant
+  - `listAssistants()` - 获取Assistant列表
+  - `getAssistant()` - 获取单个Assistant
+  - `updateAssistant()` - 更新Assistant
+  - `deleteAssistant()` - 删除Assistant
+  - `chat()` - 与Assistant对话 (初始版本)
+
+### ✅ 路由注册
+- [x] 创建 `index.js` - 路由注册
+- [x] 注册API端点：
+  - `POST /api/e2b-assistants/` - 创建Assistant
+  - `GET /api/e2b-assistants/` - 获取Assistant列表
+  - `GET /api/e2b-assistants/:assistant_id` - 获取单个Assistant
+  - `PATCH /api/e2b-assistants/:assistant_id` - 更新Assistant
+  - `DELETE /api/e2b-assistants/:assistant_id` - 删除Assistant
+  - `POST /api/e2b-assistants/:assistant_id/chat` - 对话
+- [x] 在 `api/server/routes/index.js` 中导出路由
+- [x] 在 `api/server/index.js` 中挂载 `/api/e2b-assistants`
+
+---
+
+## Phase 2: Agent核心逻辑（暂停 ⏸️）
 
 ### ✅ 提示词和工具定义
 - [x] 创建 `prompts.js` - 系统提示词（System Prompt）生成
