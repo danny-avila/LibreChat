@@ -4,6 +4,19 @@ import { Skeleton } from '@librechat/client';
 import type t from 'librechat-data-provider';
 
 /**
+ * Checks if an image is already cached in the browser
+ * Returns true if image is complete and has valid dimensions
+ */
+export const isImageCached = (url: string | null | undefined): boolean => {
+  if (typeof window === 'undefined' || !url) {
+    return false;
+  }
+  const img = new Image();
+  img.src = url;
+  return img.complete && img.naturalWidth > 0;
+};
+
+/**
  * Extracts the avatar URL from an agent's avatar property
  * Handles both string and object formats
  */
@@ -32,10 +45,17 @@ const LazyAgentAvatar = ({
   alt: string;
   imgClass: string;
 }) => {
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(() => isImageCached(url));
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
-    setIsLoaded(false);
+    if (isImageCached(url)) {
+      setIsLoaded(true);
+      setHasError(false);
+    } else {
+      setIsLoaded(false);
+      setHasError(false);
+    }
   }, [url]);
 
   return (
@@ -44,15 +64,19 @@ const LazyAgentAvatar = ({
         src={url}
         alt={alt}
         className={imgClass}
-        loading="lazy"
         onLoad={() => setIsLoaded(true)}
-        onError={() => setIsLoaded(false)}
+        onError={() => {
+          setIsLoaded(false);
+          setHasError(true);
+        }}
         style={{
           opacity: isLoaded ? 1 : 0,
           transition: 'opacity 0.2s ease-in-out',
         }}
       />
-      {!isLoaded && <Skeleton className="absolute inset-0 rounded-full" aria-hidden="true" />}
+      {!isLoaded && !hasError && (
+        <Skeleton className="absolute inset-0 rounded-full" aria-hidden="true" />
+      )}
     </>
   );
 };
@@ -61,16 +85,17 @@ const LazyAgentAvatar = ({
  * Renders an agent avatar with fallback to Bot icon
  * Consistent across all agent displays
  */
-export const renderAgentAvatar = (
-  agent: t.Agent | null | undefined,
-  options: {
-    size?: 'icon' | 'sm' | 'md' | 'lg' | 'xl';
-    className?: string;
-    showBorder?: boolean;
-  } = {},
-): React.ReactElement => {
-  const { size = 'md', className = '', showBorder = true } = options;
-
+export const AgentAvatar = ({
+  agent,
+  size = 'md',
+  className = '',
+  showBorder = true,
+}: {
+  agent: t.Agent | null | undefined;
+  size?: 'icon' | 'sm' | 'md' | 'lg' | 'xl';
+  className?: string;
+  showBorder?: boolean;
+}) => {
   const avatarUrl = getAgentAvatarUrl(agent);
 
   // Size mappings for responsive design

@@ -7,7 +7,7 @@ import type { FavoriteModel } from '~/store/favorites';
 import type t from 'librechat-data-provider';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
 import { useFavorites, useLocalize } from '~/hooks';
-import { renderAgentAvatar, cn } from '~/utils';
+import { AgentAvatar, cn } from '~/utils';
 
 type Kwargs = {
   model?: string;
@@ -73,7 +73,7 @@ export default function FavoriteItem({
 
   const renderIcon = () => {
     if (type === 'agent') {
-      return renderAgentAvatar(item as t.Agent, { size: 'icon', className: 'mr-2' });
+      return <AgentAvatar agent={item as t.Agent} size="icon" className="mr-2" />;
     }
     const model = item as FavoriteModel;
     return (
