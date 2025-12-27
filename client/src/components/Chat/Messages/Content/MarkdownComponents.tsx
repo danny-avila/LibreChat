@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provider';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
+import MermaidErrorBoundary from '~/components/Messages/Content/MermaidErrorBoundary';
 import Mermaid from '~/components/Messages/Content/Mermaid';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
@@ -39,7 +40,11 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
     return <>{children}</>;
   } else if (isMermaid) {
     const content = typeof children === 'string' ? children : String(children);
-    return <Mermaid id={`mermaid-${blockIndex}`}>{content}</Mermaid>;
+    return (
+      <MermaidErrorBoundary code={content}>
+        <Mermaid id={`mermaid-${blockIndex}`}>{content}</Mermaid>
+      </MermaidErrorBoundary>
+    );
   } else if (isSingleLine) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
