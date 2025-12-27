@@ -85,6 +85,9 @@ const createTokenHash = () => {
  * @returns {Promise<void>}
  */
 const sendVerificationEmail = async (user) => {
+  const appConfig = await getAppConfig();
+  const emailVerificationExpiry = appConfig?.registration?.emailVerificationExpiry || 900;
+
   const [verifyToken, hash] = createTokenHash();
 
   const verificationLink = `${
@@ -107,7 +110,7 @@ const sendVerificationEmail = async (user) => {
     email: user.email,
     token: hash,
     createdAt: Date.now(),
-    expiresIn: 900,
+    expiresIn: emailVerificationExpiry,
   });
 
   logger.info(`[sendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
@@ -492,6 +495,9 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
 const resendVerificationEmail = async (req) => {
   try {
     const { email } = req.body;
+    const appConfig = await getAppConfig();
+    const emailVerificationExpiry = appConfig?.registration?.emailVerificationExpiry || 900;
+
     await deleteTokens({ email });
     const user = await findUser({ email }, 'email _id name');
 
@@ -523,7 +529,7 @@ const resendVerificationEmail = async (req) => {
       email: user.email,
       token: hash,
       createdAt: Date.now(),
-      expiresIn: 900,
+      expiresIn: emailVerificationExpiry,
     });
 
     logger.info(`[resendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
