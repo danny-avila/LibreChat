@@ -78,11 +78,11 @@ function MCPSelectContent() {
           render={
             <Ariakit.MenuButton
               className={cn(
-                'group relative inline-flex items-center justify-center gap-1.5 rounded-full',
+                'group relative inline-flex items-center justify-center gap-1.5',
                 'border border-border-medium text-sm font-medium transition-all',
-                'size-9 bg-transparent p-2 shadow-sm',
+                'h-9 min-w-9 rounded-full bg-transparent px-2.5 shadow-sm',
                 'hover:bg-surface-hover hover:shadow-md active:shadow-inner',
-                'md:w-fit md:justify-start md:p-3',
+                'md:w-fit md:justify-start md:px-3',
                 isOpen && 'bg-surface-hover',
               )}
             />
