@@ -70,11 +70,13 @@ export const useMermaid = ({
   }, [content, id, isDarkMode, customTheme]);
 
   // Generate unique diagram ID (mermaid requires unique IDs in the DOM)
+  // Include cacheKey to regenerate when content/theme changes, preventing mermaid internal conflicts
   const diagramId = useMemo(() => {
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(7);
     return `${id}-${timestamp}-${random}`;
-  }, [id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, cacheKey]);
 
   // Build mermaid configuration
   const mermaidConfig = useMemo((): MermaidConfig => {
@@ -87,9 +89,6 @@ export const useMermaid = ({
       ...config,
       // Security hardening - these MUST come last to prevent override
       securityLevel: 'strict', // Highest security: disables click, sanitizes text
-      secure: ['secure', 'sandbox', 'loose'].includes(config?.securityLevel as string)
-        ? undefined
-        : undefined,
       maxTextSize: config?.maxTextSize ?? 50000, // Limit text size to prevent DoS
       maxEdges: config?.maxEdges ?? 500, // Limit edges to prevent DoS
     };

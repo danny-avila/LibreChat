@@ -93,10 +93,17 @@ export const useDebouncedMermaid = ({
   minLength = 15,
   key = 0,
 }: UseDebouncedMermaidOptions) => {
-  // Check if content looks complete on initial mount (non-streaming case)
-  // Using a ref to capture initial state without re-running
+  // Check if content looks complete on initial mount or when content changes significantly
+  // Using refs to capture state and detect significant content changes (e.g., user edits message)
   const initialCheckRef = useRef<boolean | null>(null);
-  if (initialCheckRef.current === null) {
+  const contentLengthRef = useRef(content.length);
+
+  // Reset check if content length changed significantly (more than 20% difference)
+  const lengthDiff = Math.abs(content.length - contentLengthRef.current);
+  const significantChange = lengthDiff > contentLengthRef.current * 0.2 && lengthDiff > 50;
+
+  if (initialCheckRef.current === null || significantChange) {
+    contentLengthRef.current = content.length;
     initialCheckRef.current =
       content.length >= minLength && looksComplete(content) && !isLikelyStreaming(content);
   }
