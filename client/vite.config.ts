@@ -196,6 +196,9 @@ export default defineConfig(({ command }) => ({
             if (normalizedId.includes('heic-to')) {
               return 'heic-converter';
             }
+            if (normalizedId.includes('mermaid')) {
+              return 'mermaid';
+            }
 
             // Existing chunks
             if (normalizedId.includes('@radix-ui')) {
