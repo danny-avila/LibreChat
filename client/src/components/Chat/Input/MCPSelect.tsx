@@ -4,13 +4,13 @@ import { MultiSelect, MCPIcon } from '@librechat/client';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { useBadgeRowContext } from '~/Providers';
-import { useHasAccess } from '~/hooks';
+import { useHasAccess, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 function MCPSelectContent() {
+  const localize = useLocalize();
   const { conversationId, mcpServerManager } = useBadgeRowContext();
   const {
-    localize,
     isPinned,
     mcpValues,
     isInitializing,
@@ -102,6 +102,8 @@ function MCPSelectContent() {
           'group relative inline-flex items-center justify-center md:justify-start gap-1.5 rounded-full border border-border-medium text-sm font-medium transition-all',
           'md:w-full size-9 p-2 md:p-3 bg-transparent shadow-sm hover:bg-surface-hover hover:shadow-md active:shadow-inner',
         )}
+        searchPlaceholder={localize('com_ui_search') + '...'}
+        noResultsText={localize('com_ui_no_results_found')}
       />
       {configDialogProps && (
         <MCPConfigDialog {...configDialogProps} conversationId={conversationId} />
