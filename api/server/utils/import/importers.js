@@ -13,8 +13,14 @@ const getLogStores = require('~/cache/getLogStores');
  * @throws {Error} - If the import type is not supported.
  */
 function getImporter(jsonData) {
-  // For ChatGPT
+  // For array-based formats (ChatGPT or Claude)
   if (Array.isArray(jsonData)) {
+    // Claude format has chat_messages array in each conversation
+    if (jsonData.length > 0 && jsonData[0].chat_messages) {
+      logger.info('Importing Claude conversation');
+      return importClaudeConvo;
+    }
+    // ChatGPT format has mapping object in each conversation
     logger.info('Importing ChatGPT conversation');
     return importChatGptConvo;
   }
@@ -68,6 +74,87 @@ async function importChatBotUiConvo(
     logger.info(`user: ${requestUserId} | ChatbotUI conversation imported`);
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from ChatbotUI file`, error);
+  }
+}
+
+/**
+ * Imports Claude conversations from provided JSON data.
+ * Claude export format: array of conversations with chat_messages array.
+ *
+ * @param {Array} jsonData - Array of Claude conversation objects to be imported.
+ * @param {string} requestUserId - The ID of the user who initiated the import process.
+ * @param {Function} builderFactory - Factory function to create a new import batch builder instance.
+ * @returns {Promise<void>} Promise that resolves when all conversations have been imported.
+ */
+async function importClaudeConvo(jsonData, requestUserId, builderFactory = createImportBatchBuilder) {
+  try {
+    const importBatchBuilder = builderFactory(requestUserId);
+
+    for (const conv of jsonData) {
+      importBatchBuilder.startConversation(EModelEndpoint.anthropic);
+
+      let lastMessageId = Constants.NO_PARENT;
+
+      for (const msg of conv.chat_messages || []) {
+        const isCreatedByUser = msg.sender === 'human';
+        const messageId = uuidv4();
+
+        // Extract text and thinking content from content array
+        let textContent = '';
+        let thinkingContent = '';
+
+        for (const part of msg.content || []) {
+          if (part.type === 'text' && part.text) {
+            textContent += part.text;
+          } else if (part.type === 'thinking' && part.thinking) {
+            thinkingContent += part.thinking;
+          }
+        }
+
+        // Use the text field as fallback if content array is empty
+        if (!textContent && msg.text) {
+          textContent = msg.text;
+        }
+
+        // Skip empty messages
+        if (!textContent && !thinkingContent) {
+          continue;
+        }
+
+        const createdAt = msg.created_at ? new Date(msg.created_at) : new Date();
+
+        const message = {
+          messageId,
+          parentMessageId: lastMessageId,
+          text: textContent,
+          sender: isCreatedByUser ? 'user' : 'Claude',
+          isCreatedByUser,
+          model: 'claude-3-5-sonnet-20241022',
+          user: requestUserId,
+          endpoint: EModelEndpoint.anthropic,
+          createdAt,
+        };
+
+        // Add content array with thinking if present
+        if (thinkingContent && !isCreatedByUser) {
+          message.content = [
+            { type: 'think', think: thinkingContent },
+            { type: 'text', text: textContent },
+          ];
+        }
+
+        importBatchBuilder.saveMessage(message);
+        lastMessageId = messageId;
+      }
+
+      const createdAt = conv.created_at ? new Date(conv.created_at) : new Date();
+      importBatchBuilder.finishConversation(conv.name || 'Imported Claude Chat', createdAt);
+    }
+
+    await importBatchBuilder.saveBatch();
+    logger.info(`user: ${requestUserId} | Claude conversation imported`);
+  } catch (error) {
+    logger.error(`user: ${requestUserId} | Error creating conversation from Claude file`, error);
   }
 }
 
