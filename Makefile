@@ -1,4 +1,4 @@
-.PHONY: help setup install build up down restart logs clean rebuild
+.PHONY: help setup install build up down restart logs clean rebuild ollama-models ollama-pull-qwen ollama-pull-llama
 
 # Default target
 help:
@@ -11,17 +11,25 @@ help:
 	@echo ""
 	@echo "Docker Commands:"
 	@echo "  make build          - Build Docker containers"
-	@echo "  make up             - Start all services"
+	@echo "  make up             - Start all services and pull Ollama models"
 	@echo "  make down           - Stop all services"
 	@echo "  make restart        - Restart all services"
-	@echo "  make rebuild        - Rebuild and restart services"
+	@echo "  make rebuild        - Rebuild, restart services, and pull Ollama models"
+	@echo ""
+	@echo "Ollama Commands:"
+	@echo "  make ollama-models  - Pull all Ollama models (qwen, llama3.2)"
+	@echo "  make ollama-pull-qwen   - Pull Qwen model"
+	@echo "  make ollama-pull-llama  - Pull Llama 3.2 model"
+	@echo "  make ollama-list    - List installed Ollama models"
 	@echo ""
 	@echo "Utility Commands:"
 	@echo "  make logs           - View container logs (all services)"
 	@echo "  make logs-api       - View API container logs"
 	@echo "  make logs-db        - View MongoDB container logs"
+	@echo "  make logs-ollama    - View Ollama container logs"
 	@echo "  make clean          - Remove containers, volumes, and images"
 	@echo "  make shell          - Open shell in API container"
+	@echo "  make shell-ollama   - Open shell in Ollama container"
 	@echo ""
 	@echo "MCP Commands:"
 	@echo "  make mcp-start      - Start MCP ClickHouse server"
@@ -32,6 +40,7 @@ help:
 	@echo "  make dev            - Start in development mode"
 	@echo "  make ps             - Show running containers"
 	@echo "  make reset          - Reset database and restart"
+	@echo "  make health         - Check health status of all services"
 
 # Complete setup
 setup:
@@ -140,24 +149,127 @@ up:
 	@echo "Starting Bintybyte LibreChat services..."
 	docker compose up -d
 	@echo ""
-	@echo "Services are starting..."
-	@echo "Access LibreChat at: http://localhost:3080"
+	@echo "✅ Services started successfully!"
+	@echo ""
+	@echo "🤖 Pulling Ollama models (this may take a few minutes)..."
+	@sleep 5
+	@$(MAKE) ollama-models || echo "⚠️  Warning: Ollama models pull failed. You can manually pull them with 'make ollama-models'"
+	@echo ""
+	@echo "🌐 Access LibreChat at: http://localhost:3080"
+	@echo "📊 Access MCP ClickHouse at: http://localhost:8001"
+	@echo ""
+	@echo "💡 Tip: Run 'make logs' to view all container logs"
+	@echo "💡 Tip: Run 'make health' to check service status"
 
 # Stop services
 down:
 	@echo "Stopping services..."
 	docker compose down
+	@echo "✅ All services stopped"
 
 # Restart services
-restart: down up
+restart:
+	@echo "Restarting services..."
+	@$(MAKE) down
+	@sleep 2
+	@$(MAKE) up
 
 # Rebuild and restart
 rebuild:
-	@echo "Rebuilding and restarting services..."
-	docker compose down
-	docker compose build --no-cache
-	docker compose up -d
-	@echo "Services rebuilt and started!"
+	@echo "🔨 Rebuilding and restarting services..."
+	@docker compose down
+	@echo ""
+	@echo "Building containers (no cache)..."
+	@docker compose build --no-cache
+	@echo ""
+	@echo "Starting services..."
+	@docker compose up -d
+	@echo ""
+	@echo "✅ Services rebuilt and started!"
+	@echo ""
+	@echo "🤖 Pulling Ollama models (this may take a few minutes)..."
+	@sleep 5
+	@$(MAKE) ollama-models || echo "⚠️  Warning: Ollama models pull failed. You can manually pull them with 'make ollama-models'"
+	@echo ""
+	@echo "🌐 Access LibreChat at: http://localhost:3080"
+	@echo "📊 Access MCP ClickHouse at: http://localhost:8001"
+
+# Pull all Ollama models
+ollama-models:
+	@echo "📦 Checking Ollama models..."
+	@echo ""
+	@echo "Waiting for Ollama service to be ready..."
+	@timeout=60; while ! docker compose exec ollama ollama list >/dev/null 2>&1 && [ $$timeout -gt 0 ]; do \
+		echo "Waiting for Ollama... ($$timeout seconds remaining)"; \
+		sleep 2; \
+		timeout=$$((timeout-2)); \
+	done
+	@if ! docker compose exec ollama ollama list >/dev/null 2>&1; then \
+		echo "❌ Error: Ollama service is not ready"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "1/2 Checking Qwen model..."
+	@if docker compose exec ollama ollama list | grep -q "qwen"; then \
+		echo "✅ Qwen model already exists (skipping download)"; \
+	else \
+		echo "📥 Pulling Qwen model (this may take several minutes)..."; \
+		docker compose exec ollama ollama pull qwen:latest && echo "✅ Qwen model pulled successfully" || echo "❌ Failed to pull Qwen model"; \
+	fi
+	@echo ""
+	@echo "2/2 Checking Llama 3.2 model..."
+	@if docker compose exec ollama ollama list | grep -q "llama3.2"; then \
+		echo "✅ Llama 3.2 model already exists (skipping download)"; \
+	else \
+		echo "📥 Pulling Llama 3.2 model (this may take several minutes)..."; \
+		docker compose exec ollama ollama pull llama3.2:latest && echo "✅ Llama 3.2 model pulled successfully" || echo "❌ Failed to pull Llama 3.2 model"; \
+	fi
+	@echo ""
+	@echo "✅ Ollama models ready!"
+	@echo ""
+	@echo "📋 Installed models:"
+	@docker compose exec ollama ollama list
+	@echo ""
+	@echo "Test models with:"
+	@echo "  make ollama-test-qwen"
+	@echo "  make ollama-test-llama"
+
+# Pull individual models
+ollama-pull-qwen:
+	@echo "Checking Qwen model..."
+	@if docker compose exec ollama ollama list | grep -q "qwen"; then \
+		echo "✅ Qwen model already exists"; \
+		echo "💡 To update, run: docker compose exec ollama ollama pull qwen:latest"; \
+	else \
+		echo "📥 Pulling Qwen model..."; \
+		docker compose exec ollama ollama pull qwen:latest; \
+		echo "✅ Qwen model ready"; \
+	fi
+
+ollama-pull-llama:
+	@echo "Checking Llama 3.2 model..."
+	@if docker compose exec ollama ollama list | grep -q "llama3.2"; then \
+		echo "✅ Llama 3.2 model already exists"; \
+		echo "💡 To update, run: docker compose exec ollama ollama pull llama3.2:latest"; \
+	else \
+		echo "📥 Pulling Llama 3.2 model..."; \
+		docker compose exec ollama ollama pull llama3.2:latest; \
+		echo "✅ Llama 3.2 model ready"; \
+	fi
+
+# List Ollama models
+ollama-list:
+	@echo "Installed Ollama models:"
+	@docker compose exec ollama ollama list
+
+# Test Ollama models
+ollama-test-qwen:
+	@echo "Testing Qwen model..."
+	@docker compose exec ollama ollama run qwen:latest "Hello, introduce yourself briefly"
+
+ollama-test-llama:
+	@echo "Testing Llama 3.2 model..."
+	@docker compose exec ollama ollama run llama3.2:latest "Hello, introduce yourself briefly"
 
 # View all logs
 logs:
@@ -171,13 +283,41 @@ logs-api:
 logs-db:
 	docker compose logs -f mongodb
 
+# View Ollama logs
+logs-ollama:
+	docker compose logs -f ollama
+
 # Show running containers
 ps:
-	docker compose ps
+	@echo "Running containers:"
+	@docker compose ps
+	@echo ""
+	@echo "Resource usage:"
+	@docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"
 
 # Open shell in API container
 shell:
 	docker compose exec api sh
+
+# Open shell in Ollama container
+shell-ollama:
+	docker compose exec ollama bash
+
+# Health check
+health:
+	@echo "🏥 Checking service health..."
+	@echo ""
+	@echo "Container Status:"
+	@docker compose ps
+	@echo ""
+	@echo "LibreChat API:"
+	@curl -s http://localhost:3080/api/health 2>/dev/null && echo "✅ API is healthy" || echo "❌ API is not responding"
+	@echo ""
+	@echo "MCP ClickHouse:"
+	@curl -s http://localhost:8001 2>/dev/null && echo "✅ MCP is responding" || echo "❌ MCP is not responding"
+	@echo ""
+	@echo "Ollama:"
+	@docker compose exec ollama ollama list 2>/dev/null && echo "✅ Ollama is ready" || echo "❌ Ollama is not ready"
 
 # Development mode
 dev:
@@ -205,22 +345,29 @@ mcp-restart: mcp-stop mcp-start
 
 # Clean everything
 clean:
-	@echo "Cleaning up containers, volumes, and images..."
-	@read -p "This will remove all containers, volumes, and data. Are you sure? [y/N] " confirm; \
+	@echo "🧹 Cleaning up containers, volumes, and images..."
+	@echo ""
+	@read -p "⚠️  This will remove all containers, volumes, and data. Are you sure? [y/N] " confirm; \
 	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
+		echo "Stopping and removing containers..."; \
 		docker compose down -v; \
+		echo "Pruning Docker system..."; \
 		docker system prune -af --volumes; \
-		echo "Cleanup complete!"; \
+		echo "✅ Cleanup complete!"; \
 	else \
-		echo "Cleanup cancelled."; \
+		echo "❌ Cleanup cancelled."; \
 	fi
 
 # Reset database
 reset:
-	@echo "Resetting database..."
-	docker compose down mongodb
-	docker volume rm librechat_data-node || true
-	docker compose up -d mongodb
-	@echo "Database reset complete!"
-	@echo "Restarting services..."
-	docker compose restart api
+	@echo "🔄 Resetting database..."
+	@docker compose stop mongodb
+	@docker volume rm librechat_data-node 2>/dev/null || echo "Volume already removed or doesn't exist"
+	@docker compose up -d mongodb
+	@echo ""
+	@echo "Waiting for MongoDB to be ready..."
+	@sleep 5
+	@docker compose restart api
+	@echo ""
+	@echo "✅ Database reset complete!"
+	@echo "💡 Tip: Create a new account at http://localhost:3080"

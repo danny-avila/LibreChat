@@ -68,5 +68,24 @@ services:
     env_file:
       - .env
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./data/ollama:/root/.ollama
+      # - ./ollama/init-models.sh:/init-models.sh
+      # - ./ollama/models.txt:/models.txt
+    entrypoint: [ "/bin/sh", "-c" ]
+    command: [ "ollama serve && wait" ]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+
+
 volumes:
   pgdata2:

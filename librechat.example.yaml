@@ -271,6 +271,19 @@ endpoints:
       titleModel: 'mixtral-8x7b-32768'
       modelDisplayLabel: 'groq'
 
+    - name: 'ollama'
+      apiKey: 'ollama'  # Ollama does not use API keys, but a value is required
+      baseURL: 'http://host.docker.internal:11434/v1'  # Change to your Ollama server URL
+      models:
+        default: ['llama3.2', 'gemma3', 'qwen']
+        fetch: true
+      titleConvo: true
+      titleModel: 'llama3.2'
+      modelDisplayLabel: 'Ollama'
+      summarize: false
+      summaryModel: 'llama3.2'
+      forcePrompt: false
+
     # Mistral AI Example
     - name: 'Mistral' # Unique name for the endpoint
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
