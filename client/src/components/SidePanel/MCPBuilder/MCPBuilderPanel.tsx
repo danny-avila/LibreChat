@@ -37,10 +37,7 @@ export default function MCPBuilderPanel() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-visible">
-      <div role="region" aria-label={localize('com_ui_mcp_servers')} className="mt-2 space-y-4">
-        {/* Admin Settings Section */}
-        <MCPAdminSettings />
-
+      <div role="region" aria-label={localize('com_ui_mcp_servers')} className="mt-2 space-y-2">
         {/* Toolbar: Search + Add Button */}
         <div className="flex items-center gap-2">
           <FilterInput
@@ -93,6 +90,9 @@ export default function MCPBuilderPanel() {
 
         {/* Config Dialog for custom user vars */}
         {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
+
+        {/* Admin Settings Section */}
+        <MCPAdminSettings />
       </div>
     </div>
   );
