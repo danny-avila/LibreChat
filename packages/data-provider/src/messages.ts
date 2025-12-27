@@ -14,9 +14,10 @@ export function buildTree({
   }
 
   const messageMap: Record<string, ParentMessage> = {};
-  const rootMessages: TMessage[] = [];
+  const rootMessages: ParentMessage[] = [];
   const childrenCount: Record<string, number> = {};
 
+  // First pass: Build complete messageMap with all messages
   messages.forEach((message) => {
     if (!message) {
       return;
@@ -36,15 +37,28 @@ export function buildTree({
     }
 
     messageMap[message.messageId] = extendedMessage;
+  });
 
+  // Second pass: Link children to parents (now all parents exist in messageMap)
+  Object.values(messageMap).forEach((message) => {
+    const parentId = message.parentMessageId ?? '';
     const parentMessage = messageMap[parentId];
     if (parentMessage) {
-      parentMessage.children.push(extendedMessage);
-      extendedMessage.depth = parentMessage.depth + 1;
+      parentMessage.children.push(message);
     } else {
-      rootMessages.push(extendedMessage);
+      rootMessages.push(message);
     }
   });
+
+  // Third pass: Compute depths via BFS
+  const queue: ParentMessage[] = [...rootMessages];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const child of current.children) {
+      (child as ParentMessage).depth = current.depth + 1;
+      queue.push(child as ParentMessage);
+    }
+  }
 
   return rootMessages;
 }

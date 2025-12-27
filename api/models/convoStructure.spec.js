@@ -21,11 +21,11 @@ beforeEach(async () => {
 });
 
 describe('Conversation Structure Tests', () => {
-  test('Conversation folding/corrupting with inconsistent timestamps', async () => {
+  test('Fix: Conversation structure maintained with inconsistent timestamps', async () => {
     const userId = 'testUser';
     const conversationId = 'testConversation';
 
-    // Create messages with inconsistent timestamps
+    // Create messages with inconsistent timestamps (child earlier than parent)
     const messages = [
       {
         messageId: 'message0',
@@ -77,8 +77,9 @@ describe('Conversation Structure Tests', () => {
     // Build tree
     const tree = buildTree({ messages: retrievedMessages });
 
-    // Check if the tree is incorrect (folded/corrupted)
-    expect(tree.length).toBeGreaterThan(1); // Should have multiple root messages, indicating corruption
+    // Two-pass buildTree algorithm correctly handles out-of-order timestamps
+    expect(tree.length).toBe(1); // Should have only one root message
+    expect(tree[0].messageId).toBe('message0');
   });
 
   test('Fix: Conversation structure maintained with more than 16 messages', async () => {
@@ -115,7 +116,7 @@ describe('Conversation Structure Tests', () => {
     expect(currentNode.children.length).toBe(0); // Last message should have no children
   });
 
-  test('Simulate MongoDB ordering issue with more than 16 messages and close timestamps', async () => {
+  test('Fix: Conversation structure maintained with close timestamps', async () => {
     const userId = 'testUser';
     const conversationId = 'testConversation';
 
@@ -139,7 +140,9 @@ describe('Conversation Structure Tests', () => {
     await bulkSaveMessages(messages, true);
     const retrievedMessages = await getMessages({ conversationId, user: userId });
     const tree = buildTree({ messages: retrievedMessages });
-    expect(tree.length).toBeGreaterThan(1);
+
+    // Two-pass buildTree algorithm correctly handles close/interleaved timestamps
+    expect(tree.length).toBe(1); // Should have only one root message
   });
 
   test('Fix: Preserve order with more than 16 messages by maintaining original timestamps', async () => {
