@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo, useEffect } from 'react';
+import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react';
 import copy from 'copy-to-clipboard';
 import { InfoIcon } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
@@ -18,6 +18,10 @@ type CodeBlockProps = Pick<
   codeChildren: React.ReactNode;
   classProp?: string;
 };
+
+interface FloatingCodeBarProps extends CodeBarProps {
+  isVisible: boolean;
+}
 
 const CodeBar: React.FC<CodeBarProps> = React.memo(
   ({ lang, error, codeRef, blockIndex, plugin = null, allowExecution = true }) => {
@@ -70,6 +74,77 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(
   },
 );
 
+const FloatingCodeBar: React.FC<FloatingCodeBarProps> = React.memo(
+  ({ lang, error, codeRef, blockIndex, plugin = null, allowExecution = true, isVisible }) => {
+    const localize = useLocalize();
+    const [isCopied, setIsCopied] = useState(false);
+    const copyButtonRef = useRef<HTMLButtonElement>(null);
+
+    const handleCopy = useCallback(() => {
+      const codeString = codeRef.current?.textContent;
+      if (codeString != null) {
+        const wasFocused = document.activeElement === copyButtonRef.current;
+        setIsCopied(true);
+        copy(codeString.trim(), { format: 'text/plain' });
+        if (wasFocused) {
+          requestAnimationFrame(() => {
+            copyButtonRef.current?.focus();
+          });
+        }
+
+        setTimeout(() => {
+          const focusedElement = document.activeElement as HTMLElement | null;
+          setIsCopied(false);
+          requestAnimationFrame(() => {
+            focusedElement?.focus();
+          });
+        }, 3000);
+      }
+    }, [codeRef]);
+
+    return (
+      <div
+        className={cn(
+          'absolute bottom-2 right-2 flex items-center gap-2 font-sans text-xs text-gray-200 transition-opacity duration-150',
+          isVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
+        )}
+      >
+        {plugin === true ? (
+          <InfoIcon className="flex h-4 w-4 gap-2 text-white/50" />
+        ) : (
+          <>
+            {allowExecution === true && (
+              <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} />
+            )}
+            <button
+              ref={copyButtonRef}
+              type="button"
+              tabIndex={isVisible ? 0 : -1}
+              className={cn(
+                'flex gap-2 rounded bg-gray-700 px-2 py-1 focus:outline focus:outline-white',
+                error === true ? 'h-4 w-4 items-start text-white/50' : '',
+              )}
+              onClick={handleCopy}
+            >
+              {isCopied ? (
+                <>
+                  <CheckMark className="h-[18px] w-[18px]" />
+                  {error === true ? '' : localize('com_ui_copied')}
+                </>
+              ) : (
+                <>
+                  <Clipboard />
+                  {error === true ? '' : localize('com_ui_copy_code')}
+                </>
+              )}
+            </button>
+          </>
+        )}
+      </div>
+    );
+  },
+);
+
 const CodeBlock: React.FC<CodeBlockProps> = ({
   lang,
   blockIndex,
@@ -80,6 +155,8 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
   error,
 }) => {
   const codeRef = useRef<HTMLElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isBarVisible, setIsBarVisible] = useState(false);
   const toolCallsMap = useToolCallsMapContext();
   const { messageId, partIndex } = useMessageContext();
   const key = allowExecution
@@ -96,6 +173,29 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
       setCurrentIndex(fetchedToolCalls.length - 1);
     }
   }, [fetchedToolCalls]);
+
+  // Handle focus within the container (for keyboard navigation)
+  const handleFocus = useCallback(() => {
+    setIsBarVisible(true);
+  }, []);
+
+  const handleBlur = useCallback((e: React.FocusEvent) => {
+    // Check if focus is moving to another element within the container
+    if (!containerRef.current?.contains(e.relatedTarget as Node)) {
+      setIsBarVisible(false);
+    }
+  }, []);
+
+  const handleMouseEnter = useCallback(() => {
+    setIsBarVisible(true);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    // Only hide if no element inside has focus
+    if (!containerRef.current?.contains(document.activeElement)) {
+      setIsBarVisible(false);
+    }
+  }, []);
 
   const currentToolCall = useMemo(() => toolCalls?.[currentIndex], [toolCalls, currentIndex]);
 
@@ -118,7 +218,14 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
   const language = isNonCode ? 'json' : lang;
 
   return (
-    <div className="w-full rounded-md bg-gray-900 text-xs text-white/80">
+    <div
+      ref={containerRef}
+      className="relative w-full rounded-md bg-gray-900 text-xs text-white/80"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+    >
       <CodeBar
         lang={lang}
         error={error}
@@ -137,6 +244,15 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
           {codeChildren}
         </code>
       </div>
+      <FloatingCodeBar
+        lang={lang}
+        error={error}
+        codeRef={codeRef}
+        blockIndex={blockIndex}
+        plugin={plugin === true}
+        allowExecution={allowExecution}
+        isVisible={isBarVisible}
+      />
       {allowExecution === true && toolCalls && toolCalls.length > 0 && (
         <>
           <div className="bg-gray-700 p-4 text-xs">
