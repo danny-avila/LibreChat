@@ -120,7 +120,8 @@ export async function loadWebSearchAuth({
         }
       }
 
-      if (requiredKeys.length === 0) continue;
+      const simpleReRankerChosen = specificService && service === 'simple';
+      if (!simpleReRankerChosen && requiredKeys.length === 0) continue;
 
       const requiredAuthFields = extractWebSearchEnvVars({
         keys: requiredKeys,
