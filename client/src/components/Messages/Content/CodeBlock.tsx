@@ -55,16 +55,14 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(
                 }
               }}
             >
-              {isCopied ? (
-                <>
-                  <CheckMark className="h-[18px] w-[18px]" />
-                  {error === true ? '' : localize('com_ui_copied')}
-                </>
-              ) : (
-                <>
-                  <Clipboard />
-                  {error === true ? '' : localize('com_ui_copy_code')}
-                </>
+              {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
+              {error !== true && (
+                <span className="relative">
+                  <span className="invisible">{localize('com_ui_copy_code')}</span>
+                  <span className="absolute inset-0 flex items-center">
+                    {isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
+                  </span>
+                </span>
               )}
             </button>
           </div>
@@ -126,16 +124,14 @@ const FloatingCodeBar: React.FC<FloatingCodeBarProps> = React.memo(
               )}
               onClick={handleCopy}
             >
-              {isCopied ? (
-                <>
-                  <CheckMark className="h-[18px] w-[18px]" />
-                  {error === true ? '' : localize('com_ui_copied')}
-                </>
-              ) : (
-                <>
-                  <Clipboard />
-                  {error === true ? '' : localize('com_ui_copy_code')}
-                </>
+              {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
+              {error !== true && (
+                <span className="relative">
+                  <span className="invisible">{localize('com_ui_copy_code')}</span>
+                  <span className="absolute inset-0 flex items-center">
+                    {isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
+                  </span>
+                </span>
               )}
             </button>
           </>
