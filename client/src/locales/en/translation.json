@@ -1133,6 +1133,8 @@
   "com_ui_no_mcp_servers": "No MCP servers yet",
   "com_ui_no_mcp_servers_match": "No MCP servers match your filter",
   "com_ui_no_memories": "No memories. Create them manually or prompt the AI to remember something",
+  "com_ui_no_memories_title": "No memories yet",
+  "com_ui_no_memories_match": "No memories match your search",
   "com_ui_no_personalization_available": "No personalization options are currently available",
   "com_ui_no_read_access": "You don't have permission to view memories",
   "com_ui_no_results_found": "No results found",
