@@ -121,7 +121,7 @@ const FloatingCodeBar: React.FC<FloatingCodeBarProps> = React.memo(
               type="button"
               tabIndex={isVisible ? 0 : -1}
               className={cn(
-                'flex gap-2 rounded bg-gray-700 px-2 py-1 focus:outline focus:outline-white',
+                'flex gap-2 rounded px-2 py-1 hover:bg-gray-700 focus:bg-gray-700 focus:outline focus:outline-white',
                 error === true ? 'h-4 w-4 items-start text-white/50' : '',
               )}
               onClick={handleCopy}
