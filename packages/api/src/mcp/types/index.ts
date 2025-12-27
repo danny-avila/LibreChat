@@ -20,7 +20,10 @@ import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provi
 import type { TokenMethods, JsonSchemaType, IUser } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
+import type { GraphTokenResolver } from '~/utils/graph';
 import type * as o from '~/mcp/oauth/types';
+
+export type { GraphTokenResolver } from '~/utils/graph';
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;

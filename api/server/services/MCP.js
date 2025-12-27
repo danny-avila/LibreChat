@@ -29,6 +29,7 @@ const {
   getMCPManager,
 } = require('~/config');
 const { findToken, createToken, updateToken } = require('~/models');
+const { getGraphApiToken } = require('./GraphTokenService');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
@@ -501,6 +502,7 @@ function createToolInstance({
         },
         oauthStart,
         oauthEnd,
+        graphTokenResolver: getGraphApiToken,
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
