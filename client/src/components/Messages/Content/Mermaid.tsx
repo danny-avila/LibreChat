@@ -49,6 +49,8 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   const copyButtonRef = useRef<HTMLButtonElement>(null);
   const dialogShowCodeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogCopyButtonRef = useRef<HTMLButtonElement>(null);
+  const zoomCopyButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogZoomCopyButtonRef = useRef<HTMLButtonElement>(null);
 
   // Zoom and pan state
   const [zoom, setZoom] = useState(1);
@@ -151,6 +153,30 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     copy(children.trim(), { format: 'text/plain' });
     requestAnimationFrame(() => {
       dialogCopyButtonRef.current?.focus();
+    });
+  }, [children]);
+
+  // Zoom controls copy with focus restoration
+  const [isZoomCopied, setIsZoomCopied] = useState(false);
+  const handleZoomCopy = useCallback(() => {
+    copy(children.trim(), { format: 'text/plain' });
+    setIsZoomCopied(true);
+    requestAnimationFrame(() => {
+      zoomCopyButtonRef.current?.focus();
+    });
+    setTimeout(() => {
+      setIsZoomCopied(false);
+      requestAnimationFrame(() => {
+        zoomCopyButtonRef.current?.focus();
+      });
+    }, 3000);
+  }, [children]);
+
+  // Dialog zoom controls copy
+  const handleDialogZoomCopy = useCallback(() => {
+    copy(children.trim(), { format: 'text/plain' });
+    requestAnimationFrame(() => {
+      dialogZoomCopyButtonRef.current?.focus();
     });
   }, [children]);
 
@@ -392,6 +418,19 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
       >
         <RotateCcw className="h-4 w-4" />
       </button>
+      <div className="mx-1 h-4 w-px bg-border-medium" />
+      <button
+        ref={zoomCopyButtonRef}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleZoomCopy();
+        }}
+        className="rounded p-1.5 text-text-secondary hover:bg-surface-hover"
+        title={localize('com_ui_copy_code')}
+      >
+        {isZoomCopied ? <CheckMark className="h-4 w-4" /> : <Clipboard className="h-4 w-4" />}
+      </button>
     </div>
   );
 
@@ -437,6 +476,19 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
         title={localize('com_ui_reset_zoom')}
       >
         <RotateCcw className="h-4 w-4" />
+      </button>
+      <div className="mx-1 h-4 w-px bg-border-medium" />
+      <button
+        ref={dialogZoomCopyButtonRef}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleDialogZoomCopy();
+        }}
+        className="rounded p-1.5 text-text-secondary hover:bg-surface-hover"
+        title={localize('com_ui_copy_code')}
+      >
+        <Clipboard className="h-4 w-4" />
       </button>
     </div>
   );
