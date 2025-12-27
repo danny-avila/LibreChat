@@ -10,6 +10,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import {
+  Button,
   Spinner,
   OGDialog,
   Clipboard,
@@ -44,6 +45,10 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   const [dialogShowCode, setDialogShowCode] = useState(false);
   const lastValidSvgRef = useRef<string | null>(null);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
+  const showCodeButtonRef = useRef<HTMLButtonElement>(null);
+  const copyButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogShowCodeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogCopyButtonRef = useRef<HTMLButtonElement>(null);
 
   // Zoom and pan state
   const [zoom, setZoom] = useState(1);
@@ -125,15 +130,49 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     };
   }, [processedSvg]);
 
-  const handleCopy = () => {
+  const handleCopy = useCallback(() => {
     copy(children.trim(), { format: 'text/plain' });
     setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 3000);
-  };
+    requestAnimationFrame(() => {
+      copyButtonRef.current?.focus();
+    });
+    setTimeout(() => {
+      // Save currently focused element before state update causes re-render
+      const focusedElement = document.activeElement as HTMLElement | null;
+      setIsCopied(false);
+      // Restore focus to whatever was focused (React re-render may have disrupted it)
+      requestAnimationFrame(() => {
+        focusedElement?.focus();
+      });
+    }, 3000);
+  }, [children]);
+
+  const handleDialogCopy = useCallback(() => {
+    copy(children.trim(), { format: 'text/plain' });
+    requestAnimationFrame(() => {
+      dialogCopyButtonRef.current?.focus();
+    });
+  }, [children]);
 
   const handleRetry = () => {
     setRetryCount((prev) => prev + 1);
   };
+
+  // Toggle code with focus restoration
+  const handleToggleCode = useCallback(() => {
+    setShowCode((prev) => !prev);
+    requestAnimationFrame(() => {
+      showCodeButtonRef.current?.focus();
+    });
+  }, []);
+
+  // Toggle dialog code with focus restoration
+  const handleToggleDialogCode = useCallback(() => {
+    setDialogShowCode((prev) => !prev);
+    requestAnimationFrame(() => {
+      dialogShowCodeButtonRef.current?.focus();
+    });
+  }, []);
 
   // Zoom handlers
   const handleZoomIn = useCallback(() => {
@@ -259,10 +298,11 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
       {showActions && (
         <div className="ml-auto flex gap-2">
           {showExpandButton && (
-            <button
+            <Button
               ref={expandButtonRef}
-              type="button"
-              className="flex items-center gap-1 rounded-sm focus:outline focus:outline-white"
+              variant="ghost"
+              size="sm"
+              className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
               onClick={() => {
                 setDialogShowCode(false);
                 setDialogZoom(1);
@@ -272,19 +312,24 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
               title={localize('com_ui_expand')}
             >
               <Expand className="h-4 w-4" />
-            </button>
+              {localize('com_ui_expand')}
+            </Button>
           )}
-          <button
-            type="button"
-            className="flex items-center gap-1 rounded-sm focus:outline focus:outline-white"
-            onClick={() => setShowCode(!showCode)}
+          <Button
+            ref={showCodeButtonRef}
+            variant="ghost"
+            size="sm"
+            className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
+            onClick={handleToggleCode}
           >
             {showCode ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             {showCode ? localize('com_ui_hide_code') : localize('com_ui_show_code')}
-          </button>
-          <button
-            type="button"
-            className="flex gap-2 rounded-sm focus:outline focus:outline-white"
+          </Button>
+          <Button
+            ref={copyButtonRef}
+            variant="ghost"
+            size="sm"
+            className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
             onClick={handleCopy}
           >
             {isCopied ? (
@@ -298,7 +343,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
                 {localize('com_ui_copy_code')}
               </>
             )}
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -403,10 +448,12 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
         <OGDialogTitle className="flex items-center justify-between rounded-t-md bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200">
           <span>{localize('com_ui_mermaid')}</span>
           <div className="flex gap-2">
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-sm focus:outline focus:outline-white"
-              onClick={() => setDialogShowCode((prev) => !prev)}
+            <Button
+              ref={dialogShowCodeButtonRef}
+              variant="ghost"
+              size="sm"
+              className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
+              onClick={handleToggleDialogCode}
             >
               {dialogShowCode ? (
                 <ChevronUp className="h-4 w-4" />
@@ -414,17 +461,17 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
                 <ChevronDown className="h-4 w-4" />
               )}
               {dialogShowCode ? localize('com_ui_hide_code') : localize('com_ui_show_code')}
-            </button>
-            <button
-              type="button"
-              className="flex gap-2 rounded-sm focus:outline focus:outline-white"
-              onClick={() => {
-                copy(children.trim(), { format: 'text/plain' });
-              }}
+            </Button>
+            <Button
+              ref={dialogCopyButtonRef}
+              variant="ghost"
+              size="sm"
+              className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
+              onClick={handleDialogCopy}
             >
               <Clipboard />
               {localize('com_ui_copy_code')}
-            </button>
+            </Button>
           </div>
         </OGDialogTitle>
         {dialogShowCode && (
