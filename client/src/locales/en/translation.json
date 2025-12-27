@@ -1106,7 +1106,6 @@
   "com_ui_memory_would_exceed": "Cannot save - would exceed limit by {{tokens}} tokens. Delete existing memories to make space.",
   "com_ui_mermaid": "mermaid",
   "com_ui_mermaid_failed": "Failed to render diagram:",
-  "com_ui_mermaid_rendering": "Rendering diagram...",
   "com_ui_mermaid_source": "Source code:",
   "com_ui_mention": "Mention an endpoint, assistant, or preset to quickly switch to it",
   "com_ui_message_input": "Message input",
