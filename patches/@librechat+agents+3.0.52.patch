@@ -1,0 +1,98 @@
+diff --git a/node_modules/@librechat/agents/dist/cjs/llm/vertexai/index.cjs b/node_modules/@librechat/agents/dist/cjs/llm/vertexai/index.cjs
+index b66484c..737e89d 100644
+--- a/node_modules/@librechat/agents/dist/cjs/llm/vertexai/index.cjs
++++ b/node_modules/@librechat/agents/dist/cjs/llm/vertexai/index.cjs
+@@ -4,6 +4,23 @@ var googleGauth = require('@langchain/google-gauth');
+ var googleCommon = require('@langchain/google-common');
+ 
+ class CustomChatConnection extends googleCommon.ChatConnection {
++    // Store thinkingConfig from constructor for later use
++    // This is needed because LangChain's @langchain/google-gauth silently drops
++    // unrecognized options like thinkingConfig when constructing the request
++    thinkingConfig = null;
++    includeThoughts = false;
++
++    constructor(fields, caller, client, streaming) {
++        super(fields, caller, client, streaming);
++        // Capture thinkingConfig that LangChain doesn't pass through
++        if (fields?.thinkingConfig) {
++            this.thinkingConfig = fields.thinkingConfig;
++        }
++        if (fields?.includeThoughts) {
++            this.includeThoughts = fields.includeThoughts;
++        }
++    }
++
+     async formatData(input, parameters) {
+         const formattedData = (await super.formatData(input, parameters));
+         if (formattedData.generationConfig?.thinkingConfig?.thinkingBudget === -1) {
+@@ -13,6 +30,20 @@ class CustomChatConnection extends googleCommon.ChatConnection {
+             }
+             delete formattedData.generationConfig.thinkingConfig.thinkingBudget;
+         }
++
++        // Inject thinkingConfig for Gemini 3 models
++        // LangChain's @langchain/google-gauth doesn't pass thinkingConfig through to the API
++        // so we need to inject it here after the parent class has formatted the request
++        if (this.thinkingConfig && !formattedData.generationConfig?.thinkingConfig) {
++            formattedData.generationConfig = formattedData.generationConfig || {};
++            formattedData.generationConfig.thinkingConfig = this.thinkingConfig;
++        } else if (this.includeThoughts && !formattedData.generationConfig?.thinkingConfig?.includeThoughts) {
++            // Fallback: if only includeThoughts was set
++            formattedData.generationConfig = formattedData.generationConfig || {};
++            formattedData.generationConfig.thinkingConfig = formattedData.generationConfig.thinkingConfig || {};
++            formattedData.generationConfig.thinkingConfig.includeThoughts = true;
++        }
++
+         return formattedData;
+     }
+ }
+diff --git a/node_modules/@librechat/agents/dist/esm/llm/vertexai/index.mjs b/node_modules/@librechat/agents/dist/esm/llm/vertexai/index.mjs
+index 448af34..354cdb1 100644
+--- a/node_modules/@librechat/agents/dist/esm/llm/vertexai/index.mjs
++++ b/node_modules/@librechat/agents/dist/esm/llm/vertexai/index.mjs
+@@ -2,6 +2,23 @@ import { ChatGoogle } from '@langchain/google-gauth';
+ import { ChatConnection } from '@langchain/google-common';
+ 
+ class CustomChatConnection extends ChatConnection {
++    // Store thinkingConfig from constructor for later use
++    // This is needed because LangChain's @langchain/google-gauth silently drops
++    // unrecognized options like thinkingConfig when constructing the request
++    thinkingConfig = null;
++    includeThoughts = false;
++
++    constructor(fields, caller, client, streaming) {
++        super(fields, caller, client, streaming);
++        // Capture thinkingConfig that LangChain doesn't pass through
++        if (fields?.thinkingConfig) {
++            this.thinkingConfig = fields.thinkingConfig;
++        }
++        if (fields?.includeThoughts) {
++            this.includeThoughts = fields.includeThoughts;
++        }
++    }
++
+     async formatData(input, parameters) {
+         const formattedData = (await super.formatData(input, parameters));
+         if (formattedData.generationConfig?.thinkingConfig?.thinkingBudget === -1) {
+@@ -11,6 +28,20 @@ class CustomChatConnection extends ChatConnection {
+             }
+             delete formattedData.generationConfig.thinkingConfig.thinkingBudget;
+         }
++
++        // Inject thinkingConfig for Gemini 3 models
++        // LangChain's @langchain/google-gauth doesn't pass thinkingConfig through to the API
++        // so we need to inject it here after the parent class has formatted the request
++        if (this.thinkingConfig && !formattedData.generationConfig?.thinkingConfig) {
++            formattedData.generationConfig = formattedData.generationConfig || {};
++            formattedData.generationConfig.thinkingConfig = this.thinkingConfig;
++        } else if (this.includeThoughts && !formattedData.generationConfig?.thinkingConfig?.includeThoughts) {
++            // Fallback: if only includeThoughts was set
++            formattedData.generationConfig = formattedData.generationConfig || {};
++            formattedData.generationConfig.thinkingConfig = formattedData.generationConfig.thinkingConfig || {};
++            formattedData.generationConfig.thinkingConfig.includeThoughts = true;
++        }
++
+         return formattedData;
+     }
+ }

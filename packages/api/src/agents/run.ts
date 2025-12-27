@@ -27,7 +27,7 @@ export function getReasoningKey(
   agentEndpoint?: string | null,
 ): 'reasoning_content' | 'reasoning' {
   let reasoningKey: 'reasoning_content' | 'reasoning' = 'reasoning_content';
-  if (provider === Providers.GOOGLE) {
+  if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
     reasoningKey = 'reasoning';
   } else if (
     llmConfig.configuration?.baseURL?.includes(KnownEndpoints.openrouter) ||

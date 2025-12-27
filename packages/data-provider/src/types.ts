@@ -52,6 +52,8 @@ export type TEndpointOption = Pick<
   | 'promptCache'
   | 'thinking'
   | 'thinkingBudget'
+  | 'thinkingLevel'
+  | 'mediaResolution'
   // Assistant/Agent fields
   | 'assistant_id'
   | 'agent_id'

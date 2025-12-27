@@ -8,6 +8,8 @@ import {
   ReasoningSummary,
   BedrockProviders,
   anthropicSettings,
+  ThinkingLevel,
+  MediaResolution,
 } from './types';
 import { SettingDefinition, SettingsConfiguration } from './generate';
 
@@ -594,6 +596,25 @@ const google: Record<string, SettingDefinition> = {
     optionType: 'model',
     columnSpan: 2,
   },
+  /** Gemini 3 maxOutputTokens without default - lets API use its own default */
+  maxOutputTokensGemini3: {
+    key: 'maxOutputTokens',
+    label: 'com_endpoint_max_output_tokens',
+    labelCode: true,
+    type: 'number',
+    component: 'input',
+    description: 'com_endpoint_google_maxoutputtokens',
+    descriptionCode: true,
+    placeholder: 'com_nav_theme_system',
+    placeholderCode: true,
+    range: {
+      min: googleSettings.maxOutputTokens.min,
+      max: googleSettings.maxOutputTokens.max,
+      step: googleSettings.maxOutputTokens.step,
+    },
+    optionType: 'model',
+    columnSpan: 2,
+  },
   thinking: {
     key: 'thinking',
     label: 'com_endpoint_thinking',
@@ -624,6 +645,58 @@ const google: Record<string, SettingDefinition> = {
     },
     optionType: 'conversation',
     columnSpan: 2,
+  },
+  thinkingLevel: {
+    key: 'thinkingLevel',
+    label: 'com_endpoint_thinking_level',
+    labelCode: true,
+    description: 'com_endpoint_google_thinking_level',
+    descriptionCode: true,
+    type: 'enum',
+    default: ThinkingLevel.unset,
+    component: 'slider',
+    options: [
+      ThinkingLevel.unset,
+      ThinkingLevel.minimal,
+      ThinkingLevel.low,
+      ThinkingLevel.medium,
+      ThinkingLevel.high,
+    ],
+    enumMappings: {
+      [ThinkingLevel.unset]: 'com_ui_auto',
+      [ThinkingLevel.minimal]: 'com_ui_minimal',
+      [ThinkingLevel.low]: 'com_ui_low',
+      [ThinkingLevel.medium]: 'com_ui_medium',
+      [ThinkingLevel.high]: 'com_ui_high',
+    },
+    optionType: 'conversation',
+    columnSpan: 4,
+  },
+  mediaResolution: {
+    key: 'mediaResolution',
+    label: 'com_endpoint_media_resolution',
+    labelCode: true,
+    description: 'com_endpoint_google_media_resolution',
+    descriptionCode: true,
+    type: 'enum',
+    default: MediaResolution.unset,
+    component: 'slider',
+    options: [
+      MediaResolution.unset,
+      MediaResolution.low,
+      MediaResolution.medium,
+      MediaResolution.high,
+      MediaResolution.ultra_high,
+    ],
+    enumMappings: {
+      [MediaResolution.unset]: 'com_ui_auto',
+      [MediaResolution.low]: 'com_ui_low',
+      [MediaResolution.medium]: 'com_ui_medium',
+      [MediaResolution.high]: 'com_ui_high',
+      [MediaResolution.ultra_high]: 'com_endpoint_ultra_high',
+    },
+    optionType: 'conversation',
+    columnSpan: 4,
   },
   web_search: {
     key: 'web_search',
@@ -670,6 +743,37 @@ const googleCol2: SettingsConfiguration = [
   librechat.resendFiles,
   google.thinking,
   google.thinkingBudget,
+  google.web_search,
+  librechat.fileTokenLimit,
+];
+
+/** Gemini 3 models use thinkingLevel instead of thinkingBudget */
+const googleConfigGemini3: SettingsConfiguration = [
+  librechat.modelLabel,
+  librechat.promptPrefix,
+  librechat.maxContextTokens,
+  google.maxOutputTokensGemini3,
+  google.temperature,
+  google.topP,
+  google.topK,
+  librechat.resendFiles,
+  google.thinking,
+  google.thinkingLevel,
+  google.mediaResolution,
+  google.web_search,
+  librechat.fileTokenLimit,
+];
+
+const googleCol2Gemini3: SettingsConfiguration = [
+  librechat.maxContextTokens,
+  google.maxOutputTokensGemini3,
+  google.temperature,
+  google.topP,
+  google.topK,
+  librechat.resendFiles,
+  google.thinking,
+  google.thinkingLevel,
+  google.mediaResolution,
   google.web_search,
   librechat.fileTokenLimit,
 ];
@@ -891,6 +995,7 @@ export const paramSettings: Record<string, SettingsConfiguration | undefined> = 
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Amazon}`]: bedrockGeneral,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.DeepSeek}`]: bedrockGeneral,
   [EModelEndpoint.google]: googleConfig,
+  'google-gemini-3': googleConfigGemini3,
 };
 
 const openAIColumns = {
@@ -937,6 +1042,10 @@ export const presetSettings: Record<
   [EModelEndpoint.google]: {
     col1: googleCol1,
     col2: googleCol2,
+  },
+  'google-gemini-3': {
+    col1: googleCol1,
+    col2: googleCol2Gemini3,
   },
 };
 

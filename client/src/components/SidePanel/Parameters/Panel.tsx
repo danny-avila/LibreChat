@@ -6,6 +6,7 @@ import {
   paramSettings,
   getSettingsKeys,
   getEndpointField,
+  EModelEndpoint,
   SettingDefinition,
   tConvoUpdateSchema,
 } from 'librechat-data-provider';
@@ -42,7 +43,18 @@ export default function Parameters() {
     const customParams = endpointsConfig[provider]?.customParams ?? {};
     const [combinedKey, endpointKey] = getSettingsKeys(endpointType ?? provider, model);
     const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
-    const defaultParams = paramSettings[combinedKey] ?? paramSettings[overriddenEndpointKey] ?? [];
+
+    // Check for Gemini 3 models which use thinkingLevel instead of thinkingBudget
+    let effectiveKey = combinedKey;
+    if (provider === EModelEndpoint.google && model && /gemini-3/i.test(model)) {
+      effectiveKey = 'google-gemini-3';
+    }
+
+    const defaultParams =
+      paramSettings[effectiveKey] ??
+      paramSettings[combinedKey] ??
+      paramSettings[overriddenEndpointKey] ??
+      [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
     return defaultParams
