@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useMemo,
+  memo,
+  lazy,
+  Suspense,
+  useRef,
+  startTransition,
+} from 'react';
 import { useRecoilValue } from 'recoil';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Skeleton, useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
@@ -23,8 +33,10 @@ import store from '~/store';
 const BookmarkNav = lazy(() => import('./Bookmarks/BookmarkNav'));
 const AccountSettings = lazy(() => import('./AccountSettings'));
 
-const NAV_WIDTH_DESKTOP = '260px';
-const NAV_WIDTH_MOBILE = '320px';
+export const NAV_WIDTH = {
+  MOBILE: 320,
+  DESKTOP: 260,
+} as const;
 
 const SearchBarSkeleton = memo(() => (
   <div className={cn('flex h-10 items-center py-2')}>
@@ -66,7 +78,6 @@ const Nav = memo(
     const { isAuthenticated } = useAuthContext();
     useTitleGeneration(isAuthenticated);
 
-    const [navWidth, setNavWidth] = useState(NAV_WIDTH_DESKTOP);
     const isSmallScreen = useMediaQuery('(max-width: 768px)');
     const [newUser, setNewUser] = useLocalStorage('newUser', true);
     const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
@@ -122,13 +133,17 @@ const Nav = memo(
     }, [data]);
 
     const toggleNavVisible = useCallback(() => {
-      setNavVisible((prev: boolean) => {
-        localStorage.setItem('navVisible', JSON.stringify(!prev));
-        return !prev;
+      // Use startTransition to mark this as a non-urgent update
+      // This prevents blocking the main thread during the cascade of re-renders
+      startTransition(() => {
+        setNavVisible((prev: boolean) => {
+          localStorage.setItem('navVisible', JSON.stringify(!prev));
+          return !prev;
+        });
+        if (newUser) {
+          setNewUser(false);
+        }
       });
-      if (newUser) {
-        setNewUser(false);
-      }
     }, [newUser, setNavVisible, setNewUser]);
 
     const itemToggleNav = useCallback(() => {
@@ -143,9 +158,6 @@ const Nav = memo(
         if (savedNavVisible === null) {
           toggleNavVisible();
         }
-        setNavWidth(NAV_WIDTH_MOBILE);
-      } else {
-        setNavWidth(NAV_WIDTH_DESKTOP);
       }
     }, [isSmallScreen, toggleNavVisible]);
 
@@ -201,61 +213,90 @@ const Nav = memo(
       }
     }, [search.query, search.isTyping, isLoading, isFetching]);
 
+    // Always render sidebar to avoid mount/unmount costs
+    // Use transform for GPU-accelerated animation (no layout thrashing)
+    const sidebarWidth = isSmallScreen ? NAV_WIDTH.MOBILE : NAV_WIDTH.DESKTOP;
+
+    // Sidebar content (shared between mobile and desktop)
+    const sidebarContent = (
+      <div className="flex h-full flex-col">
+        <nav
+          id="chat-history-nav"
+          aria-label={localize('com_ui_chat_history')}
+          className="flex h-full flex-col px-2 pb-3.5"
+          aria-hidden={!navVisible}
+        >
+          <div className="flex flex-1 flex-col overflow-hidden" ref={outerContainerRef}>
+            <MemoNewChat
+              subHeaders={subHeaders}
+              toggleNav={toggleNavVisible}
+              headerButtons={headerButtons}
+              isSmallScreen={isSmallScreen}
+            />
+            <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
+              <Conversations
+                conversations={conversations}
+                moveToTop={moveToTop}
+                toggleNav={itemToggleNav}
+                containerRef={conversationsRef}
+                loadMoreConversations={loadMoreConversations}
+                isLoading={isFetchingNextPage || showLoading || isLoading}
+                isSearchLoading={isSearchLoading}
+                isChatsExpanded={isChatsExpanded}
+                setIsChatsExpanded={setIsChatsExpanded}
+              />
+            </div>
+          </div>
+          <Suspense fallback={<Skeleton className="mt-1 h-12 w-full rounded-xl" />}>
+            <AccountSettings />
+          </Suspense>
+        </nav>
+      </div>
+    );
+
+    // Mobile: Fixed positioned sidebar that slides over content
+    // Uses CSS transitions (not Framer Motion) to sync perfectly with content animation
+    if (isSmallScreen) {
+      return (
+        <>
+          <div
+            data-testid="nav"
+            className={cn(
+              'nav fixed left-0 top-0 z-[70] h-full bg-surface-primary-alt',
+              navVisible && 'active',
+            )}
+            style={{
+              width: sidebarWidth,
+              transform: navVisible ? 'translateX(0)' : `translateX(-${sidebarWidth}px)`,
+              transition: 'transform 0.2s ease-out',
+            }}
+          >
+            {sidebarContent}
+          </div>
+          <NavMask navVisible={navVisible} toggleNavVisible={toggleNavVisible} />
+        </>
+      );
+    }
+
+    // Desktop: Inline sidebar with width transition
     return (
-      <>
-        <AnimatePresence initial={false}>
-          {navVisible && (
-            <motion.div
-              data-testid="nav"
-              className={cn(
-                'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-surface-primary-alt',
-                'md:max-w-[260px]',
-              )}
-              initial={{ width: 0 }}
-              animate={{ width: navWidth }}
-              exit={{ width: 0 }}
-              transition={{ duration: 0.2 }}
-              key="nav"
-            >
-              <div className="h-full w-[320px] md:w-[260px]">
-                <div className="flex h-full flex-col">
-                  <nav
-                    id="chat-history-nav"
-                    aria-label={localize('com_ui_chat_history')}
-                    className="flex h-full flex-col px-2 pb-3.5"
-                  >
-                    <div className="flex flex-1 flex-col overflow-hidden" ref={outerContainerRef}>
-                      <MemoNewChat
-                        subHeaders={subHeaders}
-                        toggleNav={toggleNavVisible}
-                        headerButtons={headerButtons}
-                        isSmallScreen={isSmallScreen}
-                      />
-                      <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
-                        <Conversations
-                          conversations={conversations}
-                          moveToTop={moveToTop}
-                          toggleNav={itemToggleNav}
-                          containerRef={conversationsRef}
-                          loadMoreConversations={loadMoreConversations}
-                          isLoading={isFetchingNextPage || showLoading || isLoading}
-                          isSearchLoading={isSearchLoading}
-                          isChatsExpanded={isChatsExpanded}
-                          setIsChatsExpanded={setIsChatsExpanded}
-                        />
-                      </div>
-                    </div>
-                    <Suspense fallback={<Skeleton className="mt-1 h-12 w-full rounded-xl" />}>
-                      <AccountSettings />
-                    </Suspense>
-                  </nav>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        {isSmallScreen && <NavMask navVisible={navVisible} toggleNavVisible={toggleNavVisible} />}
-      </>
+      <div
+        className="flex-shrink-0 overflow-hidden"
+        style={{ width: navVisible ? sidebarWidth : 0, transition: 'width 0.2s ease-out' }}
+      >
+        <motion.div
+          data-testid="nav"
+          className={cn('nav h-full bg-surface-primary-alt', navVisible && 'active')}
+          style={{ width: sidebarWidth }}
+          initial={false}
+          animate={{
+            x: navVisible ? 0 : -sidebarWidth,
+          }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+        >
+          {sidebarContent}
+        </motion.div>
+      </div>
     );
   },
 );

@@ -147,9 +147,9 @@ const BookmarkMenu: FC = () => {
       return <Spinner aria-label="Spinner" />;
     }
     if ((tags?.length ?? 0) > 0) {
-      return <BookmarkFilledIcon className="icon-sm" aria-label="Filled Bookmark" />;
+      return <BookmarkFilledIcon className="icon-lg" aria-label="Filled Bookmark" />;
     }
-    return <BookmarkIcon className="icon-sm" aria-label="Bookmark" />;
+    return <BookmarkIcon className="icon-lg" aria-label="Bookmark" />;
   };
 
   return (
