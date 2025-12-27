@@ -93,12 +93,22 @@ export const useDebouncedMermaid = ({
   minLength = 15,
   key = 0,
 }: UseDebouncedMermaidOptions) => {
+  // Check if content looks complete on initial mount (non-streaming case)
+  // Using a ref to capture initial state without re-running
+  const initialCheckRef = useRef<boolean | null>(null);
+  if (initialCheckRef.current === null) {
+    initialCheckRef.current =
+      content.length >= minLength && looksComplete(content) && !isLikelyStreaming(content);
+  }
+  const isInitiallyComplete = initialCheckRef.current;
+
   const [debouncedContent, setDebouncedContent] = useState(content);
-  const [shouldRender, setShouldRender] = useState(false);
+  const [shouldRender, setShouldRender] = useState(isInitiallyComplete);
   const [errorCount, setErrorCount] = useState(0);
   const [forceRender, setForceRender] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout>();
   const prevKeyRef = useRef(key);
+  const hasRenderedRef = useRef(isInitiallyComplete);
 
   // When key changes (retry), force immediate render
   useEffect(() => {
@@ -112,8 +122,23 @@ export const useDebouncedMermaid = ({
   }, [key, content]);
 
   useEffect(() => {
-    // Skip debounce logic if force render is active
+    // Skip debounce logic if force render is active or already rendered initially
     if (forceRender) {
+      return;
+    }
+
+    // If we already rendered on mount, skip the initial debounce
+    if (hasRenderedRef.current && shouldRender) {
+      // Content changed after initial render, apply normal debounce for updates
+      if (content !== debouncedContent) {
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+        }
+        const effectiveDelay = looksComplete(content) ? delay / 2 : delay;
+        timeoutRef.current = setTimeout(() => {
+          setDebouncedContent(content);
+        }, effectiveDelay);
+      }
       return;
     }
 
@@ -133,6 +158,7 @@ export const useDebouncedMermaid = ({
     timeoutRef.current = setTimeout(() => {
       setDebouncedContent(content);
       setShouldRender(true);
+      hasRenderedRef.current = true;
     }, effectiveDelay);
 
     return () => {
@@ -140,7 +166,7 @@ export const useDebouncedMermaid = ({
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [content, delay, minLength, forceRender]);
+  }, [content, delay, minLength, forceRender, shouldRender, debouncedContent]);
 
   const result = useMermaid({
     content: shouldRender ? debouncedContent : '',
