@@ -230,8 +230,15 @@ describe('extractSSEErrorMessage', () => {
       };
     }
 
-    // Check for common network/timeout patterns
-    if (rawMessage.includes('ETIMEDOUT') || rawMessage.includes('timeout')) {
+    // Check for timeout patterns with case-insensitive matching
+    const lowerMessage = rawMessage.toLowerCase();
+    if (
+      rawMessage.includes('ETIMEDOUT') ||
+      rawMessage.includes('ESOCKETTIMEDOUT') ||
+      lowerMessage.includes('timed out') ||
+      lowerMessage.includes('timeout after') ||
+      lowerMessage.includes('request timeout')
+    ) {
       return {
         message: `SSE connection timed out: ${rawMessage}. If behind a reverse proxy, increase proxy_read_timeout.`,
         code,
@@ -350,12 +357,45 @@ describe('extractSSEErrorMessage', () => {
       expect(result.isTransient).toBe(true);
     });
 
-    it('should detect timeout in message', () => {
+    it('should detect ESOCKETTIMEDOUT', () => {
+      const error = { message: 'ESOCKETTIMEDOUT' };
+      const result = extractSSEErrorMessage(error);
+
+      expect(result.message).toContain('SSE connection timed out');
+      expect(result.isTransient).toBe(true);
+    });
+
+    it('should detect "timed out" (case insensitive)', () => {
+      const error = { message: 'Connection Timed Out' };
+      const result = extractSSEErrorMessage(error);
+
+      expect(result.message).toContain('SSE connection timed out');
+      expect(result.isTransient).toBe(true);
+    });
+
+    it('should detect "timeout after"', () => {
       const error = { message: 'Request timeout after 60000ms' };
       const result = extractSSEErrorMessage(error);
 
       expect(result.message).toContain('SSE connection timed out');
       expect(result.isTransient).toBe(true);
+    });
+
+    it('should detect "request timeout"', () => {
+      const error = { message: 'Request Timeout' };
+      const result = extractSSEErrorMessage(error);
+
+      expect(result.message).toContain('SSE connection timed out');
+      expect(result.isTransient).toBe(true);
+    });
+
+    it('should NOT match "timeout" in unrelated context', () => {
+      // URL containing "timeout" should not trigger timeout detection
+      const error = { message: 'Failed to connect to https://api.example.com/timeout-settings' };
+      const result = extractSSEErrorMessage(error);
+
+      expect(result.message).not.toContain('SSE connection timed out');
+      expect(result.message).toBe('Failed to connect to https://api.example.com/timeout-settings');
     });
   });
 

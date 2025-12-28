@@ -134,8 +134,20 @@ function extractSSEErrorMessage(error: unknown): {
     };
   }
 
-  // Check for common network/timeout patterns - these are transient and will reconnect
-  if (rawMessage.includes('ETIMEDOUT') || rawMessage.includes('timeout')) {
+  /**
+   * Check for timeout patterns. Use case-insensitive matching for common timeout error codes:
+   * - ETIMEDOUT: TCP connection timeout
+   * - ESOCKETTIMEDOUT: Socket timeout
+   * - "timed out" / "timeout": Generic timeout messages
+   */
+  const lowerMessage = rawMessage.toLowerCase();
+  if (
+    rawMessage.includes('ETIMEDOUT') ||
+    rawMessage.includes('ESOCKETTIMEDOUT') ||
+    lowerMessage.includes('timed out') ||
+    lowerMessage.includes('timeout after') ||
+    lowerMessage.includes('request timeout')
+  ) {
     return {
       message: `SSE connection timed out: ${rawMessage}. If behind a reverse proxy, increase proxy_read_timeout.`,
       code,
@@ -800,7 +812,7 @@ export class MCPConnection extends EventEmitter {
       /**
        * Log with enhanced context for debugging.
        * All transport.onerror events are logged as errors to preserve stack traces.
-       * The isTransient flag indicates whether auto-reconnection is expected to succeed.
+       * isTransient indicates whether auto-reconnection is expected to succeed.
        *
        * The MCP SDK's SseError extends Error and includes:
        * - code: HTTP status code or eventsource error code
@@ -810,7 +822,6 @@ export class MCPConnection extends EventEmitter {
       const errorContext: Record<string, unknown> = {
         code: errorCode,
         isTransient,
-        willReconnect: isTransient,
       };
 
       if (isProxyHint) {
