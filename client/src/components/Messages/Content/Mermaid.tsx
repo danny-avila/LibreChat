@@ -151,11 +151,19 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     }, 3000);
   }, [children]);
 
+  const [isDialogCopied, setIsDialogCopied] = useState(false);
   const handleDialogCopy = useCallback(() => {
     copy(children.trim(), { format: 'text/plain' });
+    setIsDialogCopied(true);
     requestAnimationFrame(() => {
       dialogCopyButtonRef.current?.focus();
     });
+    setTimeout(() => {
+      setIsDialogCopied(false);
+      requestAnimationFrame(() => {
+        dialogCopyButtonRef.current?.focus();
+      });
+    }, 3000);
   }, [children]);
 
   // Zoom controls copy with focus restoration
@@ -347,7 +355,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
             ref={showCodeButtonRef}
             variant="ghost"
             size="sm"
-            className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
+            className="h-auto min-w-[6rem] gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
             onClick={handleToggleCode}
           >
             {showCode ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -360,17 +368,8 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
             className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
             onClick={handleCopy}
           >
-            {isCopied ? (
-              <>
-                <CheckMark className="h-[18px] w-[18px]" />
-                {localize('com_ui_copied')}
-              </>
-            ) : (
-              <>
-                <Clipboard />
-                {localize('com_ui_copy_code')}
-              </>
-            )}
+            {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
+            {localize('com_ui_copy_code')}
           </Button>
         </div>
       )}
@@ -500,16 +499,16 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     <OGDialog open={isDialogOpen} onOpenChange={setIsDialogOpen} triggerRef={expandButtonRef}>
       <OGDialogContent
         showCloseButton={false}
-        className="h-[85vh] max-h-[85vh] w-[90vw] max-w-[90vw] gap-0 overflow-hidden border-border-light bg-surface-primary p-0"
+        className="h-[85vh] max-h-[85vh] w-[90vw] max-w-[90vw] gap-0 overflow-hidden border-border-light bg-surface-primary-alt p-0"
       >
-        <OGDialogTitle className="flex items-center justify-between bg-gray-700 px-4 py-2 font-sans text-xs text-gray-200">
+        <OGDialogTitle className="flex h-10 items-center justify-between bg-gray-700 px-4 font-sans text-xs text-gray-200">
           <span>{localize('com_ui_mermaid')}</span>
           <div className="flex gap-2">
             <Button
               ref={dialogShowCodeButtonRef}
               variant="ghost"
               size="sm"
-              className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
+              className="h-auto min-w-[6rem] gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
               onClick={handleToggleDialogCode}
             >
               {dialogShowCode ? (
@@ -526,7 +525,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
               className="h-auto gap-1 rounded-sm px-1 py-0 text-xs text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:ring-white focus-visible:ring-offset-0"
               onClick={handleDialogCopy}
             >
-              <Clipboard />
+              {isDialogCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard />}
               {localize('com_ui_copy_code')}
             </Button>
             <OGDialogClose className="rounded-sm p-1 text-gray-200 hover:bg-gray-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
