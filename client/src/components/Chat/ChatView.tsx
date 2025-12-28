@@ -92,7 +92,7 @@ function ChatView({ index = 0 }: { index?: number }) {
       <ChatContext.Provider value={chatHelpers}>
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation>
-            <div className="flex h-full w-full flex-col">
+            <div className="relative flex h-full w-full flex-col">
               {!isLoading && <Header />}
               <>
                 <div
