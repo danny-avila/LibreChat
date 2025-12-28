@@ -9,7 +9,6 @@ const {
 } = require('@librechat/api');
 const {
   Tools,
-  Constants,
   ErrorTypes,
   ContentTypes,
   imageGenTools,
@@ -18,6 +17,7 @@ const {
   ImageVisionTool,
   openapiToFunction,
   AgentCapabilities,
+  isEphemeralAgentId,
   validateActionDomain,
   defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
@@ -393,7 +393,7 @@ async function loadAgentTools({
   const endpointsConfig = await getEndpointsConfig(req);
   let enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
   /** Edge case: use defined/fallback capabilities when the "agents" endpoint is not enabled */
-  if (enabledCapabilities.size === 0 && agent.id === Constants.EPHEMERAL_AGENT_ID) {
+  if (enabledCapabilities.size === 0 && isEphemeralAgentId(agent.id)) {
     enabledCapabilities = new Set(
       appConfig.endpoints?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
     );

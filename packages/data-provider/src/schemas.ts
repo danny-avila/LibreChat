@@ -49,7 +49,8 @@ export const documentSupportedProviders = new Set<string>([
   EModelEndpoint.anthropic,
   EModelEndpoint.openAI,
   EModelEndpoint.custom,
-  EModelEndpoint.azureOpenAI,
+  // handled in AttachFileMenu and DragDropModal since azureOpenAI only supports documents with Use Responses API set to true
+  // EModelEndpoint.azureOpenAI,
   EModelEndpoint.google,
   Providers.VERTEXAI,
   Providers.MISTRALAI,

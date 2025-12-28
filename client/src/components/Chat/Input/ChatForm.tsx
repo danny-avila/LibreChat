@@ -75,14 +75,11 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     handleStopGenerating,
   } = useChatContext();
   const {
-    addedIndex,
     generateConversation,
     conversation: addedConvo,
     setConversation: setAddedConvo,
-    isSubmitting: isSubmittingAdded,
   } = useAddedChatContext();
   const assistantMap = useAssistantsMapContext();
-  const showStopAdded = useRecoilValue(store.showStopButtonByIndex(addedIndex));
 
   const endpoint = useMemo(
     () => conversation?.endpointType ?? conversation?.endpoint,
@@ -128,7 +125,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     setFiles,
     textAreaRef,
     conversationId,
-    isSubmitting: isSubmitting || isSubmittingAdded,
+    isSubmitting,
   });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
@@ -324,7 +321,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
               </div>
               <BadgeRow
                 showEphemeralBadges={!isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)}
-                isSubmitting={isSubmitting || isSubmittingAdded}
+                isSubmitting={isSubmitting}
                 conversationId={conversationId}
                 onChange={setBadges}
                 isInChat={
@@ -342,7 +339,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 />
               )}
               <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
-                {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
+                {isSubmitting && showStopButton ? (
                   <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
                 ) : (
                   endpoint && (

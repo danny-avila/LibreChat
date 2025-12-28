@@ -233,11 +233,11 @@ describe('RedisJobStore Integration Tests', () => {
       }
 
       // Instance 2 reconstructs content (simulating reconnect to different instance)
-      const content = await instance2.getContentParts(streamId);
+      const result = await instance2.getContentParts(streamId);
 
       // Should have reconstructed content
-      expect(content).not.toBeNull();
-      expect(content!.length).toBeGreaterThan(0);
+      expect(result).not.toBeNull();
+      expect(result!.content.length).toBeGreaterThan(0);
 
       await instance1.destroy();
       await instance2.destroy();
@@ -325,11 +325,11 @@ describe('RedisJobStore Integration Tests', () => {
         await store.appendChunk(streamId, chunk);
       }
 
-      const content = await store.getContentParts(streamId);
+      const result = await store.getContentParts(streamId);
 
-      expect(content).not.toBeNull();
+      expect(result).not.toBeNull();
       // Content aggregator combines text deltas
-      const textPart = content!.find((p) => p.type === 'text');
+      const textPart = result!.content.find((p) => p.type === 'text');
       expect(textPart).toBeDefined();
 
       await store.destroy();
@@ -388,12 +388,12 @@ describe('RedisJobStore Integration Tests', () => {
         await store.appendChunk(streamId, chunk);
       }
 
-      const content = await store.getContentParts(streamId);
+      const result = await store.getContentParts(streamId);
 
-      expect(content).not.toBeNull();
+      expect(result).not.toBeNull();
       // Should have both think and text parts
-      const thinkPart = content!.find((p) => p.type === 'think');
-      const textPart = content!.find((p) => p.type === 'text');
+      const thinkPart = result!.content.find((p) => p.type === 'think');
+      const textPart = result!.content.find((p) => p.type === 'text');
       expect(thinkPart).toBeDefined();
       expect(textPart).toBeDefined();
 
@@ -905,8 +905,8 @@ describe('RedisJobStore Integration Tests', () => {
       store.setGraph(streamId, mockGraph as unknown as StandardGraph);
 
       // Get content - should come from local cache, not Redis
-      const content = await store.getContentParts(streamId);
-      expect(content).toEqual(mockContentParts);
+      const result = await store.getContentParts(streamId);
+      expect(result!.content).toEqual(mockContentParts);
 
       // Get run steps - should come from local cache
       const runSteps = await store.getRunSteps(streamId);
@@ -959,9 +959,9 @@ describe('RedisJobStore Integration Tests', () => {
       await instance2.initialize();
 
       // Get content - should reconstruct from Redis chunks
-      const content = await instance2.getContentParts(streamId);
-      expect(content).not.toBeNull();
-      expect(content!.length).toBeGreaterThan(0);
+      const result = await instance2.getContentParts(streamId);
+      expect(result).not.toBeNull();
+      expect(result!.content.length).toBeGreaterThan(0);
 
       // Get run steps - should fetch from Redis
       const runSteps = await instance2.getRunSteps(streamId);

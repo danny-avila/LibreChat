@@ -413,7 +413,6 @@
   "com_ui_bookmark_delete_confirm": "Är du säker på att du vill ta bort detta bokmärke?",
   "com_ui_bookmarks": "Bokmärken",
   "com_ui_bookmarks_add_to_conversation": "Lägg till i nuvarande konversation",
-  "com_ui_bookmarks_count": "Antal",
   "com_ui_bookmarks_create_error": "Ett fel uppstod vid skapandet av bokmärket",
   "com_ui_bookmarks_create_success": "Bokmärke skapat framgångsrikt",
   "com_ui_bookmarks_delete_error": "Ett fel uppstod vid raderingen av bokmärket",

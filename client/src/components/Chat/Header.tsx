@@ -10,7 +10,7 @@ import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
-// import AddMultiConvo from './AddMultiConvo';
+import AddMultiConvo from './AddMultiConvo';
 import { useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -30,10 +30,10 @@ export default function Header() {
     permission: Permissions.USE,
   });
 
-  // const hasAccessToMultiConvo = useHasAccess({
-  //   permissionType: PermissionTypes.MULTI_CONVO,
-  //   permission: Permissions.USE,
-  // });
+  const hasAccessToMultiConvo = useHasAccess({
+    permissionType: PermissionTypes.MULTI_CONVO,
+    permission: Permissions.USE,
+  });
 
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
@@ -45,10 +45,10 @@ export default function Header() {
             {!navVisible && (
               <motion.div
                 className="flex items-center gap-2"
-                initial={{ width: 0, opacity: 0 }}
-                animate={{ width: 'auto', opacity: 1 }}
-                exit={{ width: 0, opacity: 0 }}
-                transition={{ duration: 0.2 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
                 key="header-buttons"
               >
                 <OpenSidebar setNavVisible={setNavVisible} className="max-md:hidden" />
@@ -67,7 +67,7 @@ export default function Header() {
               <ModelSelector startupConfig={startupConfig} />
               {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
               {hasAccessToBookmarks === true && <BookmarkMenu />}
-              {/* {hasAccessToMultiConvo === true && <AddMultiConvo />} */}
+              {hasAccessToMultiConvo === true && <AddMultiConvo />}
               {isSmallScreen && (
                 <>
                   <ExportAndShareMenu

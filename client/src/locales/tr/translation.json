@@ -440,7 +440,6 @@
   "com_ui_bookmarks": "Yer İmleri",
   "com_ui_bookmarks_add": "Yer İmi Ekle",
   "com_ui_bookmarks_add_to_conversation": "Mevcut sohbete ekle",
-  "com_ui_bookmarks_count": "Adet",
   "com_ui_bookmarks_create_error": "Yer imi oluşturulurken bir hata oluştu",
   "com_ui_bookmarks_create_exists": "Bu yer imi zaten mevcut",
   "com_ui_bookmarks_create_success": "Yer imi başarıyla oluşturuldu",

@@ -167,7 +167,9 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @returns Content parts or null if not available
    */
-  getContentParts(streamId: string): Promise<Agents.MessageContentComplex[] | null>;
+  getContentParts(streamId: string): Promise<{
+    content: Agents.MessageContentComplex[];
+  } | null>;
 
   /**
    * Get run steps for a job (for resume state).

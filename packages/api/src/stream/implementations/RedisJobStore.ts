@@ -225,7 +225,7 @@ export class RedisJobStore implements IJobStore {
   }
 
   async deleteJob(streamId: string): Promise<void> {
-    // Clear local cache
+    // Clear local caches
     this.localGraphCache.delete(streamId);
 
     // Note: userJobs cleanup is handled lazily via self-healing in getActiveJobIdsByUser
@@ -380,7 +380,7 @@ export class RedisJobStore implements IJobStore {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
-    // Clear local cache
+    // Clear local caches
     this.localGraphCache.clear();
     // Don't close the Redis connection - it's shared
     logger.info('[RedisJobStore] Destroyed');
@@ -403,10 +403,12 @@ export class RedisJobStore implements IJobStore {
   }
 
   /**
-   * No-op for Redis - content is built from chunks.
+   * No-op for Redis - content parts are reconstructed from chunks.
+   * Metadata (agentId, groupId) is embedded directly on content parts by the agent runtime.
    */
-  setContentParts(): void {
-    // No-op: Redis uses chunks for content reconstruction
+  setContentParts(_streamId: string, _contentParts: Agents.MessageContentComplex[]): void {
+    // Content parts are reconstructed from chunks during getContentParts
+    // No separate storage needed
   }
 
   /**
@@ -417,9 +419,11 @@ export class RedisJobStore implements IJobStore {
    * For cross-instance reconnects, we reconstruct from Redis Streams.
    *
    * @param streamId - The stream identifier
-   * @returns Content parts array, or null if not found
+   * @returns Content parts array or null if not found
    */
-  async getContentParts(streamId: string): Promise<Agents.MessageContentComplex[] | null> {
+  async getContentParts(streamId: string): Promise<{
+    content: Agents.MessageContentComplex[];
+  } | null> {
     // 1. Try local graph cache first (fast path for same-instance reconnect)
     const graphRef = this.localGraphCache.get(streamId);
     if (graphRef) {
@@ -427,7 +431,9 @@ export class RedisJobStore implements IJobStore {
       if (graph) {
         const localParts = graph.getContentParts();
         if (localParts && localParts.length > 0) {
-          return localParts;
+          return {
+            content: localParts,
+          };
         }
       } else {
         // WeakRef was collected, remove from cache
@@ -472,7 +478,10 @@ export class RedisJobStore implements IJobStore {
         filtered.push(part);
       }
     }
-    return filtered;
+
+    return {
+      content: filtered,
+    };
   }
 
   /**
@@ -517,7 +526,7 @@ export class RedisJobStore implements IJobStore {
    * Removes both local cache and Redis data.
    */
   clearContentState(streamId: string): void {
-    // Clear local cache immediately
+    // Clear local caches immediately
     this.localGraphCache.delete(streamId);
 
     // Fire and forget - async cleanup for Redis
