@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import { Button, Spinner, OGDialogTrigger, Input } from '@librechat/client';
+import { Button, Spinner, FilterInput, OGDialogTrigger } from '@librechat/client';
 import { useLocalize, useMCPServerManager, useHasAccess } from '~/hooks';
 import MCPServerList from './MCPServerList';
 import MCPServerDialog from './MCPServerDialog';
@@ -42,16 +42,12 @@ export default function MCPBuilderPanel() {
         <MCPAdminSettings />
 
         {/* Search Input */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
-          <Input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={localize('com_ui_filter_mcp_servers')}
-            className="pl-9"
-            aria-label={localize('com_ui_filter_mcp_servers')}
-          />
-        </div>
+        <FilterInput
+          inputId="mcp-filter"
+          label={localize('com_ui_filter_mcp_servers')}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
 
         {hasCreateAccess && (
           <MCPServerDialog open={showDialog} onOpenChange={setShowDialog} triggerRef={addButtonRef}>
