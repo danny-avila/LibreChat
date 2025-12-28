@@ -1,9 +1,9 @@
 import {
-  Constants,
   parseConvo,
   EModelEndpoint,
-  isAssistantsEndpoint,
   isAgentsEndpoint,
+  isEphemeralAgentId,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TConversation, EndpointSchemaKey } from 'librechat-data-provider';
 import { clearModelForNonEphemeralAgent } from './endpoints';
@@ -71,7 +71,7 @@ const buildDefaultConvo = ({
   if (
     isAgentsEndpoint(endpoint) &&
     agentId &&
-    (!defaultAgentId || defaultAgentId === Constants.EPHEMERAL_AGENT_ID)
+    (!defaultAgentId || isEphemeralAgentId(defaultAgentId))
   ) {
     defaultConvo.agent_id = agentId;
   }

@@ -11,6 +11,7 @@ const {
   createSafeUser,
   MCPOAuthHandler,
   MCPTokenStorage,
+  getBasePath,
   getUserMCPAuthMap,
   generateCheckAccess,
 } = require('@librechat/api');
@@ -105,6 +106,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, async (req, res) => {
  * This handles the OAuth callback after the user has authorized the application
  */
 router.get('/:serverName/oauth/callback', async (req, res) => {
+  const basePath = getBasePath();
   try {
     const { serverName } = req.params;
     const { code, state, error: oauthError } = req.query;
@@ -118,17 +120,19 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
     if (oauthError) {
       logger.error('[MCP OAuth] OAuth error received', { error: oauthError });
-      return res.redirect(`/oauth/error?error=${encodeURIComponent(String(oauthError))}`);
+      return res.redirect(
+        `${basePath}/oauth/error?error=${encodeURIComponent(String(oauthError))}`,
+      );
     }
 
     if (!code || typeof code !== 'string') {
       logger.error('[MCP OAuth] Missing or invalid code');
-      return res.redirect('/oauth/error?error=missing_code');
+      return res.redirect(`${basePath}/oauth/error?error=missing_code`);
     }
 
     if (!state || typeof state !== 'string') {
       logger.error('[MCP OAuth] Missing or invalid state');
-      return res.redirect('/oauth/error?error=missing_state');
+      return res.redirect(`${basePath}/oauth/error?error=missing_state`);
     }
 
     const flowId = state;
@@ -142,7 +146,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
     if (!flowState) {
       logger.error('[MCP OAuth] Flow state not found for flowId:', flowId);
-      return res.redirect('/oauth/error?error=invalid_state');
+      return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
     }
 
     logger.debug('[MCP OAuth] Flow state details', {
@@ -160,7 +164,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         flowId,
         serverName,
       });
-      return res.redirect(`/oauth/success?serverName=${encodeURIComponent(serverName)}`);
+      return res.redirect(`${basePath}/oauth/success?serverName=${encodeURIComponent(serverName)}`);
     }
 
     logger.debug('[MCP OAuth] Completing OAuth flow');
@@ -254,11 +258,11 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     }
 
     /** Redirect to success page with flowId and serverName */
-    const redirectUrl = `/oauth/success?serverName=${encodeURIComponent(serverName)}`;
+    const redirectUrl = `${basePath}/oauth/success?serverName=${encodeURIComponent(serverName)}`;
     res.redirect(redirectUrl);
   } catch (error) {
     logger.error('[MCP OAuth] OAuth callback error', error);
-    res.redirect('/oauth/error?error=callback_failed');
+    res.redirect(`${basePath}/oauth/error?error=callback_failed`);
   }
 });
 
@@ -588,7 +592,7 @@ async function getOAuthHeaders(serverName, userId) {
   return serverConfig?.oauth_headers ?? {};
 }
 
-/** 
+/**
 MCP Server CRUD Routes (User-Managed MCP Servers)
 */
 

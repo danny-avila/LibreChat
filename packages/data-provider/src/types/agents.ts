@@ -33,11 +33,26 @@ export namespace Agents {
     image_url: string | { url: string; detail?: ImageDetail };
   };
 
+  export type MessageContentVideoUrl = {
+    type: ContentTypes.VIDEO_URL;
+    video_url: { url: string };
+  };
+
+  export type MessageContentInputAudio = {
+    type: ContentTypes.INPUT_AUDIO;
+    input_audio: {
+      data: string;
+      format: string;
+    };
+  };
+
   export type MessageContentComplex =
     | ReasoningContentText
     | AgentUpdate
     | MessageContentText
     | MessageContentImageUrl
+    | MessageContentVideoUrl
+    | MessageContentInputAudio
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     | (Record<string, any> & { type?: ContentTypes | string })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -166,8 +181,11 @@ export namespace Agents {
     type: StepTypes;
     id: string; // #new
     runId?: string; // #new
+    agentId?: string; // #new
     index: number; // #new
     stepIndex?: number; // #new
+    /** Group ID for parallel content - parts with same groupId are displayed in columns */
+    groupId?: number; // #new
     stepDetails: StepDetails;
     usage: null | object;
   };
@@ -292,6 +310,8 @@ export namespace Agents {
     | ContentTypes.THINK
     | ContentTypes.TEXT
     | ContentTypes.IMAGE_URL
+    | ContentTypes.VIDEO_URL
+    | ContentTypes.INPUT_AUDIO
     | string;
 }
 

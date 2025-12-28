@@ -727,7 +727,6 @@
   "com_ui_bookmarks": "ブックマーク",
   "com_ui_bookmarks_add": "ブックマークを追加",
   "com_ui_bookmarks_add_to_conversation": "現在の会話に追加",
-  "com_ui_bookmarks_count": "カウント",
   "com_ui_bookmarks_create_error": "ブックマークの作成中にエラーが発生しました",
   "com_ui_bookmarks_create_exists": "このブックマークは既に存在します",
   "com_ui_bookmarks_create_success": "ブックマークが正常に作成されました",

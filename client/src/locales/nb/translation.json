@@ -705,7 +705,6 @@
   "com_ui_bookmarks": "Bokmerker",
   "com_ui_bookmarks_add": "Legg til bokmerker",
   "com_ui_bookmarks_add_to_conversation": "Legg til i gjeldende samtale",
-  "com_ui_bookmarks_count": "Antall",
   "com_ui_bookmarks_create_error": "Det oppstod en feil under oppretting av bokmerket.",
   "com_ui_bookmarks_create_exists": "Dette bokmerket finnes allerede.",
   "com_ui_bookmarks_create_success": "Bokmerket ble opprettet.",
