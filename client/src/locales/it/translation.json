@@ -572,7 +572,6 @@
   "com_ui_bookmarks": "Segnalibri",
   "com_ui_bookmarks_add": "Aggiungi Segnalibri",
   "com_ui_bookmarks_add_to_conversation": "Aggiungi alla conversazione attuale",
-  "com_ui_bookmarks_count": "Conteggio",
   "com_ui_bookmarks_create_error": "Si è verificato un errore durante la creazione del segnalibro",
   "com_ui_bookmarks_create_exists": "Questo segnalibro esiste già",
   "com_ui_bookmarks_create_success": "Segnalibro creato con successo",
