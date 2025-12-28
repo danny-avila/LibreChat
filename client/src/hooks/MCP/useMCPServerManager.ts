@@ -1,4 +1,5 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
+import { useAtom } from 'jotai';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys, MCPOptions, ResourceType } from 'librechat-data-provider';
@@ -12,6 +13,8 @@ import type { TUpdateUserPlugins, TPlugin, MCPServersResponse } from 'librechat-
 import type { ConfigFieldDetail } from '~/common';
 import { useLocalize, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
+import { mcpServerInitStatesAtom, getServerInitState } from '~/store/mcp';
+import type { MCPServerInitState } from '~/store/mcp';
 
 export interface MCPServerDefinition {
   serverName: string;
@@ -21,13 +24,9 @@ export interface MCPServerDefinition {
   consumeOnly?: boolean;
 }
 
-interface ServerState {
-  isInitializing: boolean;
-  oauthUrl: string | null;
-  oauthStartTime: number | null;
-  isCancellable: boolean;
-  pollInterval: NodeJS.Timeout | null;
-}
+// Poll intervals are kept local since they're timer references that can't be serialized
+// The init states (isInitializing, isCancellable, etc.) are stored in the global Jotai atom
+type PollIntervals = Record<string, NodeJS.Timeout | null>;
 
 export function useMCPServerManager({ conversationId }: { conversationId?: string | null } = {}) {
   const localize = useLocalize();
@@ -114,61 +113,53 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
     },
   });
 
-  const [serverStates, setServerStates] = useState<Record<string, ServerState>>(() => {
-    const initialStates: Record<string, ServerState> = {};
-    availableMCPServers.forEach((server) => {
-      initialStates[server.serverName] = {
-        isInitializing: false,
-        oauthUrl: null,
-        oauthStartTime: null,
-        isCancellable: false,
-        pollInterval: null,
-      };
-    });
-    return initialStates;
-  });
+  // Global atom for init states - shared across all useMCPServerManager instances
+  // This enables canceling OAuth from both chat dropdown and settings panel
+  const [serverInitStates, setServerInitStates] = useAtom(mcpServerInitStatesAtom);
+
+  // Poll intervals are kept local (not serializable)
+  const pollIntervalsRef = useRef<PollIntervals>({});
 
   const { connectionStatus } = useMCPConnectionStatus({
     enabled: !isLoading && availableMCPServers.length > 0,
   });
 
-  const updateServerState = useCallback((serverName: string, updates: Partial<ServerState>) => {
-    setServerStates((prev) => {
-      const newStates = { ...prev };
-      const currentState = newStates[serverName] || {
-        isInitializing: false,
-        oauthUrl: null,
-        oauthStartTime: null,
-        isCancellable: false,
-        pollInterval: null,
-      };
-      newStates[serverName] = { ...currentState, ...updates };
-      return newStates;
-    });
-  }, []);
+  const updateServerInitState = useCallback(
+    (serverName: string, updates: Partial<MCPServerInitState>) => {
+      setServerInitStates((prev) => {
+        const currentState = getServerInitState(prev, serverName);
+        return {
+          ...prev,
+          [serverName]: { ...currentState, ...updates },
+        };
+      });
+    },
+    [setServerInitStates],
+  );
 
   const cleanupServerState = useCallback(
     (serverName: string) => {
-      const state = serverStates[serverName];
-      if (state?.pollInterval) {
-        clearTimeout(state.pollInterval);
+      // Clear local poll interval
+      const pollInterval = pollIntervalsRef.current[serverName];
+      if (pollInterval) {
+        clearTimeout(pollInterval);
+        pollIntervalsRef.current[serverName] = null;
       }
-      updateServerState(serverName, {
+      // Reset global init state
+      updateServerInitState(serverName, {
         isInitializing: false,
         oauthUrl: null,
         oauthStartTime: null,
         isCancellable: false,
-        pollInterval: null,
       });
     },
-    [serverStates, updateServerState],
+    [updateServerInitState],
   );
 
   const startServerPolling = useCallback(
     (serverName: string) => {
       // Prevent duplicate polling for the same server
-      const existingState = serverStates[serverName];
-      if (existingState?.pollInterval) {
+      if (pollIntervalsRef.current[serverName]) {
         console.debug(`[MCP Manager] Polling already active for ${serverName}, skipping duplicate`);
         return;
       }
@@ -191,7 +182,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       const pollOnce = async () => {
         try {
           pollAttempts++;
-          const state = serverStates[serverName];
+          const state = getServerInitState(serverInitStates, serverName);
 
           /** Stop polling after 3 minutes or max attempts */
           const elapsedTime = state?.oauthStartTime
@@ -283,7 +274,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
           }
 
           timeoutId = setTimeout(pollOnce, nextInterval);
-          updateServerState(serverName, { pollInterval: timeoutId });
+          pollIntervalsRef.current[serverName] = timeoutId;
         } catch (error) {
           console.error(`[MCP Manager] Error polling server ${serverName}:`, error);
           if (timeoutId) {
@@ -296,22 +287,14 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
       // Start the first poll
       timeoutId = setTimeout(pollOnce, getPollInterval(0));
-      updateServerState(serverName, { pollInterval: timeoutId });
+      pollIntervalsRef.current[serverName] = timeoutId;
     },
-    [
-      queryClient,
-      serverStates,
-      showToast,
-      localize,
-      setMCPValues,
-      cleanupServerState,
-      updateServerState,
-    ],
+    [queryClient, serverInitStates, showToast, localize, setMCPValues, cleanupServerState],
   );
 
   const initializeServer = useCallback(
     async (serverName: string, autoOpenOAuth: boolean = true) => {
-      updateServerState(serverName, { isInitializing: true });
+      updateServerInitState(serverName, { isInitializing: true });
       try {
         const response = await reinitializeMutation.mutateAsync(serverName);
         if (!response.success) {
@@ -324,7 +307,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
         }
 
         if (response.oauthRequired && response.oauthUrl) {
-          updateServerState(serverName, {
+          updateServerInitState(serverName, {
             oauthUrl: response.oauthUrl,
             oauthStartTime: Date.now(),
             isCancellable: true,
@@ -367,7 +350,7 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
       }
     },
     [
-      updateServerState,
+      updateServerInitState,
       reinitializeMutation,
       startServerPolling,
       queryClient,
@@ -410,23 +393,23 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
   const isInitializing = useCallback(
     (serverName: string) => {
-      return serverStates[serverName]?.isInitializing || false;
+      return getServerInitState(serverInitStates, serverName).isInitializing;
     },
-    [serverStates],
+    [serverInitStates],
   );
 
   const isCancellable = useCallback(
     (serverName: string) => {
-      return serverStates[serverName]?.isCancellable || false;
+      return getServerInitState(serverInitStates, serverName).isCancellable;
     },
-    [serverStates],
+    [serverInitStates],
   );
 
   const getOAuthUrl = useCallback(
     (serverName: string) => {
-      return serverStates[serverName]?.oauthUrl || null;
+      return getServerInitState(serverInitStates, serverName).oauthUrl;
     },
-    [serverStates],
+    [serverInitStates],
   );
 
   const placeholderText = useMemo(
