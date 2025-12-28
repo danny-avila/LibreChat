@@ -38,17 +38,17 @@ export default function Header() {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   return (
-    <div className="absolute top-0 z-10 flex h-14 w-full items-center justify-between bg-gradient-to-b from-white/100 to-transparent p-2 font-semibold text-text-primary dark:from-gray-800/100 dark:via-gray-800/70 md:from-white/80 md:dark:via-gray-800/50 2xl:from-white/0 2xl:via-white/0 2xl:dark:from-gray-800/0 2xl:dark:via-gray-800/0">
+    <div className="absolute top-0 z-10 flex h-14 w-full items-center justify-between bg-gradient-to-b from-white/100 to-transparent p-2 font-semibold text-text-primary dark:from-gray-800/100 dark:via-gray-800/70 md:from-white/80 md:dark:via-gray-800/50 2xl:from-white/0 2xl:dark:from-gray-800/0">
       <div className="hide-scrollbar flex w-full items-center justify-between gap-2 overflow-x-auto">
         <div className="mx-1 flex items-center">
           <AnimatePresence initial={false}>
             {!navVisible && (
               <motion.div
                 className="flex items-center gap-2"
-                initial={{ width: 0, opacity: 0 }}
-                animate={{ width: 'auto', opacity: 1 }}
-                exit={{ width: 0, opacity: 0 }}
-                transition={{ duration: 0.2 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
                 key="header-buttons"
               >
                 <OpenSidebar setNavVisible={setNavVisible} className="max-md:hidden" />

@@ -401,7 +401,6 @@
   "com_ui_bookmark_delete_confirm": "Oletko varma, että haluat poistaa tämän kirjanmerkin?",
   "com_ui_bookmarks": "Kirjanmerkit",
   "com_ui_bookmarks_add_to_conversation": "Lisää nykyiseen keskusteluun",
-  "com_ui_bookmarks_count": "Määrä",
   "com_ui_bookmarks_create_error": "Virhe kirjanmerkin luomisessa",
   "com_ui_bookmarks_create_success": "Kirjanmerkki luotu onnistuneesti",
   "com_ui_bookmarks_delete_error": "Virhe kirjanmerkin poistamisessa",

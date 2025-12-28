@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRecoilState } from 'recoil';
 import { ListFilter, User, Share2 } from 'lucide-react';
 import { SystemCategories } from 'librechat-data-provider';
-import { Dropdown, AnimatedSearchInput } from '@librechat/client';
+import { Dropdown, FilterInput } from '@librechat/client';
 import type { Option } from '~/common';
 import { useLocalize, useCategories, useDebounce } from '~/hooks';
 import { usePromptGroupsContext } from '~/Providers';
@@ -77,8 +77,6 @@ export default function FilterPrompts({ className = '' }: { className?: string }
     setSearchTerm(e.target.value);
   }, []);
 
-  const isSearching = searchTerm !== debouncedSearchTerm;
-
   const resultCount = promptGroups?.length ?? 0;
   const searchResultsAnnouncement = useMemo(() => {
     if (!debouncedSearchTerm.trim()) {
@@ -102,11 +100,12 @@ export default function FilterPrompts({ className = '' }: { className?: string }
         ariaLabel={localize('com_ui_filter_prompts')}
         iconOnly
       />
-      <AnimatedSearchInput
+      <FilterInput
+        inputId="prompts-filter"
+        label={localize('com_ui_filter_prompts_name')}
         value={searchTerm}
         onChange={handleSearchChange}
-        isSearching={isSearching}
-        placeholder={localize('com_ui_filter_prompts_name')}
+        containerClassName="flex-1"
       />
     </div>
   );

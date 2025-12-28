@@ -495,7 +495,6 @@
   "com_ui_bookmarks": "نشانک ها",
   "com_ui_bookmarks_add": "اضافه کردن نشانک",
   "com_ui_bookmarks_add_to_conversation": "به مکالمه فعلی اضافه کنید",
-  "com_ui_bookmarks_count": "بشمار",
   "com_ui_bookmarks_create_error": "در ایجاد نشانک خطایی روی داد",
   "com_ui_bookmarks_create_exists": "این نشانک از قبل وجود دارد",
   "com_ui_bookmarks_create_success": "نشانک با موفقیت ایجاد شد",

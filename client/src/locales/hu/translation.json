@@ -495,7 +495,6 @@
   "com_ui_bookmarks": "Könyvjelzők",
   "com_ui_bookmarks_add": "Könyvjelzők hozzáadása",
   "com_ui_bookmarks_add_to_conversation": "Hozzáadás az aktuális beszélgetéshez",
-  "com_ui_bookmarks_count": "Szám",
   "com_ui_bookmarks_create_error": "Hiba történt a könyvjelző létrehozása során",
   "com_ui_bookmarks_create_exists": "Ez a könyvjelző már létezik",
   "com_ui_bookmarks_create_success": "Könyvjelző sikeresen létrehozva",

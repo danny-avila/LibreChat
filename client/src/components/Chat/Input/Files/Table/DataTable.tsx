@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Search } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import {
   flexRender,
@@ -17,7 +16,6 @@ import type {
 } from '@tanstack/react-table';
 import { FileContext } from 'librechat-data-provider';
 import {
-  Input,
   Table,
   Button,
   Spinner,
@@ -26,6 +24,7 @@ import {
   TableCell,
   TableHead,
   TrashIcon,
+  FilterInput,
   TableHeader,
   useMediaQuery,
 } from '@librechat/client';
@@ -115,23 +114,13 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           )}
           {!isSmallScreen && <span className="ml-2">{localize('com_ui_delete')}</span>}
         </Button>
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-text-secondary" />
-          <Input
-            id="files-filter"
-            placeholder=" "
-            value={(table.getColumn('filename')?.getFilterValue() as string | undefined) ?? ''}
-            onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-            className="peer w-full pl-10 text-sm focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label={localize('com_files_filter_input')}
-          />
-          <label
-            htmlFor="files-filter"
-            className="pointer-events-none absolute left-10 top-1/2 -translate-y-1/2 text-sm text-text-secondary transition-all duration-200 peer-focus:top-0 peer-focus:bg-background peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:bg-background peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs"
-          >
-            {localize('com_files_filter')}
-          </label>
-        </div>
+        <FilterInput
+          inputId="files-filter"
+          label={localize('com_files_filter')}
+          value={(table.getColumn('filename')?.getFilterValue() as string | undefined) ?? ''}
+          onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
+          containerClassName="flex-1"
+        />
         <div className="relative focus-within:z-[100]">
           <ColumnVisibilityDropdown
             table={table}
