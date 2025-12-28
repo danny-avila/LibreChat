@@ -1,0 +1,4 @@
+Username,First Name,Last Name,E-mail,Password,Groups,Organisation
+support,Support,Agent,support@librechat.local,Support123!,"support,sessions",OrgOne
+audit,Audit,User,audit@librechat.local,Audit123!,sessions,OrgOne
+ops,Operations,Team,ops@librechat.local,Ops123!,operations,OrgTwo

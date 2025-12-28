@@ -1,0 +1,644 @@
+##
+## schema file for OpenLDAP 2.x
+## Schema for storing Samba user accounts and group maps in LDAP
+## OIDs are owned by the Samba Team
+##
+## Prerequisite schemas - uid         (cosine.schema)
+##                      - displayName (inetorgperson.schema)
+##                      - gidNumber   (nis.schema)
+##
+## 1.3.6.1.4.1.7165.2.1.x - attributetypes
+## 1.3.6.1.4.1.7165.2.2.x - objectclasses
+##
+## Printer support
+## 1.3.6.1.4.1.7165.2.3.1.x - attributetypes
+## 1.3.6.1.4.1.7165.2.3.2.x - objectclasses
+##
+## Samba4
+## 1.3.6.1.4.1.7165.4.1.x - attributetypes
+## 1.3.6.1.4.1.7165.4.2.x - objectclasses
+## 1.3.6.1.4.1.7165.4.3.x - LDB/LDAP Controls
+## 1.3.6.1.4.1.7165.4.4.x - LDB/LDAP Extended Operations
+## 1.3.6.1.4.1.7165.4.255.x - mapped OIDs due to conflicts between AD and standards-track
+##
+## External projects
+## 1.3.6.1.4.1.7165.655.x
+## 1.3.6.1.4.1.7165.655.1.x - GSS-NTLMSSP
+##
+## ----- READ THIS WHEN ADDING A NEW ATTRIBUTE OR OBJECT CLASS ------
+##
+## Run the 'get_next_oid' bash script in this directory to find the 
+## next available OID for attribute type and object classes.
+##
+##   $ ./get_next_oid
+##   attributetype ( 1.3.6.1.4.1.7165.2.1.XX NAME ....
+##   objectclass ( 1.3.6.1.4.1.7165.2.2.XX NAME ....
+##
+## Also ensure that new entries adhere to the declaration style
+## used throughout this file
+##
+##    <attributetype|objectclass> ( 1.3.6.1.4.1.7165.2.XX.XX NAME ....
+##                               ^ ^                        ^
+##
+## The spaces are required for the get_next_oid script (and for 
+## readability).
+##
+## ------------------------------------------------------------------
+
+# objectIdentifier SambaRoot 1.3.6.1.4.1.7165
+# objectIdentifier Samba3 SambaRoot:2
+# objectIdentifier Samba3Attrib Samba3:1
+# objectIdentifier Samba3ObjectClass Samba3:2
+# objectIdentifier Samba4 SambaRoot:4
+
+########################################################################
+##                            HISTORICAL                              ##
+########################################################################
+
+##
+## Password hashes
+##
+#attributetype ( 1.3.6.1.4.1.7165.2.1.1 NAME 'lmPassword'
+#	DESC 'LanManager Passwd'
+#	EQUALITY caseIgnoreIA5Match
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{32} SINGLE-VALUE )
+
+#attributetype ( 1.3.6.1.4.1.7165.2.1.2 NAME 'ntPassword'
+#	DESC 'NT Passwd'
+#	EQUALITY caseIgnoreIA5Match
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{32} SINGLE-VALUE )
+
+##
+## Account flags in string format ([UWDX     ])
+##
+#attributetype ( 1.3.6.1.4.1.7165.2.1.4 NAME 'acctFlags'
+#	DESC 'Account Flags'
+#	EQUALITY caseIgnoreIA5Match
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{16} SINGLE-VALUE )
+
+##
+## Password timestamps & policies
+##
+#attributetype ( 1.3.6.1.4.1.7165.2.1.3 NAME 'pwdLastSet'
+#	DESC 'NT pwdLastSet'
+#	EQUALITY integerMatch
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+#attributetype ( 1.3.6.1.4.1.7165.2.1.5 NAME 'logonTime'
+#	DESC 'NT logonTime'
+#	EQUALITY integerMatch
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+#attributetype ( 1.3.6.1.4.1.7165.2.1.6 NAME 'logoffTime'
+#	DESC 'NT logoffTime'
+#	EQUALITY integerMatch
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+#attributetype ( 1.3.6.1.4.1.7165.2.1.7 NAME 'kickoffTime'
+#	DESC 'NT kickoffTime'
+#	EQUALITY integerMatch
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+#attributetype ( 1.3.6.1.4.1.7165.2.1.8 NAME 'pwdCanChange'
+#	DESC 'NT pwdCanChange'
+#	EQUALITY integerMatch
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+#attributetype ( 1.3.6.1.4.1.7165.2.1.9 NAME 'pwdMustChange'
+#	DESC 'NT pwdMustChange'
+#	EQUALITY integerMatch
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+##
+## string settings
+##
+#attributetype ( 1.3.6.1.4.1.7165.2.1.10 NAME 'homeDrive'
+#	DESC 'NT homeDrive'
+#	EQUALITY caseIgnoreIA5Match
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{4} SINGLE-VALUE )
+
+#attributetype ( 1.3.6.1.4.1.7165.2.1.11 NAME 'scriptPath'
+#	DESC 'NT scriptPath'
+#	EQUALITY caseIgnoreIA5Match
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{255} SINGLE-VALUE )
+
+#attributetype ( 1.3.6.1.4.1.7165.2.1.12 NAME 'profilePath'
+#	DESC 'NT profilePath'
+#	EQUALITY caseIgnoreIA5Match
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{255} SINGLE-VALUE )
+
+#attributetype ( 1.3.6.1.4.1.7165.2.1.13 NAME 'userWorkstations'
+#	DESC 'userWorkstations'
+#	EQUALITY caseIgnoreIA5Match
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{255} SINGLE-VALUE )
+
+#attributetype ( 1.3.6.1.4.1.7165.2.1.17 NAME 'smbHome'
+#	DESC 'smbHome'
+#	EQUALITY caseIgnoreIA5Match
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{128} )
+
+#attributetype ( 1.3.6.1.4.1.7165.2.1.18 NAME 'domain'
+#	DESC 'Windows NT domain to which the user belongs'
+#	EQUALITY caseIgnoreIA5Match
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{128} )
+
+##
+## user and group RID
+##
+#attributetype ( 1.3.6.1.4.1.7165.2.1.14 NAME 'rid'
+#	DESC 'NT rid'
+#	EQUALITY integerMatch
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+#attributetype ( 1.3.6.1.4.1.7165.2.1.15 NAME 'primaryGroupID'
+#	DESC 'NT Group RID'
+#	EQUALITY integerMatch
+#	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+##
+## The smbPasswordEntry objectclass has been depreciated in favor of the
+## sambaAccount objectclass
+##
+#objectclass ( 1.3.6.1.4.1.7165.2.2.1 NAME 'smbPasswordEntry' SUP top AUXILIARY
+#        DESC 'Samba smbpasswd entry'
+#        MUST ( uid $ uidNumber )
+#        MAY  ( lmPassword $ ntPassword $ pwdLastSet $ acctFlags ))
+
+#objectclass ( 1.3.6.1.4.1.7165.2.2.2 NAME 'sambaAccount' SUP top STRUCTURAL
+#	DESC 'Samba Account'
+#	MUST ( uid $ rid )
+#	MAY  ( cn $ lmPassword $ ntPassword $ pwdLastSet $ logonTime $
+#               logoffTime $ kickoffTime $ pwdCanChange $ pwdMustChange $ acctFlags $
+#               displayName $ smbHome $ homeDrive $ scriptPath $ profilePath $
+#               description $ userWorkstations $ primaryGroupID $ domain ))
+
+#objectclass ( 1.3.6.1.4.1.7165.2.2.3 NAME 'sambaAccount' SUP top AUXILIARY
+#	DESC 'Samba Auxiliary Account'
+#	MUST ( uid $ rid )
+#	MAY  ( cn $ lmPassword $ ntPassword $ pwdLastSet $ logonTime $
+#              logoffTime $ kickoffTime $ pwdCanChange $ pwdMustChange $ acctFlags $
+#              displayName $ smbHome $ homeDrive $ scriptPath $ profilePath $
+#              description $ userWorkstations $ primaryGroupID $ domain ))
+
+########################################################################
+##                        END OF HISTORICAL                           ##
+########################################################################
+
+#######################################################################
+##                Attributes used by Samba 3.0 schema                ##
+#######################################################################
+
+##
+## Password hashes
+##
+attributetype ( 1.3.6.1.4.1.7165.2.1.24 NAME 'sambaLMPassword'
+	DESC 'LanManager Password'
+	EQUALITY caseIgnoreIA5Match
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{32} SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.25 NAME 'sambaNTPassword'
+	DESC 'MD4 hash of the unicode password'
+	EQUALITY caseIgnoreIA5Match
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{32} SINGLE-VALUE )
+
+##
+## Account flags in string format ([UWDX     ])
+##
+attributetype ( 1.3.6.1.4.1.7165.2.1.26 NAME 'sambaAcctFlags'
+	DESC 'Account Flags'
+	EQUALITY caseIgnoreIA5Match
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{16} SINGLE-VALUE )
+
+##
+## Password timestamps & policies
+##
+attributetype ( 1.3.6.1.4.1.7165.2.1.27 NAME 'sambaPwdLastSet'
+	DESC 'Timestamp of the last password update'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.28 NAME 'sambaPwdCanChange'
+	DESC 'Timestamp of when the user is allowed to update the password'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.29 NAME 'sambaPwdMustChange'
+	DESC 'Timestamp of when the password will expire'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.30 NAME 'sambaLogonTime'
+	DESC 'Timestamp of last logon'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.31 NAME 'sambaLogoffTime'
+	DESC 'Timestamp of last logoff'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.32 NAME 'sambaKickoffTime'
+	DESC 'Timestamp of when the user will be logged off automatically'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.48 NAME 'sambaBadPasswordCount'
+	DESC 'Bad password attempt count'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.49 NAME 'sambaBadPasswordTime'
+	DESC 'Time of the last bad password attempt'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.55 NAME 'sambaLogonHours'
+	DESC 'Logon Hours'
+	EQUALITY caseIgnoreIA5Match
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{42} SINGLE-VALUE )
+
+##
+## string settings
+##
+attributetype ( 1.3.6.1.4.1.7165.2.1.33 NAME 'sambaHomeDrive'
+	DESC 'Driver letter of home directory mapping'
+	EQUALITY caseIgnoreIA5Match
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{4} SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.34 NAME 'sambaLogonScript'
+	DESC 'Logon script path'
+	EQUALITY caseIgnoreMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{255} SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.35 NAME 'sambaProfilePath'
+	DESC 'Roaming profile path'
+	EQUALITY caseIgnoreMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{255} SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.36 NAME 'sambaUserWorkstations'
+	DESC 'List of user workstations the user is allowed to logon to'
+	EQUALITY caseIgnoreMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{255} SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.37 NAME 'sambaHomePath'
+	DESC 'Home directory UNC path'
+	EQUALITY caseIgnoreMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{128} )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.38 NAME 'sambaDomainName'
+	DESC 'Windows NT domain to which the user belongs'
+	EQUALITY caseIgnoreMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{128} )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.47 NAME 'sambaMungedDial'
+	DESC 'Base64 encoded user parameter string'
+	EQUALITY caseExactMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{1050} )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.54 NAME 'sambaPasswordHistory'
+	DESC 'Concatenated MD5 hashes of the salted NT passwords used on this account'
+	EQUALITY caseIgnoreIA5Match
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{32} )
+
+##
+## SID, of any type
+##
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.20 NAME 'sambaSID'
+	DESC 'Security ID'
+	EQUALITY caseIgnoreIA5Match
+	SUBSTR caseExactIA5SubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{64} SINGLE-VALUE )
+
+##
+## Primary group SID, compatible with ntSid
+##
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.23 NAME 'sambaPrimaryGroupSID'
+	DESC 'Primary Group Security ID'
+	EQUALITY caseIgnoreIA5Match
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{64} SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.51 NAME 'sambaSIDList'
+	DESC 'Security ID List'
+	EQUALITY caseIgnoreIA5Match
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{64} )
+
+##
+## group mapping attributes
+##
+attributetype ( 1.3.6.1.4.1.7165.2.1.19 NAME 'sambaGroupType'
+	DESC 'NT Group Type'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+##
+## Store info on the domain
+##
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.21 NAME 'sambaNextUserRid'
+	DESC 'Next NT rid to give our for users'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.22 NAME 'sambaNextGroupRid'
+	DESC 'Next NT rid to give out for groups'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.39 NAME 'sambaNextRid'
+	DESC 'Next NT rid to give out for anything'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.40 NAME 'sambaAlgorithmicRidBase'
+	DESC 'Base at which the samba RID generation algorithm should operate'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.41 NAME 'sambaShareName'
+	DESC 'Share Name'
+	EQUALITY caseIgnoreMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.42 NAME 'sambaOptionName'
+	DESC 'Option Name'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{256} )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.43 NAME 'sambaBoolOption'
+	DESC 'A boolean option'
+	EQUALITY booleanMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.7 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.44 NAME 'sambaIntegerOption'
+	DESC 'An integer option'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.45 NAME 'sambaStringOption'
+	DESC 'A string option'
+	EQUALITY caseExactIA5Match
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.46 NAME 'sambaStringListOption'
+	DESC 'A string list option'
+	EQUALITY caseIgnoreMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )
+
+
+##attributetype ( 1.3.6.1.4.1.7165.2.1.50 NAME 'sambaPrivName' 
+##	SUP name )
+
+##attributetype ( 1.3.6.1.4.1.7165.2.1.52 NAME 'sambaPrivilegeList'
+##	DESC 'Privileges List'
+##	EQUALITY caseIgnoreIA5Match
+##	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{64} )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.53 NAME 'sambaTrustFlags'
+	DESC 'Trust Password Flags'
+	EQUALITY caseIgnoreIA5Match
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26 )
+
+# "min password length"
+attributetype ( 1.3.6.1.4.1.7165.2.1.58 NAME 'sambaMinPwdLength'
+	DESC 'Minimal password length (default: 5)'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+# "password history"
+attributetype ( 1.3.6.1.4.1.7165.2.1.59 NAME 'sambaPwdHistoryLength'
+	DESC 'Length of Password History Entries (default: 0 => off)'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+# "user must logon to change password"
+attributetype ( 1.3.6.1.4.1.7165.2.1.60 NAME 'sambaLogonToChgPwd'
+	DESC 'Force Users to logon for password change (default: 0 => off, 2 => on)'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+# "maximum password age"
+attributetype ( 1.3.6.1.4.1.7165.2.1.61 NAME 'sambaMaxPwdAge'
+	DESC 'Maximum password age, in seconds (default: -1 => never expire passwords)'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+# "minimum password age"
+attributetype ( 1.3.6.1.4.1.7165.2.1.62 NAME 'sambaMinPwdAge'
+	DESC 'Minimum password age, in seconds (default: 0 => allow immediate password change)'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+# "lockout duration"
+attributetype ( 1.3.6.1.4.1.7165.2.1.63 NAME 'sambaLockoutDuration'
+	DESC 'Lockout duration in minutes (default: 30, -1 => forever)'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+# "reset count minutes"
+attributetype ( 1.3.6.1.4.1.7165.2.1.64 NAME 'sambaLockoutObservationWindow'
+	DESC 'Reset time after lockout in minutes (default: 30)'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+# "bad lockout attempt"
+attributetype ( 1.3.6.1.4.1.7165.2.1.65 NAME 'sambaLockoutThreshold'
+	DESC 'Lockout users after bad logon attempts (default: 0 => off)'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+# "disconnect time"
+attributetype ( 1.3.6.1.4.1.7165.2.1.66 NAME 'sambaForceLogoff'
+	DESC 'Disconnect Users outside logon hours (default: -1 => off, 0 => on)'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+# "refuse machine password change"
+attributetype ( 1.3.6.1.4.1.7165.2.1.67 NAME 'sambaRefuseMachinePwdChange'
+	DESC 'Allow Machine Password changes (default: 0 => off)'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+#
+attributetype ( 1.3.6.1.4.1.7165.2.1.68 NAME 'sambaClearTextPassword'
+	DESC 'Clear text password (used for trusted domain passwords)'
+	EQUALITY octetStringMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.40 )
+
+#
+attributetype ( 1.3.6.1.4.1.7165.2.1.69 NAME 'sambaPreviousClearTextPassword'
+	DESC 'Previous clear text password (used for trusted domain passwords)'
+	EQUALITY octetStringMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.40 )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.70 NAME 'sambaTrustType'
+	DESC 'Type of trust'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.71 NAME 'sambaTrustAttributes'
+	DESC 'Trust attributes for a trusted domain'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.72 NAME 'sambaTrustDirection'
+	DESC 'Direction of a trust'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.73 NAME 'sambaTrustPartner'
+	DESC 'Fully qualified name of the domain with which a trust exists'
+	EQUALITY caseIgnoreMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{128} )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.74 NAME 'sambaFlatName'
+	DESC 'NetBIOS name of a domain'
+	EQUALITY caseIgnoreMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{128} )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.75 NAME 'sambaTrustAuthOutgoing'
+	DESC 'Authentication information for the outgoing portion of a trust'
+	EQUALITY caseExactMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{1050} )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.76 NAME 'sambaTrustAuthIncoming'
+	DESC 'Authentication information for the incoming portion of a trust'
+	EQUALITY caseExactMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{1050} )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.77 NAME 'sambaSecurityIdentifier'
+	DESC 'SID of a trusted domain'
+	EQUALITY caseIgnoreIA5Match SUBSTR caseExactIA5SubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{64} SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.78 NAME 'sambaTrustForestTrustInfo'
+	DESC 'Forest trust information for a trusted domain object'
+	EQUALITY caseExactMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{1050} )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.79 NAME 'sambaTrustPosixOffset'
+	DESC 'POSIX offset of a trust'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.7165.2.1.80 NAME 'sambaSupportedEncryptionTypes'
+	DESC 'Supported encryption types of a trust'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+#######################################################################
+##              objectClasses used by Samba 3.0 schema               ##
+#######################################################################
+
+## The X.500 data model (and therefore LDAPv3) says that each entry can
+## only have one structural objectclass.  OpenLDAP 2.0 does not enforce
+## this currently but will in v2.1
+
+##
+## added new objectclass (and OID) for 3.0 to help us deal with backwards
+## compatibility with 2.2 installations (e.g. ldapsam_compat)  --jerry
+##
+objectclass ( 1.3.6.1.4.1.7165.2.2.6 NAME 'sambaSamAccount' SUP top AUXILIARY
+	DESC 'Samba 3.0 Auxilary SAM Account'
+	MUST ( uid $ sambaSID )
+	MAY  ( cn $ sambaLMPassword $ sambaNTPassword $ sambaPwdLastSet $
+	       sambaLogonTime $ sambaLogoffTime $ sambaKickoffTime $
+	       sambaPwdCanChange $ sambaPwdMustChange $ sambaAcctFlags $
+               displayName $ sambaHomePath $ sambaHomeDrive $ sambaLogonScript $
+	       sambaProfilePath $ description $ sambaUserWorkstations $
+	       sambaPrimaryGroupSID $ sambaDomainName $ sambaMungedDial $
+	       sambaBadPasswordCount $ sambaBadPasswordTime $
+	       sambaPasswordHistory $ sambaLogonHours))
+
+##
+## Group mapping info
+##
+objectclass ( 1.3.6.1.4.1.7165.2.2.4 NAME 'sambaGroupMapping' SUP top AUXILIARY
+	DESC 'Samba Group Mapping'
+	MUST ( gidNumber $ sambaSID $ sambaGroupType )
+	MAY  ( displayName $ description $ sambaSIDList ))
+
+##
+## Trust password for trust relationships (any kind)
+##
+objectclass ( 1.3.6.1.4.1.7165.2.2.14 NAME 'sambaTrustPassword' SUP top STRUCTURAL
+	DESC 'Samba Trust Password'
+	MUST ( sambaDomainName $ sambaNTPassword $ sambaTrustFlags )
+	MAY ( sambaSID $ sambaPwdLastSet ))
+
+##
+## Trust password for trusted domains
+## (to be stored beneath the trusting sambaDomain object in the DIT)
+##
+objectclass ( 1.3.6.1.4.1.7165.2.2.15 NAME 'sambaTrustedDomainPassword' SUP top STRUCTURAL
+	DESC 'Samba Trusted Domain Password'
+	MUST ( sambaDomainName $ sambaSID $
+	       sambaClearTextPassword $ sambaPwdLastSet )
+	MAY  ( sambaPreviousClearTextPassword ))
+
+##
+## Whole-of-domain info
+##
+objectclass ( 1.3.6.1.4.1.7165.2.2.5 NAME 'sambaDomain' SUP top STRUCTURAL
+	DESC 'Samba Domain Information'
+	MUST ( sambaDomainName $ 
+	       sambaSID ) 
+	MAY ( sambaNextRid $ sambaNextGroupRid $ sambaNextUserRid $
+	      sambaAlgorithmicRidBase $ 
+	      sambaMinPwdLength $ sambaPwdHistoryLength $ sambaLogonToChgPwd $
+	      sambaMaxPwdAge $ sambaMinPwdAge $
+	      sambaLockoutDuration $ sambaLockoutObservationWindow $ sambaLockoutThreshold $
+	      sambaForceLogoff $ sambaRefuseMachinePwdChange ))
+
+##
+## used for idmap_ldap module
+##
+objectclass ( 1.3.6.1.4.1.7165.2.2.7 NAME 'sambaUnixIdPool' SUP top AUXILIARY
+        DESC 'Pool for allocating UNIX uids/gids'
+        MUST ( uidNumber $ gidNumber ) )
+
+
+objectclass ( 1.3.6.1.4.1.7165.2.2.8 NAME 'sambaIdmapEntry' SUP top AUXILIARY
+        DESC 'Mapping from a SID to an ID'
+        MUST ( sambaSID )
+	MAY ( uidNumber $ gidNumber ) )
+
+objectclass ( 1.3.6.1.4.1.7165.2.2.9 NAME 'sambaSidEntry' SUP top STRUCTURAL
+	DESC 'Structural Class for a SID'
+	MUST ( sambaSID ) )
+
+objectclass ( 1.3.6.1.4.1.7165.2.2.10 NAME 'sambaConfig' SUP top AUXILIARY
+	DESC 'Samba Configuration Section'
+	MAY ( description ) )
+
+objectclass ( 1.3.6.1.4.1.7165.2.2.11 NAME 'sambaShare' SUP top STRUCTURAL
+	DESC 'Samba Share Section'
+	MUST ( sambaShareName )
+	MAY ( description ) )
+
+objectclass ( 1.3.6.1.4.1.7165.2.2.12 NAME 'sambaConfigOption' SUP top STRUCTURAL
+	DESC 'Samba Configuration Option'
+	MUST ( sambaOptionName )
+	MAY ( sambaBoolOption $ sambaIntegerOption $ sambaStringOption $ 
+	      sambaStringListoption $ description ) )
+
+
+## retired during privilege rewrite
+##objectclass ( 1.3.6.1.4.1.7165.2.2.13 NAME 'sambaPrivilege' SUP top AUXILIARY
+##	DESC 'Samba Privilege'
+##	MUST ( sambaSID )
+##	MAY ( sambaPrivilegeList ) )
+
+##
+## used for IPA_ldapsam
+##
+objectclass ( 1.3.6.1.4.1.7165.2.2.16 NAME 'sambaTrustedDomain' SUP top STRUCTURAL
+	DESC 'Samba Trusted Domain Object'
+	MUST ( cn )
+	MAY ( sambaTrustType $ sambaTrustAttributes $ sambaTrustDirection $
+	      sambaTrustPartner $ sambaFlatName $ sambaTrustAuthOutgoing $
+	      sambaTrustAuthIncoming $ sambaSecurityIdentifier $
+	      sambaTrustForestTrustInfo $ sambaTrustPosixOffset $
+	      sambaSupportedEncryptionTypes) )

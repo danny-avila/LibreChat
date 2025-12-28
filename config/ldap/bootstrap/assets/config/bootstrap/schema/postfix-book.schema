@@ -1,0 +1,78 @@
+# $Id$
+#
+# State of Mind
+# Private Enterprise Number: 29426
+#
+# OID prefix: 1.3.6.1.4.1.29426
+#
+# Attributes: 1.3.6.1.4.1.29426.1.10.x
+#
+
+
+attributetype ( 1.3.6.1.4.1.29426.1.10.1 NAME 'mailHomeDirectory'
+	DESC 'The absolute path to the mail user home directory'
+        EQUALITY caseExactIA5Match
+        SYNTAX 1.3.6.1.4.1.1466.115.121.1.26 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.29426.1.10.2 NAME 'mailAlias'
+        DESC 'RFC822 Mailbox - mail alias'
+        EQUALITY caseIgnoreIA5Match
+        SUBSTR caseIgnoreIA5SubstringsMatch
+        SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{256} )
+
+attributetype ( 1.3.6.1.4.1.29426.1.10.3 NAME 'mailUidNumber'
+        DESC 'UID required to access the mailbox'
+        EQUALITY integerMatch
+        SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.29426.1.10.4 NAME 'mailGidNumber'
+        DESC 'GID required to access the mailbox'
+        EQUALITY integerMatch
+        SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.29426.1.10.5 NAME 'mailEnabled'
+	DESC 'TRUE to enable, FALSE to disable account'
+        EQUALITY booleanMatch
+        SYNTAX 1.3.6.1.4.1.1466.115.121.1.7 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.29426.1.10.6 NAME 'mailGroupMember'
+	DESC 'Name of a mail distribution list'
+        EQUALITY caseExactIA5Match
+        SYNTAX 1.3.6.1.4.1.1466.115.121.1.26 )
+
+attributetype ( 1.3.6.1.4.1.29426.1.10.7 NAME 'mailQuota'
+	DESC 'Mail quota limit in kilobytes'
+        EQUALITY caseExactIA5Match
+        SYNTAX 1.3.6.1.4.1.1466.115.121.1.26 )
+
+attributetype ( 1.3.6.1.4.1.29426.1.10.8 NAME 'mailStorageDirectory'
+	DESC 'The absolute path to the mail users mailbox'
+        EQUALITY caseExactIA5Match
+        SYNTAX 1.3.6.1.4.1.1466.115.121.1.26 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.29426.1.10.9 NAME ( 'mailSieveRuleSource' )
+	DESC 'Sun ONE Messaging Server defined attribute'
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.26  X-ORIGIN 'Sun ONE Messaging Server' )
+
+attributetype ( 1.3.6.1.4.1.29426.1.10.10 NAME 'mailForwardingAddress'
+        DESC 'Address(es) to forward all incoming messages to.'
+        EQUALITY caseIgnoreIA5Match
+        SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{320} )
+
+#
+# Objects: 1.3.6.1.4.1.29426.1.2.2.x
+#
+
+objectclass ( 1.3.6.1.4.1.29426.1.2.2.1 NAME 'PostfixBookMailAccount'
+        SUP top AUXILIARY
+	DESC 'Mail account used in Postfix Book'
+	MUST ( mail )
+        MAY ( mailHomeDirectory $ mailAlias $ mailGroupMember
+		$ mailUidNumber $ mailGidNumber $ mailEnabled
+		$ mailQuota $mailStorageDirectory $mailSieveRuleSource ) )
+
+objectclass ( 1.3.6.1.4.1.29426.1.2.2.2 NAME 'PostfixBookMailForward'
+        SUP top AUXILIARY
+	DESC 'Mail forward used in Postfix Book'
+	MUST ( mail $ mailAlias )
+	MAY ( mailForwardingAddress ))

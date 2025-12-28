@@ -9,11 +9,11 @@ services:
     depends_on:
       - mongodb
       - rag_api
+      - keycloak
+      - ldap
     image: ghcr.io/danny-avila/librechat-dev:latest
     restart: always
     user: "${UID}:${GID}"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
       - HOST=0.0.0.0
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
@@ -68,6 +68,56 @@ services:
     env_file:
       - .env
 
+  ldap:
+    image: osixia/openldap:1.5.0
+    container_name: chat-ldap
+    restart: unless-stopped
+    environment:
+      - LDAP_ORGANISATION=LibreChat
+      - LDAP_DOMAIN=librechat.local
+      - LDAP_ADMIN_PASSWORD=admin
+      - LDAP_CONFIG_PASSWORD=admin
+      - LDAP_BASE=dc=librechat,dc=local
+      - LDAP_TLS=false
+    ports:
+      - "389:389"
+    volumes:
+      - ./data/ldap-no-tls:/var/lib/ldap
+      - ./data/ldap_config-no-tls:/etc/ldap/slapd.d
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:22.0.4
+    container_name: chat-keycloak
+    restart: unless-stopped
+    depends_on:
+      - ldap
+      - keycloak-db
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://keycloak-db:5432/librechat
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=librechat
+      - KC_HOSTNAME_STRICT=false
+      - KEYCLOAK_IMPORT=/opt/keycloak/data/import/librechat-realm.json
+    command: start-dev --db=postgres
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak/data:/opt/keycloak/data
+      - ./keycloak/realm:/opt/keycloak/data/import
+  keycloak-db:
+    image: postgres:15
+    container_name: chat-keycloak-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=librechat
+      - POSTGRES_USER=keycloak
+      - POSTGRES_PASSWORD=librechat
+    volumes:
+      - ./data/keycloak-db:/var/lib/postgresql/data
+
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
@@ -84,7 +134,7 @@ services:
       resources:
         limits:
           cpus: "2.0"
-          memory: 4G
+          memory: 12G
 
 
 volumes:

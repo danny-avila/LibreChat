@@ -1,0 +1,336 @@
+attributetype ( 1.3.6.1.4.1.47732.1.1.1.1
+	NAME 'kopanoQuotaOverride'
+	DESC 'KOPANO: Override child quota'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.1.2
+	NAME 'kopanoQuotaWarn'
+	DESC 'KOPANO: Warning quota size in MB'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.1.3
+	NAME 'kopanoQuotaSoft'
+	DESC 'KOPANO: Soft quota size in MB'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.1.4
+	NAME 'kopanoQuotaHard'
+	DESC 'KOPANO: Hard quota size in MB'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.1.5
+	NAME 'kopanoUserDefaultQuotaOverride'
+	DESC 'KOPANO: Override User default quota for children'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.1.6
+	NAME 'kopanoUserDefaultQuotaWarn'
+	DESC 'KOPANO: User default warning quota size in MB'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.1.7
+	NAME 'kopanoUserDefaultQuotaSoft'
+	DESC 'KOPANO: User default soft quota size in MB'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.1.8
+	NAME 'kopanoUserDefaultQuotaHard'
+	DESC 'KOPANO: User default hard quota size in MB'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.2.1
+	NAME 'kopanoAdmin'
+	DESC 'KOPANO: Administrator of kopano'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.2.2
+	NAME 'kopanoSharedStoreOnly'
+	DESC 'KOPANO: is store a shared store'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.2.3
+	NAME 'kopanoAccount'
+	DESC 'KOPANO: entry is a part of kopano'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.2.4
+	NAME 'kopanoSendAsPrivilege'
+	DESC 'KOPANO: Users may directly send email as this user'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.2.5
+	NAME 'kopanoMrAccept'
+	DESC 'KOPANO: user should auto-accept meeting requests'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.2.6
+	NAME 'kopanoMrDeclineConflict'
+	DESC 'KOPANO: user should automatically decline conflicting meeting requests'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.2.7
+	NAME 'kopanoMrDeclineRecurring'
+	DESC 'KOPANO: user should automatically decline recurring meeting requests'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.2.8
+	NAME 'kopanoId'
+	DESC 'KOPANO: Generic unique ID'
+	EQUALITY octetStringMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.40 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.2.9
+	NAME 'kopanoResourceType'
+	DESC 'KOPANO: for shared stores, resource is type Room or Equipment'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.2.10
+	NAME 'kopanoResourceCapacity'
+	DESC 'KOPANO: number of rooms or equipment available'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.2.11
+	NAME 'kopanoHidden'
+	DESC 'KOPANO: This object should be hidden from address book'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.2.13
+	NAME 'kopanoEnabledFeatures'
+	DESC 'KOPANO: This user has these features explicitly enabled'
+	EQUALITY caseIgnoreMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.44 )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.2.14
+	NAME 'kopanoDisabledFeatures'
+	DESC 'KOPANO: This user has these features explicitly disabled'
+	EQUALITY caseIgnoreMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.44 )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.3.1
+	NAME 'kopanoAliases'
+	DESC 'KOPANO: All other email addresses for this user'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.4.1
+	NAME 'kopanoUserServer'
+	DESC 'KOPANO: Home server for the user'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.6.1
+	NAME 'kopanoUserArchiveServers'
+	DESC 'KOPANO: List of server names that contain an archive store for the user'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )
+
+attributetype ( 1.3.6.1.4.1.47732.1.1.6.2
+	NAME 'kopanoUserArchiveCouplings'
+	DESC 'KOPANO: List of username:foldername pairs that specify many-to-one archive locations'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )
+
+objectclass	( 1.3.6.1.4.1.47732.1.1.0.0
+	NAME 'kopano-user'
+	DESC 'KOPANO: an user of Kopano'
+	SUP top AUXILIARY
+	MUST ( cn )
+	MAY (
+		kopanoQuotaOverride $ kopanoQuotaWarn $ kopanoQuotaSoft $ kopanoSendAsPrivilege $
+		kopanoQuotaHard $ kopanoAdmin $ kopanoSharedStoreOnly $ kopanoResourceType $
+		kopanoResourceCapacity $ kopanoAccount $ kopanoHidden $ kopanoAliases $
+		kopanoUserServer $ kopanoEnabledFeatures $ kopanoDisabledFeatures $
+		kopanoUserArchiveServers $ kopanoUserArchiveCouplings $
+		uidNumber
+		)
+	)
+
+objectclass	( 1.3.6.1.4.1.47732.1.6.0.0
+	NAME 'kopano-contact'
+	DESC 'KOPANO: a contact of Kopano'
+	SUP top AUXILIARY
+	MUST ( cn $ uidNumber )
+	MAY (
+		kopanoSendAsPrivilege $ kopanoHidden $ kopanoAliases $ kopanoAccount
+		)
+	)
+
+
+attributetype ( 1.3.6.1.4.1.47732.1.2.2.1
+	NAME 'kopanoSecurityGroup'
+	DESC 'KOPANO: group has security possibilities'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+objectclass	( 1.3.6.1.4.1.47732.1.2.0.0
+	NAME 'kopano-group'
+	DESC 'KOPANO: a group of Kopano'
+	SUP top	AUXILIARY
+	MUST ( cn )
+	MAY (
+		kopanoAccount $ kopanoHidden $ mail $ kopanoAliases $ kopanoSecurityGroup $ kopanoSendAsPrivilege $
+		gidNumber
+		)
+	)
+
+attributetype ( 1.3.6.1.4.1.47732.1.3.2.4
+	NAME 'kopanoViewPrivilege'
+	DESC 'KOPANO: Companies with view privileges over selected company'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15
+	)
+
+attributetype ( 1.3.6.1.4.1.47732.1.3.2.5
+	NAME 'kopanoAdminPrivilege'
+	DESC 'KOPANO: Users from different companies which are administrator over selected company'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15
+	)
+
+attributetype ( 1.3.6.1.4.1.47732.1.3.2.6
+	NAME 'kopanoSystemAdmin'
+	DESC 'KOPANO: The user who is the system administrator for this company'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE
+	)
+
+attributetype (1.3.6.1.4.1.47732.1.3.1.5
+	NAME 'kopanoQuotaUserWarningRecipients'
+	DESC 'KOPANO: Users who will receive a notification email when a user exceeds his quota'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15
+	)
+
+attributetype (1.3.6.1.4.1.47732.1.3.1.6
+	NAME 'kopanoQuotaCompanyWarningRecipients'
+	DESC 'KOPANO: Users who will receive a notification email when a company exceeds its quota'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15
+	)
+
+attributetype ( 1.3.6.1.4.1.47732.1.3.4.1
+	NAME 'kopanoCompanyServer'
+	DESC 'KOPANO: Home server for the public folders for a company'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+
+objectclass ( 1.3.6.1.4.1.47732.1.3.0.0
+	NAME 'kopano-company'
+	DESC 'KOPANO: a company of Kopano'
+	SUP top AUXILIARY
+	MUST ( ou )
+	MAY (
+		kopanoAccount $ kopanoHidden $
+		kopanoViewPrivilege $ kopanoAdminPrivilege $ kopanoSystemAdmin $
+		kopanoQuotaOverride $ kopanoQuotaWarn $
+		kopanoUserDefaultQuotaOverride $ kopanoUserDefaultQuotaWarn $ kopanoUserDefaultQuotaSoft $ kopanoUserDefaultQuotaHard $
+		kopanoQuotaUserWarningRecipients $ kopanoQuotaCompanyWarningRecipients $
+		kopanoCompanyServer
+		)
+	)
+
+attributetype (1.3.6.1.4.1.47732.1.4.4.1
+	NAME 'kopanoHttpPort'
+	DESC 'KOPANO: Port for the http connection'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype (1.3.6.1.4.1.47732.1.4.4.2
+	NAME 'kopanoSslPort'
+	DESC 'KOPANO: Port for the ssl connection'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype (1.3.6.1.4.1.47732.1.4.4.3
+	NAME 'kopanoFilePath'
+	DESC 'KOPANO: The Unix socket or named pipe to the server'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+
+attributetype (1.3.6.1.4.1.47732.1.4.4.4
+	NAME 'kopanoContainsPublic'
+	DESC 'KOPANO: This server contains the public store'
+	EQUALITY integerMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.27 SINGLE-VALUE )
+
+attributetype (1.3.6.1.4.1.47732.1.4.4.6
+	NAME 'kopanoProxyURL'
+	DESC 'KOPANO: Full proxy URL for this server'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+
+objectclass ( 1.3.6.1.4.1.47732.1.4.0.0
+	NAME 'kopano-server'
+	DESC 'KOPANO: a Kopano server'
+	SUP top AUXILIARY
+	MUST ( cn )
+	MAY (
+		kopanoAccount $ kopanoHidden $ kopanoHttpPort $ kopanoSslPort $ kopanoFilePath $ kopanoContainsPublic $ kopanoProxyURL
+		)
+	)
+
+attributetype (1.3.6.1.4.1.47732.1.5.5.1
+	NAME 'kopanoFilter'
+	DESC 'KOPANO: LDAP Filter to apply'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+
+attributetype (1.3.6.1.4.1.47732.1.5.5.2
+	NAME 'kopanoBase'
+	DESC 'KOPANO: LDAP Search base to apply'
+	EQUALITY caseIgnoreMatch
+	SUBSTR caseIgnoreSubstringsMatch
+	SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+
+objectclass ( 1.3.6.1.4.1.47732.1.5.0.0
+	NAME 'kopano-addresslist'
+	DESC 'KOPANO: a Kopano Addresslist'
+	SUP top STRUCTURAL
+	MUST ( cn )
+    MAY (
+		kopanoAccount $ kopanoHidden $ kopanoFilter $ kopanoBase
+		)
+	)
+
+objectclass ( 1.3.6.1.4.1.47732.1.7.0.0
+	NAME 'kopano-dynamicgroup'
+	DESC 'KOPANO: a Kopano dynamic group'
+	SUP top STRUCTURAL
+	MUST ( cn )
+    MAY (
+		kopanoAccount $ kopanoHidden $ mail $ kopanoAliases $ kopanoFilter $ kopanoBase
+		)
+	)

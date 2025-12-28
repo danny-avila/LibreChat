@@ -254,6 +254,7 @@ endpoints:
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
   custom:
+    # Set enabled: false to keep the endpoint in your config but stop LibreChat from contacting it.
     # Groq Example
     - name: 'groq'
       apiKey: '${GROQ_API_KEY}'

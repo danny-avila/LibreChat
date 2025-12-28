@@ -1,4 +1,4 @@
-.PHONY: help setup install build up down restart logs clean rebuild ollama-models ollama-pull-qwen ollama-pull-llama
+.PHONY: help setup install build up down restart logs clean rebuild ollama-models ollama-pull-qwen ollama-pull-llama ldap-up ldap-down ldap-test ldap-integration-test keycloak-up keycloak-down keycloak-test
 
 # Default target
 help:
@@ -11,6 +11,7 @@ help:
 	@echo ""
 	@echo "Docker Commands:"
 	@echo "  make build          - Build Docker containers"
+	@echo "  make ensure-volumes  - Prep host volume folders to .env UID/GID"
 	@echo "  make up             - Start all services and pull Ollama models"
 	@echo "  make down           - Stop all services"
 	@echo "  make restart        - Restart all services"
@@ -27,6 +28,8 @@ help:
 	@echo "  make logs-api       - View API container logs"
 	@echo "  make logs-db        - View MongoDB container logs"
 	@echo "  make logs-ollama    - View Ollama container logs"
+	@echo "  make list-users     - List LDAP users in the configured users OU"
+	@echo "  make list-services  - Show container/service statuses from docker compose"
 	@echo "  make clean          - Remove containers, volumes, and images"
 	@echo "  make shell          - Open shell in API container"
 	@echo "  make shell-ollama   - Open shell in Ollama container"
@@ -41,6 +44,16 @@ help:
 	@echo "  make ps             - Show running containers"
 	@echo "  make reset          - Reset database and restart"
 	@echo "  make health         - Check health status of all services"
+	@echo ""
+	@echo "SSO Commands:"
+	@echo "  make ldap-up        - Start LDAP service only"
+	@echo "  make ldap-down      - Stop LDAP service"
+	@echo "  make ldap-test      - Run a simple LDAP search"
+	@echo "  make ldap-integration-test - Ensure ssouser exists and Keycloak responds"
+	@echo "  make keycloak-up    - Start Keycloak and its Postgres database"
+	@echo "  make keycloak-down  - Stop Keycloak services"
+	@echo "  make keycloak-test  - Check Keycloak admin health endpoint"
+	@echo "  make add-ldap-user  - Seed ssouser (default) or pass USERNAME=..., EMAIL=..., etc. to create/update LDAP users"
 
 # Complete setup
 setup:
@@ -53,35 +66,23 @@ setup:
 		echo ".env file already exists. Skipping..."; \
 	fi
 	@if [ ! -f docker-compose.override.yml ]; then \
-		echo "Creating docker-compose.override.yml..."; \
-		echo "# Bintybyte LibreChat - Docker Compose Override" > docker-compose.override.yml; \
-		echo "# Enables: Groq, Mistral, OpenRouter, Helicone, Portkey, MCP, WebSearch" >> docker-compose.override.yml; \
-		echo "" >> docker-compose.override.yml; \
-		echo "services:" >> docker-compose.override.yml; \
-		echo "  api:" >> docker-compose.override.yml; \
-		echo "    volumes:" >> docker-compose.override.yml; \
-		echo "      - ./librechat.yaml:/app/librechat.yaml" >> docker-compose.override.yml; \
-		echo "" >> docker-compose.override.yml; \
-		echo "  mcp-clickhouse:" >> docker-compose.override.yml; \
-		echo "    image: mcp/clickhouse" >> docker-compose.override.yml; \
-		echo "    container_name: mcp-clickhouse" >> docker-compose.override.yml; \
-		echo "    ports:" >> docker-compose.override.yml; \
+		@bash scripts/add-ldap-user.sh list
 		echo "      - 8001:8000" >> docker-compose.override.yml; \
 		echo "    extra_hosts:" >> docker-compose.override.yml; \
 		echo "      - \"host.docker.internal:host-gateway\"" >> docker-compose.override.yml; \
-		echo "    environment:" >> docker-compose.override.yml; \
-		echo "      - CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com" >> docker-compose.override.yml; \
-		echo "      - CLICKHOUSE_USER=demo" >> docker-compose.override.yml; \
-		echo "      - CLICKHOUSE_PASSWORD=" >> docker-compose.override.yml; \
-		echo "      - CLICKHOUSE_MCP_SERVER_TRANSPORT=sse" >> docker-compose.override.yml; \
-		echo "      - CLICKHOUSE_MCP_BIND_HOST=0.0.0.0" >> docker-compose.override.yml; \
-		echo "docker-compose.override.yml created with MCP ClickHouse service."; \
-	else \
-		echo "docker-compose.override.yml already exists. Skipping..."; \
-	fi
-	@if [ ! -f librechat.yaml ]; then \
-		echo "Creating librechat.yaml with MCP and WebSearch enabled..."; \
-		cp librechat.example.yaml librechat.yaml; \
+		@services=$$(docker compose config --services 2>/dev/null); \
+		@if [ -z "$$services" ]; then \
+			echo "⚠️  Unable to read services from docker compose config."; \
+			exit 1; \
+		fi; \
+		@states=$$(docker compose ps --format '{{.Service}}\t{{.State}}' 2>/dev/null); \
+		@printf '%-30s %s\n' "SERVICE" "STATUS"; \
+		@printf '%-30s %s\n' "-------" "------"; \
+		for svc in $$services; do \
+			status=$$(printf '%s\n' "$$states" | awk -v service="$$svc" 'BEGIN {st="not created"} $1==service {st=$2; for (i=3;i<=NF;i++) st=st" " $i} END {print st}'); \
+			if [ -z "$$status" ]; then status="not created"; fi; \
+			printf '%-30s %s\n' "$$svc" "$$status"; \
+		done
 		sed -i.bak 's/use: false/use: true/' librechat.yaml && rm -f librechat.yaml.bak; \
 		echo "" >> librechat.yaml; \
 		echo "# MCP Servers Configuration" >> librechat.yaml; \
@@ -120,6 +121,7 @@ setup:
 	@echo "   - librechat.yaml (with Groq, Mistral, OpenRouter, Helicone, Portkey, MCP, WebSearch)"
 	@echo ""
 	@echo "✅ Setup complete!"
+	@$(MAKE) ensure-volumes
 	@echo ""
 	@echo "📝 Next steps:"
 	@echo "1. Add your API keys to .env:"
@@ -144,8 +146,14 @@ build:
 	@echo "Building Docker containers..."
 	docker compose build
 
+# Align host volume ownership with the UID/GID declared in .env.
+ensure-volumes:
+	@echo "Preparing host volume directories..."
+	@./scripts/ensure-volume-permissions.sh
+
 # Start services
 up:
+	@$(MAKE) ensure-volumes
 	@echo "Starting Bintybyte LibreChat services..."
 	docker compose up -d
 	@echo ""
@@ -183,6 +191,7 @@ rebuild:
 	@docker compose build --no-cache
 	@echo ""
 	@echo "Starting services..."
+	@$(MAKE) ensure-volumes
 	@docker compose up -d
 	@echo ""
 	@echo "✅ Services rebuilt and started!"
@@ -286,6 +295,93 @@ logs-db:
 # View Ollama logs
 logs-ollama:
 	docker compose logs -f ollama
+
+# LDAP helpers
+LDAP_USER_OPTIONAL_ARGS := $(if $(FIRSTNAME),--firstname "$(FIRSTNAME)") $(if $(LASTNAME),--lastname "$(LASTNAME)") $(if $(EMAIL),--email "$(EMAIL)") $(if $(PASSWORD),--password "$(PASSWORD)") $(if $(GROUPS),--groups "$(GROUPS)") $(if $(ORG),--org "$(ORG)")
+ldap-up:
+	@echo "Starting LDAP container only..."
+	docker compose up -d ldap
+	@echo "✅ ldap service is starting"
+
+ldap-down:
+	@echo "Stopping LDAP container..."
+	docker compose stop ldap
+	@echo "✅ ldap stopped"
+
+ldap-test:
+	@echo "Testing LDAP connectivity..."
+	docker compose exec ldap ldapsearch -x -LLL -D "cn=admin,dc=librechat,dc=local" -w admin -b "dc=librechat,dc=local" "(objectclass=*)" dn | head
+	@echo "✅ LDAP search returned results"
+
+ldap-integration-test:
+	@echo "Validating LDAP + Keycloak integration..."
+	@echo "Seeding LDAP user (if missing)..."
+	@bash scripts/add-ldap-user.sh seed || true
+	@docker compose exec ldap ldapsearch -x -LLL -D "cn=admin,dc=librechat,dc=local" -w admin -b "ou=users,dc=librechat,dc=local" "(cn=ssouser)" dn >/dev/null 2>&1 \
+		&& echo "✅ LDAP has ssouser entry" || (echo "❌ ssouser missing in LDAP" && exit 1)
+	@if curl -s http://localhost:8080/health >/dev/null 2>&1; then \
+		echo "✅ Keycloak is responding"; \
+	else \
+		echo "❌ Keycloak did not respond"; \
+		exit 1; \
+	fi
+
+keycloak-up:
+	@echo "Starting Keycloak and Postgres..."
+	docker compose up -d keycloak-db keycloak
+	@echo "✅ Keycloak services are starting"
+
+keycloak-down:
+	@echo "Stopping Keycloak services..."
+	docker compose stop keycloak keycloak-db
+	@echo "✅ Keycloak services stopped"
+
+keycloak-test:
+	@echo "Checking Keycloak admin console..."
+	@timeout=30; while ! curl -s http://localhost:8080/health >/dev/null 2>&1 && [ $$timeout -gt 0 ]; do \
+		echo "Waiting for Keycloak... ($$timeout seconds remaining)"; \
+		sleep 2; \
+		timeout=$$((timeout-2)); \
+	done
+	@if curl -s http://localhost:8080/health >/dev/null 2>&1; then \
+		echo "✅ Keycloak is responding"; \
+	else \
+		echo "❌ Keycloak did not respond yet"; \
+		exit 1; \
+	fi
+
+add-ldap-user:
+	@if [ -z "$(USERNAME)" ]; then \
+		echo "Seeding ssouser into OpenLDAP (idempotent)..."; \
+		bash scripts/add-ldap-user.sh seed; \
+	else \
+		echo "Creating/updating LDAP user '$(USERNAME)'..."; \
+		bash scripts/add-ldap-user.sh user \
+			--username "$(USERNAME)" $(LDAP_USER_OPTIONAL_ARGS); \
+	fi
+	@echo "Run scripts/add-ldap-user.sh help for advanced user/group commands"
+
+list-users:
+	@echo "Listing LDAP users..."
+	@bash scripts/add-ldap-user.sh list
+
+list-services:
+	@services=$$(docker compose config --services 2>/dev/null || true); \
+	states=$$(docker compose ps --format '{{.Service}}\t{{.State}}' 2>/dev/null || true); \
+	echo "Docker Compose service statuses:"; \
+	if [ -z "$$services" ] && [ -z "$$states" ]; then \
+		echo "⚠️  Unable to inspect docker compose services."; \
+	fi; \
+	if [ -z "$$services" ]; then \
+		services=$$(printf '%s\n' "$$states" | awk -F'\t' '!seen[$$1]++ {print $$1}'); \
+	fi; \
+	printf '%-30s %s\n' "SERVICE" "STATUS"; \
+	printf '%-30s %s\n' "-------" "------"; \
+	for svc in $$services; do \
+		status=$$(printf '%s\n' "$$states" | awk -v service="$$svc" 'BEGIN {st="not created"} $$1==service {st=$$2; for (i=3;i<=NF;i++) st=st" " $$i} END {print st}'); \
+		if [ -z "$$status" ]; then status="not created"; fi; \
+		printf '%-30s %s\n' "$$svc" "$$status"; \
+	done
 
 # Show running containers
 ps:

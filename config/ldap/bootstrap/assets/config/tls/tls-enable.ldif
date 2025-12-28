@@ -1,0 +1,19 @@
+dn: cn=config
+changetype: modify
+replace: olcTLSCipherSuite
+olcTLSCipherSuite: {{ LDAP_TLS_CIPHER_SUITE }}
+-
+replace: olcTLSCACertificateFile
+olcTLSCACertificateFile: {{ LDAP_TLS_CA_CRT_PATH }}
+-
+replace: olcTLSCertificateFile
+olcTLSCertificateFile: {{ LDAP_TLS_CRT_PATH }}
+-
+replace: olcTLSCertificateKeyFile
+olcTLSCertificateKeyFile: {{ LDAP_TLS_KEY_PATH }}
+-
+replace: olcTLSDHParamFile
+olcTLSDHParamFile: {{ LDAP_TLS_DH_PARAM_PATH }}
+-
+replace: olcTLSVerifyClient
+olcTLSVerifyClient: {{ LDAP_TLS_VERIFY_CLIENT }}

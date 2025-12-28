@@ -1,0 +1,46 @@
+# Load syncprov module
+dn: cn=module{0},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: syncprov
+
+# Set server ID
+dn: cn=config
+changeType: modify
+add: olcServerID
+{{ LDAP_REPLICATION_HOSTS }}
+
+# Add syncprov on config
+dn: olcOverlay=syncprov,olcDatabase={0}config,cn=config
+changetype: add
+objectClass: olcOverlayConfig
+objectClass: olcSyncProvConfig
+olcOverlay: syncprov
+
+# Add sync replication on config
+dn: olcDatabase={0}config,cn=config
+changetype: modify
+add: olcSyncRepl
+{{ LDAP_REPLICATION_HOSTS_CONFIG_SYNC_REPL }}
+-
+add: olcMirrorMode
+olcMirrorMode: TRUE
+
+# Add syncprov on backend
+dn: olcOverlay=syncprov,olcDatabase={1}{{ LDAP_BACKEND }},cn=config
+changetype: add
+objectClass: olcOverlayConfig
+objectClass: olcSyncProvConfig
+olcOverlay: syncprov
+
+# Add sync replication on backend
+dn: olcDatabase={1}{{ LDAP_BACKEND }},cn=config
+changetype: modify
+add: olcSyncRepl
+{{ LDAP_REPLICATION_HOSTS_DB_SYNC_REPL }}
+-
+add: olcMirrorMode
+olcMirrorMode: TRUE
+-
+add: olcLimits
+olcLimits: dn.exact="cn=admin,$LDAP_BASE_DN" time.soft=unlimited time.hard=unlimited size.soft=unlimited size.hard=unlimited

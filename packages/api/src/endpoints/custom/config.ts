@@ -1,4 +1,9 @@
-import { EModelEndpoint, extractEnvVariable, normalizeEndpointName } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  envVarRegex,
+  extractEnvVariable,
+  normalizeEndpointName,
+} from 'librechat-data-provider';
 import type { TCustomEndpoints, TEndpoint } from 'librechat-data-provider';
 import type { TCustomEndpointsConfig } from '~/types/endpoints';
 import { isUserProvided } from '~/utils';
@@ -23,7 +28,8 @@ export function loadCustomEndpointsConfig(
         endpoint.apiKey &&
         endpoint.name &&
         endpoint.models &&
-        (endpoint.models.fetch || endpoint.models.default),
+        (endpoint.models.fetch || endpoint.models.default) &&
+        endpoint.enabled !== false,
     );
 
     for (let i = 0; i < filteredEndpoints.length; i++) {
@@ -40,6 +46,10 @@ export function loadCustomEndpointsConfig(
 
       const resolvedApiKey = extractEnvVariable(apiKey ?? '');
       const resolvedBaseURL = extractEnvVariable(baseURL ?? '');
+
+      if (envVarRegex.test(resolvedApiKey) || envVarRegex.test(resolvedBaseURL)) {
+        continue;
+      }
 
       customEndpointsConfig[name] = {
         type: EModelEndpoint.custom,

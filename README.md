@@ -85,6 +85,10 @@ make up
 make logs
 ```
 
+> The generated `.env` holds secrets and is excluded from git (see `.gitignore`), and the host-side logs/data/uploads folders are also ignored so they never get committed even though they are mounted into containers.
+
+> `make up` runs `make ensure-volumes` first so the host directories for MongoDB, Keycloak, LDAP, and other services match the `UID`/`GID` defined in `.env`. Run `make ensure-volumes` manually whenever those values change.
+
 ### Start MCP Server (Optional)
 
 The MCP ClickHouse server provides database query capabilities to AI models:
@@ -109,6 +113,7 @@ make mcp-stop      # Stop MCP server
 make mcp-logs      # View MCP server logs
 make setup         # Initial setup (creates all config files)
 make build         # Build Docker containers
+make ensure-volumes  # Prep host volume folders to .env UID/GID
 make up            # Start all services
 make down          # Stop all services
 make restart       # Restart all services
@@ -121,7 +126,9 @@ make shell         # Open shell in API container
 make clean         # Remove all containers and data (⚠️ dangerous)
 make reset         # Reset database only
 make dev           # Start in development mode
-```
+make add-ldap-user  # Seed ssouser (default) or pass USERNAME=... FIRSTNAME=... EMAIL=... etc. to create/update any LDAP user via the helper
+make list-users     # Show LDAP entries (uid/cn/mail) from the configured users OU
+make list-services  # Report docker compose service statuses (running/stopped/created/not created)
 
 ---
 
@@ -228,6 +235,11 @@ Out of the box, Bintybyte includes:
   - Secure authentication with OAuth2, LDAP, and email
   - Built-in moderation and usage tracking
 
+When running LDAP locally you can seed the default `ssouser` entry after the stack is ready by running `scripts/add-ldap-user.sh seed` (the Makefile `add-ldap-user` shortcut still calls this command, and now supports `USERNAME=… FIRSTNAME=… EMAIL=… PASSWORD=… GROUPS=… ORG=…` to create or update other LDAP users without leaving `make`). The helper now ships with a `help` command so you can also create arbitrary users or groups with service metadata for RBAC, e.g. `scripts/add-ldap-user.sh user --username alice --groups support --email alice@example.com` or `scripts/add-ldap-user.sh group --name support --services api,mcp --members ssouser`. There is also an `import` command that reads CSV exports; map headers with `--map username=Employee ID` so the script knows which column to use, and include optional fields (`firstname`, `lastname`, `email`, `password`, `groups`, `org`) while only `username` is required. A ready-to-use CSV sample lives in `scripts/ldap-samples/users.csv`.
+Use `make list-users` to run the helper’s new `list` command for a summary of every LDAP entry returned from the users OU, and use `make list-services` to see the current docker compose status of each declared service (running/exited/not created, etc.).
+
+The script reads organizational metadata from `.env` (see the new `LDAP_ORGANISATION`, `LDAP_BASE`, `LDAP_USERS_OU`, `LDAP_GROUPS_OU`, and default-user entries near the LDAP configuration block) so you can reuse it across brands and domains before pointing Keycloak at the LDAP provider.
+
 - ⚙️ **Flexible Deployment**:
   - Docker, Docker Compose, or manual deployment
   - Run completely local or deploy to cloud
@@ -321,11 +333,7 @@ services:
     restart: always
     deploy:
       resources:
-        limits:
-          cpus: '1'
-          memory: 2G
-    volumes:
-      - mongodb_data:/data/db
+make add-ldap-user  # Seed ssouser (default) or pass USERNAME=... FIRSTNAME=... EMAIL=... etc. to create/update any LDAP user via the helper
     command: mongod --auth
 
 volumes:
@@ -454,6 +462,8 @@ endpoints:
           - 'llama-3.3-70b-versatile'
           - 'compound-beta'
 ```
+
+Setting `enabled: false` on any custom endpoint keeps the entry in your config but prevents LibreChat from contacting that provider when you do not have valid credentials yet.
 
 #### 3. `docker-compose.override.yml` - Docker Configuration
 Mounts the librechat.yaml file into the container:

@@ -1,0 +1,29 @@
+# Delete sync replication on backend
+dn: olcDatabase={1}{{ LDAP_BACKEND }},cn=config
+changetype: modify
+delete: olcSyncRepl
+-
+delete: olcMirrorMode
+-
+delete: olcLimits
+
+# Delete syncprov on backend
+dn: olcOverlay=syncprov,olcDatabase={1}{{ LDAP_BACKEND }},cn=config
+changetype: delete
+
+# Delete sync replication on config
+dn: olcDatabase={0}config,cn=config
+changetype: modify
+delete: olcSyncRepl
+-
+delete: olcMirrorMode
+
+# Delete syncprov on config
+dn: olcOverlay=syncprov,olcDatabase={0}config,cn=config
+changetype: delete
+
+# Delete server ID
+dn: cn=config
+changeType: modify
+delete: olcServerID
+

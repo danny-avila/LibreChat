@@ -1,0 +1,5 @@
+dn: cn=config
+changetype:  modify
+delete: olcSecurity
+-
+delete: olcLocalSSF

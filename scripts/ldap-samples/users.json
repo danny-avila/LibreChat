@@ -1,0 +1,26 @@
+[
+  {
+    "username": "support",
+    "firstname": "Support",
+    "lastname": "Agent",
+    "email": "support@librechat.local",
+    "password": "Support123!",
+    "groups": "support,sessions"
+  },
+  {
+    "username": "audit",
+    "firstname": "Audit",
+    "lastname": "User",
+    "email": "audit@librechat.local",
+    "password": "Audit123!",
+    "groups": "sessions"
+  },
+  {
+    "username": "ops",
+    "firstname": "Operations",
+    "lastname": "Team",
+    "email": "ops@librechat.local",
+    "password": "Ops123!",
+    "groups": "operations"
+  }
+]

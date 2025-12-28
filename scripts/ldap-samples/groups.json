@@ -1,0 +1,14 @@
+[
+  {
+    "name": "support",
+    "services": "helpdesk,streaming,api"
+  },
+  {
+    "name": "sessions",
+    "services": "api,ui"
+  },
+  {
+    "name": "operations",
+    "services": "admin,deploy"
+  }
+]

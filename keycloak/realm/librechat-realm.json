@@ -1,0 +1,72 @@
+{
+  "id": "librechat",
+  "realm": "librechat",
+  "displayName": "LibreChat",
+  "enabled": true,
+  "sslRequired": "none",
+  "users": [],
+  "clients": [
+    {
+      "clientId": "librechat-client",
+      "name": "LibreChat Web",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": false,
+      "redirectUris": [
+        "http://localhost:3080/oauth/openid/callback",
+        "http://host.docker.internal:3080/oauth/openid/callback",
+        "http://localhost:3080/*"
+      ],
+      "webOrigins": ["*"],
+      "clientAuthenticatorType": "client-secret",
+      "secret": "librechat-client-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "post.logout.redirect.uri": "http://localhost:3080",
+        "backchannel.logout.session.required": "false"
+      }
+    }
+  ],
+  "components": {
+    "librechat-ldap": {
+      "id": "librechat-ldap",
+      "name": "LibreChat LDAP",
+      "parentId": "librechat",
+      "providerId": "ldap",
+      "providerType": "org.keycloak.storage.UserStorageProvider",
+      "config": {
+        "enabled": ["true"],
+        "priority": ["0"],
+        "importEnabled": ["true"],
+        "syncRegistrations": ["false"],
+        "vendor": ["other"],
+        "connectionUrl": ["ldap://ldap:389"],
+        "usersDn": ["ou=users,dc=librechat,dc=local"],
+        "bindDn": ["cn=admin,dc=librechat,dc=local"],
+        "bindCredential": ["admin"],
+        "customUserSearchFilter": ["(|(uid={0})(mail={0}))"],
+        "searchScope": ["2"],
+        "baseDn": ["dc=librechat,dc=local"],
+        "pagination": ["true"],
+        "connectionPooling": ["true"],
+        "authType": ["simple"],
+        "useTruststoreSpi": ["never"],
+        "usernameLDAPAttribute": ["uid"],
+        "rdnLDAPAttribute": ["uid"],
+        "uuidLDAPAttribute": ["entryUUID"],
+        "userObjectClasses": ["inetOrgPerson, organizationalPerson"],
+        "fullSyncPeriod": ["-1"],
+        "changedSyncPeriod": ["-1"],
+        "editMode": ["READ_ONLY"],
+        "cachePolicy": ["DEFAULT"],
+        "validatePasswordPolicy": ["false"],
+        "useKerberosForPasswordAuthentication": ["false"],
+        "trustEmail": ["true"],
+        "connectionTimeout": ["2000"],
+        "readTimeout": ["2000"]
+      }
+    }
+  }
+}

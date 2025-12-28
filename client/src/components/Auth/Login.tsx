@@ -53,6 +53,18 @@ function Login() {
     startupConfig?.serverDomain &&
     !isAutoRedirectDisabled;
 
+  const shouldShowOpenIDButton =
+    startupConfig?.openidLoginEnabled &&
+    !shouldAutoRedirect &&
+    Boolean(startupConfig?.serverDomain);
+
+  const OpenIDButtonIcon = () =>
+    startupConfig?.openidImageUrl ? (
+      <img src={startupConfig.openidImageUrl} alt="SSO logo" className="h-5 w-5" />
+    ) : (
+      <OpenIDIcon />
+    );
+
   useEffect(() => {
     if (shouldAutoRedirect) {
       console.log('Auto-redirecting to OpenID provider...');
@@ -110,6 +122,20 @@ function Login() {
             {localize('com_auth_sign_up')}
           </a>
         </p>
+      )}
+      {shouldShowOpenIDButton && (
+        <div className="mt-8 border-t border-border-light/60 pt-6 text-center text-sm text-text-secondary">
+          <p className="mb-3">Continue with your organization's SSO provider.</p>
+          <SocialButton
+            key="openid-sso"
+            enabled={shouldShowOpenIDButton}
+            serverDomain={startupConfig.serverDomain}
+            oauthPath="openid"
+            Icon={OpenIDButtonIcon}
+            label={startupConfig.openidLabel ?? localize('com_auth_continue')}
+            id="openid-sso"
+          />
+        </div>
       )}
     </>
   );
