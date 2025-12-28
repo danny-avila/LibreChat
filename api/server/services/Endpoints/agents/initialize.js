@@ -7,10 +7,10 @@ const {
   createSequentialChainEdges,
 } = require('@librechat/api');
 const {
-  Constants,
   EModelEndpoint,
   isAgentsEndpoint,
   getResponseSender,
+  isEphemeralAgentId,
 } = require('librechat-data-provider');
 const {
   createToolEndCallback,
@@ -20,6 +20,7 @@ const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getConvoFiles } = require('~/models/Conversation');
+const { processAddedConvo } = require('./addedConvo');
 const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
@@ -233,6 +234,33 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     edges = edges ? edges.concat(chain) : chain;
   }
 
+  /** Multi-Convo: Process addedConvo for parallel agent execution */
+  const { userMCPAuthMap: updatedMCPAuthMap } = await processAddedConvo({
+    req,
+    res,
+    endpointOption,
+    modelsConfig,
+    logViolation,
+    loadTools,
+    requestFiles,
+    conversationId,
+    allowedProviders,
+    agentConfigs,
+    primaryAgentId: primaryConfig.id,
+    primaryAgent,
+    userMCPAuthMap,
+  });
+
+  if (updatedMCPAuthMap) {
+    userMCPAuthMap = updatedMCPAuthMap;
+  }
+
+  // Ensure edges is an array when we have multiple agents (multi-agent mode)
+  // MultiAgentGraph.categorizeEdges requires edges to be iterable
+  if (agentConfigs.size > 0 && !edges) {
+    edges = [];
+  }
+
   primaryConfig.edges = edges;
 
   let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];
@@ -276,10 +304,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     endpointType: endpointOption.endpointType,
     resendFiles: primaryConfig.resendFiles ?? true,
     maxContextTokens: primaryConfig.maxContextTokens,
-    endpoint:
-      primaryConfig.id === Constants.EPHEMERAL_AGENT_ID
-        ? primaryConfig.endpoint
-        : EModelEndpoint.agents,
+    endpoint: isEphemeralAgentId(primaryConfig.id) ? primaryConfig.endpoint : EModelEndpoint.agents,
   });
 
   return { client, userMCPAuthMap };

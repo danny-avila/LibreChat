@@ -371,6 +371,10 @@ endpoints:
 # - If 'group' matches an endpoint name (e.g., "openAI", "groq"), the spec appears nested under that endpoint
 # - If 'group' is a custom name (doesn't match any endpoint), it creates a separate collapsible section
 # - If 'group' is omitted, the spec appears as a standalone item at the top level
+#
+# The 'groupIcon' field sets an icon for custom groups:
+# - Only needs to be set on one spec per group (first one is used)
+# - Can be a URL or a built-in endpoint key (e.g., "openAI", "anthropic", "groq")
 # modelSpecs:
 #   list:
 #     # Example 1: Nested under an endpoint (grouped with openAI endpoint)
@@ -391,11 +395,12 @@ endpoints:
 #         endpoint: "groq"
 #         model: "llama3-70b-8192"
 #
-#     # Example 3: Custom group (creates a separate collapsible section)
+#     # Example 3: Custom group with icon (creates a separate collapsible section)
 #     - name: "coding-assistant"
 #       label: "Coding Assistant"
 #       description: "Specialized for coding tasks"
 #       group: "my-assistants"  # Custom string - doesn't match any endpoint, so creates its own group
+#       groupIcon: "https://example.com/icons/assistants.png"  # Icon URL for the group
 #       preset:
 #         endpoint: "openAI"
 #         model: "gpt-4o"
@@ -406,12 +411,22 @@ endpoints:
 #       label: "Writing Assistant"
 #       description: "Specialized for creative writing"
 #       group: "my-assistants"  # Same custom group name - both specs appear in same section
+#       # No need to set groupIcon again - the first spec's icon is used
 #       preset:
 #         endpoint: "anthropic"
 #         model: "claude-sonnet-4"
 #         instructions: "You are a creative writing expert..."
 #
-#     # Example 4: Standalone (no group - appears at top level)
+#     # Example 4: Custom group using built-in icon key
+#     - name: "fast-models"
+#       label: "Fast Response Model"
+#       group: "Fast Models"
+#       groupIcon: "groq"  # Uses the built-in Groq icon
+#       preset:
+#         endpoint: "groq"
+#         model: "llama3-8b-8192"
+#
+#     # Example 5: Standalone (no group - appears at top level)
 #     - name: "general-assistant"
 #       label: "General Assistant"
 #       description: "General purpose assistant"

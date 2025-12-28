@@ -304,6 +304,7 @@ export default function useResumableSSE(
               }
             }
 
+            setIsSubmitting(true);
             setShowStopButton(true);
             return;
           }

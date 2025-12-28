@@ -756,6 +756,12 @@ export const editArtifact = async ({
   return request.post(endpoints.messagesArtifacts(messageId), params);
 };
 
+export const branchMessage = async (
+  payload: m.TBranchMessageRequest,
+): Promise<m.TBranchMessageResponse> => {
+  return request.post(endpoints.messagesBranch(), payload);
+};
+
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
   if (
     conversationId === config.Constants.NEW_CONVO ||
