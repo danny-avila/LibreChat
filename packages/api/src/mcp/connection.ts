@@ -74,17 +74,15 @@ const SSE_CONNECT_TIMEOUT = 120000;
 /**
  * Headers for SSE connections.
  *
- * Note on headers we intentionally DO NOT include:
+ * Headers we intentionally DO NOT include:
+ * - Accept: text/event-stream - Already set by eventsource library AND MCP SDK
  * - X-Accel-Buffering: This is a RESPONSE header for Nginx, not a request header.
  *   The upstream MCP server must send this header for Nginx to respect it.
- *   Sending it from the client is ignored by Nginx.
  * - Connection: keep-alive: Forbidden in HTTP/2 (RFC 7540 §8.1.2.2).
- *   HTTP/2 manages connection persistence differently, and some proxies
- *   may reject requests with this header or strip it silently.
+ *   HTTP/2 manages connection persistence differently.
  */
 const SSE_REQUEST_HEADERS = {
   'Cache-Control': 'no-cache',
-  Accept: 'text/event-stream',
 };
 
 /**
