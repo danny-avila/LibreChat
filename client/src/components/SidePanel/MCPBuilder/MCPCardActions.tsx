@@ -1,3 +1,4 @@
+import React from 'react';
 import { Pencil, PlugZap, SlidersHorizontal, RefreshCw, X } from 'lucide-react';
 import { Spinner, TooltipAnchor } from '@librechat/client';
 import type { MCPServerStatus } from 'librechat-data-provider';
@@ -11,6 +12,7 @@ interface MCPCardActionsProps {
   canCancel: boolean;
   hasCustomUserVars: boolean;
   canEdit: boolean;
+  editButtonRef?: React.RefObject<HTMLDivElement>;
   onEditClick: (e: React.MouseEvent) => void;
   onConfigClick: (e: React.MouseEvent) => void;
   onInitialize: () => void;
@@ -34,6 +36,7 @@ export default function MCPCardActions({
   canCancel,
   hasCustomUserVars,
   canEdit,
+  editButtonRef,
   onEditClick,
   onConfigClick,
   onInitialize,
@@ -62,6 +65,7 @@ export default function MCPCardActions({
         {/* Edit button stays visible during loading */}
         {canEdit && (
           <TooltipAnchor
+            ref={editButtonRef}
             description={localize('com_ui_edit')}
             side="top"
             className={buttonBaseClass}
@@ -105,6 +109,7 @@ export default function MCPCardActions({
       {/* Edit button - opens MCPServerDialog to edit server definition */}
       {canEdit && (
         <TooltipAnchor
+          ref={editButtonRef}
           description={localize('com_ui_edit')}
           side="top"
           className={buttonBaseClass}

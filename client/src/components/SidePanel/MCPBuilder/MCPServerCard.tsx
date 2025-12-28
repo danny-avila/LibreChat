@@ -29,9 +29,9 @@ export default function MCPServerCard({
   canCreateEditMCPs,
 }: MCPServerCardProps) {
   const localize = useLocalize();
+  const triggerRef = useRef<HTMLDivElement>(null);
   const { initializeServer } = useMCPServerManager();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const statusIconProps = getServerStatusIconProps(server.serverName);
   const {
@@ -125,6 +125,7 @@ export default function MCPServerCard({
             canCancel={canCancel}
             hasCustomUserVars={hasCustomUserVars}
             canEdit={canEdit}
+            editButtonRef={triggerRef}
             onEditClick={handleEditClick}
             onConfigClick={onConfigClick}
             onInitialize={handleInitialize}
@@ -140,12 +141,7 @@ export default function MCPServerCard({
           onOpenChange={setDialogOpen}
           triggerRef={triggerRef}
           server={server}
-        >
-          {/* Hidden trigger for focus management */}
-          <button ref={triggerRef} className="sr-only" tabIndex={-1} aria-hidden="true">
-            {localize('com_ui_edit')} {displayName}
-          </button>
-        </MCPServerDialog>
+        />
       )}
     </>
   );

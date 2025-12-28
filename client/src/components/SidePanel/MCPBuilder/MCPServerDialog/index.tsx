@@ -25,8 +25,8 @@ import MCPServerForm from './MCPServerForm';
 interface MCPServerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  children: React.ReactNode;
-  triggerRef?: React.MutableRefObject<HTMLButtonElement | null>;
+  children?: React.ReactNode;
+  triggerRef?: React.MutableRefObject<HTMLDivElement | HTMLButtonElement | null>;
   server?: MCPServerDefinition | null;
 }
 
