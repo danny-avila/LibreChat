@@ -52,6 +52,7 @@ export async function loadDefaultInterface({
     runCode: interfaceConfig?.runCode,
     webSearch: interfaceConfig?.webSearch,
     fileSearch: interfaceConfig?.fileSearch,
+    fileSearchDefaultEnabled: interfaceConfig?.fileSearchDefaultEnabled ?? defaults.fileSearchDefaultEnabled,
     fileCitations: interfaceConfig?.fileCitations,
     peoplePicker: interfaceConfig?.peoplePicker,
     marketplace: interfaceConfig?.marketplace,

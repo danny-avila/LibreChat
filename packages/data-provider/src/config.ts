@@ -575,6 +575,7 @@ export const interfaceSchema = z
       })
       .optional(),
     fileSearch: z.boolean().optional(),
+    fileSearchDefaultEnabled: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
   })
   .default({
@@ -605,6 +606,7 @@ export const interfaceSchema = z
       share: false,
     },
     fileSearch: true,
+    fileSearchDefaultEnabled: false,
     fileCitations: true,
   });
 
