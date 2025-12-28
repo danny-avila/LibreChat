@@ -47,7 +47,7 @@
     "@librechat/api": "*",
     "@librechat/data-schemas": "*",
     "@microsoft/microsoft-graph-client": "^3.0.7",
-    "@modelcontextprotocol/sdk": "^1.24.3",
+    "@modelcontextprotocol/sdk": "^1.25.1",
     "@node-saml/passport-saml": "^5.1.0",
     "@smithy/node-http-handler": "^4.4.5",
     "axios": "^1.12.1",
