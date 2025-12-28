@@ -392,14 +392,15 @@ export class MCPConnection extends EventEmitter {
           const sseTimeout = this.timeout || SSE_CONNECT_TIMEOUT;
           const transport = new SSEClientTransport(url, {
             requestInit: {
-              headers: { ...headers, ...SSE_REQUEST_HEADERS },
+              /** User/OAuth headers override SSE defaults */
+              headers: { ...SSE_REQUEST_HEADERS, ...headers },
               signal: abortController.signal,
             },
             eventSourceInit: {
               fetch: (url, init) => {
-                /** Merge user headers with standard SSE request headers */
+                /** Merge headers: SSE defaults < init headers < user headers (user wins) */
                 const fetchHeaders = new Headers(
-                  Object.assign({}, init?.headers, headers, SSE_REQUEST_HEADERS),
+                  Object.assign({}, SSE_REQUEST_HEADERS, init?.headers, headers),
                 );
                 const agent = new Agent({
                   bodyTimeout: sseTimeout,
