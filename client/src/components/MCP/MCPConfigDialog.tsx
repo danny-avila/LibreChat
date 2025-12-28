@@ -71,7 +71,14 @@ export default function MCPConfigDialog({
     });
   }, [serverStatus, serverName, localize]);
 
-  // Helper function to render status badge based on connection state
+  /**
+   * Render status badge with unified color system:
+   * - Blue: Connecting/In-progress
+   * - Amber: Needs action (OAuth required)
+   * - Gray: Disconnected (neutral/inactive)
+   * - Green: Connected (success)
+   * - Red: Error
+   */
   const renderStatusBadge = () => {
     if (!serverStatus) {
       return null;
@@ -79,46 +86,51 @@ export default function MCPConfigDialog({
 
     const { connectionState, requiresOAuth } = serverStatus;
 
+    // Connecting: blue (in progress)
     if (connectionState === 'connecting') {
       return (
         <div className="flex items-center gap-2 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600 dark:bg-blue-950 dark:text-blue-400">
-          <Spinner className="h-3 w-3" />
+          <Spinner className="size-3" />
           <span>{localize('com_ui_connecting')}</span>
         </div>
       );
     }
 
+    // Disconnected: check if needs action
     if (connectionState === 'disconnected') {
       if (requiresOAuth) {
+        // Needs OAuth: amber (requires action)
         return (
           <div className="flex items-center gap-2 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-600 dark:bg-amber-950 dark:text-amber-400">
-            <KeyRound className="h-3 w-3" aria-hidden="true" />
-            <span>{localize('com_ui_oauth')}</span>
-          </div>
-        );
-      } else {
-        return (
-          <div className="flex items-center gap-2 rounded-full bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-600 dark:bg-orange-950 dark:text-orange-400">
-            <PlugZap className="h-3 w-3" aria-hidden="true" />
-            <span>{localize('com_ui_offline')}</span>
+            <KeyRound className="size-3" aria-hidden="true" />
+            <span>{localize('com_nav_mcp_status_needs_auth')}</span>
           </div>
         );
       }
+      // Simply disconnected: gray (neutral)
+      return (
+        <div className="flex items-center gap-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+          <PlugZap className="size-3" aria-hidden="true" />
+          <span>{localize('com_nav_mcp_status_disconnected')}</span>
+        </div>
+      );
     }
 
+    // Error: red
     if (connectionState === 'error') {
       return (
         <div className="flex items-center gap-2 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600 dark:bg-red-950 dark:text-red-400">
-          <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+          <AlertTriangle className="size-3" aria-hidden="true" />
           <span>{localize('com_ui_error')}</span>
         </div>
       );
     }
 
+    // Connected: green
     if (connectionState === 'connected') {
       return (
-        <div className="flex items-center gap-2 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900 dark:text-green-300">
-          <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+        <div className="flex items-center gap-2 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-600 dark:bg-green-950 dark:text-green-400">
+          <div className="size-1.5 rounded-full bg-green-500" />
           <span>{localize('com_ui_active')}</span>
         </div>
       );
