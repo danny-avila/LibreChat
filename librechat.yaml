@@ -86,15 +86,14 @@ endpoints:
       baseURL: "https://openrouter.ai/api/v1"
       models:
         default: ["z-ai/glm-4.7"]
-        fetch: true
+      fetch: true
       titleConvo: true
       titleModel: "minimax/minimax-m2.1"
       summarize: false
       summaryModel: "minimax/minimax-m2.1"
       forcePrompt: false
       modelDisplayLabel: "OpenRouter"
-      dropParams: ["stop"] # Critical for preventing hangs on some models
-
+      dropParams: ["stop"] # Critical for preventing hangs on some models   
     # --------------------------------------------------------------------------
     # Groq
     # --------------------------------------------------------------------------
