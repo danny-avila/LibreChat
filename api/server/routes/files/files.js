@@ -7,6 +7,7 @@ const {
   isUUID,
   CacheKeys,
   FileSources,
+  SystemRoles,
   ResourceType,
   EModelEndpoint,
   PermissionBits,
@@ -378,6 +379,44 @@ router.post('/', async (req, res) => {
 
     if (isAssistantsEndpoint(metadata.endpoint)) {
       return await processFileUpload({ req, res, metadata });
+    }
+
+    /** Check agent permissions for agent file uploads (not message attachments) */
+    if (metadata.agent_id && metadata.tool_resource) {
+      const userId = req.user.id;
+
+      /** Admin users bypass permission checks */
+      if (req.user.role !== SystemRoles.ADMIN) {
+        const agent = await getAgent({ id: metadata.agent_id });
+
+        if (!agent) {
+          return res.status(404).json({
+            error: 'Not Found',
+            message: 'Agent not found',
+          });
+        }
+
+        /** Check if user is the author or has edit permission */
+        if (agent.author.toString() !== userId) {
+          const hasEditPermission = await checkPermission({
+            userId,
+            role: req.user.role,
+            resourceType: ResourceType.AGENT,
+            resourceId: agent._id,
+            requiredPermission: PermissionBits.EDIT,
+          });
+
+          if (!hasEditPermission) {
+            logger.warn(
+              `[/files] User ${userId} denied upload to agent ${metadata.agent_id} (insufficient permissions)`,
+            );
+            return res.status(403).json({
+              error: 'Forbidden',
+              message: 'Insufficient permissions to upload files to this agent',
+            });
+          }
+        }
+      }
     }
 
     return await processAgentFileUpload({ req, res, metadata });
