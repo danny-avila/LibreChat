@@ -34,7 +34,8 @@ RUN pip install --no-cache-dir \
 
 # 4. Install Deep Learning (PyTorch CPU only to save space)
 # We use the extra-index-url to get the cpu-only version which is much smaller
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# Commenting out large packages to ensure build success on low-disk environment
+# RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
 # 5. Install NLP packages
 RUN pip install --no-cache-dir \

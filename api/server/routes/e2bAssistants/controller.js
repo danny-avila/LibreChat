@@ -52,7 +52,7 @@ const createAssistant = async (req, res) => {
       e2b_sandbox_template: e2b_sandbox_template || 'python3-data-analysis',
       allowed_libraries: allowed_libraries || [
         'numpy', 'pandas', 'scipy', 'statsmodels', 
-        'scikit-learn', 'xgboost', 'lightgbm', 'torch',
+        'scikit-learn', 'xgboost', 'lightgbm',
         'matplotlib', 'seaborn', 'plotly', 'bokeh',
         'nltk', 'spacy', 'textblob', 'gensim',
         'openpyxl', 'pyarrow', 'fastparquet', 'h5py',
