@@ -14,6 +14,10 @@ const { BlobSASPermissions, generateBlobSASQueryParameters, StorageSharedKeyCred
 let azureUrlExpirySeconds = 2 * 60;
 let azureRefreshExpiryMs = null;
 
+let userDelegationKey = null;
+let userDelegationKeyExpiry = null;
+const DELEGATION_KEY_REFRESH_BUFFER_MS = 5 * 60 * 1000; // 5 minutes
+
 if (process.env.AZURE_URL_EXPIRY_SECONDS !== undefined) {
   const parsed = parseInt(process.env.AZURE_URL_EXPIRY_SECONDS, 10);
   if (!isNaN(parsed) && parsed > 0) {
@@ -35,49 +39,108 @@ if (process.env.AZURE_REFRESH_EXPIRY_MS !== null && process.env.AZURE_REFRESH_EX
 
 const isPublicAccess = () => AZURE_STORAGE_PUBLIC_ACCESS?.toLowerCase() === 'true';
 
+async function getUserDelegationKey(blobServiceClient) {
+  const now = new Date();
+  
+  if (userDelegationKey && userDelegationKeyExpiry) {
+    const timeUntilExpiry = userDelegationKeyExpiry.getTime() - now.getTime();
+    if (timeUntilExpiry > DELEGATION_KEY_REFRESH_BUFFER_MS) {
+      return userDelegationKey;
+    }
+  }
+
+  const startsOn = now;
+  const expiresOn = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
+  
+  userDelegationKey = await blobServiceClient.getUserDelegationKey(startsOn, expiresOn);
+  userDelegationKeyExpiry = expiresOn;
+  
+  logger.info('[Azure] User delegation key obtained, expires:', expiresOn.toISOString());
+  return userDelegationKey;
+}
+
+/**
+ * 
+ * @param {*} param0 
+ * @returns 
+ */
 async function getSignedAzureURL({ blobPath, containerName = AZURE_CONTAINER_NAME }) {
   try {
     const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-    if (!connectionString) {
-      const containerClient = await getAzureContainerClient(containerName);
-      const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
-      return blockBlobClient.url;
-    }
+    const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
 
-    const { BlobServiceClient, BlobSASPermissions, generateBlobSASQueryParameters, StorageSharedKeyCredential } = await import('@azure/storage-blob');
-    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
-    
-    const match = connectionString.match(/AccountName=([^;]+)/i);
-    const keyMatch = connectionString.match(/AccountKey=([^;]+)/i);
-    
-    if (!match || !keyMatch) {
-      const containerClient = blobServiceClient.getContainerClient(containerName);
-      const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
-      return blockBlobClient.url;
-    }
-
-    const accountName = match[1];
-    const accountKey = keyMatch[1];
-    const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
-
-    const containerClient = blobServiceClient.getContainerClient(containerName);
-    const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
+    const {
+      BlobServiceClient,
+      BlobSASPermissions,
+      generateBlobSASQueryParameters,
+      StorageSharedKeyCredential,
+    } = await import('@azure/storage-blob');
 
     const startsOn = new Date();
     const expiresOn = new Date(startsOn.getTime() + azureUrlExpirySeconds * 1000);
 
-    const sasToken = generateBlobSASQueryParameters(
-      {
-        containerName,
-        blobName: blobPath,
-        permissions: BlobSASPermissions.parse('r'),
-        startsOn,
-        expiresOn,
-      },
-      sharedKeyCredential,
-    ).toString();
+    if (connectionString) {
+      const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+      const containerClient = blobServiceClient.getContainerClient(containerName);
+      const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
 
-    return `${blockBlobClient.url}?${sasToken}`;
+      const match = connectionString.match(/AccountName=([^;]+)/i);
+      const keyMatch = connectionString.match(/AccountKey=([^;]+)/i);
+
+      if (!match || !keyMatch) {
+        logger.warn('[getSignedAzureURL] Connection string missing AccountName or AccountKey, returning unsigned URL');
+        return blockBlobClient.url;
+      }
+
+      const sharedKeyCredential = new StorageSharedKeyCredential(match[1], keyMatch[1]);
+
+      const sasToken = generateBlobSASQueryParameters(
+        {
+          containerName,
+          blobName: blobPath,
+          permissions: BlobSASPermissions.parse('r'),
+          startsOn,
+          expiresOn,
+        },
+        sharedKeyCredential,
+      ).toString();
+
+      return `${blockBlobClient.url}?${sasToken}`;
+    }
+
+    if (accountName) {
+      try {
+        const { DefaultAzureCredential } = await import('@azure/identity');
+        const credential = new DefaultAzureCredential();
+        const blobServiceClient = new BlobServiceClient(
+          `https://${accountName}.blob.core.windows.net`,
+          credential,
+        );
+
+        const delegationKey = await getUserDelegationKey(blobServiceClient);
+        const containerClient = blobServiceClient.getContainerClient(containerName);
+        const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
+
+        const sasToken = generateBlobSASQueryParameters(
+          {
+            containerName,
+            blobName: blobPath,
+            permissions: BlobSASPermissions.parse('r'),
+            startsOn,
+            expiresOn,
+          },
+          delegationKey,
+          accountName,
+        ).toString();
+
+        return `${blockBlobClient.url}?${sasToken}`;
+      } catch (credentialError) {
+        logger.error('[getSignedAzureURL] User Delegation signing failed. Ensure you are running on Azure with Managed Identity or use a connection string:', credentialError.message);
+        throw credentialError;
+      }
+    }
+
+    throw new Error('Azure storage not configured: set AZURE_STORAGE_CONNECTION_STRING for local/AccountKey signing, or AZURE_STORAGE_ACCOUNT_NAME for Managed Identity');
   } catch (error) {
     logger.error('[getSignedAzureURL] Error generating signed URL:', error);
     throw error;
@@ -467,4 +530,5 @@ module.exports = {
   refreshAzureFileUrls,
   refreshAzureUrl,
   getNewAzureURL,
+  extractBlobPathFromAzureUrl
 };

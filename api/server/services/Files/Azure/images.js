@@ -122,15 +122,14 @@ async function processAzureAvatar({
       basePath,
       containerName,
     });
-    const isManual = manual === 'true';
-    const url = `${downloadURL}?manual=${isManual}`;
 
     // Only update user record if this is a user avatar (manual === 'true')
+    const isManual = manual === 'true';
     if (isManual && !agentId) {
-      await updateUser(userId, { avatar: url });
+      await updateUser(userId, { avatar: downloadURL });
     }
 
-    return url;
+    return downloadURL;
   } catch (error) {
     logger.error('[processAzureAvatar] Error uploading profile picture to Azure:', error);
     throw error;
