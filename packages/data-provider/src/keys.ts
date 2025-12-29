@@ -57,6 +57,11 @@ export enum QueryKeys {
   resourcePermissions = 'resourcePermissions',
   effectivePermissions = 'effectivePermissions',
   graphToken = 'graphToken',
+  /* MCP Servers */
+  mcpServers = 'mcpServers',
+  mcpServer = 'mcpServer',
+  /* Active Jobs */
+  activeJobs = 'activeJobs',
 }
 
 // Dynamic query keys that require parameters

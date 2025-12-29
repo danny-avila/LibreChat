@@ -12,6 +12,7 @@ const {
 const {
   findAccessibleResources: findAccessibleResourcesACL,
   getEffectivePermissions: getEffectivePermissionsACL,
+  getEffectivePermissionsForResources: getEffectivePermissionsForResourcesACL,
   grantPermission: grantPermissionACL,
   findEntriesByPrincipalsAndResource,
   findGroupByExternalId,
@@ -181,6 +182,49 @@ const getEffectivePermissions = async ({ userId, role, resourceType, resourceId 
   } catch (error) {
     logger.error(`[PermissionService.getEffectivePermissions] Error: ${error.message}`);
     return 0;
+  }
+};
+
+/**
+ * Get effective permissions for multiple resources in a batch operation
+ * Returns map of resourceId → effectivePermissionBits
+ *
+ * @param {Object} params - Parameters
+ * @param {string|mongoose.Types.ObjectId} params.userId - User ID
+ * @param {string} [params.role] - User role (for group membership)
+ * @param {string} params.resourceType - Resource type (must be valid ResourceType)
+ * @param {Array<mongoose.Types.ObjectId>} params.resourceIds - Array of resource IDs
+ * @returns {Promise<Map<string, number>>} Map of resourceId string → permission bits
+ * @throws {Error} If resourceType is invalid
+ */
+const getResourcePermissionsMap = async ({ userId, role, resourceType, resourceIds }) => {
+  // Validate resource type - throw on invalid type
+  validateResourceType(resourceType);
+
+  // Handle empty input
+  if (!Array.isArray(resourceIds) || resourceIds.length === 0) {
+    return new Map();
+  }
+
+  try {
+    // Get user principals (user + groups + public)
+    const principals = await getUserPrincipals({ userId, role });
+
+    // Use batch method from aclEntry
+    const permissionsMap = await getEffectivePermissionsForResourcesACL(
+      principals,
+      resourceType,
+      resourceIds,
+    );
+
+    logger.debug(
+      `[PermissionService.getResourcePermissionsMap] Computed permissions for ${resourceIds.length} resources, ${permissionsMap.size} have permissions`,
+    );
+
+    return permissionsMap;
+  } catch (error) {
+    logger.error(`[PermissionService.getResourcePermissionsMap] Error: ${error.message}`, error);
+    throw error;
   }
 };
 
@@ -788,6 +832,7 @@ module.exports = {
   grantPermission,
   checkPermission,
   getEffectivePermissions,
+  getResourcePermissionsMap,
   findAccessibleResources,
   findPubliclyAccessibleResources,
   hasPublicPermission,

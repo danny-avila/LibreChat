@@ -118,7 +118,7 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
                   onClick={handleAddStarter}
                   disabled={hasReachedMax}
                 >
-                  <Plus className="size-4" />
+                  <Plus className="size-4" aria-hidden="true" />
                 </TooltipAnchor>
               </div>
             )}
@@ -145,7 +145,7 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
               className="absolute right-1 top-1 flex size-7 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-surface-hover"
               onClick={() => handleDeleteStarter(index)}
             >
-              <X className="size-4" />
+              <X className="size-4" aria-hidden="true" />
             </TooltipAnchor>
           </div>
         ))}

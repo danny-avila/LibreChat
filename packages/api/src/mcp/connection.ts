@@ -68,6 +68,145 @@ function isStreamableHTTPOptions(options: t.MCPOptions): options is t.Streamable
 
 const FIVE_MINUTES = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT = 60000;
+/** SSE connections through proxies may need longer initial handshake time */
+const SSE_CONNECT_TIMEOUT = 120000;
+
+/**
+ * Headers for SSE connections.
+ *
+ * Headers we intentionally DO NOT include:
+ * - Accept: text/event-stream - Already set by eventsource library AND MCP SDK
+ * - X-Accel-Buffering: This is a RESPONSE header for Nginx, not a request header.
+ *   The upstream MCP server must send this header for Nginx to respect it.
+ * - Connection: keep-alive: Forbidden in HTTP/2 (RFC 7540 §8.1.2.2).
+ *   HTTP/2 manages connection persistence differently.
+ */
+const SSE_REQUEST_HEADERS = {
+  'Cache-Control': 'no-cache',
+};
+
+/**
+ * Extracts a meaningful error message from SSE transport errors.
+ * The MCP SDK's SSEClientTransport can produce "SSE error: undefined" when the
+ * underlying eventsource library encounters connection issues without a specific message.
+ *
+ * @returns Object containing:
+ *   - message: Human-readable error description
+ *   - code: HTTP status code if available
+ *   - isProxyHint: Whether this error suggests proxy misconfiguration
+ *   - isTransient: Whether this is likely a transient error that will auto-reconnect
+ */
+function extractSSEErrorMessage(error: unknown): {
+  message: string;
+  code?: number;
+  isProxyHint: boolean;
+  isTransient: boolean;
+} {
+  if (!error || typeof error !== 'object') {
+    return {
+      message: 'Unknown SSE transport error',
+      isProxyHint: true,
+      isTransient: true,
+    };
+  }
+
+  const errorObj = error as { message?: string; code?: number; event?: unknown };
+  const rawMessage = errorObj.message ?? '';
+  const code = errorObj.code;
+
+  /**
+   * Handle the common "SSE error: undefined" case.
+   * This typically occurs when:
+   * 1. A reverse proxy buffers the SSE stream (proxy issue)
+   * 2. The server closes an idle connection (normal SSE behavior)
+   * 3. Network interruption without specific error details
+   *
+   * In all cases, the eventsource library will attempt to reconnect automatically.
+   */
+  if (rawMessage === 'SSE error: undefined' || rawMessage === 'undefined' || !rawMessage) {
+    return {
+      message:
+        'SSE connection closed. This can occur due to: (1) idle connection timeout (normal), ' +
+        '(2) reverse proxy buffering (check proxy_buffering config), or (3) network interruption.',
+      code,
+      isProxyHint: true,
+      isTransient: true,
+    };
+  }
+
+  /**
+   * Check for timeout patterns. Use case-insensitive matching for common timeout error codes:
+   * - ETIMEDOUT: TCP connection timeout
+   * - ESOCKETTIMEDOUT: Socket timeout
+   * - "timed out" / "timeout": Generic timeout messages
+   */
+  const lowerMessage = rawMessage.toLowerCase();
+  if (
+    rawMessage.includes('ETIMEDOUT') ||
+    rawMessage.includes('ESOCKETTIMEDOUT') ||
+    lowerMessage.includes('timed out') ||
+    lowerMessage.includes('timeout after') ||
+    lowerMessage.includes('request timeout')
+  ) {
+    return {
+      message: `SSE connection timed out: ${rawMessage}. If behind a reverse proxy, increase proxy_read_timeout.`,
+      code,
+      isProxyHint: true,
+      isTransient: true,
+    };
+  }
+
+  // Connection reset is often transient (server restart, proxy reload)
+  if (rawMessage.includes('ECONNRESET')) {
+    return {
+      message: `SSE connection reset: ${rawMessage}. The server or proxy may have restarted.`,
+      code,
+      isProxyHint: false,
+      isTransient: true,
+    };
+  }
+
+  // Connection refused is more serious - server may be down
+  if (rawMessage.includes('ECONNREFUSED')) {
+    return {
+      message: `SSE connection refused: ${rawMessage}. Verify the MCP server is running and accessible.`,
+      code,
+      isProxyHint: false,
+      isTransient: false,
+    };
+  }
+
+  // DNS failure is usually a configuration issue, not transient
+  if (rawMessage.includes('ENOTFOUND') || rawMessage.includes('getaddrinfo')) {
+    return {
+      message: `SSE DNS resolution failed: ${rawMessage}. Check the server URL is correct.`,
+      code,
+      isProxyHint: false,
+      isTransient: false,
+    };
+  }
+
+  // Check for HTTP status codes in the message
+  const statusMatch = rawMessage.match(/\b(4\d{2}|5\d{2})\b/);
+  if (statusMatch) {
+    const statusCode = parseInt(statusMatch[1], 10);
+    // 5xx errors are often transient, 4xx are usually not
+    const isServerError = statusCode >= 500 && statusCode < 600;
+    return {
+      message: rawMessage,
+      code: statusCode,
+      isProxyHint: statusCode === 502 || statusCode === 503 || statusCode === 504,
+      isTransient: isServerError,
+    };
+  }
+
+  return {
+    message: rawMessage,
+    code,
+    isProxyHint: false,
+    isTransient: false,
+  };
+}
 
 interface MCPConnectionParams {
   serverName: string;
@@ -98,6 +237,12 @@ export class MCPConnection extends EventEmitter {
   timeout?: number;
   url?: string;
 
+  /**
+   * Timestamp when this connection was created.
+   * Used to detect if connection is stale compared to updated config.
+   */
+  public readonly createdAt: number;
+
   setRequestHeaders(headers: Record<string, string> | null): void {
     if (!headers) {
       return;
@@ -121,6 +266,7 @@ export class MCPConnection extends EventEmitter {
     this.iconPath = params.serverConfig.iconPath;
     this.timeout = params.serverConfig.timeout;
     this.lastPingTime = Date.now();
+    this.createdAt = Date.now(); // Record creation timestamp for staleness detection
     if (params.oauthTokens) {
       this.oauthTokens = params.oauthTokens;
     }
@@ -251,18 +397,29 @@ export class MCPConnection extends EventEmitter {
             headers['Authorization'] = `Bearer ${this.oauthTokens.access_token}`;
           }
 
-          const timeoutValue = this.timeout || DEFAULT_TIMEOUT;
+          /**
+           * SSE connections need longer timeouts for reliability.
+           * The connect timeout is extended because proxies may delay initial response.
+           */
+          const sseTimeout = this.timeout || SSE_CONNECT_TIMEOUT;
           const transport = new SSEClientTransport(url, {
             requestInit: {
-              headers,
+              /** User/OAuth headers override SSE defaults */
+              headers: { ...SSE_REQUEST_HEADERS, ...headers },
               signal: abortController.signal,
             },
             eventSourceInit: {
               fetch: (url, init) => {
-                const fetchHeaders = new Headers(Object.assign({}, init?.headers, headers));
+                /** Merge headers: SSE defaults < init headers < user headers (user wins) */
+                const fetchHeaders = new Headers(
+                  Object.assign({}, SSE_REQUEST_HEADERS, init?.headers, headers),
+                );
                 const agent = new Agent({
-                  bodyTimeout: timeoutValue,
-                  headersTimeout: timeoutValue,
+                  bodyTimeout: sseTimeout,
+                  headersTimeout: sseTimeout,
+                  /** Extended keep-alive for long-lived SSE connections */
+                  keepAliveTimeout: sseTimeout,
+                  keepAliveMaxTimeout: sseTimeout * 2,
                 });
                 return undiciFetch(url, {
                   ...init,
@@ -273,7 +430,7 @@ export class MCPConnection extends EventEmitter {
             },
             fetch: this.createFetchFunction(
               this.getRequestHeaders.bind(this),
-              this.timeout,
+              sseTimeout,
             ) as unknown as FetchLike,
           });
 
@@ -408,6 +565,24 @@ export class MCPConnection extends EventEmitter {
         } catch (error) {
           logger.error(`${this.getLogPrefix()} Reconnection attempt failed:`, error);
 
+          // Stop immediately if rate limited - retrying will only make it worse
+          if (this.isRateLimitError(error)) {
+            /**
+             * Rate limiting sets shouldStopReconnecting to prevent hammering the server.
+             * Silent return here (vs throw in connectClient) because we're already in
+             * error recovery mode - throwing would just add noise. The connection
+             * must be recreated to retry after rate limit lifts.
+             */
+            logger.warn(
+              `${this.getLogPrefix()} Rate limited (429), stopping reconnection attempts`,
+            );
+            logger.debug(
+              `${this.getLogPrefix()} Rate limit block is permanent for this connection instance`,
+            );
+            this.shouldStopReconnecting = true;
+            return;
+          }
+
           if (
             this.reconnectAttempts === this.MAX_RECONNECT_ATTEMPTS ||
             (this.shouldStopReconnecting as boolean)
@@ -468,6 +643,25 @@ export class MCPConnection extends EventEmitter {
         this.emit('connectionChange', 'connected');
         this.reconnectAttempts = 0;
       } catch (error) {
+        // Check if it's a rate limit error - stop immediately to avoid making it worse
+        if (this.isRateLimitError(error)) {
+          /**
+           * Rate limiting sets shouldStopReconnecting to prevent hammering the server.
+           * This is a permanent block for this connection instance - the connection
+           * must be recreated (e.g., by user re-initiating) to retry after rate limit lifts.
+           *
+           * We throw here (unlike handleReconnection which returns silently) because:
+           * - connectClient() is a public API - callers expect async errors to throw
+           * - Other errors in this catch block also throw for consistency
+           * - handleReconnection is private/internal error recovery, different context
+           */
+          logger.warn(`${this.getLogPrefix()} Rate limited (429), stopping connection attempts`);
+          this.shouldStopReconnecting = true;
+          this.connectionState = 'error';
+          this.emit('connectionChange', 'error');
+          throw error;
+        }
+
         // Check if it's an OAuth authentication error
         if (this.isOAuthError(error)) {
           logger.warn(`${this.getLogPrefix()} OAuth authentication required`);
@@ -595,26 +789,70 @@ export class MCPConnection extends EventEmitter {
 
   private setupTransportErrorHandlers(transport: Transport): void {
     transport.onerror = (error) => {
-      if (error && typeof error === 'object' && 'code' in error) {
-        const errorCode = (error as unknown as { code?: number }).code;
+      // Extract meaningful error information (handles "SSE error: undefined" cases)
+      const {
+        message: errorMessage,
+        code: errorCode,
+        isProxyHint,
+        isTransient,
+      } = extractSSEErrorMessage(error);
 
-        // Ignore SSE 404 errors for servers that don't support SSE
-        if (
-          errorCode === 404 &&
-          String(error?.message).toLowerCase().includes('failed to open sse stream')
-        ) {
-          logger.warn(`${this.getLogPrefix()} SSE stream not available (404). Ignoring.`);
-          return;
+      // Ignore SSE 404 errors for servers that don't support SSE
+      if (errorCode === 404 && errorMessage.toLowerCase().includes('failed to open sse stream')) {
+        logger.warn(`${this.getLogPrefix()} SSE stream not available (404). Ignoring.`);
+        return;
+      }
+
+      // Check if it's an OAuth authentication error
+      if (this.isOAuthError(error)) {
+        logger.warn(`${this.getLogPrefix()} OAuth authentication error detected`);
+        this.emit('oauthError', error);
+      }
+
+      /**
+       * Log with enhanced context for debugging.
+       * All transport.onerror events are logged as errors to preserve stack traces.
+       * isTransient indicates whether auto-reconnection is expected to succeed.
+       *
+       * The MCP SDK's SseError extends Error and includes:
+       * - code: HTTP status code or eventsource error code
+       * - event: The original eventsource ErrorEvent
+       * - stack: Full stack trace
+       */
+      const errorContext: Record<string, unknown> = {
+        code: errorCode,
+        isTransient,
+      };
+
+      if (isProxyHint) {
+        errorContext.hint = 'Check Nginx/proxy configuration for SSE endpoints';
+      }
+
+      // Extract additional debug info from SseError if available
+      if (error && typeof error === 'object') {
+        const sseError = error as { event?: unknown; stack?: string };
+
+        // Include the original eventsource event for debugging
+        if (sseError.event && typeof sseError.event === 'object') {
+          const event = sseError.event as { code?: number; message?: string; type?: string };
+          errorContext.eventDetails = {
+            type: event.type,
+            code: event.code,
+            message: event.message,
+          };
         }
 
-        // Check if it's an OAuth authentication error
-        if (errorCode === 401 || errorCode === 403) {
-          logger.warn(`${this.getLogPrefix()} OAuth authentication error detected`);
-          this.emit('oauthError', error);
+        // Include stack trace if available
+        if (sseError.stack) {
+          errorContext.stack = sseError.stack;
         }
       }
 
-      logger.error(`${this.getLogPrefix()} Transport error:`, error);
+      const errorLabel = isTransient
+        ? 'Transport error (transient, will reconnect)'
+        : 'Transport error (may require manual intervention)';
+
+      logger.error(`${this.getLogPrefix()} ${errorLabel}: ${errorMessage}`, errorContext);
 
       this.emit('connectionChange', 'error');
     };
@@ -736,20 +974,81 @@ export class MCPConnection extends EventEmitter {
     this.oauthTokens = tokens;
   }
 
+  /**
+   * Check if this connection is stale compared to config update time.
+   * A connection is stale if it was created before the config was updated.
+   *
+   * @param configUpdatedAt - Unix timestamp (ms) when config was last updated
+   * @returns true if connection was created before config update, false otherwise
+   */
+  public isStale(configUpdatedAt: number): boolean {
+    return this.createdAt < configUpdatedAt;
+  }
+
   private isOAuthError(error: unknown): boolean {
     if (!error || typeof error !== 'object') {
       return false;
     }
 
-    // Check for SSE error with 401 status
+    // Check for error code
+    if ('code' in error) {
+      const code = (error as { code?: number }).code;
+      if (code === 401 || code === 403) {
+        return true;
+      }
+    }
+
+    // Check message for various auth error indicators
     if ('message' in error && typeof error.message === 'string') {
-      return error.message.includes('401') || error.message.includes('Non-200 status code (401)');
+      const message = error.message.toLowerCase();
+      // Check for 401 status
+      if (message.includes('401') || message.includes('non-200 status code (401)')) {
+        return true;
+      }
+      // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
+      if (message.includes('invalid_token')) {
+        return true;
+      }
+      // Check for invalid_grant (OAuth servers return this for expired/revoked grants)
+      if (message.includes('invalid_grant')) {
+        return true;
+      }
+      // Check for authentication required
+      if (message.includes('authentication required') || message.includes('unauthorized')) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Checks if an error indicates rate limiting (HTTP 429).
+   * Rate limited requests should stop reconnection attempts to avoid making the situation worse.
+   */
+  private isRateLimitError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
     }
 
     // Check for error code
     if ('code' in error) {
       const code = (error as { code?: number }).code;
-      return code === 401 || code === 403;
+      if (code === 429) {
+        return true;
+      }
+    }
+
+    // Check message for rate limit indicators
+    if ('message' in error && typeof error.message === 'string') {
+      const message = error.message.toLowerCase();
+      if (
+        message.includes('429') ||
+        message.includes('rate limit') ||
+        message.includes('too many requests')
+      ) {
+        return true;
+      }
     }
 
     return false;

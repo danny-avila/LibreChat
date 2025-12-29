@@ -103,7 +103,7 @@ const Menu: React.FC<MenuProps> = ({
               >
                 <Ariakit.MenuButton
                   className={cn(
-                    'group flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-none transition-colors duration-200 hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',
+                    'group flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-none hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',
                     itemClassName,
                   )}
                   disabled={item.disabled}
@@ -138,13 +138,16 @@ const Menu: React.FC<MenuProps> = ({
               key={`${keyPrefix ?? ''}${index}-${item.id ?? ''}`}
               id={item.id}
               className={cn(
-                'group flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-none transition-colors duration-200 hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',
+                'group flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-3.5 text-sm text-text-primary outline-none hover:bg-surface-hover focus:bg-surface-hover md:px-2.5 md:py-2',
                 itemClassName,
+                item.className,
               )}
               disabled={item.disabled}
               render={item.render}
               ref={item.ref}
               hideOnClick={item.hideOnClick}
+              aria-haspopup={item.ariaHasPopup}
+              aria-controls={item.ariaControls}
               onClick={(event) => {
                 event.preventDefault();
                 if (item.onClick) {

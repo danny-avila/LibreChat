@@ -27,3 +27,5 @@ export * from './aclEntry';
 export * from './group';
 /* Web */
 export * from './web';
+/* MCP Servers */
+export * from './mcp';
