@@ -81,7 +81,7 @@ async function runRealTest() {
         // Add 'prompt' field explicitly as it is required by the Schema
         prompt: 'You are a python data analyst. Always write and execute python code to solve math or data problems.',
         model: 'gpt-4o', 
-        e2b_sandbox_template: 'code-interpreter-v1', // Use specific v1 template which is proven to work
+        e2b_sandbox_template: 'ei0mvdo09wb38dnl2j7x', // Custom Template with pre-installed packages
         e2b_config: { timeout_ms: 600000 } // Increased to 10 minutes
       }
     };
@@ -99,14 +99,14 @@ async function runRealTest() {
     // 4. 发起对话 (Chat)
     // 这是一个真实的端到端调用
     console.log('\n💬 Sending Chat Message (this allows the Agent to think and run code)...');
-    console.log('❓ Question: "Generate a list of the first 5 Fibonacci numbers using Python."');
+    console.log('❓ Question: "Verify environment: 1. Use numpy to create a 3x3 identity matrix. 2. Use nltk to tokenize \'Hello E2B World\'. Print results."');
     
     const chatReq = {
       user,
       baseUrl: '/api/e2b-assistants', // Required for version detection in helpers.js
       params: { assistant_id: assistant.id },
       body: {
-        text: 'Generate a list of the first 5 Fibonacci numbers using Python.',
+        text: 'Verify environment: 1. Use numpy to create a 3x3 identity matrix. 2. Use nltk to tokenize "Hello E2B World". Print results.',
         conversationId: `real-test-convo-${Date.now()}`,
         version: 2, // Explicitly set version to bypass config lookup issues
         endpoint: 'e2bAssistants' // Required by getOpenAIClient helper

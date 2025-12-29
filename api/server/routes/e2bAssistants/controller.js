@@ -51,7 +51,12 @@ const createAssistant = async (req, res) => {
       code_execution_mode: code_execution_mode || 'interactive',
       e2b_sandbox_template: e2b_sandbox_template || 'python3-data-analysis',
       allowed_libraries: allowed_libraries || [
-        'pandas', 'numpy', 'matplotlib', 'seaborn', 'scikit-learn', 'xgboost'
+        'numpy', 'pandas', 'scipy', 'statsmodels', 
+        'scikit-learn', 'xgboost', 'lightgbm', 'torch',
+        'matplotlib', 'seaborn', 'plotly', 'bokeh',
+        'nltk', 'spacy', 'textblob', 'gensim',
+        'openpyxl', 'pyarrow', 'fastparquet', 'h5py',
+        'requests', 'beautifulsoup4', 'networkx', 'sympy', 'yfinance', 'faker'
       ],
       conversation_starters: conversation_starters || [],
       // Access control defaults (to be refined by collaborators)
