@@ -41,11 +41,12 @@ interface:
 
   customWelcome: 'Welcome to LibreChat! Select a model to begin.'
 
+  # ENABLE MCP UI for remote servers
   mcpServers:
-    placeholder: 'MCP Servers'
     use: true
     create: true
     share: true
+    placeholder: 'MCP Servers'
 
 # ==============================================================================
 # REGISTRATION
@@ -83,6 +84,20 @@ endpoints:
       summaryModel: "anthropic/claude-3.5-sonnet"
       dropParams: ["stop"]
       modelDisplayLabel: "OpenRouter"
+
+# ==============================================================================
+# MCP SERVERS (Remote Only)
+# ==============================================================================
+mcpServers:
+  # Anna's Archive MCP Server (Remote)
+  annas-archive:
+    type: "streamable-http"
+    url: "https://server.smithery.ai/chris/annas-mcp"
+    timeout: 60000
+    initTimeout: 30000
+    chatMenu: true
+    startup: true
+    serverInstructions: "Use this to search for and download books from Anna's Archive"
 
 # ==============================================================================
 # FILE CONFIG
