@@ -21,6 +21,7 @@ import { ShareArtifactsContainer } from './ShareArtifacts';
 import { useLocalize, useDocumentTitle } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import { ShareContext } from '~/Providers';
+import { ShareMessagesProvider } from './ShareMessagesProvider';
 import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';
 import { cn } from '~/utils';
@@ -108,7 +109,9 @@ function SharedView() {
           onLangChange={handleLangChange}
           settingsLabel={localize('com_nav_settings')}
         />
-        <MessagesView messagesTree={messagesTree} conversationId={data.conversationId} />
+        <ShareMessagesProvider messages={data.messages}>
+          <MessagesView messagesTree={messagesTree} conversationId="shared-conversation" />
+        </ShareMessagesProvider>
       </>
     );
   } else {

@@ -36,7 +36,7 @@ export default function DuplicateAgent({ agent_id }: { agent_id: string }) {
     <Button
       size="sm"
       variant="outline"
-      aria-label={localize('com_ui_duplicate') + ' ' + localize('com_ui_agent')}
+      aria-label={localize('com_ui_duplicate_agent')}
       type="button"
       onClick={handleDuplicate}
     >

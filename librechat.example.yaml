@@ -94,8 +94,29 @@ interface:
     groups: true
     roles: true
   marketplace:
-      use: false
+    use: false
   fileCitations: true
+  mcpServers:
+    # MCP Servers configuration
+    # Controls user permissions for MCP (Model Context Protocol) server management
+    # - use: Allow users to use configured MCP servers
+    # - create: Allow users to create and manage new MCP servers
+    # - share: Allow users to share MCP servers with other users
+    use: false
+    create: false
+    share: false
+    # Creation / edit MCP server config Dialog config example
+    # trustCheckbox:
+    #   label:
+    #     en: 'I understand and I want to continue'
+    #     de: 'Ich verstehe und möchte fortfahren'
+    #     de-DE: 'Ich verstehe und möchte fortfahren' # You can narrow translation to regions like (de-DE or de-CH)
+    #   subLabel:
+    #     en: |
+    #       Librechat hasn't reviewed this MCP server. Attackers may attempt to steal your data or trick the model into taking unintended actions, including destroying data. <a href="https://google.de" target="_blank"><strong>Learn more.</strong></a>
+    #     de: |
+    #       LibreChat hat diesen MCP-Server nicht überprüft. Angreifer könnten versuchen, Ihre Daten zu stehlen oder das Modell zu unbeabsichtigten Aktionen zu verleiten, einschließlich der Zerstörung von Daten. <a href="https://google.de" target="_blank"><strong>Mehr erfahren.</strong></a>
+
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
 
@@ -162,6 +183,16 @@ actions:
     - 'swapi.dev'
     - 'librechat.ai'
     - 'google.com'
+
+# MCP Server domain restrictions for remote transports (SSE, WebSocket, HTTP)
+# Stdio transports (local processes) are not restricted.
+# If not configured, all domains are allowed (permissive default).
+# Supports wildcards: '*.example.com' matches 'api.example.com', 'staging.example.com', etc.
+# mcpSettings:
+#   allowedDomains:
+#     - 'localhost'
+#     - '*.example.com'
+#     - 'trusted-mcp-provider.com'
 
 # Example MCP Servers Object Structure
 # mcpServers:
@@ -291,7 +322,7 @@ endpoints:
       apiKey: '${OPENROUTER_KEY}'
       baseURL: 'https://openrouter.ai/api/v1'
       headers:
-          x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
+        x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
       models:
         default: ['meta-llama/llama-3-70b-instruct']
         fetch: true
@@ -308,9 +339,10 @@ endpoints:
       apiKey: '${HELICONE_KEY}'
       baseURL: 'https://ai-gateway.helicone.ai'
       headers:
-          x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
+        x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
       models:
-        default: ['gpt-4o-mini', 'claude-4.5-sonnet', 'llama-3.1-8b-instruct', 'gemini-2.5-flash-lite']
+        default:
+          ['gpt-4o-mini', 'claude-4.5-sonnet', 'llama-3.1-8b-instruct', 'gemini-2.5-flash-lite']
         fetch: true
       titleConvo: true
       titleModel: 'gpt-4o-mini'
@@ -339,6 +371,10 @@ endpoints:
 # - If 'group' matches an endpoint name (e.g., "openAI", "groq"), the spec appears nested under that endpoint
 # - If 'group' is a custom name (doesn't match any endpoint), it creates a separate collapsible section
 # - If 'group' is omitted, the spec appears as a standalone item at the top level
+#
+# The 'groupIcon' field sets an icon for custom groups:
+# - Only needs to be set on one spec per group (first one is used)
+# - Can be a URL or a built-in endpoint key (e.g., "openAI", "anthropic", "groq")
 # modelSpecs:
 #   list:
 #     # Example 1: Nested under an endpoint (grouped with openAI endpoint)
@@ -359,11 +395,12 @@ endpoints:
 #         endpoint: "groq"
 #         model: "llama3-70b-8192"
 #
-#     # Example 3: Custom group (creates a separate collapsible section)
+#     # Example 3: Custom group with icon (creates a separate collapsible section)
 #     - name: "coding-assistant"
 #       label: "Coding Assistant"
 #       description: "Specialized for coding tasks"
 #       group: "my-assistants"  # Custom string - doesn't match any endpoint, so creates its own group
+#       groupIcon: "https://example.com/icons/assistants.png"  # Icon URL for the group
 #       preset:
 #         endpoint: "openAI"
 #         model: "gpt-4o"
@@ -374,12 +411,22 @@ endpoints:
 #       label: "Writing Assistant"
 #       description: "Specialized for creative writing"
 #       group: "my-assistants"  # Same custom group name - both specs appear in same section
+#       # No need to set groupIcon again - the first spec's icon is used
 #       preset:
 #         endpoint: "anthropic"
 #         model: "claude-sonnet-4"
 #         instructions: "You are a creative writing expert..."
 #
-#     # Example 4: Standalone (no group - appears at top level)
+#     # Example 4: Custom group using built-in icon key
+#     - name: "fast-models"
+#       label: "Fast Response Model"
+#       group: "Fast Models"
+#       groupIcon: "groq"  # Uses the built-in Groq icon
+#       preset:
+#         endpoint: "groq"
+#         model: "llama3-8b-8192"
+#
+#     # Example 5: Standalone (no group - appears at top level)
 #     - name: "general-assistant"
 #       label: "General Assistant"
 #       description: "General purpose assistant"
