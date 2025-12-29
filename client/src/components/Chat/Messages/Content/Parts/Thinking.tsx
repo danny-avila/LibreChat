@@ -1,6 +1,6 @@
 import { useState, useMemo, memo, useCallback } from 'react';
 import { useAtomValue } from 'jotai';
-import { Lightbulb, ChevronDown } from 'lucide-react';
+import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
 import { Clipboard, CheckMark } from '@librechat/client';
 import type { MouseEvent, FC } from 'react';
 import { showThinkingAtom } from '~/store/showThinking';
@@ -90,13 +90,13 @@ export const ThinkingButton = memo(
           <button
             type="button"
             onClick={handleCopy}
-            title={
+            aria-label={
               isCopied
                 ? localize('com_ui_copied_to_clipboard')
                 : localize('com_ui_copy_thoughts_to_clipboard')
             }
             className={cn(
-              'rounded-lg p-1.5 text-text-secondary-alt transition-colors duration-200',
+              'rounded-lg p-1.5 text-text-secondary-alt',
               isExpanded
                 ? 'opacity-0 group-focus-within/thinking-container:opacity-100 group-hover/thinking-container:opacity-100'
                 : 'opacity-0',
@@ -104,9 +104,59 @@ export const ThinkingButton = memo(
               'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
             )}
           >
-            {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
+            {isCopied ? (
+              <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
+            ) : (
+              <Clipboard size="19" aria-hidden="true" />
+            )}
           </button>
         )}
+      </div>
+    );
+  },
+);
+
+/**
+ * ThinkingFooter - Footer with collapse and copy buttons shown at the bottom of expanded content
+ * Allows users to collapse without scrolling back to the top
+ */
+export const ThinkingFooter = memo(
+  ({
+    onClick,
+    content,
+  }: {
+    onClick: (e: MouseEvent<HTMLButtonElement>) => void;
+    content?: string;
+  }) => {
+    const localize = useLocalize();
+    const [isCopied, setIsCopied] = useState(false);
+
+    const handleCopy = useCallback(
+      (e: MouseEvent<HTMLButtonElement>) => {
+        e.stopPropagation();
+        if (content) {
+          navigator.clipboard.writeText(content);
+          setIsCopied(true);
+          setTimeout(() => setIsCopied(false), 2000);
+        }
+      },
+      [content],
+    );
+
+    return (
+      <div className="mt-3 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={localize('com_ui_collapse')}
+          className={cn(
+            'rounded-lg p-1.5 text-text-secondary-alt',
+            'hover:bg-surface-hover hover:text-text-primary',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
+          )}
+        >
+          <ChevronUp className="h-[18px] w-[18px]" aria-hidden="true" />
+        </button>
       </div>
     );
   },
@@ -153,7 +203,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
 
   return (
     <div className="group/thinking-container">
-      <div className="sticky top-0 z-10 mb-4 bg-presentation pb-2 pt-2">
+      <div className="mb-4 pb-2 pt-2">
         <ThinkingButton
           isExpanded={isExpanded}
           onClick={handleClick}
@@ -169,6 +219,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
       >
         <div className="overflow-hidden">
           <ThinkingContent>{children}</ThinkingContent>
+          <ThinkingFooter onClick={handleClick} content={textContent} />
         </div>
       </div>
     </div>
@@ -177,6 +228,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
 
 ThinkingButton.displayName = 'ThinkingButton';
 ThinkingContent.displayName = 'ThinkingContent';
+ThinkingFooter.displayName = 'ThinkingFooter';
 Thinking.displayName = 'Thinking';
 
 export default memo(Thinking);
