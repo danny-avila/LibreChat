@@ -102,9 +102,9 @@ interface:
     # - use: Allow users to use configured MCP servers
     # - create: Allow users to create and manage new MCP servers
     # - share: Allow users to share MCP servers with other users
-    use: false
-    create: false
-    share: false
+    use: true
+    create: true
+    share: true
     # Creation / edit MCP server config Dialog config example
     # trustCheckbox:
     #   label:
@@ -188,8 +188,8 @@ actions:
 # Stdio transports (local processes) are not restricted.
 # If not configured, all domains are allowed (permissive default).
 # Supports wildcards: '*.example.com' matches 'api.example.com', 'staging.example.com', etc.
-# mcpSettings:
-#   allowedDomains:
+ mcpSettings:
+   allowedDomains:
 #     - 'localhost'
 #     - '*.example.com'
 #     - 'trusted-mcp-provider.com'
@@ -465,27 +465,27 @@ endpoints:
 # # See the Custom Configuration Guide for more information on Assistants Config:
 # # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
 
-# Web Search Configuration (optional)
-# webSearch:
-#   # Jina Reranking Configuration
-#   jinaApiKey: '${JINA_API_KEY}'  # Your Jina API key
-#   jinaApiUrl: '${JINA_API_URL}'  # Custom Jina API URL (optional, defaults to https://api.jina.ai/v1/rerank)
-#   # Other rerankers
-#   cohereApiKey: '${COHERE_API_KEY}'
-#   # Search providers
-#   serperApiKey: '${SERPER_API_KEY}'
-#   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
-#   searxngApiKey: '${SEARXNG_API_KEY}'
-#   # Content scrapers
-#   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
-#   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+ Web Search Configuration (optional)
+  webSearch:
+  # Jina Reranking Configuration
+    jinaApiKey: '${JINA_API_KEY}'  # Your Jina API key
+    jinaApiUrl: '${JINA_API_URL}'  # Custom Jina API URL (optional, defaults to https://api.jina.ai/v1/rerank)
+  # Other rerankers
+    cohereApiKey: '${COHERE_API_KEY}'
+  # Search providers
+    serperApiKey: '${SERPER_API_KEY}'
+    searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
+    searxngApiKey: '${SEARXNG_API_KEY}'
+#   Content scrapers
+    firecrawlApiKey: '${FIRECRAWL_API_KEY}'
+    firecrawlApiUrl: '${FIRECRAWL_API_URL}'
 
 # Memory configuration for user memories
-# memory:
+  # memory:
 #   # (optional) Disable memory functionality
-#   disabled: false
+    # disabled: false
 #   # (optional) Restrict memory keys to specific values to limit memory storage and improve consistency
-#   validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
+  #  validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
 #   # (optional) Maximum token limit for memory storage (not yet implemented for token counting)
 #   tokenLimit: 10000
 #   # (optional) Enable personalization features (defaults to true if memory is configured)
