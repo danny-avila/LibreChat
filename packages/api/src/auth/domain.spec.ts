@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import {
-  isEmailDomainAllowed,
-  isActionDomainAllowed,
   extractMCPServerDomain,
+  isActionDomainAllowed,
+  isEmailDomainAllowed,
   isMCPDomainAllowed,
+  isSSRFTarget,
 } from './domain';
 
 describe('isEmailDomainAllowed', () => {
@@ -105,9 +106,129 @@ describe('isEmailDomainAllowed', () => {
   });
 });
 
+describe('isSSRFTarget', () => {
+  describe('localhost blocking', () => {
+    it('should block localhost', () => {
+      expect(isSSRFTarget('localhost')).toBe(true);
+      expect(isSSRFTarget('LOCALHOST')).toBe(true);
+      expect(isSSRFTarget('localhost.localdomain')).toBe(true);
+      expect(isSSRFTarget('sub.localhost')).toBe(true);
+    });
+  });
+
+  describe('IPv4 private ranges', () => {
+    it('should block 127.0.0.0/8 (loopback)', () => {
+      expect(isSSRFTarget('127.0.0.1')).toBe(true);
+      expect(isSSRFTarget('127.255.255.255')).toBe(true);
+    });
+
+    it('should block 10.0.0.0/8 (private)', () => {
+      expect(isSSRFTarget('10.0.0.1')).toBe(true);
+      expect(isSSRFTarget('10.255.255.255')).toBe(true);
+    });
+
+    it('should block 172.16.0.0/12 (private)', () => {
+      expect(isSSRFTarget('172.16.0.1')).toBe(true);
+      expect(isSSRFTarget('172.31.255.255')).toBe(true);
+      expect(isSSRFTarget('172.15.0.1')).toBe(false); // Outside range
+      expect(isSSRFTarget('172.32.0.1')).toBe(false); // Outside range
+    });
+
+    it('should block 192.168.0.0/16 (private)', () => {
+      expect(isSSRFTarget('192.168.0.1')).toBe(true);
+      expect(isSSRFTarget('192.168.255.255')).toBe(true);
+    });
+
+    it('should block 169.254.0.0/16 (link-local/cloud metadata)', () => {
+      expect(isSSRFTarget('169.254.169.254')).toBe(true); // AWS metadata
+      expect(isSSRFTarget('169.254.0.1')).toBe(true);
+    });
+
+    it('should block 0.0.0.0', () => {
+      expect(isSSRFTarget('0.0.0.0')).toBe(true);
+    });
+
+    it('should allow public IPs', () => {
+      expect(isSSRFTarget('8.8.8.8')).toBe(false);
+      expect(isSSRFTarget('1.1.1.1')).toBe(false);
+      expect(isSSRFTarget('203.0.113.1')).toBe(false);
+    });
+  });
+
+  describe('IPv6 blocking', () => {
+    it('should block IPv6 loopback', () => {
+      expect(isSSRFTarget('::1')).toBe(true);
+      expect(isSSRFTarget('::')).toBe(true);
+      expect(isSSRFTarget('[::1]')).toBe(true);
+    });
+
+    it('should block IPv6 private ranges', () => {
+      expect(isSSRFTarget('fc00::1')).toBe(true);
+      expect(isSSRFTarget('fd00::1')).toBe(true);
+      expect(isSSRFTarget('fe80::1')).toBe(true);
+    });
+  });
+
+  describe('internal hostnames', () => {
+    it('should block common internal service names', () => {
+      expect(isSSRFTarget('rag_api')).toBe(true);
+      expect(isSSRFTarget('rag-api')).toBe(true);
+      expect(isSSRFTarget('redis')).toBe(true);
+      expect(isSSRFTarget('mongodb')).toBe(true);
+      expect(isSSRFTarget('postgres')).toBe(true);
+      expect(isSSRFTarget('elasticsearch')).toBe(true);
+    });
+
+    it('should block .internal and .local TLDs', () => {
+      expect(isSSRFTarget('api.internal')).toBe(true);
+      expect(isSSRFTarget('service.local')).toBe(true);
+    });
+
+    it('should allow legitimate domains', () => {
+      expect(isSSRFTarget('api.example.com')).toBe(false);
+      expect(isSSRFTarget('swagger.io')).toBe(false);
+      expect(isSSRFTarget('openai.com')).toBe(false);
+    });
+  });
+});
+
 describe('isActionDomainAllowed', () => {
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  // SSRF Protection Tests
+  describe('SSRF protection', () => {
+    it('should block SSRF targets when no allowedDomains configured', async () => {
+      // These should be blocked when no explicit allowlist
+      expect(await isActionDomainAllowed('localhost', null)).toBe(false);
+      expect(await isActionDomainAllowed('127.0.0.1', null)).toBe(false);
+      expect(await isActionDomainAllowed('10.0.0.1', null)).toBe(false);
+      expect(await isActionDomainAllowed('192.168.1.1', null)).toBe(false);
+      expect(await isActionDomainAllowed('169.254.169.254', null)).toBe(false);
+      expect(await isActionDomainAllowed('rag_api', null)).toBe(false);
+      expect(await isActionDomainAllowed('http://rag_api:8000', null)).toBe(false);
+    });
+
+    it('should allow public domains with no restrictions', async () => {
+      expect(await isActionDomainAllowed('api.example.com', null)).toBe(true);
+      expect(await isActionDomainAllowed('https://openai.com', null)).toBe(true);
+    });
+
+    it('should allow SSRF targets when explicitly in allowedDomains (admin override)', async () => {
+      // Admins can explicitly allow internal targets if needed
+      const allowedDomains = ['localhost', '127.0.0.1', 'rag_api'];
+      expect(await isActionDomainAllowed('localhost', allowedDomains)).toBe(true);
+      expect(await isActionDomainAllowed('127.0.0.1', allowedDomains)).toBe(true);
+      expect(await isActionDomainAllowed('rag_api', allowedDomains)).toBe(true);
+    });
+
+    it('should still block SSRF targets not in allowedDomains even when list is configured', async () => {
+      // Only explicitly allowed domains should work
+      const allowedDomains = ['example.com'];
+      expect(await isActionDomainAllowed('localhost', allowedDomains)).toBe(false);
+      expect(await isActionDomainAllowed('127.0.0.1', allowedDomains)).toBe(false);
+    });
   });
 
   // Basic Input Validation Tests
@@ -215,6 +336,98 @@ describe('isActionDomainAllowed', () => {
       expect(await isActionDomainAllowed('example.com', invalidAllowedDomains)).toBe(true);
       /** @ts-expect-error */
       expect(await isActionDomainAllowed('test.com', invalidAllowedDomains)).toBe(true);
+    });
+  });
+
+  // Protocol and Port Restrictions (Recommendation #2)
+  describe('protocol and port restrictions', () => {
+    describe('protocol-only restrictions', () => {
+      const httpsOnlyDomains = ['https://api.example.com', 'https://secure.test.com'];
+
+      it('should allow HTTPS when HTTPS is required', async () => {
+        expect(await isActionDomainAllowed('https://api.example.com', httpsOnlyDomains)).toBe(true);
+        expect(await isActionDomainAllowed('https://secure.test.com', httpsOnlyDomains)).toBe(true);
+      });
+
+      it('should deny HTTP when HTTPS is required', async () => {
+        expect(await isActionDomainAllowed('http://api.example.com', httpsOnlyDomains)).toBe(false);
+        expect(await isActionDomainAllowed('http://secure.test.com', httpsOnlyDomains)).toBe(false);
+      });
+
+      it('should deny domain without protocol when protocol is required', async () => {
+        // When allowedDomains specifies protocol, input should also have protocol
+        expect(await isActionDomainAllowed('api.example.com', httpsOnlyDomains)).toBe(false);
+      });
+    });
+
+    describe('port restrictions', () => {
+      const portRestrictedDomains = ['https://api.example.com:443', 'http://internal:8080'];
+
+      it('should allow matching port', async () => {
+        expect(
+          await isActionDomainAllowed('https://api.example.com:443', portRestrictedDomains),
+        ).toBe(true);
+        expect(await isActionDomainAllowed('http://internal:8080', portRestrictedDomains)).toBe(
+          true,
+        );
+      });
+
+      it('should deny different port', async () => {
+        expect(
+          await isActionDomainAllowed('https://api.example.com:8443', portRestrictedDomains),
+        ).toBe(false);
+        expect(await isActionDomainAllowed('http://internal:9000', portRestrictedDomains)).toBe(
+          false,
+        );
+      });
+
+      it('should deny when no port specified but port required', async () => {
+        expect(await isActionDomainAllowed('https://api.example.com', portRestrictedDomains)).toBe(
+          false,
+        );
+      });
+    });
+
+    describe('mixed restrictions', () => {
+      const mixedDomains = [
+        'example.com', // Any protocol, any port
+        'https://secure.example.com', // HTTPS only, default port
+        'https://api.example.com:8443', // HTTPS only, specific port
+        'http://localhost:3000', // HTTP only, specific port (admin override for internal)
+      ];
+
+      it('should allow any protocol/port for unrestricted domain', async () => {
+        expect(await isActionDomainAllowed('http://example.com', mixedDomains)).toBe(true);
+        expect(await isActionDomainAllowed('https://example.com', mixedDomains)).toBe(true);
+        expect(await isActionDomainAllowed('https://example.com:8080', mixedDomains)).toBe(true);
+        expect(await isActionDomainAllowed('example.com', mixedDomains)).toBe(true);
+      });
+
+      it('should enforce protocol for protocol-restricted domain', async () => {
+        expect(await isActionDomainAllowed('https://secure.example.com', mixedDomains)).toBe(true);
+        expect(await isActionDomainAllowed('http://secure.example.com', mixedDomains)).toBe(false);
+      });
+
+      it('should enforce both protocol and port when both specified', async () => {
+        expect(await isActionDomainAllowed('https://api.example.com:8443', mixedDomains)).toBe(
+          true,
+        );
+        expect(await isActionDomainAllowed('http://api.example.com:8443', mixedDomains)).toBe(
+          false,
+        );
+        expect(await isActionDomainAllowed('https://api.example.com:443', mixedDomains)).toBe(
+          false,
+        );
+        expect(await isActionDomainAllowed('https://api.example.com', mixedDomains)).toBe(false);
+      });
+
+      it('should allow internal targets with explicit protocol/port (admin override)', async () => {
+        expect(await isActionDomainAllowed('http://localhost:3000', mixedDomains)).toBe(true);
+        // Different port should fail
+        expect(await isActionDomainAllowed('http://localhost:8080', mixedDomains)).toBe(false);
+        // Different protocol should fail
+        expect(await isActionDomainAllowed('https://localhost:3000', mixedDomains)).toBe(false);
+      });
     });
   });
 });
@@ -343,7 +556,8 @@ describe('isMCPDomainAllowed', () => {
       expect(await isMCPDomainAllowed(config, allowedDomains)).toBe(true);
     });
 
-    it('should allow localhost', async () => {
+    it('should allow localhost when explicitly in allowedDomains (admin override)', async () => {
+      // Admins can explicitly allow localhost for local MCP servers
       const config = { url: 'http://localhost:3001/sse' };
       expect(await isMCPDomainAllowed(config, allowedDomains)).toBe(true);
     });
