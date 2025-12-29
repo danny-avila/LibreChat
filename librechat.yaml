@@ -75,9 +75,9 @@ endpoints:
       baseURL: "https://openrouter.ai/api/v1"
       models:
         default: ["minimax/minimax-m2.1"]
-      fetch: true
+        fetch: true
       titleConvo: true
-      titleModel: "meta-llama/llama-3.1-8b-instruct:free"
+      titleModel: "minimax/minimax-m2.1"
       summarize: false
       modelDisplayLabel: "OpenRouter"
       dropParams: ["stop"]
