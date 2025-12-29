@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   OGDialog,
@@ -12,6 +12,7 @@ import {
 import type { TUserMemory } from 'librechat-data-provider';
 import { useUpdateMemoryMutation, useMemoriesQuery } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
+import MemoryUsageBadge from './MemoryUsageBadge';
 
 interface MemoryEditDialogProps {
   memory: TUserMemory | null;
@@ -20,6 +21,16 @@ interface MemoryEditDialogProps {
   children: React.ReactNode;
   triggerRef?: React.MutableRefObject<HTMLButtonElement | null>;
 }
+
+const formatDateTime = (dateString: string): string => {
+  return new Date(dateString).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
 
 export default function MemoryEditDialog({
   memory,
@@ -116,6 +127,16 @@ export default function MemoryEditDialog({
     }
   };
 
+  // Calculate memory-specific usage: available = tokenLimit - (totalTokens - thisMemoryTokens)
+  const memoryUsage = useMemo(() => {
+    if (!memory?.tokenCount || !memData?.tokenLimit) {
+      return null;
+    }
+    const availableForMemory = memData.tokenLimit - (memData.totalTokens ?? 0) + memory.tokenCount;
+    const percentage = Math.round((memory.tokenCount / availableForMemory) * 100);
+    return { availableForMemory, percentage };
+  }, [memory?.tokenCount, memData?.tokenLimit, memData?.totalTokens]);
+
   return (
     <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
       {children}
@@ -125,38 +146,41 @@ export default function MemoryEditDialog({
         className="w-11/12 md:max-w-lg"
         main={
           <div className="space-y-4">
+            {/* Memory metadata */}
             {memory && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-text-secondary">
-                  <div>
-                    {localize('com_ui_date')}:{' '}
-                    {new Date(memory.updated_at).toLocaleDateString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </div>
-                  {/* Token Information */}
-                  {memory.tokenCount !== undefined && (
-                    <div>
-                      {memory.tokenCount.toLocaleString()}
-                      {memData?.tokenLimit && ` / ${memData.tokenLimit.toLocaleString()}`}{' '}
-                      {localize(memory.tokenCount === 1 ? 'com_ui_token' : 'com_ui_tokens')}
-                    </div>
-                  )}
-                </div>
-                {/* Overall Memory Usage */}
-                {memData?.tokenLimit && memData?.usagePercentage !== null && (
-                  <div className="text-xs text-text-secondary">
-                    {localize('com_ui_usage')}: {memData.usagePercentage}%{' '}
-                  </div>
+              <div className="flex items-center justify-between rounded-lg border border-border-light bg-surface-secondary px-3 py-2">
+                {/* Token count - Left */}
+                {memory.tokenCount !== undefined ? (
+                  <span className="text-xs text-text-secondary">
+                    {memory.tokenCount.toLocaleString()}{' '}
+                    {localize(memory.tokenCount === 1 ? 'com_ui_token' : 'com_ui_tokens')}
+                  </span>
+                ) : (
+                  <div />
+                )}
+
+                {/* Date - Center */}
+                <span className="text-xs text-text-secondary">
+                  {formatDateTime(memory.updated_at)}
+                </span>
+
+                {/* Usage badge - Right (memory-specific) */}
+                {memoryUsage ? (
+                  <MemoryUsageBadge
+                    percentage={memoryUsage.percentage}
+                    tokenLimit={memData?.tokenLimit ?? 0}
+                    tooltipCurrent={memory.tokenCount}
+                    tooltipMax={memoryUsage.availableForMemory}
+                  />
+                ) : (
+                  <div />
                 )}
               </div>
             )}
+
+            {/* Key input */}
             <div className="space-y-2">
-              <Label htmlFor="memory-key" className="text-sm font-medium">
+              <Label htmlFor="memory-key" className="text-sm font-medium text-text-primary">
                 {localize('com_ui_key')}
               </Label>
               <Input
@@ -169,8 +193,10 @@ export default function MemoryEditDialog({
                 disabled={!hasUpdateAccess}
               />
             </div>
+
+            {/* Value textarea */}
             <div className="space-y-2">
-              <Label htmlFor="memory-value" className="text-sm font-medium">
+              <Label htmlFor="memory-value" className="text-sm font-medium text-text-primary">
                 {localize('com_ui_value')}
               </Label>
               <textarea
@@ -179,8 +205,8 @@ export default function MemoryEditDialog({
                 onChange={(e) => hasUpdateAccess && setValue(e.target.value)}
                 onKeyDown={handleKeyPress}
                 placeholder={localize('com_ui_enter_value')}
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                rows={3}
+                className="min-h-[100px] w-full resize-none rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-heavy disabled:cursor-not-allowed disabled:opacity-50"
+                rows={4}
                 disabled={!hasUpdateAccess}
               />
             </div>

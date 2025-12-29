@@ -1,5 +1,10 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
-import { isEmailDomainAllowed, isActionDomainAllowed } from './domain';
+import {
+  isEmailDomainAllowed,
+  isActionDomainAllowed,
+  extractMCPServerDomain,
+  isMCPDomainAllowed,
+} from './domain';
 
 describe('isEmailDomainAllowed', () => {
   afterEach(() => {
@@ -210,6 +215,212 @@ describe('isActionDomainAllowed', () => {
       expect(await isActionDomainAllowed('example.com', invalidAllowedDomains)).toBe(true);
       /** @ts-expect-error */
       expect(await isActionDomainAllowed('test.com', invalidAllowedDomains)).toBe(true);
+    });
+  });
+});
+
+describe('extractMCPServerDomain', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('URL extraction', () => {
+    it('should extract domain from HTTPS URL', () => {
+      const config = { url: 'https://api.example.com/sse' };
+      expect(extractMCPServerDomain(config)).toBe('api.example.com');
+    });
+
+    it('should extract domain from HTTP URL', () => {
+      const config = { url: 'http://api.example.com/sse' };
+      expect(extractMCPServerDomain(config)).toBe('api.example.com');
+    });
+
+    it('should extract domain from WebSocket URL', () => {
+      const config = { url: 'wss://ws.example.com' };
+      expect(extractMCPServerDomain(config)).toBe('ws.example.com');
+    });
+
+    it('should handle URL with port', () => {
+      const config = { url: 'https://localhost:3001/sse' };
+      expect(extractMCPServerDomain(config)).toBe('localhost');
+    });
+
+    it('should strip www prefix', () => {
+      const config = { url: 'https://www.example.com/api' };
+      expect(extractMCPServerDomain(config)).toBe('example.com');
+    });
+
+    it('should handle URL with path and query parameters', () => {
+      const config = { url: 'https://api.example.com/v1/sse?token=abc' };
+      expect(extractMCPServerDomain(config)).toBe('api.example.com');
+    });
+  });
+
+  describe('stdio transports (no URL)', () => {
+    it('should return null for stdio transport with command only', () => {
+      const config = { command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'] };
+      expect(extractMCPServerDomain(config)).toBeNull();
+    });
+
+    it('should return null when url is undefined', () => {
+      const config = { command: 'node', args: ['server.js'] };
+      expect(extractMCPServerDomain(config)).toBeNull();
+    });
+
+    it('should return null for empty object', () => {
+      const config = {};
+      expect(extractMCPServerDomain(config)).toBeNull();
+    });
+  });
+
+  describe('invalid URLs', () => {
+    it('should return null for invalid URL format', () => {
+      const config = { url: 'not-a-valid-url' };
+      expect(extractMCPServerDomain(config)).toBeNull();
+    });
+
+    it('should return null for empty URL string', () => {
+      const config = { url: '' };
+      expect(extractMCPServerDomain(config)).toBeNull();
+    });
+
+    it('should return null for non-string url', () => {
+      const config = { url: 12345 };
+      expect(extractMCPServerDomain(config)).toBeNull();
+    });
+
+    it('should return null for null url', () => {
+      const config = { url: null };
+      expect(extractMCPServerDomain(config)).toBeNull();
+    });
+  });
+});
+
+describe('isMCPDomainAllowed', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('stdio transports (always allowed)', () => {
+    it('should allow stdio transport regardless of allowlist', async () => {
+      const config = { command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'] };
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(true);
+    });
+
+    it('should allow stdio transport even with empty allowlist', async () => {
+      const config = { command: 'node', args: ['server.js'] };
+      expect(await isMCPDomainAllowed(config, [])).toBe(true);
+    });
+
+    it('should allow stdio transport when no URL present', async () => {
+      const config = {};
+      expect(await isMCPDomainAllowed(config, ['restricted.com'])).toBe(true);
+    });
+  });
+
+  describe('permissive defaults (no restrictions)', () => {
+    it('should allow all domains when allowedDomains is null', async () => {
+      const config = { url: 'https://any-domain.com/sse' };
+      expect(await isMCPDomainAllowed(config, null)).toBe(true);
+    });
+
+    it('should allow all domains when allowedDomains is undefined', async () => {
+      const config = { url: 'https://any-domain.com/sse' };
+      expect(await isMCPDomainAllowed(config, undefined)).toBe(true);
+    });
+
+    it('should allow all domains when allowedDomains is empty array', async () => {
+      const config = { url: 'https://any-domain.com/sse' };
+      expect(await isMCPDomainAllowed(config, [])).toBe(true);
+    });
+  });
+
+  describe('exact domain matching', () => {
+    const allowedDomains = ['example.com', 'localhost', 'trusted-mcp.com'];
+
+    it('should allow exact domain match', async () => {
+      const config = { url: 'https://example.com/api' };
+      expect(await isMCPDomainAllowed(config, allowedDomains)).toBe(true);
+    });
+
+    it('should allow localhost', async () => {
+      const config = { url: 'http://localhost:3001/sse' };
+      expect(await isMCPDomainAllowed(config, allowedDomains)).toBe(true);
+    });
+
+    it('should reject non-allowed domain', async () => {
+      const config = { url: 'https://malicious.com/sse' };
+      expect(await isMCPDomainAllowed(config, allowedDomains)).toBe(false);
+    });
+
+    it('should reject subdomain when only parent is allowed', async () => {
+      const config = { url: 'https://api.example.com/sse' };
+      expect(await isMCPDomainAllowed(config, allowedDomains)).toBe(false);
+    });
+  });
+
+  describe('wildcard domain matching', () => {
+    const allowedDomains = ['*.example.com', 'localhost'];
+
+    it('should allow subdomain with wildcard', async () => {
+      const config = { url: 'https://api.example.com/sse' };
+      expect(await isMCPDomainAllowed(config, allowedDomains)).toBe(true);
+    });
+
+    it('should allow any subdomain with wildcard', async () => {
+      const config = { url: 'https://staging.example.com/sse' };
+      expect(await isMCPDomainAllowed(config, allowedDomains)).toBe(true);
+    });
+
+    it('should allow base domain with wildcard', async () => {
+      const config = { url: 'https://example.com/sse' };
+      expect(await isMCPDomainAllowed(config, allowedDomains)).toBe(true);
+    });
+
+    it('should allow nested subdomain with wildcard', async () => {
+      const config = { url: 'https://deep.nested.example.com/sse' };
+      expect(await isMCPDomainAllowed(config, allowedDomains)).toBe(true);
+    });
+
+    it('should reject different domain even with wildcard', async () => {
+      const config = { url: 'https://api.other.com/sse' };
+      expect(await isMCPDomainAllowed(config, allowedDomains)).toBe(false);
+    });
+  });
+
+  describe('case insensitivity', () => {
+    it('should match domains case-insensitively', async () => {
+      const config = { url: 'https://EXAMPLE.COM/sse' };
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(true);
+    });
+
+    it('should match with uppercase in allowlist', async () => {
+      const config = { url: 'https://example.com/sse' };
+      expect(await isMCPDomainAllowed(config, ['EXAMPLE.COM'])).toBe(true);
+    });
+
+    it('should match with mixed case', async () => {
+      const config = { url: 'https://Api.Example.Com/sse' };
+      expect(await isMCPDomainAllowed(config, ['*.example.com'])).toBe(true);
+    });
+  });
+
+  describe('www prefix handling', () => {
+    it('should strip www prefix from URL before matching', async () => {
+      const config = { url: 'https://www.example.com/sse' };
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(true);
+    });
+
+    it('should match www in allowlist to non-www URL', async () => {
+      const config = { url: 'https://example.com/sse' };
+      expect(await isMCPDomainAllowed(config, ['www.example.com'])).toBe(true);
+    });
+  });
+
+  describe('invalid URL handling', () => {
+    it('should allow config with invalid URL (treated as stdio)', async () => {
+      const config = { url: 'not-a-valid-url' };
+      expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(true);
     });
   });
 });

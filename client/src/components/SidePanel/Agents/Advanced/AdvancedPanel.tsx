@@ -35,7 +35,7 @@ export default function AdvancedPanel() {
             aria-label={localize('com_ui_back_to_builder')}
           >
             <div className="advanced-panel-content flex w-full items-center justify-center gap-2">
-              <ChevronLeft />
+              <ChevronLeft aria-hidden="true" />
             </div>
           </button>
         </div>

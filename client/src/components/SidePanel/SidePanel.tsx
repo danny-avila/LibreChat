@@ -162,6 +162,9 @@ const SidePanel = ({
           transition: 'width 0.2s ease, visibility 0s linear 0.2s',
         }}
         onExpand={() => {
+          if (isCollapsed && (fullCollapse || collapsedSize === 0)) {
+            return;
+          }
           setIsCollapsed(false);
           localStorage.setItem('react-resizable-panels:collapsed', 'false');
         }}

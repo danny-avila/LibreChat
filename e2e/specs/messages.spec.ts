@@ -3,7 +3,7 @@ import type { Response, Page, BrowserContext } from '@playwright/test';
 
 const basePath = 'http://localhost:3080/c/';
 const initialUrl = `${basePath}new`;
-const endpoints = ['google', 'openAI', 'azureOpenAI', 'chatGPTBrowser', 'gptPlugins'];
+const endpoints = ['google', 'openAI', 'azureOpenAI'];
 const endpoint = endpoints[1];
 
 function isUUID(uuid: string) {

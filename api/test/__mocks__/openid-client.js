@@ -40,6 +40,10 @@ module.exports = {
     clientId: 'fake_client_id',
     clientSecret: 'fake_client_secret',
     issuer: 'https://fake-issuer.com',
+    serverMetadata: jest.fn().mockReturnValue({
+      jwks_uri: 'https://fake-issuer.com/.well-known/jwks.json',
+      end_session_endpoint: 'https://fake-issuer.com/logout',
+    }),
     Client: jest.fn().mockImplementation(() => ({
       authorizationUrl: jest.fn().mockReturnValue('mock_auth_url'),
       callback: jest.fn().mockResolvedValue({

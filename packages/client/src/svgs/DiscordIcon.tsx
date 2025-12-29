@@ -7,6 +7,7 @@ export default function DiscordIcon() {
       viewBox="0 0 1024 1024"
       id="discord"
       className="h-6 w-6"
+      aria-hidden="true"
     >
       <circle cx="512" cy="512" r="512" fill="#5865f2" />
       <path

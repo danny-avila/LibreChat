@@ -20,8 +20,7 @@ services:
     environment:
       - HOST=0.0.0.0
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
-      # - CHATGPT_REVERSE_PROXY=http://host.docker.internal:8080/api/conversation # if you are hosting your own chatgpt reverse proxy with docker
-      # - OPENAI_REVERSE_PROXY=http://host.docker.internal:8070/v1/chat/completions # if you are hosting your own chatgpt reverse proxy with docker
+      # - OPENAI_REVERSE_PROXY=http://host.docker.internal:8070/v1
       - MEILI_HOST=http://meilisearch:7700
 
     # Runs app on the same network as the service container, allows "forwardPorts" in devcontainer.json function.

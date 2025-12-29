@@ -15,6 +15,9 @@ const buildOptions = (req, endpoint, parsedBody, endpointType) => {
     return undefined;
   });
 
+  /** @type {import('librechat-data-provider').TConversation | undefined} */
+  const addedConvo = req.body?.addedConvo;
+
   return removeNullishValues({
     spec,
     iconURL,
@@ -23,6 +26,7 @@ const buildOptions = (req, endpoint, parsedBody, endpointType) => {
     endpointType,
     model_parameters,
     agent: agentPromise,
+    addedConvo,
   });
 };
 

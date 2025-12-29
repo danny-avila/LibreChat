@@ -45,6 +45,7 @@ export type TAccessLevel = 'none' | 'viewer' | 'editor' | 'owner';
 export enum ResourceType {
   AGENT = 'agent',
   PROMPTGROUP = 'promptGroup',
+  MCPSERVER = 'mcpServer',
 }
 
 /**
@@ -71,6 +72,9 @@ export enum AccessRoleIds {
   PROMPTGROUP_VIEWER = 'promptGroup_viewer',
   PROMPTGROUP_EDITOR = 'promptGroup_editor',
   PROMPTGROUP_OWNER = 'promptGroup_owner',
+  MCPSERVER_VIEWER = 'mcpServer_viewer',
+  MCPSERVER_EDITOR = 'mcpServer_editor',
+  MCPSERVER_OWNER = 'mcpServer_owner',
 }
 
 // ===== ZOD SCHEMAS =====
@@ -268,6 +272,12 @@ export const effectivePermissionsResponseSchema = z.object({
  * Returns just the permission bitmask for a user on a resource
  */
 export type TEffectivePermissionsResponse = z.infer<typeof effectivePermissionsResponseSchema>;
+
+/**
+ * All effective permissions response type
+ * Map of resourceId to permissionBits for all accessible resources
+ */
+export type TAllEffectivePermissionsResponse = Record<string, number>;
 
 // ===== UTILITY TYPES =====
 

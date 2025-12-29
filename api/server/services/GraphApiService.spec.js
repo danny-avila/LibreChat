@@ -18,9 +18,6 @@ jest.mock('~/config', () => ({
     defaults: {},
   })),
 }));
-jest.mock('~/utils', () => ({
-  logAxiosError: jest.fn(),
-}));
 
 jest.mock('~/server/services/Config', () => ({}));
 jest.mock('~/server/services/Files/strategies', () => ({

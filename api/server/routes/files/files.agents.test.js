@@ -6,7 +6,7 @@ const { createMethods } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
 const { createAgent } = require('~/models/Agent');
-const { createFile } = require('~/models/File');
+const { createFile } = require('~/models');
 
 // Only mock the external dependencies that we don't want to test
 jest.mock('~/server/services/Files/process', () => ({

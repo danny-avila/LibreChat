@@ -188,9 +188,41 @@ export const useUploadAgentAvatarMutation = (
   t.AgentAvatarVariables, // request
   unknown // context
 > => {
-  return useMutation([MutationKeys.agentAvatarUpload], {
+  const queryClient = useQueryClient();
+  return useMutation<t.Agent, unknown, t.AgentAvatarVariables>({
+    mutationKey: [MutationKeys.agentAvatarUpload],
     mutationFn: (variables: t.AgentAvatarVariables) => dataService.uploadAgentAvatar(variables),
-    ...(options || {}),
+    onMutate: (variables) => options?.onMutate?.(variables),
+    onError: (error, variables, context) => options?.onError?.(error, variables, context),
+    onSuccess: (updatedAgent, variables, context) => {
+      ((keys: t.AgentListParams[]) => {
+        keys.forEach((key) => {
+          const listRes = queryClient.getQueryData<t.AgentListResponse>([QueryKeys.agents, key]);
+          if (!listRes) {
+            return;
+          }
+
+          queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, key], {
+            ...listRes,
+            data: listRes.data.map((agent) => {
+              if (agent.id === variables.agent_id) {
+                return updatedAgent;
+              }
+              return agent;
+            }),
+          });
+        });
+      })(allAgentViewAndEditQueryKeys);
+
+      queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], updatedAgent);
+      queryClient.setQueryData<t.Agent>(
+        [QueryKeys.agent, variables.agent_id, 'expanded'],
+        updatedAgent,
+      );
+      invalidateAgentMarketplaceQueries(queryClient);
+
+      return options?.onSuccess?.(updatedAgent, variables, context);
+    },
   });
 };
 

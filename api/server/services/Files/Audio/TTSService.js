@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
-const { genAzureEndpoint } = require('@librechat/api');
+const { HttpsProxyAgent } = require('https-proxy-agent');
+const { genAzureEndpoint, logAxiosError } = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
 const { getAppConfig } = require('~/server/services/Config');
@@ -266,10 +267,14 @@ class TTSService {
 
     const options = { headers, responseType: stream ? 'stream' : 'arraybuffer' };
 
+    if (process.env.PROXY) {
+      options.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+    }
+
     try {
       return await axios.post(url, data, options);
     } catch (error) {
-      logger.error(`TTS request failed for provider ${provider}:`, error);
+      logAxiosError({ message: `TTS request failed for provider ${provider}:`, error });
       throw error;
     }
   }
@@ -325,7 +330,10 @@ class TTSService {
             break;
           }
         } catch (innerError) {
-          logger.error('Error processing manual update:', chunk, innerError);
+          logAxiosError({
+            message: `[TTS] Error processing manual update for chunk: ${chunk?.text?.substring(0, 50)}...`,
+            error: innerError,
+          });
           if (!res.headersSent) {
             return res.status(500).end();
           }
@@ -337,7 +345,7 @@ class TTSService {
         res.end();
       }
     } catch (error) {
-      logger.error('Error creating the audio stream:', error);
+      logAxiosError({ message: '[TTS] Error creating the audio stream:', error });
       if (!res.headersSent) {
         return res.status(500).send('An error occurred');
       }
@@ -407,7 +415,10 @@ class TTSService {
               break;
             }
           } catch (innerError) {
-            logger.error('Error processing audio stream update:', update, innerError);
+            logAxiosError({
+              message: `[TTS] Error processing audio stream update: ${update?.text?.substring(0, 50)}...`,
+              error: innerError,
+            });
             if (!res.headersSent) {
               return res.status(500).end();
             }
@@ -424,7 +435,7 @@ class TTSService {
         res.end();
       }
     } catch (error) {
-      logger.error('Failed to fetch audio:', error);
+      logAxiosError({ message: '[TTS] Failed to fetch audio:', error });
       if (!res.headersSent) {
         res.status(500).end();
       }

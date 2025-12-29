@@ -69,8 +69,8 @@ jest.mock('../ErrorDisplay', () => ({
 // Mock AgentCard component
 jest.mock('../AgentCard', () => ({
   __esModule: true,
-  default: ({ agent, onClick }: { agent: t.Agent; onClick: () => void }) => (
-    <div data-testid={`agent-card-${agent.id}`} onClick={onClick}>
+  default: ({ agent, onSelect }: { agent: t.Agent; onSelect?: (agent: t.Agent) => void }) => (
+    <div data-testid={`agent-card-${agent.id}`} onClick={() => onSelect?.(agent)}>
       <h3>{agent.name}</h3>
       <p>{agent.description}</p>
     </div>

@@ -40,10 +40,10 @@ const BookmarkItem: FC<MenuItemProps> = ({ tag, selected, handleSubmit, icon, ..
     }
 
     if (selected) {
-      return <BookmarkFilledIcon className="size-4" />;
+      return <BookmarkFilledIcon aria-hidden="true" className="size-4" />;
     }
 
-    return <BookmarkIcon className="size-4" />;
+    return <BookmarkIcon aria-hidden="true" className="size-4" />;
   };
 
   return (

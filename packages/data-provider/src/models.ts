@@ -22,6 +22,12 @@ export type TModelSpec = {
    * - If omitted, the spec appears as a standalone item at the top level
    */
   group?: string;
+  /**
+   * Optional icon URL for the group this spec belongs to.
+   * Only needs to be set on one spec per group - the first one found with a groupIcon will be used.
+   * Can be a URL or an endpoint name to use its icon.
+   */
+  groupIcon?: string | EModelEndpoint;
   showIconInMenu?: boolean;
   showIconInHeader?: boolean;
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
@@ -40,6 +46,7 @@ export const tModelSpecSchema = z.object({
   default: z.boolean().optional(),
   description: z.string().optional(),
   group: z.string().optional(),
+  groupIcon: z.union([z.string(), eModelEndpointSchema]).optional(),
   showIconInMenu: z.boolean().optional(),
   showIconInHeader: z.boolean().optional(),
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),

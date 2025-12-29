@@ -17,6 +17,7 @@ export default function SpeechIcon({ className }: SpeechIconProps) {
       strokeLinecap="round"
       strokeLinejoin="round"
       className={cn(className)}
+      aria-hidden="true"
     >
       <path d="M2 10v3" />
       <path d="M6 6v11" />

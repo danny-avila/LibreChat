@@ -152,7 +152,7 @@ export const primeResources = async ({
   agentId,
 }: {
   req: ServerRequest & { user?: IUser };
-  appConfig: AppConfig;
+  appConfig?: AppConfig;
   requestFileSet: Set<string>;
   attachments: Promise<Array<TFile | null>> | undefined;
   tool_resources: AgentToolResources | undefined;

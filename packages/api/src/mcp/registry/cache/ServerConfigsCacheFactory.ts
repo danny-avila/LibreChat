@@ -16,16 +16,16 @@ export class ServerConfigsCacheFactory {
    * Create a ServerConfigsCache instance.
    * Returns Redis implementation if Redis is configured, otherwise in-memory implementation.
    *
-   * @param owner - The owner of the cache (e.g., 'user', 'global') - only used for Redis namespacing
+   * @param namespace - The namespace for the cache (e.g., 'App') - only used for Redis namespacing
    * @param leaderOnly - Whether operations should only be performed by the leader (only applies to Redis)
    * @returns ServerConfigsCache instance
    */
-  static create(owner: string, leaderOnly: boolean): ServerConfigsCache {
+  static create(namespace: string, leaderOnly: boolean): ServerConfigsCache {
     if (cacheConfig.USE_REDIS) {
-      return new ServerConfigsCacheRedis(owner, leaderOnly);
+      return new ServerConfigsCacheRedis(namespace, leaderOnly);
     }
 
-    // In-memory mode uses a simple Map - doesn't need owner/namespace
+    // In-memory mode uses a simple Map - doesn't need namespace
     return new ServerConfigsCacheInMemory();
   }
 }

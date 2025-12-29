@@ -1,6 +1,7 @@
 .tooltip {
-  z-index: 50;
+  z-index: 150;
   cursor: pointer;
+  pointer-events: auto;
   border-radius: 0.275rem;
   background-color: var(--surface-primary);
   padding-top: 0.25rem;

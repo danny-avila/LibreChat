@@ -1604,4 +1604,332 @@ describe('PermissionService', () => {
       expect(effectivePermissions).toBe(3); // EDITOR includes VIEW
     });
   });
+
+  describe('getResourcePermissionsMap - Batch Permission Queries', () => {
+    const { getResourcePermissionsMap } = require('./PermissionService');
+
+    beforeEach(async () => {
+      await AclEntry.deleteMany({});
+      getUserPrincipals.mockReset();
+    });
+
+    test('should get permissions for multiple resources in single query', async () => {
+      const resource1 = new mongoose.Types.ObjectId();
+      const resource2 = new mongoose.Types.ObjectId();
+      const resource3 = new mongoose.Types.ObjectId();
+
+      // Grant different permissions to different resources
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: resource1,
+        accessRoleId: AccessRoleIds.MCPSERVER_VIEWER,
+        grantedBy: grantedById,
+      });
+
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: resource2,
+        accessRoleId: AccessRoleIds.MCPSERVER_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      // resource3 has no permissions
+
+      // Mock getUserPrincipals
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const permissionsMap = await getResourcePermissionsMap({
+        userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceIds: [resource1, resource2, resource3],
+      });
+
+      expect(permissionsMap).toBeInstanceOf(Map);
+      expect(permissionsMap.size).toBe(2); // Only resource1 and resource2
+      expect(permissionsMap.get(resource1.toString())).toBe(1); // VIEW
+      expect(permissionsMap.get(resource2.toString())).toBe(3); // VIEW | EDIT
+      expect(permissionsMap.get(resource3.toString())).toBeUndefined();
+    });
+
+    test('should combine permissions from multiple principals', async () => {
+      const resource1 = new mongoose.Types.ObjectId();
+      const resource2 = new mongoose.Types.ObjectId();
+
+      // User has VIEW on both resources
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: resource1,
+        accessRoleId: AccessRoleIds.MCPSERVER_VIEWER,
+        grantedBy: grantedById,
+      });
+
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: resource2,
+        accessRoleId: AccessRoleIds.MCPSERVER_VIEWER,
+        grantedBy: grantedById,
+      });
+
+      // Group has EDIT on resource1
+      await grantPermission({
+        principalType: PrincipalType.GROUP,
+        principalId: groupId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: resource1,
+        accessRoleId: AccessRoleIds.MCPSERVER_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      // Mock getUserPrincipals with user + group
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.GROUP, principalId: groupId },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const permissionsMap = await getResourcePermissionsMap({
+        userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceIds: [resource1, resource2],
+      });
+
+      expect(permissionsMap.size).toBe(2);
+      // Resource1 should have VIEW (1) | EDIT (3) = 3
+      expect(permissionsMap.get(resource1.toString())).toBe(3);
+      // Resource2 should have only VIEW (1)
+      expect(permissionsMap.get(resource2.toString())).toBe(1);
+    });
+
+    test('should handle empty resource list', async () => {
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+      ]);
+
+      const permissionsMap = await getResourcePermissionsMap({
+        userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceIds: [],
+      });
+
+      expect(permissionsMap).toBeInstanceOf(Map);
+      expect(permissionsMap.size).toBe(0);
+    });
+
+    test('should throw on invalid resource type', async () => {
+      const resource1 = new mongoose.Types.ObjectId();
+
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+      ]);
+
+      // Validation errors should throw immediately
+      await expect(
+        getResourcePermissionsMap({
+          userId,
+          resourceType: 'invalid_type',
+          resourceIds: [resource1],
+        }),
+      ).rejects.toThrow('Invalid resourceType: invalid_type');
+    });
+
+    test('should include public permissions in batch query', async () => {
+      const resource1 = new mongoose.Types.ObjectId();
+      const resource2 = new mongoose.Types.ObjectId();
+
+      // User has VIEW | EDIT on resource1
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: resource1,
+        accessRoleId: AccessRoleIds.MCPSERVER_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      // Public has VIEW on resource2
+      await grantPermission({
+        principalType: PrincipalType.PUBLIC,
+        principalId: null,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: resource2,
+        accessRoleId: AccessRoleIds.MCPSERVER_VIEWER,
+        grantedBy: grantedById,
+      });
+
+      // Mock getUserPrincipals with user + public
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const permissionsMap = await getResourcePermissionsMap({
+        userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceIds: [resource1, resource2],
+      });
+
+      expect(permissionsMap.size).toBe(2);
+      expect(permissionsMap.get(resource1.toString())).toBe(3); // VIEW | EDIT
+      expect(permissionsMap.get(resource2.toString())).toBe(1); // VIEW (public)
+    });
+
+    test('should handle large batch efficiently', async () => {
+      // Create 50 resources
+      const resources = Array.from({ length: 50 }, () => new mongoose.Types.ObjectId());
+
+      // Grant permissions to first 30 resources
+      for (let i = 0; i < 30; i++) {
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          resourceType: ResourceType.MCPSERVER,
+          resourceId: resources[i],
+          accessRoleId: AccessRoleIds.MCPSERVER_VIEWER,
+          grantedBy: grantedById,
+        });
+      }
+
+      // Grant group permissions to resources 20-40 (overlap)
+      for (let i = 20; i < 40; i++) {
+        await grantPermission({
+          principalType: PrincipalType.GROUP,
+          principalId: groupId,
+          resourceType: ResourceType.MCPSERVER,
+          resourceId: resources[i],
+          accessRoleId: AccessRoleIds.MCPSERVER_EDITOR,
+          grantedBy: grantedById,
+        });
+      }
+
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.GROUP, principalId: groupId },
+      ]);
+
+      const startTime = Date.now();
+      const permissionsMap = await getResourcePermissionsMap({
+        userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceIds: resources,
+      });
+      const duration = Date.now() - startTime;
+
+      // Should complete in reasonable time (under 1 second)
+      expect(duration).toBeLessThan(1000);
+
+      // Verify results
+      expect(permissionsMap.size).toBe(40); // Resources 0-39 have permissions
+
+      // Resources 0-19: USER VIEW only
+      for (let i = 0; i < 20; i++) {
+        expect(permissionsMap.get(resources[i].toString())).toBe(1); // VIEW
+      }
+
+      // Resources 20-29: USER VIEW | GROUP EDIT = 3
+      for (let i = 20; i < 30; i++) {
+        expect(permissionsMap.get(resources[i].toString())).toBe(3); // VIEW | EDIT
+      }
+
+      // Resources 30-39: GROUP EDIT = 3
+      for (let i = 30; i < 40; i++) {
+        expect(permissionsMap.get(resources[i].toString())).toBe(3); // EDIT includes VIEW
+      }
+
+      // Resources 40-49: No permissions
+      for (let i = 40; i < 50; i++) {
+        expect(permissionsMap.get(resources[i].toString())).toBeUndefined();
+      }
+    });
+
+    test('should work with role parameter optimization', async () => {
+      const resource1 = new mongoose.Types.ObjectId();
+      const resource2 = new mongoose.Types.ObjectId();
+
+      // Grant permissions to ADMIN role
+      await grantPermission({
+        principalType: PrincipalType.ROLE,
+        principalId: 'ADMIN',
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: resource1,
+        accessRoleId: AccessRoleIds.MCPSERVER_OWNER,
+        grantedBy: grantedById,
+      });
+
+      await grantPermission({
+        principalType: PrincipalType.ROLE,
+        principalId: 'ADMIN',
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: resource2,
+        accessRoleId: AccessRoleIds.MCPSERVER_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+        { principalType: PrincipalType.ROLE, principalId: 'ADMIN' },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+
+      const permissionsMap = await getResourcePermissionsMap({
+        userId,
+        role: 'ADMIN',
+        resourceType: ResourceType.MCPSERVER,
+        resourceIds: [resource1, resource2],
+      });
+
+      expect(permissionsMap.size).toBe(2);
+      expect(permissionsMap.get(resource1.toString())).toBe(15); // OWNER = all bits
+      expect(permissionsMap.get(resource2.toString())).toBe(3); // EDIT
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId, role: 'ADMIN' });
+    });
+
+    test('should handle mixed ObjectId and string resource IDs', async () => {
+      const resource1 = new mongoose.Types.ObjectId();
+      const resource2 = new mongoose.Types.ObjectId();
+
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: resource1,
+        accessRoleId: AccessRoleIds.MCPSERVER_VIEWER,
+        grantedBy: grantedById,
+      });
+
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: resource2,
+        accessRoleId: AccessRoleIds.MCPSERVER_EDITOR,
+        grantedBy: grantedById,
+      });
+
+      getUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: userId },
+      ]);
+
+      // Pass mix of ObjectId and string
+      const permissionsMap = await getResourcePermissionsMap({
+        userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceIds: [resource1, resource2.toString()],
+      });
+
+      expect(permissionsMap.size).toBe(2);
+      expect(permissionsMap.get(resource1.toString())).toBe(1);
+      expect(permissionsMap.get(resource2.toString())).toBe(3);
+    });
+  });
 });

@@ -1,8 +1,10 @@
 import React, { memo, useMemo, useRef, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
-import { PermissionTypes, Permissions, dataService } from 'librechat-data-provider';
+import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provider';
+import MermaidErrorBoundary from '~/components/Messages/Content/MermaidErrorBoundary';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
+import Mermaid from '~/components/Messages/Content/Mermaid';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
 import { useCodeBlockContext } from '~/Providers';
@@ -24,10 +26,11 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
   const match = /language-(\w+)/.exec(className ?? '');
   const lang = match && match[1];
   const isMath = lang === 'math';
+  const isMermaid = lang === 'mermaid';
   const isSingleLine = typeof children === 'string' && children.split('\n').length === 1;
 
   const { getNextIndex, resetCounter } = useCodeBlockContext();
-  const blockIndex = useRef(getNextIndex(isMath || isSingleLine)).current;
+  const blockIndex = useRef(getNextIndex(isMath || isMermaid || isSingleLine)).current;
 
   useEffect(() => {
     resetCounter();
@@ -35,6 +38,13 @@ export const code: React.ElementType = memo(({ className, children }: TCodeProps
 
   if (isMath) {
     return <>{children}</>;
+  } else if (isMermaid) {
+    const content = typeof children === 'string' ? children : String(children);
+    return (
+      <MermaidErrorBoundary code={content}>
+        <Mermaid id={`mermaid-${blockIndex}`}>{content}</Mermaid>
+      </MermaidErrorBoundary>
+    );
   } else if (isSingleLine) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
@@ -59,6 +69,9 @@ export const codeNoExecution: React.ElementType = memo(({ className, children }:
 
   if (lang === 'math') {
     return children;
+  } else if (lang === 'mermaid') {
+    const content = typeof children === 'string' ? children : String(children);
+    return <Mermaid>{content}</Mermaid>;
   } else if (typeof children === 'string' && children.split('\n').length === 1) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
@@ -135,7 +148,7 @@ export const a: React.ElementType = memo(({ href, children }: TAnchorProps) => {
   props.onClick = handleDownload;
   props.target = '_blank';
 
-  const domainServerBaseUrl = dataService.getDomainServerBaseUrl();
+  const domainServerBaseUrl = `${apiBaseUrl()}/api`;
 
   return (
     <a
@@ -157,4 +170,32 @@ type TParagraphProps = {
 
 export const p: React.ElementType = memo(({ children }: TParagraphProps) => {
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
+});
+
+type TImageProps = {
+  src?: string;
+  alt?: string;
+  title?: string;
+  className?: string;
+  style?: React.CSSProperties;
+};
+
+export const img: React.ElementType = memo(({ src, alt, title, className, style }: TImageProps) => {
+  // Get the base URL from the API endpoints
+  const baseURL = apiBaseUrl();
+
+  // If src starts with /images/, prepend the base URL
+  const fixedSrc = useMemo(() => {
+    if (!src) return src;
+
+    // If it's already an absolute URL or doesn't start with /images/, return as is
+    if (src.startsWith('http') || src.startsWith('data:') || !src.startsWith('/images/')) {
+      return src;
+    }
+
+    // Prepend base URL to the image path
+    return `${baseURL}${src}`;
+  }, [src, baseURL]);
+
+  return <img src={fixedSrc} alt={alt} title={title} className={className} style={style} />;
 });

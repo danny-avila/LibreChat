@@ -200,6 +200,9 @@ describe('AccessRole Model Tests', () => {
           AccessRoleIds.PROMPTGROUP_EDITOR,
           AccessRoleIds.PROMPTGROUP_OWNER,
           AccessRoleIds.PROMPTGROUP_VIEWER,
+          AccessRoleIds.MCPSERVER_EDITOR,
+          AccessRoleIds.MCPSERVER_OWNER,
+          AccessRoleIds.MCPSERVER_VIEWER,
         ].sort(),
       );
 

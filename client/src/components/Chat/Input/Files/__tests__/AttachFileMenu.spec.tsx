@@ -278,7 +278,6 @@ describe('AttachFileMenu', () => {
       { name: 'OpenAI', endpoint: EModelEndpoint.openAI },
       { name: 'Anthropic', endpoint: EModelEndpoint.anthropic },
       { name: 'Google', endpoint: EModelEndpoint.google },
-      { name: 'Azure OpenAI', endpoint: EModelEndpoint.azureOpenAI },
       { name: 'Custom', endpoint: EModelEndpoint.custom },
     ];
 
@@ -300,6 +299,45 @@ describe('AttachFileMenu', () => {
 
         expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
       });
+    });
+
+    it('should show Upload to Provider for Azure OpenAI with useResponsesApi', () => {
+      mockUseAgentToolPermissions.mockReturnValue({
+        fileSearchAllowedByAgent: false,
+        codeAllowedByAgent: false,
+        provider: EModelEndpoint.azureOpenAI,
+      });
+
+      renderAttachFileMenu({
+        endpoint: EModelEndpoint.azureOpenAI,
+        endpointType: EModelEndpoint.azureOpenAI,
+        useResponsesApi: true,
+      });
+
+      const button = screen.getByRole('button', { name: /attach file options/i });
+      fireEvent.click(button);
+
+      expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
+    });
+
+    it('should NOT show Upload to Provider for Azure OpenAI without useResponsesApi', () => {
+      mockUseAgentToolPermissions.mockReturnValue({
+        fileSearchAllowedByAgent: false,
+        codeAllowedByAgent: false,
+        provider: EModelEndpoint.azureOpenAI,
+      });
+
+      renderAttachFileMenu({
+        endpoint: EModelEndpoint.azureOpenAI,
+        endpointType: EModelEndpoint.azureOpenAI,
+        useResponsesApi: false,
+      });
+
+      const button = screen.getByRole('button', { name: /attach file options/i });
+      fireEvent.click(button);
+
+      expect(screen.queryByText('Upload to Provider')).not.toBeInTheDocument();
+      expect(screen.getByText('Upload Image')).toBeInTheDocument();
     });
   });
 
@@ -512,7 +550,7 @@ describe('AttachFileMenu', () => {
   });
 
   describe('Google Provider Special Case', () => {
-    it('should use google_multimodal file type for Google provider', () => {
+    it('should use image_document_video_audio file type for Google provider', () => {
       mockUseAgentToolPermissions.mockReturnValue({
         fileSearchAllowedByAgent: false,
         codeAllowedByAgent: false,
@@ -536,7 +574,7 @@ describe('AttachFileMenu', () => {
       // The file input should have been clicked (indirectly tested through the implementation)
     });
 
-    it('should use multimodal file type for non-Google providers', () => {
+    it('should use image_document file type for non-Google providers', () => {
       mockUseAgentToolPermissions.mockReturnValue({
         fileSearchAllowedByAgent: false,
         codeAllowedByAgent: false,
@@ -555,7 +593,7 @@ describe('AttachFileMenu', () => {
       expect(uploadProviderButton).toBeInTheDocument();
       fireEvent.click(uploadProviderButton);
 
-      // Implementation detail - multimodal type is used
+      // Implementation detail - image_document type is used
     });
   });
 

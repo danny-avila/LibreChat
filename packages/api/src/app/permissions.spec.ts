@@ -74,6 +74,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -103,6 +108,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
@@ -182,6 +192,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: false },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -211,6 +226,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: false },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
@@ -290,6 +310,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -319,6 +344,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
@@ -411,6 +441,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -440,6 +475,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
@@ -519,6 +559,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -548,6 +593,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
@@ -630,6 +680,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -653,6 +708,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
@@ -751,6 +811,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -777,6 +842,11 @@ describe('updateInterfacePermissions - permissions', () => {
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+      },
     };
 
     expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);

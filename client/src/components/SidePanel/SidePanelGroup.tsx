@@ -138,20 +138,22 @@ const SidePanelGroup = memo(
               setCollapsedSize={setCollapsedSize}
               fullCollapse={fullCollapse}
               setFullCollapse={setFullCollapse}
-              defaultSize={currentLayout[currentLayout.length - 1]}
-              hasArtifacts={artifacts != null}
               interfaceConfig={interfaceConfig}
+              hasArtifacts={shouldRenderArtifacts}
+              defaultSize={currentLayout[currentLayout.length - 1]}
             />
           )}
         </ResizablePanelGroup>
         {artifacts != null && isSmallScreen && (
           <div className="fixed inset-0 z-[100]">{artifacts}</div>
         )}
-        <button
-          aria-label="Close right side panel"
-          className={`nav-mask ${!isCollapsed ? 'active' : ''}`}
-          onClick={handleClosePanel}
-        />
+        {!hideSidePanel && interfaceConfig.sidePanel === true && (
+          <button
+            aria-label="Close right side panel"
+            className={`nav-mask ${!isCollapsed ? 'active' : ''}`}
+            onClick={handleClosePanel}
+          />
+        )}
       </>
     );
   },

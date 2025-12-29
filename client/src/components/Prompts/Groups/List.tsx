@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Button, Skeleton } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup, TStartupConfig } from 'librechat-data-provider';
@@ -7,6 +7,7 @@ import DashGroupItem from '~/components/Prompts/Groups/DashGroupItem';
 import ChatGroupItem from '~/components/Prompts/Groups/ChatGroupItem';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
+import { cn } from '~/utils';
 
 export default function List({
   groups = [],
@@ -17,7 +18,6 @@ export default function List({
   isChatRoute: boolean;
   isLoading: boolean;
 }) {
-  const navigate = useNavigate();
   const localize = useLocalize();
   const { data: startupConfig = {} as Partial<TStartupConfig> } = useGetStartupConfig();
   const { instanceProjectId } = startupConfig;
@@ -31,13 +31,15 @@ export default function List({
       {hasCreateAccess && (
         <div className="flex w-full justify-end">
           <Button
+            asChild
             variant="outline"
-            className={`w-full bg-transparent ${isChatRoute ? '' : 'mx-2'}`}
-            onClick={() => navigate('/d/prompts/new')}
+            className={cn('w-full bg-transparent', !isChatRoute && 'mx-2')}
             aria-label={localize('com_ui_create_prompt')}
           >
-            <Plus className="size-4" aria-hidden />
-            {localize('com_ui_create_prompt')}
+            <Link to="/d/prompts/new">
+              <Plus className="size-4" aria-hidden="true" />
+              {localize('com_ui_create_prompt')}
+            </Link>
           </Button>
         </div>
       )}

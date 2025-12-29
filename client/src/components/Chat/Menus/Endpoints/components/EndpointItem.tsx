@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { SettingsIcon } from 'lucide-react';
-import { TooltipAnchor, Spinner } from '@librechat/client';
+import { Spinner, TooltipAnchor } from '@librechat/client';
+import { CheckCircle2, MousePointerClick, SettingsIcon } from 'lucide-react';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
@@ -14,6 +14,7 @@ import { cn } from '~/utils';
 
 interface EndpointItemProps {
   endpoint: Endpoint;
+  endpointIndex: number;
 }
 
 const SettingsButton = ({
@@ -27,34 +28,58 @@ const SettingsButton = ({
 }) => {
   const localize = useLocalize();
   const text = localize('com_endpoint_config_key');
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!endpoint.value) {
+      return;
+    }
+    e.stopPropagation();
+    handleOpenKeyDialog(endpoint.value as EModelEndpoint, e);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (endpoint.value) {
+        handleOpenKeyDialog(endpoint.value as EModelEndpoint, e as unknown as React.MouseEvent);
+      }
+    }
+  };
+
   return (
     <button
+      type="button"
       id={`endpoint-${endpoint.value}-settings`}
-      onClick={(e) => {
-        if (!endpoint.value) {
-          return;
-        }
-        e.stopPropagation();
-        handleOpenKeyDialog(endpoint.value as EModelEndpoint, e);
-      }}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
       className={cn(
-        'flex items-center overflow-visible text-text-primary transition-all duration-300 ease-in-out',
-        'group/button rounded-md px-1 hover:bg-surface-secondary focus:bg-surface-secondary',
+        'group/button flex items-center gap-1.5 rounded-md px-1.5',
+        'text-text-secondary transition-colors duration-150',
+        'hover:bg-surface-tertiary hover:text-text-primary',
+        'focus-visible:bg-surface-tertiary focus-visible:text-text-primary',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
         className,
       )}
       aria-label={`${text} ${endpoint.label}`}
     >
-      <div className="flex w-[28px] items-center gap-1 whitespace-nowrap transition-all duration-300 ease-in-out group-hover:w-auto group-focus/button:w-auto">
-        <SettingsIcon className="h-4 w-4 flex-shrink-0" />
-        <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-300 ease-in-out group-hover:max-w-[100px] group-hover:opacity-100 group-focus/button:max-w-[100px] group-focus/button:opacity-100">
-          {text}
-        </span>
-      </div>
+      <SettingsIcon className="size-4 shrink-0" aria-hidden="true" />
+      <span
+        aria-hidden="true"
+        className={cn(
+          'grid overflow-hidden transition-[grid-template-columns,opacity] duration-150 ease-out',
+          'grid-cols-[0fr] opacity-0',
+          'group-hover/button:grid-cols-[1fr] group-hover/button:opacity-100',
+          'group-focus-visible/button:grid-cols-[1fr] group-focus-visible/button:opacity-100',
+        )}
+      >
+        <span className="min-w-0 truncate pr-0.5">{text}</span>
+      </span>
     </button>
   );
 };
 
-export function EndpointItem({ endpoint }: EndpointItemProps) {
+export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
   const localize = useLocalize();
   const {
     agentsMap,
@@ -82,35 +107,22 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
   }, [modelSpecs, endpoint.value]);
 
   const searchValue = endpointSearchValues[endpoint.value] || '';
-  const isUserProvided = useMemo(() => endpointRequiresUserKey(endpoint.value), [endpoint.value]);
+  const isUserProvided = useMemo(
+    () => endpointRequiresUserKey(endpoint.value),
+    [endpointRequiresUserKey, endpoint.value],
+  );
+
+  const isAssistantsNotLoaded =
+    isAssistantsEndpoint(endpoint.value) && endpoint.models === undefined;
 
   const renderIconLabel = () => (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 items-center gap-2">
       {endpoint.icon && (
-        <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
+        <div className="flex shrink-0 items-center justify-center" aria-hidden="true">
           {endpoint.icon}
         </div>
       )}
-      <span
-        className={cn(
-          'truncate text-left',
-          isUserProvided ? 'group-hover:w-24 group-focus:w-24' : '',
-        )}
-      >
-        {endpoint.label}
-      </span>
-      {/* TODO: remove this after deprecation */}
-      {endpoint.value === 'gptPlugins' && (
-        <TooltipAnchor
-          description={localize('com_endpoint_deprecated_info')}
-          aria-label={localize('com_endpoint_deprecated_info_a11y')}
-          render={
-            <span className="ml-2 rounded bg-amber-600/70 px-2 py-0.5 text-xs font-semibold text-white">
-              {localize('com_endpoint_deprecated')}
-            </span>
-          }
-        />
-      )}
+      <span className="truncate text-left">{endpoint.label}</span>
     </div>
   );
 
@@ -132,16 +144,14 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
       <Menu
         id={`endpoint-${endpoint.value}-menu`}
         key={`endpoint-${endpoint.value}-item`}
-        className="transition-opacity duration-200 ease-in-out"
         defaultOpen={endpoint.value === selectedEndpoint}
         searchValue={searchValue}
         onSearch={(value) => setEndpointSearchValue(endpoint.value, value)}
-        combobox={<input placeholder={placeholder} />}
+        combobox={<input placeholder=" " />}
+        comboboxLabel={placeholder}
+        onClick={() => handleSelectEndpoint(endpoint)}
         label={
-          <div
-            onClick={() => handleSelectEndpoint(endpoint)}
-            className="group flex w-full flex-shrink cursor-pointer items-center justify-between rounded-xl px-1 py-1 text-sm"
-          >
+          <div className="group flex w-full min-w-0 items-center justify-between gap-1.5 py-1 text-sm">
             {renderIconLabel()}
             {isUserProvided && (
               <SettingsButton endpoint={endpoint} handleOpenKeyDialog={handleOpenKeyDialog} />
@@ -150,8 +160,12 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         }
       >
         {isAssistantsEndpoint(endpoint.value) && endpoint.models === undefined ? (
-          <div className="flex items-center justify-center p-2">
-            <Spinner />
+          <div
+            className="flex items-center justify-center p-2"
+            role="status"
+            aria-label={localize('com_ui_loading')}
+          >
+            <Spinner aria-hidden="true" />
           </div>
         ) : (
           <>
@@ -161,8 +175,21 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
             ))}
             {/* Render endpoint models */}
             {filteredModels
-              ? renderEndpointModels(endpoint, endpoint.models || [], selectedModel, filteredModels)
-              : endpoint.models && renderEndpointModels(endpoint, endpoint.models, selectedModel)}
+              ? renderEndpointModels(
+                  endpoint,
+                  endpoint.models || [],
+                  selectedModel,
+                  filteredModels,
+                  endpointIndex,
+                )
+              : endpoint.models &&
+                renderEndpointModels(
+                  endpoint,
+                  endpoint.models,
+                  selectedModel,
+                  undefined,
+                  endpointIndex,
+                )}
           </>
         )}
       </Menu>
@@ -173,32 +200,27 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
         id={`endpoint-${endpoint.value}-menu`}
         key={`endpoint-${endpoint.value}-item`}
         onClick={() => handleSelectEndpoint(endpoint)}
-        className="flex h-8 w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2 text-sm"
+        className="group flex w-full cursor-pointer items-center justify-between gap-1.5 py-2 text-sm"
       >
-        <div className="group flex w-full min-w-0 items-center justify-between">
-          {renderIconLabel()}
-          <div className="flex items-center gap-2">
-            {endpointRequiresUserKey(endpoint.value) && (
-              <SettingsButton endpoint={endpoint} handleOpenKeyDialog={handleOpenKeyDialog} />
-            )}
-            {selectedEndpoint === endpoint.value && (
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="block"
-              >
-                <path
-                  fillRule="evenodd"
-                  clipRule="evenodd"
-                  d="M2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12ZM16.0755 7.93219C16.5272 8.25003 16.6356 8.87383 16.3178 9.32549L11.5678 16.0755C11.3931 16.3237 11.1152 16.4792 10.8123 16.4981C10.5093 16.517 10.2142 16.3973 10.0101 16.1727L7.51006 13.4227C7.13855 13.014 7.16867 12.3816 7.57733 12.0101C7.98598 11.6386 8.61843 11.6687 8.98994 12.0773L10.6504 13.9039L14.6822 8.17451C15 7.72284 15.6238 7.61436 16.0755 7.93219Z"
-                  fill="currentColor"
-                />
-              </svg>
-            )}
-          </div>
+        {renderIconLabel()}
+        <div className="flex shrink-0 items-center gap-2">
+          {endpointRequiresUserKey(endpoint.value) && (
+            <SettingsButton endpoint={endpoint} handleOpenKeyDialog={handleOpenKeyDialog} />
+          )}
+          {isAssistantsNotLoaded && (
+            <TooltipAnchor
+              description={localize('com_ui_click_to_view_var', { 0: endpoint.label })}
+              side="top"
+              render={
+                <span className="flex items-center">
+                  <MousePointerClick className="size-4 text-text-secondary" aria-hidden="true" />
+                </span>
+              }
+            />
+          )}
+          {selectedEndpoint === endpoint.value && !isAssistantsNotLoaded && (
+            <CheckCircle2 className="size-4 shrink-0 text-text-primary" aria-hidden="true" />
+          )}
         </div>
       </MenuItem>
     );
@@ -206,7 +228,11 @@ export function EndpointItem({ endpoint }: EndpointItemProps) {
 }
 
 export function renderEndpoints(mappedEndpoints: Endpoint[]) {
-  return mappedEndpoints.map((endpoint) => (
-    <EndpointItem endpoint={endpoint} key={`endpoint-${endpoint.value}-item`} />
+  return mappedEndpoints.map((endpoint, index) => (
+    <EndpointItem
+      endpoint={endpoint}
+      endpointIndex={index}
+      key={`endpoint-${endpoint.value}-${index}`}
+    />
   ));
 }

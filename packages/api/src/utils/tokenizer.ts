@@ -75,4 +75,14 @@ class Tokenizer {
 
 const TokenizerSingleton = new Tokenizer();
 
+/**
+ * Counts the number of tokens in a given text using tiktoken.
+ * This is an async wrapper around Tokenizer.getTokenCount for compatibility.
+ * @param text - The text to be tokenized. Defaults to an empty string if not provided.
+ * @returns The number of tokens in the provided text.
+ */
+export async function countTokens(text = ''): Promise<number> {
+  return TokenizerSingleton.getTokenCount(text, 'cl100k_base');
+}
+
 export default TokenizerSingleton;

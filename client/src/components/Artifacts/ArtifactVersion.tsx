@@ -59,7 +59,12 @@ export default function ArtifactVersion({
         <TooltipAnchor
           description={localize('com_ui_change_version')}
           render={
-            <Button size="icon" variant="ghost" asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              asChild
+              aria-label={localize('com_ui_change_version')}
+            >
               <MenuButton>
                 <History
                   size={18}

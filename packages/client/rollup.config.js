@@ -1,7 +1,6 @@
 // ESM bundler config for React components
 import { fileURLToPath } from 'url';
 import alias from '@rollup/plugin-alias';
-import terser from '@rollup/plugin-terser';
 import postcss from 'rollup-plugin-postcss';
 import replace from '@rollup/plugin-replace';
 import commonjs from '@rollup/plugin-commonjs';
@@ -26,6 +25,8 @@ const plugins = [
   }),
   replace({
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
+    'process.env.VITE_ENABLE_LOGGER': JSON.stringify(process.env.VITE_ENABLE_LOGGER || 'false'),
+    'process.env.VITE_LOGGER_FILTER': JSON.stringify(process.env.VITE_LOGGER_FILTER || ''),
     preventAssignment: true,
   }),
   commonjs(),
@@ -44,12 +45,9 @@ const plugins = [
     clean: true,
     check: false,
   }),
-  terser({
-    compress: {
-      directives: false,
-    },
-  }),
 ];
+
+const isDev = process.env.NODE_ENV !== 'production';
 
 export default {
   input: 'src/index.ts',
@@ -57,13 +55,13 @@ export default {
     {
       file: pkg.main,
       format: 'cjs',
-      sourcemap: true,
+      sourcemap: isDev ? 'inline' : true,
       exports: 'named',
     },
     {
       file: pkg.module,
       format: 'esm',
-      sourcemap: true,
+      sourcemap: isDev ? 'inline' : true,
       exports: 'named',
     },
   ],

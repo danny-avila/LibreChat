@@ -34,6 +34,7 @@ export interface TokenUpdateData {
   identifier?: string;
   token?: string;
   expiresAt?: Date;
+  expiresIn?: number;
   metadata?: Map<string, unknown>;
 }
 

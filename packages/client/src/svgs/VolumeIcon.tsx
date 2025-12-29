@@ -9,6 +9,7 @@ export default function VolumeIcon({ className = '', size = '1em' }) {
       height={size}
       width={size}
       className={cn(className)}
+      aria-hidden="true"
     >
       <path
         fillRule="evenodd"

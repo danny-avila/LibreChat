@@ -65,7 +65,7 @@ export async function parseText({
         accept: 'application/json',
         ...formHeaders,
       },
-      timeout: 30000,
+      timeout: 300000,
     });
 
     const responseData = response.data;

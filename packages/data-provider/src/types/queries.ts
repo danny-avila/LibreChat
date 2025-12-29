@@ -185,8 +185,8 @@ export interface MCPConnectionStatusResponse {
 export interface MCPServerConnectionStatusResponse {
   success: boolean;
   serverName: string;
-  connectionStatus: string;
   requiresOAuth: boolean;
+  connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
 }
 
 export interface MCPAuthValuesResponse {

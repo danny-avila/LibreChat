@@ -2,7 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { PermissionBits, hasPermissions, ResourceType } = require('librechat-data-provider');
 const { getEffectivePermissions } = require('~/server/services/PermissionService');
 const { getAgents } = require('~/models/Agent');
-const { getFiles } = require('~/models/File');
+const { getFiles } = require('~/models');
 
 /**
  * Checks if user has access to a file through agent permissions

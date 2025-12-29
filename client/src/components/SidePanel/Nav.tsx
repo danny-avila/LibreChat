@@ -74,7 +74,7 @@ function NavContent({ links, isCollapsed, resize }: Omit<NavProps, 'defaultActiv
                                 }
                               }}
                             >
-                              <link.icon className="mr-2 h-4 w-4" />
+                              <link.icon className="mr-2 h-4 w-4" aria-hidden="true" />
                               {localize(link.title)}
                               {link.label != null && link.label && (
                                 <span
@@ -90,7 +90,7 @@ function NavContent({ links, isCollapsed, resize }: Omit<NavProps, 'defaultActiv
                           </AccordionPrimitive.Trigger>
                         </AccordionPrimitive.Header>
 
-                        <AccordionContent className="w-full text-text-primary">
+                        <AccordionContent className="bg-token-sidebar-surface-primary w-full text-text-primary">
                           {link.Component && <link.Component />}
                         </AccordionContent>
                       </AccordionItem>

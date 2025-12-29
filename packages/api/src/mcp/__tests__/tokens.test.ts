@@ -1,9 +1,10 @@
-import { MCPTokenStorage } from '~/mcp/oauth/tokens';
-import { decryptV2 } from '~/crypto';
-import type { TokenMethods, IToken } from '@librechat/data-schemas';
 import { Types } from 'mongoose';
+import { decryptV2 } from '@librechat/data-schemas';
+import type { TokenMethods, IToken } from '@librechat/data-schemas';
+import { MCPTokenStorage } from '~/mcp/oauth/tokens';
 
-jest.mock('~/crypto', () => ({
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
   decryptV2: jest.fn(),
 }));
 

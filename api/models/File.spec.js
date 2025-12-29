@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { createModels } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { createModels, createMethods } = require('@librechat/data-schemas');
 const {
   SystemRoles,
   ResourceType,
@@ -9,8 +9,6 @@ const {
   PrincipalType,
 } = require('librechat-data-provider');
 const { grantPermission } = require('~/server/services/PermissionService');
-const { getFiles, createFile } = require('./File');
-const { seedDefaultRoles } = require('~/models');
 const { createAgent } = require('./Agent');
 
 let File;
@@ -18,6 +16,10 @@ let Agent;
 let AclEntry;
 let User;
 let modelsToCleanup = [];
+let methods;
+let getFiles;
+let createFile;
+let seedDefaultRoles;
 
 describe('File Access Control', () => {
   let mongoServer;
@@ -41,6 +43,12 @@ describe('File Access Control', () => {
     Agent = dbModels.Agent;
     AclEntry = dbModels.AclEntry;
     User = dbModels.User;
+
+    // Create methods from data-schemas (includes file methods)
+    methods = createMethods(mongoose);
+    getFiles = methods.getFiles;
+    createFile = methods.createFile;
+    seedDefaultRoles = methods.seedDefaultRoles;
 
     // Seed default roles
     await seedDefaultRoles();

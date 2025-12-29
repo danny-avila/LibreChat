@@ -74,7 +74,7 @@ const PromptVariables = ({
               <span className="text-sm font-medium text-text-primary">
                 {localize('com_ui_dropdown_variables')}
               </span>
-              <span className="text-sm text-text-secondary">
+              <span className="break-words text-sm text-text-secondary">
                 <ReactMarkdown components={components} className="markdown prose dark:prose-invert">
                   {localize('com_ui_dropdown_variables_info')}
                 </ReactMarkdown>

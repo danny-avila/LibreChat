@@ -1,6 +1,7 @@
 import { useContext, useCallback, useEffect, useState } from 'react';
 import { Sun, Moon, Monitor } from 'lucide-react';
 import { ThemeContext, isDark } from '../theme';
+import { useLocalize } from '../hooks';
 
 declare global {
   interface Window {
@@ -11,14 +12,15 @@ declare global {
 type ThemeType = 'system' | 'dark' | 'light';
 
 const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) => void }) => {
+  const localize = useLocalize();
+
   const themeIcons: Record<ThemeType, JSX.Element> = {
-    system: <Monitor />,
-    dark: <Moon color="white" />,
-    light: <Sun />,
+    system: <Monitor aria-hidden="true" />,
+    dark: <Moon color="white" aria-hidden="true" />,
+    light: <Sun aria-hidden="true" />,
   };
 
   const nextTheme = isDark(theme) ? 'light' : 'dark';
-  const label = `Switch to ${nextTheme} theme`;
 
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -33,8 +35,8 @@ const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) =
 
   return (
     <button
-      className="flex items-center gap-2 rounded-lg p-2 transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-      aria-label={label}
+      className="flex items-center gap-2 rounded-lg p-2 transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 dark:focus-visible:ring-0"
+      aria-label={localize('com_ui_toggle_theme')}
       aria-keyshortcuts="Ctrl+Shift+T"
       onClick={(e) => {
         e.preventDefault();
@@ -55,6 +57,7 @@ const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) =
 const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }) => {
   const { theme, setTheme } = useContext(ThemeContext);
   const [announcement, setAnnouncement] = useState('');
+  const localize = useLocalize();
 
   const changeTheme = useCallback(
     (value: string) => {
@@ -65,9 +68,13 @@ const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }) => {
       window.lastThemeChange = now;
 
       setTheme(value);
-      setAnnouncement(isDark(value) ? 'Dark theme enabled' : 'Light theme enabled');
+      setAnnouncement(
+        isDark(value)
+          ? localize('com_ui_dark_theme_enabled')
+          : localize('com_ui_light_theme_enabled'),
+      );
     },
-    [setTheme],
+    [setTheme, localize],
   );
 
   useEffect(() => {
@@ -93,11 +100,9 @@ const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }) => {
       <div className="absolute bottom-0 left-0 m-4">
         <Theme theme={theme} onChange={changeTheme} />
       </div>
-      {announcement && (
-        <div aria-live="polite" className="sr-only">
-          {announcement}
-        </div>
-      )}
+      <div role="alert" aria-live="assertive" aria-atomic="true" className="sr-only">
+        {announcement}
+      </div>
     </div>
   );
 };

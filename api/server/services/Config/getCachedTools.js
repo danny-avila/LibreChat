@@ -1,4 +1,4 @@
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, Time } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 
 /**
@@ -39,12 +39,12 @@ async function getCachedTools(options = {}) {
  * @param {Object} options - Options for caching tools
  * @param {string} [options.userId] - User ID for user-specific MCP tools
  * @param {string} [options.serverName] - MCP server name for server-specific tools
- * @param {number} [options.ttl] - Time to live in milliseconds
+ * @param {number} [options.ttl] - Time to live in milliseconds (default: 12 hours)
  * @returns {Promise<boolean>} Whether the operation was successful
  */
 async function setCachedTools(tools, options = {}) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  const { userId, serverName, ttl } = options;
+  const { userId, serverName, ttl = Time.TWELVE_HOURS } = options;
 
   // Cache by MCP server if specified (requires userId)
   if (serverName && userId) {

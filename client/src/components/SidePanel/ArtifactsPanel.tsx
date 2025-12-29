@@ -2,8 +2,6 @@ import { useRef, useEffect, memo } from 'react';
 import { ResizableHandleAlt, ResizablePanel } from '@librechat/client';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 
-const ANIMATION_DURATION = 500;
-
 interface ArtifactsPanelProps {
   artifacts: React.ReactNode | null;
   currentLayout: number[];
@@ -24,14 +22,9 @@ const ArtifactsPanel = memo(function ArtifactsPanel({
   onRenderChange,
 }: ArtifactsPanelProps) {
   const artifactsPanelRef = useRef<ImperativePanelHandle>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (artifacts != null) {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
       onRenderChange(true);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -39,17 +32,8 @@ const ArtifactsPanel = memo(function ArtifactsPanel({
         });
       });
     } else if (shouldRender) {
-      artifactsPanelRef.current?.collapse();
-      timeoutRef.current = setTimeout(() => {
-        onRenderChange(false);
-      }, ANIMATION_DURATION);
+      onRenderChange(false);
     }
-
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
   }, [artifacts, shouldRender, onRenderChange]);
 
   if (!shouldRender) {

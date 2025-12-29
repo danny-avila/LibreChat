@@ -16,6 +16,7 @@ export default function PaLMIcon({
       fill="none"
       preserveAspectRatio="xMidYMid meet"
       focusable="false"
+      aria-hidden="true"
     >
       <path
         d="M9.62674 16.2202H9.7049C10.4225 16.2202 11.0016 15.6412 11.0016 14.9236V4.04224H8.33008V14.92C8.33008 15.6376 8.90914 16.2202 9.62674 16.2202Z"

@@ -20,6 +20,7 @@ const EditIcon = React.forwardRef<SVGSVGElement, IconProps>((props: IconProps, r
       height={size}
       width={size}
       className={cn(className)}
+      aria-hidden="true"
     >
       <path
         fillRule="evenodd"

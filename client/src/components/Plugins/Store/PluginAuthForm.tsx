@@ -70,7 +70,7 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
                 </HoverCard>
                 {errors[authField] && (
                   <span role="alert" className="mt-1 text-sm text-red-400">
-                    {errors[authField].message as string}
+                    {errors?.[authField]?.message ?? ''}
                   </span>
                 )}
               </div>
@@ -93,7 +93,7 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
           >
             <div className="flex items-center justify-center gap-2">
               {localize('com_ui_save')}
-              <Save className="flex h-4 w-4 items-center stroke-2" />
+              <Save className="flex h-4 w-4 items-center stroke-2" aria-hidden="true" />
             </div>
           </button>
         </form>

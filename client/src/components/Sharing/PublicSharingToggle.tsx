@@ -16,9 +16,13 @@ interface PublicSharingToggleProps {
   className?: string;
 }
 
-const accessDescriptions: Record<ResourceType, 'com_ui_agent' | 'com_ui_prompt'> = {
+const accessDescriptions: Record<
+  ResourceType,
+  'com_ui_agent' | 'com_ui_prompt' | 'com_ui_mcp_server'
+> = {
   [ResourceType.AGENT]: 'com_ui_agent',
   [ResourceType.PROMPTGROUP]: 'com_ui_prompt',
+  [ResourceType.MCPSERVER]: 'com_ui_mcp_server',
 };
 
 export default function PublicSharingToggle({

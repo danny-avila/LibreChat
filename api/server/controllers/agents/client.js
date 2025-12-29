@@ -9,8 +9,12 @@ const {
   logAxiosError,
   sanitizeTitle,
   resolveHeaders,
+  createSafeUser,
+  initializeAgent,
   getBalanceConfig,
+  getProviderConfig,
   memoryInstructions,
+  GenerationJobManager,
   getTransactionsConfig,
   createMemoryProcessor,
   filterMalformedContentParts,
@@ -20,6 +24,7 @@ const {
   Providers,
   TitleMethod,
   formatMessage,
+  labelContentByAgent,
   formatAgentMessages,
   getTokenCountForMessage,
   createMetadataAggregator,
@@ -32,21 +37,19 @@ const {
   EModelEndpoint,
   PermissionTypes,
   isAgentsEndpoint,
-  AgentCapabilities,
+  isEphemeralAgentId,
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { getProviderConfig } = require('~/server/services/Endpoints');
 const { createContextHandlers } = require('~/app/clients/prompts');
-const { checkCapability } = require('~/server/services/Config');
+const { getConvoFiles } = require('~/models/Conversation');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
 const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
+const db = require('~/models');
 
 const omitTitleOptions = new Set([
   'stream',
@@ -90,6 +93,103 @@ function logToolError(graph, error, toolId) {
     error,
     message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
   });
+}
+
+/** Regex pattern to match agent ID suffix (____N) */
+const AGENT_SUFFIX_PATTERN = /____(\d+)$/;
+
+/**
+ * Creates a mapMethod for getMessagesForConversation that processes agent content.
+ * - Strips agentId/groupId metadata from all content
+ * - For multi-agent: filters to primary agent content only (no suffix or lowest suffix)
+ * - For multi-agent: applies agent labels to content
+ *
+ * @param {Agent} primaryAgent - Primary agent configuration
+ * @param {Map<string, Agent>} [agentConfigs] - Additional agent configurations
+ * @returns {(message: TMessage) => TMessage} Map method for processing messages
+ */
+function createMultiAgentMapper(primaryAgent, agentConfigs) {
+  const hasMultipleAgents = (primaryAgent.edges?.length ?? 0) > 0 || (agentConfigs?.size ?? 0) > 0;
+
+  /** @type {Record<string, string> | null} */
+  let agentNames = null;
+  if (hasMultipleAgents) {
+    agentNames = { [primaryAgent.id]: primaryAgent.name || 'Assistant' };
+    if (agentConfigs) {
+      for (const [agentId, agentConfig] of agentConfigs.entries()) {
+        agentNames[agentId] = agentConfig.name || agentConfig.id;
+      }
+    }
+  }
+
+  return (message) => {
+    if (message.isCreatedByUser || !Array.isArray(message.content)) {
+      return message;
+    }
+
+    // Find primary agent ID (no suffix, or lowest suffix number) - only needed for multi-agent
+    let primaryAgentId = null;
+    let hasAgentMetadata = false;
+
+    if (hasMultipleAgents) {
+      let lowestSuffixIndex = Infinity;
+      for (const part of message.content) {
+        const agentId = part?.agentId;
+        if (!agentId) {
+          continue;
+        }
+        hasAgentMetadata = true;
+
+        const suffixMatch = agentId.match(AGENT_SUFFIX_PATTERN);
+        if (!suffixMatch) {
+          primaryAgentId = agentId;
+          break;
+        }
+        const suffixIndex = parseInt(suffixMatch[1], 10);
+        if (suffixIndex < lowestSuffixIndex) {
+          lowestSuffixIndex = suffixIndex;
+          primaryAgentId = agentId;
+        }
+      }
+    } else {
+      // Single agent: just check if any metadata exists
+      hasAgentMetadata = message.content.some((part) => part?.agentId || part?.groupId);
+    }
+
+    if (!hasAgentMetadata) {
+      return message;
+    }
+
+    try {
+      /** @type {Array<TMessageContentParts>} */
+      const filteredContent = [];
+      /** @type {Record<number, string>} */
+      const agentIdMap = {};
+
+      for (const part of message.content) {
+        const agentId = part?.agentId;
+        // For single agent: include all parts; for multi-agent: filter to primary
+        if (!hasMultipleAgents || !agentId || agentId === primaryAgentId) {
+          const newIndex = filteredContent.length;
+          const { agentId: _a, groupId: _g, ...cleanPart } = part;
+          filteredContent.push(cleanPart);
+          if (agentId && hasMultipleAgents) {
+            agentIdMap[newIndex] = agentId;
+          }
+        }
+      }
+
+      const finalContent =
+        Object.keys(agentIdMap).length > 0 && agentNames
+          ? labelContentByAgent(filteredContent, agentIdMap, agentNames)
+          : filteredContent;
+
+      return { ...message, content: finalContent };
+    } catch (error) {
+      logger.error('[AgentClient] Error processing multi-agent message:', error);
+      return message;
+    }
+  };
 }
 
 class AgentClient extends BaseClient {
@@ -227,10 +327,11 @@ class AgentClient extends BaseClient {
     { instructions = null, additional_instructions = null },
     opts,
   ) {
-    let orderedMessages = this.constructor.getMessagesForConversation({
+    const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
       summary: this.shouldSummarize,
+      mapMethod: createMultiAgentMapper(this.options.agent, this.agentConfigs),
     });
 
     let payload;
@@ -477,18 +578,27 @@ class AgentClient extends BaseClient {
       );
     }
 
-    const agent = await initializeAgent({
-      req: this.options.req,
-      res: this.options.res,
-      agent: prelimAgent,
-      allowedProviders,
-      endpointOption: {
-        endpoint:
-          prelimAgent.id !== Constants.EPHEMERAL_AGENT_ID
+    const agent = await initializeAgent(
+      {
+        req: this.options.req,
+        res: this.options.res,
+        agent: prelimAgent,
+        allowedProviders,
+        endpointOption: {
+          endpoint: !isEphemeralAgentId(prelimAgent.id)
             ? EModelEndpoint.agents
             : memoryConfig.agent?.provider,
+        },
       },
-    });
+      {
+        getConvoFiles,
+        getFiles: db.getFiles,
+        getUserKey: db.getUserKey,
+        updateFilesUsage: db.updateFilesUsage,
+        getUserKeyValues: db.getUserKeyValues,
+        getToolFilesByIds: db.getToolFilesByIds,
+      },
+    );
 
     if (!agent) {
       logger.warn(
@@ -517,15 +627,17 @@ class AgentClient extends BaseClient {
     const userId = this.options.req.user.id + '';
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
+    const streamId = this.options.req?._resumableStreamId || null;
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
       config,
       messageId,
+      streamId,
       conversationId,
       memoryMethods: {
-        setMemory,
-        deleteMemory,
-        getFormattedMemories,
+        setMemory: db.setMemory,
+        deleteMemory: db.deleteMemory,
+        getFormattedMemories: db.getFormattedMemories,
       },
       res: this.options.res,
     });
@@ -612,7 +724,9 @@ class AgentClient extends BaseClient {
       userMCPAuthMap: opts.userMCPAuthMap,
       abortController: opts.abortController,
     });
-    return filterMalformedContentParts(this.contentParts);
+
+    const completion = filterMalformedContentParts(this.contentParts);
+    return { completion };
   }
 
   /**
@@ -788,7 +902,7 @@ class AgentClient extends BaseClient {
             conversationId: this.conversationId,
             parentMessageId: this.parentMessageId,
           },
-          user: this.options.req.user,
+          user: createSafeUser(this.options.req.user),
         },
         recursionLimit: agentsEConfig?.recursionLimit ?? 25,
         signal: abortController.signal,
@@ -808,12 +922,10 @@ class AgentClient extends BaseClient {
        */
       const runAgents = async (messages) => {
         const agents = [this.options.agent];
-        if (
-          this.agentConfigs &&
-          this.agentConfigs.size > 0 &&
-          ((this.options.agent.edges?.length ?? 0) > 0 ||
-            (await checkCapability(this.options.req, AgentCapabilities.chain)))
-        ) {
+        // Include additional agents when:
+        // - agentConfigs has agents (from addedConvo parallel execution or agent handoffs)
+        // - Agents without incoming edges become start nodes and run in parallel automatically
+        if (this.agentConfigs && this.agentConfigs.size > 0) {
           agents.push(...this.agentConfigs.values());
         }
 
@@ -864,6 +976,7 @@ class AgentClient extends BaseClient {
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
           requestBody: config.configurable.requestBody,
+          user: createSafeUser(this.options.req?.user),
           tokenCounter: createTokenCounter(this.getEncoding()),
         });
 
@@ -872,6 +985,12 @@ class AgentClient extends BaseClient {
         }
 
         this.run = run;
+
+        const streamId = this.options.req?._resumableStreamId;
+        if (streamId && run.Graph) {
+          GenerationJobManager.setGraph(streamId, run.Graph);
+        }
+
         if (userMCPAuthMap != null) {
           config.configurable.userMCPAuthMap = userMCPAuthMap;
         }
@@ -935,6 +1054,9 @@ class AgentClient extends BaseClient {
           err,
         );
       }
+      run = null;
+      config = null;
+      memoryPromise = null;
     }
   }
 
@@ -949,7 +1071,7 @@ class AgentClient extends BaseClient {
       throw new Error('Run not initialized');
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
-    const { req, res, agent } = this.options;
+    const { req, agent } = this.options;
     const appConfig = req.config;
     let endpoint = agent.endpoint;
 
@@ -1006,11 +1128,12 @@ class AgentClient extends BaseClient {
 
     const options = await titleProviderConfig.getOptions({
       req,
-      res,
-      optionsOnly: true,
-      overrideEndpoint: endpoint,
-      overrideModel: clientOptions.model,
-      endpointOption: { model_parameters: clientOptions },
+      endpoint,
+      model_parameters: clientOptions,
+      db: {
+        getUserKey: db.getUserKey,
+        getUserKeyValues: db.getUserKeyValues,
+      },
     });
 
     let provider = options.provider ?? titleProviderConfig.overrideProvider ?? agent.provider;
@@ -1063,6 +1186,7 @@ class AgentClient extends BaseClient {
     if (clientOptions?.configuration?.defaultHeaders != null) {
       clientOptions.configuration.defaultHeaders = resolveHeaders({
         headers: clientOptions.configuration.defaultHeaders,
+        user: createSafeUser(this.options.req?.user),
         body: {
           messageId: this.responseMessageId,
           conversationId: this.conversationId,

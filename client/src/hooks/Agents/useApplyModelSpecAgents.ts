@@ -74,7 +74,6 @@ export function useApplyAgentTemplate() {
         return;
       }
 
-      // Merge model spec fields into ephemeral agent
       const mergedAgent = {
         ...ephemeralAgent,
         mcp: [...(ephemeralAgent?.mcp ?? []), ...(modelSpec.mcpServers ?? [])],
@@ -83,7 +82,6 @@ export function useApplyAgentTemplate() {
         execute_code: ephemeralAgent?.execute_code ?? modelSpec.executeCode ?? false,
       };
 
-      // Deduplicate MCP servers
       mergedAgent.mcp = [...new Set(mergedAgent.mcp)];
 
       applyAgentTemplate(targetId, sourceId, mergedAgent);

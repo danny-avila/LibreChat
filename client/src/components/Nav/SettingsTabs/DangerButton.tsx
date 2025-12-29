@@ -55,7 +55,7 @@ const DangerButton = (props: TDangerButtonProps, ref: ForwardedRef<HTMLButtonEle
             id={`${id}-text`}
             data-testid={dataTestIdConfirm}
           >
-            {renderMutation(<CheckIcon className="h-5 w-5" />)}
+            {renderMutation(<CheckIcon className="h-5 w-5" aria-hidden="true" />)}
             {mutation && mutation.isLoading ? null : localize(confirmActionTextCode)}
           </div>
         ) : (

@@ -1,7 +1,7 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { isEnabled, getBasePath } = require('@librechat/api');
 
 const OBJECT_ID_LENGTH = 24;
 const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
@@ -124,14 +124,21 @@ function createValidateImageRequest(secureImageLinks) {
         return res.status(403).send('Access Denied');
       }
 
-      const agentAvatarPattern = /^\/images\/[a-f0-9]{24}\/agent-[^/]*$/;
+      const basePath = getBasePath();
+      const imagesPath = `${basePath}/images`;
+
+      const agentAvatarPattern = new RegExp(
+        `^${imagesPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[a-f0-9]{24}/agent-[^/]*$`,
+      );
       if (agentAvatarPattern.test(fullPath)) {
         logger.debug('[validateImageRequest] Image request validated');
         return next();
       }
 
       const escapedUserId = userIdForPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pathPattern = new RegExp(`^/images/${escapedUserId}/[^/]+$`);
+      const pathPattern = new RegExp(
+        `^${imagesPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/${escapedUserId}/[^/]+$`,
+      );
 
       if (pathPattern.test(fullPath)) {
         logger.debug('[validateImageRequest] Image request validated');

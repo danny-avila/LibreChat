@@ -127,7 +127,12 @@ async function reinitMCPServer({
       oauthUrl,
       tools,
     };
-    logger.debug(`[MCP Reinitialize] Response for ${serverName}:`, result);
+    logger.debug(`[MCP Reinitialize] Response for ${serverName}:`, {
+      success: result.success,
+      oauthRequired: result.oauthRequired,
+      oauthUrl: result.oauthUrl ? 'present' : null,
+      toolsCount: tools?.length ?? 0,
+    });
     return result;
   } catch (error) {
     logger.error(

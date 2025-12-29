@@ -8,7 +8,7 @@
     "target": "es2015",
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
-    "lib": ["es2017", "dom", "ES2021.String"],
+    "lib": ["es2017", "dom", "ES2021.String", "ES2021.WeakRef"],
     "allowJs": true,
     "skipLibCheck": true,
     "esModuleInterop": true,

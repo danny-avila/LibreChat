@@ -75,9 +75,16 @@ export async function encodeAndFormatVideos(
 
     if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
       result.videos.push({
-        type: 'video',
+        type: 'media',
         mimeType: file.type,
         data: content,
+      });
+    } else if (provider === Providers.OPENROUTER) {
+      result.videos.push({
+        type: 'video_url',
+        video_url: {
+          url: `data:${file.type};base64,${content}`,
+        },
       });
     }
 

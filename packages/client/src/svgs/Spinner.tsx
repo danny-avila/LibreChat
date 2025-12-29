@@ -27,6 +27,7 @@ export default function Spinner({
       viewBox="0 0 40 40"
       xmlns="http://www.w3.org/2000/svg"
       style={cssVars}
+      aria-hidden="true"
     >
       <defs>
         <style type="text/css">{`

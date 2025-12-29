@@ -3,13 +3,15 @@ import type { TModelSpec } from 'librechat-data-provider';
 import { CustomMenu as Menu } from '../CustomMenu';
 import { ModelSpecItem } from './ModelSpecItem';
 import { useModelSelectorContext } from '../ModelSelectorContext';
+import GroupIcon from './GroupIcon';
 
 interface CustomGroupProps {
   groupName: string;
   specs: TModelSpec[];
+  groupIcon?: string;
 }
 
-export function CustomGroup({ groupName, specs }: CustomGroupProps) {
+export function CustomGroup({ groupName, specs, groupIcon }: CustomGroupProps) {
   const { selectedValues } = useModelSelectorContext();
   const { modelSpec: selectedSpec } = selectedValues;
 
@@ -25,6 +27,11 @@ export function CustomGroup({ groupName, specs }: CustomGroupProps) {
       label={
         <div className="group flex w-full flex-shrink cursor-pointer items-center justify-between rounded-xl px-1 py-1 text-sm">
           <div className="flex items-center gap-2">
+            {groupIcon && (
+              <div className="flex-shrink-0">
+                <GroupIcon iconURL={groupIcon} groupName={groupName} />
+              </div>
+            )}
             <span className="truncate text-left">{groupName}</span>
           </div>
         </div>
@@ -45,22 +52,27 @@ export function renderCustomGroups(
   const endpointValues = new Set(mappedEndpoints.map((ep) => ep.value));
 
   // Group specs by their group field (excluding endpoint-matched groups and ungrouped)
+  // Also track the groupIcon for each group (first spec with groupIcon wins)
   const customGroups = modelSpecs.reduce(
     (acc, spec) => {
       if (!spec.group || endpointValues.has(spec.group)) {
         return acc;
       }
       if (!acc[spec.group]) {
-        acc[spec.group] = [];
+        acc[spec.group] = { specs: [], groupIcon: undefined };
       }
-      acc[spec.group].push(spec);
+      acc[spec.group].specs.push(spec);
+      // Use the first groupIcon found for the group
+      if (!acc[spec.group].groupIcon && spec.groupIcon) {
+        acc[spec.group].groupIcon = spec.groupIcon;
+      }
       return acc;
     },
-    {} as Record<string, TModelSpec[]>,
+    {} as Record<string, { specs: TModelSpec[]; groupIcon?: string }>,
   );
 
   // Render each custom group
-  return Object.entries(customGroups).map(([groupName, specs]) => (
-    <CustomGroup key={groupName} groupName={groupName} specs={specs} />
+  return Object.entries(customGroups).map(([groupName, { specs, groupIcon }]) => (
+    <CustomGroup key={groupName} groupName={groupName} specs={specs} groupIcon={groupIcon} />
   ));
 }

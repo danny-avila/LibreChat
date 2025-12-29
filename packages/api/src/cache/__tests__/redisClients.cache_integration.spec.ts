@@ -9,9 +9,13 @@ describe('redisClients Integration Tests', () => {
   let keyvRedisClient: RedisClientType | RedisClusterType | null = null;
 
   // Helper function to test set/get/delete operations
-  const testRedisOperations = async (client: RedisClient, keyPrefix: string): Promise<void> => {
-    // Wait  cluster to fully initialize
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+  const testRedisOperations = async (
+    client: RedisClient,
+    keyPrefix: string,
+    readyPromise?: Promise<void>,
+  ): Promise<void> => {
+    // Wait for connection and topology discovery to complete
+    if (readyPromise) await readyPromise;
 
     const testKey = `${keyPrefix}-test-key`;
     const testValue = `${keyPrefix}-test-value`;
@@ -35,18 +39,13 @@ describe('redisClients Integration Tests', () => {
   beforeEach(() => {
     originalEnv = { ...process.env };
 
-    // Clear Redis-related env vars
-    delete process.env.USE_REDIS;
-    delete process.env.REDIS_URI;
-    delete process.env.USE_REDIS_CLUSTER;
-    delete process.env.REDIS_PING_INTERVAL;
-    delete process.env.REDIS_KEY_PREFIX;
-
-    // Set common test configuration
-    process.env.REDIS_PING_INTERVAL = '0';
+    // Set common test configuration with fallback defaults for local testing
+    process.env.REDIS_PING_INTERVAL = '1000';
     process.env.REDIS_KEY_PREFIX = 'Redis-Integration-Test';
     process.env.REDIS_RETRY_MAX_ATTEMPTS = '5';
-    process.env.REDIS_PING_INTERVAL = '1000';
+    process.env.USE_REDIS = process.env.USE_REDIS || 'true';
+    process.env.USE_REDIS_CLUSTER = process.env.USE_REDIS_CLUSTER || 'false';
+    process.env.REDIS_URI = process.env.REDIS_URI || 'redis://127.0.0.1:6379';
 
     // Clear module cache to reload module
     jest.resetModules();
@@ -105,10 +104,6 @@ describe('redisClients Integration Tests', () => {
 
     describe('when connecting to a Redis instance', () => {
       test('should connect and perform set/get/delete operations', async () => {
-        process.env.USE_REDIS = 'true';
-        process.env.USE_REDIS_CLUSTER = 'false';
-        process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
         const clients = await import('../redisClients');
         ioredisClient = clients.ioredisClient;
         await testRedisOperations(ioredisClient!, 'ioredis-single');
@@ -117,7 +112,6 @@ describe('redisClients Integration Tests', () => {
 
     describe('when connecting to a Redis cluster', () => {
       test('should connect to cluster and perform set/get/delete operations', async () => {
-        process.env.USE_REDIS = 'true';
         process.env.USE_REDIS_CLUSTER = 'true';
         process.env.REDIS_URI =
           'redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003';
@@ -142,26 +136,21 @@ describe('redisClients Integration Tests', () => {
 
     describe('when connecting to a Redis instance', () => {
       test('should connect and perform set/get/delete operations', async () => {
-        process.env.USE_REDIS = 'true';
-        process.env.USE_REDIS_CLUSTER = 'false';
-        process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
         const clients = await import('../redisClients');
         keyvRedisClient = clients.keyvRedisClient;
-        await testRedisOperations(keyvRedisClient!, 'keyv-single');
+        await testRedisOperations(keyvRedisClient!, 'keyv-single', clients.keyvRedisClientReady!);
       });
     });
 
     describe('when connecting to a Redis cluster', () => {
       test('should connect to cluster and perform set/get/delete operations', async () => {
-        process.env.USE_REDIS = 'true';
         process.env.USE_REDIS_CLUSTER = 'true';
         process.env.REDIS_URI =
           'redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003';
 
         const clients = await import('../redisClients');
         keyvRedisClient = clients.keyvRedisClient;
-        await testRedisOperations(keyvRedisClient!, 'keyv-cluster');
+        await testRedisOperations(keyvRedisClient!, 'keyv-cluster', clients.keyvRedisClientReady!);
       });
     });
   });

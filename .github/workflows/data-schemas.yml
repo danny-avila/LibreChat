@@ -13,9 +13,14 @@ on:
         required: false
         default: 'Manual publish requested'
 
+permissions:
+  id-token: write  # Required for OIDC trusted publishing
+  contents: read
+
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    environment: publish  # Must match npm trusted publisher config
     steps:
       - uses: actions/checkout@v4
       
@@ -23,15 +28,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+      
+      - name: Update npm for OIDC support
+        run: npm install -g npm@latest  # Must be 11.5.1+ for provenance
           
       - name: Install dependencies
         run: cd packages/data-schemas && npm ci
         
       - name: Build
         run: cd packages/data-schemas && npm run build
-        
-      - name: Set up npm authentication
-        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.PUBLISH_NPM_TOKEN }}" > ~/.npmrc
         
       - name: Check version change
         id: check
@@ -55,4 +61,4 @@ jobs:
       - name: Publish
         if: steps.check.outputs.skip != 'true'
         working-directory: packages/data-schemas
-        run: npm publish *.tgz --access public
+        run: npm publish *.tgz --access public --provenance

@@ -10,6 +10,9 @@ export type RequestBody = {
   fileTokenLimit?: number;
   conversationId?: string;
   parentMessageId?: string;
+  endpoint?: string;
+  model?: string;
+  key?: string;
 };
 
 export type ServerRequest = Request<unknown, unknown, RequestBody> & {

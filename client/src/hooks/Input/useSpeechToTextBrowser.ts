@@ -2,16 +2,21 @@ import { useEffect, useRef, useMemo } from 'react';
 import { useRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
+import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
 import useGetAudioSettings from './useGetAudioSettings';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 const useSpeechToTextBrowser = (
   setText: (text: string) => void,
   onTranscriptionComplete: (text: string) => void,
 ) => {
+  const localize = useLocalize();
   const { showToast } = useToastContext();
   const { speechToTextEndpoint } = useGetAudioSettings();
   const isBrowserSTTEnabled = speechToTextEndpoint === 'browser';
+  const { data: speechConfig } = useGetCustomConfigSpeechQuery({ enabled: true });
+  const sttExternal = Boolean(speechConfig?.sttExternal);
 
   const lastTranscript = useRef<string | null>(null);
   const lastInterim = useRef<string | null>(null);
@@ -71,7 +76,9 @@ const useSpeechToTextBrowser = (
   const toggleListening = () => {
     if (!browserSupportsSpeechRecognition) {
       showToast({
-        message: 'Browser does not support SpeechRecognition',
+        message: sttExternal
+          ? localize('com_ui_speech_not_supported_use_external')
+          : localize('com_ui_speech_not_supported'),
         status: 'error',
       });
       return;
@@ -79,7 +86,7 @@ const useSpeechToTextBrowser = (
 
     if (!isMicrophoneAvailable) {
       showToast({
-        message: 'Microphone is not available',
+        message: localize('com_ui_microphone_unavailable'),
         status: 'error',
       });
       return;

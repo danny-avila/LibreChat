@@ -60,8 +60,7 @@ describe('sanitizeTitle', () => {
     });
 
     it('should handle multiple attributes', () => {
-      const input =
-        '<think reason="test" type="deep" id="1">reasoning</think> Title';
+      const input = '<think reason="test" type="deep" id="1">reasoning</think> Title';
       expect(sanitizeTitle(input)).toBe('Title');
     });
 
@@ -170,8 +169,7 @@ describe('sanitizeTitle', () => {
     });
 
     it('should handle real-world with attributes', () => {
-      const input =
-        '<think reasoning="multi-step">\nStep 1\nStep 2\n</think> Project Status';
+      const input = '<think reasoning="multi-step">\nStep 1\nStep 2\n</think> Project Status';
       expect(sanitizeTitle(input)).toBe('Project Status');
     });
   });
