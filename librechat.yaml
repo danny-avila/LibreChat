@@ -101,10 +101,9 @@ mcpServers:
 # ==============================================================================
 # MCP SETTINGS
 # ==============================================================================
-mcpSettings:
-  oauthCallbackUrl: https://librechat-production-df2d.up.railway.app/api/mcp/oauth/callback
-  allowedDomains:
-    - "*"
+# Note: To allow ALL domains for MCP, simply omit the allowedDomains field entirely.
+# The OAuth callback URL is derived from the DOMAIN_SERVER environment variable.
+# Set DOMAIN_SERVER=https://librechat-production-df2d.up.railway.app in your environment.
 
 # ==============================================================================
 # FILE CONFIG
