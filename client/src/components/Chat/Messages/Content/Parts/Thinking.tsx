@@ -122,7 +122,7 @@ export const ThinkingButton = memo(
 );
 
 /**
- * ThinkingFooter - Footer with collapse and copy buttons shown at the bottom of expanded content
+ * ThinkingFooter - Footer with collapse button shown at the bottom of expanded content
  * Allows users to collapse without scrolling back to the top
  */
 export const ThinkingFooter = memo(
