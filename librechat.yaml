@@ -4,15 +4,12 @@ version: 1.2.8
 # CACHE & STORAGE
 # ==============================================================================
 cache: true
-
-# File storage configuration
-  fileStrategy: "local" # Options: "local", "s3", "firebase"
+fileStrategy: "local"
 
 # ==============================================================================
 # INTERFACE & PRIVACY
 # ==============================================================================
 interface:
-  # UI Toggles - Enabling all functionality
   endpointsMenu: true
   modelSelect: true
   parameters: true
@@ -24,14 +21,12 @@ interface:
   agents: true
   fileSearch: true
   fileCitations: true
-
-  # People Picker (for permissions/sharing)
+  
   peoplePicker:
     users: true
     groups: true
     roles: true
 
-  # Privacy & TOS
   privacyPolicy:
     externalUrl: 'https://librechat.ai/privacy-policy'
     openNewTab: true
@@ -44,140 +39,107 @@ interface:
     modalContent: |
       Welcome to LibreChat. By using this service, you agree to our Terms of Service.
 
-  # Custom Welcome Message
   customWelcome: 'Welcome to LibreChat! Select a model to begin.'
 
-  # MCP Servers UI
   mcpServers:
     placeholder: 'MCP Servers'
-    use: false   # Set to true if you want users to use configured MCP servers
-    create: false # Set to true if you want users to manage MCP servers
-    share: false
+    use: true
+    create: true
+    share: true
 
 # ==============================================================================
 # REGISTRATION
 # ==============================================================================
 registration:
   socialLogins: ["discord", "facebook", "github", "google", "openid", "apple", "saml"]
-  # allowedDomains:
-  # - "gmail.com"
 
 # ==============================================================================
 # ENDPOINTS
 # ==============================================================================
 endpoints:
   
-  # ----------------------------------------------------------------------------
-  # OpenAI Assistants API (Optional)
-  # ----------------------------------------------------------------------------
-    assistants:
-      disableBuilder: false 
-      pollIntervalMs: 3000
-      timeoutMs: 180000
-      capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
-      retrievalModels: ["gpt-5.2"]
+  # OpenAI Assistants (Optional)
+  assistants:
+    disableBuilder: false 
+    pollIntervalMs: 3000
+    timeoutMs: 180000
+    capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
+    retrievalModels: ["gpt-5.2"]
 
+  # CUSTOM ENDPOINTS
   custom:
-    # --------------------------------------------------------------------------
-    # OpenRouter (Fixed Configuration)
-    # --------------------------------------------------------------------------
+    
+    # --- OpenRouter ---
     - name: "OpenRouter"
-      apiKey: "${OPENROUTER_KEY}" # Ensure Railway variable is named OPENROUTER_KEY
+      apiKey: "${OPENROUTER_KEY}"
       baseURL: "https://openrouter.ai/api/v1"
       models:
-        default: ["z-ai/glm-4.7"]
+        default: ["google/gemini-2.0-flash-exp:free", "meta-llama/llama-3.1-8b-instruct:free"]
       fetch: true
       titleConvo: true
-      titleModel: "minimax/minimax-m2.1"
+      titleModel: "meta-llama/llama-3.1-8b-instruct:free"
       summarize: false
-      summaryModel: "minimax/minimax-m2.1"
-      forcePrompt: false
       modelDisplayLabel: "OpenRouter"
-      dropParams: ["stop"] # Critical for preventing hangs on some models   
-    # --------------------------------------------------------------------------
-    # Groq
-    # --------------------------------------------------------------------------
+      dropParams: ["stop"]
+
+    # --- Groq ---
     - name: "groq"
       apiKey: "${GROQ_API_KEY}"
       baseURL: "https://api.groq.com/openai/v1/"
       models:
-        default: [
-          "llama3-70b-8192",
-          "llama3-8b-8192",
-          "llama2-70b-4096",
-          "mixtral-8x7b-32768",
-          "gemma-7b-it"
-        ]
+        default: ["llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768"]
         fetch: false
       titleConvo: true
       titleModel: "mixtral-8x7b-32768"
       modelDisplayLabel: "groq"
 
-    # --------------------------------------------------------------------------
-    # Mistral AI
-    # --------------------------------------------------------------------------
+    # --- Mistral ---
     - name: "Mistral"
       apiKey: "${MISTRAL_API_KEY}"
       baseURL: "https://api.mistral.ai/v1"
       models:
-        default: ["mistral-tiny", "mistral-small", "mistral-medium", "mistral-large-latest"]
+        default: ["mistral-tiny", "mistral-small", "mistral-medium"]
         fetch: true
       titleConvo: true
       titleModel: "mistral-tiny"
       modelDisplayLabel: "Mistral"
       dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
 
-    # --------------------------------------------------------------------------
-    # Anthropic / APIpie
-    # --------------------------------------------------------------------------
+    # --- APIpie ---
     - name: "APIpie"
       apiKey: "${APIPIE_API_KEY}"
       baseURL: "https://apipie.ai/v1/"
       models:
-        default: [
-          "gpt-4", "claude-3-opus", "claude-3-sonnet", "gemini-pro-1.5"
-        ]
+        default: ["gpt-4", "claude-3-opus"]
         fetch: false
       titleConvo: true
       titleModel: "gpt-3.5-turbo"
       dropParams: ["stream"]
 
-    # --------------------------------------------------------------------------
-    # Perplexity
-    # --------------------------------------------------------------------------
+    # --- Perplexity ---
     - name: "Perplexity"
       apiKey: "${PERPLEXITY_API_KEY}"
       baseURL: "https://api.perplexity.ai/"
       models:
-        default: [
-          "sonar-small-chat", "sonar-medium-chat", "sonar-medium-online"
-        ]
+        default: ["sonar-small-chat", "sonar-medium-chat"]
         fetch: false
       titleConvo: true
       titleModel: "sonar-medium-chat"
       dropParams: ["stop", "frequency_penalty"]
       modelDisplayLabel: "Perplexity"
 
-    # --------------------------------------------------------------------------
-    # Together.ai
-    # --------------------------------------------------------------------------
+    # --- Together.ai ---
     - name: "together.ai"
       apiKey: "${TOGETHERAI_API_KEY}"
       baseURL: "https://api.together.xyz"
       models:
-        default: [
-          "togethercomputer/llama-2-70b-chat",
-          "mistralai/Mixtral-8x7B-Instruct-v0.1",
-          "teknium/OpenHermes-2p5-Mistral-7B"
-        ]
+        default: ["mistralai/Mixtral-8x7B-Instruct-v0.1"]
         fetch: false
       titleConvo: true
-      titleModel: "togethercomputer/llama-2-7b-chat"
+      titleModel: "mistralai/Mixtral-8x7B-Instruct-v0.1"
       modelDisplayLabel: "together.ai"
 
-    # --------------------------------------------------------------------------
-    # Fireworks
-    # --------------------------------------------------------------------------
+    # --- Fireworks ---
     - name: "Fireworks"
       apiKey: "${FIREWORKS_API_KEY}"
       baseURL: "https://api.fireworks.ai/inference/v1"
@@ -189,9 +151,7 @@ endpoints:
       modelDisplayLabel: "Fireworks"
       dropParams: ["user"]
 
-    # --------------------------------------------------------------------------
-    # Cohere
-    # --------------------------------------------------------------------------
+    # --- Cohere ---
     - name: "cohere"
       apiKey: "${COHERE_API_KEY}"
       baseURL: "https://api.cohere.ai/v1"
@@ -202,9 +162,7 @@ endpoints:
       titleModel: "command"
       dropParams: ["stop", "user", "frequency_penalty", "presence_penalty", "temperature", "top_p"]
 
-    # --------------------------------------------------------------------------
-    # Anyscale
-    # --------------------------------------------------------------------------
+    # --- Anyscale ---
     - name: "Anyscale"
       apiKey: "${ANYSCALE_API_KEY}"
       baseURL: "https://api.endpoints.anyscale.com/v1"
@@ -215,9 +173,7 @@ endpoints:
       titleModel: "meta-llama/Llama-2-7b-chat-hf"
       modelDisplayLabel: "Anyscale"
 
-    # --------------------------------------------------------------------------
-    # ShuttleAI
-    # --------------------------------------------------------------------------
+    # --- ShuttleAI ---
     - name: "ShuttleAI"
       apiKey: "${SHUTTLEAI_API_KEY}"
       baseURL: "https://api.shuttleai.app/v1"
@@ -229,24 +185,20 @@ endpoints:
       modelDisplayLabel: "ShuttleAI"
       dropParams: ["user"]
 
-    # --------------------------------------------------------------------------
-    # Helicone
-    # --------------------------------------------------------------------------
+    # --- Helicone ---
     - name: 'Helicone'
       apiKey: '${HELICONE_KEY}'
       baseURL: 'https://ai-gateway.helicone.ai'
       headers:
         x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
       models:
-        default: ['gpt-4o-mini', 'claude-3-5-sonnet', 'llama-3.1-8b-instruct']
+        default: ['gpt-4o-mini', 'claude-3-5-sonnet']
         fetch: true
       titleConvo: true
       titleModel: 'gpt-4o-mini'
       modelDisplayLabel: 'Helicone'
 
-    # --------------------------------------------------------------------------
-    # Portkey
-    # --------------------------------------------------------------------------
+    # --- Portkey ---
     - name: 'Portkey'
       apiKey: 'dummy'
       baseURL: 'https://api.portkey.ai/v1'
@@ -261,19 +213,7 @@ endpoints:
       modelDisplayLabel: 'Portkey'
 
 # ==============================================================================
-# MODEL SPECS (UI Grouping)
-# ==============================================================================
-# modelSpecs:
-#   list:
-#     - name: "gpt-4o"
-#       label: "GPT-4 Optimized"
-#       group: "openAI"
-#       preset:
-#         endpoint: "openAI"
-#         model: "gpt-4o"
-
-# ==============================================================================
-# FILE UPLOAD LIMITS
+# FILE CONFIG
 # ==============================================================================
 fileConfig:
   serverFileSizeLimit: 100
@@ -285,7 +225,7 @@ fileConfig:
       disabled: true
 
 # ==============================================================================
-# MEMORY (Optional)
+# MEMORY
 # ==============================================================================
 memory:
   disabled: false
