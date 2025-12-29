@@ -153,22 +153,26 @@ LibreChat/
 ### 7.1 基础模板选择
 在 E2B V2 构建系统中，为了使用 Code Interpreter 功能（端口 49999），**必须**使用 `code-interpreter` 或 `code-interpreter-v1` 作为基础模板。
 
-### 7.2 构建步骤 (E2B CLI)
-如果需要预装 Python 包（如 `nltk`），请使用项目根目录下的 `e2b_template/e2b.toml`：
+### 5.2 构建步骤 (E2B CLI)
+如果需要预装 Python 包（如 `nltk`），请使用项目根目录下的 `e2b_template/e2b.Dockerfile`：
 
-1.  **配置文件 (`e2b_template/e2b.toml`)**:
-    ```toml
-    # 必须基于此模板，否则 Code Interpreter 服务不会启动
-    template_id = "code-interpreter-v1" 
+1.  **配置文件 (`e2b_template/e2b.Dockerfile`)**:
+    ```dockerfile
+    # 必须基于此镜像，否则 Code Interpreter 服务不会启动
+    FROM e2bdev/code-interpreter:latest
 
-    [build]
-    pip_install = ["nltk", "pandas", "numpy"]
-    run = ["python -c \"import nltk; nltk.download('punkt')\""]
+    # 安装 Python 包
+    RUN pip install nltk pandas numpy
+
+    # 预下载数据
+    RUN python -c "import nltk; nltk.download('punkt')"
     ```
 2.  **构建并发布**:
     ```bash
     cd e2b_template
-    e2b template build
+    # 这一步会自动读取 e2b.Dockerfile 并构建
+    # 注意：构建命令需要指定启动命令以确保服务运行
+    e2b template build -c "/root/.jupyter/start-up.sh"
     ```
 3.  **配置使用**:
     将生成的 Template ID 更新到 `.env` 或 `librechat.yaml` 中。
