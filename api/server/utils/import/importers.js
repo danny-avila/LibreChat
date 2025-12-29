@@ -213,11 +213,11 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
   }
 
   /**
-   * Helper function to find the nearest non-system parent
+   * Helper function to find the nearest valid parent (skips system, reasoning_recap, and thoughts messages)
    * @param {string} parentId - The ID of the parent message.
-   * @returns {string} The ID of the nearest non-system parent message.
+   * @returns {string} The ID of the nearest valid parent message.
    */
-  const findNonSystemParent = (parentId) => {
+  const findValidParent = (parentId) => {
     if (!parentId || !messageMap.has(parentId)) {
       return Constants.NO_PARENT;
     }
@@ -227,12 +227,60 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
       return Constants.NO_PARENT;
     }
 
-    /* If parent is a system message, traverse up to find the nearest non-system parent */
-    if (parentMapping.message.author?.role === 'system') {
-      return findNonSystemParent(parentMapping.parent);
+    /* If parent is a system message, reasoning_recap, or thoughts, traverse up to find the nearest valid parent */
+    const contentType = parentMapping.message.content?.content_type;
+    const shouldSkip =
+      parentMapping.message.author?.role === 'system' ||
+      contentType === 'reasoning_recap' ||
+      contentType === 'thoughts';
+
+    if (shouldSkip) {
+      return findValidParent(parentMapping.parent);
     }
 
     return messageMap.get(parentId);
+  };
+
+  /**
+   * Helper function to find thinking content from parent chain (thoughts messages)
+   * @param {string} parentId - The ID of the parent message.
+   * @param {Set} visited - Set of already-visited IDs to prevent cycles.
+   * @returns {Array} The thinking content array (empty if not found).
+   */
+  const findThinkingContent = (parentId, visited = new Set()) => {
+    // Guard against circular references in malformed imports
+    if (!parentId || visited.has(parentId)) {
+      return [];
+    }
+    visited.add(parentId);
+
+    const parentMapping = conv.mapping[parentId];
+    if (!parentMapping?.message) {
+      return [];
+    }
+
+    const contentType = parentMapping.message.content?.content_type;
+
+    // If this is a thoughts message, extract the thinking content
+    if (contentType === 'thoughts') {
+      const thoughts = parentMapping.message.content.thoughts || [];
+      const thinkingText = thoughts
+        .map((t) => t.content || t.summary || '')
+        .filter(Boolean)
+        .join('\n\n');
+
+      if (thinkingText) {
+        return [{ type: 'think', think: thinkingText }];
+      }
+      return [];
+    }
+
+    // If this is reasoning_recap, look at its parent for thoughts
+    if (contentType === 'reasoning_recap') {
+      return findThinkingContent(parentMapping.parent, visited);
+    }
+
+    return [];
   };
 
   // Create and save messages using the mapped IDs
@@ -247,8 +295,20 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
       continue;
     }
 
+    const contentType = mapping.message.content?.content_type;
+
+    // Skip thoughts messages - they will be merged into the response message
+    if (contentType === 'thoughts') {
+      continue;
+    }
+
+    // Skip reasoning_recap messages (just summaries like "Thought for 44s")
+    if (contentType === 'reasoning_recap') {
+      continue;
+    }
+
     const newMessageId = messageMap.get(id);
-    const parentMessageId = findNonSystemParent(mapping.parent);
+    const parentMessageId = findValidParent(mapping.parent);
 
     const messageText = formatMessageText(mapping.message);
 
@@ -266,7 +326,12 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
       }
     }
 
-    messages.push({
+    // Use create_time from ChatGPT export to ensure proper message ordering
+    // For null timestamps, use the conversation's create_time as fallback, or current time as last resort
+    const messageTime = mapping.message.create_time || conv.create_time;
+    const createdAt = messageTime ? new Date(messageTime * 1000) : new Date();
+
+    const message = {
       messageId: newMessageId,
       parentMessageId,
       text: messageText,
@@ -275,8 +340,22 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
       model,
       user: requestUserId,
       endpoint: EModelEndpoint.openAI,
-    });
+      createdAt,
+    };
+
+    // For assistant messages, check if there's thinking content in the parent chain
+    if (!isCreatedByUser) {
+      const thinkingContent = findThinkingContent(mapping.parent);
+      if (thinkingContent.length > 0) {
+        // Combine thinking content with the text response
+        message.content = [...thinkingContent, { type: 'text', text: messageText }];
+      }
+    }
+
+    messages.push(message);
   }
+
+  adjustTimestampsForOrdering(messages);
 
   for (const message of messages) {
     importBatchBuilder.saveMessage(message);
@@ -325,17 +404,18 @@ function processAssistantMessage(messageData, messageText) {
 /**
  * Formats the text content of a message based on its content type and author role.
  * @param {ChatGPTMessage} messageData - The message data.
- * @returns {string} - The updated message text after processing.
+ * @returns {string} - The formatted message text.
  */
 function formatMessageText(messageData) {
-  const isText = messageData.content.content_type === 'text';
+  const contentType = messageData.content.content_type;
+  const isText = contentType === 'text';
   let messageText = '';
 
   if (isText && messageData.content.parts) {
     messageText = messageData.content.parts.join(' ');
-  } else if (messageData.content.content_type === 'code') {
+  } else if (contentType === 'code') {
     messageText = `\`\`\`${messageData.content.language}\n${messageData.content.text}\n\`\`\``;
-  } else if (messageData.content.content_type === 'execution_output') {
+  } else if (contentType === 'execution_output') {
     messageText = `Execution Output:\n> ${messageData.content.text}`;
   } else if (messageData.content.parts) {
     for (const part of messageData.content.parts) {
@@ -355,6 +435,35 @@ function formatMessageText(messageData) {
   }
 
   return messageText;
+}
+
+/**
+ * Adjusts message timestamps to ensure children always come after parents.
+ * Messages are sorted by createdAt and buildTree expects parents to appear before children.
+ * ChatGPT exports can have slight timestamp inversions (e.g., tool call results
+ * arriving a few ms before their parent). Uses multiple passes to handle cascading adjustments.
+ *
+ * @param {Array} messages - Array of message objects with messageId, parentMessageId, and createdAt.
+ */
+function adjustTimestampsForOrdering(messages) {
+  const timestampMap = new Map();
+  messages.forEach((msg) => timestampMap.set(msg.messageId, msg.createdAt));
+
+  let hasChanges = true;
+  while (hasChanges) {
+    hasChanges = false;
+    for (const message of messages) {
+      if (message.parentMessageId && message.parentMessageId !== Constants.NO_PARENT) {
+        const parentTimestamp = timestampMap.get(message.parentMessageId);
+        if (parentTimestamp && message.createdAt <= parentTimestamp) {
+          // Bump child timestamp to 1ms after parent
+          message.createdAt = new Date(parentTimestamp.getTime() + 1);
+          timestampMap.set(message.messageId, message.createdAt);
+          hasChanges = true;
+        }
+      }
+    }
+  }
 }
 
 module.exports = { getImporter, processAssistantMessage };
