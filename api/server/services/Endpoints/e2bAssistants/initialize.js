@@ -15,7 +15,8 @@ class E2BClientManager {
     
     // 配置默认值
     this.defaultConfig = {
-      template: process.env.E2B_SANDBOX_TEMPLATE || 'python3-data-analysis',
+      // 默认使用官方基础模板，避免 404
+      template: process.env.E2B_SANDBOX_TEMPLATE || 'code-interpreter', 
       timeoutMs: parseInt(process.env.E2B_DEFAULT_TIMEOUT_MS) || 300000, // 5分钟
       maxMemoryMB: parseInt(process.env.E2B_DEFAULT_MAX_MEMORY_MB) || 2048,
       maxCpuPercent: parseInt(process.env.E2B_DEFAULT_MAX_CPU_PERCENT) || 80,
@@ -26,7 +27,7 @@ class E2BClientManager {
    * 创建新的沙箱实例
    * 使用E2B Code Interpreter SDK v2
    * 参考：https://e2b.dev/docs/sdk-reference/code-interpreter-js-sdk/v2/sandbox
-   * @param {string} template - 沙箱模板名称
+   * @param {string} template - 沙箱模板名称 (如果不传，将使用默认配置)
    * @param {string} userId - 用户ID
    * @param {string} conversationId - 对话ID
    * @param {Object} assistantConfig - Assistant配置（包含E2B特有字段）
@@ -34,25 +35,25 @@ class E2BClientManager {
    */
   async createSandbox(template, userId, conversationId, assistantConfig = {}) {
     try {
-      logger.info(`[E2B] Creating sandbox for user ${userId}, conversation ${conversationId}, template: ${template}`);
+      // 优先使用传入的 template，其次是 assistantConfig 中的配置，最后是默认值
+      const templateToUse = template || assistantConfig.e2b_sandbox_template || this.defaultConfig.template;
+      
+      logger.info(`[E2B] Creating sandbox for user ${userId}, conversation ${conversationId}, template: ${templateToUse}`);
       
       // 添加网络访问配置
       if (assistantConfig.has_internet_access) {
-        // 注意：网络访问在模板级别配置，这里只是记录
         logger.info(`[E2B] Internet access enabled for this sandbox`);
       }
       
-      // E2B Code Interpreter SDK v2.8.4 正确用法
-      // 显式传参方式：Sandbox.create(template, opts)
-      // 第一个参数是template字符串
-      // 第二个参数是选项对象（包含apiKey、timeoutMs等）
       const sandboxOpts = {
         apiKey: this.apiKey,
         timeoutMs: assistantConfig.timeout_ms || this.defaultConfig.timeoutMs,
-        secure: false, // 禁用安全访问以解决 400 兼容性问题
+        // 兼容性设置：如果 API Key 开启了 Secure Access 但模板不支持，需要设为 false
+        // 使用 V2 构建的模板通常不需要此设置，但为了稳健性保留
+        secure: false, 
       };
       
-      const sandbox = await Sandbox.create(template, sandboxOpts);
+      const sandbox = await Sandbox.create(templateToUse, sandboxOpts);
       
       const key = `${userId}:${conversationId}`;
       this.sandboxes.set(key, {

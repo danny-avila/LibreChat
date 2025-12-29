@@ -1,0 +1,28 @@
+# e2b.toml
+# E2B Sandbox Template Configuration for Data Analysis
+# Documentation: https://e2b.dev/docs/template/schema
+
+# Base template is CRITICAL for Code Interpreter functionality (port 49999)
+# We must use a template that already has the Code Interpreter server running.
+template_id = "code-interpreter-v1" 
+
+[build]
+# Install Python packages
+pip_install = [
+    "pandas",
+    "numpy",
+    "matplotlib",
+    "seaborn",
+    "scikit-learn",
+    "xgboost",
+    "nltk",
+    "openpyxl"
+]
+
+# Run commands during build
+# Here we pre-download NLTK data to speed up runtime
+run = [
+    "python -c \"import nltk; nltk.download('punkt'); nltk.download('averaged_perceptron_tagger')\""
+]
+
+
