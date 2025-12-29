@@ -88,7 +88,7 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
         >
           <div className="overflow-hidden">
             <ThinkingContent>{reasoningText}</ThinkingContent>
-            <ThinkingFooter onClick={handleClick} content={reasoningText} />
+            <ThinkingFooter onClick={handleClick} />
           </div>
         </div>
       </div>

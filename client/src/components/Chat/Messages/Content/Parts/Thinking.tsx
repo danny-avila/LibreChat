@@ -104,6 +104,11 @@ export const ThinkingButton = memo(
               'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
             )}
           >
+            <span className="sr-only">
+              {isCopied
+                ? localize('com_ui_copied_to_clipboard')
+                : localize('com_ui_copy_thoughts_to_clipboard')}
+            </span>
             {isCopied ? (
               <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
             ) : (
@@ -121,40 +126,22 @@ export const ThinkingButton = memo(
  * Allows users to collapse without scrolling back to the top
  */
 export const ThinkingFooter = memo(
-  ({
-    onClick,
-    content,
-  }: {
-    onClick: (e: MouseEvent<HTMLButtonElement>) => void;
-    content?: string;
-  }) => {
+  ({ onClick }: { onClick: (e: MouseEvent<HTMLButtonElement>) => void }) => {
     const localize = useLocalize();
-    const [isCopied, setIsCopied] = useState(false);
-
-    const handleCopy = useCallback(
-      (e: MouseEvent<HTMLButtonElement>) => {
-        e.stopPropagation();
-        if (content) {
-          navigator.clipboard.writeText(content);
-          setIsCopied(true);
-          setTimeout(() => setIsCopied(false), 2000);
-        }
-      },
-      [content],
-    );
 
     return (
       <div className="mt-3 flex items-center justify-end gap-2">
         <button
           type="button"
           onClick={onClick}
-          aria-label={localize('com_ui_collapse')}
+          aria-label={localize('com_ui_collapse_thoughts')}
           className={cn(
             'rounded-lg p-1.5 text-text-secondary-alt',
             'hover:bg-surface-hover hover:text-text-primary',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
           )}
         >
+          <span className="sr-only">{localize('com_ui_collapse_thoughts')}</span>
           <ChevronUp className="h-[18px] w-[18px]" aria-hidden="true" />
         </button>
       </div>
@@ -219,7 +206,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
       >
         <div className="overflow-hidden">
           <ThinkingContent>{children}</ThinkingContent>
-          <ThinkingFooter onClick={handleClick} content={textContent} />
+          <ThinkingFooter onClick={handleClick} />
         </div>
       </div>
     </div>
