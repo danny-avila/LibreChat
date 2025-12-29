@@ -86,18 +86,24 @@ endpoints:
       modelDisplayLabel: "OpenRouter"
 
 # ==============================================================================
-# MCP SERVERS (Remote Only)
+# MCP SERVERS
 # ==============================================================================
 mcpServers:
-  # Anna's Archive MCP Server (Remote)
   annas-archive:
-    type: "streamable-http"
-    url: "https://server.smithery.ai/chris/annas-mcp"
+    type: streamable-http
+    url: https://server.smithery.ai/chris/annas-mcp
     timeout: 60000
     initTimeout: 30000
     chatMenu: true
     startup: true
-    serverInstructions: "Use this to search for and download books from Anna's Archive"
+    serverInstructions: Use this to search for and download books from Anna's Archive
+
+# ==============================================================================
+# MCP SETTINGS
+# ==============================================================================
+mcpSettings:
+  allowedDomains:
+    - server.smithery.ai
 
 # ==============================================================================
 # FILE CONFIG
