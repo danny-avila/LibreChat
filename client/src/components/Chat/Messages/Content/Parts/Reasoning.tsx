@@ -2,7 +2,7 @@ import { memo, useMemo, useState, useCallback } from 'react';
 import { useAtom } from 'jotai';
 import type { MouseEvent } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
-import { ThinkingContent, ThinkingButton } from './Thinking';
+import { ThinkingContent, ThinkingButton, ThinkingFooter } from './Thinking';
 import { showThinkingAtom } from '~/store/showThinking';
 import { useMessageContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -69,7 +69,7 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
   return (
     <div className="group/reasoning">
       <div className="group/thinking-container">
-        <div className="sticky top-0 z-10 mb-2 bg-presentation pb-2 pt-2">
+        <div className="mb-2 pb-2 pt-2">
           <ThinkingButton
             isExpanded={isExpanded}
             onClick={handleClick}
@@ -88,6 +88,7 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
         >
           <div className="overflow-hidden">
             <ThinkingContent>{reasoningText}</ThinkingContent>
+            <ThinkingFooter onClick={handleClick} />
           </div>
         </div>
       </div>
