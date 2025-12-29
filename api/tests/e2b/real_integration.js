@@ -81,8 +81,8 @@ async function runRealTest() {
         // Add 'prompt' field explicitly as it is required by the Schema
         prompt: 'You are a python data analyst. Always write and execute python code to solve math or data problems.',
         model: 'gpt-4o', 
-        e2b_sandbox_template: 'code-interpreter', 
-        e2b_config: { timeout_ms: 60000 }
+        e2b_sandbox_template: 'code-interpreter-v1', // Use specific v1 template which is proven to work
+        e2b_config: { timeout_ms: 600000 } // Increased to 10 minutes
       }
     };
     const createRes = mockRes();

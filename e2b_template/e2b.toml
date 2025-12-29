@@ -1,5 +1,5 @@
 # e2b.toml
-# E2B Sandbox Template Configuration for Data Analysis
+# E2B Sandbox Template Configuration for Comprehensive Data Analysis
 # Documentation: https://e2b.dev/docs/template/schema
 
 # Base template is CRITICAL for Code Interpreter functionality (port 49999)
@@ -7,22 +7,52 @@
 template_id = "code-interpreter-v1" 
 
 [build]
-# Install Python packages
+# Install comprehensive Python packages for Data Science & Analysis
 pip_install = [
-    "pandas",
+    # Core Data Science
     "numpy",
-    "matplotlib",
-    "seaborn",
+    "pandas",
+    "scipy",
+    "statsmodels",
+    
+    # Machine Learning
     "scikit-learn",
     "xgboost",
+    "lightgbm",
+    "torch", # PyTorch for DL tasks
+    
+    # Visualization
+    "matplotlib",
+    "seaborn",
+    "plotly",
+    "bokeh",
+    
+    # NLP
     "nltk",
-    "openpyxl"
+    "spacy",
+    "textblob",
+    "gensim",
+    
+    # Data Formats & IO
+    "openpyxl", # Excel
+    "pyarrow",  # Parquet
+    "fastparquet",
+    "h5py",
+    
+    # Utilities & Network
+    "requests",
+    "beautifulsoup4",
+    "networkx",
+    "sympy", # Symbolic math
+    "yfinance", # Financial data
+    "faker" # Synthetic data generation
 ]
 
-# Run commands during build
-# Here we pre-download NLTK data to speed up runtime
+# Run commands during build to prepare the environment
 run = [
-    "python -c \"import nltk; nltk.download('punkt'); nltk.download('averaged_perceptron_tagger')\""
+    # Download NLTK data
+    "python -c \"import nltk; nltk.download('punkt'); nltk.download('averaged_perceptron_tagger'); nltk.download('stopwords'); nltk.download('wordnet')\"",
+    
+    # Download Spacy model (English)
+    "python -m spacy download en_core_web_sm"
 ]
-
-

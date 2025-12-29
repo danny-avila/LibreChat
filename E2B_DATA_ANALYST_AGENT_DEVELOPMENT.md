@@ -56,10 +56,6 @@
 - **MongoDB**: 存储Assistant配置
 - **Node.js/Express.js**: 后端框架
 
-### 3.2 E2B沙箱模板
-- **python3-data-analysis**: 预装Python数据分析库的标准模板
-- 自定义库：pandas, numpy, matplotlib, seaborn, scikit-learn, xgboost
-
 ---
 
 ## 4. 目录结构规划
@@ -92,7 +88,8 @@ LibreChat/
 │       └── e2b/
 │           ├── codeExecutor.test.js   # [已实现] CodeExecutor单元测试
 │           ├── fileHandler.test.js    # [已实现] FileHandler单元测试
-│           └── real_integration.js    # [已实现] 真实环境端到端测试
+│           ├── real_integration.js    # [已实现] 真实环境端到端测试
+│           └── debug_sandbox.js       # [已实现] 沙箱调试脚本
 ├── packages/
 │   └── data-schemas/
 │       ├── src/
@@ -111,7 +108,8 @@ LibreChat/
 ### 5.1 E2BClientManager (`initialize.js`)
 - **功能**: 管理 E2B 沙箱生命周期（创建、销毁、重用）。
 - **SDK适配**: 适配了 `@e2b/code-interpreter` v2.8.4，使用 `Sandbox.create()` 和 `sandbox.kill()`。
-- **配置**: `secure: false` 以确保与 E2B API 的兼容性。
+- **文件操作**: 使用 `.files` API 进行文件读写。
+- **配置**: 默认 `secure: false` 以增强兼容性，并支持智能模板选择。
 
 ### 5.2 CodeExecutor (`codeExecutor.js`)
 - **功能**: 在沙箱中执行 Python 代码，处理 `stdout`/`stderr`，并提取生成的图表。
@@ -145,45 +143,79 @@ LibreChat/
 
 ### 6.2 助手逻辑集成
 - **Helpers**: 在 `api/server/controllers/assistants/helpers.js` 中添加了对 `e2bAssistants` 的支持：
-  - `getOpenAIClient`: 路由到 E2B 的初始化逻辑。
+  - `getOpenAIClient`: 路由到 E2B 的初始化逻辑，并确保初始化 OpenAI 客户端进行 Agent 推理。
   - `fetchAssistants`: 从 `E2BAssistant` 模型获取助手列表。
 
 ---
 
-## 7. 测试与验证
+## 7. 自定义模板与预装包 (重要 💡)
 
-### 7.1 单元测试
-位于 `api/tests/e2b/` 目录：
-- `codeExecutor.test.js`: 验证代码执行、图表提取和安全校验。
-- `fileHandler.test.js`: 验证文件同步和持久化逻辑。
+### 7.1 基础模板选择
+在 E2B V2 构建系统中，为了使用 Code Interpreter 功能（端口 49999），**必须**使用 `code-interpreter` 或 `code-interpreter-v1` 作为基础模板。
 
-### 7.2 端到端集成测试
-脚本 `api/tests/e2b/real_integration.js` 验证全链路逻辑：
-1. **环境准备**: 需配置 `.env` 中的 `OPENAI_API_KEY` 和 `E2B_API_KEY`，并确保 MongoDB 运行。
-2. **测试流程**:
-   - 连接真实 MongoDB。
-   - 创建 `Real E2B Analyst` 助手。
-   - 发送 "计算 Fibonacci 数列" 的请求。
-   - 验证 Agent 思考 -> 生成 Python 代码 -> E2B 沙箱执行 -> 返回结果的闭环。
-   - 清理创建的助手。
+### 7.2 构建步骤 (E2B CLI)
+如果需要预装 Python 包（如 `nltk`），请使用项目根目录下的 `e2b_template/e2b.toml`：
+
+1.  **配置文件 (`e2b_template/e2b.toml`)**:
+    ```toml
+    # 必须基于此模板，否则 Code Interpreter 服务不会启动
+    template_id = "code-interpreter-v1" 
+
+    [build]
+    pip_install = ["nltk", "pandas", "numpy"]
+    run = ["python -c \"import nltk; nltk.download('punkt')\""]
+    ```
+2.  **构建并发布**:
+    ```bash
+    cd e2b_template
+    e2b template build
+    ```
+3.  **配置使用**:
+    将生成的 Template ID 更新到 `.env` 或 `librechat.yaml` 中。
+
+---
+
+## 8. 故障排除 (Troubleshooting)
+
+### 8.1 502: The sandbox is running but port is not open
+*   **原因**：沙箱内的代码解释器进程未启动或权限不足。
+*   **解决方法**：
+    1.  **使用正确的模板 ID**：确保使用 `code-interpreter-v1` 而不是 `base` 或其他通用模板。
+    2.  **检查启动命令**：如果是自定义模板，确保不仅安装了包，还继承了基础镜像的启动逻辑。
+    3.  **使用调试脚本**：运行 `node api/tests/e2b/debug_sandbox.js` 检查沙箱内部进程 (`ps aux`)。
+
+### 8.2 400: Template is not compatible with secured access
+*   **原因**：E2B API Key 开启了“安全访问”限制，但模板或请求未通过鉴权。
+*   **解决方法**：代码中已默认设置 `secure: false` 以确保兼容性。
+
+---
+
+## 9. 测试与验证
+
+### 9.1 单元测试
+```bash
+cd api
+npx jest tests/e2b/codeExecutor.test.js
+npx jest tests/e2b/fileHandler.test.js
+```
+
+### 9.2 端到端集成测试 (推荐)
+脚本 `api/tests/e2b/real_integration.js` 验证全链路逻辑（Controller -> Agent -> OpenAI -> E2B Sandbox）。
+
+**前置条件**:
+1.  MongoDB 正在运行 (localhost:27017)。
+2.  `.env` 中配置了有效的 `OPENAI_API_KEY` 和 `E2B_API_KEY`。
 
 **运行方式**:
 ```bash
 node api/tests/e2b/real_integration.js
 ```
 
----
-
-## 8. 下一步计划 (前端适配)
-
-后端 MVP 已完成，接下来的重点是前端适配：
-1. **前端 Endpoint 配置**: 确保前端能识别 `e2bAssistants`。
-2. **创建界面**: 复用 Assistant 创建界面，添加 E2B 特有配置（如 Sandbox Template）。
-3. **聊天界面**: 确保对话请求正确路由到 `/api/e2b-assistants/:id/chat`。
+**预期结果**:
+看到 "✅ Chat Response Received" 并且包含 "Real Tool Executions" 日志，且没有 502 错误。
 
 ---
 
 **创建日期**: 2025-12-23  
-**最后更新**: 2025-12-26  
-**当前状态**: 后端核心服务、Agent 逻辑及 API 层均已完成并通过真实环境集成测试。
-**当前分支**: `feature/e2b-integration`
+**最后更新**: 2025-12-29  
+**当前状态**: 后端全链路已通。支持自定义模板和预装包。测试脚本已归档。
