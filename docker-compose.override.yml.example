@@ -123,6 +123,25 @@
 #    volumes:
 #      - ./ollama:/root/.ollama
 
+# # ADD PISTON CODE EXECUTION
+#  piston:
+#    image: ghcr.io/engineer-man/piston:latest
+#    container_name: piston
+#    privileged: true
+#    restart: always
+#    ports:
+#      - "2000:2000"
+#    environment:
+#      - PISTON_LOG_LEVEL=INFO
+#      - PISTON_RUN_TIMEOUT=15000
+#      - PISTON_RUN_CPU_TIME=15000
+#      - PISTON_COMPILE_TIMEOUT=15000
+#      - PISTON_COMPILE_CPU_TIME=15000
+#      - PISTON_RUN_MEMORY_LIMIT=-1
+#      - PISTON_OUTPUT_MAX_SIZE=5242880
+#    volumes:
+#      - ./piston_data:/piston
+
 # # ADD LITELLM BASIC - NEED TO CONFIGURE litellm-config.yaml, ONLY NEED ENV TO ENABLE REDIS FOR CACHING OR LANGFUSE FOR MONITORING
 #  litellm:
 #    image: ghcr.io/berriai/litellm:main-latest

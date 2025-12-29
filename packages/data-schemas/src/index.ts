@@ -9,3 +9,4 @@ export type * from './types';
 export type * from './methods';
 export { default as logger } from './config/winston';
 export { default as meiliLogger } from './config/meiliLogger';
+export * from './config/code-execution';

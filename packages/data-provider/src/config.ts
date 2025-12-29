@@ -701,6 +701,7 @@ export type TStartupConfig = {
   >;
   mcpPlaceholder?: string;
   conversationImportMaxFileSize?: number;
+  codeExecutor?: 'piston' | 'librechat';
 };
 
 export enum OCRStrategy {

@@ -67,6 +67,16 @@ const verifyToolAuth = async (req, res) => {
     if (toolId === Tools.web_search) {
       return await verifyWebSearchAuth(req, res);
     }
+
+    // If CODE_EXECUTOR is set to piston, skip API key check for execute_code tool
+    if (toolId === Tools.execute_code && process.env.CODE_EXECUTOR === 'piston') {
+      res.status(200).json({
+        authenticated: true,
+        message: AuthType.SYSTEM_DEFINED,
+      });
+      return;
+    }
+
     const authFields = fieldsMap[toolId];
     if (!authFields) {
       res.status(404).json({ message: 'Tool not found' });
@@ -192,32 +202,48 @@ const callTool = async (req, res) => {
       });
     }
 
+    // Check if this is Piston (no session_id) or LibreChat Code API (has session_id)
+    const isPiston = !artifact.session_id;
+
     const artifactPromises = [];
     for (const file of artifact.files) {
-      const { id, name } = file;
-      artifactPromises.push(
-        (async () => {
-          const fileMetadata = await processCodeOutput({
-            req,
-            id,
-            name,
-            apiKey: tool.apiKey,
-            messageId,
+      if (isPiston) {
+        // Piston files are already complete - just add toolCallId for UI mapping
+        artifactPromises.push(
+          Promise.resolve({
+            ...file,
             toolCallId,
+            messageId,
             conversationId,
-            session_id: artifact.session_id,
-          });
+          }),
+        );
+      } else {
+        // LibreChat Code API files need processing
+        const { id, name } = file;
+        artifactPromises.push(
+          (async () => {
+            const fileMetadata = await processCodeOutput({
+              req,
+              id,
+              name,
+              apiKey: tool.apiKey,
+              messageId,
+              toolCallId,
+              conversationId,
+              session_id: artifact.session_id,
+            });
 
-          if (!fileMetadata) {
+            if (!fileMetadata) {
+              return null;
+            }
+
+            return fileMetadata;
+          })().catch((error) => {
+            logger.error('Error processing code output:', error);
             return null;
-          }
-
-          return fileMetadata;
-        })().catch((error) => {
-          logger.error('Error processing code output:', error);
-          return null;
-        }),
-      );
+          }),
+        );
+      }
     }
     const attachments = await Promise.all(artifactPromises);
     toolCallData.attachments = attachments;

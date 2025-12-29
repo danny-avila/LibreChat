@@ -9,6 +9,7 @@ import {
   CircleHelpIcon,
 } from '@librechat/client';
 import type { AssistantForm } from '~/common';
+import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
@@ -16,6 +17,8 @@ export default function Code({ version }: { version: number | string }) {
   const localize = useLocalize();
   const methods = useFormContext<AssistantForm>();
   const { control, setValue, getValues } = methods;
+  const { data: config } = useGetStartupConfig();
+  const isPiston = config?.codeExecutor === 'piston';
 
   return (
     <>
@@ -49,7 +52,9 @@ export default function Code({ version }: { version: number | string }) {
               className="form-check-label text-token-text-primary w-full cursor-pointer"
               htmlFor={Capabilities.code_interpreter}
             >
-              {localize('com_assistants_code_interpreter')}
+              {isPiston
+                ? localize('com_agents_code_execution_title')
+                : localize('com_assistants_code_interpreter')}
             </label>
             <HoverCardTrigger>
               <CircleHelpIcon className="h-5 w-5 text-gray-500" />

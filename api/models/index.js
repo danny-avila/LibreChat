@@ -13,6 +13,7 @@ const {
 } = require('./Message');
 const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
+const { getToolFilesByIds } = require('./File');
 const { File } = require('~/db/models');
 
 const seedDatabase = async () => {
@@ -43,6 +44,9 @@ module.exports = {
   getPresets,
   savePreset,
   deletePresets,
+
+  // Override getToolFilesByIds from methods with local version for Piston support
+  getToolFilesByIds,
 
   Files: File,
 };

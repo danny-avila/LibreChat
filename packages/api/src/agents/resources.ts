@@ -90,7 +90,25 @@ const categorizeFileForToolResources = ({
   requestFileSet: Set<string>;
   processedResourceFiles: Set<string>;
 }): void => {
+  // LibreChat Code API files have fileIdentifier
   if (file.metadata?.fileIdentifier) {
+    addFileToResource({
+      file,
+      resourceType: EToolResources.execute_code,
+      tool_resources,
+      processedResourceFiles,
+    });
+    return;
+  }
+
+  // Piston files: uploaded with tool_resource=execute_code or context=execute_code
+  // These have context=execute_code or context=message_attachment but no fileIdentifier
+  if (file.context === 'execute_code' || file.context === 'message_attachment') {
+    logger.debug('[categorizeFileForToolResources] Adding Piston file to execute_code:', {
+      file_id: file.file_id,
+      filename: file.filename,
+      context: file.context,
+    });
     addFileToResource({
       file,
       resourceType: EToolResources.execute_code,
@@ -152,7 +170,7 @@ export const primeResources = async ({
   agentId,
 }: {
   req: ServerRequest & { user?: IUser };
-  appConfig?: AppConfig;
+  appConfig: AppConfig;
   requestFileSet: Set<string>;
   attachments: Promise<Array<TFile | null>> | undefined;
   tool_resources: AgentToolResources | undefined;
@@ -286,6 +304,16 @@ export const primeResources = async ({
         attachmentFileIds.add(file.file_id);
       }
     }
+
+    logger.debug('[primeResources] Final tool_resources.execute_code:', {
+      file_ids: tool_resources?.[EToolResources.execute_code]?.file_ids,
+      files_count: tool_resources?.[EToolResources.execute_code]?.files?.length,
+      files: tool_resources?.[EToolResources.execute_code]?.files?.map(f => ({
+        file_id: f.file_id,
+        filename: f.filename,
+        context: f.context,
+      })),
+    });
 
     return { attachments: attachments.length > 0 ? attachments : [], tool_resources };
   } catch (error) {

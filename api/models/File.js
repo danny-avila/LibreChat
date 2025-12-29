@@ -49,7 +49,14 @@ const getToolFilesByIds = async (fileIds, toolResourceSet) => {
       filter.$or.push({ embedded: true });
     }
     if (toolResourceSet.has(EToolResources.execute_code)) {
-      filter.$or.push({ 'metadata.fileIdentifier': { $exists: true } });
+      filter.$or.push(
+        // LibreChat Code API files (have fileIdentifier)
+        { 'metadata.fileIdentifier': { $exists: true } },
+        // Piston files (no fileIdentifier, but have execute_code context)
+        { context: FileContext.execute_code },
+        // Message attachments for code execution (Piston)
+        { context: FileContext.message_attachment }
+      );
     }
 
     const selectFields = { text: 0 };

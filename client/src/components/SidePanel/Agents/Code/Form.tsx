@@ -1,6 +1,6 @@
 import { Tools } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { useVerifyAgentToolAuth } from '~/data-provider';
+import { useVerifyAgentToolAuth, useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import Action from './Action';
 import Files from './Files';
@@ -14,6 +14,16 @@ export default function CodeForm({
 }) {
   const localize = useLocalize();
   const { data } = useVerifyAgentToolAuth({ toolId: Tools.execute_code });
+  const { data: config } = useGetStartupConfig();
+  const isPiston = config?.codeExecutor === 'piston';
+
+  const title = isPiston
+    ? localize('com_agents_code_execution_title')
+    : localize('com_agents_code_interpreter_title');
+
+  const subtitle = isPiston
+    ? localize('com_agents_powered_by_piston')
+    : localize('com_agents_by_librechat');
 
   return (
     <div className="w-full">
@@ -21,10 +31,10 @@ export default function CodeForm({
         <div className="flex flex-row items-center gap-1">
           <div className="flex items-center gap-1">
             <span className="text-token-text-primary block font-medium">
-              {localize('com_agents_code_interpreter_title')}
+              {title}
             </span>
             <span className="text-xs text-text-secondary">
-              {localize('com_agents_by_librechat')}
+              {subtitle}
             </span>
           </div>
         </div>

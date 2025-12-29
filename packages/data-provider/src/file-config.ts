@@ -89,10 +89,13 @@ export const fullMimeTypesList = [
 export const codeInterpreterMimeTypesList = [
   'text/x-c',
   'text/x-c++',
+  'text/x-c++src',
+  'text/x-c++hdr',
   'application/csv',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'text/html',
   'text/x-java',
+  'text/x-java-source',
   'application/json',
   'text/markdown',
   'application/pdf',
@@ -100,19 +103,27 @@ export const codeInterpreterMimeTypesList = [
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'text/x-python',
   'text/x-script.python',
+  'text/x-python-script',
+  'application/x-python',
   'text/x-ruby',
+  'application/x-ruby',
   'text/x-tex',
   'text/plain',
   'text/css',
   'image/jpeg',
   'text/javascript',
+  'application/javascript',
+  'application/x-javascript',
   'image/gif',
   'image/png',
   'image/heic',
   'image/heif',
   'application/x-tar',
   'application/typescript',
+  'text/typescript',
+  'application/x-typescript',
   'application/xml',
+  'application/x-sh',
   'application/zip',
   ...excelFileTypes,
 ];
@@ -141,7 +152,7 @@ export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
 
 export const textMimeTypes =
-  /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml))$/;
+  /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-python-script|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml))$/;
 
 export const applicationMimeTypes =
   /^(application\/(epub\+zip|csv|json|pdf|x-tar|x-sh|typescript|sql|yaml|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;

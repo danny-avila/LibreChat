@@ -28,7 +28,7 @@ const getConvo = async (user, conversationId) => {
     return await Conversation.findOne({ user, conversationId }).lean();
   } catch (error) {
     logger.error('[getConvo] Error getting single conversation', error);
-    throw new Error('Error getting single conversation');
+    return { message: 'Error getting single conversation' };
   }
 };
 
@@ -68,7 +68,9 @@ const deleteNullOrEmptyConversations = async () => {
  */
 const getConvoFiles = async (conversationId) => {
   try {
-    return (await Conversation.findOne({ conversationId }, 'files').lean())?.files ?? [];
+    const files = (await Conversation.findOne({ conversationId }, 'files').lean())?.files ?? [];
+    logger.debug(`[getConvoFiles] Retrieved ${files.length} file(s) for conversation ${conversationId}:`, files);
+    return files;
   } catch (error) {
     logger.error('[getConvoFiles] Error getting conversation files', error);
     throw new Error('Error getting conversation files');
@@ -94,6 +96,10 @@ module.exports = {
 
       const messages = await getMessages({ conversationId }, '_id');
       const update = { ...convo, messages, user: req.user.id };
+
+      if (convo.files) {
+        logger.debug('[saveConvo] Saving conversation with files:', convo.files);
+      }
 
       if (newConversationId) {
         update.conversationId = newConversationId;
@@ -151,21 +157,13 @@ module.exports = {
       const result = await Conversation.bulkWrite(bulkOps);
       return result;
     } catch (error) {
-      logger.error('[bulkSaveConvos] Error saving conversations in bulk', error);
+      logger.error('[saveBulkConversations] Error saving conversations in bulk', error);
       throw new Error('Failed to save conversations in bulk.');
     }
   },
   getConvosByCursor: async (
     user,
-    {
-      cursor,
-      limit = 25,
-      isArchived = false,
-      tags,
-      search,
-      sortBy = 'createdAt',
-      sortDirection = 'desc',
-    } = {},
+    { cursor, limit = 25, isArchived = false, tags, search, order = 'desc' } = {},
   ) => {
     const filters = [{ user }];
     if (isArchived) {
@@ -192,77 +190,35 @@ module.exports = {
         filters.push({ conversationId: { $in: matchingIds } });
       } catch (error) {
         logger.error('[getConvosByCursor] Error during meiliSearch', error);
-        throw new Error('Error during meiliSearch');
+        return { message: 'Error during meiliSearch' };
       }
     }
 
-    const validSortFields = ['title', 'createdAt', 'updatedAt'];
-    if (!validSortFields.includes(sortBy)) {
-      throw new Error(
-        `Invalid sortBy field: ${sortBy}. Must be one of ${validSortFields.join(', ')}`,
-      );
-    }
-    const finalSortBy = sortBy;
-    const finalSortDirection = sortDirection === 'asc' ? 'asc' : 'desc';
-
-    let cursorFilter = null;
     if (cursor) {
-      try {
-        const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString());
-        const { primary, secondary } = decoded;
-        const primaryValue = finalSortBy === 'title' ? primary : new Date(primary);
-        const secondaryValue = new Date(secondary);
-        const op = finalSortDirection === 'asc' ? '$gt' : '$lt';
-
-        cursorFilter = {
-          $or: [
-            { [finalSortBy]: { [op]: primaryValue } },
-            {
-              [finalSortBy]: primaryValue,
-              updatedAt: { [op]: secondaryValue },
-            },
-          ],
-        };
-      } catch (err) {
-        logger.warn('[getConvosByCursor] Invalid cursor format, starting from beginning');
-      }
-      if (cursorFilter) {
-        filters.push(cursorFilter);
-      }
+      filters.push({ updatedAt: { $lt: new Date(cursor) } });
     }
 
     const query = filters.length === 1 ? filters[0] : { $and: filters };
 
     try {
-      const sortOrder = finalSortDirection === 'asc' ? 1 : -1;
-      const sortObj = { [finalSortBy]: sortOrder };
-
-      if (finalSortBy !== 'updatedAt') {
-        sortObj.updatedAt = sortOrder;
-      }
-
       const convos = await Conversation.find(query)
         .select(
           'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL',
         )
-        .sort(sortObj)
+        .sort({ updatedAt: order === 'asc' ? 1 : -1 })
         .limit(limit + 1)
         .lean();
 
       let nextCursor = null;
       if (convos.length > limit) {
         const lastConvo = convos.pop();
-        const primaryValue = lastConvo[finalSortBy];
-        const primaryStr = finalSortBy === 'title' ? primaryValue : primaryValue.toISOString();
-        const secondaryStr = lastConvo.updatedAt.toISOString();
-        const composite = { primary: primaryStr, secondary: secondaryStr };
-        nextCursor = Buffer.from(JSON.stringify(composite)).toString('base64');
+        nextCursor = lastConvo.updatedAt.toISOString();
       }
 
       return { conversations: convos, nextCursor };
     } catch (error) {
       logger.error('[getConvosByCursor] Error getting conversations', error);
-      throw new Error('Error getting conversations');
+      return { message: 'Error getting conversations' };
     }
   },
   getConvosQueried: async (user, convoIds, cursor = null, limit = 25) => {
@@ -302,7 +258,7 @@ module.exports = {
       return { conversations: limited, nextCursor, convoMap };
     } catch (error) {
       logger.error('[getConvosQueried] Error getting conversations', error);
-      throw new Error('Error fetching conversations');
+      return { message: 'Error fetching conversations' };
     }
   },
   getConvo,
@@ -319,7 +275,7 @@ module.exports = {
       }
     } catch (error) {
       logger.error('[getConvoTitle] Error getting conversation title', error);
-      throw new Error('Error getting conversation title');
+      return { message: 'Error getting conversation title' };
     }
   },
   /**

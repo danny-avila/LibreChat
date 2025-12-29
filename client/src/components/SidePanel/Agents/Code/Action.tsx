@@ -12,6 +12,7 @@ import {
 } from '@librechat/client';
 import type { AgentForm } from '~/common';
 import { useLocalize, useCodeApiKeyForm } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 import ApiKeyDialog from './ApiKeyDialog';
 import { ESide } from '~/common';
 
@@ -19,6 +20,8 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { control, setValue } = methods;
+  const { data: config } = useGetStartupConfig();
+  const isPiston = config?.codeExecutor === 'piston';
   const apiKeyButtonRef = useRef<HTMLButtonElement>(null);
   const {
     onSubmit,
@@ -39,6 +42,10 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
 
   const runCodeIsEnabled = useWatch({ control, name: AgentCapabilities.execute_code });
   const isUserProvided = authType === AuthType.USER_PROVIDED;
+
+  const description = isPiston
+    ? localize('com_agents_piston_description')
+    : localize('com_agents_code_interpreter');
 
   const handleCheckboxChange = (checked: boolean) => {
     if (isToolAuthenticated) {
@@ -104,7 +111,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
             <HoverCardContent side={ESide.Top} className="w-80">
               <div className="space-y-2">
                 <p className="text-sm text-text-secondary">
-                  {localize('com_agents_code_interpreter')}
+                  {description}
                 </p>
               </div>
             </HoverCardContent>

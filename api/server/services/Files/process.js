@@ -487,24 +487,41 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
   const isImage = file.mimetype.startsWith('image');
   let fileInfoMetadata;
-  const entity_id = messageAttachment === true ? undefined : agent_id;
+  // For Piston execute_code, message attachments need special handling
+  // Piston is stateless, so files must persist across conversation turns
+  const isPistonCodeFile = messageAttachment && tool_resource === EToolResources.execute_code && process.env.CODE_EXECUTOR === 'piston';
+  
+  // For Piston: only set entity_id if agent_id exists (saved agents)
+  // For ephemeral agents, entity_id stays undefined but files are still accessible via conversation context
+  const entity_id = (messageAttachment && !isPistonCodeFile) ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
   if (tool_resource === EToolResources.execute_code) {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
       throw new Error('Code execution is not enabled for Agents');
     }
-    const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
-    const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
-    const stream = fs.createReadStream(file.path);
-    const fileIdentifier = await uploadCodeEnvFile({
-      req,
-      stream,
-      filename: file.originalname,
-      apiKey: result[EnvVar.CODE_API_KEY],
-      entity_id,
-    });
-    fileInfoMetadata = { fileIdentifier };
+    
+    const codeExecutor = process.env.CODE_EXECUTOR || 'librechat';
+    
+    if (codeExecutor === 'piston') {
+      // For Piston: Don't upload to Code API
+      // Files will be stored normally and fetched from storage at execution time
+      fileInfoMetadata = {};
+      logger.debug(`[Piston] Skipping Code API upload for file: ${file.originalname}`);
+    } else {
+      // For LibreChat Code API: Upload to Code API environment
+      const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
+      const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
+      const stream = fs.createReadStream(file.path);
+      const fileIdentifier = await uploadCodeEnvFile({
+        req,
+        stream,
+        filename: file.originalname,
+        apiKey: result[EnvVar.CODE_API_KEY],
+        entity_id,
+      });
+      fileInfoMetadata = { fileIdentifier };
+    }
   } else if (tool_resource === EToolResources.file_search) {
     const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
     if (!isFileSearchEnabled) {
@@ -537,7 +554,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
       });
 
-      if (!messageAttachment && tool_resource) {
+      if (!messageAttachment && tool_resource && agent_id) {
         await addAgentResourceFile({
           req,
           file_id,
@@ -654,7 +671,9 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
   let filepath = _filepath;
 
-  if (!messageAttachment && tool_resource) {
+  // Add files to agent resources only for non-message attachments with valid agent_id
+  // Message attachments persist via conversation context (like images)
+  if (!messageAttachment && tool_resource && agent_id) {
     await addAgentResourceFile({
       req,
       file_id,

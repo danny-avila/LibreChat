@@ -11,7 +11,6 @@ const {
   mcpToolPattern,
   loadWebSearchAuth,
 } = require('@librechat/api');
-const { getMCPServersRegistry } = require('~/config');
 const {
   Tools,
   Constants,
@@ -249,30 +248,71 @@ const loadTools = async ({
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
-      requestedTools[tool] = async () => {
-        const authValues = await loadAuthValues({
-          userId: user,
-          authFields: [EnvVar.CODE_API_KEY],
-        });
-        const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-        const { files, toolContext } = await primeCodeFiles(
-          {
-            ...options,
-            agentId: agent?.id,
-          },
-          codeApiKey,
-        );
-        if (toolContext) {
-          toolContextMap[tool] = toolContext;
-        }
-        const CodeExecutionTool = createCodeExecutionTool({
-          user_id: user,
-          files,
-          ...authValues,
-        });
-        CodeExecutionTool.apiKey = codeApiKey;
-        return CodeExecutionTool;
-      };
+      // Check which code executor to use (librechat or piston)
+      const codeExecutor = process.env.CODE_EXECUTOR || 'librechat';
+
+      if (codeExecutor === 'piston') {
+        // Use Piston code executor
+        requestedTools[tool] = async () => {
+          const { createPistonCodeExecutionTool, getPistonToolContext } = require('~/server/tools/CodeExecutorPiston');
+
+          // Debug logging for tool_resources
+          logger.debug('[Piston Tool] Tool resources:', JSON.stringify(options.tool_resources, null, 2));
+          logger.debug('[Piston Tool] Agent ID:', agent?.id);
+
+          // Reuse existing primeCodeFiles to get files from tool_resources
+          // Note: We pass null for apiKey since Piston doesn't need LibreChat Code API key
+          const { files } = await primeCodeFiles(
+            {
+              ...options,
+              agentId: agent?.id,
+            },
+            null,
+          );
+
+          logger.debug('[Piston Tool] Files from primeCodeFiles:', JSON.stringify(files, null, 2));
+
+          // Add Piston-specific tool context
+          if (files && files.length > 0) {
+            toolContextMap[tool] = getPistonToolContext(files);
+          }
+
+          return createPistonCodeExecutionTool({
+            user_id: user,
+            files,
+            pistonUrl: process.env.PISTON_URL,
+            pistonApiKey: process.env.PISTON_API_KEY,
+            req: options.req,
+            conversationId: options.conversationId,
+          });
+        };
+      } else {
+        // Use LibreChat code executor (default)
+        requestedTools[tool] = async () => {
+          const authValues = await loadAuthValues({
+            userId: user,
+            authFields: [EnvVar.CODE_API_KEY],
+          });
+          const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+          const { files, toolContext } = await primeCodeFiles(
+            {
+              ...options,
+              agentId: agent?.id,
+            },
+            codeApiKey,
+          );
+          if (toolContext) {
+            toolContextMap[tool] = toolContext;
+          }
+          const CodeExecutionTool = createCodeExecutionTool({
+            user_id: user,
+            files,
+            ...authValues,
+          });
+          CodeExecutionTool.apiKey = codeApiKey;
+          return CodeExecutionTool;
+        };
+      }
       continue;
     } else if (tool === Tools.file_search) {
       requestedTools[tool] = async () => {
@@ -348,10 +388,7 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
         /** Placeholder used for UI purposes */
         continue;
       }
-      const serverConfig = serverName
-        ? await getMCPServersRegistry().getServerConfig(serverName, user)
-        : null;
-      if (!serverConfig) {
+      if (serverName && options.req?.config?.mcpConfig?.[serverName] == null) {
         logger.warn(
           `MCP server "${serverName}" for "${toolName}" tool is not configured${agent?.id != null && agent.id ? ` but attached to "${agent.id}"` : ''}`,
         );
@@ -362,7 +399,6 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
           {
             type: 'all',
             serverName,
-            config: serverConfig,
           },
         ];
         continue;
@@ -373,7 +409,6 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
         type: 'single',
         toolKey: tool,
         serverName,
-        config: serverConfig,
       });
       continue;
     }
@@ -434,11 +469,9 @@ Anchor pattern: \\ue202turn{N}{type}{index} where N=turn number, type=search|new
           user: safeUser,
           userMCPAuthMap,
           res: options.res,
-          streamId: options.req?._resumableStreamId || null,
           model: agent?.model ?? model,
           serverName: config.serverName,
           provider: agent?.provider ?? endpoint,
-          config: config.config,
         };
 
         if (config.type === 'all' && toolConfigs.length === 1) {

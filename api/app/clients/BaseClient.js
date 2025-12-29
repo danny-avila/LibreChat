@@ -18,20 +18,13 @@ const {
   EModelEndpoint,
   isParamEndpoint,
   isAgentsEndpoint,
-  isEphemeralAgentId,
   supportsBalanceCheck,
 } = require('librechat-data-provider');
-const {
-  updateMessage,
-  getMessages,
-  saveMessage,
-  saveConvo,
-  getConvo,
-  getFiles,
-} = require('~/models');
+const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
+const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
 
 class BaseClient {
@@ -715,7 +708,7 @@ class BaseClient {
       iconURL: this.options.iconURL,
       endpoint: this.options.endpoint,
       ...(this.metadata ?? {}),
-      metadata: Object.keys(metadata ?? {}).length > 0 ? metadata : undefined,
+      metadata,
     };
 
     if (typeof completion === 'string') {
@@ -796,6 +789,7 @@ class BaseClient {
     if (this.options.attachments) {
       try {
         saveOptions.files = this.options.attachments.map((attachments) => attachments.file_id);
+        logger.debug('[BaseClient] Setting saveOptions.files for conversation:', saveOptions.files);
       } catch (error) {
         logger.error('[BaseClient] Error mapping attachments for conversation', error);
       }
@@ -967,13 +961,6 @@ class BaseClient {
 
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);
-    const hasNonEphemeralAgent =
-      isAgentsEndpoint(this.options.endpoint) &&
-      endpointOptions?.agent_id &&
-      !isEphemeralAgentId(endpointOptions.agent_id);
-    if (hasNonEphemeralAgent) {
-      exceptions.add('model');
-    }
     if (existingConvo != null) {
       this.fetchedConvo = true;
       for (const key in existingConvo) {
@@ -1307,6 +1294,12 @@ class BaseClient {
         continue;
       }
       if (file.embedded === true || file.metadata?.fileIdentifier != null) {
+        allFiles.push(file);
+        continue;
+      }
+
+      // Add Piston code execution files to allFiles
+      if (file.context === 'execute_code' || file.context === 'message_attachment') {
         allFiles.push(file);
         continue;
       }

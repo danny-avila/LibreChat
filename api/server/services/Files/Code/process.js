@@ -14,7 +14,7 @@ const {
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
-const { createFile, getFiles, updateFile } = require('~/models');
+const { createFile, getFiles, updateFile } = require('~/models/File');
 
 /**
  * Process OpenAI image files, convert to target format, save and return file metadata.
@@ -168,6 +168,10 @@ const primeFiles = async (options, apiKey) => {
   const agentResourceIds = new Set(file_ids);
   const resourceFiles = tool_resources?.[EToolResources.execute_code]?.files ?? [];
 
+  logger.debug('[primeFiles] file_ids:', file_ids);
+  logger.debug('[primeFiles] resourceFiles count:', resourceFiles.length);
+  logger.debug('[primeFiles] resourceFiles:', JSON.stringify(resourceFiles.map(f => ({ file_id: f.file_id, filename: f.filename, context: f.context })), null, 2));
+
   // Get all files first
   const allFiles = (await getFiles({ file_id: { $in: file_ids } }, null, { text: 0 })) ?? [];
 
@@ -196,7 +200,7 @@ const primeFiles = async (options, apiKey) => {
       continue;
     }
 
-    if (file.metadata.fileIdentifier) {
+    if (file.metadata?.fileIdentifier) {
       const [path, queryString] = file.metadata.fileIdentifier.split('?');
       const [session_id, id] = path.split('/');
 
@@ -270,6 +274,21 @@ const primeFiles = async (options, apiKey) => {
       }
       sessions.set(session_id, true);
       pushFile();
+    } else {
+      // Handle Piston files (no fileIdentifier)
+      // These files are stored in normal storage and will be fetched by prepareFilesForPiston
+      if (!toolContext) {
+        toolContext = `- Note: The following files are available in the "${Tools.execute_code}" tool environment:`;
+      }
+      toolContext += `\n\t- ${file.filename}${
+        agentResourceIds.has(file.file_id) ? '' : ' (just attached by user)'
+      }`;
+      files.push({
+        id: file.file_id,
+        name: file.filename,
+        // No session_id for Piston files
+      });
+      logger.debug(`[Piston] Added file without fileIdentifier: ${file.filename} (${file.file_id})`);
     }
   }
 

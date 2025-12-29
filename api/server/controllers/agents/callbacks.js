@@ -451,39 +451,62 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       return;
     }
 
+    // Check if this is Piston (no session_id) or LibreChat Code API (has session_id)
+    const isPiston = !output.artifact.session_id;
+
     for (const file of output.artifact.files) {
-      const { id, name } = file;
-      artifactPromises.push(
-        (async () => {
-          const result = await loadAuthValues({
-            userId: req.user.id,
-            authFields: [EnvVar.CODE_API_KEY],
-          });
-          const fileMetadata = await processCodeOutput({
-            req,
-            id,
-            name,
-            apiKey: result[EnvVar.CODE_API_KEY],
-            messageId: metadata.run_id,
-            toolCallId: output.tool_call_id,
-            conversationId: metadata.thread_id,
-            session_id: output.artifact.session_id,
-          });
-          if (!streamId && !res.headersSent) {
+      if (isPiston) {
+        // Piston files are already complete - just add toolCallId and send as attachments
+        artifactPromises.push(
+          (async () => {
+            const attachment = {
+              ...file,
+              toolCallId: output.tool_call_id,
+              messageId: metadata.run_id,
+              conversationId: metadata.thread_id,
+            };
+            if (!streamId && !res.headersSent && attachment) {
+              logger.info(`[Piston] Sending attachment to frontend: ${JSON.stringify(attachment)}`);
+              writeAttachment(res, streamId, attachment);
+            }
+            return attachment;
+          })(),
+        );
+      } else {
+        // LibreChat Code API files need processing
+        const { id, name } = file;
+        artifactPromises.push(
+          (async () => {
+            const result = await loadAuthValues({
+              userId: req.user.id,
+              authFields: [EnvVar.CODE_API_KEY],
+            });
+            const fileMetadata = await processCodeOutput({
+              req,
+              id,
+              name,
+              apiKey: result[EnvVar.CODE_API_KEY],
+              messageId: metadata.run_id,
+              toolCallId: output.tool_call_id,
+              conversationId: metadata.thread_id,
+              session_id: output.artifact.session_id,
+            });
+            if (!streamId && !res.headersSent) {
+              return fileMetadata;
+            }
+
+            if (!fileMetadata) {
+              return null;
+            }
+
+            writeAttachment(res, streamId, fileMetadata);
             return fileMetadata;
-          }
-
-          if (!fileMetadata) {
+          })().catch((error) => {
+            logger.error('Error processing code output:', error);
             return null;
-          }
-
-          writeAttachment(res, streamId, fileMetadata);
-          return fileMetadata;
-        })().catch((error) => {
-          logger.error('Error processing code output:', error);
-          return null;
-        }),
-      );
+          }),
+        );
+      }
     }
   };
 }
