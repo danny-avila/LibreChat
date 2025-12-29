@@ -86,7 +86,7 @@ endpoints:
       forcePrompt: false
       modelDisplayLabel: "OpenRouter"
       addParams:
-        safe_mode: "off
+        safe_mode: "off"
 
     # --- Groq ---
     - name: "groq"
