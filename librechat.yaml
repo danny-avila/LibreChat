@@ -57,7 +57,7 @@ registration:
 # ENDPOINTS
 # ==============================================================================
 endpoints:
-  # Configure Agents to allow OpenRouter (FIXED INDENTATION!)
+  # Configure Agents to allow OpenRouter
   agents:
     disableBuilder: false
     allowedProviders:
@@ -72,12 +72,15 @@ endpoints:
       apiKey: "${OPENROUTER_KEY}"
       baseURL: "https://openrouter.ai/api/v1"
       models:
-        default: []
+        default:
+          - "anthropic/claude-3.5-sonnet"
+          - "openai/gpt-4o"
+          - "meta-llama/llama-3.1-8b-instruct:free"
         fetch: true
       titleConvo: true
-      titleModel: "anthropic/claude-3-haiku"
+      titleModel: "anthropic/claude-3.5-sonnet"
       summarize: false
-      summaryModel: "anthropic/claude-3-haiku"
+      summaryModel: "anthropic/claude-3.5-sonnet"
       dropParams: ["stop"]
       modelDisplayLabel: "OpenRouter"
 
