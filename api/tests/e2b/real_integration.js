@@ -99,14 +99,14 @@ async function runRealTest() {
     // 4. 发起对话 (Chat)
     // 这是一个真实的端到端调用
     console.log('\n💬 Sending Chat Message (this allows the Agent to think and run code)...');
-    console.log('❓ Question: "Verify environment: 1. Use numpy to create a 3x3 identity matrix. 2. Use nltk to tokenize \'Hello E2B World\'. Print results."');
+    console.log('❓ Question: "Load the Iris dataset using scikit-learn. Split it into train/test sets. Train an XGBoost classifier. Print the accuracy score."');
     
     const chatReq = {
       user,
       baseUrl: '/api/e2b-assistants', // Required for version detection in helpers.js
       params: { assistant_id: assistant.id },
       body: {
-        text: 'Verify environment: 1. Use numpy to create a 3x3 identity matrix. 2. Use nltk to tokenize "Hello E2B World". Print results.',
+        text: 'Load the Iris dataset using scikit-learn. Split it into train/test sets. Train an XGBoost classifier. Print the accuracy score.',
         conversationId: `real-test-convo-${Date.now()}`,
         version: 2, // Explicitly set version to bypass config lookup issues
         endpoint: 'e2bAssistants' // Required by getOpenAIClient helper

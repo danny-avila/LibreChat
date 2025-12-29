@@ -192,6 +192,13 @@ LibreChat/
 *   **原因**：E2B API Key 开启了“安全访问”限制，但模板或请求未通过鉴权。
 *   **解决方法**：代码中已默认设置 `secure: false` 以确保兼容性。
 
+### 8.3 Agent 陷入重试循环 (Max Iterations Reached)
+*   **现象**：Agent 反复执行相同的代码，直到达到最大迭代次数。
+*   **原因**：许多数据科学库（如 XGBoost, PyTorch, NLTK）会将非致命的日志或警告输出到 `stderr`。如果 Agent 误认为这是执行失败，它会尝试重试。
+*   **解决方法**：
+    1.  在 System Prompt 中明确告知 Agent：“`stderr` may contain warnings or logs. If you get the expected output, proceed.”
+    2.  优化 `CodeExecutor`，仅在 `exitCode !== 0` 时标记为 `success: false`。
+
 ---
 
 ## 9. 测试与验证
