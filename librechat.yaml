@@ -102,8 +102,9 @@ mcpServers:
 # MCP SETTINGS
 # ==============================================================================
 mcpSettings:
+  oauthCallbackUrl: https://librechat-production-df2d.up.railway.app/api/mcp/oauth/callback
   allowedDomains:
-    - server.smithery.ai
+    - "*"
 
 # ==============================================================================
 # FILE CONFIG
