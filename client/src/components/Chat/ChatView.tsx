@@ -7,7 +7,13 @@ import { Constants, buildTree } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
-import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
+import {
+  useResumableStreamToggle,
+  useAddedResponse,
+  useResumeOnLoad,
+  useAdaptiveSSE,
+  useChatHelpers,
+} from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
@@ -49,10 +55,18 @@ function ChatView({ index = 0 }: { index?: number }) {
   });
 
   const chatHelpers = useChatHelpers(index, conversationId);
-  const addedChatHelpers = useAddedResponse({ rootIndex: index });
+  const addedChatHelpers = useAddedResponse();
 
-  useSSE(rootSubmission, chatHelpers, false);
-  useSSE(addedSubmission, addedChatHelpers, true);
+  useResumableStreamToggle(
+    chatHelpers.conversation?.endpoint,
+    chatHelpers.conversation?.endpointType,
+  );
+
+  useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
+
+  // Auto-resume if navigating back to conversation with active job
+  // Wait for messages to load before resuming to avoid race condition
+  useResumeOnLoad(conversationId, chatHelpers.getMessages, index, !isLoading);
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },

@@ -14,6 +14,7 @@ const {
   getBalanceConfig,
   getProviderConfig,
   memoryInstructions,
+  GenerationJobManager,
   getTransactionsConfig,
   createMemoryProcessor,
   filterMalformedContentParts,
@@ -36,14 +37,13 @@ const {
   EModelEndpoint,
   PermissionTypes,
   isAgentsEndpoint,
-  AgentCapabilities,
+  isEphemeralAgentId,
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
-const { checkCapability } = require('~/server/services/Config');
 const { getConvoFiles } = require('~/models/Conversation');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
@@ -95,59 +95,101 @@ function logToolError(graph, error, toolId) {
   });
 }
 
+/** Regex pattern to match agent ID suffix (____N) */
+const AGENT_SUFFIX_PATTERN = /____(\d+)$/;
+
 /**
- * Applies agent labeling to conversation history when multi-agent patterns are detected.
- * Labels content parts by their originating agent to prevent identity confusion.
+ * Creates a mapMethod for getMessagesForConversation that processes agent content.
+ * - Strips agentId/groupId metadata from all content
+ * - For multi-agent: filters to primary agent content only (no suffix or lowest suffix)
+ * - For multi-agent: applies agent labels to content
  *
- * @param {TMessage[]} orderedMessages - The ordered conversation messages
- * @param {Agent} primaryAgent - The primary agent configuration
- * @param {Map<string, Agent>} agentConfigs - Map of additional agent configurations
- * @returns {TMessage[]} Messages with agent labels applied where appropriate
+ * @param {Agent} primaryAgent - Primary agent configuration
+ * @param {Map<string, Agent>} [agentConfigs] - Additional agent configurations
+ * @returns {(message: TMessage) => TMessage} Map method for processing messages
  */
-function applyAgentLabelsToHistory(orderedMessages, primaryAgent, agentConfigs) {
-  const shouldLabelByAgent = (primaryAgent.edges?.length ?? 0) > 0 || (agentConfigs?.size ?? 0) > 0;
+function createMultiAgentMapper(primaryAgent, agentConfigs) {
+  const hasMultipleAgents = (primaryAgent.edges?.length ?? 0) > 0 || (agentConfigs?.size ?? 0) > 0;
 
-  if (!shouldLabelByAgent) {
-    return orderedMessages;
-  }
-
-  const processedMessages = [];
-
-  for (let i = 0; i < orderedMessages.length; i++) {
-    const message = orderedMessages[i];
-
-    /** @type {Record<string, string>} */
-    const agentNames = { [primaryAgent.id]: primaryAgent.name || 'Assistant' };
-
+  /** @type {Record<string, string> | null} */
+  let agentNames = null;
+  if (hasMultipleAgents) {
+    agentNames = { [primaryAgent.id]: primaryAgent.name || 'Assistant' };
     if (agentConfigs) {
       for (const [agentId, agentConfig] of agentConfigs.entries()) {
         agentNames[agentId] = agentConfig.name || agentConfig.id;
       }
     }
-
-    if (
-      !message.isCreatedByUser &&
-      message.metadata?.agentIdMap &&
-      Array.isArray(message.content)
-    ) {
-      try {
-        const labeledContent = labelContentByAgent(
-          message.content,
-          message.metadata.agentIdMap,
-          agentNames,
-        );
-
-        processedMessages.push({ ...message, content: labeledContent });
-      } catch (error) {
-        logger.error('[AgentClient] Error applying agent labels to message:', error);
-        processedMessages.push(message);
-      }
-    } else {
-      processedMessages.push(message);
-    }
   }
 
-  return processedMessages;
+  return (message) => {
+    if (message.isCreatedByUser || !Array.isArray(message.content)) {
+      return message;
+    }
+
+    // Find primary agent ID (no suffix, or lowest suffix number) - only needed for multi-agent
+    let primaryAgentId = null;
+    let hasAgentMetadata = false;
+
+    if (hasMultipleAgents) {
+      let lowestSuffixIndex = Infinity;
+      for (const part of message.content) {
+        const agentId = part?.agentId;
+        if (!agentId) {
+          continue;
+        }
+        hasAgentMetadata = true;
+
+        const suffixMatch = agentId.match(AGENT_SUFFIX_PATTERN);
+        if (!suffixMatch) {
+          primaryAgentId = agentId;
+          break;
+        }
+        const suffixIndex = parseInt(suffixMatch[1], 10);
+        if (suffixIndex < lowestSuffixIndex) {
+          lowestSuffixIndex = suffixIndex;
+          primaryAgentId = agentId;
+        }
+      }
+    } else {
+      // Single agent: just check if any metadata exists
+      hasAgentMetadata = message.content.some((part) => part?.agentId || part?.groupId);
+    }
+
+    if (!hasAgentMetadata) {
+      return message;
+    }
+
+    try {
+      /** @type {Array<TMessageContentParts>} */
+      const filteredContent = [];
+      /** @type {Record<number, string>} */
+      const agentIdMap = {};
+
+      for (const part of message.content) {
+        const agentId = part?.agentId;
+        // For single agent: include all parts; for multi-agent: filter to primary
+        if (!hasMultipleAgents || !agentId || agentId === primaryAgentId) {
+          const newIndex = filteredContent.length;
+          const { agentId: _a, groupId: _g, ...cleanPart } = part;
+          filteredContent.push(cleanPart);
+          if (agentId && hasMultipleAgents) {
+            agentIdMap[newIndex] = agentId;
+          }
+        }
+      }
+
+      const finalContent =
+        Object.keys(agentIdMap).length > 0 && agentNames
+          ? labelContentByAgent(filteredContent, agentIdMap, agentNames)
+          : filteredContent;
+
+      return { ...message, content: finalContent };
+    } catch (error) {
+      logger.error('[AgentClient] Error processing multi-agent message:', error);
+      return message;
+    }
+  };
 }
 
 class AgentClient extends BaseClient {
@@ -199,8 +241,6 @@ class AgentClient extends BaseClient {
     this.indexTokenCountMap = {};
     /** @type {(messages: BaseMessage[]) => Promise<void>} */
     this.processMemory;
-    /** @type {Record<number, string> | null} */
-    this.agentIdMap = null;
   }
 
   /**
@@ -287,17 +327,12 @@ class AgentClient extends BaseClient {
     { instructions = null, additional_instructions = null },
     opts,
   ) {
-    let orderedMessages = this.constructor.getMessagesForConversation({
+    const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
       summary: this.shouldSummarize,
+      mapMethod: createMultiAgentMapper(this.options.agent, this.agentConfigs),
     });
-
-    orderedMessages = applyAgentLabelsToHistory(
-      orderedMessages,
-      this.options.agent,
-      this.agentConfigs,
-    );
 
     let payload;
     /** @type {number | undefined} */
@@ -550,10 +585,9 @@ class AgentClient extends BaseClient {
         agent: prelimAgent,
         allowedProviders,
         endpointOption: {
-          endpoint:
-            prelimAgent.id !== Constants.EPHEMERAL_AGENT_ID
-              ? EModelEndpoint.agents
-              : memoryConfig.agent?.provider,
+          endpoint: !isEphemeralAgentId(prelimAgent.id)
+            ? EModelEndpoint.agents
+            : memoryConfig.agent?.provider,
         },
       },
       {
@@ -593,10 +627,12 @@ class AgentClient extends BaseClient {
     const userId = this.options.req.user.id + '';
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
+    const streamId = this.options.req?._resumableStreamId || null;
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
       config,
       messageId,
+      streamId,
       conversationId,
       memoryMethods: {
         setMemory: db.setMemory,
@@ -690,9 +726,7 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
-    const metadata = this.agentIdMap ? { agentIdMap: this.agentIdMap } : undefined;
-
-    return { completion, metadata };
+    return { completion };
   }
 
   /**
@@ -888,12 +922,10 @@ class AgentClient extends BaseClient {
        */
       const runAgents = async (messages) => {
         const agents = [this.options.agent];
-        if (
-          this.agentConfigs &&
-          this.agentConfigs.size > 0 &&
-          ((this.options.agent.edges?.length ?? 0) > 0 ||
-            (await checkCapability(this.options.req, AgentCapabilities.chain)))
-        ) {
+        // Include additional agents when:
+        // - agentConfigs has agents (from addedConvo parallel execution or agent handoffs)
+        // - Agents without incoming edges become start nodes and run in parallel automatically
+        if (this.agentConfigs && this.agentConfigs.size > 0) {
           agents.push(...this.agentConfigs.values());
         }
 
@@ -953,6 +985,12 @@ class AgentClient extends BaseClient {
         }
 
         this.run = run;
+
+        const streamId = this.options.req?._resumableStreamId;
+        if (streamId && run.Graph) {
+          GenerationJobManager.setGraph(streamId, run.Graph);
+        }
+
         if (userMCPAuthMap != null) {
           config.configurable.userMCPAuthMap = userMCPAuthMap;
         }
@@ -982,24 +1020,6 @@ class AgentClient extends BaseClient {
             part.tool_call_ids
           );
         });
-      }
-
-      try {
-        /** Capture agent ID map if we have edges or multiple agents */
-        const shouldStoreAgentMap =
-          (this.options.agent.edges?.length ?? 0) > 0 || (this.agentConfigs?.size ?? 0) > 0;
-        if (shouldStoreAgentMap && run?.Graph) {
-          const contentPartAgentMap = run.Graph.getContentPartAgentMap();
-          if (contentPartAgentMap && contentPartAgentMap.size > 0) {
-            this.agentIdMap = Object.fromEntries(contentPartAgentMap);
-            logger.debug('[AgentClient] Captured agent ID map:', {
-              totalParts: this.contentParts.length,
-              mappedParts: Object.keys(this.agentIdMap).length,
-            });
-          }
-        }
-      } catch (error) {
-        logger.error('[AgentClient] Error capturing agent ID map:', error);
       }
     } catch (err) {
       logger.error(

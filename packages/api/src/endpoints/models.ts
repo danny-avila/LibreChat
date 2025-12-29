@@ -130,7 +130,7 @@ export async function fetchModels({
     const options: {
       headers: Record<string, string>;
       timeout: number;
-      httpsAgent?: HttpsProxyAgent;
+      httpsAgent?: HttpsProxyAgent<string>;
     } = {
       headers: {
         ...(headers ?? {}),

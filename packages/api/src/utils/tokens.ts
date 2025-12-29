@@ -21,6 +21,8 @@ const openAIModels = {
   'gpt-4.1-mini': 1047576,
   'gpt-4.1-nano': 1047576,
   'gpt-5': 400000,
+  'gpt-5.1': 400000,
+  'gpt-5.2': 400000,
   'gpt-5-mini': 400000,
   'gpt-5-nano': 400000,
   'gpt-5-pro': 400000,
@@ -308,6 +310,8 @@ export const modelMaxOutputs = {
   'o1-mini': 65136, // -500 from max: 65,536
   'o1-preview': 32268, // -500 from max: 32,768
   'gpt-5': 128000,
+  'gpt-5.1': 128000,
+  'gpt-5.2': 128000,
   'gpt-5-mini': 128000,
   'gpt-5-nano': 128000,
   'gpt-5-pro': 128000,

@@ -79,6 +79,21 @@ export async function encodeAndFormatAudios(
         mimeType: file.type,
         data: content,
       });
+    } else if (provider === Providers.OPENROUTER) {
+      // Extract format from filename extension (e.g., 'audio.mp3' -> 'mp3')
+      // OpenRouter expects format values like: wav, mp3, aiff, aac, ogg, flac, m4a, pcm16, pcm24
+      // Note: MIME types don't always match (e.g., 'audio/mpeg' is mp3, not mpeg), so that is why we are using the file extension instead
+      const format = file.filename.split('.').pop()?.toLowerCase();
+      if (!format) {
+        throw new Error(`Could not extract audio format from filename: ${file.filename}`);
+      }
+      result.audios.push({
+        type: 'input_audio',
+        input_audio: {
+          data: content,
+          format,
+        },
+      });
     }
 
     result.files.push(metadata);
