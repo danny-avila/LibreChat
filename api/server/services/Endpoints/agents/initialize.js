@@ -7,10 +7,10 @@ const {
   createSequentialChainEdges,
 } = require('@librechat/api');
 const {
-  Constants,
   EModelEndpoint,
   isAgentsEndpoint,
   getResponseSender,
+  isEphemeralAgentId,
 } = require('librechat-data-provider');
 const {
   createToolEndCallback,
@@ -20,14 +20,17 @@ const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getConvoFiles } = require('~/models/Conversation');
+const { processAddedConvo } = require('./addedConvo');
 const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
 /**
- * @param {AbortSignal} signal
+ * Creates a tool loader function for the agent.
+ * @param {AbortSignal} signal - The abort signal
+ * @param {string | null} [streamId] - The stream ID for resumable mode
  */
-function createToolLoader(signal) {
+function createToolLoader(signal, streamId = null) {
   /**
    * @param {object} params
    * @param {ServerRequest} params.req
@@ -52,6 +55,7 @@ function createToolLoader(signal) {
         agent,
         signal,
         tool_resources,
+        streamId,
       });
     } catch (error) {
       logger.error('Error loading tools for agent ' + agentId, error);
@@ -65,18 +69,21 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   }
   const appConfig = req.config;
 
-  // TODO: use endpointOption to determine options/modelOptions
+  /** @type {string | null} */
+  const streamId = req._resumableStreamId || null;
+
   /** @type {Array<UsageMetadata>} */
   const collectedUsage = [];
   /** @type {ArtifactPromises} */
   const artifactPromises = [];
   const { contentParts, aggregateContent } = createContentAggregator();
-  const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+  const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
   const eventHandlers = getDefaultHandlers({
     res,
     aggregateContent,
     toolEndCallback,
     collectedUsage,
+    streamId,
   });
 
   if (!endpointOption.agent) {
@@ -105,7 +112,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const agentConfigs = new Map();
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
 
-  const loadTools = createToolLoader(signal);
+  const loadTools = createToolLoader(signal, streamId);
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   /** @type {string} */
@@ -227,6 +234,33 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     edges = edges ? edges.concat(chain) : chain;
   }
 
+  /** Multi-Convo: Process addedConvo for parallel agent execution */
+  const { userMCPAuthMap: updatedMCPAuthMap } = await processAddedConvo({
+    req,
+    res,
+    endpointOption,
+    modelsConfig,
+    logViolation,
+    loadTools,
+    requestFiles,
+    conversationId,
+    allowedProviders,
+    agentConfigs,
+    primaryAgentId: primaryConfig.id,
+    primaryAgent,
+    userMCPAuthMap,
+  });
+
+  if (updatedMCPAuthMap) {
+    userMCPAuthMap = updatedMCPAuthMap;
+  }
+
+  // Ensure edges is an array when we have multiple agents (multi-agent mode)
+  // MultiAgentGraph.categorizeEdges requires edges to be iterable
+  if (agentConfigs.size > 0 && !edges) {
+    edges = [];
+  }
+
   primaryConfig.edges = edges;
 
   let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];
@@ -270,10 +304,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     endpointType: endpointOption.endpointType,
     resendFiles: primaryConfig.resendFiles ?? true,
     maxContextTokens: primaryConfig.maxContextTokens,
-    endpoint:
-      primaryConfig.id === Constants.EPHEMERAL_AGENT_ID
-        ? primaryConfig.endpoint
-        : EModelEndpoint.agents,
+    endpoint: isEphemeralAgentId(primaryConfig.id) ? primaryConfig.endpoint : EModelEndpoint.agents,
   });
 
   return { client, userMCPAuthMap };

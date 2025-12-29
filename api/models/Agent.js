@@ -1,8 +1,18 @@
 const mongoose = require('mongoose');
 const crypto = require('node:crypto');
 const { logger } = require('@librechat/data-schemas');
-const { ResourceType, SystemRoles, Tools, actionDelimiter } = require('librechat-data-provider');
-const { GLOBAL_PROJECT_NAME, EPHEMERAL_AGENT_ID, mcp_all, mcp_delimiter } =
+const { getCustomEndpointConfig } = require('@librechat/api');
+const {
+  Tools,
+  SystemRoles,
+  ResourceType,
+  actionDelimiter,
+  isAgentsEndpoint,
+  getResponseSender,
+  isEphemeralAgentId,
+  encodeEphemeralAgentId,
+} = require('librechat-data-provider');
+const { GLOBAL_PROJECT_NAME, mcp_all, mcp_delimiter } =
   require('librechat-data-provider').Constants;
 const {
   removeAgentFromAllProjects,
@@ -92,7 +102,7 @@ const getAgents = async (searchParameter) => await Agent.find(searchParameter).l
  * @param {import('@librechat/agents').ClientOptions} [params.model_parameters]
  * @returns {Promise<Agent|null>} The agent document as a plain object, or null if not found.
  */
-const loadEphemeralAgent = async ({ req, spec, agent_id, endpoint, model_parameters: _m }) => {
+const loadEphemeralAgent = async ({ req, spec, endpoint, model_parameters: _m }) => {
   const { model, ...model_parameters } = _m;
   const modelSpecs = req.config?.modelSpecs?.list;
   /** @type {TModelSpec | null} */
@@ -139,8 +149,28 @@ const loadEphemeralAgent = async ({ req, spec, agent_id, endpoint, model_paramet
   }
 
   const instructions = req.body.promptPrefix;
+
+  // Compute display name using getResponseSender (same logic used for addedConvo agents)
+  const appConfig = req.config;
+  let endpointConfig = appConfig?.endpoints?.[endpoint];
+  if (!isAgentsEndpoint(endpoint) && !endpointConfig) {
+    try {
+      endpointConfig = getCustomEndpointConfig({ endpoint, appConfig });
+    } catch (err) {
+      logger.error('[loadEphemeralAgent] Error getting custom endpoint config', err);
+    }
+  }
+
+  const sender = getResponseSender({
+    modelLabel: model_parameters?.modelLabel,
+    modelDisplayLabel: endpointConfig?.modelDisplayLabel,
+  });
+
+  // Encode ephemeral agent ID with endpoint, model, and computed sender for display
+  const ephemeralId = encodeEphemeralAgentId({ endpoint, model, sender });
+
   const result = {
-    id: agent_id,
+    id: ephemeralId,
     instructions,
     provider: endpoint,
     model_parameters,
@@ -169,8 +199,8 @@ const loadAgent = async ({ req, spec, agent_id, endpoint, model_parameters }) =>
   if (!agent_id) {
     return null;
   }
-  if (agent_id === EPHEMERAL_AGENT_ID) {
-    return await loadEphemeralAgent({ req, spec, agent_id, endpoint, model_parameters });
+  if (isEphemeralAgentId(agent_id)) {
+    return await loadEphemeralAgent({ req, spec, endpoint, model_parameters });
   }
   const agent = await getAgent({
     id: agent_id,
