@@ -152,10 +152,10 @@ export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
 
 export const textMimeTypes =
-  /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-python-script|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml))$/;
+  /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-c\+\+src|x-c\+\+hdr|x-h|x-java|x-java-source|html|markdown|x-php|x-python|x-script\.python|x-python-script|x-ruby|x-tex|plain|css|vtt|javascript|typescript|csv|xml))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(epub\+zip|csv|json|pdf|x-tar|x-sh|typescript|sql|yaml|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|json|pdf|x-tar|x-sh|typescript|x-typescript|x-python|x-ruby|javascript|x-javascript|sql|yaml|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
