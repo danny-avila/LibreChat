@@ -31,6 +31,8 @@
 import * as cdk from "aws-cdk-lib";
 import { EcsStack } from "../lib/ecs-stack";
 import { ApigStack } from "../lib/apig-stack";
+import { CognitoStack } from "../lib/cognito-stack";
+import {branding, assets} from "../lib/branding";
 
 const app = new cdk.App();
 
@@ -55,6 +57,14 @@ const apiGatewayStack = new ApigStack(app, "ApiGatewayStack", {
   domainName: "dev.ai-assistant.nj.gov",
 });
 
+const cognitoStack = new CognitoStack(app, "CognitoStack", {
+  env: env,
+  callback_urls: ["https://dev.ai-assistant.nj.gov/oauth/openid/callback"],
+  logout_urls: ["https://dev.ai-assistant.nj.gov/oauth/openid/logout"],
+  branding: branding,
+  assets: assets,
+});
+
 cdk.Tags.of(ecsStack).add("Project", "AIAssistantService");
 cdk.Tags.of(ecsStack).add("ManagedBy", "CDK");
 cdk.Tags.of(ecsStack).add("Environment", process.env.NODE_ENV ?? "development");
@@ -62,3 +72,7 @@ cdk.Tags.of(ecsStack).add("Environment", process.env.NODE_ENV ?? "development");
 cdk.Tags.of(apiGatewayStack).add("Project", "AIAssistantService");
 cdk.Tags.of(apiGatewayStack).add("ManagedBy", "CDK");
 cdk.Tags.of(apiGatewayStack).add("Environment", process.env.NODE_ENV ?? "development");
+
+cdk.Tags.of(cognitoStack).add("Project", "AIAssistantService");
+cdk.Tags.of(cognitoStack).add("ManagedBy", "CDK");
+cdk.Tags.of(cognitoStack).add("Environment", process.env.NODE_ENV ?? "development");
