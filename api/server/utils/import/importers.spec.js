@@ -497,6 +497,262 @@ describe('importChatGptConvo', () => {
     expect(userMsg.sender).toBe('user');
     expect(userMsg.isCreatedByUser).toBe(true);
   });
+
+  it('should merge thinking content into assistant message', async () => {
+    const testData = [
+      {
+        title: 'Thinking Content Test',
+        create_time: 1000,
+        update_time: 2000,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['user-msg-1'],
+          },
+          'user-msg-1': {
+            id: 'user-msg-1',
+            message: {
+              id: 'user-msg-1',
+              author: { role: 'user' },
+              create_time: 1,
+              content: { content_type: 'text', parts: ['What is 2+2?'] },
+              metadata: {},
+            },
+            parent: 'root-node',
+            children: ['thoughts-msg'],
+          },
+          'thoughts-msg': {
+            id: 'thoughts-msg',
+            message: {
+              id: 'thoughts-msg',
+              author: { role: 'assistant' },
+              create_time: 2,
+              content: {
+                content_type: 'thoughts',
+                thoughts: [
+                  { content: 'Let me think about this math problem.' },
+                  { content: 'Adding 2 and 2 together gives 4.' },
+                ],
+              },
+              metadata: {},
+            },
+            parent: 'user-msg-1',
+            children: ['reasoning-recap-msg'],
+          },
+          'reasoning-recap-msg': {
+            id: 'reasoning-recap-msg',
+            message: {
+              id: 'reasoning-recap-msg',
+              author: { role: 'assistant' },
+              create_time: 3,
+              content: {
+                content_type: 'reasoning_recap',
+                recap_text: 'Thought for 2 seconds',
+              },
+              metadata: {},
+            },
+            parent: 'thoughts-msg',
+            children: ['assistant-msg-1'],
+          },
+          'assistant-msg-1': {
+            id: 'assistant-msg-1',
+            message: {
+              id: 'assistant-msg-1',
+              author: { role: 'assistant' },
+              create_time: 4,
+              content: { content_type: 'text', parts: ['The answer is 4.'] },
+              metadata: {},
+            },
+            parent: 'reasoning-recap-msg',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    // Should only have 2 messages: user message and assistant response
+    // (thoughts and reasoning_recap should be merged/skipped)
+    expect(savedMessages).toHaveLength(2);
+
+    const userMsg = savedMessages.find((msg) => msg.text === 'What is 2+2?');
+    const assistantMsg = savedMessages.find((msg) => msg.text === 'The answer is 4.');
+
+    expect(userMsg).toBeDefined();
+    expect(assistantMsg).toBeDefined();
+
+    // Assistant message should have content array with thinking block
+    expect(assistantMsg.content).toBeDefined();
+    expect(assistantMsg.content).toHaveLength(2);
+    expect(assistantMsg.content[0].type).toBe('think');
+    expect(assistantMsg.content[0].think).toContain('Let me think about this math problem.');
+    expect(assistantMsg.content[0].think).toContain('Adding 2 and 2 together gives 4.');
+    expect(assistantMsg.content[1].type).toBe('text');
+    expect(assistantMsg.content[1].text).toBe('The answer is 4.');
+
+    // Verify parent-child relationship is correct (skips thoughts and reasoning_recap)
+    expect(assistantMsg.parentMessageId).toBe(userMsg.messageId);
+  });
+
+  it('should skip reasoning_recap and thoughts messages as separate entries', async () => {
+    const testData = [
+      {
+        title: 'Skip Thinking Messages Test',
+        create_time: 1000,
+        update_time: 2000,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['user-msg-1'],
+          },
+          'user-msg-1': {
+            id: 'user-msg-1',
+            message: {
+              id: 'user-msg-1',
+              author: { role: 'user' },
+              create_time: 1,
+              content: { content_type: 'text', parts: ['Hello'] },
+              metadata: {},
+            },
+            parent: 'root-node',
+            children: ['thoughts-msg'],
+          },
+          'thoughts-msg': {
+            id: 'thoughts-msg',
+            message: {
+              id: 'thoughts-msg',
+              author: { role: 'assistant' },
+              create_time: 2,
+              content: {
+                content_type: 'thoughts',
+                thoughts: [{ content: 'Thinking...' }],
+              },
+              metadata: {},
+            },
+            parent: 'user-msg-1',
+            children: ['reasoning-recap-msg'],
+          },
+          'reasoning-recap-msg': {
+            id: 'reasoning-recap-msg',
+            message: {
+              id: 'reasoning-recap-msg',
+              author: { role: 'assistant' },
+              create_time: 3,
+              content: {
+                content_type: 'reasoning_recap',
+                recap_text: 'Thought for 1 second',
+              },
+              metadata: {},
+            },
+            parent: 'thoughts-msg',
+            children: ['assistant-msg-1'],
+          },
+          'assistant-msg-1': {
+            id: 'assistant-msg-1',
+            message: {
+              id: 'assistant-msg-1',
+              author: { role: 'assistant' },
+              create_time: 4,
+              content: { content_type: 'text', parts: ['Hi there!'] },
+              metadata: {},
+            },
+            parent: 'reasoning-recap-msg',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    // Verify no messages have thoughts or reasoning_recap content types
+    const thoughtsMessages = savedMessages.filter(
+      (msg) =>
+        msg.text === '' || msg.text?.includes('Thinking...') || msg.text?.includes('Thought for'),
+    );
+    expect(thoughtsMessages).toHaveLength(0);
+
+    // Only user and assistant text messages should be saved
+    expect(savedMessages).toHaveLength(2);
+    expect(savedMessages.map((m) => m.text).sort()).toEqual(['Hello', 'Hi there!'].sort());
+  });
+
+  it('should set createdAt from ChatGPT create_time', async () => {
+    const testData = [
+      {
+        title: 'Timestamp Test',
+        create_time: 1000,
+        update_time: 2000,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['user-msg-1'],
+          },
+          'user-msg-1': {
+            id: 'user-msg-1',
+            message: {
+              id: 'user-msg-1',
+              author: { role: 'user' },
+              create_time: 1000,
+              content: { content_type: 'text', parts: ['Test message'] },
+              metadata: {},
+            },
+            parent: 'root-node',
+            children: ['assistant-msg-1'],
+          },
+          'assistant-msg-1': {
+            id: 'assistant-msg-1',
+            message: {
+              id: 'assistant-msg-1',
+              author: { role: 'assistant' },
+              create_time: 2000,
+              content: { content_type: 'text', parts: ['Response'] },
+              metadata: {},
+            },
+            parent: 'user-msg-1',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    const userMsg = savedMessages.find((msg) => msg.text === 'Test message');
+    const assistantMsg = savedMessages.find((msg) => msg.text === 'Response');
+
+    // Verify createdAt is set from create_time (converted from Unix timestamp)
+    expect(userMsg.createdAt).toEqual(new Date(1000 * 1000));
+    expect(assistantMsg.createdAt).toEqual(new Date(2000 * 1000));
+  });
 });
 
 describe('importLibreChatConvo', () => {
