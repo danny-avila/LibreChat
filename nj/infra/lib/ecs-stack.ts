@@ -47,6 +47,10 @@ export class EcsStack extends cdk.Stack {
     vpc.addInterfaceEndpoint("BedrockRuntimeEndpoint", {
       service: ec2.InterfaceVpcEndpointAwsService.BEDROCK_RUNTIME,
       securityGroups: [endpointsSg],
+    });    
+    vpc.addInterfaceEndpoint("CognitoEndpoint", {
+      service: ec2.InterfaceVpcEndpointAwsService.COGNITO_IDP,
+      securityGroups: [endpointsSg],
     });
     vpc.addGatewayEndpoint("S3GatewayEndpoint", {
       service: ec2.GatewayVpcEndpointAwsService.S3,
