@@ -40,6 +40,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     isContinued = false,
     editedContent = null,
     parentMessageId = null,
+    isDeepResearch = false,
     overrideParentMessageId = null,
     responseMessageId: editedResponseMessageId = null,
   } = req.body;
@@ -141,6 +142,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       req,
       res,
       endpointOption,
+      isDeepResearch,
       signal: prelimAbortController.signal,
     });
     if (prelimAbortController.signal?.aborted) {
@@ -206,6 +208,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       isEdited: !!editedContent,
       userMCPAuthMap: result.userMCPAuthMap,
       responseMessageId: editedResponseMessageId,
+      isDeepResearch,
       progressOptions: {
         res,
       },

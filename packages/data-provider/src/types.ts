@@ -107,6 +107,7 @@ export type TPayload = Partial<TMessage> &
     conversationId: string | null;
     messages?: TMessages;
     isTemporary: boolean;
+    isDeepResearch?: boolean;
     ephemeralAgent?: TEphemeralAgent | null;
     editedContent?: TEditedContent | null;
   };
@@ -128,6 +129,7 @@ export type TSubmission = {
   isEdited?: boolean;
   isContinued?: boolean;
   isTemporary: boolean;
+  isDeepResearch?: boolean;
   messages: TMessage[];
   isRegenerate?: boolean;
   initialResponse?: TMessage;

@@ -68,6 +68,7 @@ export default function useChatFunctions({
   const setFilesToDelete = useSetFilesToDelete();
   const getEphemeralAgent = useGetEphemeralAgent();
   const isTemporary = useRecoilValue(store.isTemporary);
+  const isDeepResearch = useRecoilValue(store.isDeepResearch);
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
@@ -317,6 +318,7 @@ export default function useChatFunctions({
       isRegenerate,
       initialResponse,
       isTemporary,
+      isDeepResearch,
       ephemeralAgent,
       editedContent,
     };

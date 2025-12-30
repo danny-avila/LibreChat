@@ -26,6 +26,13 @@ export default function ChatRoute() {
       },
     [],
   );
+  const setIsDeepResearch = useRecoilCallback(
+    ({ set }) =>
+      (value: boolean) => {
+        set(store.isDeepResearch, value);
+      },
+    [],
+  );
   useAppStartup({ startupConfig, user });
 
   const index = 0;
@@ -50,12 +57,14 @@ export default function ChatRoute() {
   useEffect(() => {
     if (conversationId === Constants.NEW_CONVO) {
       setIsTemporary(defaultTemporaryChat);
+      // Reset deep research for new conversations
+      setIsDeepResearch(false);
     } else if (isTemporaryChat) {
       setIsTemporary(isTemporaryChat);
     } else {
       setIsTemporary(false);
     }
-  }, [conversationId, isTemporaryChat, setIsTemporary, defaultTemporaryChat]);
+  }, [conversationId, isTemporaryChat, setIsTemporary, defaultTemporaryChat, setIsDeepResearch]);
 
   /** This effect is mainly for the first conversation state change on first load of the page.
    *  Adjusting this may have unintended consequences on the conversation state.

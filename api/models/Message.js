@@ -67,6 +67,13 @@ async function saveMessage(req, params, metadata) {
       update.expiredAt = null;
     }
 
+    // Store Deep Research flag in metadata
+    if (req?.body?.isDeepResearch) {
+      update.metadata = update.metadata || {};
+      update.metadata.deepResearch = true;
+      logger.debug(`[saveMessage] Storing Deep Research flag for message ${params.messageId}`);
+    }
+
     if (update.tokenCount != null && isNaN(update.tokenCount)) {
       logger.warn(
         `Resetting invalid \`tokenCount\` for message \`${params.messageId}\`: ${update.tokenCount}`,

@@ -13,6 +13,7 @@ export default function createPayload(submission: t.TSubmission) {
     editedContent,
     ephemeralAgent,
     endpointOption,
+    isDeepResearch,
   } = submission;
   const { conversationId } = s.tConvoUpdateSchema.parse(conversation);
   const { endpoint: _e, endpointType } = endpointOption as {
@@ -33,6 +34,7 @@ export default function createPayload(submission: t.TSubmission) {
     ...endpointOption,
     endpoint,
     isTemporary,
+    isDeepResearch,
     isRegenerate,
     editedContent,
     conversationId,

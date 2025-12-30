@@ -13,6 +13,7 @@ import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
 import { useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
+import { DeepResearchChat } from './DeepResearch';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -74,6 +75,7 @@ export default function Header() {
                     isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
                   />
                   <TemporaryChat />
+                  <DeepResearchChat />
                 </>
               )}
             </div>
@@ -86,6 +88,7 @@ export default function Header() {
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
             />
             <TemporaryChat />
+            <DeepResearchChat />
           </div>
         )}
       </div>

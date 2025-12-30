@@ -54,6 +54,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
   const isTemporary = useRecoilValue(store.isTemporary);
+  const isDeepResearch = useRecoilValue(store.isDeepResearch);
 
   const [badges, setBadges] = useRecoilState(store.chatBadges);
   const [isEditingBadges, setIsEditingBadges] = useRecoilState(store.isEditingBadges);
@@ -245,9 +246,9 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             className={cn(
               'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl border pb-4 text-text-primary transition-all duration-200 sm:rounded-3xl sm:pb-0',
               isTextAreaFocused ? 'shadow-lg' : 'shadow-md',
-              isTemporary
-                ? 'border-violet-800/60 bg-violet-950/10'
-                : 'border-border-light bg-surface-chat',
+              isTemporary && 'border-violet-800/60 bg-violet-950/10',
+              isDeepResearch && 'border-blue-800/60 bg-blue-950/10',
+              !isTemporary && !isDeepResearch && 'border-border-light bg-surface-chat',
             )}
           >
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
