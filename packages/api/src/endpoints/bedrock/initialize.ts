@@ -48,7 +48,11 @@ export async function initializeBedrock({
 }: BaseInitializeParams): Promise<InitializeResultBase> {
   void endpoint;
   const appConfig = req.config;
-  const bedrockConfig = appConfig?.endpoints?.[EModelEndpoint.bedrock];
+  const bedrockConfig = appConfig?.endpoints?.[EModelEndpoint.bedrock] as
+    | (typeof appConfig.endpoints[EModelEndpoint.bedrock] & {
+        guardrailConfig?: GuardrailConfiguration;
+      })
+    | undefined;
 
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
@@ -91,14 +95,18 @@ export async function initializeBedrock({
   const requestOptions: Record<string, unknown> = {
     model: model_parameters?.model as string | undefined,
     region: BEDROCK_AWS_DEFAULT_REGION,
-    ...(bedrockConfig?.guardrailConfig && { guardrailConfig: bedrockConfig.guardrailConfig }),
   };
 
   const configOptions: Record<string, unknown> = {};
 
   const llmConfig = bedrockOutputParser(
     bedrockInputParser.parse(
-      removeNullishValues({ ...requestOptions, ...(model_parameters ?? {}) }),
+      removeNullishValues({
+        ...requestOptions,
+        ...(model_parameters ?? {}),
+        // Apply guardrailConfig after model_parameters to prevent user override
+        ...(bedrockConfig?.guardrailConfig && { guardrailConfig: bedrockConfig.guardrailConfig }),
+      }),
     ),
   ) as InitializeResultBase['llmConfig'] & {
     region?: string;
