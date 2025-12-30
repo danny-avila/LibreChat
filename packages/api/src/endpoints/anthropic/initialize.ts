@@ -30,7 +30,9 @@ export async function initializeAnthropic({
   const vertexConfig = appConfig?.endpoints?.[EModelEndpoint.anthropic]?.vertexConfig;
 
   // Check for Vertex AI configuration: YAML config takes priority over env var
-  const useVertexAI = vertexConfig?.enabled || isEnabled(process.env.ANTHROPIC_USE_VERTEX);
+  // When vertexConfig exists and enabled is not explicitly false, Vertex AI is enabled
+  const useVertexAI =
+    (vertexConfig && vertexConfig.enabled !== false) || isEnabled(process.env.ANTHROPIC_USE_VERTEX);
 
   if (useVertexAI) {
     // Load credentials with optional YAML config overrides

@@ -264,9 +264,8 @@ endpoints:
   #
   #   # Vertex AI Configuration - enables running Claude models via Google Cloud
   #   # This is similar to Azure OpenAI but for Anthropic models on Google Cloud
+  #   # Vertex AI is automatically enabled when this config section is present
   #   vertex:
-  #     # Enable Vertex AI mode (required)
-  #     enabled: true
   #     # Vertex AI region (optional, defaults to 'us-east5')
   #     # Available regions: us-east5, us-central1, europe-west1, europe-west4, asia-southeast1
   #     region: "us-east5"

@@ -138,7 +138,7 @@ export function validateVertexConfig(
   const isValid = errors.length === 0;
 
   return {
-    enabled: vertexConfig.enabled ?? false,
+    enabled: vertexConfig.enabled !== false,
     projectId,
     region,
     serviceKeyFile,
@@ -168,8 +168,9 @@ export function vertexConfigSetup(config: Partial<TCustomConfig>): TVertexAIConf
 
   const vertexConfig = anthropicConfig.vertex;
 
-  // Skip if not enabled
-  if (!vertexConfig.enabled) {
+  // Skip if explicitly disabled (enabled: false)
+  // When vertex config exists, it's enabled by default unless explicitly set to false
+  if (vertexConfig.enabled === false) {
     return null;
   }
 
