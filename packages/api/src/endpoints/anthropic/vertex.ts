@@ -43,7 +43,7 @@ export async function loadAnthropicVertexCredentials(
   const serviceKeyPath =
     options?.serviceKeyFile ||
     process.env.GOOGLE_SERVICE_KEY_FILE ||
-    path.join(__dirname, '..', '..', '..', 'api', 'data', 'auth.json');
+    path.join(process.cwd(), 'api', 'data', 'auth.json');
 
   const serviceKey = await loadServiceKey(serviceKeyPath);
 
@@ -183,10 +183,14 @@ export function createAnthropicVertexClient(
 ): AnthropicVertex {
   const serviceKey = credentials[AuthKeys.GOOGLE_SERVICE_KEY];
 
+  if (!serviceKey) {
+    throw new Error('Google service account key is required for Vertex AI');
+  }
+
   // Priority: vertexOptions > env vars > service key project_id
   const region = vertexOptions?.region || process.env.ANTHROPIC_VERTEX_REGION || 'us-east5';
   const projectId =
-    vertexOptions?.projectId || process.env.VERTEX_PROJECT_ID || serviceKey?.project_id;
+    vertexOptions?.projectId || process.env.VERTEX_PROJECT_ID || serviceKey.project_id;
 
   try {
     const googleAuth = new GoogleAuth({

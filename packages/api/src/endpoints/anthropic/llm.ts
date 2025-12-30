@@ -1,4 +1,5 @@
 import { Dispatcher, ProxyAgent } from 'undici';
+import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import { anthropicSettings, removeNullishValues, AuthKeys } from 'librechat-data-provider';
 import type {
@@ -28,6 +29,7 @@ function parseCredentials(
       return JSON.parse(credentials);
     } catch {
       // If not valid JSON, treat as a plain API key
+      logger.debug('[Anthropic] Credentials not JSON, treating as API key');
       return { [AuthKeys.ANTHROPIC_API_KEY]: credentials };
     }
   }
