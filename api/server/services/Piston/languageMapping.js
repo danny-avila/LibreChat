@@ -114,20 +114,20 @@ const LANGUAGE_MAP = {
 function getLanguageConfig(lang) {
   const normalized = lang.toLowerCase();
   const config = LANGUAGE_MAP[normalized];
-  
+
   if (!config) {
     // Generate a helpful error message with supported languages
     // Filter out aliases (keep only primary language names) for cleaner error message
     const primaryLanguages = Object.keys(LANGUAGE_MAP)
-      .filter(key => !key.includes('-') && key === LANGUAGE_MAP[key].pistonName)
+      .filter((key) => !key.includes('-') && key === LANGUAGE_MAP[key].pistonName)
       .slice(0, 10);
-    
+
     const supported = primaryLanguages.join(', ');
     throw new Error(
-      `Unsupported language: "${lang}". Supported languages include: ${supported}, and more. Check the tool description for the full list.`
+      `Unsupported language: "${lang}". Supported languages include: ${supported}, and more. Check the tool description for the full list.`,
     );
   }
-  
+
   return config;
 }
 
@@ -135,4 +135,3 @@ module.exports = {
   LANGUAGE_MAP,
   getLanguageConfig,
 };
-

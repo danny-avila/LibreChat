@@ -29,12 +29,7 @@ function isBinaryFile(mimeType) {
   const binaryTypes = ['application/', 'image/', 'audio/', 'video/', 'font/'];
 
   // Text types that can use utf8
-  const textTypes = [
-    'text/',
-    'application/json',
-    'application/xml',
-    'application/javascript',
-  ];
+  const textTypes = ['text/', 'application/json', 'application/xml', 'application/javascript'];
 
   // Check if it's explicitly a text type
   if (textTypes.some((type) => mimeType.startsWith(type))) {
@@ -53,7 +48,7 @@ function isBinaryFile(mimeType) {
 /**
  * Fetches files from LibreChat storage and encodes them for Piston API.
  * Reuses existing file infrastructure (DB + S3/Firebase/local storage).
- * 
+ *
  * @param {Object} req - Server request object
  * @param {Array} files - Array of file objects from primeFiles: { id: file_id, name: filename }
  * @returns {Promise<Array>} Array of files formatted for Piston API
@@ -105,4 +100,3 @@ module.exports = {
   isBinaryFile,
   streamToBuffer,
 };
-

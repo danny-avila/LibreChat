@@ -489,20 +489,23 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   let fileInfoMetadata;
   // For Piston execute_code, message attachments need special handling
   // Piston is stateless, so files must persist across conversation turns
-  const isPistonCodeFile = messageAttachment && tool_resource === EToolResources.execute_code && process.env.CODE_EXECUTOR === 'piston';
-  
+  const isPistonCodeFile =
+    messageAttachment &&
+    tool_resource === EToolResources.execute_code &&
+    process.env.CODE_EXECUTOR === 'piston';
+
   // For Piston: only set entity_id if agent_id exists (saved agents)
   // For ephemeral agents, entity_id stays undefined but files are still accessible via conversation context
-  const entity_id = (messageAttachment && !isPistonCodeFile) ? undefined : agent_id;
+  const entity_id = messageAttachment && !isPistonCodeFile ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
   if (tool_resource === EToolResources.execute_code) {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
       throw new Error('Code execution is not enabled for Agents');
     }
-    
+
     const codeExecutor = process.env.CODE_EXECUTOR || 'librechat';
-    
+
     if (codeExecutor === 'piston') {
       // For Piston: Don't upload to Code API
       // Files will be stored normally and fetched from storage at execution time
@@ -510,8 +513,13 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       logger.debug(`[Piston] Skipping Code API upload for file: ${file.originalname}`);
     } else {
       // For LibreChat Code API: Upload to Code API environment
-      const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
-      const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
+      const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
+        FileSources.execute_code,
+      );
+      const result = await loadAuthValues({
+        userId: req.user.id,
+        authFields: [EnvVar.CODE_API_KEY],
+      });
       const stream = fs.createReadStream(file.path);
       const fileIdentifier = await uploadCodeEnvFile({
         req,

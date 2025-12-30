@@ -170,7 +170,14 @@ const primeFiles = async (options, apiKey) => {
 
   logger.debug('[primeFiles] file_ids:', file_ids);
   logger.debug('[primeFiles] resourceFiles count:', resourceFiles.length);
-  logger.debug('[primeFiles] resourceFiles:', JSON.stringify(resourceFiles.map(f => ({ file_id: f.file_id, filename: f.filename, context: f.context })), null, 2));
+  logger.debug(
+    '[primeFiles] resourceFiles:',
+    JSON.stringify(
+      resourceFiles.map((f) => ({ file_id: f.file_id, filename: f.filename, context: f.context })),
+      null,
+      2,
+    ),
+  );
 
   // Get all files first
   const allFiles = (await getFiles({ file_id: { $in: file_ids } }, null, { text: 0 })) ?? [];
@@ -288,7 +295,9 @@ const primeFiles = async (options, apiKey) => {
         name: file.filename,
         // No session_id for Piston files
       });
-      logger.debug(`[Piston] Added file without fileIdentifier: ${file.filename} (${file.file_id})`);
+      logger.debug(
+        `[Piston] Added file without fileIdentifier: ${file.filename} (${file.file_id})`,
+      );
     }
   }
 

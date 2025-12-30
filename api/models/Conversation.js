@@ -69,7 +69,10 @@ const deleteNullOrEmptyConversations = async () => {
 const getConvoFiles = async (conversationId) => {
   try {
     const files = (await Conversation.findOne({ conversationId }, 'files').lean())?.files ?? [];
-    logger.debug(`[getConvoFiles] Retrieved ${files.length} file(s) for conversation ${conversationId}:`, files);
+    logger.debug(
+      `[getConvoFiles] Retrieved ${files.length} file(s) for conversation ${conversationId}:`,
+      files,
+    );
     return files;
   } catch (error) {
     logger.error('[getConvoFiles] Error getting conversation files', error);

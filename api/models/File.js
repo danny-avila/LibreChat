@@ -55,7 +55,7 @@ const getToolFilesByIds = async (fileIds, toolResourceSet) => {
         // Piston files (no fileIdentifier, but have execute_code context)
         { context: FileContext.execute_code },
         // Message attachments for code execution (Piston)
-        { context: FileContext.message_attachment }
+        { context: FileContext.message_attachment },
       );
     }
 

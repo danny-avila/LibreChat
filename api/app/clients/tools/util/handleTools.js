@@ -254,10 +254,16 @@ const loadTools = async ({
       if (codeExecutor === 'piston') {
         // Use Piston code executor
         requestedTools[tool] = async () => {
-          const { createPistonCodeExecutionTool, getPistonToolContext } = require('~/server/tools/CodeExecutorPiston');
+          const {
+            createPistonCodeExecutionTool,
+            getPistonToolContext,
+          } = require('~/server/tools/CodeExecutorPiston');
 
           // Debug logging for tool_resources
-          logger.debug('[Piston Tool] Tool resources:', JSON.stringify(options.tool_resources, null, 2));
+          logger.debug(
+            '[Piston Tool] Tool resources:',
+            JSON.stringify(options.tool_resources, null, 2),
+          );
           logger.debug('[Piston Tool] Agent ID:', agent?.id);
 
           // Reuse existing primeCodeFiles to get files from tool_resources

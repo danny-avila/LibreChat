@@ -58,7 +58,7 @@ function getMimeTypeFromExtension(ext) {
 /**
  * Saves extracted files to LibreChat storage.
  * Reuses existing storage strategies (S3/Firebase/local).
- * 
+ *
  * @param {Array} extractedFiles - Files extracted from Piston stdout
  * @param {string} userId - User ID for file ownership
  * @param {string} conversationId - Conversation ID for context
@@ -88,9 +88,9 @@ async function saveExtractedFiles(extractedFiles, userId, conversationId, req) {
 
       // 3. Save using existing storage strategy
       const fileStrategy = req.app.locals.fileStrategy || req.config?.fileStrategy;
-      
+
       let storagePath;
-      
+
       if (fileStrategy === 'local') {
         // For local storage, save directly like uploadLocalFile does
         const appConfig = req.config;
@@ -155,4 +155,3 @@ module.exports = {
   saveExtractedFiles,
   getMimeTypeFromExtension,
 };
-

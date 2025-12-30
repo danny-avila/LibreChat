@@ -152,7 +152,7 @@ describe('languageMapping', () => {
       it('should suggest supported languages in error', () => {
         try {
           getLanguageConfig('invalid');
-          fail('Should have thrown an error');
+          throw new Error('Should have thrown an error');
         } catch (error) {
           expect(error.message).toContain('Supported languages');
           expect(error.message).toContain('python');
@@ -176,8 +176,8 @@ describe('languageMapping', () => {
     describe('Default version', () => {
       it('should use "*" as default version for all languages', () => {
         const languages = ['python', 'javascript', 'java', 'cpp', 'go'];
-        
-        languages.forEach(lang => {
+
+        languages.forEach((lang) => {
           const config = getLanguageConfig(lang);
           expect(config.defaultVersion).toBe('*');
         });
@@ -197,12 +197,12 @@ describe('languageMapping', () => {
     });
 
     it('should have consistent structure for all entries', () => {
-      Object.keys(LANGUAGE_MAP).forEach(key => {
+      Object.keys(LANGUAGE_MAP).forEach((key) => {
         const entry = LANGUAGE_MAP[key];
         expect(entry).toHaveProperty('pistonName');
         expect(entry).toHaveProperty('extension');
         expect(entry).toHaveProperty('defaultVersion');
-        
+
         expect(typeof entry.pistonName).toBe('string');
         expect(typeof entry.extension).toBe('string');
         expect(typeof entry.defaultVersion).toBe('string');
@@ -210,10 +210,9 @@ describe('languageMapping', () => {
     });
 
     it('should have lowercase keys', () => {
-      Object.keys(LANGUAGE_MAP).forEach(key => {
+      Object.keys(LANGUAGE_MAP).forEach((key) => {
         expect(key).toBe(key.toLowerCase());
       });
     });
   });
 });
-

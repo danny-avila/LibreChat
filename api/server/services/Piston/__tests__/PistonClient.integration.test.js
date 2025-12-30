@@ -1,7 +1,7 @@
 /**
  * Integration tests for Piston Code Executor
  * These tests run against the REAL public Piston API
- * 
+ *
  * Note: Tests will skip gracefully if the API is unreachable
  */
 
@@ -17,7 +17,7 @@ describe('PistonClient Integration Tests (Real API)', () => {
 
   beforeAll(async () => {
     client = new PistonClient(PUBLIC_PISTON_URL);
-    
+
     // Check if API is available
     try {
       await client.getRuntimes();
@@ -157,10 +157,10 @@ print('===LIBRECHAT_FILE_END===')
         });
 
         expect(result.run.code).toBe(0);
-        
+
         // Extract files using our marker parser
         const { cleanedOutput, files } = extractFilesFromStdout(result.run.stdout);
-        
+
         expect(files).toHaveLength(1);
         expect(files[0].filename).toBe('data.csv');
         expect(files[0].encoding).toBe('utf8');
@@ -201,13 +201,13 @@ print('===LIBRECHAT_FILE_END===')
         });
 
         expect(result.run.code).toBe(0);
-        
+
         const { files } = extractFilesFromStdout(result.run.stdout);
-        
+
         expect(files).toHaveLength(1);
         expect(files[0].filename).toBe('output.json');
         expect(files[0].encoding).toBe('utf8');
-        
+
         const parsedJson = JSON.parse(files[0].content);
         expect(parsedJson.status).toBe('success');
         expect(parsedJson.count).toBe(42);
@@ -266,24 +266,24 @@ print('===LIBRECHAT_FILE_END===')
         });
 
         expect(result.run.code).toBe(0);
-        
+
         const { files } = extractFilesFromStdout(result.run.stdout);
-        
+
         expect(files).toHaveLength(1);
         expect(files[0].filename).toBe('image.png');
         expect(files[0].encoding).toBe('base64');
-        
+
         // Verify base64 content is valid
         expect(files[0].content).toMatch(/^[A-Za-z0-9+/=]+$/);
-        
+
         // Verify we can decode it back to bytes
         const decoded = Buffer.from(files[0].content, 'base64');
         expect(decoded.length).toBeGreaterThan(0);
-        
+
         // Verify PNG signature
         expect(decoded[0]).toBe(0x89);
         expect(decoded[1]).toBe(0x50); // 'P'
-        expect(decoded[2]).toBe(0x4E); // 'N'
+        expect(decoded[2]).toBe(0x4e); // 'N'
         expect(decoded[3]).toBe(0x47); // 'G'
       } catch (error) {
         handleRateLimit(error);
@@ -349,27 +349,27 @@ print('Done!')
         });
 
         expect(result.run.code).toBe(0);
-        
+
         const { cleanedOutput, files } = extractFilesFromStdout(result.run.stdout);
-        
+
         // Should extract 3 files
         expect(files).toHaveLength(3);
-        
+
         // Verify each file
-        const txtFile = files.find(f => f.filename === 'report.txt');
+        const txtFile = files.find((f) => f.filename === 'report.txt');
         expect(txtFile).toBeDefined();
         expect(txtFile.encoding).toBe('utf8');
         expect(txtFile.content).toContain('test report');
-      
-        const csvFile = files.find(f => f.filename === 'data.csv');
+
+        const csvFile = files.find((f) => f.filename === 'data.csv');
         expect(csvFile).toBeDefined();
         expect(csvFile.encoding).toBe('utf8');
         expect(csvFile.content).toContain('id,value');
-        
-        const pngFile = files.find(f => f.filename === 'chart.png');
+
+        const pngFile = files.find((f) => f.filename === 'chart.png');
         expect(pngFile).toBeDefined();
         expect(pngFile.encoding).toBe('base64');
-        
+
         // Cleaned output should still have regular print statements
         expect(cleanedOutput).toContain('Processing...');
         expect(cleanedOutput).toContain('Done!');
@@ -390,7 +390,7 @@ print('Done!')
             language: 'nonexistent-language',
             version: '*',
             files: [{ name: 'main.txt', content: 'test' }],
-          })
+          }),
         ).rejects.toThrow();
       } catch (error) {
         handleRateLimit(error);
@@ -398,4 +398,3 @@ print('Done!')
     });
   });
 });
-

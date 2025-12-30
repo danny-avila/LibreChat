@@ -113,11 +113,17 @@ describe('fileHelpers', () => {
       it('should map document extensions correctly', () => {
         expect(getMimeTypeFromExtension('.pdf')).toBe('application/pdf');
         expect(getMimeTypeFromExtension('.doc')).toBe('application/msword');
-        expect(getMimeTypeFromExtension('.docx')).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        expect(getMimeTypeFromExtension('.docx')).toBe(
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        );
         expect(getMimeTypeFromExtension('.xls')).toBe('application/vnd.ms-excel');
-        expect(getMimeTypeFromExtension('.xlsx')).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        expect(getMimeTypeFromExtension('.xlsx')).toBe(
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
         expect(getMimeTypeFromExtension('.ppt')).toBe('application/vnd.ms-powerpoint');
-        expect(getMimeTypeFromExtension('.pptx')).toBe('application/vnd.openxmlformats-officedocument.presentationml.presentation');
+        expect(getMimeTypeFromExtension('.pptx')).toBe(
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        );
       });
     });
 
@@ -207,7 +213,9 @@ describe('fileHelpers', () => {
 
       it('should correctly identify spreadsheets', () => {
         expect(getMimeTypeFromExtension('.csv')).toBe('text/csv');
-        expect(getMimeTypeFromExtension('.xlsx')).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        expect(getMimeTypeFromExtension('.xlsx')).toBe(
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
       });
     });
   });
@@ -251,4 +259,3 @@ describe('fileHelpers', () => {
     });
   });
 });
-

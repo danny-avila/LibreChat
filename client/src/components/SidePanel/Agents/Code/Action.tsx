@@ -110,9 +110,7 @@ export default function Action({ authType = '', isToolAuthenticated = false }) {
           <HoverCardPortal>
             <HoverCardContent side={ESide.Top} className="w-80">
               <div className="space-y-2">
-                <p className="text-sm text-text-secondary">
-                  {description}
-                </p>
+                <p className="text-sm text-text-secondary">{description}</p>
               </div>
             </HoverCardContent>
           </HoverCardPortal>

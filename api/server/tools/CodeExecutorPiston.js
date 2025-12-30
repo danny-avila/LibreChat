@@ -12,7 +12,7 @@ const { getLanguageConfig } = require('~/server/services/Piston/languageMapping'
  * Tool description for Piston code executor.
  * This description is added to the agent's system prompt automatically
  * by LangChain's tool integration mechanism.
- * 
+ *
  * The agent MUST follow the marker format described here, or generated files will be lost.
  */
 const PISTON_TOOL_DESCRIPTION = `
@@ -159,7 +159,7 @@ const PistonCodeExecutionSchema = z.object({
  * Creates a Piston code execution tool for LibreChat agents.
  * This tool executes code using the Piston API and handles file uploads/downloads
  * via base64 encoding and stdout marker parsing.
- * 
+ *
  * @param {Object} params - Tool parameters
  * @param {string} params.user_id - User ID
  * @param {Array} params.files - Array of files for upload
@@ -211,10 +211,10 @@ function createPistonCodeExecutionTool(params) {
         // 5.5. Validate extracted files before saving
         const { validateExtractedFile } = require('~/server/services/Piston/markerParser');
         const validFiles = files.filter(validateExtractedFile);
-        
+
         if (validFiles.length < files.length) {
           logger.warn(
-            `[Piston] Filtered out ${files.length - validFiles.length} invalid file(s) with malformed data`
+            `[Piston] Filtered out ${files.length - validFiles.length} invalid file(s) with malformed data`,
           );
         }
 
@@ -294,7 +294,7 @@ function createPistonCodeExecutionTool(params) {
         ];
       } catch (error) {
         const errorMessage = error.message || 'Unknown error during code execution';
-        
+
         // Enhanced error logging for monitoring
         logger.error('[Piston Error]', {
           error: errorMessage,
@@ -326,4 +326,3 @@ module.exports = {
   createPistonCodeExecutionTool,
   getPistonToolContext,
 };
-

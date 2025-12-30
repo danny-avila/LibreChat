@@ -30,14 +30,15 @@ Some output after`;
       expect(files[0].filename).toBe('test.txt');
       expect(files[0].encoding).toBe('utf8');
       expect(files[0].content).toBe('Hello, World!');
-      
+
       expect(cleanedOutput).toContain('Some output before');
       expect(cleanedOutput).toContain('Some output after');
       expect(cleanedOutput).not.toContain(FILE_START_MARKER);
     });
 
     it('should extract a single base64 binary file', () => {
-      const base64Content = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      const base64Content =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
       const stdout = `${FILE_START_MARKER}
 image.png
 base64
@@ -155,7 +156,7 @@ ${FILE_END_MARKER}`;
     it('should handle very large stdout by skipping extraction', () => {
       // Create stdout larger than MAX_STDOUT_SIZE
       const largeStdout = 'x'.repeat(MAX_STDOUT_SIZE + 1000);
-      
+
       const { cleanedOutput, files } = extractFilesFromStdout(largeStdout);
 
       // Should skip extraction and return truncated output
@@ -353,7 +354,7 @@ ${FILE_END_MARKER}`;
     it('should truncate very long filenames', () => {
       const longName = 'a'.repeat(300) + '.txt';
       const result = sanitizeFilename(longName);
-      
+
       expect(result.length).toBeLessThanOrEqual(200);
       expect(result).toContain('a');
     });
@@ -378,11 +379,10 @@ ${FILE_END_MARKER}`;
     it('should handle control characters', () => {
       const withControlChars = 'file\x00name\x1F.txt';
       const result = sanitizeFilename(withControlChars);
-      
+
       expect(result).not.toContain('\x00');
       expect(result).not.toContain('\x1F');
       expect(result).toContain('_');
     });
   });
 });
-
