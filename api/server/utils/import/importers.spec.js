@@ -1313,3 +1313,301 @@ describe('processAssistantMessage', () => {
     expect(duration).toBeLessThan(100);
   });
 });
+
+describe('importClaudeConvo', () => {
+  it('should import basic Claude conversation correctly', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Test Conversation',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'Hello Claude' }],
+          },
+          {
+            uuid: 'msg-2',
+            sender: 'assistant',
+            created_at: '2025-01-15T10:00:02.000Z',
+            content: [{ type: 'text', text: 'Hello! How can I help you?' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    jest.spyOn(importBatchBuilder, 'startConversation');
+    jest.spyOn(importBatchBuilder, 'finishConversation');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(importBatchBuilder.startConversation).toHaveBeenCalledWith(EModelEndpoint.anthropic);
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(2);
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
+      'Test Conversation',
+      expect.any(Date),
+    );
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+
+    // Check user message
+    const userMsg = savedMessages.find((msg) => msg.text === 'Hello Claude');
+    expect(userMsg.isCreatedByUser).toBe(true);
+    expect(userMsg.sender).toBe('user');
+    expect(userMsg.endpoint).toBe(EModelEndpoint.anthropic);
+
+    // Check assistant message
+    const assistantMsg = savedMessages.find((msg) => msg.text === 'Hello! How can I help you?');
+    expect(assistantMsg.isCreatedByUser).toBe(false);
+    expect(assistantMsg.sender).toBe('Claude');
+    expect(assistantMsg.parentMessageId).toBe(userMsg.messageId);
+  });
+
+  it('should merge thinking content into assistant message', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Thinking Test',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'What is 2+2?' }],
+          },
+          {
+            uuid: 'msg-2',
+            sender: 'assistant',
+            created_at: '2025-01-15T10:00:02.000Z',
+            content: [
+              { type: 'thinking', thinking: 'Let me calculate this simple math problem.' },
+              { type: 'text', text: 'The answer is 4.' },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+    const assistantMsg = savedMessages.find((msg) => msg.text === 'The answer is 4.');
+
+    expect(assistantMsg.content).toBeDefined();
+    expect(assistantMsg.content).toHaveLength(2);
+    expect(assistantMsg.content[0].type).toBe('think');
+    expect(assistantMsg.content[0].think).toBe('Let me calculate this simple math problem.');
+    expect(assistantMsg.content[1].type).toBe('text');
+    expect(assistantMsg.content[1].text).toBe('The answer is 4.');
+  });
+
+  it('should not include model field (Claude exports do not contain model info)', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'No Model Test',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'Hello' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+    // Model should not be explicitly set (will use ImportBatchBuilder default)
+    expect(savedMessages[0]).not.toHaveProperty('model');
+  });
+
+  it('should correct timestamp inversions (child before parent)', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Timestamp Inversion Test',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:05.000Z', // Later timestamp
+            content: [{ type: 'text', text: 'First message' }],
+          },
+          {
+            uuid: 'msg-2',
+            sender: 'assistant',
+            created_at: '2025-01-15T10:00:02.000Z', // Earlier timestamp (inverted)
+            content: [{ type: 'text', text: 'Second message' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+    const firstMsg = savedMessages.find((msg) => msg.text === 'First message');
+    const secondMsg = savedMessages.find((msg) => msg.text === 'Second message');
+
+    // Second message should have timestamp adjusted to be after first
+    expect(new Date(secondMsg.createdAt).getTime()).toBeGreaterThan(
+      new Date(firstMsg.createdAt).getTime(),
+    );
+  });
+
+  it('should use conversation create_time for null message timestamps', async () => {
+    const convCreateTime = '2025-01-15T10:00:00.000Z';
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Null Timestamp Test',
+        created_at: convCreateTime,
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: null, // Null timestamp
+            content: [{ type: 'text', text: 'Message with null time' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+    expect(savedMessages[0].createdAt).toEqual(new Date(convCreateTime));
+  });
+
+  it('should use text field as fallback when content array is empty', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Text Fallback Test',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            text: 'Fallback text content',
+            content: [], // Empty content array
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+    expect(savedMessages[0].text).toBe('Fallback text content');
+  });
+
+  it('should skip empty messages', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Skip Empty Test',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'Valid message' }],
+          },
+          {
+            uuid: 'msg-2',
+            sender: 'assistant',
+            created_at: '2025-01-15T10:00:02.000Z',
+            content: [], // Empty content
+            text: '', // Empty text
+          },
+          {
+            uuid: 'msg-3',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:03.000Z',
+            content: [{ type: 'text', text: 'Another valid message' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    // Should only save 2 messages (empty one skipped)
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('should use default name for unnamed conversations', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: '', // Empty name
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'Hello' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'finishConversation');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
+      'Imported Claude Chat',
+      expect.any(Date),
+    );
+  });
+});
