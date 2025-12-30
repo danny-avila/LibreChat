@@ -24,7 +24,7 @@ export class EcsStack extends cdk.Stack {
 
   constructor(scope: Construct, id: string, props: EcsServicesProps) {
     super(scope, id, props);
-    const vpc = ec2.Vpc.fromLookup(this, "VpcId", {
+    const vpc = ec2.Vpc.fromLookup(this, "ExistingVpc", {
       vpcId: props.vpcId,
     });
     const librechatImage = props.librechatImage;
@@ -116,7 +116,7 @@ export class EcsStack extends cdk.Stack {
     this.loadBalancer = librechatService.loadBalancer;
     this.service = librechatService.service;
 
-    const mongoEfs = new efs.FileSystem(this, "MongoEfs", {
+    const mongoFs = new efs.FileSystem(this, "MongoFs", {
       vpc,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       encrypted: true,
@@ -131,7 +131,7 @@ export class EcsStack extends cdk.Stack {
     mongoTaskDef.addVolume({
       name: "mongoData",
       efsVolumeConfiguration: {
-        fileSystemId: mongoEfs.fileSystemId,
+        fileSystemId: mongoFs.fileSystemId,
         transitEncryption: "ENABLED",
       },
     });
@@ -158,7 +158,7 @@ export class EcsStack extends cdk.Stack {
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     });
 
-    const pgEfs = new efs.FileSystem(this, "PgEfs", {
+    const pgFs = new efs.FileSystem(this, "PgFs", {
       vpc,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       encrypted: true,
@@ -173,7 +173,7 @@ export class EcsStack extends cdk.Stack {
     pgTaskDef.addVolume({
       name: "pgData",
       efsVolumeConfiguration: {
-        fileSystemId: pgEfs.fileSystemId,
+        fileSystemId: pgFs.fileSystemId,
         transitEncryption: "ENABLED",
       },
     });
@@ -207,8 +207,8 @@ export class EcsStack extends cdk.Stack {
     mongoService.connections.allowFrom(librechatService.service, ec2.Port.tcp(27017), "App to MongoDB");
     vectordbService.connections.allowFrom(librechatService.service, ec2.Port.tcp(5432), "App to Postgres");
 
-    mongoEfs.connections.allowDefaultPortFrom(mongoService);
-    pgEfs.connections.allowDefaultPortFrom(vectordbService);
+    mongoFs.connections.allowDefaultPortFrom(mongoService);
+    pgFs.connections.allowDefaultPortFrom(vectordbService);
 
     new cdk.CfnOutput(this, "LibrechatImageUri", { value: librechatImage });
     new cdk.CfnOutput(this, "MongoImageUri", { value: mongoImage });
