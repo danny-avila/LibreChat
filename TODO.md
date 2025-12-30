@@ -136,18 +136,22 @@
 
 ## Phase 4: 优化和后续调研（进行中 ⏳）
 
-### ⬜ Agent 编排精调 (Orchestration Tuning)
+### ⏳ Agent 编排精调 (Orchestration Tuning)
 - [ ] 调研 Open Interpreter / Julius AI 的交互模式
 - [ ] 优化工具调用循环的 Token 消耗
 - [ ] 增强多轮对话中的上下文管理
 
-### ⬜ 错误处理与恢复
-- [ ] 实现超时错误恢复机制
-- [ ] 实现内存限制友好提示
+### ✅ 错误处理与恢复
+- [x] 验证沙箱连接超时 (502) 的自动重试机制
+- [x] 验证环境缺失包时的降级处理
 
-### ⬜ 资源管理与监控
-- [ ] 实现代码执行指标收集
-- [ ] 添加执行时间与内存监控
+### ✅ 资源管理与监控
+- [x] 实现并验证自定义 Docker 模板构建流程
+- [x] 优化 Dockerfile 以适应受限磁盘空间（移除 PyTorch，保留 XGBoost）
+
+### ✅ 测试
+- [x] 编写并跑通集成测试：`real_integration.js`
+- [x] 验证 XGBoost 机器学习任务全流程
 
 ---
 
@@ -157,7 +161,8 @@
 ```bash
 # 在 .env 中添加
 E2B_API_KEY=your_e2b_api_key_here
-E2B_SANDBOX_TEMPLATE=python3-data-analysis
+# 使用构建成功的 Data Analyst 模板 ID
+E2B_SANDBOX_TEMPLATE=xed696qfsyzpaei3ulh5
 E2B_DEFAULT_TIMEOUT_MS=300000
 E2B_DEFAULT_MAX_MEMORY_MB=2048
 E2B_DEFAULT_MAX_CPU_PERCENT=80

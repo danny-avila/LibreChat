@@ -158,5 +158,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "e2b": "^2.9.0"
   }
 }

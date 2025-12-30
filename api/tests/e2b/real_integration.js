@@ -81,7 +81,7 @@ async function runRealTest() {
         // Add 'prompt' field explicitly as it is required by the Schema
         prompt: 'You are a python data analyst. Always write and execute python code to solve math or data problems.',
         model: 'gpt-4o', 
-        e2b_sandbox_template: 'ei0mvdo09wb38dnl2j7x', // Custom Template with pre-installed packages
+        e2b_sandbox_template: 'xed696qfsyzpaei3ulh5', // Custom Template with pre-installed packages
         e2b_config: { timeout_ms: 600000 } // Increased to 10 minutes
       }
     };
@@ -133,6 +133,10 @@ async function runRealTest() {
           if (step.observation) {
             const output = JSON.stringify(step.observation);
             console.log(`  Output: ${output.length > 200 ? output.substring(0, 200) + '...' : output}`);
+          
+          if (step.tool === 'execute_code' && step.observation && step.observation.success) {  
+          console.log(`  ✅ Code executed successfully despite error logs`);
+            }
           }
         });
       } else {

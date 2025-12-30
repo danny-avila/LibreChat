@@ -5,7 +5,7 @@ const { Sandbox } = require('@e2b/code-interpreter');
 async function debugSandbox() {
   console.log('🚀 Starting E2B Sandbox Debugger (Data Science Stack)...');
   const apiKey = process.env.E2B_API_KEY;
-  const template = 'ei0mvdo09wb38dnl2j7x'; // Your custom template ID
+  const template = 'xed696qfsyzpaei3ulh5'; // Your custom template ID
 
   console.log(`📦 Creating sandbox with template: "${template}"...`);
 
