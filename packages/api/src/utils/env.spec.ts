@@ -1377,4 +1377,157 @@ describe('processMCPEnv', () => {
       }
     });
   });
+
+  describe('admin-provided API key header injection', () => {
+    it('should apply admin-provided bearer API key to Authorization header', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          key: 'my-secret-api-key',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer my-secret-api-key');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should apply admin-provided basic API key to Authorization header', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'basic',
+          key: 'base64encodedcreds',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Basic base64encodedcreds');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should apply admin-provided custom API key to custom header', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'custom',
+          custom_header: 'X-Api-Key',
+          key: 'my-custom-api-key',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Api-Key']).toBe('my-custom-api-key');
+        expect(result.headers?.Authorization).toBeUndefined();
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should use default X-Api-Key header when custom_header is not provided', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'custom',
+          key: 'my-api-key',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Api-Key']).toBe('my-api-key');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should not apply user-provided API key (handled via placeholders)', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'user',
+          authorization_type: 'bearer',
+        },
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        // User-provided key should NOT be injected - placeholder remains
+        expect(result.headers?.Authorization).toBe('Bearer {{MCP_API_KEY}}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should merge admin API key header with existing headers', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Custom-Header': 'custom-value',
+        },
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          key: 'my-api-key',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['Content-Type']).toBe('application/json');
+        expect(result.headers?.['X-Custom-Header']).toBe('custom-value');
+        expect(result.headers?.Authorization).toBe('Bearer my-api-key');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should not inject header when apiKey.key is missing', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          // key is missing
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBeUndefined();
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+  });
 });

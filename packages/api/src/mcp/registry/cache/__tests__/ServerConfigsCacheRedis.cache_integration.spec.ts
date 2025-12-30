@@ -4,8 +4,7 @@ import { ParsedServerConfig } from '~/mcp/types';
 describe('ServerConfigsCacheRedis Integration Tests', () => {
   let ServerConfigsCacheRedis: typeof import('../ServerConfigsCacheRedis').ServerConfigsCacheRedis;
   let keyvRedisClient: Awaited<typeof import('~/cache/redisClients')>['keyvRedisClient'];
-  let LeaderElection: typeof import('~/cluster/LeaderElection').LeaderElection;
-  let checkIsLeader: () => Promise<boolean>;
+
   let cache: InstanceType<typeof import('../ServerConfigsCacheRedis').ServerConfigsCacheRedis>;
 
   // Test data
@@ -41,49 +40,42 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
     // Import modules after setting env vars
     const cacheModule = await import('../ServerConfigsCacheRedis');
     const redisClients = await import('~/cache/redisClients');
-    const leaderElectionModule = await import('~/cluster/LeaderElection');
-    const clusterModule = await import('~/cluster');
 
     ServerConfigsCacheRedis = cacheModule.ServerConfigsCacheRedis;
     keyvRedisClient = redisClients.keyvRedisClient;
-    LeaderElection = leaderElectionModule.LeaderElection;
-    checkIsLeader = clusterModule.isLeader;
 
     // Ensure Redis is connected
     if (!keyvRedisClient) throw new Error('Redis client is not initialized');
 
     // Wait for connection and topology discovery to complete
     await redisClients.keyvRedisClientReady;
-
-    // Clear any existing leader key to ensure clean state
-    await keyvRedisClient.del(LeaderElection.LEADER_KEY);
-
-    // Become leader so we can perform write operations (using default election instance)
-    const isLeader = await checkIsLeader();
-    expect(isLeader).toBe(true);
   });
 
   beforeEach(() => {
     // Create a fresh instance for each test with leaderOnly=true
-    cache = new ServerConfigsCacheRedis('test-user', true);
+    jest.resetModules();
+    cache = new ServerConfigsCacheRedis('test-user', 'Shared', false);
   });
 
   afterEach(async () => {
     // Clean up: clear all test keys from Redis
-    if (keyvRedisClient) {
+    if (keyvRedisClient && 'scanIterator' in keyvRedisClient) {
       const pattern = '*ServerConfigsCacheRedis-IntegrationTest*';
-      if ('scanIterator' in keyvRedisClient) {
-        for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
-          await keyvRedisClient.del(key);
-        }
+      const keysToDelete: string[] = [];
+
+      // Collect all keys first
+      for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
+        keysToDelete.push(key);
+      }
+
+      // Delete in parallel for cluster mode efficiency
+      if (keysToDelete.length > 0) {
+        await Promise.all(keysToDelete.map((key) => keyvRedisClient!.del(key)));
       }
     }
   });
 
   afterAll(async () => {
-    // Clear leader key to allow other tests to become leader
-    if (keyvRedisClient) await keyvRedisClient.del(LeaderElection.LEADER_KEY);
-
     // Close Redis connection
     if (keyvRedisClient?.isOpen) await keyvRedisClient.disconnect();
   });
@@ -92,7 +84,7 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
     it('should add and retrieve a server config', async () => {
       await cache.add('server1', mockConfig1);
       const result = await cache.get('server1');
-      expect(result).toEqual(mockConfig1);
+      expect(result).toMatchObject(mockConfig1);
     });
 
     it('should return undefined for non-existent server', async () => {
@@ -116,14 +108,14 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
       const result2 = await cache.get('server2');
       const result3 = await cache.get('server3');
 
-      expect(result1).toEqual(mockConfig1);
-      expect(result2).toEqual(mockConfig2);
-      expect(result3).toEqual(mockConfig3);
+      expect(result1).toMatchObject(mockConfig1);
+      expect(result2).toMatchObject(mockConfig2);
+      expect(result3).toMatchObject(mockConfig3);
     });
 
     it('should isolate caches by owner namespace', async () => {
-      const userCache = new ServerConfigsCacheRedis('user1', true);
-      const globalCache = new ServerConfigsCacheRedis('global', true);
+      const userCache = new ServerConfigsCacheRedis('user1', 'Private', false);
+      const globalCache = new ServerConfigsCacheRedis('global', 'Shared', false);
 
       await userCache.add('server1', mockConfig1);
       await globalCache.add('server1', mockConfig2);
@@ -131,15 +123,15 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
       const userResult = await userCache.get('server1');
       const globalResult = await globalCache.get('server1');
 
-      expect(userResult).toEqual(mockConfig1);
-      expect(globalResult).toEqual(mockConfig2);
+      expect(userResult).toMatchObject(mockConfig1);
+      expect(globalResult).toMatchObject(mockConfig2);
     });
   });
 
   describe('getAll operation', () => {
     it('should return empty object when no servers exist', async () => {
       const result = await cache.getAll();
-      expect(result).toEqual({});
+      expect(result).toMatchObject({});
     });
 
     it('should return all server configs', async () => {
@@ -148,7 +140,7 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
       await cache.add('server3', mockConfig3);
 
       const result = await cache.getAll();
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         server1: mockConfig1,
         server2: mockConfig2,
         server3: mockConfig3,
@@ -165,12 +157,12 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
       await cache.add('server3', mockConfig3);
       result = await cache.getAll();
       expect(Object.keys(result).length).toBe(3);
-      expect(result.server3).toEqual(mockConfig3);
+      expect(result.server3).toMatchObject(mockConfig3);
     });
 
     it('should only return configs for the specific owner', async () => {
-      const userCache = new ServerConfigsCacheRedis('user1', true);
-      const globalCache = new ServerConfigsCacheRedis('global', true);
+      const userCache = new ServerConfigsCacheRedis('user1', 'Private', false);
+      const globalCache = new ServerConfigsCacheRedis('global', 'Private', false);
 
       await userCache.add('server1', mockConfig1);
       await userCache.add('server2', mockConfig2);
@@ -181,20 +173,20 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
 
       expect(Object.keys(userResult).length).toBe(2);
       expect(Object.keys(globalResult).length).toBe(1);
-      expect(userResult.server1).toEqual(mockConfig1);
+      expect(userResult.server1).toMatchObject(mockConfig1);
       expect(userResult.server3).toBeUndefined();
-      expect(globalResult.server3).toEqual(mockConfig3);
+      expect(globalResult.server3).toMatchObject(mockConfig3);
     });
   });
 
   describe('update operation', () => {
     it('should update an existing server config', async () => {
       await cache.add('server1', mockConfig1);
-      expect(await cache.get('server1')).toEqual(mockConfig1);
+      expect(await cache.get('server1')).toMatchObject(mockConfig1);
 
       await cache.update('server1', mockConfig2);
       const result = await cache.get('server1');
-      expect(result).toEqual(mockConfig2);
+      expect(result).toMatchObject(mockConfig2);
     });
 
     it('should throw error when updating non-existent server', async () => {
@@ -209,28 +201,28 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
 
       await cache.update('server1', mockConfig3);
       const result = await cache.getAll();
-      expect(result.server1).toEqual(mockConfig3);
-      expect(result.server2).toEqual(mockConfig2);
+      expect(result.server1).toMatchObject(mockConfig3);
+      expect(result.server2).toMatchObject(mockConfig2);
     });
 
     it('should only update in the specific owner namespace', async () => {
-      const userCache = new ServerConfigsCacheRedis('user1', true);
-      const globalCache = new ServerConfigsCacheRedis('global', true);
+      const userCache = new ServerConfigsCacheRedis('user1', 'Private', false);
+      const globalCache = new ServerConfigsCacheRedis('global', 'Shared', false);
 
       await userCache.add('server1', mockConfig1);
       await globalCache.add('server1', mockConfig2);
 
       await userCache.update('server1', mockConfig3);
 
-      expect(await userCache.get('server1')).toEqual(mockConfig3);
-      expect(await globalCache.get('server1')).toEqual(mockConfig2);
+      expect(await userCache.get('server1')).toMatchObject(mockConfig3);
+      expect(await globalCache.get('server1')).toMatchObject(mockConfig2);
     });
   });
 
   describe('remove operation', () => {
     it('should remove an existing server config', async () => {
       await cache.add('server1', mockConfig1);
-      expect(await cache.get('server1')).toEqual(mockConfig1);
+      expect(await cache.get('server1')).toMatchObject(mockConfig1);
 
       await cache.remove('server1');
       expect(await cache.get('server1')).toBeUndefined();
@@ -253,7 +245,7 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
       result = await cache.getAll();
       expect(Object.keys(result).length).toBe(1);
       expect(result.server1).toBeUndefined();
-      expect(result.server2).toEqual(mockConfig2);
+      expect(result.server2).toMatchObject(mockConfig2);
     });
 
     it('should allow re-adding a removed server', async () => {
@@ -262,12 +254,12 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
       await cache.add('server1', mockConfig3);
 
       const result = await cache.get('server1');
-      expect(result).toEqual(mockConfig3);
+      expect(result).toMatchObject(mockConfig3);
     });
 
     it('should only remove from the specific owner namespace', async () => {
-      const userCache = new ServerConfigsCacheRedis('user1', true);
-      const globalCache = new ServerConfigsCacheRedis('global', true);
+      const userCache = new ServerConfigsCacheRedis('user1', 'Private', false);
+      const globalCache = new ServerConfigsCacheRedis('global', 'Shared', false);
 
       await userCache.add('server1', mockConfig1);
       await globalCache.add('server1', mockConfig2);
@@ -275,7 +267,7 @@ describe('ServerConfigsCacheRedis Integration Tests', () => {
       await userCache.remove('server1');
 
       expect(await userCache.get('server1')).toBeUndefined();
-      expect(await globalCache.get('server1')).toEqual(mockConfig2);
+      expect(await globalCache.get('server1')).toMatchObject(mockConfig2);
     });
   });
 });

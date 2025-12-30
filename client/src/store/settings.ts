@@ -6,10 +6,7 @@ import type { TOptionSettings } from '~/common';
 // Static atoms without localStorage
 const staticAtoms = {
   abortScroll: atom<boolean>({ key: 'abortScroll', default: false }),
-  showFiles: atom<boolean>({ key: 'showFiles', default: false }),
   optionSettings: atom<TOptionSettings>({ key: 'optionSettings', default: {} }),
-  showPluginStoreDialog: atom<boolean>({ key: 'showPluginStoreDialog', default: false }),
-  showAgentSettings: atom<boolean>({ key: 'showAgentSettings', default: false }),
   currentSettingsView: atom<SettingsViews>({
     key: 'currentSettingsView',
     default: SettingsViews.default,
@@ -45,6 +42,7 @@ const localStorageAtoms = {
   LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
   centerFormOnLanding: atomWithLocalStorage('centerFormOnLanding', true),
   showFooter: atomWithLocalStorage('showFooter', true),
+  resumableStreams: atomWithLocalStorage('resumableStreams', true),
 
   // Commands settings
   atCommand: atomWithLocalStorage('atCommand', true),

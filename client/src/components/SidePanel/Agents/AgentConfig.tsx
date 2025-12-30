@@ -49,7 +49,7 @@ export default function AgentConfig() {
     setAction,
     regularTools,
     agentsConfig,
-    startupConfig,
+    availableMCPServers,
     mcpServersMap,
     setActivePanel,
     endpointsConfig,
@@ -305,19 +305,29 @@ export default function AgentConfig() {
           </div>
         )}
         {/* MCP Section */}
-        {startupConfig?.mcpServers != null && (
+        {availableMCPServers != null && availableMCPServers.length > 0 && (
           <MCPTools
             agentId={agent_id}
             mcpServerNames={mcpServerNames}
             setShowMCPToolDialog={setShowMCPToolDialog}
           />
         )}
+
         {/* Agent Tools & Actions */}
         <div className="mb-4">
           <label className={labelClass}>
-            {`${toolsEnabled === true ? localize('com_ui_tools') : ''}
-              ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
-              ${actionsEnabled === true ? localize('com_assistants_actions') : ''}`}
+            {(() => {
+              if (toolsEnabled === true && actionsEnabled === true) {
+                return localize('com_ui_tools_and_actions');
+              }
+              if (toolsEnabled === true) {
+                return localize('com_ui_tools');
+              }
+              if (actionsEnabled === true) {
+                return localize('com_assistants_actions');
+              }
+              return '';
+            })()}
           </label>
           <div>
             <div className="mb-1">
@@ -482,7 +492,7 @@ export default function AgentConfig() {
         setIsOpen={setShowToolDialog}
         endpoint={EModelEndpoint.agents}
       />
-      {startupConfig?.mcpServers != null && (
+      {availableMCPServers != null && availableMCPServers.length > 0 && (
         <MCPToolSelectDialog
           agentId={agent_id}
           isOpen={showMCPToolDialog}

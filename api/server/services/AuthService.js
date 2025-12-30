@@ -1,9 +1,13 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
-const { logger } = require('@librechat/data-schemas');
-const { isEnabled, checkEmailConfig, isEmailDomainAllowed } = require('@librechat/api');
+const {
+  logger,
+  DEFAULT_SESSION_EXPIRY,
+  DEFAULT_REFRESH_TOKEN_EXPIRY,
+} = require('@librechat/data-schemas');
 const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
+const { isEnabled, checkEmailConfig, isEmailDomainAllowed, math } = require('@librechat/api');
 const {
   findUser,
   findToken,
@@ -369,19 +373,21 @@ const setAuthTokens = async (userId, res, _session = null) => {
     let session = _session;
     let refreshToken;
     let refreshTokenExpires;
+    const expiresIn = math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY);
 
     if (session && session._id && session.expiration != null) {
       refreshTokenExpires = session.expiration.getTime();
       refreshToken = await generateRefreshToken(session);
     } else {
-      const result = await createSession(userId);
+      const result = await createSession(userId, { expiresIn });
       session = result.session;
       refreshToken = result.refreshToken;
       refreshTokenExpires = session.expiration.getTime();
     }
 
     const user = await getUserById(userId);
-    const token = await generateToken(user);
+    const sessionExpiry = math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY);
+    const token = await generateToken(user, sessionExpiry);
 
     res.cookie('refreshToken', refreshToken, {
       expires: new Date(refreshTokenExpires),
@@ -418,10 +424,10 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
       return;
     }
-    const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
-    const expiryInMilliseconds = REFRESH_TOKEN_EXPIRY
-      ? eval(REFRESH_TOKEN_EXPIRY)
-      : 1000 * 60 * 60 * 24 * 7; // 7 days default
+    const expiryInMilliseconds = math(
+      process.env.REFRESH_TOKEN_EXPIRY,
+      DEFAULT_REFRESH_TOKEN_EXPIRY,
+    );
     const expirationDate = new Date(Date.now() + expiryInMilliseconds);
     if (tokenset == null) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');

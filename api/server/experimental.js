@@ -246,7 +246,22 @@ if (cluster.isMaster) {
     app.use(noIndex);
     app.use(express.json({ limit: '3mb' }));
     app.use(express.urlencoded({ extended: true, limit: '3mb' }));
+
     app.use(handleJsonParseError);
+
+    /**
+     * Express 5 Compatibility: Make req.query writable for mongoSanitize
+     * In Express 5, req.query is read-only by default, but express-mongo-sanitize needs to modify it
+     */
+    app.use((req, _res, next) => {
+      Object.defineProperty(req, 'query', {
+        ...Object.getOwnPropertyDescriptor(req, 'query'),
+        value: req.query,
+        writable: true,
+      });
+      next();
+    });
+
     app.use(mongoSanitize());
     app.use(cors());
     app.use(cookieParser());
@@ -286,7 +301,6 @@ if (cluster.isMaster) {
     app.use('/api/keys', routes.keys);
     app.use('/api/user', routes.user);
     app.use('/api/search', routes.search);
-    app.use('/api/edit', routes.edit);
     app.use('/api/messages', routes.messages);
     app.use('/api/convos', routes.convos);
     app.use('/api/presets', routes.presets);
@@ -329,7 +343,12 @@ if (cluster.isMaster) {
     });
 
     /** Start listening on shared port (cluster will distribute connections) */
-    app.listen(port, host, async () => {
+    app.listen(port, host, async (err) => {
+      if (err) {
+        logger.error(`Worker ${process.pid} failed to start server:`, err);
+        process.exit(1);
+      }
+
       logger.info(
         `Worker ${process.pid} started: Server listening at http://${
           host == '0.0.0.0' ? 'localhost' : host

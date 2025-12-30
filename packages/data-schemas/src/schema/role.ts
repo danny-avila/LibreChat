@@ -53,6 +53,11 @@ const rolePermissionsSchema = new Schema(
     [PermissionTypes.FILE_CITATIONS]: {
       [Permissions.USE]: { type: Boolean },
     },
+    [PermissionTypes.MCP_SERVERS]: {
+      [Permissions.USE]: { type: Boolean },
+      [Permissions.CREATE]: { type: Boolean },
+      [Permissions.SHARE]: { type: Boolean },
+    },
   },
   { _id: false },
 );

@@ -18,13 +18,20 @@ const {
   EModelEndpoint,
   isParamEndpoint,
   isAgentsEndpoint,
+  isEphemeralAgentId,
   supportsBalanceCheck,
 } = require('librechat-data-provider');
-const { getMessages, saveMessage, updateMessage, saveConvo, getConvo } = require('~/models');
+const {
+  updateMessage,
+  getMessages,
+  saveMessage,
+  saveConvo,
+  getConvo,
+  getFiles,
+} = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
-const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
 
 class BaseClient {
@@ -708,7 +715,7 @@ class BaseClient {
       iconURL: this.options.iconURL,
       endpoint: this.options.endpoint,
       ...(this.metadata ?? {}),
-      metadata,
+      metadata: Object.keys(metadata ?? {}).length > 0 ? metadata : undefined,
     };
 
     if (typeof completion === 'string') {
@@ -960,6 +967,13 @@ class BaseClient {
 
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);
+    const hasNonEphemeralAgent =
+      isAgentsEndpoint(this.options.endpoint) &&
+      endpointOptions?.agent_id &&
+      !isEphemeralAgentId(endpointOptions.agent_id);
+    if (hasNonEphemeralAgent) {
+      exceptions.add('model');
+    }
     if (existingConvo != null) {
       this.fetchedConvo = true;
       for (const key in existingConvo) {

@@ -53,7 +53,11 @@ export const fullMimeTypesList = [
   'image/heic',
   'image/heif',
   'application/x-tar',
+  'application/x-sh',
   'application/typescript',
+  'application/sql',
+  'application/yaml',
+  'application/vnd.coffeescript',
   'application/xml',
   'application/zip',
   'image/svg',
@@ -140,7 +144,7 @@ export const textMimeTypes =
   /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(epub\+zip|csv|json|pdf|x-tar|typescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|json|pdf|x-tar|x-sh|typescript|sql|yaml|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
@@ -180,24 +184,110 @@ export const codeInterpreterMimeTypes = [
 ];
 
 export const codeTypeMapping: { [key: string]: string } = {
-  c: 'text/x-c',
-  cs: 'text/x-csharp',
-  cpp: 'text/x-c++',
-  h: 'text/x-h',
-  md: 'text/markdown',
-  php: 'text/x-php',
-  py: 'text/x-python',
-  rb: 'text/x-ruby',
-  tex: 'text/x-tex',
-  js: 'text/javascript',
-  sh: 'application/x-sh',
-  ts: 'application/typescript',
-  tar: 'application/x-tar',
-  zip: 'application/zip',
-  yml: 'application/x-yaml',
-  yaml: 'application/x-yaml',
-  log: 'text/plain',
-  tsv: 'text/tab-separated-values',
+  c: 'text/x-c', // .c - C source
+  cs: 'text/x-csharp', // .cs - C# source
+  cpp: 'text/x-c++', // .cpp - C++ source
+  h: 'text/x-h', // .h - C/C++ header
+  md: 'text/markdown', // .md - Markdown
+  php: 'text/x-php', // .php - PHP source
+  py: 'text/x-python', // .py - Python source
+  rb: 'text/x-ruby', // .rb - Ruby source
+  tex: 'text/x-tex', // .tex - LaTeX source
+  js: 'text/javascript', // .js - JavaScript source
+  sh: 'application/x-sh', // .sh - Shell script
+  ts: 'application/typescript', // .ts - TypeScript source
+  tar: 'application/x-tar', // .tar - Tar archive
+  zip: 'application/zip', // .zip - ZIP archive
+  log: 'text/plain', // .log - Log file
+  tsv: 'text/tab-separated-values', // .tsv - Tab-separated values
+  yml: 'application/yaml', // .yml - YAML
+  yaml: 'application/yaml', // .yaml - YAML
+  sql: 'application/sql', // .sql - SQL (IANA registered)
+  dart: 'text/plain', // .dart - Dart source
+  coffee: 'application/vnd.coffeescript', // .coffee - CoffeeScript (IANA registered)
+  go: 'text/plain', // .go - Go source
+  rs: 'text/plain', // .rs - Rust source
+  swift: 'text/plain', // .swift - Swift source
+  kt: 'text/plain', // .kt - Kotlin source
+  kts: 'text/plain', // .kts - Kotlin script
+  scala: 'text/plain', // .scala - Scala source
+  lua: 'text/plain', // .lua - Lua source
+  r: 'text/plain', // .r - R source
+  pl: 'text/plain', // .pl - Perl source
+  pm: 'text/plain', // .pm - Perl module
+  groovy: 'text/plain', // .groovy - Groovy source
+  gradle: 'text/plain', // .gradle - Gradle build script
+  clj: 'text/plain', // .clj - Clojure source
+  cljs: 'text/plain', // .cljs - ClojureScript source
+  cljc: 'text/plain', // .cljc - Clojure common source
+  elm: 'text/plain', // .elm - Elm source
+  erl: 'text/plain', // .erl - Erlang source
+  hrl: 'text/plain', // .hrl - Erlang header
+  ex: 'text/plain', // .ex - Elixir source
+  exs: 'text/plain', // .exs - Elixir script
+  hs: 'text/plain', // .hs - Haskell source
+  lhs: 'text/plain', // .lhs - Literate Haskell source
+  ml: 'text/plain', // .ml - OCaml source
+  mli: 'text/plain', // .mli - OCaml interface
+  fs: 'text/plain', // .fs - F# source
+  fsx: 'text/plain', // .fsx - F# script
+  lisp: 'text/plain', // .lisp - Lisp source
+  cl: 'text/plain', // .cl - Common Lisp source
+  scm: 'text/plain', // .scm - Scheme source
+  rkt: 'text/plain', // .rkt - Racket source
+  jsx: 'text/plain', // .jsx - React JSX
+  tsx: 'text/plain', // .tsx - React TSX
+  vue: 'text/plain', // .vue - Vue component
+  svelte: 'text/plain', // .svelte - Svelte component
+  astro: 'text/plain', // .astro - Astro component
+  scss: 'text/plain', // .scss - SCSS source
+  sass: 'text/plain', // .sass - Sass source
+  less: 'text/plain', // .less - Less source
+  styl: 'text/plain', // .styl - Stylus source
+  toml: 'text/plain', // .toml - TOML config
+  ini: 'text/plain', // .ini - INI config
+  cfg: 'text/plain', // .cfg - Config file
+  conf: 'text/plain', // .conf - Config file
+  env: 'text/plain', // .env - Environment file
+  properties: 'text/plain', // .properties - Java properties
+  graphql: 'text/plain', // .graphql - GraphQL schema/query
+  gql: 'text/plain', // .gql - GraphQL schema/query
+  proto: 'text/plain', // .proto - Protocol Buffers
+  dockerfile: 'text/plain', // Dockerfile
+  makefile: 'text/plain', // Makefile
+  cmake: 'text/plain', // .cmake - CMake script
+  rake: 'text/plain', // .rake - Rake task
+  gemspec: 'text/plain', // .gemspec - Ruby gem spec
+  bash: 'text/plain', // .bash - Bash script
+  zsh: 'text/plain', // .zsh - Zsh script
+  fish: 'text/plain', // .fish - Fish script
+  ps1: 'text/plain', // .ps1 - PowerShell script
+  psm1: 'text/plain', // .psm1 - PowerShell module
+  bat: 'text/plain', // .bat - Batch script
+  cmd: 'text/plain', // .cmd - Windows command script
+  asm: 'text/plain', // .asm - Assembly source
+  s: 'text/plain', // .s - Assembly source
+  v: 'text/plain', // .v - V or Verilog source
+  zig: 'text/plain', // .zig - Zig source
+  nim: 'text/plain', // .nim - Nim source
+  cr: 'text/plain', // .cr - Crystal source
+  d: 'text/plain', // .d - D source
+  pas: 'text/plain', // .pas - Pascal source
+  pp: 'text/plain', // .pp - Pascal/Puppet source
+  f90: 'text/plain', // .f90 - Fortran 90 source
+  f95: 'text/plain', // .f95 - Fortran 95 source
+  f03: 'text/plain', // .f03 - Fortran 2003 source
+  jl: 'text/plain', // .jl - Julia source
+  m: 'text/plain', // .m - Objective-C/MATLAB source
+  mm: 'text/plain', // .mm - Objective-C++ source
+  ada: 'text/plain', // .ada - Ada source
+  adb: 'text/plain', // .adb - Ada body
+  ads: 'text/plain', // .ads - Ada spec
+  cob: 'text/plain', // .cob - COBOL source
+  cbl: 'text/plain', // .cbl - COBOL source
+  tcl: 'text/plain', // .tcl - Tcl source
+  awk: 'text/plain', // .awk - AWK script
+  sed: 'text/plain', // .sed - Sed script
 };
 
 /** Maps image extensions to MIME types for formats browsers may not recognize */

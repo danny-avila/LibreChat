@@ -42,10 +42,7 @@ export default function VariablesDropdown({
   };
 
   return (
-    <div
-      className={className}
-      title={`${localize('com_ui_add')} ${localize('com_ui_special_variables')}`}
-    >
+    <div className={className} title={localize('com_ui_add_special_variables')}>
       <DropdownPopup
         portal={true}
         mountByState={true}
@@ -56,7 +53,7 @@ export default function VariablesDropdown({
         trigger={
           <Menu.MenuButton
             id="variables-menu-button"
-            aria-label={`${localize('com_ui_add')} ${localize('com_ui_special_variables')}`}
+            aria-label={localize('com_ui_add_special_variables')}
             className="flex h-8 items-center gap-1 rounded-md border border-border-medium bg-surface-secondary px-2 py-0 text-sm text-text-primary transition-colors duration-200 hover:bg-surface-tertiary"
           >
             <PlusCircle className="mr-1 h-3 w-3 text-text-secondary" aria-hidden={true} />

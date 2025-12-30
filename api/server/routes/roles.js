@@ -8,6 +8,7 @@ const {
   memoryPermissionsSchema,
   marketplacePermissionsSchema,
   peoplePickerPermissionsSchema,
+  mcpServersPermissionsSchema,
 } = require('librechat-data-provider');
 const { checkAdmin, requireJwtAuth } = require('~/server/middleware');
 const { updateRoleByName, getRoleByName } = require('~/models/Role');
@@ -39,6 +40,11 @@ const permissionConfigs = {
     schema: peoplePickerPermissionsSchema,
     permissionType: PermissionTypes.PEOPLE_PICKER,
     errorMessage: 'Invalid people picker permissions.',
+  },
+  'mcp-servers': {
+    schema: mcpServersPermissionsSchema,
+    permissionType: PermissionTypes.MCP_SERVERS,
+    errorMessage: 'Invalid MCP servers permissions.',
   },
   marketplace: {
     schema: marketplacePermissionsSchema,
@@ -141,6 +147,12 @@ router.put('/:roleName/memories', checkAdmin, createPermissionUpdateHandler('mem
  * Update people picker permissions for a specific role
  */
 router.put('/:roleName/people-picker', checkAdmin, createPermissionUpdateHandler('people-picker'));
+
+/**
+ * PUT /api/roles/:roleName/mcp-servers
+ * Update MCP servers permissions for a specific role
+ */
+router.put('/:roleName/mcp-servers', checkAdmin, createPermissionUpdateHandler('mcp-servers'));
 
 /**
  * PUT /api/roles/:roleName/marketplace

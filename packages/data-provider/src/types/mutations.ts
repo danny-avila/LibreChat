@@ -274,6 +274,7 @@ export type UpdatePromptPermVars = UpdatePermVars<p.TPromptPermissions>;
 export type UpdateMemoryPermVars = UpdatePermVars<p.TMemoryPermissions>;
 export type UpdateAgentPermVars = UpdatePermVars<p.TAgentPermissions>;
 export type UpdatePeoplePickerPermVars = UpdatePermVars<p.TPeoplePickerPermissions>;
+export type UpdateMCPServersPermVars = UpdatePermVars<p.TMcpServersPermissions>;
 
 export type UpdatePermResponse = r.TRole;
 
@@ -301,6 +302,13 @@ export type UpdateAgentPermOptions = MutationOptions<
 export type UpdatePeoplePickerPermOptions = MutationOptions<
   UpdatePermResponse,
   UpdatePeoplePickerPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
+export type UpdateMCPServersPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateMCPServersPermVars,
   unknown,
   types.TError | null | undefined
 >;
@@ -369,6 +377,20 @@ export type TEditArtifactResponse = Pick<types.TMessage, 'content' | 'text' | 'c
 export type EditArtifactOptions = MutationOptions<
   TEditArtifactResponse,
   TEditArtifactRequest,
+  unknown,
+  Error
+>;
+
+export type TBranchMessageRequest = {
+  messageId: string;
+  agentId: string;
+};
+
+export type TBranchMessageResponse = types.TMessage;
+
+export type BranchMessageOptions = MutationOptions<
+  TBranchMessageResponse,
+  TBranchMessageRequest,
   unknown,
   Error
 >;

@@ -91,7 +91,7 @@ export function SourceHovercard({
           />
           <Ariakit.HovercardDisclosure className="ml-0.5 rounded-full text-text-primary focus:outline-none focus:ring-2 focus:ring-ring">
             <VisuallyHidden>{localize('com_citation_more_details', { label })}</VisuallyHidden>
-            <ChevronDown className="icon-sm" />
+            <ChevronDown className="icon-sm" aria-hidden="true" />
           </Ariakit.HovercardDisclosure>
 
           <Ariakit.Hovercard

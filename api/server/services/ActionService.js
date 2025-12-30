@@ -1,14 +1,13 @@
 const jwt = require('jsonwebtoken');
 const { nanoid } = require('nanoid');
 const { tool } = require('@langchain/core/tools');
-const { logger } = require('@librechat/data-schemas');
 const { GraphEvents, sleep } = require('@librechat/agents');
+const { logger, encryptV2, decryptV2 } = require('@librechat/data-schemas');
 const {
   sendEvent,
-  encryptV2,
-  decryptV2,
   logAxiosError,
   refreshAccessToken,
+  GenerationJobManager,
 } = require('@librechat/api');
 const {
   Time,
@@ -133,6 +132,7 @@ async function loadActionSets(searchParams) {
  * @param {string | undefined} [params.description] - The description for the tool.
  * @param {import('zod').ZodTypeAny | undefined} [params.zodSchema] - The Zod schema for tool input validation/definition
  * @param {{ oauth_client_id?: string; oauth_client_secret?: string; }} params.encrypted - The encrypted values for the action.
+ * @param {string | null} [params.streamId] - The stream ID for resumable streams.
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createActionTool({
@@ -144,6 +144,7 @@ async function createActionTool({
   name,
   description,
   encrypted,
+  streamId = null,
 }) {
   /** @type {(toolInput: Object | string, config: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolInput, config) => {
@@ -198,7 +199,12 @@ async function createActionTool({
                   `${identifier}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`,
                   'oauth_login',
                   async () => {
-                    sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
+                    const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
+                    if (streamId) {
+                      GenerationJobManager.emitChunk(streamId, eventData);
+                    } else {
+                      sendEvent(res, eventData);
+                    }
                     logger.debug('Sent OAuth login request to client', { action_id, identifier });
                     return true;
                   },
@@ -223,7 +229,12 @@ async function createActionTool({
                 logger.debug('Received OAuth Authorization response', { action_id, identifier });
                 data.delta.auth = undefined;
                 data.delta.expires_at = undefined;
-                sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
+                const successEventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
+                if (streamId) {
+                  GenerationJobManager.emitChunk(streamId, successEventData);
+                } else {
+                  sendEvent(res, successEventData);
+                }
                 await sleep(3000);
                 metadata.oauth_access_token = result.access_token;
                 metadata.oauth_refresh_token = result.refresh_token;

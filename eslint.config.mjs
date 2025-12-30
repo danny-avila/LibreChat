@@ -34,12 +34,15 @@ export default [
       'packages/api/dist/**/*',
       'packages/api/test_bundle/**/*',
       'api/demo/**/*',
+      'packages/client/dist/**/*',
       'packages/data-provider/types/**/*',
       'packages/data-provider/dist/**/*',
       'packages/data-provider/test_bundle/**/*',
+      'packages/data-schemas/dist/**/*',
       'data-node/**/*',
       'meili_data/**/*',
       '**/node_modules/**/*',
+      '.devcontainer/**/*',
     ],
   },
   ...fixupConfigRules(
@@ -236,6 +239,7 @@ export default [
         },
       ],
       //
+      'lines-between-class-members': ['error', 'always', { exceptAfterSingleLine: true }],
       '@typescript-eslint/no-unused-expressions': 'off',
       '@typescript-eslint/no-unused-vars': [
         'warn',
@@ -285,6 +289,9 @@ export default [
   },
   {
     files: ['./packages/api/**/*.ts'],
+    rules: {
+      'lines-between-class-members': ['error', 'always', { exceptAfterSingleLine: true }],
+    },
   },
   {
     files: ['./config/translations/**/*.ts'],

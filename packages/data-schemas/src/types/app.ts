@@ -82,6 +82,8 @@ export interface AppConfig {
   speech?: TCustomConfig['speech'];
   /** MCP server configuration */
   mcpConfig?: TCustomConfig['mcpServers'] | null;
+  /** MCP settings (domain allowlist, etc.) */
+  mcpSettings?: TCustomConfig['mcpSettings'] | null;
   /** File configuration */
   fileConfig?: TFileConfig;
   /** Secure image links configuration */
@@ -99,8 +101,6 @@ export interface AppConfig {
     bedrock?: Partial<TEndpoint>;
     /** Anthropic endpoint configuration */
     anthropic?: Partial<TEndpoint>;
-    /** GPT plugins endpoint configuration */
-    gptPlugins?: Partial<TEndpoint>;
     /** Azure OpenAI endpoint configuration */
     azureOpenAI?: TAzureConfig;
     /** Assistants endpoint configuration */

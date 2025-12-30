@@ -86,14 +86,16 @@ const RunCode: React.FC<CodeBarProps> = React.memo(({ lang, codeRef, blockIndex 
     <>
       <button
         type="button"
-        className={cn('ml-auto flex gap-2')}
+        className={cn(
+          'ml-auto flex gap-2 rounded-sm px-2 py-1 hover:bg-gray-700 focus:bg-gray-700 focus:outline focus:outline-white',
+        )}
         onClick={debouncedExecute}
         disabled={execute.isLoading}
       >
         {execute.isLoading ? (
           <Spinner className="animate-spin" size={18} />
         ) : (
-          <TerminalSquareIcon size={18} />
+          <TerminalSquareIcon size={18} aria-hidden="true" />
         )}
         {localize('com_ui_run_code')}
       </button>

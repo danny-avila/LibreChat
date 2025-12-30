@@ -10,6 +10,7 @@ describe('cacheConfig', () => {
     delete process.env.REDIS_KEY_PREFIX_VAR;
     delete process.env.REDIS_KEY_PREFIX;
     delete process.env.USE_REDIS;
+    delete process.env.USE_REDIS_STREAMS;
     delete process.env.USE_REDIS_CLUSTER;
     delete process.env.REDIS_PING_INTERVAL;
     delete process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES;
@@ -127,6 +128,53 @@ describe('cacheConfig', () => {
       expect(cacheConfig.USE_REDIS_CLUSTER).toBe(true);
       expect(cacheConfig.USE_REDIS).toBe(true);
       expect(cacheConfig.REDIS_URI).toBe('redis://localhost:6379');
+    });
+  });
+
+  describe('USE_REDIS_STREAMS configuration', () => {
+    test('should default to USE_REDIS value when USE_REDIS_STREAMS is not set', async () => {
+      process.env.USE_REDIS = 'true';
+      process.env.REDIS_URI = 'redis://localhost:6379';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.USE_REDIS).toBe(true);
+      expect(cacheConfig.USE_REDIS_STREAMS).toBe(true);
+    });
+
+    test('should default to false when both USE_REDIS and USE_REDIS_STREAMS are not set', async () => {
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.USE_REDIS).toBe(false);
+      expect(cacheConfig.USE_REDIS_STREAMS).toBe(false);
+    });
+
+    test('should be false when explicitly set to false even if USE_REDIS is true', async () => {
+      process.env.USE_REDIS = 'true';
+      process.env.USE_REDIS_STREAMS = 'false';
+      process.env.REDIS_URI = 'redis://localhost:6379';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.USE_REDIS).toBe(true);
+      expect(cacheConfig.USE_REDIS_STREAMS).toBe(false);
+    });
+
+    test('should be true when explicitly set to true', async () => {
+      process.env.USE_REDIS = 'true';
+      process.env.USE_REDIS_STREAMS = 'true';
+      process.env.REDIS_URI = 'redis://localhost:6379';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.USE_REDIS_STREAMS).toBe(true);
+    });
+
+    test('should allow streams without general Redis (explicit override)', async () => {
+      // Edge case: someone might want streams with Redis but not general caching
+      // This would require REDIS_URI but not USE_REDIS
+      process.env.USE_REDIS_STREAMS = 'true';
+      process.env.REDIS_URI = 'redis://localhost:6379';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.USE_REDIS).toBe(false);
+      expect(cacheConfig.USE_REDIS_STREAMS).toBe(true);
     });
   });
 

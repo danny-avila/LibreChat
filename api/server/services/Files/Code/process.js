@@ -14,7 +14,7 @@ const {
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
-const { createFile, getFiles, updateFile } = require('~/models/File');
+const { createFile, getFiles, updateFile } = require('~/models');
 
 /**
  * Process OpenAI image files, convert to target format, save and return file metadata.

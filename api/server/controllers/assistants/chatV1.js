@@ -7,6 +7,7 @@ const {
   Constants,
   RunStatus,
   CacheKeys,
+  VisionModes,
   ContentTypes,
   EModelEndpoint,
   ViolationTypes,
@@ -25,6 +26,7 @@ const {
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { formatMessage, createVisionPrompt } = require('~/app/clients/prompts');
+const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { createRunBody } = require('~/server/services/createRunBody');
@@ -64,7 +66,7 @@ const chatV1 = async (req, res) => {
     clientTimestamp,
   } = req.body;
 
-  /** @type {OpenAIClient} */
+  /** @type {OpenAI} */
   let openai;
   /** @type {string|undefined} - the current thread id */
   let thread_id = _thread_id;
@@ -285,11 +287,10 @@ const chatV1 = async (req, res) => {
       });
     };
 
-    const { openai: _openai, client } = await getOpenAIClient({
+    const { openai: _openai } = await getOpenAIClient({
       req,
       res,
       endpointOption,
-      initAppClient: true,
     });
 
     openai = _openai;
@@ -364,7 +365,15 @@ const chatV1 = async (req, res) => {
         role: 'user',
         content: '',
       };
-      const files = await client.addImageURLs(visionMessage, attachments);
+      const { files, image_urls } = await encodeAndFormat(
+        req,
+        attachments,
+        {
+          endpoint: EModelEndpoint.assistants,
+        },
+        VisionModes.generative,
+      );
+      visionMessage.image_urls = image_urls.length ? image_urls : undefined;
       if (!visionMessage.image_urls?.length) {
         return;
       }
@@ -609,7 +618,6 @@ const chatV1 = async (req, res) => {
         text,
         responseText: response.text,
         conversationId,
-        client,
       });
     }
 

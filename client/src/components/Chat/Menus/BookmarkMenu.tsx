@@ -147,9 +147,9 @@ const BookmarkMenu: FC = () => {
       return <Spinner aria-label="Spinner" />;
     }
     if ((tags?.length ?? 0) > 0) {
-      return <BookmarkFilledIcon className="icon-sm" aria-label="Filled Bookmark" />;
+      return <BookmarkFilledIcon className="icon-lg" aria-label="Filled Bookmark" />;
     }
-    return <BookmarkIcon className="icon-sm" aria-label="Bookmark" />;
+    return <BookmarkIcon className="icon-lg" aria-label="Bookmark" />;
   };
 
   return (
@@ -170,7 +170,7 @@ const BookmarkMenu: FC = () => {
                 id="bookmark-menu-button"
                 aria-label={localize('com_ui_bookmarks_add')}
                 className={cn(
-                  'mt-text-sm flex size-10 flex-shrink-0 items-center justify-center gap-2 rounded-xl border border-border-light text-sm transition-colors duration-200 hover:bg-surface-hover',
+                  'mt-text-sm flex size-10 flex-shrink-0 items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation text-sm transition-colors duration-200 hover:bg-surface-hover',
                   isMenuOpen ? 'bg-surface-hover' : '',
                 )}
                 data-testid="bookmark-menu"

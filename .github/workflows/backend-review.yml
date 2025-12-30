@@ -4,6 +4,7 @@ on:
     branches:
       - main
       - dev
+      - dev-staging
       - release/*
     paths:
       - 'api/**'
@@ -23,6 +24,7 @@ jobs:
       BAN_DURATION: ${{ secrets.BAN_DURATION }}
       BAN_INTERVAL: ${{ secrets.BAN_INTERVAL }}
       NODE_ENV: CI
+      NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js 20.x

@@ -16,6 +16,7 @@ export interface MenuItemProps {
   hideOnClick?: boolean;
   dialog?: React.ReactElement;
   ref?: React.Ref<any>;
+  className?: string;
   render?:
     | RenderProp<React.HTMLAttributes<any> & { ref?: React.Ref<any> | undefined }>
     | React.ReactElement<any, string | React.JSXElementConstructor<any>>

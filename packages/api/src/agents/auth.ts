@@ -1,6 +1,5 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, decrypt } from '@librechat/data-schemas';
 import type { IPluginAuth, PluginAuthMethods } from '@librechat/data-schemas';
-import { decrypt } from '../crypto/encryption';
 
 export interface GetPluginAuthMapParams {
   userId: string;

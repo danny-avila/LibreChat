@@ -28,8 +28,8 @@ const {
 const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
 const { addAgentResourceFile, removeAgentResourceFiles } = require('~/models/Agent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
-const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
+const { createFile, updateFileUsage, deleteFiles } = require('~/models');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
@@ -58,45 +58,6 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
 
     return uploadFunction({ req, file: sanitizedFile, file_id, ...restParams });
   };
-};
-
-/**
- *
- * @param {Array<MongoFile>} files
- * @param {Array<string>} [fileIds]
- * @returns
- */
-const processFiles = async (files, fileIds) => {
-  const promises = [];
-  const seen = new Set();
-
-  for (let file of files) {
-    const { file_id } = file;
-    if (seen.has(file_id)) {
-      continue;
-    }
-    seen.add(file_id);
-    promises.push(updateFileUsage({ file_id }));
-  }
-
-  if (!fileIds) {
-    const results = await Promise.all(promises);
-    // Filter out null results from failed updateFileUsage calls
-    return results.filter((result) => result != null);
-  }
-
-  for (let file_id of fileIds) {
-    if (seen.has(file_id)) {
-      continue;
-    }
-    seen.add(file_id);
-    promises.push(updateFileUsage({ file_id }));
-  }
-
-  // TODO: calculate token cost when image is first uploaded
-  const results = await Promise.all(promises);
-  // Filter out null results from failed updateFileUsage calls
-  return results.filter((result) => result != null);
 };
 
 /**
@@ -1057,7 +1018,6 @@ function filterFile({ req, image, isAvatar }) {
 
 module.exports = {
   filterFile,
-  processFiles,
   processFileURL,
   saveBase64Image,
   processImageFile,

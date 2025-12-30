@@ -1960,7 +1960,8 @@ describe('models/Agent', () => {
       });
 
       if (result) {
-        expect(result.id).toBe(EPHEMERAL_AGENT_ID);
+        // Ephemeral agent ID is encoded with endpoint and model
+        expect(result.id).toBe('openai__gpt-4');
         expect(result.instructions).toBe('Test instructions');
         expect(result.provider).toBe('openai');
         expect(result.model).toBe('gpt-4');
@@ -1978,7 +1979,7 @@ describe('models/Agent', () => {
       const mockReq = { user: { id: 'user123' } };
       const result = await loadAgent({
         req: mockReq,
-        agent_id: 'non_existent_agent',
+        agent_id: 'agent_non_existent',
         endpoint: 'openai',
         model_parameters: { model: 'gpt-4' },
       });
@@ -2105,7 +2106,7 @@ describe('models/Agent', () => {
       test('should handle loadAgent with malformed req object', async () => {
         const result = await loadAgent({
           req: null,
-          agent_id: 'test',
+          agent_id: 'agent_test',
           endpoint: 'openai',
           model_parameters: { model: 'gpt-4' },
         });

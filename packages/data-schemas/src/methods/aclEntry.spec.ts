@@ -679,4 +679,284 @@ describe('AclEntry Model Tests', () => {
       expect(effective).toBe(PermissionBits.VIEW);
     });
   });
+
+  describe('Batch Permission Queries', () => {
+    test('should get effective permissions for multiple resources in single query', async () => {
+      const resource1 = new mongoose.Types.ObjectId();
+      const resource2 = new mongoose.Types.ObjectId();
+      const resource3 = new mongoose.Types.ObjectId();
+
+      /** Grant different permissions to different resources */
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.MCPSERVER,
+        resource1,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.MCPSERVER,
+        resource2,
+        PermissionBits.VIEW | PermissionBits.EDIT,
+        grantedById,
+      );
+
+      await methods.grantPermission(
+        PrincipalType.GROUP,
+        groupId,
+        ResourceType.MCPSERVER,
+        resource3,
+        PermissionBits.DELETE,
+        grantedById,
+      );
+
+      /** Get permissions for all resources */
+      const permissionsMap = await methods.getEffectivePermissionsForResources(
+        [{ principalType: PrincipalType.USER, principalId: userId }],
+        ResourceType.MCPSERVER,
+        [resource1, resource2, resource3],
+      );
+
+      expect(permissionsMap.size).toBe(2); // Only resource1 and resource2 for user
+      expect(permissionsMap.get(resource1.toString())).toBe(PermissionBits.VIEW);
+      expect(permissionsMap.get(resource2.toString())).toBe(
+        PermissionBits.VIEW | PermissionBits.EDIT,
+      );
+      expect(permissionsMap.get(resource3.toString())).toBeUndefined(); // User has no access
+    });
+
+    test('should combine permissions from multiple principals in batch query', async () => {
+      const resource1 = new mongoose.Types.ObjectId();
+      const resource2 = new mongoose.Types.ObjectId();
+
+      /** User has VIEW on both resources */
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.MCPSERVER,
+        resource1,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.MCPSERVER,
+        resource2,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      /** Group has EDIT on resource1 */
+      await methods.grantPermission(
+        PrincipalType.GROUP,
+        groupId,
+        ResourceType.MCPSERVER,
+        resource1,
+        PermissionBits.EDIT,
+        grantedById,
+      );
+
+      /** Get combined permissions for user + group */
+      const permissionsMap = await methods.getEffectivePermissionsForResources(
+        [
+          { principalType: PrincipalType.USER, principalId: userId },
+          { principalType: PrincipalType.GROUP, principalId: groupId },
+        ],
+        ResourceType.MCPSERVER,
+        [resource1, resource2],
+      );
+
+      expect(permissionsMap.size).toBe(2);
+      /** Resource1 should have VIEW | EDIT (from user + group) */
+      expect(permissionsMap.get(resource1.toString())).toBe(
+        PermissionBits.VIEW | PermissionBits.EDIT,
+      );
+      /** Resource2 should have only VIEW (from user) */
+      expect(permissionsMap.get(resource2.toString())).toBe(PermissionBits.VIEW);
+    });
+
+    test('should handle empty resource list', async () => {
+      const permissionsMap = await methods.getEffectivePermissionsForResources(
+        [{ principalType: PrincipalType.USER, principalId: userId }],
+        ResourceType.MCPSERVER,
+        [],
+      );
+
+      expect(permissionsMap.size).toBe(0);
+    });
+
+    test('should handle resources with no permissions', async () => {
+      const resource1 = new mongoose.Types.ObjectId();
+      const resource2 = new mongoose.Types.ObjectId();
+
+      /** Only grant permission to resource1 */
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.MCPSERVER,
+        resource1,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      const permissionsMap = await methods.getEffectivePermissionsForResources(
+        [{ principalType: PrincipalType.USER, principalId: userId }],
+        ResourceType.MCPSERVER,
+        [resource1, resource2], // resource2 has no permissions
+      );
+
+      expect(permissionsMap.size).toBe(1);
+      expect(permissionsMap.get(resource1.toString())).toBe(PermissionBits.VIEW);
+      expect(permissionsMap.get(resource2.toString())).toBeUndefined();
+    });
+
+    test('should include public permissions in batch query', async () => {
+      const resource1 = new mongoose.Types.ObjectId();
+      const resource2 = new mongoose.Types.ObjectId();
+
+      /** User has VIEW on resource1 */
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.MCPSERVER,
+        resource1,
+        PermissionBits.VIEW | PermissionBits.EDIT,
+        grantedById,
+      );
+
+      /** Public has VIEW on resource2 */
+      await methods.grantPermission(
+        PrincipalType.PUBLIC,
+        null,
+        ResourceType.MCPSERVER,
+        resource2,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      /** Query with user + public principals */
+      const permissionsMap = await methods.getEffectivePermissionsForResources(
+        [
+          { principalType: PrincipalType.USER, principalId: userId },
+          { principalType: PrincipalType.PUBLIC },
+        ],
+        ResourceType.MCPSERVER,
+        [resource1, resource2],
+      );
+
+      expect(permissionsMap.size).toBe(2);
+      expect(permissionsMap.get(resource1.toString())).toBe(
+        PermissionBits.VIEW | PermissionBits.EDIT,
+      );
+      expect(permissionsMap.get(resource2.toString())).toBe(PermissionBits.VIEW);
+    });
+
+    test('should handle large batch efficiently', async () => {
+      /** Create 50 resources with various permissions */
+      const resources = Array.from({ length: 50 }, () => new mongoose.Types.ObjectId());
+
+      /** Grant permissions to first 30 resources */
+      for (let i = 0; i < 30; i++) {
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.MCPSERVER,
+          resources[i],
+          PermissionBits.VIEW,
+          grantedById,
+        );
+      }
+
+      /** Grant group permissions to resources 20-40 (overlap with user) */
+      for (let i = 20; i < 40; i++) {
+        await methods.grantPermission(
+          PrincipalType.GROUP,
+          groupId,
+          ResourceType.MCPSERVER,
+          resources[i],
+          PermissionBits.EDIT,
+          grantedById,
+        );
+      }
+
+      const startTime = Date.now();
+      const permissionsMap = await methods.getEffectivePermissionsForResources(
+        [
+          { principalType: PrincipalType.USER, principalId: userId },
+          { principalType: PrincipalType.GROUP, principalId: groupId },
+        ],
+        ResourceType.MCPSERVER,
+        resources,
+      );
+      const duration = Date.now() - startTime;
+
+      /** Should be reasonably fast (under 1 second for 50 resources) */
+      expect(duration).toBeLessThan(1000);
+
+      /** Verify results */
+      expect(permissionsMap.size).toBe(40); // Resources 0-39 have permissions
+
+      /** Resources 0-19: USER VIEW only */
+      for (let i = 0; i < 20; i++) {
+        expect(permissionsMap.get(resources[i].toString())).toBe(PermissionBits.VIEW);
+      }
+
+      /** Resources 20-29: USER VIEW | GROUP EDIT */
+      for (let i = 20; i < 30; i++) {
+        expect(permissionsMap.get(resources[i].toString())).toBe(
+          PermissionBits.VIEW | PermissionBits.EDIT,
+        );
+      }
+
+      /** Resources 30-39: GROUP EDIT only */
+      for (let i = 30; i < 40; i++) {
+        expect(permissionsMap.get(resources[i].toString())).toBe(PermissionBits.EDIT);
+      }
+
+      /** Resources 40-49: No permissions */
+      for (let i = 40; i < 50; i++) {
+        expect(permissionsMap.get(resources[i].toString())).toBeUndefined();
+      }
+    });
+
+    test('should handle mixed ObjectId and string resource IDs', async () => {
+      const resource1 = new mongoose.Types.ObjectId();
+      const resource2 = new mongoose.Types.ObjectId();
+
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.MCPSERVER,
+        resource1,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.MCPSERVER,
+        resource2,
+        PermissionBits.EDIT,
+        grantedById,
+      );
+
+      /** Pass mix of ObjectId and string */
+      const permissionsMap = await methods.getEffectivePermissionsForResources(
+        [{ principalType: PrincipalType.USER, principalId: userId }],
+        ResourceType.MCPSERVER,
+        [resource1, resource2.toString()], // Mix of ObjectId and string
+      );
+
+      expect(permissionsMap.size).toBe(2);
+      expect(permissionsMap.get(resource1.toString())).toBe(PermissionBits.VIEW);
+      expect(permissionsMap.get(resource2.toString())).toBe(PermissionBits.EDIT);
+    });
+  });
 });

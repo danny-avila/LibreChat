@@ -59,6 +59,7 @@ jest.mock('~/server/middleware', () => ({
     forkUserLimiter: (req, res, next) => next(),
   })),
   configMiddleware: (req, res, next) => next(),
+  validateConvoAccess: (req, res, next) => next(),
 }));
 
 jest.mock('~/server/utils/import/fork', () => ({

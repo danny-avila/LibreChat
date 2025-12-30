@@ -1,4 +1,5 @@
 import React, { useCallback } from 'react';
+import { Trans } from 'react-i18next';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -6,6 +7,7 @@ import {
   Button,
   Spinner,
   OGDialog,
+  OGDialogClose,
   OGDialogTitle,
   OGDialogHeader,
   OGDialogContent,
@@ -80,20 +82,26 @@ export function DeleteConversationDialog({
 
   return (
     <OGDialogContent
-      title={localize('com_ui_delete_confirm') + ' ' + title}
       className="w-11/12 max-w-md"
       showCloseButton={false}
+      aria-describedby="delete-conversation-description"
     >
       <OGDialogHeader>
         <OGDialogTitle>{localize('com_ui_delete_conversation')}</OGDialogTitle>
       </OGDialogHeader>
-      <div className="w-full truncate">
-        {localize('com_ui_delete_confirm')} <strong>{title}</strong> ?
+      <div id="delete-conversation-description" className="w-full truncate">
+        <Trans
+          i18nKey="com_ui_delete_confirm_strong"
+          values={{ title }}
+          components={{ strong: <strong /> }}
+        />
       </div>
       <div className="flex justify-end gap-4 pt-4">
-        <Button aria-label="cancel" variant="outline" onClick={() => setShowDeleteDialog(false)}>
-          {localize('com_ui_cancel')}
-        </Button>
+        <OGDialogClose asChild>
+          <Button aria-label="cancel" variant="outline">
+            {localize('com_ui_cancel')}
+          </Button>
+        </OGDialogClose>
         <Button variant="destructive" onClick={confirmDelete} disabled={deleteMutation.isLoading}>
           {deleteMutation.isLoading ? <Spinner /> : localize('com_ui_delete')}
         </Button>

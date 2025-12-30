@@ -14,7 +14,7 @@ test.describe('Key suite', () => {
   // npx playwright test --config=e2e/playwright.config.local.ts --headed e2e/specs/keys.spec.ts
   test('Test Setting and Revoking Keys', async ({ page }) => {
     await page.goto('http://localhost:3080/', { timeout: 5000 });
-    const endpoint = 'chatGPTBrowser';
+    const endpoint = 'openAI';
 
     const newTopicButton = page.getByTestId('new-conversation-menu');
     await newTopicButton.click();
