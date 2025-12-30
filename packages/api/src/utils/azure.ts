@@ -1,5 +1,7 @@
 import { isEnabled } from './common';
 import type { AzureOptions, GenericClient } from '~/types';
+import { DefaultAzureCredential, AccessToken } from '@azure/identity';
+import { logger } from '@librechat/data-schemas';
 
 /**
  * Sanitizes the model name to be used in the URL by removing or replacing disallowed characters.
@@ -124,3 +126,77 @@ export function constructAzureURL({
 
   return finalURL;
 }
+
+/**
+ * Checks if Entra ID authentication should be used based on environment variables.
+ * @returns {boolean} True if Entra ID authentication should be used
+ */
+export const shouldUseEntraId = (): boolean => {
+  return isEnabled(process.env.AZURE_OPENAI_USE_ENTRA_ID);
+};
+
+/**
+ * Creates and caches an Azure credential for Entra ID authentication.
+ * Uses DefaultAzureCredential which supports multiple authentication methods:
+ * - Managed Identity (when running in Azure)
+ * - Service Principal (when environment variables are set)
+ * - Azure CLI (for local development)
+ * - Visual Studio Code (for local development)
+ *
+ * @returns DefaultAzureCredential instance
+ */
+let entraIdCredential: DefaultAzureCredential | undefined;
+export const createEntraIdCredential = (): DefaultAzureCredential => {
+  if (!entraIdCredential) {
+    entraIdCredential = new DefaultAzureCredential();
+  }
+  return entraIdCredential;
+};
+
+let cachedToken: AccessToken | null = null;
+let cachedTokenPromise: Promise<AccessToken | null> | null = null;
+
+
+// Refresh cached token a bit early to avoid edge cases (clock skew, retries, etc.)
+const ENTRA_ID_EARLY_REFRESH_MS = 2 * 60 * 1000; // 2 minutes
+const ENTRA_ID_SCOPE = 'https://cognitiveservices.azure.com/.default';
+
+const isTokenFresh = (token: AccessToken, nowMs: number): boolean =>
+  nowMs < token.expiresOnTimestamp - ENTRA_ID_EARLY_REFRESH_MS;
+
+/**
+ * Gets the access token for Entra ID authentication from azure/identity.
+ * @returns The access token string
+ */
+export const getEntraIdAccessToken = async (): Promise<string> => {
+  const nowMs = Date.now();
+
+  if (cachedToken && isTokenFresh(cachedToken, nowMs)) {
+    return cachedToken.token;
+  }
+
+  // Dedupe concurrent refreshes to avoid token "stampedes"
+  if (!cachedTokenPromise) {
+    const credential = createEntraIdCredential();
+    cachedTokenPromise = credential.getToken(ENTRA_ID_SCOPE);
+  }
+
+  try {
+    const token = await cachedTokenPromise;
+    if (!token) {
+      throw new Error('Failed to get Entra ID access token (credential returned null token)');
+    }
+
+    cachedToken = token;
+    return token.token;
+  } catch (error) {
+    const safeError =
+      error instanceof Error
+        ? { message: error.message, ...((error as any).code && { code: (error as any).code }) }
+        : { message: String(error) };
+    logger.error('[ENTRA_ID_DEBUG] Failed to get Entra ID access token:', safeError);
+    throw error;
+  } finally {
+    cachedTokenPromise = null;
+  }
+};
