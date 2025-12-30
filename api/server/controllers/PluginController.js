@@ -1,6 +1,6 @@
-const { logger } = require('@librechat/data-schemas');
-const { CacheKeys } = require('librechat-data-provider');
-const { getToolkitKey, checkPluginAuth, filterUniquePlugins } = require('@librechat/api');
+const { logger } = require('@brainiac/data-schemas');
+const { CacheKeys } = require('brainiac-data-provider');
+const { getToolkitKey, checkPluginAuth, filterUniquePlugins } = require('@brainiac/api');
 const { getCachedTools, setCachedTools } = require('~/server/services/Config');
 const { availableTools, toolkits } = require('~/app/clients/tools');
 const { getAppConfig } = require('~/server/services/Config');
@@ -18,7 +18,7 @@ const getAvailablePluginsController = async (req, res) => {
     const appConfig = await getAppConfig({ role: req.user?.role });
     /** @type {{ filteredTools: string[], includedTools: string[] }} */
     const { filteredTools = [], includedTools = [] } = appConfig;
-    /** @type {import('@librechat/api').LCManifestTool[]} */
+    /** @type {import('@brainiac/api').LCManifestTool[]} */
     const pluginManifest = availableTools;
 
     const uniquePlugins = filterUniquePlugins(pluginManifest);
@@ -83,7 +83,7 @@ const getAvailableTools = async (req, res) => {
       toolDefinitions = appConfig.availableTools;
     }
 
-    /** @type {import('@librechat/api').LCManifestTool[]} */
+    /** @type {import('@brainiac/api').LCManifestTool[]} */
     let pluginManifest = availableTools;
 
     /** @type {TPlugin[]} Deduplicate and authenticate plugins */

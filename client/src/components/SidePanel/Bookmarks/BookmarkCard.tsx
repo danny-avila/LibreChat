@@ -1,8 +1,8 @@
 import React, { useRef } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
 import { GripVertical } from 'lucide-react';
-import type { TConversationTag } from 'librechat-data-provider';
-import { TooltipAnchor, useToastContext } from '@librechat/client';
+import type { TConversationTag } from 'brainiac-data-provider';
+import { TooltipAnchor, useToastContext } from '@brainiac/client';
 import { useConversationTagMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import BookmarkCardActions from './BookmarkCardActions';

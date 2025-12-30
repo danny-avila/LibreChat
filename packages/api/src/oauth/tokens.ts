@@ -1,7 +1,7 @@
 import axios from 'axios';
-import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
-import { TokenExchangeMethodEnum } from 'librechat-data-provider';
-import type { TokenMethods } from '@librechat/data-schemas';
+import { logger, encryptV2, decryptV2 } from '@brainiac/data-schemas';
+import { TokenExchangeMethodEnum } from 'brainiac-data-provider';
+import type { TokenMethods } from '@brainiac/data-schemas';
 import type { AxiosError } from 'axios';
 import { logAxiosError } from '~/utils';
 

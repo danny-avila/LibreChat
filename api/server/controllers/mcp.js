@@ -1,17 +1,17 @@
 /**
  * MCP Tools Controller
- * Handles MCP-specific tool endpoints, decoupled from regular LibreChat tools
+ * Handles MCP-specific tool endpoints, decoupled from regular Brainiac tools
  *
- * @import { MCPServerRegistry } from '@librechat/api'
- * @import { MCPServerDocument } from 'librechat-data-provider'
+ * @import { MCPServerRegistry } from '@brainiac/api'
+ * @import { MCPServerDocument } from 'brainiac-data-provider'
  */
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@brainiac/data-schemas');
 const {
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
   MCPErrorCodes,
-} = require('@librechat/api');
-const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
+} = require('@brainiac/api');
+const { Constants, MCPServerUserInputSchema } = require('brainiac-data-provider');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
 

@@ -1,11 +1,11 @@
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@brainiac/data-schemas';
 import { ConnectionsRepository } from '../ConnectionsRepository';
 import { MCPConnectionFactory } from '../MCPConnectionFactory';
 import { MCPConnection } from '../connection';
 import type * as t from '../types';
 
 // Mock external dependencies
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@brainiac/data-schemas', () => ({
   logger: {
     error: jest.fn(),
     info: jest.fn(),

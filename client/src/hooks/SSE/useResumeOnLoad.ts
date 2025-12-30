@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-import { Constants, tMessageSchema } from 'librechat-data-provider';
-import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
+import { Constants, tMessageSchema } from 'brainiac-data-provider';
+import type { TMessage, TConversation, TSubmission, Agents } from 'brainiac-data-provider';
 import { useStreamStatus } from '~/data-provider';
 import store from '~/store';
 

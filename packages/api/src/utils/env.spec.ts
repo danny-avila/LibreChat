@@ -1,7 +1,7 @@
-import { TokenExchangeMethodEnum } from 'librechat-data-provider';
+import { TokenExchangeMethodEnum } from 'brainiac-data-provider';
 import { resolveHeaders, resolveNestedObject, processMCPEnv } from './env';
-import type { MCPOptions } from 'librechat-data-provider';
-import type { IUser } from '@librechat/data-schemas';
+import type { MCPOptions } from 'brainiac-data-provider';
+import type { IUser } from '@brainiac/data-schemas';
 import { Types } from 'mongoose';
 
 function isStdioOptions(options: MCPOptions): options is Extract<MCPOptions, { type?: 'stdio' }> {

@@ -6,7 +6,7 @@ import AgentGrid from '../AgentGrid';
 import AgentCard from '../AgentCard';
 import SearchBar from '../SearchBar';
 import ErrorDisplay from '../ErrorDisplay';
-import * as t from 'librechat-data-provider';
+import * as t from 'brainiac-data-provider';
 
 // Mock matchMedia
 Object.defineProperty(window, 'matchMedia', {
@@ -112,9 +112,9 @@ jest.mock('~/Providers', () => ({
   })),
 }));
 
-// Mock @librechat/client toast context
-jest.mock('@librechat/client', () => ({
-  ...jest.requireActual('@librechat/client'),
+// Mock @brainiac/client toast context
+jest.mock('@brainiac/client', () => ({
+  ...jest.requireActual('@brainiac/client'),
   useToastContext: jest.fn(() => ({
     showToast: jest.fn(),
   })),

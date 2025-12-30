@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { CacheKeys } = require('librechat-data-provider');
+const { logger } = require('@brainiac/data-schemas');
+const { CacheKeys } = require('brainiac-data-provider');
 const { createOAuthReconnectionManager, getFlowStateManager } = require('~/config');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
 const { getLogStores } = require('~/cache');

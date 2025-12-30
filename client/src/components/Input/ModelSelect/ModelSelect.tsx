@@ -1,5 +1,5 @@
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import type { TConversation } from 'librechat-data-provider';
+import { useGetModelsQuery } from 'brainiac-data-provider/react-query';
+import type { TConversation } from 'brainiac-data-provider';
 import type { TSetOption } from '~/common';
 import { multiChatOptions } from './options';
 

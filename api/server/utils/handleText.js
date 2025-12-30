@@ -7,8 +7,8 @@ const {
   defaultRetrievalModels,
   defaultAssistantsVersion,
   defaultAgentCapabilities,
-} = require('librechat-data-provider');
-const { sendEvent, isUserProvided } = require('@librechat/api');
+} = require('brainiac-data-provider');
+const { sendEvent, isUserProvided } = require('@brainiac/api');
 
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
 

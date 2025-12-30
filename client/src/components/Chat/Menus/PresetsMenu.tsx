@@ -9,7 +9,7 @@ import {
   OGDialogTitle,
   OGDialogHeader,
   OGDialogContent,
-} from '@librechat/client';
+} from '@brainiac/client';
 import type { FC } from 'react';
 import { EditPresetDialog, PresetItems } from './Presets';
 import { useLocalize, usePresets } from '~/hooks';

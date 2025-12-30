@@ -1,11 +1,11 @@
-const { logger, webSearchKeys } = require('@librechat/data-schemas');
-const { Tools, CacheKeys, Constants, FileSources } = require('librechat-data-provider');
+const { logger, webSearchKeys } = require('@brainiac/data-schemas');
+const { Tools, CacheKeys, Constants, FileSources } = require('brainiac-data-provider');
 const {
   MCPOAuthHandler,
   MCPTokenStorage,
   normalizeHttpError,
   extractWebSearchEnvVars,
-} = require('@librechat/api');
+} = require('@brainiac/api');
 const {
   deleteAllUserSessions,
   deleteAllSharedLinks,

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ShieldEllipsis } from 'lucide-react';
-import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import { OGDialog, OGDialogTemplate, Button, useToastContext } from '@librechat/client';
+import { Permissions, PermissionTypes } from 'brainiac-data-provider';
+import { OGDialog, OGDialogTemplate, Button, useToastContext } from '@brainiac/client';
 import { AdminSettingsDialog } from '~/components/ui';
 import { useUpdatePromptPermissionsMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';

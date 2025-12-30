@@ -1,5 +1,5 @@
-const { handleError } = require('@librechat/api');
-const { ViolationTypes } = require('librechat-data-provider');
+const { handleError } = require('@brainiac/api');
+const { ViolationTypes } = require('brainiac-data-provider');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logViolation } = require('~/cache');
 /**

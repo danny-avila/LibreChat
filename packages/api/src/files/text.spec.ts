@@ -1,7 +1,7 @@
-import { FileSources } from 'librechat-data-provider';
+import { FileSources } from 'brainiac-data-provider';
 import { Readable } from 'stream';
 
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@brainiac/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
     warn: jest.fn(),

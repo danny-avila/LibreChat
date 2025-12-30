@@ -1,5 +1,5 @@
-import type { ClientOptions, OpenAIClientOptions } from '@librechat/agents';
-import type { TConfig } from 'librechat-data-provider';
+import type { ClientOptions, OpenAIClientOptions } from '@brainiac/agents';
+import type { TConfig } from 'brainiac-data-provider';
 import type { EndpointTokenConfig, ServerRequest } from '~/types';
 
 export type TCustomEndpointsConfig = Partial<{ [key: string]: Omit<TConfig, 'order'> }>;

@@ -1,7 +1,7 @@
 const crypto = require('crypto');
-const { logger } = require('@librechat/data-schemas');
-const { parseConvo } = require('librechat-data-provider');
-const { sendEvent, handleError, sanitizeMessageForTransmit } = require('@librechat/api');
+const { logger } = require('@brainiac/data-schemas');
+const { parseConvo } = require('brainiac-data-provider');
+const { sendEvent, handleError, sanitizeMessageForTransmit } = require('@brainiac/api');
 const { saveMessage, getMessages } = require('~/models/Message');
 const { getConvo } = require('~/models/Conversation');
 

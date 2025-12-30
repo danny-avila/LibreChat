@@ -1,8 +1,8 @@
 import { getTransactionsConfig, getBalanceConfig } from './config';
-import { logger } from '@librechat/data-schemas';
-import { FileSources } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
-import type { AppConfig } from '@librechat/data-schemas';
+import { logger } from '@brainiac/data-schemas';
+import { FileSources } from 'brainiac-data-provider';
+import type { TCustomConfig } from 'brainiac-data-provider';
+import type { AppConfig } from '@brainiac/data-schemas';
 
 // Helper function to create a minimal AppConfig for testing
 const createTestAppConfig = (overrides: Partial<AppConfig> = {}): AppConfig => {
@@ -32,7 +32,7 @@ const createTestAppConfig = (overrides: Partial<AppConfig> = {}): AppConfig => {
   };
 };
 
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@brainiac/data-schemas', () => ({
   logger: {
     warn: jest.fn(),
   },

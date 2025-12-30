@@ -4,10 +4,10 @@ const OpenAI = require('openai');
 const FormData = require('form-data');
 const { ProxyAgent } = require('undici');
 const { tool } = require('@langchain/core/tools');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@brainiac/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
-const { logAxiosError, oaiToolkit, extractBaseURL } = require('@librechat/api');
+const { ContentTypes, EImageOutputType } = require('brainiac-data-provider');
+const { logAxiosError, oaiToolkit, extractBaseURL } = require('@brainiac/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFiles } = require('~/models');
 

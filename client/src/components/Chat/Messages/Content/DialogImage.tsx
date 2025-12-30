@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Button, OGDialog, OGDialogContent, TooltipAnchor } from '@librechat/client';
+import { Button, OGDialog, OGDialogContent, TooltipAnchor } from '@brainiac/client';
 import { X, ArrowDownToLine, PanelLeftOpen, PanelLeftClose, RotateCcw } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 

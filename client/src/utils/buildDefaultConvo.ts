@@ -4,8 +4,8 @@ import {
   isAgentsEndpoint,
   isEphemeralAgentId,
   isAssistantsEndpoint,
-} from 'librechat-data-provider';
-import type { TConversation, EndpointSchemaKey } from 'librechat-data-provider';
+} from 'brainiac-data-provider';
+import type { TConversation, EndpointSchemaKey } from 'brainiac-data-provider';
 import { clearModelForNonEphemeralAgent } from './endpoints';
 import { getLocalStorageItems } from './localStorage';
 

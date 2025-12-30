@@ -7,7 +7,7 @@ import {
   OGDialogTrigger,
   Spinner,
   useOnClickOutside,
-} from '@librechat/client';
+} from '@brainiac/client';
 import { useLocalize } from '~/hooks';
 
 export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {

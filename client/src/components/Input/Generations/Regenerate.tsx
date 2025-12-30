@@ -1,4 +1,4 @@
-import { RegenerateIcon } from '@librechat/client';
+import { RegenerateIcon } from '@brainiac/client';
 import type { TGenButtonProps } from '~/common';
 import { useLocalize } from '~/hooks';
 import Button from './Button';

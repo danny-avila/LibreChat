@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { Spinner, TooltipAnchor } from '@librechat/client';
+import { Spinner, TooltipAnchor } from '@brainiac/client';
 import { CheckCircle2, MousePointerClick, SettingsIcon } from 'lucide-react';
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
-import type { TModelSpec } from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'brainiac-data-provider';
+import type { TModelSpec } from 'brainiac-data-provider';
 import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useModelSelectorContext } from '../ModelSelectorContext';

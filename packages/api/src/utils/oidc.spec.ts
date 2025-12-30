@@ -1,5 +1,5 @@
 import { extractOpenIDTokenInfo, isOpenIDTokenValid, processOpenIDPlaceholders } from './oidc';
-import type { TUser } from 'librechat-data-provider';
+import type { TUser } from 'brainiac-data-provider';
 
 describe('OpenID Token Utilities', () => {
   describe('extractOpenIDTokenInfo', () => {
@@ -339,10 +339,10 @@ describe('OpenID Token Utilities', () => {
       };
 
       // Wrong case should NOT be replaced
-      const input = 'Token: {{librechat_openid_token}}';
+      const input = 'Token: {{brainiac_openid_token}}';
       const result = processOpenIDPlaceholders(input, tokenInfo);
 
-      expect(result).toBe('Token: {{librechat_openid_token}}');
+      expect(result).toBe('Token: {{brainiac_openid_token}}');
     });
 
     it('should handle multiple occurrences of the same placeholder', () => {

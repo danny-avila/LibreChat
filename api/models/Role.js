@@ -4,8 +4,8 @@ const {
   roleDefaults,
   permissionsSchema,
   removeNullishValues,
-} = require('librechat-data-provider');
-const { logger } = require('@librechat/data-schemas');
+} = require('brainiac-data-provider');
+const { logger } = require('@brainiac/data-schemas');
 const getLogStores = require('~/cache/getLogStores');
 const { Role } = require('~/db/models');
 

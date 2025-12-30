@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { SystemRoles } = require('librechat-data-provider');
+const { logger } = require('@brainiac/data-schemas');
+const { SystemRoles } = require('brainiac-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const { getUserById, updateUser } = require('~/models');
 

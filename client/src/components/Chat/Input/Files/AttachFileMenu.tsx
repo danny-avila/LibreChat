@@ -14,15 +14,15 @@ import {
   EModelEndpoint,
   defaultAgentCapabilities,
   isDocumentSupportedProvider,
-} from 'librechat-data-provider';
+} from 'brainiac-data-provider';
 import {
   FileUpload,
   TooltipAnchor,
   DropdownPopup,
   AttachmentIcon,
   SharePointIcon,
-} from '@librechat/client';
-import type { EndpointFileConfig } from 'librechat-data-provider';
+} from '@brainiac/client';
+import type { EndpointFileConfig } from 'brainiac-data-provider';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,

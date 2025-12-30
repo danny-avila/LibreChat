@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { QueryKeys, request, dataService } from 'librechat-data-provider';
+import { QueryKeys, request, dataService } from 'brainiac-data-provider';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
-import type { Agents, TConversation } from 'librechat-data-provider';
+import type { Agents, TConversation } from 'brainiac-data-provider';
 import { updateConvoInAllQueries } from '~/utils';
 
 export interface StreamStatusResponse {

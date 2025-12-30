@@ -1,6 +1,6 @@
-const { sendEvent } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
-const { CacheKeys, RunStatus, isUUID } = require('librechat-data-provider');
+const { sendEvent } = require('@brainiac/api');
+const { logger } = require('@brainiac/data-schemas');
+const { CacheKeys, RunStatus, isUUID } = require('brainiac-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { checkMessageGaps, recordUsage } = require('~/server/services/Threads');
 const { deleteMessages } = require('~/models/Message');

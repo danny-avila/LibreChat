@@ -1,5 +1,5 @@
 const { Keyv } = require('keyv');
-const { Time, CacheKeys, ViolationTypes } = require('librechat-data-provider');
+const { Time, CacheKeys, ViolationTypes } = require('brainiac-data-provider');
 const {
   logFile,
   keyvMongo,
@@ -7,7 +7,7 @@ const {
   sessionCache,
   standardCache,
   violationCache,
-} = require('@librechat/api');
+} = require('@brainiac/api');
 
 const namespaces = {
   [ViolationTypes.GENERAL]: new Keyv({ store: logFile, namespace: 'violations' }),

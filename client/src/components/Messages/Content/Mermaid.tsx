@@ -19,7 +19,7 @@ import {
   OGDialogClose,
   OGDialogTitle,
   OGDialogContent,
-} from '@librechat/client';
+} from '@brainiac/client';
 import { useLocalize, useDebouncedMermaid } from '~/hooks';
 import cn from '~/utils/cn';
 

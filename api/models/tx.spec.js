@@ -1,5 +1,5 @@
-const { maxTokensMap } = require('@librechat/api');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { maxTokensMap } = require('@brainiac/api');
+const { EModelEndpoint } = require('brainiac-data-provider');
 const {
   defaultRate,
   tokenValues,

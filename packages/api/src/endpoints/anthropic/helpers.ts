@@ -1,6 +1,6 @@
-import { logger } from '@librechat/data-schemas';
-import { AnthropicClientOptions } from '@librechat/agents';
-import { EModelEndpoint, anthropicSettings } from 'librechat-data-provider';
+import { logger } from '@brainiac/data-schemas';
+import { AnthropicClientOptions } from '@brainiac/agents';
+import { EModelEndpoint, anthropicSettings } from 'brainiac-data-provider';
 import { matchModelName } from '~/utils/tokens';
 
 /**

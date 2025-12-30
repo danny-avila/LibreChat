@@ -9,13 +9,13 @@ import {
   tQueryParamsSchema,
   isAssistantsEndpoint,
   PermissionBits,
-} from 'librechat-data-provider';
+} from 'brainiac-data-provider';
 import type {
   AgentListResponse,
   TEndpointsConfig,
   TStartupConfig,
   TPreset,
-} from 'librechat-data-provider';
+} from 'brainiac-data-provider';
 import type { ZodAny } from 'zod';
 import {
   clearModelForNonEphemeralAgent,

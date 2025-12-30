@@ -11,7 +11,7 @@ import {
   ArrowDown,
   ExternalLink,
 } from 'lucide-react';
-import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
+import type { SharedLinkItem, SharedLinksListParams } from 'brainiac-data-provider';
 import type { TranslationKeys } from '~/hooks';
 import {
   OGDialog,
@@ -27,7 +27,7 @@ import {
   Spinner,
   Button,
   Label,
-} from '@librechat/client';
+} from '@brainiac/client';
 import { useDeleteSharedLinkMutation, useSharedLinksQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';

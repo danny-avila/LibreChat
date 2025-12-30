@@ -1,4 +1,4 @@
-import { TooltipAnchor } from '@librechat/client';
+import { TooltipAnchor } from '@brainiac/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

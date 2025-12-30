@@ -1,6 +1,6 @@
 const uap = require('ua-parser-js');
-const { ViolationTypes } = require('librechat-data-provider');
-const { handleError } = require('@librechat/api');
+const { ViolationTypes } = require('brainiac-data-provider');
+const { handleError } = require('@brainiac/api');
 const { logViolation } = require('../../cache');
 
 /**

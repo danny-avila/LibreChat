@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { SystemRoles } from 'librechat-data-provider';
+import { SystemRoles } from 'brainiac-data-provider';
 import { IUser } from '~/types';
 
 // Session sub-schema

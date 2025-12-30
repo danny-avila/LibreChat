@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { AgentCapabilities } from 'librechat-data-provider';
+import { AgentCapabilities } from 'brainiac-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import {
   Checkbox,
@@ -8,7 +8,7 @@ import {
   HoverCardPortal,
   HoverCardTrigger,
   CircleHelpIcon,
-} from '@librechat/client';
+} from '@brainiac/client';
 import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';

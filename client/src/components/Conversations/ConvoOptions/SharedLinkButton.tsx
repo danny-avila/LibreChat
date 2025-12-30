@@ -12,8 +12,8 @@ import {
   OGDialogHeader,
   useToastContext,
   OGDialogContent,
-} from '@librechat/client';
-import type { TSharedLinkGetResponse } from 'librechat-data-provider';
+} from '@brainiac/client';
+import type { TSharedLinkGetResponse } from 'brainiac-data-provider';
 import {
   useCreateSharedLinkMutation,
   useUpdateSharedLinkMutation,

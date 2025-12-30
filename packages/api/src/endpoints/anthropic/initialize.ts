@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'brainiac-data-provider';
 import type { BaseInitializeParams, InitializeResultBase, AnthropicConfigOptions } from '~/types';
 import { checkUserKeyExpiry } from '~/utils';
 import { getLLMConfig } from './llm';

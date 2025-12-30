@@ -1,4 +1,4 @@
-import type * as t from 'librechat-data-provider';
+import type * as t from 'brainiac-data-provider';
 import type { TPluginMap } from '~/common';
 
 /** Maps Attachments by `toolCallId` for quick lookup */

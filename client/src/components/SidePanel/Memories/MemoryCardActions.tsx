@@ -10,8 +10,8 @@ import {
   OGDialogTrigger,
   OGDialogTemplate,
   useToastContext,
-} from '@librechat/client';
-import type { TUserMemory } from 'librechat-data-provider';
+} from '@brainiac/client';
+import type { TUserMemory } from 'brainiac-data-provider';
 import { useDeleteMemoryMutation } from '~/data-provider';
 import MemoryEditDialog from './MemoryEditDialog';
 import { useLocalize } from '~/hooks';

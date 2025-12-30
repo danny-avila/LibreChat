@@ -1,8 +1,8 @@
 import React from 'react';
-import { Button, useMediaQuery } from '@librechat/client';
+import { Button, useMediaQuery } from '@brainiac/client';
 import { Users, X, ExternalLink } from 'lucide-react';
-import { ResourceType } from 'librechat-data-provider';
-import type { TPrincipal, AccessRoleIds } from 'librechat-data-provider';
+import { ResourceType } from 'brainiac-data-provider';
+import type { TPrincipal, AccessRoleIds } from 'brainiac-data-provider';
 import AccessRolesPicker from '~/components/Sharing/AccessRolesPicker';
 import PrincipalAvatar from '~/components/Sharing/PrincipalAvatar';
 import { useLocalize } from '~/hooks';

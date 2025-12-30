@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { getSettingsKeys } from 'librechat-data-provider';
-import type { SettingDefinition } from 'librechat-data-provider';
+import { getSettingsKeys } from 'brainiac-data-provider';
+import type { SettingDefinition } from 'brainiac-data-provider';
 import type { TModelSelectProps } from '~/common';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
-import { presetSettings } from 'librechat-data-provider';
+import { presetSettings } from 'brainiac-data-provider';
 
 export default function AnthropicSettings({
   conversation,

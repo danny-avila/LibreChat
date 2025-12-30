@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Input } from '@librechat/client';
+import { Input } from '@brainiac/client';
 import { useLocalize } from '~/hooks';
 import { Info } from 'lucide-react';
 

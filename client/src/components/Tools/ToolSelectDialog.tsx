@@ -1,16 +1,16 @@
 import { useEffect } from 'react';
 import { Search, X } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
-import { isAgentsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint } from 'brainiac-data-provider';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { useUpdateUserPluginsMutation } from 'brainiac-data-provider/react-query';
 import type {
   AssistantsEndpoint,
   EModelEndpoint,
   TPluginAction,
   TPlugin,
   TError,
-} from 'librechat-data-provider';
+} from 'brainiac-data-provider';
 import type { AgentForm, ToolDialogProps } from '~/common';
 import { PluginPagination, PluginAuthForm } from '~/components/Plugins/Store';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';

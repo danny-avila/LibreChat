@@ -1,4 +1,4 @@
-const { removeNullishValues } = require('librechat-data-provider');
+const { removeNullishValues } = require('brainiac-data-provider');
 const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
 const { getAssistant } = require('~/models/Assistant');
 

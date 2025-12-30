@@ -1,17 +1,17 @@
-const { Providers } = require('@librechat/agents');
-const { Constants, EModelEndpoint } = require('librechat-data-provider');
+const { Providers } = require('@brainiac/agents');
+const { Constants, EModelEndpoint } = require('brainiac-data-provider');
 const AgentClient = require('./client');
 
-jest.mock('@librechat/agents', () => ({
-  ...jest.requireActual('@librechat/agents'),
+jest.mock('@brainiac/agents', () => ({
+  ...jest.requireActual('@brainiac/agents'),
   createMetadataAggregator: () => ({
     handleLLMEnd: jest.fn(),
     collected: [],
   }),
 }));
 
-jest.mock('@librechat/api', () => ({
-  ...jest.requireActual('@librechat/api'),
+jest.mock('@brainiac/api', () => ({
+  ...jest.requireActual('@brainiac/api'),
 }));
 
 // Mock getMCPManager
@@ -1513,7 +1513,7 @@ describe('AgentClient - titleConvo', () => {
 
     it('should handle mixed content types correctly', async () => {
       const { HumanMessage } = require('@langchain/core/messages');
-      const { ContentTypes } = require('librechat-data-provider');
+      const { ContentTypes } = require('brainiac-data-provider');
 
       const messages = [
         new HumanMessage({

@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@brainiac/data-schemas');
 const {
   countTokens,
   getBalanceConfig,
@@ -8,7 +8,7 @@ const {
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   encodeAndFormatDocuments,
-} = require('@librechat/api');
+} = require('@brainiac/api');
 const {
   Constants,
   ErrorTypes,
@@ -20,7 +20,7 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
   supportsBalanceCheck,
-} = require('librechat-data-provider');
+} = require('brainiac-data-provider');
 const {
   updateMessage,
   getMessages,
@@ -76,7 +76,7 @@ class BaseClient {
     this.fetchedConvo;
     /** @type {TMessage[]} */
     this.currentMessages = [];
-    /** @type {import('librechat-data-provider').VisionModes | undefined} */
+    /** @type {import('brainiac-data-provider').VisionModes | undefined} */
     this.visionMode;
   }
 

@@ -1,11 +1,11 @@
-const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { logger } = require('@brainiac/data-schemas');
+const { EModelEndpoint } = require('brainiac-data-provider');
 const {
   getAnthropicModels,
   getBedrockModels,
   getOpenAIModels,
   getGoogleModels,
-} = require('@librechat/api');
+} = require('@brainiac/api');
 
 /**
  * Loads the default models for the application.

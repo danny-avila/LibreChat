@@ -1,5 +1,5 @@
-import { Providers } from '@librechat/agents';
-import { mbToBytes } from 'librechat-data-provider';
+import { Providers } from '@brainiac/agents';
+import { mbToBytes } from 'brainiac-data-provider';
 import { validatePdf, validateVideo, validateAudio } from './validation';
 
 describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
@@ -288,7 +288,7 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
   describe('Bug reproduction - Original issue', () => {
     it('should reproduce the original bug scenario from issue description', async () => {
       /**
-       * Original bug: User configures openAI.fileSizeLimit = 50MB in librechat.yaml
+       * Original bug: User configures openAI.fileSizeLimit = 50MB in brainiac.yaml
        * Uploads a 15MB PDF to OpenAI endpoint
        * Expected: Should be accepted (within 50MB config)
        * Actual (before fix): Rejected with "exceeds 10MB limit"

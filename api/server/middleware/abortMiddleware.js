@@ -1,12 +1,12 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@brainiac/data-schemas');
 const {
   countTokens,
   isEnabled,
   sendEvent,
   GenerationJobManager,
   sanitizeMessageForTransmit,
-} = require('@librechat/api');
-const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
+} = require('@brainiac/api');
+const { isAssistantsEndpoint, ErrorTypes } = require('brainiac-data-provider');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const { sendError } = require('~/server/middleware/error');

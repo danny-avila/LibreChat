@@ -1,5 +1,5 @@
 {
-  "name": "LibreChat",
+  "name": "Brainiac",
   "version": "v0.8.2-rc1",
   "description": "",
   "workspaces": [
@@ -93,14 +93,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danny-avila/LibreChat.git"
+    "url": "git+https://github.com/danny-avila/Brainiac.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/danny-avila/LibreChat/issues"
+    "url": "https://github.com/danny-avila/Brainiac/issues"
   },
-  "homepage": "https://librechat.ai/",
+  "homepage": "https://brainiac.ai/",
   "devDependencies": {
     "@axe-core/playwright": "^4.10.1",
     "@eslint/compat": "^1.2.6",

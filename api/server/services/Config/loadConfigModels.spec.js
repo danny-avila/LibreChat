@@ -1,9 +1,9 @@
-const { fetchModels } = require('@librechat/api');
+const { fetchModels } = require('@brainiac/api');
 const loadConfigModels = require('./loadConfigModels');
 const { getAppConfig } = require('./app');
 
-jest.mock('@librechat/api', () => ({
-  ...jest.requireActual('@librechat/api'),
+jest.mock('@brainiac/api', () => ({
+  ...jest.requireActual('@brainiac/api'),
   fetchModels: jest.fn(),
 }));
 jest.mock('./app');

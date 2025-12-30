@@ -1,5 +1,5 @@
-import { EModelEndpoint } from 'librechat-data-provider';
-import type { TCustomConfig, TAgentsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'brainiac-data-provider';
+import type { TCustomConfig, TAgentsEndpoint } from 'brainiac-data-provider';
 import type { AppConfig } from '~/types';
 import { azureAssistantsDefaults, assistantsConfigSetup } from './assistants';
 import { agentsConfigSetup } from './agents';

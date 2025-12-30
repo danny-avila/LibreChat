@@ -1,4 +1,4 @@
-import { AgentListResponse } from 'librechat-data-provider';
+import { AgentListResponse } from 'brainiac-data-provider';
 import React, { useState, useEffect } from 'react';
 
 interface SmartLoaderProps {

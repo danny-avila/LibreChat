@@ -8,14 +8,14 @@ import {
   Button,
   TrashIcon,
   Spinner,
-} from '@librechat/client';
+} from '@brainiac/client';
 import {
   SystemRoles,
   Permissions,
   ResourceType,
   PermissionBits,
   PermissionTypes,
-} from 'librechat-data-provider';
+} from 'brainiac-data-provider';
 import { GenericGrantAccessDialog } from '~/components/Sharing';
 import { useAuthContext, useHasAccess, useResourcePermissions, MCPServerDefinition } from '~/hooks';
 import { useLocalize } from '~/hooks';

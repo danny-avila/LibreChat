@@ -66,7 +66,7 @@ export default [
       ...Object.keys(pkg.peerDependencies || {}),
       'react',
       'react-dom',
-      // 'librechat-data-provider', // Marking main part as external
+      // 'brainiac-data-provider', // Marking main part as external
     ],
     preserveSymlinks: true,
     plugins,

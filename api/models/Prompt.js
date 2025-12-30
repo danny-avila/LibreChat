@@ -1,12 +1,12 @@
 const { ObjectId } = require('mongodb');
-const { escapeRegExp } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { escapeRegExp } = require('@brainiac/api');
+const { logger } = require('@brainiac/data-schemas');
 const {
   Constants,
   SystemRoles,
   ResourceType,
   SystemCategories,
-} = require('librechat-data-provider');
+} = require('brainiac-data-provider');
 const {
   removeGroupFromAllProjects,
   removeGroupIdsFromProject,

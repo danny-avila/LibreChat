@@ -8,8 +8,8 @@ import {
   Label,
   Checkbox,
   Dropdown,
-} from '@librechat/client';
-import type { TConversation } from 'librechat-data-provider';
+} from '@brainiac/client';
+import type { TConversation } from 'brainiac-data-provider';
 import { useLocalize, useExportConversation } from '~/hooks';
 
 const TYPE_OPTIONS = [

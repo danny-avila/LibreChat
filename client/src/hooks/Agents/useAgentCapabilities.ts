@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { AgentCapabilities } from 'librechat-data-provider';
+import { AgentCapabilities } from 'brainiac-data-provider';
 
 interface AgentCapabilitiesResult {
   toolsEnabled: boolean;

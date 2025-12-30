@@ -1,6 +1,6 @@
 import { Check, PlugZap } from 'lucide-react';
-import { Spinner } from '@librechat/client';
-import type { MCPServerStatus } from 'librechat-data-provider';
+import { Spinner } from '@brainiac/client';
+import type { MCPServerStatus } from 'brainiac-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

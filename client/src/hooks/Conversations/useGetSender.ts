@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
-import { getResponseSender } from 'librechat-data-provider';
-import type { TEndpointOption, TEndpointsConfig } from 'librechat-data-provider';
+import { getResponseSender } from 'brainiac-data-provider';
+import type { TEndpointOption, TEndpointsConfig } from 'brainiac-data-provider';
 import { useGetEndpointsQuery } from '~/data-provider';
 
 export default function useGetSender() {

@@ -1,6 +1,6 @@
 import type { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
 import type { AwsCredentialIdentity } from '@aws-sdk/types';
-import type { BedrockConverseInput } from 'librechat-data-provider';
+import type { BedrockConverseInput } from 'brainiac-data-provider';
 
 /**
  * AWS credentials for Bedrock

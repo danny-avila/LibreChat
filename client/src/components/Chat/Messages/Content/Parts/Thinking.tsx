@@ -1,6 +1,6 @@
 import { useState, useMemo, memo, useCallback, useRef } from 'react';
 import { useAtomValue } from 'jotai';
-import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
+import { Clipboard, CheckMark, TooltipAnchor } from '@brainiac/client';
 import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
 import type { MouseEvent, FocusEvent, FC } from 'react';
 import { showThinkingAtom } from '~/store/showThinking';

@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { openAISchema } from 'librechat-data-provider';
-import type { TConfig } from 'librechat-data-provider';
-import type { OpenAIClientOptions, Providers } from '@librechat/agents';
+import { openAISchema } from 'brainiac-data-provider';
+import type { TConfig } from 'brainiac-data-provider';
+import type { OpenAIClientOptions, Providers } from '@brainiac/agents';
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { AzureOptions } from './azure';
 

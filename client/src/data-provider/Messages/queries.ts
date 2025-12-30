@@ -1,8 +1,8 @@
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
-import { QueryKeys, dataService } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
+import { QueryKeys, dataService } from 'brainiac-data-provider';
+import type * as t from 'brainiac-data-provider';
 import { logger } from '~/utils';
 
 export const useGetMessagesByConvoId = <TData = t.TMessage[]>(

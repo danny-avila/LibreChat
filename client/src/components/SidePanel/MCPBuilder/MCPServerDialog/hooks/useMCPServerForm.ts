@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useCallback, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import type { MCPServerCreateParams } from 'librechat-data-provider';
+import type { MCPServerCreateParams } from 'brainiac-data-provider';
 import {
   useCreateMCPServerMutation,
   useUpdateMCPServerMutation,
   useDeleteMCPServerMutation,
 } from '~/data-provider/MCP';
-import { useToastContext } from '@librechat/client';
+import { useToastContext } from '@brainiac/client';
 import { useLocalize } from '~/hooks';
 import { extractServerNameFromUrl, isValidUrl, normalizeUrl } from '../utils/urlUtils';
 import type { MCPServerDefinition } from '~/hooks';

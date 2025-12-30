@@ -7,5 +7,5 @@ export {
   decryptV3,
   hashBackupCode,
   getRandomValues,
-} from '@librechat/data-schemas';
+} from '@brainiac/data-schemas';
 export * from './jwt';

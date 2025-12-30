@@ -1,12 +1,12 @@
-const { sleep } = require('@librechat/agents');
-const { logger } = require('@librechat/data-schemas');
+const { sleep } = require('@brainiac/agents');
+const { logger } = require('@brainiac/data-schemas');
 const { tool: toolFn, DynamicStructuredTool } = require('@langchain/core/tools');
 const {
   getToolkitKey,
   hasCustomUserVars,
   getUserMCPAuthMap,
   isActionDomainAllowed,
-} = require('@librechat/api');
+} = require('@brainiac/api');
 const {
   Tools,
   ErrorTypes,
@@ -21,7 +21,7 @@ const {
   validateActionDomain,
   defaultAgentCapabilities,
   validateAndParseOpenAPISpec,
-} = require('librechat-data-provider');
+} = require('brainiac-data-provider');
 const {
   createActionTool,
   decryptMetadata,

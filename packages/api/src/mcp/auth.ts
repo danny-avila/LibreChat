@@ -1,7 +1,7 @@
-import { logger } from '@librechat/data-schemas';
-import { Constants } from 'librechat-data-provider';
-import type { PluginAuthMethods } from '@librechat/data-schemas';
-import type { GenericTool } from '@librechat/agents';
+import { logger } from '@brainiac/data-schemas';
+import { Constants } from 'brainiac-data-provider';
+import type { PluginAuthMethods } from '@brainiac/data-schemas';
+import type { GenericTool } from '@brainiac/agents';
 import { getPluginAuthMap } from '~/agents/auth';
 
 export async function getUserMCPAuthMap({

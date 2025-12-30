@@ -1,11 +1,11 @@
-const { logger } = require('@librechat/data-schemas');
-const { ErrorTypes } = require('librechat-data-provider');
+const { logger } = require('@brainiac/data-schemas');
+const { ErrorTypes } = require('brainiac-data-provider');
 const { createSocialUser, handleExistingUser } = require('./process');
 const socialLogin = require('./socialLogin');
 const { findUser } = require('~/models');
 
-jest.mock('@librechat/data-schemas', () => {
-  const actualModule = jest.requireActual('@librechat/data-schemas');
+jest.mock('@brainiac/data-schemas', () => {
+  const actualModule = jest.requireActual('@brainiac/data-schemas');
   return {
     ...actualModule,
     logger: {
@@ -21,8 +21,8 @@ jest.mock('./process', () => ({
   handleExistingUser: jest.fn(),
 }));
 
-jest.mock('@librechat/api', () => ({
-  ...jest.requireActual('@librechat/api'),
+jest.mock('@brainiac/api', () => ({
+  ...jest.requireActual('@brainiac/api'),
   isEnabled: jest.fn().mockReturnValue(true),
   isEmailDomainAllowed: jest.fn().mockReturnValue(true),
 }));

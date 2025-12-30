@@ -1,8 +1,8 @@
 import React from 'react';
-import { Tools } from 'librechat-data-provider';
+import { Tools } from 'brainiac-data-provider';
 import { UIResourceRenderer } from '@mcp-ui/client';
 import { render, screen } from '@testing-library/react';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment } from 'brainiac-data-provider';
 import UIResourceCarousel from '~/components/Chat/Messages/Content/UIResourceCarousel';
 import ToolCallInfo from '~/components/Chat/Messages/Content/ToolCallInfo';
 

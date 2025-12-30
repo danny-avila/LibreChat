@@ -1,6 +1,6 @@
 import React from 'react';
-import { ECallState } from 'librechat-data-provider';
-import { CircleIcon, CircleDotsIcon } from '@librechat/client';
+import { ECallState } from 'brainiac-data-provider';
+import { CircleIcon, CircleDotsIcon } from '@brainiac/client';
 
 const CircleRender = ({ rmsLevel, isCameraOn, state }) => {
   const getIconComponent = (state) => {

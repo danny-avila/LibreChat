@@ -3,9 +3,9 @@ import { useRecoilState } from 'recoil';
 import { useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
-import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
-import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
-import type t from 'librechat-data-provider';
+import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@brainiac/client';
+import { PermissionTypes, Permissions, QueryKeys } from 'brainiac-data-provider';
+import type t from 'brainiac-data-provider';
 import type { ContextType } from '~/common';
 import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/hooks';
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
@@ -57,7 +57,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Set page title
-  useDocumentTitle(`${localize('com_agents_marketplace')} | LibreChat`);
+  useDocumentTitle(`${localize('com_agents_marketplace')} | Brainiac`);
 
   // Ensure right sidebar is always visible in marketplace
   useEffect(() => {

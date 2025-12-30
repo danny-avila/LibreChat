@@ -1,5 +1,5 @@
 import { useRef, useEffect, memo } from 'react';
-import { ResizableHandleAlt, ResizablePanel } from '@librechat/client';
+import { ResizableHandleAlt, ResizablePanel } from '@brainiac/client';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 
 interface ArtifactsPanelProps {

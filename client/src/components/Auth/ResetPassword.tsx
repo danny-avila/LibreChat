@@ -1,9 +1,9 @@
 import { useForm } from 'react-hook-form';
-import { Spinner, Button } from '@librechat/client';
+import { Spinner, Button } from '@brainiac/client';
 import { useOutletContext } from 'react-router-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useResetPasswordMutation } from 'librechat-data-provider/react-query';
-import type { TResetPassword } from 'librechat-data-provider';
+import { useResetPasswordMutation } from 'brainiac-data-provider/react-query';
+import type { TResetPassword } from 'brainiac-data-provider';
 import type { TLoginLayoutContext } from '~/common';
 import { useLocalize } from '~/hooks';
 

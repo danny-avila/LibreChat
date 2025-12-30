@@ -2,12 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
-const { sanitizeFilename } = require('@librechat/api');
+const { sanitizeFilename } = require('@brainiac/api');
 const {
   mergeFileConfig,
   getEndpointFileConfig,
   fileConfig: defaultFileConfig,
-} = require('librechat-data-provider');
+} = require('brainiac-data-provider');
 const { getAppConfig } = require('~/server/services/Config');
 
 const storage = multer.diskStorage({
@@ -39,7 +39,7 @@ const importFileFilter = (req, file, cb) => {
 
 /**
  *
- * @param {import('librechat-data-provider').FileConfig | undefined} customFileConfig
+ * @param {import('brainiac-data-provider').FileConfig | undefined} customFileConfig
  */
 const createFileFilter = (customFileConfig) => {
   /**

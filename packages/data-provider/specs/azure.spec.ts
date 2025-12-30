@@ -487,9 +487,9 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
   it('should throw an error if environment variables are set but not configured', () => {
     const validConfigs: TAzureGroups = [
       {
-        group: 'librechat-westus',
+        group: 'brainiac-westus',
         apiKey: '${WESTUS_API_KEY}',
-        instanceName: 'librechat-westus',
+        instanceName: 'brainiac-westus',
         version: '2023-12-01-preview',
         models: {
           'gpt-4-vision-preview': {
@@ -511,9 +511,9 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
         },
       },
       {
-        group: 'librechat-eastus',
+        group: 'brainiac-eastus',
         apiKey: '${EASTUS_API_KEY}',
-        instanceName: 'librechat-eastus',
+        instanceName: 'brainiac-eastus',
         deploymentName: 'gpt-4-turbo',
         version: '2024-02-15-preview',
         models: {
@@ -536,9 +536,9 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
 
     const validConfigs: TAzureGroups = [
       {
-        group: 'librechat-westus',
+        group: 'brainiac-westus',
         apiKey: '${WESTUS_API_KEY}',
-        instanceName: 'librechat-westus',
+        instanceName: 'brainiac-westus',
         version: '2023-12-01-preview',
         models: {
           'gpt-4-vision-preview': {
@@ -560,9 +560,9 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
         },
       },
       {
-        group: 'librechat-eastus',
+        group: 'brainiac-eastus',
         apiKey: '${EASTUS_API_KEY}',
-        instanceName: 'librechat-eastus',
+        instanceName: 'brainiac-eastus',
         deploymentName: 'gpt-4-turbo',
         version: '2024-02-15-preview',
         models: {
@@ -612,12 +612,12 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
       expect(modelGroupMap[modelName]).toBeDefined();
     });
 
-    // Check groupMap for 'librechat-westus'
-    expect(groupMap).toHaveProperty('librechat-westus');
-    expect(groupMap['librechat-westus']).toEqual(
+    // Check groupMap for 'brainiac-westus'
+    expect(groupMap).toHaveProperty('brainiac-westus');
+    expect(groupMap['brainiac-westus']).toEqual(
       expect.objectContaining({
         apiKey: '${WESTUS_API_KEY}',
-        instanceName: 'librechat-westus',
+        instanceName: 'brainiac-westus',
         version: '2023-12-01-preview',
         models: expect.objectContaining({
           'gpt-4-vision-preview': expect.any(Object),
@@ -629,12 +629,12 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
       }),
     );
 
-    // Check groupMap for 'librechat-eastus'
-    expect(groupMap).toHaveProperty('librechat-eastus');
-    expect(groupMap['librechat-eastus']).toEqual(
+    // Check groupMap for 'brainiac-eastus'
+    expect(groupMap).toHaveProperty('brainiac-eastus');
+    expect(groupMap['brainiac-eastus']).toEqual(
       expect.objectContaining({
         apiKey: '${EASTUS_API_KEY}',
-        instanceName: 'librechat-eastus',
+        instanceName: 'brainiac-eastus',
         deploymentName: 'gpt-4-turbo',
         version: '2024-02-15-preview',
         models: expect.objectContaining({
@@ -678,7 +678,7 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
     });
     expect(azureOptions1).toEqual({
       azureOpenAIApiKey: 'westus-key',
-      azureOpenAIApiInstanceName: 'librechat-westus',
+      azureOpenAIApiInstanceName: 'brainiac-westus',
       azureOpenAIApiDeploymentName: 'gpt-4-vision-preview',
       azureOpenAIApiVersion: '2024-02-15-preview',
     });
@@ -694,7 +694,7 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
     });
     expect(azureOptions2).toEqual({
       azureOpenAIApiKey: 'eastus-key',
-      azureOpenAIApiInstanceName: 'librechat-eastus',
+      azureOpenAIApiInstanceName: 'brainiac-eastus',
       azureOpenAIApiDeploymentName: 'gpt-4-turbo',
       azureOpenAIApiVersion: '2024-02-15-preview',
     });
@@ -710,7 +710,7 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
     });
     expect(azureOptions3).toEqual({
       azureOpenAIApiKey: 'westus-key',
-      azureOpenAIApiInstanceName: 'librechat-westus',
+      azureOpenAIApiInstanceName: 'brainiac-westus',
       azureOpenAIApiDeploymentName: 'gpt-4',
       azureOpenAIApiVersion: '2023-12-01-preview',
     });
@@ -722,7 +722,7 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
     });
     expect(azureOptions4).toEqual({
       azureOpenAIApiKey: 'westus-key',
-      azureOpenAIApiInstanceName: 'librechat-westus',
+      azureOpenAIApiInstanceName: 'brainiac-westus',
       azureOpenAIApiDeploymentName: 'gpt-35-turbo',
       azureOpenAIApiVersion: '2023-12-01-preview',
     });
@@ -734,7 +734,7 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
     });
     expect(azureOptions5).toEqual({
       azureOpenAIApiKey: 'westus-key',
-      azureOpenAIApiInstanceName: 'librechat-westus',
+      azureOpenAIApiInstanceName: 'brainiac-westus',
       azureOpenAIApiDeploymentName: 'gpt-35-turbo-1106',
       azureOpenAIApiVersion: '2023-12-01-preview',
     });
@@ -746,7 +746,7 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
     });
     expect(azureOptions6).toEqual({
       azureOpenAIApiKey: 'westus-key',
-      azureOpenAIApiInstanceName: 'librechat-westus',
+      azureOpenAIApiInstanceName: 'brainiac-westus',
       azureOpenAIApiDeploymentName: 'gpt-4-1106-preview',
       azureOpenAIApiVersion: '2023-12-01-preview',
     });

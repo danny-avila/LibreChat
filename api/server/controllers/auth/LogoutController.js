@@ -1,6 +1,6 @@
 const cookies = require('cookie');
-const { isEnabled } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { isEnabled } = require('@brainiac/api');
+const { logger } = require('@brainiac/data-schemas');
 const { logoutUser } = require('~/server/services/AuthService');
 const { getOpenIdConfig } = require('~/strategies');
 

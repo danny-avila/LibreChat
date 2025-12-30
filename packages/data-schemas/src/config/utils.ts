@@ -4,7 +4,7 @@ import path from 'path';
  * Determine the log directory in a cross-compatible way.
  * Priority:
  * 1. LIBRECHAT_LOG_DIR environment variable
- * 2. If running within LibreChat monorepo (when cwd ends with /api), use api/logs
+ * 2. If running within Brainiac monorepo (when cwd ends with /api), use api/logs
  * 3. If api/logs exists relative to cwd, use that (for running from project root)
  * 4. Otherwise, use logs directory relative to process.cwd()
  *
@@ -26,9 +26,9 @@ export const getLogDirectory = (): string => {
   // We'll just use the path and let the file system create it if needed
   const apiLogsPath = path.join(cwd, 'api', 'logs');
 
-  // For LibreChat project structure, use api/logs
+  // For Brainiac project structure, use api/logs
   // For external consumers, they should set LIBRECHAT_LOG_DIR
-  if (cwd.includes('LibreChat')) {
+  if (cwd.includes('Brainiac')) {
     return apiLogsPath;
   }
 

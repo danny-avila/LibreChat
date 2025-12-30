@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { buildTree } = require('librechat-data-provider');
+const { buildTree } = require('brainiac-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { getMessages, bulkSaveMessages } = require('./Message');
 const { Message } = require('~/db/models');

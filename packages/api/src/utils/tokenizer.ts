@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@brainiac/data-schemas';
 import { encoding_for_model as encodingForModel, get_encoding as getEncoding } from 'tiktoken';
 import type { Tiktoken, TiktokenModel, TiktokenEncoding } from 'tiktoken';
 

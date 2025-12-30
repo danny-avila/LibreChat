@@ -1,11 +1,11 @@
-import { connectDb } from '@librechat/backend/db/connect';
+import { connectDb } from '@brainiac/backend/db/connect';
 import {
   findUser,
   deleteConvos,
   deleteMessages,
   deleteAllUserSessions,
-} from '@librechat/backend/models';
-import { User, Balance, Transaction, AclEntry, Token, Group } from '@librechat/backend/db/models';
+} from '@brainiac/backend/models';
+import { User, Balance, Transaction, AclEntry, Token, Group } from '@brainiac/backend/db/models';
 
 type TUser = { email: string; password: string };
 

@@ -1,6 +1,6 @@
 const axios = require('axios');
-const { logger } = require('@librechat/data-schemas');
-const { logAxiosError, validateImage } = require('@librechat/api');
+const { logger } = require('@brainiac/data-schemas');
+const { logAxiosError, validateImage } = require('@brainiac/api');
 const {
   FileSources,
   VisionModes,
@@ -9,7 +9,7 @@ const {
   EModelEndpoint,
   mergeFileConfig,
   getEndpointFileConfig,
-} = require('librechat-data-provider');
+} = require('brainiac-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 
 /**

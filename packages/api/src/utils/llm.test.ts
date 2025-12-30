@@ -1,8 +1,8 @@
-import { extractLibreChatParams } from './llm';
+import { extractBrainiacParams } from './llm';
 
-describe('extractLibreChatParams', () => {
+describe('extractBrainiacParams', () => {
   it('should return defaults when options is undefined', () => {
-    const result = extractLibreChatParams(undefined);
+    const result = extractBrainiacParams(undefined);
 
     expect(result.resendFiles).toBe(true);
     expect(result.promptPrefix).toBeUndefined();
@@ -13,7 +13,7 @@ describe('extractLibreChatParams', () => {
   });
 
   it('should return defaults when options is null', () => {
-    const result = extractLibreChatParams();
+    const result = extractBrainiacParams();
 
     expect(result.resendFiles).toBe(true);
     expect(result.promptPrefix).toBeUndefined();
@@ -23,7 +23,7 @@ describe('extractLibreChatParams', () => {
     expect(result.modelOptions).toEqual({});
   });
 
-  it('should extract all LibreChat params and leave model options', () => {
+  it('should extract all Brainiac params and leave model options', () => {
     const options = {
       resendFiles: false,
       promptPrefix: 'You are a helpful assistant',
@@ -35,7 +35,7 @@ describe('extractLibreChatParams', () => {
       max_tokens: 1000,
     };
 
-    const result = extractLibreChatParams(options);
+    const result = extractBrainiacParams(options);
 
     expect(result.resendFiles).toBe(false);
     expect(result.promptPrefix).toBe('You are a helpful assistant');
@@ -49,7 +49,7 @@ describe('extractLibreChatParams', () => {
     });
   });
 
-  it('should handle null values for LibreChat params', () => {
+  it('should handle null values for Brainiac params', () => {
     const options = {
       resendFiles: true,
       promptPrefix: null,
@@ -59,7 +59,7 @@ describe('extractLibreChatParams', () => {
       model: 'claude-3',
     };
 
-    const result = extractLibreChatParams(options);
+    const result = extractBrainiacParams(options);
 
     expect(result.resendFiles).toBe(true);
     expect(result.promptPrefix).toBeNull();
@@ -78,7 +78,7 @@ describe('extractLibreChatParams', () => {
       temperature: 0.5,
     };
 
-    const result = extractLibreChatParams(options);
+    const result = extractBrainiacParams(options);
 
     expect(result.resendFiles).toBe(true); // Should use default
     expect(result.promptPrefix).toBe('Test prefix');
@@ -92,7 +92,7 @@ describe('extractLibreChatParams', () => {
   });
 
   it('should handle empty options object', () => {
-    const result = extractLibreChatParams({});
+    const result = extractBrainiacParams({});
 
     expect(result.resendFiles).toBe(true); // Should use default
     expect(result.promptPrefix).toBeUndefined();
@@ -102,7 +102,7 @@ describe('extractLibreChatParams', () => {
     expect(result.modelOptions).toEqual({});
   });
 
-  it('should only extract known LibreChat params', () => {
+  it('should only extract known Brainiac params', () => {
     const options = {
       resendFiles: false,
       promptPrefix: 'Custom prompt',
@@ -120,9 +120,9 @@ describe('extractLibreChatParams', () => {
       customSetting: 123,
     };
 
-    const result = extractLibreChatParams(options);
+    const result = extractBrainiacParams(options);
 
-    // LibreChat params extracted
+    // Brainiac params extracted
     expect(result.resendFiles).toBe(false);
     expect(result.promptPrefix).toBe('Custom prompt');
     expect(result.maxContextTokens).toBe(8192);
@@ -150,13 +150,13 @@ describe('extractLibreChatParams', () => {
     };
     const originalOptions = { ...options };
 
-    extractLibreChatParams(options);
+    extractBrainiacParams(options);
 
     // Original object should remain unchanged
     expect(options).toEqual(originalOptions);
   });
 
-  it('should handle undefined values for optional LibreChat params', () => {
+  it('should handle undefined values for optional Brainiac params', () => {
     const options = {
       resendFiles: false,
       promptPrefix: undefined,
@@ -165,7 +165,7 @@ describe('extractLibreChatParams', () => {
       model: 'claude-2',
     };
 
-    const result = extractLibreChatParams(options);
+    const result = extractBrainiacParams(options);
 
     expect(result.resendFiles).toBe(false);
     expect(result.promptPrefix).toBeUndefined();
@@ -185,7 +185,7 @@ describe('extractLibreChatParams', () => {
       stop: ['\\n', '\\n\\n'],
     };
 
-    const result = extractLibreChatParams(options);
+    const result = extractBrainiacParams(options);
 
     expect(result.resendFiles).toBe(true); // default
     expect(result.promptPrefix).toBeNull();

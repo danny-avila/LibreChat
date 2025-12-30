@@ -1,7 +1,7 @@
 import React, { useContext, useCallback } from 'react';
 import Cookies from 'js-cookie';
 import { useRecoilState } from 'recoil';
-import { Dropdown, ThemeContext } from '@librechat/client';
+import { Dropdown, ThemeContext } from '@brainiac/client';
 import ArchivedChats from './ArchivedChats';
 import ToggleSwitch from '../ToggleSwitch';
 import { useLocalize } from '~/hooks';

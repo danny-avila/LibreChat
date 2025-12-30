@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo } from 'react';
 import { Plus } from 'lucide-react';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import { Button, Spinner, FilterInput, OGDialogTrigger, TooltipAnchor } from '@librechat/client';
+import { PermissionTypes, Permissions } from 'brainiac-data-provider';
+import { Button, Spinner, FilterInput, OGDialogTrigger, TooltipAnchor } from '@brainiac/client';
 import { useLocalize, useMCPServerManager, useHasAccess } from '~/hooks';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import MCPAdminSettings from './MCPAdminSettings';

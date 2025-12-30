@@ -1,12 +1,12 @@
 const { Router } = require('express');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@brainiac/data-schemas');
 const {
   CacheKeys,
   Constants,
   PermissionBits,
   PermissionTypes,
   Permissions,
-} = require('librechat-data-provider');
+} = require('brainiac-data-provider');
 const {
   createSafeUser,
   MCPOAuthHandler,
@@ -14,7 +14,7 @@ const {
   getBasePath,
   getUserMCPAuthMap,
   generateCheckAccess,
-} = require('@librechat/api');
+} = require('@brainiac/api');
 const {
   getMCPManager,
   getFlowStateManager,
@@ -43,7 +43,7 @@ const router = Router();
 
 /**
  * Get all MCP tools available to the user
- * Returns only MCP tools, completely decoupled from regular LibreChat tools
+ * Returns only MCP tools, completely decoupled from regular Brainiac tools
  */
 router.get('/tools', requireJwtAuth, async (req, res) => {
   return getMCPTools(req, res);

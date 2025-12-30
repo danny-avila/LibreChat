@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Clipboard, CheckMark } from '@librechat/client';
-import type { TMessage, TAttachment, SearchResultData } from 'librechat-data-provider';
+import { Clipboard, CheckMark } from '@brainiac/client';
+import type { TMessage, TAttachment, SearchResultData } from 'brainiac-data-provider';
 import { useLocalize, useCopyToClipboard } from '~/hooks';
 
 type THoverButtons = {

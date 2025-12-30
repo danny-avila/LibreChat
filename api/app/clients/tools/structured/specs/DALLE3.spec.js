@@ -1,9 +1,9 @@
 const OpenAI = require('openai');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@brainiac/data-schemas');
 const DALLE3 = require('../DALLE3');
 
 jest.mock('openai');
-jest.mock('@librechat/data-schemas', () => {
+jest.mock('@brainiac/data-schemas', () => {
   return {
     logger: {
       info: jest.fn(),

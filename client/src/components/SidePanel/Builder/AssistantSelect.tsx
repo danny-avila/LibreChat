@@ -1,6 +1,6 @@
 import { useMemo, useCallback, useEffect, useRef } from 'react';
 import { Plus } from 'lucide-react';
-import { SelectDropDown } from '@librechat/client';
+import { SelectDropDown } from '@brainiac/client';
 import {
   Tools,
   FileSources,
@@ -9,14 +9,14 @@ import {
   LocalStorageKeys,
   isImageVisionTool,
   defaultAssistantFormValues,
-} from 'librechat-data-provider';
+} from 'brainiac-data-provider';
 import type {
   TPlugin,
   Assistant,
   AssistantDocument,
   AssistantsEndpoint,
   AssistantCreateParams,
-} from 'librechat-data-provider';
+} from 'brainiac-data-provider';
 import type {
   Actions,
   ExtendedFile,

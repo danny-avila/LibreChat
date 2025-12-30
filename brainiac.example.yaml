@@ -1,5 +1,5 @@
 # For more information, see the Configuration Guide:
-# https://www.librechat.ai/docs/configuration/librechat_yaml
+# https://www.brainiac.ai/docs/configuration/brainiac_yaml
 
 # Configuration version (required)
 version: 1.2.1
@@ -27,32 +27,32 @@ cache: true
 
 # Custom interface configuration
 interface:
-  customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
+  customWelcome: 'Welcome to Brainiac! Enjoy your experience.'
   # Enable/disable file search as a chatarea selection (default: true)
   # Note: This setting does not disable the Agents File Search Capability.
   # To disable the Agents Capability, see the Agents Endpoint configuration instead.
   fileSearch: true
   # Privacy policy settings
   privacyPolicy:
-    externalUrl: 'https://librechat.ai/privacy-policy'
+    externalUrl: 'https://brainiac.ai/privacy-policy'
     openNewTab: true
 
   # Terms of service
   termsOfService:
-    externalUrl: 'https://librechat.ai/tos'
+    externalUrl: 'https://brainiac.ai/tos'
     openNewTab: true
     modalAcceptance: true
-    modalTitle: 'Terms of Service for LibreChat'
+    modalTitle: 'Terms of Service for Brainiac'
     modalContent: |
-      # Terms and Conditions for LibreChat
+      # Terms and Conditions for Brainiac
 
       *Effective Date: February 18, 2024*
 
-      Welcome to LibreChat, the informational website for the open-source AI chat platform, available at https://librechat.ai. These Terms of Service ("Terms") govern your use of our website and the services we offer. By accessing or using the Website, you agree to be bound by these Terms and our Privacy Policy, accessible at https://librechat.ai//privacy.
+      Welcome to Brainiac, the informational website for the open-source AI chat platform, available at https://brainiac.ai. These Terms of Service ("Terms") govern your use of our website and the services we offer. By accessing or using the Website, you agree to be bound by these Terms and our Privacy Policy, accessible at https://brainiac.ai//privacy.
 
       ## 1. Ownership
 
-      Upon purchasing a package from LibreChat, you are granted the right to download and use the code for accessing an admin panel for LibreChat. While you own the downloaded code, you are expressly prohibited from reselling, redistributing, or otherwise transferring the code to third parties without explicit permission from LibreChat.
+      Upon purchasing a package from Brainiac, you are granted the right to download and use the code for accessing an admin panel for Brainiac. While you own the downloaded code, you are expressly prohibited from reselling, redistributing, or otherwise transferring the code to third parties without explicit permission from Brainiac.
 
       ## 2. User Data
 
@@ -76,7 +76,7 @@ interface:
 
       ## 7. Contact Information
 
-      If you have any questions about these Terms, please contact us at contact@librechat.ai.
+      If you have any questions about these Terms, please contact us at contact@brainiac.ai.
 
       By using the Website, you acknowledge that you have read these Terms of Service and agree to be bound by them.
 
@@ -115,7 +115,7 @@ interface:
     #     en: |
     #       Librechat hasn't reviewed this MCP server. Attackers may attempt to steal your data or trick the model into taking unintended actions, including destroying data. <a href="https://google.de" target="_blank"><strong>Learn more.</strong></a>
     #     de: |
-    #       LibreChat hat diesen MCP-Server nicht überprüft. Angreifer könnten versuchen, Ihre Daten zu stehlen oder das Modell zu unbeabsichtigten Aktionen zu verleiten, einschließlich der Zerstörung von Daten. <a href="https://google.de" target="_blank"><strong>Mehr erfahren.</strong></a>
+    #       Brainiac hat diesen MCP-Server nicht überprüft. Angreifer könnten versuchen, Ihre Daten zu stehlen oder das Modell zu unbeabsichtigten Aktionen zu verleiten, einschließlich der Zerstörung von Daten. <a href="https://google.de" target="_blank"><strong>Mehr erfahren.</strong></a>
 
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
@@ -181,7 +181,7 @@ registration:
 actions:
   allowedDomains:
     - 'swapi.dev'
-    - 'librechat.ai'
+    - 'brainiac.ai'
     - 'google.com'
 
 # MCP Server domain restrictions for remote transports (SSE, WebSocket, HTTP)
@@ -213,8 +213,8 @@ actions:
 #     args:
 #       - -y
 #       - "@modelcontextprotocol/server-filesystem"
-#       - /home/user/LibreChat/
-#     iconPath: /home/user/LibreChat/client/public/assets/logo.svg
+#       - /home/user/Brainiac/
+#     iconPath: /home/user/Brainiac/client/public/assets/logo.svg
 #   mcp-obsidian:
 #     command: npx
 #     args:
@@ -322,7 +322,7 @@ endpoints:
       apiKey: '${OPENROUTER_KEY}'
       baseURL: 'https://openrouter.ai/api/v1'
       headers:
-        x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
+        x-brainiac-body-parentmessageid: '{{BRAINIAC_BODY_PARENTMESSAGEID}}'
       models:
         default: ['meta-llama/llama-3-70b-instruct']
         fetch: true
@@ -339,7 +339,7 @@ endpoints:
       apiKey: '${HELICONE_KEY}'
       baseURL: 'https://ai-gateway.helicone.ai'
       headers:
-        x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
+        x-brainiac-body-parentmessageid: '{{BRAINIAC_BODY_PARENTMESSAGEID}}'
       models:
         default:
           ['gpt-4o-mini', 'claude-4.5-sonnet', 'llama-3.1-8b-instruct', 'gemini-2.5-flash-lite']
@@ -463,7 +463,7 @@ endpoints:
 #     maxHeight: 1900  # Maximum height for resized images (default: 1900)
 #     quality: 0.92  # JPEG quality for compression (0.0-1.0, default: 0.92)
 # # See the Custom Configuration Guide for more information on Assistants Config:
-# # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
+# # https://www.brainiac.ai/docs/configuration/brainiac_yaml/object_structure/assistants_endpoint
 
 # Web Search Configuration (optional)
 # webSearch:

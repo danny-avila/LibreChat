@@ -1,4 +1,4 @@
-const { CacheKeys, Time } = require('librechat-data-provider');
+const { CacheKeys, Time } = require('brainiac-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 
 /**

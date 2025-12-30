@@ -1,4 +1,4 @@
-import type { TUserMemory } from 'librechat-data-provider';
+import type { TUserMemory } from 'brainiac-data-provider';
 import MemoryEmptyState from './MemoryEmptyState';
 import MemoryCard from './MemoryCard';
 import { useLocalize } from '~/hooks';

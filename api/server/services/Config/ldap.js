@@ -1,4 +1,4 @@
-const { isEnabled } = require('@librechat/api');
+const { isEnabled } = require('@brainiac/api');
 
 /** @returns {TStartupConfig['ldap'] | undefined} */
 const getLdapConfig = () => {

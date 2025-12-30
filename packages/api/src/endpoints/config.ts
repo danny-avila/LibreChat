@@ -1,7 +1,7 @@
-import { Providers } from '@librechat/agents';
-import { EModelEndpoint } from 'librechat-data-provider';
-import type { TEndpoint } from 'librechat-data-provider';
-import type { AppConfig } from '@librechat/data-schemas';
+import { Providers } from '@brainiac/agents';
+import { EModelEndpoint } from 'brainiac-data-provider';
+import type { TEndpoint } from 'brainiac-data-provider';
+import type { AppConfig } from '@brainiac/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase } from '~/types';
 import { initializeAnthropic } from './anthropic/initialize';
 import { initializeBedrock } from './bedrock/initialize';

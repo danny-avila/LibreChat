@@ -10,8 +10,8 @@ import {
   createPayload,
   LocalStorageKeys,
   removeNullishValues,
-} from 'librechat-data-provider';
-import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
+} from 'brainiac-data-provider';
+import type { TMessage, TPayload, TSubmission, EventSubmission } from 'brainiac-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import { useGetStartupConfig, useGetUserBalance, queueTitleGeneration } from '~/data-provider';
 import type { ActiveJobsResponse } from '~/data-provider';
