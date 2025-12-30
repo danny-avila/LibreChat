@@ -184,7 +184,9 @@ describe('initializeMCPs', () => {
 
       expect(mockMCPManagerInstance.getAppToolFunctions).not.toHaveBeenCalled();
       expect(mockMergeAppTools).not.toHaveBeenCalled();
-      expect(logger.debug).toHaveBeenCalled();
+      expect(logger.debug).toHaveBeenCalledWith(
+        '[MCP] No YAML servers configured. MCPManager ready for UI-based servers.',
+      );
     });
 
     it('should merge tools when YAML servers exist', async () => {
@@ -202,9 +204,7 @@ describe('initializeMCPs', () => {
 
       expect(mockMCPManagerInstance.getAppToolFunctions).toHaveBeenCalledTimes(1);
       expect(mockMergeAppTools).toHaveBeenCalledWith(mcpTools);
-      expect(logger.info).toHaveBeenCalledWith(
-        '[MCP] Initialized with 1 YAML servers and 2 tools.',
-      );
+      expect(logger.info).toHaveBeenCalledWith('[MCP] Initialized with 1 YAML server and 2 tools.');
     });
 
     it('should handle null return from getAppToolFunctions', async () => {
@@ -216,9 +216,7 @@ describe('initializeMCPs', () => {
 
       // Should use empty object fallback
       expect(mockMergeAppTools).toHaveBeenCalledWith({});
-      expect(logger.info).toHaveBeenCalledWith(
-        '[MCP] Initialized with 1 YAML servers and 0 tools.',
-      );
+      expect(logger.info).toHaveBeenCalledWith('[MCP] Initialized with 1 YAML server and 0 tools.');
     });
   });
 

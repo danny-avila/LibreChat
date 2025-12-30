@@ -11,7 +11,7 @@ async function initializeMCPs() {
   const mcpServers = appConfig.mcpConfig;
 
   // ALWAYS initialize MCPServersRegistry (required for UI-based MCP server management)
-  // This must happen before the early return, as users can add MCP servers via the UI
+  // This must always run so users can add MCP servers via the UI
   // even when no servers are configured in librechat.yaml
   try {
     createMCPServersRegistry(mongoose, appConfig?.mcpSettings?.allowedDomains);
@@ -30,8 +30,10 @@ async function initializeMCPs() {
     if (mcpServers && Object.keys(mcpServers).length > 0) {
       const mcpTools = (await mcpManager.getAppToolFunctions()) || {};
       await mergeAppTools(mcpTools);
+      const serverCount = Object.keys(mcpServers).length;
+      const toolCount = Object.keys(mcpTools).length;
       logger.info(
-        `[MCP] Initialized with ${Object.keys(mcpServers).length} YAML servers and ${Object.keys(mcpTools).length} tools.`,
+        `[MCP] Initialized with ${serverCount} YAML ${serverCount === 1 ? 'server' : 'servers'} and ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}.`,
       );
     } else {
       logger.debug('[MCP] No YAML servers configured. MCPManager ready for UI-based servers.');
