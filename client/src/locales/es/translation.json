@@ -521,7 +521,6 @@
   "com_ui_bookmarks": "Marcadores",
   "com_ui_bookmarks_add": "Agregar Marcadores",
   "com_ui_bookmarks_add_to_conversation": "Agregar a la conversación actual",
-  "com_ui_bookmarks_count": "Conteo",
   "com_ui_bookmarks_create_error": "Hubo un error al crear el marcador",
   "com_ui_bookmarks_create_exists": "Este marcador ya existe",
   "com_ui_bookmarks_create_success": "Marcador creado con éxito",

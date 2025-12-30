@@ -724,7 +724,6 @@
   "com_ui_bookmarks": "书签",
   "com_ui_bookmarks_add": "添加书签",
   "com_ui_bookmarks_add_to_conversation": "添加到当前对话",
-  "com_ui_bookmarks_count": "计数",
   "com_ui_bookmarks_create_error": "创建书签时出现错误",
   "com_ui_bookmarks_create_exists": "书签已存在",
   "com_ui_bookmarks_create_success": "书签创建成功",

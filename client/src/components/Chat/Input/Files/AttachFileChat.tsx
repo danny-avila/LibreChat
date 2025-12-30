@@ -10,7 +10,8 @@ import {
   getEndpointFileConfig,
 } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
-import { useGetFileConfig, useGetEndpointsQuery } from '~/data-provider';
+import { useGetFileConfig, useGetEndpointsQuery, useGetAgentByIdQuery } from '~/data-provider';
+import { useAgentsMapContext } from '~/Providers';
 import AttachFileMenu from './AttachFileMenu';
 import AttachFile from './AttachFile';
 
@@ -25,6 +26,28 @@ function AttachFileChat({
   const { endpoint } = conversation ?? { endpoint: null };
   const isAgents = useMemo(() => isAgentsEndpoint(endpoint), [endpoint]);
   const isAssistants = useMemo(() => isAssistantsEndpoint(endpoint), [endpoint]);
+
+  const agentsMap = useAgentsMapContext();
+
+  const needsAgentFetch = useMemo(() => {
+    if (!isAgents || !conversation?.agent_id) {
+      return false;
+    }
+    const agent = agentsMap?.[conversation.agent_id];
+    return !agent?.model_parameters;
+  }, [isAgents, conversation?.agent_id, agentsMap]);
+
+  const { data: agentData } = useGetAgentByIdQuery(conversation?.agent_id, {
+    enabled: needsAgentFetch,
+  });
+
+  const useResponsesApi = useMemo(() => {
+    if (!isAgents || !conversation?.agent_id || conversation?.useResponsesApi) {
+      return conversation?.useResponsesApi;
+    }
+    const agent = agentData || agentsMap?.[conversation.agent_id];
+    return agent?.model_parameters?.useResponsesApi;
+  }, [isAgents, conversation?.agent_id, conversation?.useResponsesApi, agentData, agentsMap]);
 
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -68,6 +91,7 @@ function AttachFileChat({
         conversationId={conversationId}
         agentId={conversation?.agent_id}
         endpointFileConfig={endpointFileConfig}
+        useResponsesApi={useResponsesApi}
       />
     );
   }

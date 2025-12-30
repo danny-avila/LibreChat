@@ -14,10 +14,10 @@ import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
 import type { NavLink } from '~/common';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
-import MemoryViewer from '~/components/SidePanel/Memories/MemoryViewer';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import PromptsAccordion from '~/components/Prompts/PromptsAccordion';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
+import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { useHasAccess, useMCPServerManager } from '~/hooks';
 
@@ -122,7 +122,7 @@ export default function useSideNavLinks({
         label: '',
         icon: Database,
         id: 'memories',
-        Component: MemoryViewer,
+        Component: MemoryPanel,
       });
     }
 
