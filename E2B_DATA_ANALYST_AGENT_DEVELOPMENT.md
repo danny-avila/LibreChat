@@ -150,54 +150,51 @@ LibreChat/
 
 ## 7. 自定义模板与预装包 (重要 💡)
 
-### 7.1 基础模板选择
-在 E2B V2 构建系统中，为了使用 Code Interpreter 功能（端口 49999），**必须**使用 `code-interpreter` 或 `code-interpreter-v1` 作为基础模板。
+### 7.1 模板系统 (V2)
+本项目采用 E2B 最新的 **TypeScript 模板系统**。模板定义位于 `e2b_template/data-analyst/template.ts`。这种方式比旧的 Dockerfile 更灵活，支持编程式定义环境。
 
-### 5.2 构建步骤 (E2B CLI)
-如果需要预装 Python 包（如 `nltk`），请使用项目根目录下的 `e2b_template/e2b.Dockerfile`：
+### 7.2 构建与发布步骤
+如果需要添加新的 Python 包（如 `lightgbm`）或系统依赖：
 
-1.  **配置文件 (`e2b_template/e2b.Dockerfile`)**:
-    ```dockerfile
-    # 必须基于此镜像，否则 Code Interpreter 服务不会启动
-    FROM e2bdev/code-interpreter:latest
-
-    # 安装 Python 包
-    RUN pip install nltk pandas numpy
-
-    # 预下载数据
-    RUN python -c "import nltk; nltk.download('punkt')"
+1.  **修改模板定义**:
+    编辑 `e2b_template/data-analyst/template.ts`:
+    ```typescript
+    // 示例：添加新的 Python 包
+    .run("pip install lightgbm")
     ```
-2.  **构建并发布**:
+
+2.  **构建模板**:
     ```bash
-    cd e2b_template
-    # 这一步会自动读取 e2b.Dockerfile 并构建
-    # 注意：构建命令需要指定启动命令以确保服务运行
-    e2b template build -c "/root/.jupyter/start-up.sh"
+    cd e2b_template/data-analyst
+    npm install
+    # 构建开发版 (Dev)
+    npm run e2b:build:dev
+    # 或构建生产版 (Prod)
+    # npm run e2b:build:prod
     ```
-3.  **配置使用**:
-    将生成的 Template ID 更新到 `.env` 或 `librechat.yaml` 中。
+
+3.  **获取 Template ID**:
+    构建成功后，控制台会输出 Template ID (如 `xed696qfsyzpaei3ulh5`)。
+
+4.  **配置使用**:
+    将新的 Template ID 更新到 `.env` 文件中：
+    ```bash
+    E2B_SANDBOX_TEMPLATE=xed696qfsyzpaei3ulh5
+    ```
 
 ---
 
 ## 8. 故障排除 (Troubleshooting)
 
 ### 8.1 502: The sandbox is running but port is not open
-*   **原因**：沙箱内的代码解释器进程未启动或权限不足。
+*   **原因**：沙箱内的代码解释器进程未启动。
 *   **解决方法**：
-    1.  **使用正确的模板 ID**：确保使用 `code-interpreter-v1` 而不是 `base` 或其他通用模板。
-    2.  **检查启动命令**：如果是自定义模板，确保不仅安装了包，还继承了基础镜像的启动逻辑。
-    3.  **使用调试脚本**：运行 `node api/tests/e2b/debug_sandbox.js` 检查沙箱内部进程 (`ps aux`)。
+    1.  **检查 Template ID**：确保 `.env` 中的 ID 对应的是基于 `code-interpreter` 构建的模板。
+    2.  **重新构建**：如果模板损坏，重新运行构建命令生成新 ID。
 
 ### 8.2 400: Template is not compatible with secured access
-*   **原因**：E2B API Key 开启了“安全访问”限制，但模板或请求未通过鉴权。
-*   **解决方法**：代码中已默认设置 `secure: false` 以确保兼容性。
-
-### 8.3 Agent 陷入重试循环 (Max Iterations Reached)
-*   **现象**：Agent 反复执行相同的代码，直到达到最大迭代次数。
-*   **原因**：许多数据科学库（如 XGBoost, PyTorch, NLTK）会将非致命的日志或警告输出到 `stderr`。如果 Agent 误认为这是执行失败，它会尝试重试。
-*   **解决方法**：
-    1.  在 System Prompt 中明确告知 Agent：“`stderr` may contain warnings or logs. If you get the expected output, proceed.”
-    2.  优化 `CodeExecutor`，仅在 `exitCode !== 0` 时标记为 `success: false`。
+*   **原因**：E2B API Key 开启了“安全访问”限制。
+*   **解决方法**：我们在代码中已默认设置 `secure: false`。如果问题依旧，请检查 E2B Dashboard 的 API Key 设置。
 
 ---
 
@@ -212,18 +209,11 @@ npx jest tests/e2b/fileHandler.test.js
 
 ### 9.2 端到端集成测试 (推荐)
 脚本 `api/tests/e2b/real_integration.js` 验证全链路逻辑（Controller -> Agent -> OpenAI -> E2B Sandbox）。
+**注意**：运行前请确保 `.env` 中已配置有效的 `E2B_SANDBOX_TEMPLATE`。
 
-**前置条件**:
-1.  MongoDB 正在运行 (localhost:27017)。
-2.  `.env` 中配置了有效的 `OPENAI_API_KEY` 和 `E2B_API_KEY`。
-
-**运行方式**:
 ```bash
 node api/tests/e2b/real_integration.js
 ```
-
-**预期结果**:
-看到 "✅ Chat Response Received" 并且包含 "Real Tool Executions" 日志，且没有 502 错误。
 
 ---
 
