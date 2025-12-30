@@ -1,5 +1,5 @@
-import { RateLimitPrefix } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
+import { RateLimitPrefix } from 'brainiac-data-provider';
+import type { TCustomConfig } from 'brainiac-data-provider';
 
 /**
  *

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { Label, Radio } from '@librechat/client';
+import { Label, Radio } from '@brainiac/client';
 import { useLocalize } from '~/hooks';
 import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 

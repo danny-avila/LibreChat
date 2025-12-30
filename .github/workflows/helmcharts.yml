@@ -30,9 +30,9 @@ jobs:
       
       - name: Build Subchart Deps
         run: |
-          cd helm/librechat
+          cd helm/brainiac
           helm dependency build  
-          cd ../librechat-rag-api
+          cd ../brainiac-rag-api
           helm dependency build      
 
       - name: Get Chart Version
@@ -50,26 +50,26 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Run Helm OCI Charts Releaser
-      # This is for the librechat chart
-      - name: Release Helm OCI Charts for librechat
+      # This is for the brainiac chart
+      - name: Release Helm OCI Charts for brainiac
         uses: appany/helm-oci-chart-releaser@v0.4.2
         with:
-          name: librechat
-          repository: ${{ github.actor }}/librechat-chart
+          name: brainiac
+          repository: ${{ github.actor }}/brainiac-chart
           tag: ${{ steps.chart-version.outputs.CHART_VERSION }}
-          path: helm/librechat
+          path: helm/brainiac
           registry: ghcr.io
           registry_username: ${{ github.actor }}
           registry_password: ${{ secrets.GITHUB_TOKEN }}
       
-      # this is for the librechat-rag-api chart
-      - name: Release Helm OCI Charts for librechat-rag-api
+      # this is for the brainiac-rag-api chart
+      - name: Release Helm OCI Charts for brainiac-rag-api
         uses: appany/helm-oci-chart-releaser@v0.4.2
         with:
-          name: librechat-rag-api
-          repository: ${{ github.actor }}/librechat-chart
+          name: brainiac-rag-api
+          repository: ${{ github.actor }}/brainiac-chart
           tag: ${{ steps.chart-version.outputs.CHART_VERSION }}
-          path: helm/librechat-rag-api
+          path: helm/brainiac-rag-api
           registry: ghcr.io
           registry_username: ${{ github.actor }}
           registry_password: ${{ secrets.GITHUB_TOKEN }}

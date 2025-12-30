@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint } = require('librechat-data-provider');
-const { generateShortLivedToken } = require('@librechat/api');
+const { logger } = require('@brainiac/data-schemas');
+const { EModelEndpoint } = require('brainiac-data-provider');
+const { generateShortLivedToken } = require('@brainiac/api');
 const { resizeImageBuffer } = require('~/server/services/Files/images/resize');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');

@@ -1,9 +1,9 @@
 import { useMemo, useCallback } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useLocation } from 'react-router-dom';
-import { SystemRoles } from 'librechat-data-provider';
+import { SystemRoles } from 'brainiac-data-provider';
 import { ArrowLeft, MessageSquareQuote } from 'lucide-react';
-import { Sidebar } from '@librechat/client';
+import { Sidebar } from '@brainiac/client';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -15,7 +15,7 @@ import {
   // DropdownMenuItem,
   // DropdownMenuContent,
   // DropdownMenuTrigger,
-} from '@librechat/client';
+} from '@brainiac/client';
 import { useLocalize, useCustomLink, useAuthContext } from '~/hooks';
 import AdvancedSwitch from '~/components/Prompts/AdvancedSwitch';
 // import { RightPanel } from '../../components/Prompts/RightPanel';

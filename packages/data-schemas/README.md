@@ -1,6 +1,6 @@
-# LibreChat Data Schemas Package
+# Brainiac Data Schemas Package
 
-This package provides the database schemas, models, types, and methods for LibreChat using Mongoose ODM.
+This package provides the database schemas, models, types, and methods for Brainiac using Mongoose ODM.
 
 ## 📁 Package Structure
 

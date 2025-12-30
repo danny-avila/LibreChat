@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, type ReactElement } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { DropdownPopup, Skeleton } from '@librechat/client';
+import { DropdownPopup, Skeleton } from '@brainiac/client';
 import type { MenuItemProps } from '~/common/menus';
 import { useLocalize } from '~/hooks';
 

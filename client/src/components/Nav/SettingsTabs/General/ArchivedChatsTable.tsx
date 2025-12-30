@@ -15,8 +15,8 @@ import {
   OGDialogHeader,
   useToastContext,
   OGDialogContent,
-} from '@librechat/client';
-import type { ConversationListParams, TConversation } from 'librechat-data-provider';
+} from '@brainiac/client';
+import type { ConversationListParams, TConversation } from 'brainiac-data-provider';
 import type { TranslationKeys } from '~/hooks';
 import {
   useConversationsInfiniteQuery,

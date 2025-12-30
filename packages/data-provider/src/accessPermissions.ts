@@ -30,7 +30,7 @@ export enum PrincipalModel {
 }
 
 /**
- * Source of the principal (local LibreChat or external Entra ID)
+ * Source of the principal (local Brainiac or external Entra ID)
  */
 export type TPrincipalSource = 'local' | 'entra';
 

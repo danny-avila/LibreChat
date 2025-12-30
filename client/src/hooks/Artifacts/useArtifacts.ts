@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
-import { Constants } from 'librechat-data-provider';
+import { Constants } from 'brainiac-data-provider';
 import { useRecoilState, useRecoilValue, useResetRecoilState } from 'recoil';
 import { useArtifactsContext } from '~/Providers';
 import { logger } from '~/utils';

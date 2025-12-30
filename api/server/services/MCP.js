@@ -1,12 +1,12 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@brainiac/data-schemas');
 const {
   Providers,
   StepTypes,
   GraphEvents,
   Constants: AgentConstants,
-} = require('@librechat/agents');
+} = require('@brainiac/agents');
 const {
   sendEvent,
   MCPOAuthHandler,
@@ -14,14 +14,14 @@ const {
   normalizeServerName,
   convertWithResolvedRefs,
   GenerationJobManager,
-} = require('@librechat/api');
+} = require('@brainiac/api');
 const {
   Time,
   CacheKeys,
   Constants,
   ContentTypes,
   isAssistantsEndpoint,
-} = require('librechat-data-provider');
+} = require('brainiac-data-provider');
 const {
   getOAuthReconnectionManager,
   getMCPServersRegistry,
@@ -76,7 +76,7 @@ function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
  */
 function createRunStepEmitter({ res, runId, stepId, toolCall, index, streamId = null }) {
   return function () {
-    /** @type {import('@librechat/agents').RunStep} */
+    /** @type {import('@brainiac/agents').RunStep} */
     const data = {
       runId: runId ?? Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
       id: stepId,
@@ -277,7 +277,7 @@ async function reconnectServer({
  * @param {number} [params.index]
  * @param {AbortSignal} [params.signal]
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
- * @param {import('@librechat/api').ParsedServerConfig} [params.config]
+ * @param {import('@brainiac/api').ParsedServerConfig} [params.config]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
@@ -353,7 +353,7 @@ async function createMCPTools({
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {LCAvailableTools} [params.availableTools]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
- * @param {import('@librechat/api').ParsedServerConfig} [params.config]
+ * @param {import('@brainiac/api').ParsedServerConfig} [params.config]
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTool({
@@ -564,7 +564,7 @@ async function getMCPSetupData(userId) {
   }
 
   const mcpManager = getMCPManager(userId);
-  /** @type {Map<string, import('@librechat/api').MCPConnection>} */
+  /** @type {Map<string, import('@brainiac/api').MCPConnection>} */
   let appConnections = new Map();
   try {
     // Use getLoaded() instead of getAll() to avoid forcing connection creation
@@ -648,9 +648,9 @@ async function checkOAuthFlowStatus(userId, serverName) {
  * Get connection status for a specific MCP server
  * @param {string} userId - The user ID
  * @param {string} serverName - The server name
- * @param {import('@librechat/api').ParsedServerConfig} config - The server configuration
- * @param {Map<string, import('@librechat/api').MCPConnection>} appConnections - App-level connections
- * @param {Map<string, import('@librechat/api').MCPConnection>} userConnections - User-level connections
+ * @param {import('@brainiac/api').ParsedServerConfig} config - The server configuration
+ * @param {Map<string, import('@brainiac/api').MCPConnection>} appConnections - App-level connections
+ * @param {Map<string, import('@brainiac/api').MCPConnection>} userConnections - User-level connections
  * @param {Set} oauthServers - Set of OAuth servers
  * @returns {Object} Object containing requiresOAuth and connectionState
  */

@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { matchSorter } from 'match-sorter';
-import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { SystemRoles, PermissionTypes, Permissions } from 'brainiac-data-provider';
 import {
   Button,
   Switch,
@@ -10,8 +10,8 @@ import {
   TooltipAnchor,
   OGDialogTrigger,
   useToastContext,
-} from '@librechat/client';
-import type { TUserMemory } from 'librechat-data-provider';
+} from '@brainiac/client';
+import type { TUserMemory } from 'brainiac-data-provider';
 import {
   useUpdateMemoryPreferencesMutation,
   useMemoriesQuery,

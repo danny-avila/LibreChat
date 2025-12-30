@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { PrincipalType, PrincipalModel, ResourceType } from 'librechat-data-provider';
+import { PrincipalType, PrincipalModel, ResourceType } from 'brainiac-data-provider';
 import type { IAclEntry } from '~/types';
 
 const aclEntrySchema = new Schema<IAclEntry>(

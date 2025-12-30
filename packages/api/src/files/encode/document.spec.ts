@@ -1,6 +1,6 @@
-import { Providers } from '@librechat/agents';
-import { mbToBytes } from 'librechat-data-provider';
-import type { AppConfig, IMongoFile } from '@librechat/data-schemas';
+import { Providers } from '@brainiac/agents';
+import { mbToBytes } from 'brainiac-data-provider';
+import type { AppConfig, IMongoFile } from '@brainiac/data-schemas';
 import type { ServerRequest } from '~/types';
 import { encodeAndFormatDocuments } from './document';
 

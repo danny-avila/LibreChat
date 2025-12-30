@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { useDrop } from 'react-dnd';
-import { useToastContext } from '@librechat/client';
+import { useToastContext } from '@brainiac/client';
 import { NativeTypes } from 'react-dnd-html5-backend';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
@@ -15,9 +15,9 @@ import {
   isAssistantsEndpoint,
   getEndpointFileConfig,
   defaultAgentCapabilities,
-} from 'librechat-data-provider';
+} from 'brainiac-data-provider';
 import type { DropTargetMonitor } from 'react-dnd';
-import type * as t from 'librechat-data-provider';
+import type * as t from 'brainiac-data-provider';
 import store, { ephemeralAgentByConvoId } from '~/store';
 import useFileHandling from './useFileHandling';
 import { isEphemeralAgent } from '~/common';

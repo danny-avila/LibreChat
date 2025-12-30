@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { removeNullishValues } from 'librechat-data-provider';
+import { removeNullishValues } from 'brainiac-data-provider';
 import type { Artifact } from '~/common';
 import { getKey, getProps, getTemplate, getArtifactFilename } from '~/utils/artifacts';
 import { getMermaidFiles } from '~/utils/mermaid';

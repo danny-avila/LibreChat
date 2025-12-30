@@ -1,5 +1,5 @@
-import { Providers } from '@librechat/agents';
-import { mbToBytes, isOpenAILikeProvider } from 'librechat-data-provider';
+import { Providers } from '@brainiac/agents';
+import { mbToBytes, isOpenAILikeProvider } from 'brainiac-data-provider';
 
 export interface PDFValidationResult {
   isValid: boolean;

@@ -1,9 +1,9 @@
 /** Memories */
 import { z } from 'zod';
 import { tool } from '@langchain/core/tools';
-import { Tools } from 'librechat-data-provider';
-import { logger } from '@librechat/data-schemas';
-import { Run, Providers, GraphEvents } from '@librechat/agents';
+import { Tools } from 'brainiac-data-provider';
+import { logger } from '@brainiac/data-schemas';
+import { Run, Providers, GraphEvents } from '@brainiac/agents';
 import type {
   OpenAIClientOptions,
   StreamEventData,
@@ -12,9 +12,9 @@ import type {
   EventHandler,
   ToolEndData,
   LLMConfig,
-} from '@librechat/agents';
-import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
-import type { ObjectId, MemoryMethods } from '@librechat/data-schemas';
+} from '@brainiac/agents';
+import type { TAttachment, MemoryArtifact } from 'brainiac-data-provider';
+import type { ObjectId, MemoryMethods } from '@brainiac/data-schemas';
 import type { BaseMessage, ToolMessage } from '@langchain/core/messages';
 import type { Response as ServerResponse } from 'express';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';

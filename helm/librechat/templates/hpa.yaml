@@ -1,15 +1,15 @@
 {{- if .Values.autoscaling.enabled }}
-apiVersion: {{ include "librechat.hpa.apiVersion" $ }}
+apiVersion: {{ include "brainiac.hpa.apiVersion" $ }}
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "librechat.fullname" $ }}
+  name: {{ include "brainiac.fullname" $ }}
   labels:
-    {{- include "librechat.labels" . | nindent 4 }}
+    {{- include "brainiac.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "librechat.fullname" $ }}
+    name: {{ include "brainiac.fullname" $ }}
   minReplicas: {{ .Values.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.autoscaling.maxReplicas }}
   metrics:

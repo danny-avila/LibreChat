@@ -11,8 +11,8 @@ import {
 import { debounce } from 'lodash';
 import { useRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
-import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
+import { setTokenHeader, SystemRoles } from 'brainiac-data-provider';
+import type * as t from 'brainiac-data-provider';
 import {
   useGetRole,
   useGetUserQuery,

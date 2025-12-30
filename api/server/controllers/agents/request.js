@@ -1,11 +1,11 @@
-const { logger } = require('@librechat/data-schemas');
-const { Constants } = require('librechat-data-provider');
+const { logger } = require('@brainiac/data-schemas');
+const { Constants } = require('brainiac-data-provider');
 const {
   sendEvent,
   GenerationJobManager,
   sanitizeFileForTransmit,
   sanitizeMessageForTransmit,
-} = require('@librechat/api');
+} = require('@brainiac/api');
 const { handleAbortError } = require('~/server/middleware');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { saveMessage } = require('~/models');

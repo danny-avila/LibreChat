@@ -1,10 +1,10 @@
 {
-  "name": "@librechat/client",
+  "name": "@brainiac/client",
   "version": "0.4.3",
-  "description": "React components for LibreChat",
+  "description": "React components for Brainiac",
   "repository": {
     "type": "git",
-    "url": "https://github.com/danny-avila/LibreChat"
+    "url": "https://github.com/danny-avila/Brainiac"
   },
   "main": "dist/index.js",
   "module": "dist/index.es.js",

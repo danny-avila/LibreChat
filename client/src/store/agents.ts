@@ -1,6 +1,6 @@
-import { Constants } from 'librechat-data-provider';
+import { Constants } from 'brainiac-data-provider';
 import { atomFamily, useRecoilCallback } from 'recoil';
-import type { TEphemeralAgent } from 'librechat-data-provider';
+import type { TEphemeralAgent } from 'brainiac-data-provider';
 import { logger } from '~/utils';
 
 export const ephemeralAgentByConvoId = atomFamily<TEphemeralAgent | null, string>({

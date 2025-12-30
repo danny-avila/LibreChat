@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Blocks, MCPIcon, AttachmentIcon } from '@librechat/client';
+import { Blocks, MCPIcon, AttachmentIcon } from '@brainiac/client';
 import { Database, Bookmark, Settings2, ArrowRightToLine, MessageSquareQuote } from 'lucide-react';
 import {
   Permissions,
@@ -8,8 +8,8 @@ import {
   isParamEndpoint,
   isAgentsEndpoint,
   isAssistantsEndpoint,
-} from 'librechat-data-provider';
-import type { TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider';
+} from 'brainiac-data-provider';
+import type { TInterfaceConfig, TEndpointsConfig } from 'brainiac-data-provider';
 import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
 import type { NavLink } from '~/common';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';

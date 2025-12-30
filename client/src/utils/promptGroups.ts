@@ -1,10 +1,10 @@
-import { InfiniteCollections, QueryKeys } from 'librechat-data-provider';
+import { InfiniteCollections, QueryKeys } from 'brainiac-data-provider';
 import type { InfiniteData, QueryClient } from '@tanstack/react-query';
 import type {
   PromptGroupListResponse,
   PromptGroupListData,
   TPromptGroup,
-} from 'librechat-data-provider';
+} from 'brainiac-data-provider';
 import {
   addData,
   deleteData,

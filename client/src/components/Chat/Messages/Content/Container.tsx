@@ -1,4 +1,4 @@
-import { TMessage } from 'librechat-data-provider';
+import { TMessage } from 'brainiac-data-provider';
 import Files from './Files';
 
 const Container = ({ children, message }: { children: React.ReactNode; message?: TMessage }) => (

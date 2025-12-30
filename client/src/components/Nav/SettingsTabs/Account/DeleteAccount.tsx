@@ -10,7 +10,7 @@ import {
   OGDialogTrigger,
   OGDialogHeader,
   OGDialogTitle,
-} from '@librechat/client';
+} from '@brainiac/client';
 import { useDeleteUserMutation } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { LocalizeFunction } from '~/common';

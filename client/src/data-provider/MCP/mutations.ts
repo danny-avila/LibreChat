@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, UseMutationResult } from '@tanstack/react-query';
-import { dataService, QueryKeys, ResourceType } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
+import { dataService, QueryKeys, ResourceType } from 'brainiac-data-provider';
+import type * as t from 'brainiac-data-provider';
 
 /**
  * Hook for creating a new MCP server

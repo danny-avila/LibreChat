@@ -1,8 +1,8 @@
-import { logger } from '@librechat/data-schemas';
-import { createContentAggregator } from '@librechat/agents';
+import { logger } from '@brainiac/data-schemas';
+import { createContentAggregator } from '@brainiac/agents';
 import type { IJobStore, SerializableJobData, JobStatus } from '~/stream/interfaces/IJobStore';
-import type { StandardGraph } from '@librechat/agents';
-import type { Agents } from 'librechat-data-provider';
+import type { StandardGraph } from '@brainiac/agents';
+import type { Agents } from 'brainiac-data-provider';
 import type { Redis, Cluster } from 'ioredis';
 
 /**

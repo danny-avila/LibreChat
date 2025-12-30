@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pencil, PlugZap, SlidersHorizontal, RefreshCw, X } from 'lucide-react';
-import { Spinner, TooltipAnchor } from '@librechat/client';
-import type { MCPServerStatus } from 'librechat-data-provider';
+import { Spinner, TooltipAnchor } from '@brainiac/client';
+import type { MCPServerStatus } from 'brainiac-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

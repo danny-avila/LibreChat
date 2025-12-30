@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from '@librechat/client';
+import { Button } from '@brainiac/client';
 import { useLocalize } from '~/hooks';
 
 type ActionButtonProps = {

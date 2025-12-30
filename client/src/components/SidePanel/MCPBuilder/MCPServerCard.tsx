@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
-import { MCPIcon } from '@librechat/client';
-import { PermissionBits, hasPermissions } from 'librechat-data-provider';
+import { MCPIcon } from '@brainiac/client';
+import { PermissionBits, hasPermissions } from 'brainiac-data-provider';
 import type { MCPServerStatusIconProps } from '~/components/MCP/MCPServerStatusIcon';
 import type { MCPServerDefinition } from '~/hooks';
 import MCPServerDialog from './MCPServerDialog';

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useCreatePresetMutation } from 'librechat-data-provider/react-query';
-import { OGDialogTemplate, OGDialog, Input, Label, useToastContext } from '@librechat/client';
+import { useCreatePresetMutation } from 'brainiac-data-provider/react-query';
+import { OGDialogTemplate, OGDialog, Input, Label, useToastContext } from '@brainiac/client';
 import type { TEditPresetProps } from '~/common';
 import { cn, removeFocusOutlines, cleanupPreset, defaultTextProps } from '~/utils';
 import { NotificationSeverity } from '~/common';

@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { useMediaQuery } from '@librechat/client';
+import { useMediaQuery } from '@brainiac/client';
 import { useOutletContext } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { getConfigDefaults, PermissionTypes, Permissions } from 'brainiac-data-provider';
 import type { ContextType } from '~/common';
 import { PresetsMenu, HeaderNewChat, OpenSidebar } from './Menus';
 import ModelSelector from './Menus/Endpoints/ModelSelector';

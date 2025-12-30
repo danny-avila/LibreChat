@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AuthType, Tools, QueryKeys } from 'librechat-data-provider';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { AuthType, Tools, QueryKeys } from 'brainiac-data-provider';
+import { useUpdateUserPluginsMutation } from 'brainiac-data-provider/react-query';
 
 const useAuthCodeTool = (options?: { isEntityTool: boolean }) => {
   const queryClient = useQueryClient();

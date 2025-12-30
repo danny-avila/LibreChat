@@ -1,6 +1,6 @@
 const client = require('openid-client');
-const { logger } = require('@librechat/data-schemas');
-const { CacheKeys } = require('librechat-data-provider');
+const { logger } = require('@brainiac/data-schemas');
+const { CacheKeys } = require('brainiac-data-provider');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const getLogStores = require('~/cache/getLogStores');
 

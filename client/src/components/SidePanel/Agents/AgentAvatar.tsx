@@ -1,8 +1,8 @@
 import { useEffect, useCallback } from 'react';
-import { useToastContext } from '@librechat/client';
+import { useToastContext } from '@brainiac/client';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { mergeFileConfig, fileConfig as defaultFileConfig } from 'librechat-data-provider';
-import type { AgentAvatar } from 'librechat-data-provider';
+import { mergeFileConfig, fileConfig as defaultFileConfig } from 'brainiac-data-provider';
+import type { AgentAvatar } from 'brainiac-data-provider';
 import type { AgentForm } from '~/common';
 import { AgentAvatarRender, NoImage, AvatarMenu } from './Images';
 import { useGetFileConfig } from '~/data-provider';

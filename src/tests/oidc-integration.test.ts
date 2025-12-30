@@ -8,11 +8,11 @@ import {
   type OpenIDTokenInfo,
 } from '../packages/api/src/utils/oidc';
 import { processMCPEnv, resolveHeaders } from '../packages/api/src/utils/env';
-import type { TUser } from 'librechat-data-provider';
-import type { IUser } from '@librechat/data-schemas';
+import type { TUser } from 'brainiac-data-provider';
+import type { IUser } from '@brainiac/data-schemas';
 
 // Mock logger to avoid console output during tests
-jest.mock('@librechat/data-schemas', () => ({
+jest.mock('@brainiac/data-schemas', () => ({
   logger: {
     error: jest.fn(),
     warn: jest.fn(),

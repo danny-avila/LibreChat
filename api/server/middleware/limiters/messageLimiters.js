@@ -1,6 +1,6 @@
 const rateLimit = require('express-rate-limit');
-const { limiterCache } = require('@librechat/api');
-const { ViolationTypes } = require('librechat-data-provider');
+const { limiterCache } = require('@brainiac/api');
+const { ViolationTypes } = require('brainiac-data-provider');
 const denyRequest = require('~/server/middleware/denyRequest');
 const { logViolation } = require('~/cache');
 

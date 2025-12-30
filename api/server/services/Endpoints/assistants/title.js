@@ -1,6 +1,6 @@
-const { isEnabled, sanitizeTitle } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
-const { CacheKeys } = require('librechat-data-provider');
+const { isEnabled, sanitizeTitle } = require('@brainiac/api');
+const { logger } = require('@brainiac/data-schemas');
+const { CacheKeys } = require('brainiac-data-provider');
 const { saveConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const initializeClient = require('./initalize');

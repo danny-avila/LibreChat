@@ -1,5 +1,5 @@
 import React from 'react';
-import { Label, InfoHoverCard, ESide } from '@librechat/client';
+import { Label, InfoHoverCard, ESide } from '@brainiac/client';
 import { TranslationKeys, useLocalize } from '~/hooks';
 
 interface AutoRefillSettingsProps {

@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { request } from 'librechat-data-provider';
+import { request } from 'brainiac-data-provider';
 
 export interface AbortStreamParams {
   /** The stream ID to abort (if known) */

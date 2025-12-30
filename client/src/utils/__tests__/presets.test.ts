@@ -1,6 +1,6 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'brainiac-data-provider';
 import { getPresetTitle, removeUnavailableTools } from '../presets';
-import type { TPreset, TPlugin } from 'librechat-data-provider';
+import type { TPreset, TPlugin } from 'brainiac-data-provider';
 
 describe('presets utils', () => {
   describe('getPresetTitle', () => {

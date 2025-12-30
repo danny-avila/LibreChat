@@ -7,13 +7,13 @@ import {
   marketplacePermissionsSchema,
   peoplePickerPermissionsSchema,
   mcpServersPermissionsSchema,
-} from 'librechat-data-provider';
+} from 'brainiac-data-provider';
 import type {
   UseQueryOptions,
   UseMutationResult,
   QueryObserverResult,
 } from '@tanstack/react-query';
-import type * as t from 'librechat-data-provider';
+import type * as t from 'brainiac-data-provider';
 
 export const useGetRole = (
   roleName: string,

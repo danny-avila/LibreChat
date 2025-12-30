@@ -1,5 +1,5 @@
 import { useFormContext } from 'react-hook-form';
-import { Input, Label, TextareaAutosize } from '@librechat/client';
+import { Input, Label, TextareaAutosize } from '@brainiac/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';

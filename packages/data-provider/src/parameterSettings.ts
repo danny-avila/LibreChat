@@ -90,7 +90,7 @@ const createDefinition = (
   return { ...base, ...overrides } as SettingDefinition;
 };
 
-export const librechat = {
+export const brainiac = {
   modelLabel: {
     key: 'modelLabel',
     label: 'com_endpoint_custom_name',
@@ -155,10 +155,10 @@ export const librechat = {
 
 const openAIParams: Record<string, SettingDefinition> = {
   chatGptLabel: {
-    ...librechat.modelLabel,
+    ...brainiac.modelLabel,
     key: 'chatGptLabel',
   },
-  promptPrefix: librechat.promptPrefix,
+  promptPrefix: brainiac.promptPrefix,
   temperature: createDefinition(baseDefinitions.temperature, {
     default: openAISettings.temperature.default,
     range: {
@@ -641,50 +641,50 @@ const google: Record<string, SettingDefinition> = {
 };
 
 const googleConfig: SettingsConfiguration = [
-  librechat.modelLabel,
-  librechat.promptPrefix,
-  librechat.maxContextTokens,
+  brainiac.modelLabel,
+  brainiac.promptPrefix,
+  brainiac.maxContextTokens,
   google.maxOutputTokens,
   google.temperature,
   google.topP,
   google.topK,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   google.thinking,
   google.thinkingBudget,
   google.web_search,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 const googleCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
-  librechat.promptPrefix,
+  brainiac.modelLabel,
+  brainiac.promptPrefix,
 ];
 
 const googleCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  brainiac.maxContextTokens,
   google.maxOutputTokens,
   google.temperature,
   google.topP,
   google.topK,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   google.thinking,
   google.thinkingBudget,
   google.web_search,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 const openAI: SettingsConfiguration = [
-  librechat.modelLabel,
-  librechat.promptPrefix,
-  librechat.maxContextTokens,
+  brainiac.modelLabel,
+  brainiac.promptPrefix,
+  brainiac.maxContextTokens,
   openAIParams.max_tokens,
   openAIParams.temperature,
   openAIParams.top_p,
   openAIParams.frequency_penalty,
   openAIParams.presence_penalty,
   baseDefinitions.stop,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   baseDefinitions.imageDetail,
   openAIParams.web_search,
   openAIParams.reasoning_effort,
@@ -692,24 +692,24 @@ const openAI: SettingsConfiguration = [
   openAIParams.reasoning_summary,
   openAIParams.verbosity,
   openAIParams.disableStreaming,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 const openAICol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
-  librechat.promptPrefix,
+  brainiac.modelLabel,
+  brainiac.promptPrefix,
 ];
 
 const openAICol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  brainiac.maxContextTokens,
   openAIParams.max_tokens,
   openAIParams.temperature,
   openAIParams.top_p,
   openAIParams.frequency_penalty,
   openAIParams.presence_penalty,
   baseDefinitions.stop,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   baseDefinitions.imageDetail,
   openAIParams.reasoning_effort,
   openAIParams.reasoning_summary,
@@ -717,165 +717,165 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.useResponsesApi,
   openAIParams.web_search,
   openAIParams.disableStreaming,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 const anthropicConfig: SettingsConfiguration = [
-  librechat.modelLabel,
-  librechat.promptPrefix,
-  librechat.maxContextTokens,
+  brainiac.modelLabel,
+  brainiac.promptPrefix,
+  brainiac.maxContextTokens,
   anthropic.maxOutputTokens,
   anthropic.temperature,
   anthropic.topP,
   anthropic.topK,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.web_search,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 const anthropicCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
-  librechat.promptPrefix,
+  brainiac.modelLabel,
+  brainiac.promptPrefix,
 ];
 
 const anthropicCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  brainiac.maxContextTokens,
   anthropic.maxOutputTokens,
   anthropic.temperature,
   anthropic.topP,
   anthropic.topK,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   anthropic.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.web_search,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 const bedrockAnthropic: SettingsConfiguration = [
-  librechat.modelLabel,
+  brainiac.modelLabel,
   bedrock.system,
-  librechat.maxContextTokens,
+  brainiac.maxContextTokens,
   bedrock.maxTokens,
   bedrock.temperature,
   bedrock.topP,
   bedrock.topK,
   baseDefinitions.stop,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   bedrock.region,
   bedrock.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 const bedrockMistral: SettingsConfiguration = [
-  librechat.modelLabel,
-  librechat.promptPrefix,
-  librechat.maxContextTokens,
+  brainiac.modelLabel,
+  brainiac.promptPrefix,
+  brainiac.maxContextTokens,
   bedrock.maxTokens,
   mistral.temperature,
   mistral.topP,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   bedrock.region,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 const bedrockCohere: SettingsConfiguration = [
-  librechat.modelLabel,
-  librechat.promptPrefix,
-  librechat.maxContextTokens,
+  brainiac.modelLabel,
+  brainiac.promptPrefix,
+  brainiac.maxContextTokens,
   bedrock.maxTokens,
   cohere.temperature,
   cohere.topP,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   bedrock.region,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 const bedrockGeneral: SettingsConfiguration = [
-  librechat.modelLabel,
-  librechat.promptPrefix,
-  librechat.maxContextTokens,
+  brainiac.modelLabel,
+  brainiac.promptPrefix,
+  brainiac.maxContextTokens,
   meta.temperature,
   meta.topP,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   bedrock.region,
   bedrock.promptCache,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 const bedrockAnthropicCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
+  brainiac.modelLabel,
   bedrock.system,
   baseDefinitions.stop,
 ];
 
 const bedrockAnthropicCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  brainiac.maxContextTokens,
   bedrock.maxTokens,
   bedrock.temperature,
   bedrock.topP,
   bedrock.topK,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   bedrock.region,
   bedrock.promptCache,
   anthropic.thinking,
   anthropic.thinkingBudget,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 const bedrockMistralCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
-  librechat.promptPrefix,
+  brainiac.modelLabel,
+  brainiac.promptPrefix,
 ];
 
 const bedrockMistralCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  brainiac.maxContextTokens,
   bedrock.maxTokens,
   mistral.temperature,
   mistral.topP,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   bedrock.region,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 const bedrockCohereCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
-  librechat.promptPrefix,
+  brainiac.modelLabel,
+  brainiac.promptPrefix,
 ];
 
 const bedrockCohereCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  brainiac.maxContextTokens,
   bedrock.maxTokens,
   cohere.temperature,
   cohere.topP,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   bedrock.region,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 const bedrockGeneralCol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
-  librechat.modelLabel,
-  librechat.promptPrefix,
+  brainiac.modelLabel,
+  brainiac.promptPrefix,
 ];
 
 const bedrockGeneralCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  brainiac.maxContextTokens,
   meta.temperature,
   meta.topP,
-  librechat.resendFiles,
+  brainiac.resendFiles,
   bedrock.region,
   bedrock.promptCache,
-  librechat.fileTokenLimit,
+  brainiac.fileTokenLimit,
 ];
 
 export const paramSettings: Record<string, SettingsConfiguration | undefined> = {

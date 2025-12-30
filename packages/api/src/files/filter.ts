@@ -1,5 +1,5 @@
-import { getEndpointFileConfig, mergeFileConfig, fileConfig } from 'librechat-data-provider';
-import type { IMongoFile } from '@librechat/data-schemas';
+import { getEndpointFileConfig, mergeFileConfig, fileConfig } from 'brainiac-data-provider';
+import type { IMongoFile } from '@brainiac/data-schemas';
 import type { ServerRequest } from '~/types';
 
 /**

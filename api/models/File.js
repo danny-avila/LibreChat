@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { EToolResources, FileContext } = require('librechat-data-provider');
+const { logger } = require('@brainiac/data-schemas');
+const { EToolResources, FileContext } = require('brainiac-data-provider');
 const { File } = require('~/db/models');
 
 /**

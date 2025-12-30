@@ -2,8 +2,8 @@ import {
   MCPOptions,
   StdioOptionsSchema,
   StreamableHTTPOptionsSchema,
-} from 'librechat-data-provider';
-import type { TUser } from 'librechat-data-provider';
+} from 'brainiac-data-provider';
+import type { TUser } from 'brainiac-data-provider';
 import { processMCPEnv } from '~/utils/env';
 
 // Helper function to create test user objects
@@ -817,14 +817,14 @@ describe('Environment Variable Extraction (MCP)', () => {
         PAT_TOKEN: 'ghp_1234567890abcdef1234567890abcdef12345678', // GitHub Personal Access Token
       };
 
-      // Simulate the GitHub MCP server configuration from librechat.yaml
+      // Simulate the GitHub MCP server configuration from brainiac.yaml
       const options: MCPOptions = {
         type: 'streamable-http',
         url: 'https://api.githubcopilot.com/mcp/',
         headers: {
           Authorization: '{{PAT_TOKEN}}',
           'Content-Type': 'application/json',
-          'User-Agent': 'LibreChat-MCP-Client',
+          'User-Agent': 'Brainiac-MCP-Client',
         },
       };
 
@@ -833,7 +833,7 @@ describe('Environment Variable Extraction (MCP)', () => {
       expect('headers' in result && result.headers).toEqual({
         Authorization: 'ghp_1234567890abcdef1234567890abcdef12345678',
         'Content-Type': 'application/json',
-        'User-Agent': 'LibreChat-MCP-Client',
+        'User-Agent': 'Brainiac-MCP-Client',
       });
       expect('url' in result && result.url).toBe('https://api.githubcopilot.com/mcp/');
       expect(result.type).toBe('streamable-http');

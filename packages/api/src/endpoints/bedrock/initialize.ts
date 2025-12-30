@@ -7,7 +7,7 @@ import {
   bedrockInputParser,
   bedrockOutputParser,
   removeNullishValues,
-} from 'librechat-data-provider';
+} from 'brainiac-data-provider';
 import type { BaseInitializeParams, InitializeResultBase, BedrockCredentials } from '~/types';
 import { checkUserKeyExpiry } from '~/utils';
 

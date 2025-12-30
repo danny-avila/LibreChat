@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback } from 'react';
 import { Import } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, TStartupConfig } from 'librechat-data-provider';
-import { Spinner, useToastContext, Label, Button } from '@librechat/client';
+import { QueryKeys, TStartupConfig } from 'brainiac-data-provider';
+import { Spinner, useToastContext, Label, Button } from '@brainiac/client';
 import { useUploadConversationsMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';

@@ -1,13 +1,13 @@
 const { z } = require('zod');
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@brainiac/data-schemas');
 const {
   agentCreateSchema,
   agentUpdateSchema,
   mergeAgentOcrConversion,
   convertOcrToContextInPlace,
-} = require('@librechat/api');
+} = require('@brainiac/api');
 const {
   Tools,
   Constants,
@@ -21,7 +21,7 @@ const {
   removeNullishValues,
   CacheKeys,
   Time,
-} = require('librechat-data-provider');
+} = require('brainiac-data-provider');
 const {
   getListAgentsByAccess,
   countPromotedAgents,

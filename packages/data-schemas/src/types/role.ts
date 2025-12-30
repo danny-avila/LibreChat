@@ -1,5 +1,5 @@
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { DeepPartial } from 'librechat-data-provider';
+import { PermissionTypes, Permissions } from 'brainiac-data-provider';
+import type { DeepPartial } from 'brainiac-data-provider';
 import type { Document } from 'mongoose';
 import { CursorPaginationParams } from '~/common';
 

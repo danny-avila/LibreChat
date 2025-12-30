@@ -1,5 +1,5 @@
-const { CacheKeys } = require('librechat-data-provider');
-const { logger, AppService } = require('@librechat/data-schemas');
+const { CacheKeys } = require('brainiac-data-provider');
+const { logger, AppService } = require('@brainiac/data-schemas');
 const { loadAndFormatTools } = require('~/server/services/start/tools');
 const loadCustomConfig = require('./loadCustomConfig');
 const { setCachedTools } = require('./getCachedTools');

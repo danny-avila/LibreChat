@@ -1,5 +1,5 @@
-import { AuthType, EToolResources } from 'librechat-data-provider';
-import type { TPlugin } from 'librechat-data-provider';
+import { AuthType, EToolResources } from 'brainiac-data-provider';
+import type { TPlugin } from 'brainiac-data-provider';
 import { filterUniquePlugins, checkPluginAuth, getToolkitKey } from './format';
 
 describe('format.ts helper functions', () => {

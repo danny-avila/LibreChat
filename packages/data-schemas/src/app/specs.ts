@@ -1,9 +1,9 @@
 import logger from '~/config/winston';
-import { EModelEndpoint, normalizeEndpointName } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
+import { EModelEndpoint, normalizeEndpointName } from 'brainiac-data-provider';
+import type { TCustomConfig } from 'brainiac-data-provider';
 
 /**
- * Sets up Model Specs from the config (`librechat.yaml`) file.
+ * Sets up Model Specs from the config (`brainiac.yaml`) file.
  * @param [endpoints] - The loaded custom configuration for endpoints.
  * @param [modelSpecs] - The loaded custom configuration for model specs.
  * @param [interfaceConfig] - The loaded interface configuration.
@@ -66,7 +66,7 @@ export function processModelSpecs(
     if (!endpoint) {
       logger.warn(`Model spec with endpoint "${currentEndpoint}" was skipped: Endpoint not found in configuration. The \`endpoint\` value must exactly match either a system-defined endpoint or a custom endpoint defined by the user.
 
-For more information, see the documentation at https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/model_specs#endpoint`);
+For more information, see the documentation at https://www.brainiac.ai/docs/configuration/brainiac_yaml/object_structure/model_specs#endpoint`);
       continue;
     }
 

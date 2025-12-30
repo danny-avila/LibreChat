@@ -1,5 +1,5 @@
 import { useRecoilValue } from 'recoil';
-import type { TSubmission } from 'librechat-data-provider';
+import type { TSubmission } from 'brainiac-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import useSSE from './useSSE';
 import useResumableSSE from './useResumableSSE';

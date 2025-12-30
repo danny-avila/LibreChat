@@ -1,5 +1,5 @@
-import { logger } from '@librechat/data-schemas';
-import type { IUser } from '@librechat/data-schemas';
+import { logger } from '@brainiac/data-schemas';
+import type { IUser } from '@brainiac/data-schemas';
 
 export interface OpenIDTokenInfo {
   accessToken?: string;

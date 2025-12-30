@@ -1,5 +1,5 @@
 {
-  "name": "librechat-data-provider/react-query",
+  "name": "brainiac-data-provider/react-query",
   "private": true,
   "main": "../index.js",
   "module": "./index.es.js",

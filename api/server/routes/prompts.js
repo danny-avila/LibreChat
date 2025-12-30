@@ -1,5 +1,5 @@
 const express = require('express');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@brainiac/data-schemas');
 const {
   generateCheckAccess,
   markPublicPromptGroups,
@@ -8,7 +8,7 @@ const {
   safeValidatePromptGroupUpdate,
   createEmptyPromptGroupsResponse,
   filterAccessibleIdsBySharedLogic,
-} = require('@librechat/api');
+} = require('@brainiac/api');
 const {
   Permissions,
   SystemRoles,
@@ -17,7 +17,7 @@ const {
   PrincipalType,
   PermissionBits,
   PermissionTypes,
-} = require('librechat-data-provider');
+} = require('brainiac-data-provider');
 const {
   getListPromptGroupsByAccess,
   makePromptProduction,

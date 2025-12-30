@@ -1,5 +1,5 @@
 import { Document, Types } from 'mongoose';
-import type { GraphEdge } from 'librechat-data-provider';
+import type { GraphEdge } from 'brainiac-data-provider';
 
 export interface ISupportContact {
   name?: string;

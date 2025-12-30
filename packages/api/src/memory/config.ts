@@ -1,5 +1,5 @@
-import { memorySchema } from 'librechat-data-provider';
-import type { TCustomConfig, TMemoryConfig } from 'librechat-data-provider';
+import { memorySchema } from 'brainiac-data-provider';
+import type { TCustomConfig, TMemoryConfig } from 'brainiac-data-provider';
 
 const hasValidAgent = (agent: TMemoryConfig['agent']) =>
   !!agent &&

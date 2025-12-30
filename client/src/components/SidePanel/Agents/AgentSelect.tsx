@@ -1,10 +1,10 @@
 import { EarthIcon } from 'lucide-react';
-import { ControlCombobox } from '@librechat/client';
+import { ControlCombobox } from '@brainiac/client';
 import { useCallback, useEffect, useRef } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
-import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
+import { AgentCapabilities, defaultAgentFormValues } from 'brainiac-data-provider';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
-import type { Agent, AgentCreateParams } from 'librechat-data-provider';
+import type { Agent, AgentCreateParams } from 'brainiac-data-provider';
 import type { TAgentCapabilities, AgentForm } from '~/common';
 import { cn, createProviderOption, processAgentOption, getDefaultAgentFormValues } from '~/utils';
 import { useLocalize, useAgentDefaultPermissionLevel } from '~/hooks';

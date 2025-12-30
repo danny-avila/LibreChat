@@ -1,5 +1,5 @@
-import { Constants } from 'librechat-data-provider';
-import type { JsonSchemaType } from '@librechat/data-schemas';
+import { Constants } from 'brainiac-data-provider';
+import type { JsonSchemaType } from '@brainiac/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
 import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
@@ -111,10 +111,10 @@ export class MCPServerInspector {
   }
 
   /**
-   * Converts server tools to LibreChat-compatible tool functions format.
+   * Converts server tools to Brainiac-compatible tool functions format.
    * @param serverName - The name of the server
    * @param connection - The MCP connection
-   * @returns Tool functions formatted for LibreChat
+   * @returns Tool functions formatted for Brainiac
    */
   public static async getToolFunctions(
     serverName: string,

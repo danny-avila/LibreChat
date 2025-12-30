@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
-import { Providers } from '@librechat/agents';
-import { EModelEndpoint } from 'librechat-data-provider';
-import type { IMongoFile } from '@librechat/data-schemas';
+import { Providers } from '@brainiac/agents';
+import { EModelEndpoint } from 'brainiac-data-provider';
+import type { IMongoFile } from '@brainiac/data-schemas';
 import type { ServerRequest } from '~/types';
 import { filterFilesByEndpointConfig } from './filter';
 

@@ -1,6 +1,6 @@
 const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@brainiac/data-schemas');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 
 class AzureAISearch extends Tool {

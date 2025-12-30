@@ -1,6 +1,6 @@
 const path = require('path');
-const { logger } = require('@librechat/data-schemas');
-const { loadServiceKey, isUserProvided } = require('@librechat/api');
+const { logger } = require('@brainiac/data-schemas');
+const { loadServiceKey, isUserProvided } = require('@brainiac/api');
 const { config } = require('./EndpointService');
 
 async function loadAsyncEndpoints() {

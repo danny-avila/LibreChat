@@ -1,17 +1,17 @@
-const { logger } = require('@librechat/data-schemas');
-const { createContentAggregator } = require('@librechat/agents');
+const { logger } = require('@brainiac/data-schemas');
+const { createContentAggregator } = require('@brainiac/agents');
 const {
   initializeAgent,
   validateAgentModel,
   getCustomEndpointConfig,
   createSequentialChainEdges,
-} = require('@librechat/api');
+} = require('@brainiac/api');
 const {
   EModelEndpoint,
   isAgentsEndpoint,
   getResponseSender,
   isEphemeralAgentId,
-} = require('librechat-data-provider');
+} = require('brainiac-data-provider');
 const {
   createToolEndCallback,
   getDefaultHandlers,

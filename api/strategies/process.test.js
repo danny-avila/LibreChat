@@ -1,4 +1,4 @@
-const { FileSources } = require('librechat-data-provider');
+const { FileSources } = require('brainiac-data-provider');
 const { handleExistingUser } = require('./process');
 
 jest.mock('~/server/services/Files/strategies', () => ({
@@ -19,7 +19,7 @@ jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({}),
 }));
 
-jest.mock('@librechat/api', () => ({
+jest.mock('@brainiac/api', () => ({
   getBalanceConfig: jest.fn(() => ({
     enabled: false,
   })),

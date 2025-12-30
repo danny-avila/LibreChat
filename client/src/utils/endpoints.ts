@@ -8,8 +8,8 @@ import {
   isAgentsEndpoint,
   isEphemeralAgentId,
   isAssistantsEndpoint,
-} from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
+} from 'brainiac-data-provider';
+import type * as t from 'brainiac-data-provider';
 import type { LocalizeFunction, IconsRecord } from '~/common';
 
 /**

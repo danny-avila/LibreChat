@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment } from 'brainiac-data-provider';
 import { StackedFavicons } from '~/components/Web/Sources';
 import { useSearchContext } from '~/Providers';
 import ProgressText from './ProgressText';

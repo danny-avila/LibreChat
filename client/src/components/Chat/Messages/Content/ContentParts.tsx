@@ -1,11 +1,11 @@
 import { memo, useMemo, useCallback } from 'react';
-import { ContentTypes } from 'librechat-data-provider';
+import { ContentTypes } from 'brainiac-data-provider';
 import type {
   TMessageContentParts,
   SearchResultData,
   TAttachment,
   Agents,
-} from 'librechat-data-provider';
+} from 'brainiac-data-provider';
 import { MessageContext, SearchContext } from '~/Providers';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { mapAttachments } from '~/utils';

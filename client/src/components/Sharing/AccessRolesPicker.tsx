@@ -1,10 +1,10 @@
 import React from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
-import { DropdownPopup, Skeleton } from '@librechat/client';
-import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
-import { useGetAccessRolesQuery } from 'librechat-data-provider/react-query';
-import type { AccessRole } from 'librechat-data-provider';
+import { DropdownPopup, Skeleton } from '@brainiac/client';
+import { AccessRoleIds, ResourceType } from 'brainiac-data-provider';
+import { useGetAccessRolesQuery } from 'brainiac-data-provider/react-query';
+import type { AccessRole } from 'brainiac-data-provider';
 import type * as t from '~/common';
 import { cn, getRoleLocalizationKeys } from '~/utils';
 import { useLocalize } from '~/hooks';

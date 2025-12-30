@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, X } from 'lucide-react';
-import { Input } from '@librechat/client';
+import { Input } from '@brainiac/client';
 import { useDebounce, useLocalize } from '~/hooks';
 
 /**

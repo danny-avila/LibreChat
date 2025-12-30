@@ -1,5 +1,5 @@
-import { EModelEndpoint, getConfigDefaults } from 'librechat-data-provider';
-import type { TCustomConfig, FileSources, DeepPartial } from 'librechat-data-provider';
+import { EModelEndpoint, getConfigDefaults } from 'brainiac-data-provider';
+import type { TCustomConfig, FileSources, DeepPartial } from 'brainiac-data-provider';
 import type { AppConfig, FunctionTool } from '~/types/app';
 import { loadDefaultInterface } from './interface';
 import { loadTurnstileConfig } from './turnstile';

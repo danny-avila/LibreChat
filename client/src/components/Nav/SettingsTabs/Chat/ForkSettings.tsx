@@ -1,6 +1,6 @@
 import { useRecoilState } from 'recoil';
-import { ForkOptions } from 'librechat-data-provider';
-import { Dropdown, Switch, InfoHoverCard, ESide } from '@librechat/client';
+import { ForkOptions } from 'brainiac-data-provider';
+import { Dropdown, Switch, InfoHoverCard, ESide } from '@brainiac/client';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 

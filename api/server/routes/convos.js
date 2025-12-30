@@ -1,9 +1,9 @@
 const multer = require('multer');
 const express = require('express');
-const { sleep } = require('@librechat/agents');
-const { isEnabled } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
-const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
+const { sleep } = require('@brainiac/agents');
+const { isEnabled } = require('@brainiac/api');
+const { logger } = require('@brainiac/data-schemas');
+const { CacheKeys, EModelEndpoint } = require('brainiac-data-provider');
 const {
   createImportLimiters,
   validateConvoAccess,

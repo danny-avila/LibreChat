@@ -1,5 +1,5 @@
-import type { Agents } from 'librechat-data-provider';
-import type { StandardGraph } from '@librechat/agents';
+import type { Agents } from 'brainiac-data-provider';
+import type { StandardGraph } from '@brainiac/agents';
 
 /**
  * Job status enum

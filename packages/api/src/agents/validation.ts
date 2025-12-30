@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { ViolationTypes, ErrorTypes } from 'librechat-data-provider';
-import type { Agent, TModelsConfig } from 'librechat-data-provider';
+import { ViolationTypes, ErrorTypes } from 'brainiac-data-provider';
+import type { Agent, TModelsConfig } from 'brainiac-data-provider';
 import type { Request, Response } from 'express';
 
 /** Avatar schema shared between create and update */

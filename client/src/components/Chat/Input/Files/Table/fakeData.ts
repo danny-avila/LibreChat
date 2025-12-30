@@ -1,5 +1,5 @@
-import { FileSources } from 'librechat-data-provider';
-import type { TFile } from 'librechat-data-provider';
+import { FileSources } from 'brainiac-data-provider';
+import type { TFile } from 'brainiac-data-provider';
 
 export const files: TFile[] = [
   {

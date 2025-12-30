@@ -17,7 +17,7 @@ type AnthropicInput = BedrockConverseInput & {
 
 export const bedrockInputSchema = s.tConversationSchema
   .pick({
-    /* LibreChat params; optionType: 'conversation' */
+    /* Brainiac params; optionType: 'conversation' */
     modelLabel: true,
     promptPrefix: true,
     resendFiles: true,
@@ -60,7 +60,7 @@ export type BedrockConverseInput = z.infer<typeof bedrockInputSchema>;
 
 export const bedrockInputParser = s.tConversationSchema
   .pick({
-    /* LibreChat params; optionType: 'conversation' */
+    /* Brainiac params; optionType: 'conversation' */
     modelLabel: true,
     promptPrefix: true,
     resendFiles: true,

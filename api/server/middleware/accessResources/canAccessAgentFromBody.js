@@ -1,10 +1,10 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('@brainiac/data-schemas');
 const {
   Constants,
   ResourceType,
   isAgentsEndpoint,
   isEphemeralAgentId,
-} = require('librechat-data-provider');
+} = require('brainiac-data-provider');
 const { canAccessResource } = require('./canAccessResource');
 const { getAgent } = require('~/models/Agent');
 

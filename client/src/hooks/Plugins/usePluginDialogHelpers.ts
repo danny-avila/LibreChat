@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { TPlugin } from 'librechat-data-provider';
+import type { TPlugin } from 'brainiac-data-provider';
 
 function usePluginDialogHelpers() {
   const [maxPage, setMaxPage] = useState(1);

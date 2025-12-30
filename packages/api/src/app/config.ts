@@ -1,11 +1,11 @@
-import { logger } from '@librechat/data-schemas';
+import { logger } from '@brainiac/data-schemas';
 import {
   EModelEndpoint,
   removeNullishValues,
   normalizeEndpointName,
-} from 'librechat-data-provider';
-import type { TCustomConfig, TEndpoint, TTransactionsConfig } from 'librechat-data-provider';
-import type { AppConfig } from '@librechat/data-schemas';
+} from 'brainiac-data-provider';
+import type { TCustomConfig, TEndpoint, TTransactionsConfig } from 'brainiac-data-provider';
+import type { AppConfig } from '@brainiac/data-schemas';
 import { isEnabled } from '~/utils';
 
 /**

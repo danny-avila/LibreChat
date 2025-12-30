@@ -8,7 +8,7 @@ rag:
     EMBEDDINGS_PROVIDER: openai
 
 image:
-  repository: danny-avila/librechat-rag-api-dev-lite # there is rag-api-dev and rag-api-dev-lite. currently only lite is docuimented
+  repository: danny-avila/brainiac-rag-api-dev-lite # there is rag-api-dev and rag-api-dev-lite. currently only lite is docuimented
   registry: ghcr.io
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
@@ -23,11 +23,11 @@ postgresql:
     repository: bat-bs/bitnami-pgvector
     tag: pg16
   auth:
-    database: librechat-vectordb
+    database: brainiac-vectordb
     username: postgres
     # define a secret with values for "postgres-password", "password" (user Password)  and "replication-password" or add values directly
-    existingSecret: librechat-vectordb
-    # postgres-password is needed to enable pgvector extension. If you enable it manually you can use "password" and user "librechat"
+    existingSecret: brainiac-vectordb
+    # postgres-password is needed to enable pgvector extension. If you enable it manually you can use "password" and user "brainiac"
     secretKeys:
       userPasswordKey: postgres-password
       adminPasswordKey: postgres-password

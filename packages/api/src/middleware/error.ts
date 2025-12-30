@@ -1,5 +1,5 @@
-import { logger } from '@librechat/data-schemas';
-import { ErrorTypes } from 'librechat-data-provider';
+import { logger } from '@brainiac/data-schemas';
+import { ErrorTypes } from 'brainiac-data-provider';
 import type { NextFunction, Request, Response } from 'express';
 import type { MongoServerError, ValidationError, CustomError } from '~/types';
 

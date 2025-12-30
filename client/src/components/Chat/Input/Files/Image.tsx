@@ -1,4 +1,4 @@
-import { FileSources } from 'librechat-data-provider';
+import { FileSources } from 'brainiac-data-provider';
 import ImagePreview from './ImagePreview';
 import RemoveFile from './RemoveFile';
 

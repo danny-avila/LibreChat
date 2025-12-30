@@ -1,4 +1,4 @@
-import { DotsIcon, TrashIcon } from '@librechat/client';
+import { DotsIcon, TrashIcon } from '@brainiac/client';
 
 export default function Template() {
   return (

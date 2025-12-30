@@ -9,7 +9,7 @@ const {
   marketplacePermissionsSchema,
   peoplePickerPermissionsSchema,
   mcpServersPermissionsSchema,
-} = require('librechat-data-provider');
+} = require('brainiac-data-provider');
 const { checkAdmin, requireJwtAuth } = require('~/server/middleware');
 const { updateRoleByName, getRoleByName } = require('~/models/Role');
 

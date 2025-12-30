@@ -50,7 +50,7 @@ const connect = require('./connect');
     console.green('MeiliSearch sync flags have been reset successfully!');
     console.cyan(`\nTotal messages to sync: ${totalMessages}`);
     console.cyan(`Total conversations to sync: ${totalConversations}`);
-    console.yellow('\nThe next time LibreChat starts or performs a sync check,');
+    console.yellow('\nThe next time Brainiac starts or performs a sync check,');
     console.yellow('all data will be re-indexed into MeiliSearch.');
     console.purple('---------------------------------------\n');
 
@@ -59,7 +59,7 @@ const connect = require('./connect');
 
     if (showAdvanced.toLowerCase() === 'y') {
       console.cyan('\nAdvanced Options:');
-      console.yellow('1. To trigger immediate sync, restart LibreChat');
+      console.yellow('1. To trigger immediate sync, restart Brainiac');
       console.yellow('2. To disable sync, set MEILI_NO_SYNC=true in .env');
       console.yellow(
         '3. To adjust sync batch size, set MEILI_SYNC_BATCH_SIZE in .env (default: 100)',

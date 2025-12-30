@@ -1,6 +1,6 @@
 const { z } = require('zod');
-const { logger } = require('@librechat/data-schemas');
-const { createTempChatExpirationDate } = require('@librechat/api');
+const { logger } = require('@brainiac/data-schemas');
+const { createTempChatExpirationDate } = require('@brainiac/api');
 const { Message } = require('~/db/models');
 
 const idSchema = z.string().uuid();

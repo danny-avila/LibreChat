@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
-import { isAssistantsEndpoint } from 'librechat-data-provider';
-import type { EModelEndpoint } from 'librechat-data-provider';
+import { isAssistantsEndpoint } from 'brainiac-data-provider';
+import type { EModelEndpoint } from 'brainiac-data-provider';
 import store from '~/store';
 
 /**

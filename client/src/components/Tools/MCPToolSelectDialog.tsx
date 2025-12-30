@@ -2,10 +2,10 @@ import { useEffect, useState, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
-import { Constants, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
+import { Constants, EModelEndpoint, QueryKeys } from 'brainiac-data-provider';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
-import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import type { TError, AgentToolType } from 'librechat-data-provider';
+import { useUpdateUserPluginsMutation } from 'brainiac-data-provider/react-query';
+import type { TError, AgentToolType } from 'brainiac-data-provider';
 import type { AgentForm, ToolDialogProps } from '~/common';
 import {
   usePluginDialogHelpers,
