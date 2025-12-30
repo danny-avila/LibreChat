@@ -4,7 +4,6 @@ const {
   Tools,
   Constants,
   isAgentsEndpoint,
-  getResponseSender,
   isEphemeralAgentId,
   appendAgentIdSuffix,
   encodeEphemeralAgentId,
@@ -81,7 +80,7 @@ const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
   // If both primary and added agents are ephemeral, duplicate tools from primary agent
   const primaryIsEphemeral = primaryAgent && isEphemeralAgentId(primaryAgent.id);
   if (primaryIsEphemeral && Array.isArray(primaryAgent.tools)) {
-    // Get display name using getResponseSender
+    // Get endpoint config and model spec for display name fallbacks
     const appConfig = req.config;
     let endpointConfig = appConfig?.endpoints?.[endpoint];
     if (!isAgentsEndpoint(endpoint) && !endpointConfig) {
@@ -92,10 +91,13 @@ const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
       }
     }
 
-    const sender = getResponseSender({
-      modelLabel: rest.modelLabel,
-      modelDisplayLabel: endpointConfig?.modelDisplayLabel,
-    });
+    // Look up model spec for label fallback
+    const modelSpecs = appConfig?.modelSpecs?.list;
+    const modelSpec = spec != null && spec !== '' ? modelSpecs?.find((s) => s.name === spec) : null;
+
+    // For ephemeral agents, use modelLabel if provided, then model spec's label,
+    // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
+    const sender = rest.modelLabel ?? modelSpec?.label ?? endpointConfig?.modelDisplayLabel ?? '';
 
     const ephemeralId = encodeEphemeralAgentId({ endpoint, model, sender, index: 1 });
 
@@ -175,7 +177,7 @@ const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
     }
   }
 
-  // Get endpoint config for modelDisplayLabel (same pattern as initialize.js)
+  // Get endpoint config for modelDisplayLabel fallback
   const appConfig = req.config;
   let endpointConfig = appConfig?.endpoints?.[endpoint];
   if (!isAgentsEndpoint(endpoint) && !endpointConfig) {
@@ -186,11 +188,9 @@ const loadAddedAgent = async ({ req, conversation, primaryAgent }) => {
     }
   }
 
-  // Compute display name using getResponseSender (same logic used for main agent)
-  const sender = getResponseSender({
-    modelLabel: rest.modelLabel,
-    modelDisplayLabel: endpointConfig?.modelDisplayLabel,
-  });
+  // For ephemeral agents, use modelLabel if provided, then model spec's label,
+  // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
+  const sender = rest.modelLabel ?? modelSpec?.label ?? endpointConfig?.modelDisplayLabel ?? '';
 
   /** Encoded ephemeral agent ID with endpoint, model, sender, and index=1 to distinguish from primary */
   const ephemeralId = encodeEphemeralAgentId({ endpoint, model, sender, index: 1 });
