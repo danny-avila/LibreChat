@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["nodejs_20", "python3"]
+
+[phases.install]
+cmds = ["npm ci --no-audit"]
+
+[phases.build]
+cmds = ["npm run frontend"]
+
+[start]
+cmd = "npm run backend"
