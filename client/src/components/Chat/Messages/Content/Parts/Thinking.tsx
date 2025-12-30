@@ -1,8 +1,8 @@
-import { useState, useMemo, memo, useCallback } from 'react';
+import { useState, useMemo, memo, useCallback, useRef } from 'react';
 import { useAtomValue } from 'jotai';
-import { Clipboard, CheckMark } from '@librechat/client';
+import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
-import type { MouseEvent, FC } from 'react';
+import type { MouseEvent, FocusEvent, FC } from 'react';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
 import { useLocalize } from '~/hooks';
@@ -18,7 +18,7 @@ export const ThinkingContent: FC<{
   const fontSize = useAtomValue(fontSizeAtom);
 
   return (
-    <div className="relative rounded-3xl border border-border-medium bg-surface-tertiary p-4 text-text-secondary">
+    <div className="relative rounded-3xl border border-border-medium bg-surface-tertiary p-4 pb-10 text-text-secondary">
       <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{children}</p>
     </div>
   );
@@ -122,28 +122,54 @@ export const ThinkingButton = memo(
 );
 
 /**
- * ThinkingFooter - Footer with collapse button shown at the bottom of expanded content
- * Allows users to collapse without scrolling back to the top
+ * FloatingThinkingBar - Floating bar with expand/collapse button
+ * Shows on hover/focus, positioned at bottom right of thinking content
+ * Inspired by CodeBlock's FloatingCodeBar pattern
  */
-export const ThinkingFooter = memo(
-  ({ onClick }: { onClick: (e: MouseEvent<HTMLButtonElement>) => void }) => {
+export const FloatingThinkingBar = memo(
+  ({
+    isVisible,
+    isExpanded,
+    onClick,
+  }: {
+    isVisible: boolean;
+    isExpanded: boolean;
+    onClick: (e: MouseEvent<HTMLButtonElement>) => void;
+  }) => {
     const localize = useLocalize();
+    const tooltipText = isExpanded
+      ? localize('com_ui_collapse_thoughts')
+      : localize('com_ui_expand_thoughts');
 
     return (
-      <div className="mt-3 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={onClick}
-          aria-label={localize('com_ui_collapse_thoughts')}
-          className={cn(
-            'rounded-lg p-1.5 text-text-secondary-alt',
-            'hover:bg-surface-hover hover:text-text-primary',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
-          )}
-        >
-          <span className="sr-only">{localize('com_ui_collapse_thoughts')}</span>
-          <ChevronUp className="h-[18px] w-[18px]" aria-hidden="true" />
-        </button>
+      <div
+        className={cn(
+          'absolute bottom-3 right-3 flex items-center gap-2 transition-opacity duration-150',
+          isVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
+        )}
+      >
+        <TooltipAnchor
+          description={tooltipText}
+          render={
+            <button
+              type="button"
+              tabIndex={isVisible ? 0 : -1}
+              onClick={onClick}
+              aria-label={tooltipText}
+              className={cn(
+                'flex items-center justify-center rounded-lg bg-surface-secondary p-1.5 text-text-secondary-alt shadow-sm',
+                'hover:bg-surface-hover hover:text-text-primary',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+              )}
+            >
+              {isExpanded ? (
+                <ChevronUp className="h-[18px] w-[18px]" aria-hidden="true" />
+              ) : (
+                <ChevronDown className="h-[18px] w-[18px]" aria-hidden="true" />
+              )}
+            </button>
+          }
+        />
       </div>
     );
   },
@@ -168,10 +194,32 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
   const localize = useLocalize();
   const showThinking = useAtomValue(showThinkingAtom);
   const [isExpanded, setIsExpanded] = useState(showThinking);
+  const [isBarVisible, setIsBarVisible] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     setIsExpanded((prev) => !prev);
+  }, []);
+
+  const handleFocus = useCallback(() => {
+    setIsBarVisible(true);
+  }, []);
+
+  const handleBlur = useCallback((e: FocusEvent) => {
+    if (!containerRef.current?.contains(e.relatedTarget as Node)) {
+      setIsBarVisible(false);
+    }
+  }, []);
+
+  const handleMouseEnter = useCallback(() => {
+    setIsBarVisible(true);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (!containerRef.current?.contains(document.activeElement)) {
+      setIsBarVisible(false);
+    }
   }, []);
 
   const label = useMemo(() => localize('com_ui_thoughts'), [localize]);
@@ -189,7 +237,14 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
   }
 
   return (
-    <div className="group/thinking-container">
+    <div
+      ref={containerRef}
+      className="group/thinking-container"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+    >
       <div className="mb-4 pb-2 pt-2">
         <ThinkingButton
           isExpanded={isExpanded}
@@ -204,9 +259,13 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
           gridTemplateRows: isExpanded ? '1fr' : '0fr',
         }}
       >
-        <div className="overflow-hidden">
+        <div className="relative overflow-hidden">
           <ThinkingContent>{children}</ThinkingContent>
-          <ThinkingFooter onClick={handleClick} />
+          <FloatingThinkingBar
+            isVisible={isBarVisible && isExpanded}
+            isExpanded={isExpanded}
+            onClick={handleClick}
+          />
         </div>
       </div>
     </div>
@@ -215,7 +274,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
 
 ThinkingButton.displayName = 'ThinkingButton';
 ThinkingContent.displayName = 'ThinkingContent';
-ThinkingFooter.displayName = 'ThinkingFooter';
+FloatingThinkingBar.displayName = 'FloatingThinkingBar';
 Thinking.displayName = 'Thinking';
 
 export default memo(Thinking);
