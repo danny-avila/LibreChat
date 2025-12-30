@@ -710,7 +710,7 @@ export const tConversationSchema = z.object({
   additionalModelRequestFields: DocumentType.optional(),
   guardrailConfig: z
     .object({
-      guardrailIdentifier: z.string().min(0).max(2048),
+      guardrailIdentifier: z.string().min(1).max(2048),
       guardrailVersion: z.string().regex(/^(|([1-9][0-9]{0,7})|(DRAFT))$/),
       trace: z.enum(['enabled', 'disabled', 'enabled_full']).optional(),
     })
