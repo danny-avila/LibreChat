@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="brainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Brain outline -->
+  <path d="M 50 15
+           C 35 15, 25 25, 25 35
+           C 20 35, 15 40, 15 45
+           C 15 50, 18 54, 22 56
+           C 22 65, 25 72, 30 78
+           C 35 84, 42 88, 50 88
+           C 58 88, 65 84, 70 78
+           C 75 72, 78 65, 78 56
+           C 82 54, 85 50, 85 45
+           C 85 40, 80 35, 75 35
+           C 75 25, 65 15, 50 15 Z"
+        fill="url(#brainGradient)"
+        stroke="#4f46e5"
+        stroke-width="2"/>
+
+  <!-- Neural network connections -->
+  <g fill="#ffffff" opacity="0.9">
+    <!-- Left hemisphere nodes -->
+    <circle cx="35" cy="35" r="3"/>
+    <circle cx="30" cy="50" r="3"/>
+    <circle cx="35" cy="65" r="3"/>
+
+    <!-- Right hemisphere nodes -->
+    <circle cx="65" cy="35" r="3"/>
+    <circle cx="70" cy="50" r="3"/>
+    <circle cx="65" cy="65" r="3"/>
+
+    <!-- Center nodes -->
+    <circle cx="50" cy="30" r="3"/>
+    <circle cx="50" cy="50" r="4"/>
+    <circle cx="50" cy="70" r="3"/>
+  </g>
+
+  <!-- Connection lines -->
+  <g stroke="#ffffff" stroke-width="1.5" opacity="0.6" fill="none">
+    <!-- Left connections -->
+    <line x1="35" y1="35" x2="50" y2="30"/>
+    <line x1="35" y1="35" x2="30" y2="50"/>
+    <line x1="30" y1="50" x2="35" y2="65"/>
+    <line x1="30" y1="50" x2="50" y2="50"/>
+
+    <!-- Right connections -->
+    <line x1="65" y1="35" x2="50" y2="30"/>
+    <line x1="65" y1="35" x2="70" y2="50"/>
+    <line x1="70" y1="50" x2="65" y2="65"/>
+    <line x1="70" y1="50" x2="50" y2="50"/>
+
+    <!-- Center connections -->
+    <line x1="50" y1="30" x2="50" y2="50"/>
+    <line x1="50" y1="50" x2="50" y2="70"/>
+    <line x1="35" y1="65" x2="50" y2="70"/>
+    <line x1="65" y1="65" x2="50" y2="70"/>
+  </g>
+
+  <!-- Sparkle effect for AI -->
+  <g fill="#ffffff" opacity="0.8">
+    <circle cx="42" cy="22" r="1.5"/>
+    <circle cx="58" cy="25" r="1"/>
+    <circle cx="70" cy="40" r="1.5"/>
+  </g>
+</svg>
