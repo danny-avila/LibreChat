@@ -281,7 +281,6 @@ const loadTools = async ({
             user_id: user,
             files,
             pistonUrl: process.env.PISTON_URL,
-            pistonApiKey: process.env.PISTON_API_KEY,
             req: options.req,
             conversationId: options.conversationId,
           });

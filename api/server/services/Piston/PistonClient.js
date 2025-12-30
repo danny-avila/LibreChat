@@ -4,9 +4,8 @@ const { createAxiosInstance } = require('@librechat/api');
  * Client for interacting with Piston API
  */
 class PistonClient {
-  constructor(baseUrl, apiKey) {
+  constructor(baseUrl) {
     this.baseUrl = baseUrl;
-    this.apiKey = apiKey;
     this.axios = createAxiosInstance();
   }
 
@@ -51,7 +50,6 @@ class PistonClient {
       `${this.baseUrl}/execute`,
       executionParams,
       {
-        headers: this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {},
         timeout: 30000, // 30 second HTTP timeout for code execution
       },
     );
@@ -64,7 +62,6 @@ class PistonClient {
    */
   async getRuntimes() {
     const response = await this.axios.get(`${this.baseUrl}/runtimes`, {
-      headers: this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {},
       timeout: 5000,
     });
     return response.data;

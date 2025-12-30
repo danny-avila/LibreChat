@@ -10,7 +10,6 @@ export enum CodeExecutorType {
 export interface CodeExecutionConfig {
   executor: CodeExecutorType;
   pistonUrl?: string;
-  pistonApiKey?: string;
 }
 
 export const DEFAULT_CODE_EXECUTOR = CodeExecutorType.LIBRECHAT;

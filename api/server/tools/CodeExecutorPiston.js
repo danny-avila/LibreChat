@@ -164,14 +164,13 @@ const PistonCodeExecutionSchema = z.object({
  * @param {string} params.user_id - User ID
  * @param {Array} params.files - Array of files for upload
  * @param {string} params.pistonUrl - Piston API URL
- * @param {string} params.pistonApiKey - Optional API key
  * @param {Object} params.req - Server request object
  * @param {string} params.conversationId - Conversation ID
  * @returns {Object} LangChain tool instance
  */
 function createPistonCodeExecutionTool(params) {
   const pistonUrl = params.pistonUrl || DEFAULT_PISTON_URL;
-  const pistonClient = new PistonClient(pistonUrl, params.pistonApiKey);
+  const pistonClient = new PistonClient(pistonUrl);
 
   return tool(
     async ({ lang, code }) => {
