@@ -5,6 +5,7 @@ import { RecoilRoot } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { EModelEndpoint } from 'librechat-data-provider';
 import AttachFileMenu from '../AttachFileMenu';
+import store from '~/store';
 
 // Mock all the hooks
 jest.mock('~/hooks', () => ({
@@ -148,10 +149,13 @@ describe('AttachFileMenu', () => {
     });
   });
 
-  const renderAttachFileMenu = (props: any = {}) => {
+  const renderAttachFileMenu = (
+    props: any = {},
+    initialRecoilState?: (MutableSnapshot) => void,
+  ) => {
     return render(
       <QueryClientProvider client={queryClient}>
-        <RecoilRoot>
+        <RecoilRoot initializeState={initialRecoilState}>
           <AttachFileMenu conversationId="test-conversation" {...props} />
         </RecoilRoot>
       </QueryClientProvider>,
@@ -594,6 +598,16 @@ describe('AttachFileMenu', () => {
       fireEvent.click(uploadProviderButton);
 
       // Implementation detail - image_document type is used
+    });
+  });
+
+  describe('Additional metadata', () => {
+    it('should pass additional metadata w/ temporary status to file handler', () => {
+      renderAttachFileMenu({}, ({ set }) => set(store.isTemporary, true));
+
+      expect(mockUseFileHandling).toHaveBeenCalledWith({
+        additionalMetadata: { temporary: 'true' },
+      });
     });
   });
 
