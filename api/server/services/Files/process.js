@@ -19,7 +19,12 @@ const {
 } = require('librechat-data-provider');
 const { EnvVar } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
-const { sanitizeFilename, parseText, processAudioFile } = require('@librechat/api');
+const {
+  sanitizeFilename,
+  parseText,
+  processAudioFile,
+  createTempChatExpirationDate,
+} = require('@librechat/api');
 const {
   convertImage,
   resizeAndConvert,
@@ -284,13 +289,14 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
   const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
   const { handleImageUpload } = getStrategyFunctions(source);
-  const { file_id, temp_file_id, endpoint } = metadata;
+  const { file_id, temp_file_id, endpoint, temporary } = metadata;
 
   const { filepath, bytes, width, height } = await handleImageUpload({
     req,
     file,
     file_id,
     endpoint,
+    temporary,
   });
 
   const result = await createFile({
@@ -305,6 +311,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
     type: `image/${appConfig.imageOutputType}`,
     width,
     height,
+    expiresAt: getExpiresAt(appConfig, temporary),
   });
 
   if (returnFile) {
@@ -375,7 +382,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
   // Use the configured file strategy for regular file uploads (not vectordb)
   const source = isAssistantUpload ? assistantSource : appConfig.fileStrategy;
   const { handleFileUpload } = getStrategyFunctions(source);
-  const { file_id, temp_file_id = null } = metadata;
+  const { file_id, temp_file_id = null, temporary } = metadata;
 
   /** @type {OpenAI | undefined} */
   let openai;
@@ -398,6 +405,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
     file,
     file_id,
     openai,
+    temporary,
   });
 
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
@@ -439,6 +447,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
     source,
     height,
     width,
+    expiresAt: getExpiresAt(appConfig, temporary),
   });
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
 };
@@ -999,6 +1008,10 @@ function filterFile({ req, image, isAvatar }) {
   if (!height) {
     throw new Error('No height provided');
   }
+}
+
+function getExpiresAt(appConfig, temporary) {
+  return temporary ? createTempChatExpirationDate(appConfig?.interfaceConfig) : undefined;
 }
 
 module.exports = {
