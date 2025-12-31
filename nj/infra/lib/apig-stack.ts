@@ -6,17 +6,22 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import { Construct } from "constructs";
 
+export type EnvVars = {
+    vpcId: string,
+    domainName: string,
+    env: string, 
+}
+
 export interface ApigStackProps extends cdk.StackProps {
-  vpcId?: string;
+  envVars: EnvVars,
   listener: elbv2.ApplicationListener;
-  domainName: string;
 }
 
 export class ApigStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApigStackProps) {
     super(scope, id, props);
     const vpc = ec2.Vpc.fromLookup(this, "ExistingVpcForApi", {
-      vpcId: props.vpcId,
+      vpcId: props.envVars.vpcId,
     });
     // use local vpc instead of props.vpc
     const vpcLink = new apigatewayv2.VpcLink(this, "ServiceVpcLink", {
@@ -26,12 +31,12 @@ export class ApigStack extends cdk.Stack {
     });
 
     const certificate = new acm.Certificate(this, "ServiceCertificate", {
-      domainName: props.domainName,
+      domainName: props.envVars.domainName,
       validation: acm.CertificateValidation.fromDns(),
     });
 
     const domain = new apigatewayv2.DomainName(this, "ServiceDomain", {
-      domainName: props.domainName,
+      domainName: props.envVars.domainName,
       certificate,
     });
 
