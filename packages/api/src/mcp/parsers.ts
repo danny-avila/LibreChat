@@ -93,6 +93,7 @@ export function formatToolContent(
   result: t.MCPToolCallResponse,
   provider: t.Provider,
 ): t.FormattedContentResult {
+  const isError = result?.isError ?? false;
   if (!RECOGNIZED_PROVIDERS.has(provider)) {
     return [parseAsString(result), undefined];
   }
@@ -212,8 +213,8 @@ UI Resource Markers Available:
   }
 
   if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
-    return [formattedContent, artifacts];
+    return [formattedContent, artifacts, isError];
   }
 
-  return [currentTextBlock, artifacts];
+  return [currentTextBlock, artifacts, isError];
 }

@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
+const { ToolMessage } = require('@langchain/core/messages');
 const { logger } = require('@librechat/data-schemas');
 const {
   Providers,
@@ -502,6 +503,23 @@ function createToolInstance({
         oauthStart,
         oauthEnd,
       });
+
+      // Extract isError flag from result tuple [content, artifacts, isError]
+      const isError = Array.isArray(result) && result.length > 2 ? result[2] : false;
+
+      // If there's an error, return a ToolMessage with error status
+      if (isError && config?.toolCall?.id) {
+        const content = Array.isArray(result) ? result[0] : result;
+        const artifact = Array.isArray(result) && result.length > 1 ? result[1] : undefined;
+
+        return new ToolMessage({
+          name: normalizedToolKey,
+          tool_call_id: config.toolCall.id,
+          content: typeof content === 'string' ? content : JSON.stringify(content),
+          status: 'error',
+          artifact,
+        });
+      }
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
         return result[0];

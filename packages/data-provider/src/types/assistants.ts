@@ -342,6 +342,7 @@ export type CodeToolCall = {
 export type FunctionToolCall = {
   id: string; // The ID of the tool call object.
   function: {
+    isError?: boolean;
     arguments: string; // The arguments passed to the function.
     name: string; // The name of the function.
     output: string | null; // The output of the function, null if not submitted.

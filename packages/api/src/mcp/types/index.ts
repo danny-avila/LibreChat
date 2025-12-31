@@ -142,7 +142,7 @@ export type Artifacts =
     }
   | undefined;
 
-export type FormattedContentResult = [string | FormattedContent[], undefined | Artifacts];
+export type FormattedContentResult = [string | FormattedContent[], undefined | Artifacts, boolean?];
 
 export type ImageFormatter = (item: ImageContent) => FormattedContent;
 

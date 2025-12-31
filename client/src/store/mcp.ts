@@ -55,3 +55,48 @@ export const getServerInitState = (
 ): MCPServerInitState => {
   return states[serverName] || defaultServerInitState;
 };
+
+/**
+ * Interface for MCP progress tracking
+ */
+export interface MCPProgress {
+  progressToken: string;
+  serverName: string;
+  toolName: string;
+  progress: number;
+  total?: number;
+  message?: string;
+  timestamp: number;
+}
+
+/**
+ * Atom for tracking MCP tool call progress
+ * Maps conversationId to progress data
+ */
+export const mcpProgressAtom = atom<Record<string, MCPProgress[]>>({});
+
+/**
+ * Atom for tracking active MCP operations
+ * Maps conversationId to boolean (true if active)
+ */
+export const mcpActiveAtom = atom<Record<string, boolean>>({});
+
+/**
+ * Get progress for a conversation using atomFamily
+ */
+export const getMCPProgressAtom = atomFamily((conversationId: string) =>
+  atom((get) => {
+    const progress = get(mcpProgressAtom);
+    return progress[conversationId] || [];
+  }),
+);
+
+/**
+ * Get active state for a conversation using atomFamily
+ */
+export const getMCPActiveAtom = atomFamily((conversationId: string) =>
+  atom((get) => {
+    const active = get(mcpActiveAtom);
+    return active[conversationId] || false;
+  }),
+);
