@@ -169,6 +169,39 @@ describe('File Routes - Delete with Agent Access', () => {
     });
   });
 
+  describe('GET /files', () => {
+    it('should return files', async () => {
+      await createFile({
+        user: otherUserId,
+        file_id: new mongoose.Types.ObjectId(),
+        filename: 'user-file.txt',
+        filepath: '/uploads/user-file.txt',
+        bytes: 200,
+        type: 'text/plain',
+      });
+
+      const response = await request(app).get('/files');
+
+      expect(response.body.length).toBe(1);
+    });
+
+    it('should not return temporary files', async () => {
+      await createFile({
+        user: otherUserId,
+        file_id: new mongoose.Types.ObjectId(),
+        filename: 'user-file.txt',
+        filepath: '/uploads/user-file.txt',
+        bytes: 200,
+        type: 'text/plain',
+        expiresAt: new Date(),
+      });
+
+      const response = await request(app).get('/files');
+
+      expect(response.body.length).toBe(0);
+    });
+  });
+
   describe('DELETE /files', () => {
     it('should allow deleting files owned by the user', async () => {
       // Create a file owned by the current user

@@ -2,13 +2,18 @@ import React, { useRef } from 'react';
 import { FileUpload, TooltipAnchor, AttachmentIcon } from '@librechat/client';
 import { useLocalize, useFileHandling } from '~/hooks';
 import { cn } from '~/utils';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
 
 const AttachFile = ({ disabled }: { disabled?: boolean | null }) => {
   const localize = useLocalize();
   const inputRef = useRef<HTMLInputElement>(null);
+  const isTemporary = useRecoilValue(store.isTemporary);
   const isUploadDisabled = disabled ?? false;
 
-  const { handleFileChange } = useFileHandling();
+  const { handleFileChange } = useFileHandling({
+    additionalMetadata: { temporary: isTemporary.toString() },
+  });
 
   return (
     <FileUpload ref={inputRef} handleFileChange={handleFileChange}>
