@@ -36,53 +36,16 @@ export class EcsStack extends cdk.Stack {
     const librechatImage = props.librechatImage;
     const mongoImage = props.mongoImage;
     const postgresImage = props.postgresImage;
+    const isProd = props.envVars.env.includes("prod")
 
-    const endpointsSg = new ec2.SecurityGroup(this, "VpcEndpointsSg", { vpc });
-    vpc.addInterfaceEndpoint("EcrDockerEndpoint", {
-      service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
-      securityGroups: [endpointsSg],
-    });
-    vpc.addInterfaceEndpoint("EcrApiEndpoint", {
-      service: ec2.InterfaceVpcEndpointAwsService.ECR,
-      securityGroups: [endpointsSg],
-    });
-    vpc.addInterfaceEndpoint("CloudWatchLogsEndpoint", {
-      service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
-      securityGroups: [endpointsSg],
-    });
-    vpc.addInterfaceEndpoint("BedrockRuntimeEndpoint", {
-      service: ec2.InterfaceVpcEndpointAwsService.BEDROCK_RUNTIME,
-      securityGroups: [endpointsSg],
-    });    
-    vpc.addInterfaceEndpoint("CognitoEndpoint", {
-      service: ec2.InterfaceVpcEndpointAwsService.COGNITO_IDP,
-      securityGroups: [endpointsSg],
-      subnets: {
-        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-        availabilityZones: ['us-east-1a']
-  }
-    });
-    vpc.addGatewayEndpoint("S3GatewayEndpoint", {
-      service: ec2.GatewayVpcEndpointAwsService.S3,
-    });
+    this.CreateVPCEndpoints(props, vpc);
+    const cluster = this.CreateCluster(vpc);
+    const commonExecRole = this.CreateCommonExecRole(isProd);
+    // CreateLibrechatTask() // add secrets manager database creds
+    // CreateDatabaseSidecars() // only on dev
     
-    const cluster = new ecs.Cluster(this, "AIAssistantCluster", {
-      vpc,
-      clusterName: "ai-assistant-cluster",
-    });
-    cluster.addDefaultCloudMapNamespace({ name: "internal" });
 
-    // Shared execution role for all task definitions
-    const commonExecRole = new iam.Role(this, "CommonTaskExecutionRole", {
-      assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-      description: "Execution role for pulling ECR images and writing logs",
-    });
-    commonExecRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AmazonECSTaskExecutionRolePolicy"),
-    );
-    commonExecRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonS3ReadOnlyAccess")
-    );
+
 
     // Create LibreChat task definition using the shared execution role
     const librechatTaskDef = new ecs.FargateTaskDefinition(this, "LibreChatTaskDef", {
@@ -228,4 +191,68 @@ export class EcsStack extends cdk.Stack {
     new cdk.CfnOutput(this, "MongoImageUri", { value: mongoImage });
     new cdk.CfnOutput(this, "PostgresImageUri", { value: postgresImage });
   }
+
+  private CreateVPCEndpoints(props: EcsServicesProps, vpc: ec2.IVpc) {
+      const endpointsSg = new ec2.SecurityGroup(this, "VpcEndpointsSg", { vpc });
+      vpc.addInterfaceEndpoint("EcrDockerEndpoint", {
+        service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
+        securityGroups: [endpointsSg],
+      });
+      vpc.addInterfaceEndpoint("EcrApiEndpoint", {
+        service: ec2.InterfaceVpcEndpointAwsService.ECR,
+        securityGroups: [endpointsSg],
+      });
+      vpc.addInterfaceEndpoint("CloudWatchLogsEndpoint", {
+        service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
+        securityGroups: [endpointsSg],
+      });
+      vpc.addInterfaceEndpoint("BedrockRuntimeEndpoint", {
+        service: ec2.InterfaceVpcEndpointAwsService.BEDROCK_RUNTIME,
+        securityGroups: [endpointsSg],
+      });    
+      vpc.addInterfaceEndpoint("CognitoEndpoint", {
+        service: ec2.InterfaceVpcEndpointAwsService.COGNITO_IDP,
+        securityGroups: [endpointsSg],
+        subnets: {
+          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+          availabilityZones: ['us-east-1a']
+        } 
+      });
+      vpc.addGatewayEndpoint("S3GatewayEndpoint", {
+        service: ec2.GatewayVpcEndpointAwsService.S3,
+      });
+  };
+
+  private CreateCluster(vpc: ec2.IVpc) {
+    const cluster = new ecs.Cluster(this, "AIAssistantCluster", {
+      vpc,
+      clusterName: "ai-assistant-cluster",
+    });
+    cluster.addDefaultCloudMapNamespace({ name: "internal" });
+
+    return cluster;
+  };
+
+  private CreateCommonExecRole(isProd: boolean) {
+    const commonExecRole = new iam.Role(this, "CommonTaskExecutionRole", {
+      assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+      description: "Execution role for pulling ECR images and writing logs",
+    });
+    commonExecRole.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AmazonECSTaskExecutionRolePolicy"),
+    );
+    commonExecRole.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonS3ReadOnlyAccess")
+    );
+    if (isProd) {
+      commonExecRole.addManagedPolicy(
+        iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonRDSFullAccess")
+      );
+      commonExecRole.addManagedPolicy(
+        iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonDocDBFullAccess")
+      );
+    }
+    return commonExecRole;
+  };
 }
+

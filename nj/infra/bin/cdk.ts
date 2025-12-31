@@ -29,6 +29,7 @@
  */
 
 import * as cdk from "aws-cdk-lib";
+import { DatabaseStack } from "../lib/db-stack";
 import { EcsStack } from "../lib/ecs-stack";
 import { ApigStack } from "../lib/apig-stack";
 import { CognitoStack } from "../lib/cognito-stack";
@@ -42,6 +43,7 @@ const env = {
 };
 
 const isProd = process.env.AWS_ENV?.includes("prod"); // looks jank, but it's required for github actions reasons
+const tagEnv = isProd ? "production" : "development"
 
 const envVars = {
   vpcId: isProd ? "vpc-051d43046b343c516" : "vpc-06ea0349e255c4c59",
@@ -49,6 +51,18 @@ const envVars = {
   env: isProd ? "prod" : "dev", 
 }
 
+if (isProd) {
+  const databaseStack = new DatabaseStack(app, "DatabaseStack", {
+    env: env,
+    envVars: envVars,
+  });
+
+  cdk.Tags.of(databaseStack).add("Project", "AIAssistantService");
+  cdk.Tags.of(databaseStack).add("ManagedBy", "CDK");
+  cdk.Tags.of(databaseStack).add("Environment", tagEnv);
+}
+
+// TODO: Add SSM Parameter check for latest librechat version for prod
 const ecsStack = new EcsStack(app, "EcsStack", {
   env: env,
   envVars: envVars,
@@ -73,12 +87,12 @@ const cognitoStack = new CognitoStack(app, "CognitoStack", {
 
 cdk.Tags.of(ecsStack).add("Project", "AIAssistantService");
 cdk.Tags.of(ecsStack).add("ManagedBy", "CDK");
-cdk.Tags.of(ecsStack).add("Environment", process.env.NODE_ENV ?? "development");
+cdk.Tags.of(ecsStack).add("Environment", tagEnv);
 
 cdk.Tags.of(apiGatewayStack).add("Project", "AIAssistantService");
 cdk.Tags.of(apiGatewayStack).add("ManagedBy", "CDK");
-cdk.Tags.of(apiGatewayStack).add("Environment", process.env.NODE_ENV ?? "development");
+cdk.Tags.of(apiGatewayStack).add("Environment", tagEnv);
 
 cdk.Tags.of(cognitoStack).add("Project", "AIAssistantService");
 cdk.Tags.of(cognitoStack).add("ManagedBy", "CDK");
-cdk.Tags.of(cognitoStack).add("Environment", process.env.NODE_ENV ?? "development");
+cdk.Tags.of(cognitoStack).add("Environment", tagEnv);
