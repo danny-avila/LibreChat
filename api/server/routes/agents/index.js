@@ -7,13 +7,12 @@ const {
   requireJwtAuth,
   messageIpLimiter,
   configMiddleware,
-  concurrentLimiter,
   messageUserLimiter,
 } = require('~/server/middleware');
 const { v1 } = require('./v1');
 const chat = require('./chat');
 
-const { LIMIT_CONCURRENT_MESSAGES, LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
+const { LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
 const router = express.Router();
 
@@ -207,10 +206,6 @@ router.post('/chat/abort', async (req, res) => {
 
 const chatRouter = express.Router();
 chatRouter.use(configMiddleware);
-
-if (isEnabled(LIMIT_CONCURRENT_MESSAGES)) {
-  chatRouter.use(concurrentLimiter);
-}
 
 if (isEnabled(LIMIT_MESSAGE_IP)) {
   chatRouter.use(messageIpLimiter);
