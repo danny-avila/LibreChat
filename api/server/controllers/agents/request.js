@@ -10,7 +10,6 @@ const {
   checkAndIncrementPendingRequest,
 } = require('@librechat/api');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
-const denyRequest = require('~/server/middleware/denyRequest');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
 const { saveMessage } = require('~/models');
@@ -56,7 +55,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   if (!allowed) {
     const violationInfo = getViolationInfo(pendingRequests, limit);
     await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
-    return await denyRequest(req, res, violationInfo);
+    return res.status(429).json(violationInfo);
   }
 
   // Generate conversationId upfront if not provided - streamId === conversationId always
