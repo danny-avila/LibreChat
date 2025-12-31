@@ -41,9 +41,17 @@ const env = {
   region: process.env.CDK_DEFAULT_REGION,
 };
 
+const isProd = process.env.AWS_ENV?.includes("prod"); // looks jank, but it's required for github actions reasons
+
+const envVars = {
+  vpcId: isProd ? "vpc-051d43046b343c516" : "vpc-06ea0349e255c4c59",
+  domainName : isProd ? "ai-assistant.nj.gov" : "dev.ai-assistant.nj.gov",
+  env: isProd ? "prod" : "dev", 
+}
+
 const ecsStack = new EcsStack(app, "EcsStack", {
   env: env,
-  vpcId: "vpc-06ea0349e255c4c59",
+  envVars: envVars,
   librechatImage: "152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/librechat:latest",
   mongoImage: "152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/mongo:latest",
   postgresImage: "152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/pgvector:0.8.0-pg15-trixie",
@@ -52,15 +60,13 @@ const ecsStack = new EcsStack(app, "EcsStack", {
 
 const apiGatewayStack = new ApigStack(app, "ApiGatewayStack", {
   env: env,
-  vpcId: "vpc-06ea0349e255c4c59",
+  envVars: envVars,
   listener: ecsStack.listener,
-  domainName: "dev.ai-assistant.nj.gov",
 });
 
 const cognitoStack = new CognitoStack(app, "CognitoStack", {
   env: env,
-  callback_urls: ["https://dev.ai-assistant.nj.gov/oauth/openid/callback"],
-  logout_urls: ["https://dev.ai-assistant.nj.gov/oauth/openid/logout"],
+  envVars: envVars,
   branding: branding,
   assets: assets,
 });

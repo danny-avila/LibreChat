@@ -9,8 +9,14 @@ import * as s3 from "aws-cdk-lib/aws-s3";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import { Construct } from "constructs";
 
+export type EnvVars = {
+    vpcId: string,
+    domainName: string,
+    env: string, 
+}
+
 export interface EcsServicesProps extends cdk.StackProps {
-  vpcId: string;
+  envVars: EnvVars,
   librechatImage: string;
   mongoImage: string;
   postgresImage: string;
@@ -25,7 +31,7 @@ export class EcsStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: EcsServicesProps) {
     super(scope, id, props);
     const vpc = ec2.Vpc.fromLookup(this, "ExistingVpc", {
-      vpcId: props.vpcId,
+      vpcId: props.envVars.vpcId,
     });
     const librechatImage = props.librechatImage;
     const mongoImage = props.mongoImage;
@@ -51,6 +57,10 @@ export class EcsStack extends cdk.Stack {
     vpc.addInterfaceEndpoint("CognitoEndpoint", {
       service: ec2.InterfaceVpcEndpointAwsService.COGNITO_IDP,
       securityGroups: [endpointsSg],
+      subnets: {
+        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+        availabilityZones: ['us-east-1a']
+  }
     });
     vpc.addGatewayEndpoint("S3GatewayEndpoint", {
       service: ec2.GatewayVpcEndpointAwsService.S3,
@@ -95,7 +105,7 @@ export class EcsStack extends cdk.Stack {
         CONFIG_PATH: "/app/nj/nj-librechat.yaml",
       },
       environmentFiles: [
-        ecs.EnvironmentFile.fromBucket(s3.Bucket.fromBucketArn(this, "EnvFilesBucket", "arn:aws:s3:::nj-librechat-env-files"), 'dev.env'),
+        ecs.EnvironmentFile.fromBucket(s3.Bucket.fromBucketArn(this, "EnvFilesBucket", "arn:aws:s3:::nj-librechat-env-files"), `${props.envVars.env}.env`),
       ],
       portMappings: [{ containerPort: 3080 }],
       command: ["npm","run","backend"], 
@@ -111,9 +121,9 @@ export class EcsStack extends cdk.Stack {
         desiredCount: 1,
         taskDefinition: librechatTaskDef,
         publicLoadBalancer: false,
-        listenerPort: 80,
+        listenerPort: 80, // change to 443 when OIT is done with imperva
         taskSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-        certificate: aiAssistantCertificate,
+        // certificate: aiAssistantCertificate, // uncomment when OIT is done with imperva
       }
     );
     this.listener = librechatService.listener;

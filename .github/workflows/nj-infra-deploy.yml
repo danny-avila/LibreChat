@@ -1,0 +1,62 @@
+name: Deploy AI Assistant Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Select the target environment'
+        type: choice
+        options:
+        - dev
+        - prod
+        required: true
+        default: dev
+
+jobs:
+  cdk-diff:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Fail if branch is not prod
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/prod'
+        run: |
+          echo "This workflow should not be triggered with workflow_dispatch on a branch other than prod"
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: AWS CDK GitHub Actions
+        uses: youyo/aws-cdk-github-actions@v2.1.4
+        with:
+          cdk_subcommand: 'diff'
+          actions_comment: true
+          working_dir: nj/infra/
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          AWS_ENV: ${{ github.event.inputs.environment }}
+
+  cdk-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment }}-deploy
+    needs: cdk-diff
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: AWS CDK GitHub Actions
+        uses: youyo/aws-cdk-github-actions@v2.1.4
+        with:
+          cdk_subcommand: 'deploy'
+          cdk_args: '--require-approval never'
+          actions_comment: true
+          working_dir: nj/infra/
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          AWS_ENV: ${{ github.event.inputs.environment }}
