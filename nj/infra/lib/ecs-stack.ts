@@ -44,9 +44,6 @@ export class EcsStack extends cdk.Stack {
     // CreateLibrechatTask() // add secrets manager database creds
     // CreateDatabaseSidecars() // only on dev
     
-
-
-
     // Create LibreChat task definition using the shared execution role
     const librechatTaskDef = new ecs.FargateTaskDefinition(this, "LibreChatTaskDef", {
       cpu: 256,

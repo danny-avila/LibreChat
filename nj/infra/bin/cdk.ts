@@ -72,11 +72,16 @@ const ecsStack = new EcsStack(app, "EcsStack", {
   certificateArn: "arn:aws:acm:us-east-1:152320432929:certificate/b795286d-3044-4e95-ba06-21e81fc5022e"
 });
 
-const apiGatewayStack = new ApigStack(app, "ApiGatewayStack", {
-  env: env,
-  envVars: envVars,
-  listener: ecsStack.listener,
-});
+if (!isProd){
+  const apiGatewayStack = new ApigStack(app, "ApiGatewayStack", {
+    env: env,
+    envVars: envVars,
+    listener: ecsStack.listener,
+  });
+  cdk.Tags.of(apiGatewayStack).add("Project", "AIAssistantService");
+  cdk.Tags.of(apiGatewayStack).add("ManagedBy", "CDK");
+  cdk.Tags.of(apiGatewayStack).add("Environment", tagEnv);
+}
 
 const cognitoStack = new CognitoStack(app, "CognitoStack", {
   env: env,
@@ -88,10 +93,6 @@ const cognitoStack = new CognitoStack(app, "CognitoStack", {
 cdk.Tags.of(ecsStack).add("Project", "AIAssistantService");
 cdk.Tags.of(ecsStack).add("ManagedBy", "CDK");
 cdk.Tags.of(ecsStack).add("Environment", tagEnv);
-
-cdk.Tags.of(apiGatewayStack).add("Project", "AIAssistantService");
-cdk.Tags.of(apiGatewayStack).add("ManagedBy", "CDK");
-cdk.Tags.of(apiGatewayStack).add("Environment", tagEnv);
 
 cdk.Tags.of(cognitoStack).add("Project", "AIAssistantService");
 cdk.Tags.of(cognitoStack).add("ManagedBy", "CDK");
