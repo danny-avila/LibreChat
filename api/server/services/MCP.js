@@ -497,12 +497,6 @@ function createToolInstance({
           };
 
           try {
-            logger.info(`[MCP.js] DIRECTLY emitting progress to SSE (streamId: ${streamId ? 'yes' : 'no'})`, {
-              serverName: progressData.serverName,
-              toolName: progressData.toolName,
-              progress: progressData.progress,
-              total: progressData.total,
-            });
             const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
             if (streamId) {
               GenerationJobManager.emitChunk(streamId, eventData);
