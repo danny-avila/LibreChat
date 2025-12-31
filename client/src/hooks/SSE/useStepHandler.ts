@@ -533,6 +533,12 @@ export default function useStepHandler({
           const conversationId =
             submission?.initialResponse?.conversationId || userMessage.conversationId;
           if (progressData.serverName && progressData.toolName && conversationId) {
+            // Set active state when receiving progress updates
+            setMcpActive((current) => ({
+              ...current,
+              [conversationId]: true,
+            }));
+
             updateMCPProgress(conversationId, {
               serverName: progressData.serverName,
               toolName: progressData.toolName,
@@ -605,6 +611,16 @@ export default function useStepHandler({
           parentMessageId = submission?.initialResponse?.parentMessageId ?? '';
         }
 
+        // Clear active state for this conversation when tool completes
+        const conversationId =
+          submission?.initialResponse?.conversationId || userMessage.conversationId;
+        if (conversationId) {
+          setMcpActive((current) => ({
+            ...current,
+            [conversationId]: false,
+          }));
+        }
+
         if (!runStep || !responseMessageId) {
           console.warn('No run step or runId found for completed tool call event');
           return;
@@ -619,11 +635,24 @@ export default function useStepHandler({
             tool_call: result.tool_call,
           };
 
-          // Use server's index, offset by initialContent for edit scenarios
-          const currentIndex = runStep.index + initialContent.length;
+          // Completion events come back with wrong stepId, so find the next incomplete tool call
+          const targetToolCallId = result.tool_call?.id;
+          let targetIndex = runStep.index + initialContent.length; // fallback to original logic
+
+          // Find the first incomplete tool call with matching ID
+          const incompleteIndex = updatedResponse.content?.findIndex(
+            (part) =>
+              part?.type === ContentTypes.TOOL_CALL &&
+              part[ContentTypes.TOOL_CALL]?.id === targetToolCallId &&
+              !part[ContentTypes.TOOL_CALL]?.progress,
+          );
+          if (incompleteIndex !== undefined && incompleteIndex >= 0) {
+            targetIndex = incompleteIndex;
+          }
+
           updatedResponse = updateContent(
             updatedResponse,
-            currentIndex,
+            targetIndex,
             contentPart,
             true,
             getStepMetadata(runStep),
@@ -644,7 +673,15 @@ export default function useStepHandler({
         stepMap.current.clear();
       };
     },
-    [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages, calculateContentIndex],
+    [
+      getMessages,
+      lastAnnouncementTimeRef,
+      announcePolite,
+      setMessages,
+      updateMCPProgress,
+      setMcpActive,
+      calculateContentIndex,
+    ],
   );
 
   const clearStepMaps = useCallback(() => {

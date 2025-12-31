@@ -8,7 +8,11 @@ import {
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
-import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  ResourceListChangedNotificationSchema,
+  ProgressNotificationSchema,
+  type ProgressNotification,
+} from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
@@ -526,6 +530,7 @@ export class MCPConnection extends EventEmitter {
     });
 
     this.subscribeToResources();
+    this.subscribeToProgressNotifications();
   }
 
   private async handleReconnection(): Promise<void> {
@@ -601,6 +606,21 @@ export class MCPConnection extends EventEmitter {
     this.client.setNotificationHandler(ResourceListChangedNotificationSchema, async () => {
       this.emit('resourcesChanged');
     });
+  }
+
+  private subscribeToProgressNotifications(): void {
+    this.client.setNotificationHandler(
+      ProgressNotificationSchema,
+      async (notification: ProgressNotification) => {
+        this.emit('progress', {
+          serverName: this.serverName,
+          progressToken: notification.params?.progressToken,
+          progress: notification.params?.progress,
+          total: notification.params?.total,
+          message: notification.params?.message,
+        });
+      },
+    );
   }
 
   async connectClient(): Promise<void> {

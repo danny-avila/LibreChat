@@ -1,4 +1,6 @@
 import pick from 'lodash/pick';
+import { EventEmitter } from 'events';
+import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
@@ -22,6 +24,11 @@ import { processMCPEnv } from '~/utils/env';
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
+  private eventEmitter: EventEmitter = new EventEmitter();
+  private progressTokens: Map<
+    string,
+    { serverName: string; toolName: string; userId?: string }
+  > = new Map();
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -41,6 +48,38 @@ export class MCPManager extends UserConnectionManager {
   public async initialize(configs: t.MCPServers) {
     await MCPServersInitializer.initialize(configs);
     this.appConnections = new ConnectionsRepository(undefined);
+  }
+
+  /**
+   * EventEmitter delegation methods for progress tracking
+   */
+  on(event: string | symbol, listener: (...args: unknown[]) => void): this {
+    this.eventEmitter.on(event, listener);
+    return this;
+  }
+
+  off(event: string | symbol, listener: (...args: unknown[]) => void): this {
+    this.eventEmitter.off(event, listener);
+    return this;
+  }
+
+  emit(event: string | symbol, ...args: unknown[]): boolean {
+    return this.eventEmitter.emit(event, ...args);
+  }
+
+  once(event: string | symbol, listener: (...args: unknown[]) => void): this {
+    this.eventEmitter.once(event, listener);
+    return this;
+  }
+
+  removeListener(event: string | symbol, listener: (...args: unknown[]) => void): this {
+    this.eventEmitter.removeListener(event, listener);
+    return this;
+  }
+
+  removeAllListeners(event?: string | symbol): this {
+    this.eventEmitter.removeAllListeners(event);
+    return this;
   }
 
   /** Retrieves an app-level or user-specific connection based on provided arguments */
@@ -193,6 +232,13 @@ Please follow these instructions when using tools from the respective MCP server
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
 
+    // Generate a unique progress token for this tool call
+    const progressToken = `${serverName}:${toolName}:${randomUUID()}`;
+    this.progressTokens.set(progressToken, { serverName, toolName, userId });
+
+    // Progress listener to forward events
+    let progressListener: ((progressData: unknown) => void) | undefined;
+
     try {
       if (userId && user) this.updateUserLastActivity(userId);
 
@@ -216,6 +262,23 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
 
+      // Set up progress event listener
+      progressListener = (progressData: any) => {
+        if (progressData.progressToken === progressToken) {
+          this.emit('toolProgress', {
+            progressToken,
+            serverName,
+            toolName,
+            userId,
+            progress: progressData.progress,
+            total: progressData.total,
+            message: progressData.message,
+          });
+        }
+      };
+
+      connection.on('progress', progressListener);
+
       const rawConfig = (await MCPServersRegistry.getInstance().getServerConfig(
         serverName,
         userId,
@@ -236,6 +299,9 @@ Please follow these instructions when using tools from the respective MCP server
           params: {
             name: toolName,
             arguments: toolArguments,
+            _meta: {
+              progressToken,
+            },
           },
         },
         CallToolResultSchema,
@@ -255,6 +321,12 @@ Please follow these instructions when using tools from the respective MCP server
       logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
       // Rethrowing allows the caller (createMCPTool) to handle the final user message
       throw error;
+    } finally {
+      // Clean up progress listener and token
+      if (connection && progressListener) {
+        connection.off('progress', progressListener);
+      }
+      this.progressTokens.delete(progressToken);
     }
   }
 }
