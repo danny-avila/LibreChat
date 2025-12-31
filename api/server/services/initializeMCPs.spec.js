@@ -171,7 +171,7 @@ describe('initializeMCPs', () => {
       expect(mockMCPManagerInstance.getAppToolFunctions).not.toHaveBeenCalled();
       expect(mockMergeAppTools).not.toHaveBeenCalled();
       expect(logger.debug).toHaveBeenCalledWith(
-        '[MCP] No configured servers configured. MCPManager ready for UI-based servers.',
+        '[MCP] No servers configured. MCPManager ready for UI-based servers.',
       );
     });
 
@@ -185,7 +185,7 @@ describe('initializeMCPs', () => {
       expect(mockMCPManagerInstance.getAppToolFunctions).not.toHaveBeenCalled();
       expect(mockMergeAppTools).not.toHaveBeenCalled();
       expect(logger.debug).toHaveBeenCalledWith(
-        '[MCP] No configured servers configured. MCPManager ready for UI-based servers.',
+        '[MCP] No servers configured. MCPManager ready for UI-based servers.',
       );
     });
 
