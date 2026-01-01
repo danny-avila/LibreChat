@@ -342,10 +342,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           disposeClient(client);
         }
 
+        // Don't continue to title generation after error/abort
         return;
       }
     };
 
+    // Start generation and handle any unhandled errors
     startGeneration().catch(async (err) => {
       logger.error(
         `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
