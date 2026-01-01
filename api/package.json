@@ -45,7 +45,7 @@
     "@googleapis/youtube": "^20.0.0",
     "@keyv/redis": "^4.3.3",
     "@langchain/core": "^0.3.80",
-    "@librechat/agents": "^3.0.61",
+    "@librechat/agents": "^3.0.66",
     "@librechat/api": "*",
     "@librechat/data-schemas": "*",
     "@microsoft/microsoft-graph-client": "^3.0.7",
