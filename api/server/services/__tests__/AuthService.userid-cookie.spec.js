@@ -1,4 +1,3 @@
-// Mock dependencies before requiring AuthService
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     error: jest.fn(),
@@ -8,6 +7,8 @@ jest.mock('@librechat/data-schemas', () => ({
   },
   hashToken: jest.fn((token) => `hashed-${token}`),
   createMethods: jest.fn(() => ({})),
+  DEFAULT_REFRESH_TOKEN_EXPIRY: 1000 * 60 * 60 * 24 * 7, // 7 days in milliseconds
+  DEFAULT_SESSION_EXPIRY: 1000 * 60 * 15, // 15 minutes in milliseconds
 }));
 
 jest.mock('librechat-data-provider', () => ({
