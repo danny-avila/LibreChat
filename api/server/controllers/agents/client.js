@@ -99,9 +99,34 @@ function logToolError(graph, error, toolId) {
 const AGENT_SUFFIX_PATTERN = /____(\d+)$/;
 
 /**
+ * Finds the primary agent ID within a set of agent IDs.
+ * Primary = no suffix (____N) or lowest suffix number.
+ * @param {Set<string>} agentIds
+ * @returns {string | null}
+ */
+function findPrimaryAgentId(agentIds) {
+  let primaryAgentId = null;
+  let lowestSuffixIndex = Infinity;
+
+  for (const agentId of agentIds) {
+    const suffixMatch = agentId.match(AGENT_SUFFIX_PATTERN);
+    if (!suffixMatch) {
+      return agentId;
+    }
+    const suffixIndex = parseInt(suffixMatch[1], 10);
+    if (suffixIndex < lowestSuffixIndex) {
+      lowestSuffixIndex = suffixIndex;
+      primaryAgentId = agentId;
+    }
+  }
+
+  return primaryAgentId;
+}
+
+/**
  * Creates a mapMethod for getMessagesForConversation that processes agent content.
  * - Strips agentId/groupId metadata from all content
- * - For parallel agents (addedConvo with groupId): filters to primary agent content only
+ * - For parallel agents (addedConvo with groupId): filters each group to its primary agent
  * - For handoffs (agentId without groupId): keeps all content from all agents
  * - For multi-agent: applies agent labels to content
  *
@@ -132,52 +157,38 @@ function createMultiAgentMapper(primaryAgent, agentConfigs) {
       return message;
     }
 
-    // Check for metadata and determine if this is parallel (groupId) or handoff (agentId only)
-    let hasAgentMetadata = false;
-    let hasGroupId = false;
-
-    for (const part of message.content) {
-      if (part?.agentId || part?.groupId != null) {
-        hasAgentMetadata = true;
-      }
-      if (part?.groupId != null) {
-        hasGroupId = true;
-        break;
-      }
-    }
-
+    // Check for metadata
+    const hasAgentMetadata = message.content.some((part) => part?.agentId || part?.groupId != null);
     if (!hasAgentMetadata) {
       return message;
     }
 
-    // For parallel execution (addedConvo): filter to primary agent only
-    // For handoffs: keep all content from all agents
-    const shouldFilterToOnePrimaryAgent = hasMultipleAgents && hasGroupId;
+    try {
+      // Build a map of groupId -> Set of agentIds, to find primary per group
+      /** @type {Map<number, Set<string>>} */
+      const groupAgentMap = new Map();
 
-    // Find primary agent ID only when filtering is needed
-    let primaryAgentId = null;
-    if (shouldFilterToOnePrimaryAgent) {
-      let lowestSuffixIndex = Infinity;
       for (const part of message.content) {
+        const groupId = part?.groupId;
         const agentId = part?.agentId;
-        if (!agentId) {
-          continue;
-        }
-
-        const suffixMatch = agentId.match(AGENT_SUFFIX_PATTERN);
-        if (!suffixMatch) {
-          primaryAgentId = agentId;
-          break;
-        }
-        const suffixIndex = parseInt(suffixMatch[1], 10);
-        if (suffixIndex < lowestSuffixIndex) {
-          lowestSuffixIndex = suffixIndex;
-          primaryAgentId = agentId;
+        if (groupId != null && agentId) {
+          if (!groupAgentMap.has(groupId)) {
+            groupAgentMap.set(groupId, new Set());
+          }
+          groupAgentMap.get(groupId).add(agentId);
         }
       }
-    }
 
-    try {
+      // For each group, find the primary agent
+      /** @type {Map<number, string>} */
+      const groupPrimaryMap = new Map();
+      for (const [groupId, agentIds] of groupAgentMap) {
+        const primary = findPrimaryAgentId(agentIds);
+        if (primary) {
+          groupPrimaryMap.set(groupId, primary);
+        }
+      }
+
       /** @type {Array<TMessageContentParts>} */
       const filteredContent = [];
       /** @type {Record<number, string>} */
@@ -185,8 +196,16 @@ function createMultiAgentMapper(primaryAgent, agentConfigs) {
 
       for (const part of message.content) {
         const agentId = part?.agentId;
-        // For parallel: filter to primary; for handoffs: include all
-        if (!shouldFilterToOnePrimaryAgent || !agentId || agentId === primaryAgentId) {
+        const groupId = part?.groupId;
+
+        // Filtering logic:
+        // - No groupId (handoffs): always include
+        // - Has groupId (parallel): only include if it's the primary for that group
+        const isParallelPart = groupId != null;
+        const groupPrimary = isParallelPart ? groupPrimaryMap.get(groupId) : null;
+        const shouldInclude = !isParallelPart || !agentId || agentId === groupPrimary;
+
+        if (shouldInclude) {
           const newIndex = filteredContent.length;
           const { agentId: _a, groupId: _g, ...cleanPart } = part;
           filteredContent.push(cleanPart);
@@ -342,11 +361,14 @@ class AgentClient extends BaseClient {
     { instructions = null, additional_instructions = null },
     opts,
   ) {
+    const hasAddedConvo = this.options.req?.body?.addedConvo != null;
     const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
       summary: this.shouldSummarize,
-      mapMethod: createMultiAgentMapper(this.options.agent, this.agentConfigs),
+      mapMethod: hasAddedConvo
+        ? createMultiAgentMapper(this.options.agent, this.agentConfigs)
+        : undefined,
     });
 
     let payload;
