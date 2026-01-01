@@ -84,10 +84,18 @@ export async function checkAndIncrementPendingRequest(
   if (USE_REDIS && ioredisClient) {
     const key = buildKey(userId);
     try {
-      // INCR is atomic - increments and returns new value in one operation
-      const newCount = await ioredisClient.incr(key);
-      // Set TTL on every increment to keep counter alive during active requests
-      await ioredisClient.expire(key, 60);
+      // Pipeline ensures INCR and EXPIRE execute atomically in one round-trip
+      // This prevents edge cases where crash between operations leaves key without TTL
+      const pipeline = ioredisClient.pipeline();
+      pipeline.incr(key);
+      pipeline.expire(key, 60);
+      const results = await pipeline.exec();
+
+      if (!results || results[0][0]) {
+        throw new Error('Pipeline execution failed');
+      }
+
+      const newCount = results[0][1] as number;
 
       if (newCount > limit) {
         // Over limit - decrement back and reject
