@@ -143,10 +143,17 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const agent_ids = primaryConfig.agent_ids;
   let userMCPAuthMap = primaryConfig.userMCPAuthMap;
 
+  /** @type {Set<string>} Track agents that failed to load (orphaned references) */
+  const skippedAgentIds = new Set();
+
   async function processAgent(agentId) {
     const agent = await getAgent({ id: agentId });
     if (!agent) {
-      throw new Error(`Agent ${agentId} not found`);
+      logger.warn(
+        `[processAgent] Handoff agent ${agentId} not found, skipping (orphaned reference)`,
+      );
+      skippedAgentIds.add(agentId);
+      return;
     }
 
     const validationResult = await validateAgentModel({
@@ -259,6 +266,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   // MultiAgentGraph.categorizeEdges requires edges to be iterable
   if (agentConfigs.size > 0 && !edges) {
     edges = [];
+  }
+
+  if (edges && skippedAgentIds.size > 0) {
+    edges = edges.filter((edge) => {
+      const toIds = Array.isArray(edge.to) ? edge.to : [edge.to];
+      return !toIds.some((id) => skippedAgentIds.has(id));
+    });
   }
 
   primaryConfig.edges = edges;
