@@ -1,8 +1,13 @@
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
+
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-// Define User schema directly (simple approach)
+const n8nToolService = require('../api/server/services/N8nToolService');
+const Profile = require('../api/server/models/Profile');
+
+// Define User schema directly (inline approach biar ga ribet import)
 const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true },
   password: { type: String, required: true },
@@ -19,58 +24,10 @@ const userSchema = new mongoose.Schema({
 // Create User model
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 
-// Import Profile model
-const Profile = require('../api/server/models/Profile');
-
 // MongoDB connection
 const MONGO_URI = process.env.MONGO_URI;
 
-// Workflow mappings per profile type
-const WORKFLOW_MAPPINGS = {
-  ceo: [
-    {
-      workflowId: 'wf_financial_analytics',
-      workflowName: 'Financial Analytics Dashboard',
-      endpoint: '/webhook/librechat/financial-analytics',
-      description: 'Get comprehensive financial metrics and reports',
-    },
-    {
-      workflowId: 'wf_company_metrics',
-      workflowName: 'Company Performance Metrics',
-      endpoint: '/webhook/librechat/company-metrics',
-      description: 'View KPIs across all departments',
-    },
-  ],
-  employee: [
-    {
-      workflowId: 'wf_doc_search',
-      workflowName: 'Document Search',
-      endpoint: '/webhook/librechat/doc-search',
-      description: 'Search internal documentation and policies',
-    },
-    {
-      workflowId: 'wf_task_management',
-      workflowName: 'Task Management',
-      endpoint: '/webhook/librechat/task-management',
-      description: 'Create and manage your tasks',
-    },
-  ],
-  customer: [
-    {
-      workflowId: 'wf_support_ticket',
-      workflowName: 'Create Support Ticket',
-      endpoint: '/webhook/librechat/support-ticket',
-      description: 'Submit support requests and track issues',
-    },
-    {
-      workflowId: 'wf_project_status',
-      workflowName: 'Project Status',
-      endpoint: '/webhook/librechat/project-status',
-      description: 'Check your project progress and milestones',
-    },
-  ],
-};
-
+// PERMISSION SETS
 const PERMISSION_SETS = {
   ceo: ['full_analytics', 'financial_data', 'all_departments', 'strategic_planning'],
   employee: ['department_data', 'personal_records', 'team_collaboration', 'knowledge_base'],
@@ -103,6 +60,10 @@ async function seedDatabase() {
   try {
     console.log('🌱 Starting database seeding...\n');
 
+    if (!MONGO_URI) {
+      throw new Error('MONGO_URI is not defined in .env file');
+    }
+
     // Connect to MongoDB
     await mongoose.connect(MONGO_URI);
     console.log('✅ Connected to MongoDB\n');
@@ -115,7 +76,7 @@ async function seedDatabase() {
       let user = await User.findOne({ email: userData.email });
 
       if (user) {
-        console.log(`   ⚠️  User already exists, skipping user creation`);
+        console.log(`   ⚠️  User already exists, checking profile...`);
       } else {
         // Hash password
         const hashedPassword = await bcrypt.hash(userData.password, 10);
@@ -133,66 +94,50 @@ async function seedDatabase() {
         console.log(`   ✅ User created`);
       }
 
+      const correctWorkflows = n8nToolService.getWorkflowsForRole(userData.profileType);
+
       // Check if profile exists
       let profile = await Profile.findOne({ userId: user._id });
 
       if (profile) {
-        console.log(`   ⚠️  Profile already exists, updating...`);
+        console.log(`   🔄 Updating existing profile...`);
 
-        // Update existing profile
         profile.profileType = userData.profileType;
         profile.permissions = PERMISSION_SETS[userData.profileType];
-        profile.allowedWorkflows = WORKFLOW_MAPPINGS[userData.profileType];
+        profile.allowedWorkflows = correctWorkflows; // Sync workflow terbaru
         profile.updatedAt = new Date();
 
         await profile.save();
-        console.log(`   ✅ Profile updated`);
+        console.log(`   ✅ Profile updated with ${correctWorkflows.length} workflows`);
       } else {
         // Create new profile
-        {
-          // determine security level without nested ternary
-          let securityLevel;
-          if (userData.profileType === 'ceo') {
-            securityLevel = 5;
-          } else if (userData.profileType === 'employee') {
-            securityLevel = 3;
-          } else {
-            securityLevel = 1;
-          }
+        let securityLevel = 1;
+        if (userData.profileType === 'ceo') securityLevel = 5;
+        else if (userData.profileType === 'employee') securityLevel = 3;
 
-          profile = await Profile.create({
-            userId: user._id,
-            profileType: userData.profileType,
-            permissions: PERMISSION_SETS[userData.profileType],
-            allowedWorkflows: WORKFLOW_MAPPINGS[userData.profileType],
-            metadata: {
-              department: userData.profileType === 'employee' ? 'Engineering' : null,
-              customerId: userData.profileType === 'customer' ? `CUST_${Date.now()}` : null,
-              securityLevel: securityLevel,
-              companyId: 'COMPANY_001',
-            },
-          });
-        }
+        profile = await Profile.create({
+          userId: user._id,
+          profileType: userData.profileType,
+          permissions: PERMISSION_SETS[userData.profileType],
+          allowedWorkflows: correctWorkflows,
+          metadata: {
+            department: userData.profileType === 'employee' ? 'Engineering' : null,
+            customerId: userData.profileType === 'customer' ? `CUST_${Date.now()}` : null,
+            securityLevel: securityLevel,
+            companyId: 'COMPANY_001',
+          },
+        });
 
-        console.log(`   ✅ Profile created with ${profile.allowedWorkflows.length} workflows`);
+        console.log(`   ✅ Profile created with ${correctWorkflows.length} workflows`);
       }
-
       console.log('');
     }
 
     console.log('='.repeat(60));
     console.log('🎉 DATABASE SEEDING COMPLETED!\n');
-
-    console.log('📋 TEST CREDENTIALS:\n');
-    TEST_USERS.forEach((user) => {
-      console.log(`${user.profileType.toUpperCase()}:`);
-      console.log(`  Email: ${user.email}`);
-      console.log(`  Password: ${user.password}`);
-      console.log(`  Workflows: ${WORKFLOW_MAPPINGS[user.profileType].length}\n`);
-    });
-
+    console.log('📋 Login Credentials:');
+    TEST_USERS.forEach((u) => console.log(`   - ${u.email} / ${u.password}`));
     console.log('='.repeat(60));
-    console.log('\n✅ You can now login to LibreChat with these credentials!');
   } catch (error) {
     console.error('❌ Seeding error:', error);
     process.exit(1);

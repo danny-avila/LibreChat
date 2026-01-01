@@ -1,0 +1,318 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "librechat/project-update",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "7f8412b4-1ae3-451a-9eda-c2ec7e7b8b84",
+      "name": "Webhook Update",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        400
+      ],
+      "webhookId": "c486c6aa-f8f4-49b0-b71a-3d711ec7a42c"
+    },
+    {
+      "parameters": {
+        "collection": "projects",
+        "options": {},
+        "query": "={ \"projectId\": \"{{ $json.body.projectId }}\" }"
+      },
+      "id": "1a809840-b10a-4a4f-9e72-24ae29b74137",
+      "name": "Check Project Exists",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        -320,
+        400
+      ],
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $input.all().length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "ed3e513d-d717-44d1-ba90-3f13df4e6981",
+      "name": "Project Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -96,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": false, \"message\": \"Project ID not found\" }",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "id": "9b9795a9-8e55-4386-944d-db0c531ac449",
+      "name": "Respond 404",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        128,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ambil data input dari Webhook\nconst inputBody = $(\"Webhook Update\").first().json.body;\n\n// Cek apakah ada request ganti manager?\nif (inputBody.managerId) {\n  return [ { json: { lookupManager: true, ...inputBody } } ];\n} else {\n  return [ { json: { lookupManager: false, ...inputBody } } ];\n}"
+      },
+      "id": "26df2533-4c94-4a97-923d-a33a8e39120c",
+      "name": "Check Input Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.lookupManager }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "68c6b85f-a688-4380-83cd-9c9038ae10ba",
+      "name": "Need Manager Lookup?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        352,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "collection": "users",
+        "options": {},
+        "query": "={ \"_id\": \"{{ $json.managerId }}\" }"
+      },
+      "id": "87bfe25c-c98c-4e68-a490-bd73cce07e18",
+      "name": "Find Manager",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        560,
+        176
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Data Input (Project Data)\nconst projectData = $(\"Need Manager Lookup?\").first().json;\n\n// Data Manager (Hasil Lookup)\nconst managerData = $json.username ? $json : {};\nconst managerName = managerData.username || managerData.name || undefined;\n\n// Gabungkan\nconst finalData = {\n  ...projectData,\n};\n\nif (managerName) {\n  finalData.managerName = managerName;\n}\n\n// Format Angka & Tanggal\nfinalData.updatedAt = new Date().toISOString();\nif (finalData.progress !== undefined) finalData.progress = parseInt(finalData.progress);\nif (finalData.budget !== undefined) finalData.budget = parseInt(finalData.budget);\nif (finalData.spent !== undefined) finalData.spent = parseInt(finalData.spent);\n\n// Hapus field yang TIDAK BOLEH di-update atau field sampah\ndelete finalData.lookupManager;\ndelete finalData._id; // PENTING: Jangan update _id\n// Kita sisakan 'projectId' agar bisa dibaca oleh node selanjutnya sebagai KEY, \n// tapi nanti di Mongo node kita pilih field apa saja yang mau di-update selain ini.\n\nreturn { \n  json: finalData \n};"
+      },
+      "id": "72f9efd8-0e20-489d-9c97-8158a41c5a64",
+      "name": "Prep Complex Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const projectData = $json;\n\nconst finalData = {\n  ...projectData,\n  updatedAt: new Date().toISOString()\n};\n\n// Format Angka\nif (finalData.progress !== undefined) finalData.progress = parseInt(finalData.progress);\nif (finalData.budget !== undefined) finalData.budget = parseInt(finalData.budget);\nif (finalData.spent !== undefined) finalData.spent = parseInt(finalData.spent);\n\n// Hapus field sampah\ndelete finalData.lookupManager;\ndelete finalData._id; // PENTING\n\nreturn { \n  json: finalData \n};"
+      },
+      "id": "b7fbbe93-d38d-4a9e-9e75-43e025a47518",
+      "name": "Prep Simple Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "collection": "projects",
+        "updateKey": "projectId",
+        "fields": "name, description, status, progress, budget, spent, startDate, deadline, managerId, managerName, profileType, updatedAt",
+        "options": {}
+      },
+      "id": "b05310eb-3b36-4380-9331-67b5c8095832",
+      "name": "Update Project DB",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        1008,
+        304
+      ],
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": true, \"message\": \"Project updated\" }",
+        "options": {}
+      },
+      "id": "ffa058f9-579b-4236-a30a-ef26f67f1554",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1232,
+        304
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Update": {
+      "main": [
+        [
+          {
+            "node": "Check Project Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Project Exists": {
+      "main": [
+        [
+          {
+            "node": "Project Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Project Found?": {
+      "main": [
+        [
+          {
+            "node": "Check Input Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 404",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Input Data": {
+      "main": [
+        [
+          {
+            "node": "Need Manager Lookup?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Need Manager Lookup?": {
+      "main": [
+        [
+          {
+            "node": "Find Manager",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Simple Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Manager": {
+      "main": [
+        [
+          {
+            "node": "Prep Complex Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Complex Update": {
+      "main": [
+        [
+          {
+            "node": "Update Project DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Simple Update": {
+      "main": [
+        [
+          {
+            "node": "Update Project DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Project DB": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "afecc94df1945fdbb46e597f19a01c5b4a51d2c9be0486277817e120a2bfbd46"
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "librechat/task-management",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e43e6115-c06c-404c-aa35-3b25243a8887",
+      "name": "Webhook List Tasks",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "38e00722-dfca-4791-9642-24bc5b831ca3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst { projectId, action, userId } = body;\n\n// Default: Ambil semua\nlet query = {};\n\n// LOGIKA FILTERING\nif (projectId) {\n  // Jika Project ID dikirim, filter berdasarkan Project tersebut\n  query.projectId = projectId;\n} \n\n// Opsional: Jika mau filter berdasarkan User juga (misal di tab 'My Tasks')\n// if (!projectId && userId) {\n//    query.assignedTo = userId;\n// }\n\nreturn { \n  json: { \n    mongoQuery: JSON.stringify(query) \n  } \n};"
+      },
+      "id": "07405410-cd51-41b0-a2ae-fed465181ff5",
+      "name": "Prep Filter Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "collection": "tasks",
+        "options": {
+          "sort": "{\"dueDate\": 1}"
+        },
+        "query": "={{ $json.mongoQuery }}"
+      },
+      "id": "c8d0f997-ac38-4cb3-8ae7-cd6abb6e0634",
+      "name": "Find Tasks",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ],
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": true, \"count\": {{ $input.all().length }}, \"tasks\": {{ JSON.stringify($input.all().map(i => i.json)) }} }",
+        "options": {}
+      },
+      "id": "a2cd2e9d-e745-4c7b-b43c-ff4f9a429895",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook List Tasks": {
+      "main": [
+        [
+          {
+            "node": "Prep Filter Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Filter Query": {
+      "main": [
+        [
+          {
+            "node": "Find Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Tasks": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "afecc94df1945fdbb46e597f19a01c5b4a51d2c9be0486277817e120a2bfbd46"
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "librechat/task-create",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "32f8fc37-bb01-4877-824f-352333a1477b",
+      "name": "Webhook Create",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        256,
+        80
+      ],
+      "webhookId": "task-create"
+    },
+    {
+      "parameters": {
+        "collection": "users",
+        "options": {},
+        "query": "={ \"_id\": \"{{ $json.body.assignedTo }}\" }"
+      },
+      "id": "539c6b88-5b32-4b7c-81ec-eaba6fbc65e4",
+      "name": "Find Assigned User",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        480,
+        80
+      ],
+      "database": "LibreChat",
+      "alwaysOutputData": true,
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ambil data dari Webhook\nconst taskData = $(\"Webhook Create\").first().json.body;\n// Ambil data User (Safe retrieval)\nconst userData = $input.first() ? $input.first().json : {};\n\n// Fallback: Jika user tidak ketemu, pakai default agar tidak error\nconst userEmail = userData.email || 'unknown@system.local';\nconst userName = userData.name || userData.username || 'Unknown User';\nconst userId = userData._id ? userData._id.toString() : taskData.assignedTo;\n\nconst now = new Date().toISOString();\n\nreturn {\n  json: {\n    title: taskData.title,\n    description: taskData.description || '',\n    status: taskData.status || 'pending',\n    priority: taskData.priority || 'medium',\n    dueDate: taskData.dueDate,\n    createdAt: now,\n    updatedAt: now,\n    assignedTo: userId,\n    assignedEmail: userEmail,\n    assignedName: userName\n  }\n};"
+      },
+      "id": "a2939a89-e4a5-4291-a4bd-4813564d99f6",
+      "name": "Merge Data Safe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        704,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "collection": "tasks",
+        "fields": "title,description,status,priority,dueDate,createdAt,updatedAt,assignedTo,assignedEmail,assignedName",
+        "options": {}
+      },
+      "id": "c579176e-95bf-4189-9276-d1ec6dfe23d2",
+      "name": "Insert Task",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        928,
+        80
+      ],
+      "database": "librechat_enterprise",
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Task created successfully\",\n  \"taskId\": \"{{ $json._id }}\"\n}",
+        "options": {}
+      },
+      "id": "258ae4d1-d07b-44fc-980f-99b48e6e053c",
+      "name": "Respond Safe",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1136,
+        80
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Create": {
+      "main": [
+        [
+          {
+            "node": "Find Assigned User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Assigned User": {
+      "main": [
+        [
+          {
+            "node": "Merge Data Safe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Data Safe": {
+      "main": [
+        [
+          {
+            "node": "Insert Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Task": {
+      "main": [
+        [
+          {
+            "node": "Respond Safe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "afecc94df1945fdbb46e597f19a01c5b4a51d2c9be0486277817e120a2bfbd46"
+  }
+}

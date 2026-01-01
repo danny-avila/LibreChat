@@ -1,0 +1,111 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "librechat/support-ticket-reply",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "01880129-abc3-40e8-be13-79602553a6b8",
+      "name": "Webhook Reply",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        528,
+        80
+      ],
+      "webhookId": "f05f5f49-29e5-46cc-8e38-744fdd8365e2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { ticketId, userId, message, senderName, senderType } = $json.body || $json;\n\n// Validasi\nif (!ticketId) throw new Error(\"Ticket ID is missing\");\n\nreturn {\n  json: {\n    ticketId,\n    senderId: userId,\n    senderName: senderName || 'User',\n    role: senderType || 'employee' || 'customer',\n    message: message,\n    createdAt: new Date().toISOString()\n  }\n};"
+      },
+      "id": "4fc8d91d-be05-4b28-a2d3-d8798c8e456c",
+      "name": "Prep Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "collection": "ticket_messages",
+        "fields": "ticketId,senderId, senderName, role, message,createdAt",
+        "options": {}
+      },
+      "id": "518cc266-eb21-419c-8ec3-918270a47d21",
+      "name": "Insert Message",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        976,
+        80
+      ],
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": true, \"message\": \"Reply saved\" }",
+        "options": {}
+      },
+      "id": "62a3c291-22fe-47db-8fec-4fad983749d1",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        80
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Reply": {
+      "main": [
+        [
+          {
+            "node": "Prep Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Message": {
+      "main": [
+        [
+          {
+            "node": "Insert Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Message": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "afecc94df1945fdbb46e597f19a01c5b4a51d2c9be0486277817e120a2bfbd46"
+  }
+}

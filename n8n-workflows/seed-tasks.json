@@ -1,0 +1,113 @@
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9f51d4d2-7282-470d-adfc-bd2280712030",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "collection": "users",
+        "options": {},
+        "query": "{ \"email\": { \"$regex\": \"employee\" } }"
+      },
+      "id": "c90c45c9-0859-408f-809a-1ed75db7cfc3",
+      "name": "Find Employee Users",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        240,
+        0
+      ],
+      "database": "LibreChat",
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const employees = $items(\"Find Employee Users\").map(item => item.json);\nif (!employees.length) throw new Error('No employee users found!');\nconst statuses = ['pending', 'in-progress', 'completed'];\nconst priorities = ['low', 'medium', 'high'];\nconst titles = [\n  'Prepare monthly report',\n  'Update client documentation',\n  'Fix login bug',\n  'Review pull request',\n  'Organize team meeting',\n  'Test new feature',\n  'Refactor codebase',\n  'Write unit tests',\n  'Deploy to production',\n  'Analyze user feedback',\n  'Optimize database',\n  'Design new UI',\n  'Research competitors',\n  'Update dependencies',\n  'Document API changes',\n  'Plan sprint tasks',\n  'Clean up old files',\n  'Prepare onboarding',\n  'Sync with marketing',\n  'Investigate error logs'\n];\nconst descriptions = [\n  'This task is important for the current sprint.',\n  'Coordinate with the relevant team members.',\n  'Ensure all changes are tested before deployment.',\n  'Update the documentation as needed.',\n  'Reach out to the client if clarification is needed.',\n  'Double-check for edge cases and bugs.',\n  'This is a high-priority item.',\n  'Follow up after completion.',\n  'Attach all relevant files.',\n  'Provide a summary in the next meeting.'\n];\nconst tasks = [];\nfor (let i = 0; i < 20; i++) {\n  const emp = employees[Math.floor(Math.random() * employees.length)];\n  const title = titles[Math.floor(Math.random() * titles.length)];\n  const description = descriptions[Math.floor(Math.random() * descriptions.length)];\n  tasks.push({\n    title,\n    description,\n    status: statuses[Math.floor(Math.random() * statuses.length)],\n    priority: priorities[Math.floor(Math.random() * priorities.length)],\n    dueDate: new Date(Date.now() + Math.random() * 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],\n    createdAt: new Date(Date.now() - Math.random() * 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],\n    assignedTo: emp._id,\n    assignedEmail: emp.email,\n    assignedName: emp.name\n  });\n}\nreturn tasks.map(t => ({ json: t }));"
+      },
+      "id": "1191d749-5a56-40cd-aa75-21759cbae673",
+      "name": "Generate Dummy Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "collection": "tasks",
+        "fields": "title,description,status,priority,dueDate,createdAt,assignedTo,assignedEmail,assignedName",
+        "options": {}
+      },
+      "id": "01e59ebd-7918-40d0-8ac7-9ce5465891b7",
+      "name": "Insert to MongoDB",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        720,
+        0
+      ],
+      "database": "librechat_enterprise",
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Find Employee Users",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Employee Users": {
+      "main": [
+        [
+          {
+            "node": "Generate Dummy Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Dummy Tasks": {
+      "main": [
+        [
+          {
+            "node": "Insert to MongoDB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "afecc94df1945fdbb46e597f19a01c5b4a51d2c9be0486277817e120a2bfbd46"
+  }
+}

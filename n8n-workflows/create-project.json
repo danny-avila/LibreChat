@@ -1,0 +1,111 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "librechat/project-create",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1871c78-36a3-4227-bb72-f10f511a54b5",
+      "name": "Webhook Create",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "b932e895-bb2a-4469-a307-f11c6467cb2a"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\n\n// 1. Generate ID Project Unik (PRJ-xxxx)\nconst randomNum = Math.floor(1000 + Math.random() * 9000);\nconst projectId = `PRJ-${randomNum}`;\n\n// 2. Siapkan Data\nconst newProject = {\n  projectId: projectId,\n  name: body.name,\n  description: body.description,\n  status: body.status || 'planning',\n  progress: parseInt(body.progress) || 0,\n  budget: parseInt(body.budget) || 0,\n  spent: parseInt(body.spent) || 0,\n  startDate: body.startDate,\n  deadline: body.deadline,\n  managerId: body.managerId,\n  profileType: body.profileType,\n  createdAt: new Date().toISOString(),\n  updatedAt: new Date().toISOString()\n};\n\nreturn { \n  json: newProject \n};"
+      },
+      "id": "815ab274-498a-4551-8e73-9a9b58aff960",
+      "name": "Prep Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "collection": "projects",
+        "fields": "projectId, name, description, status, progress, budget, spent, startDate, deadline, managerId, profileType, createdAt, updatedAt",
+        "options": {}
+      },
+      "id": "f80a7ef8-e0c5-44c0-b54e-6a71c4c67630",
+      "name": "Insert Project",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ],
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": true, \"message\": \"Project created\", \"projectId\": \"{{ $json.projectId }}\" }",
+        "options": {}
+      },
+      "id": "a68fc0d5-e8b2-4ff9-807f-68dd87b8739b",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Create": {
+      "main": [
+        [
+          {
+            "node": "Prep Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Data": {
+      "main": [
+        [
+          {
+            "node": "Insert Project",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Project": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "afecc94df1945fdbb46e597f19a01c5b4a51d2c9be0486277817e120a2bfbd46"
+  }
+}

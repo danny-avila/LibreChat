@@ -1,0 +1,112 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "librechat/support-ticket-update",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "49440666-9b2f-4fff-bb9d-cab8b025989a",
+      "name": "Webhook Update",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        -176
+      ],
+      "webhookId": "support-ticket-update"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\n\n// 1. Validasi ID (Wajib ada)\nconst ticketId = body.ticketId;\nif (!ticketId) {\n  throw new Error(\"Missing ticketId. Cannot update.\");\n}\n\n// 2. Bersihkan Data (Hapus field yang tidak boleh diubah)\nconst updateData = { ...body };\ndelete updateData.ticketId;   // Jangan update kuncinya sendiri\ndelete updateData._id;        // Jangan update ObjectId\ndelete updateData.userId;     // Jangan update Owner\ndelete updateData.customerId; // Jangan update Owner\ndelete updateData.createdAt;  // Jangan update tanggal buat\n\n// 3. Tambahkan Timestamp Update\nupdateData.updatedAt = new Date().toISOString();\n\n// 4. Generate Field List untuk MongoDB Node\nconst fieldNames = Object.keys(updateData).join(',');\n\nreturn { \n  json: { \n    ticketId: ticketId, // Ini KUNCI update kita\n    fieldNames: fieldNames, \n    ...updateData \n  } \n};"
+      },
+      "id": "d8a8c0e9-2f60-495a-9e6b-b10b23d008c7",
+      "name": "Prep Update Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "collection": "support_ticket",
+        "updateKey": "ticketId",
+        "fields": "={{ $json.fieldNames }}",
+        "options": {}
+      },
+      "id": "d6528535-432e-4b37-be7c-73d6721d1a0b",
+      "name": "Update MongoDB",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        432,
+        -176
+      ],
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Ticket updated successfully\",\n  \"updatedFields\": \"{{ $json.fieldNames }}\"\n}",
+        "options": {}
+      },
+      "id": "5f22a68f-6a23-471a-b6ad-377440861ffb",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        656,
+        -176
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Update": {
+      "main": [
+        [
+          {
+            "node": "Prep Update Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Update Data": {
+      "main": [
+        [
+          {
+            "node": "Update MongoDB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update MongoDB": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "afecc94df1945fdbb46e597f19a01c5b4a51d2c9be0486277817e120a2bfbd46"
+  }
+}

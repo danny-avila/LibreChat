@@ -1,0 +1,111 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "librechat/project-status",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "70ea3c89-72d4-4e4f-9756-9ab43e27b5d0",
+      "name": "Webhook Project",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "278e4cd1-2ca9-454c-b8d9-aba69b857018"
+    },
+    {
+      "parameters": {
+        "collection": "projects",
+        "options": {
+          "sort": "={ \"deadline\": 1 }"
+        }
+      },
+      "id": "48086a2b-f7ec-49f7-80c0-b5ae16afcf13",
+      "name": "Get All Projects",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        224,
+        0
+      ],
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const projects = $input.all().map(item => item.json);\n\nreturn { \n  json: { \n    success: true,\n    data: { \n      projects: projects \n    }\n  } \n};"
+      },
+      "id": "e622156f-9c05-407e-8e53-fe4d3688391b",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "8fe4f466-b357-4691-8eaf-d19b7df49263",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Project": {
+      "main": [
+        [
+          {
+            "node": "Get All Projects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Projects": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "afecc94df1945fdbb46e597f19a01c5b4a51d2c9be0486277817e120a2bfbd46"
+  }
+}

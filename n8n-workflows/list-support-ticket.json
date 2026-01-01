@@ -1,0 +1,136 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "librechat/support-ticket-list",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b8241110-516e-432e-a32d-bde2828b74e5",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -592,
+        -32
+      ],
+      "webhookId": "2c2877ba-b707-449d-9520-cf50c972a5c9"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { userId, role } = $json.body || $json;\nlet query = {};\n\n// FIX: Gunakan 'customerId' karena itu nama field di database kamu\nif (role === 'customer') {\n  if (!userId) throw new Error('UserId required for customer');\n  query.customerId = userId;\n}\n\nreturn { json: { query } };"
+      },
+      "id": "3cc87415-bd57-4e66-ab84-d6eb0d592119",
+      "name": "Prep Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -368,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "collection": "support_ticket",
+        "options": {
+          "sort": "={ \"createdAt\": -1 }"
+        },
+        "query": "={{ JSON.stringify($json.query) }}"
+      },
+      "id": "d8186110-ec51-401b-9182-c1a200f85da1",
+      "name": "Find Mongo",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        -32
+      ],
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all().map(i => i.json);\nreturn { json: { success: true, count: data.length, data } };"
+      },
+      "id": "a6f7e0e8-430f-4fd2-9310-1f1f827b49c9",
+      "name": "Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "65468abd-9fad-4afd-8a54-c6fe7a4166b3",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        288,
+        -32
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prep Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Query": {
+      "main": [
+        [
+          {
+            "node": "Find Mongo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Mongo": {
+      "main": [
+        [
+          {
+            "node": "Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "afecc94df1945fdbb46e597f19a01c5b4a51d2c9be0486277817e120a2bfbd46"
+  }
+}

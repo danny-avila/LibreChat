@@ -1,5 +1,4 @@
 const axios = require('axios');
-const { z } = require('zod');
 const { logger } = require('@librechat/data-schemas');
 const { Tools } = require('librechat-data-provider');
 const Profile = require('../models/Profile');
@@ -7,13 +6,6 @@ const Profile = require('../models/Profile');
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://nadyaputriast-n8n.hf.space';
 const N8N_TIMEOUT = parseInt(process.env.N8N_TIMEOUT) || 30000;
 
-/**
- * N8nToolService - Converts n8n workflows into OpenAI function tools
- *
- * This service is the bridge between LibreChat's AI capabilities and n8n workflows.
- * It transforms workflow definitions into OpenAI-compatible function tools that
- * can be called naturally through conversation.
- */
 class N8nToolService {
   constructor() {
     this.toolCache = new Map();
@@ -21,457 +13,371 @@ class N8nToolService {
   }
 
   /**
-   * Define all n8n workflows with their metadata
-   * This maps workflow information to OpenAI function tool format
+   * DEFINISI UTAMA WORKFLOW
+   * Key menggunakan "wf_" sesuai database kamu.
    */
   defineWorkflows() {
     return {
-      // ===== EXECUTIVE MODULE =====
+      // ===== 1. EXECUTIVE / CEO TOOLS =====
       wf_financial_analytics: {
         name: 'get_financial_analytics',
-        description:
-          'Get comprehensive financial analytics including revenue, expenses, profit, department performance, and trends. Use this when user asks about financial data, revenue, profit, expenses, or financial metrics.',
+        label: 'Financial Analytics',
+        description: 'Get comprehensive financial analytics including revenue, expenses, profit.',
         endpoint: '/webhook/librechat/financial-analytics',
         profileTypes: ['ceo'],
         parameters: {
           type: 'object',
           properties: {
-            period: {
-              type: 'string',
-              description:
-                'Time period for analytics (e.g., "Q4 2024", "2024", "Last Quarter", "This Year")',
-              default: 'Q4 2024',
-            },
-            includeComparison: {
-              type: 'boolean',
-              description: 'Include comparison with previous period',
-              default: true,
-            },
+            period: { type: 'string', default: 'Q4 2024' },
             department: {
               type: 'string',
-              description:
-                'Specific department to analyze (optional). Leave empty for all departments.',
               enum: ['Sales', 'Marketing', 'Engineering', 'Operations', 'all'],
             },
           },
           required: ['period'],
         },
-        examples: [
-          'Show me Q4 2024 financials',
-          'What is our revenue this quarter?',
-          'How much profit did we make?',
-          'Compare sales performance',
-        ],
       },
-
       wf_company_metrics: {
         name: 'get_company_metrics',
-        description:
-          'Get company-wide KPIs and metrics including employee count, customer satisfaction, active projects, department performance, and goal progress. Use this when user asks about company performance, KPIs, metrics, or overall company status.',
+        label: 'Company Metrics',
+        description: 'Get company-wide KPIs, employee count, and satisfaction scores.',
         endpoint: '/webhook/librechat/company-metrics',
         profileTypes: ['ceo'],
         parameters: {
           type: 'object',
           properties: {
-            metricType: {
-              type: 'string',
-              description: 'Type of metrics to retrieve',
-              enum: ['all', 'employees', 'customers', 'projects', 'departments', 'goals'],
-              default: 'all',
-            },
-            includeHistory: {
-              type: 'boolean',
-              description: 'Include historical trend data',
-              default: false,
-            },
+            metricType: { type: 'string', default: 'all' },
           },
-          required: [],
         },
-        examples: [
-          'Show me company metrics',
-          'How many employees do we have?',
-          'What is our customer satisfaction score?',
-          'How many active projects?',
-        ],
       },
 
-      // ===== OPERATIONAL MODULE (Employee) =====
-      wf_task_management: {
-        name: 'manage_tasks',
-        description:
-          'Manage tasks including listing, creating, updating, and completing tasks. Use this when user wants to view tasks, create new tasks, update task status, or mark tasks as complete.',
+      // ===== 2. PROJECT MANAGEMENT =====
+      wf_create_project: {
+        name: 'create_project',
+        label: 'Create Project',
+        description: 'Create a new project definition.',
+        endpoint: '/webhook/librechat/project-create',
+        profileTypes: ['employee', 'customer'],
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            description: { type: 'string' },
+            budget: { type: 'number' },
+            deadline: { type: 'string' },
+          },
+          required: ['name', 'description'],
+        },
+      },
+      wf_list_project: {
+        name: 'list_project',
+        label: 'List Projects',
+        description: 'List existing projects and their statuses.',
+        endpoint: '/webhook/librechat/project-status',
+        profileTypes: ['employee', 'customer'],
+        parameters: {
+          type: 'object',
+          properties: {
+            action: { type: 'string', default: 'list' },
+            projectId: { type: 'string' },
+          },
+          required: ['action'],
+        },
+      },
+      wf_update_project: {
+        name: 'update_project',
+        label: 'Update Project',
+        description: 'Update project details, status, or progress.',
+        endpoint: '/webhook/librechat/project-update',
+        profileTypes: ['employee', 'customer'],
+        parameters: {
+          type: 'object',
+          properties: {
+            projectId: { type: 'string' },
+            status: { type: 'string' },
+            progress: { type: 'number' },
+          },
+          required: ['projectId'],
+        },
+      },
+
+      // ===== 3. TASK MANAGEMENT =====
+      wf_task_create: {
+        name: 'create_task',
+        label: 'Create Task',
+        description: 'Create a new task assignment.',
+        endpoint: '/webhook/librechat/task-create',
+        profileTypes: ['employee'],
+        parameters: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            description: { type: 'string' },
+            priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+            assignedTo: { type: 'string' },
+          },
+          required: ['title'],
+        },
+      },
+      wf_task_list: {
+        name: 'list_task',
+        label: 'List Tasks',
+        description: 'View list of tasks.',
         endpoint: '/webhook/librechat/task-management',
         profileTypes: ['employee'],
         parameters: {
           type: 'object',
           properties: {
-            action: {
-              type: 'string',
-              description: 'Action to perform on tasks',
-              enum: ['list', 'create', 'update', 'complete'],
-              default: 'list',
-            },
-            status: {
-              type: 'string',
-              description: 'Filter tasks by status (for list action)',
-              enum: ['pending', 'in-progress', 'completed', 'all'],
-            },
-            taskTitle: {
-              type: 'string',
-              description: 'Task title (for create/update actions)',
-            },
-            taskDescription: {
-              type: 'string',
-              description: 'Task description (for create action)',
-            },
-            priority: {
-              type: 'string',
-              description: 'Task priority (for create action)',
-              enum: ['low', 'medium', 'high', 'urgent'],
-              default: 'medium',
-            },
-            taskId: {
-              type: 'string',
-              description: 'Task ID (for update/complete actions)',
-            },
+            action: { type: 'string', default: 'list' },
+            status: { type: 'string' },
           },
           required: ['action'],
         },
-        examples: [
-          'Show me my tasks',
-          'Create a task to review Q4 reports',
-          'Mark task as complete',
-          'List pending tasks',
-        ],
       },
-
-      // ===== OPERATIONAL MODULE (Customer) =====
-      wf_support_ticket: {
-        name: 'manage_support_tickets',
-        description:
-          'Manage support tickets including creating new tickets, viewing ticket status, and listing all tickets. Use this when customer wants to report an issue, check ticket status, or view their support history.',
-        endpoint: '/webhook/librechat/support-ticket',
-        profileTypes: ['customer'],
+      wf_task_update: {
+        name: 'update_task',
+        label: 'Update Task',
+        description: 'Update task status or details.',
+        endpoint: '/webhook/librechat/task-update',
+        profileTypes: ['employee'],
         parameters: {
           type: 'object',
           properties: {
-            action: {
-              type: 'string',
-              description: 'Action to perform',
-              enum: ['create', 'list', 'get_status'],
-              default: 'list',
-            },
-            subject: {
-              type: 'string',
-              description: 'Ticket subject (for create action)',
-            },
-            description: {
-              type: 'string',
-              description:
-                'Detailed description of the issue (for create action). Minimum 10 characters.',
-            },
-            priority: {
-              type: 'string',
-              description: 'Issue priority (for create action)',
-              enum: ['low', 'medium', 'high', 'urgent'],
-              default: 'medium',
-            },
-            ticketId: {
-              type: 'string',
-              description: 'Ticket ID (for get_status action)',
-            },
+            _id: { type: 'string' },
+            status: { type: 'string', enum: ['pending', 'in-progress', 'completed'] },
           },
-          required: ['action'],
+          required: ['_id'],
         },
-        examples: [
-          'I need help with login issues',
-          'Create a support ticket for billing',
-          'Check my ticket status',
-          'List my support tickets',
-        ],
       },
-
-      wf_project_status: {
-        name: 'get_project_status',
-        description:
-          'Get project status, progress, budget, timeline, and team information. Use this when customer asks about their project progress, budget status, milestones, or team members.',
-        endpoint: '/webhook/librechat/project-status',
-        profileTypes: ['customer'],
+      wf_task_delete: {
+        name: 'delete_task',
+        label: 'Delete Task',
+        description: 'Remove a task.',
+        endpoint: '/webhook/librechat/task-delete',
+        profileTypes: ['employee'],
         parameters: {
           type: 'object',
           properties: {
-            action: {
-              type: 'string',
-              description: 'Action to perform',
-              enum: ['get', 'list'],
-              default: 'list',
-            },
-            projectId: {
-              type: 'string',
-              description: 'Project ID (for get action). Examples: PRJ-001, PRJ-002',
-            },
+            _id: { type: 'string' },
           },
-          required: ['action'],
+          required: ['_id'],
         },
-        examples: [
-          'Show me my project status',
-          'What is the progress of PRJ-001?',
-          'List all my projects',
-          'How is my project doing?',
-        ],
       },
 
-      // ===== GENERAL MODULE =====
+      // ===== 4. SUPPORT TICKETS =====
+      wf_ticket_create: {
+        name: 'create_support_ticket',
+        label: 'Create Support Ticket',
+        description: 'Submit a new support ticket.',
+        endpoint: '/webhook/librechat/support-ticket-create',
+        profileTypes: ['customer', 'employee'],
+        parameters: {
+          type: 'object',
+          properties: {
+            subject: { type: 'string' },
+            description: { type: 'string' },
+            priority: { type: 'string' },
+            userId: { type: 'string' },
+          },
+          required: ['subject', 'description', 'userId'],
+        },
+      },
+      wf_ticket_list: {
+        name: 'list_support_ticket',
+        label: 'List Support Tickets',
+        description: 'View support tickets.',
+        endpoint: '/webhook/librechat/support-ticket-list',
+        profileTypes: ['customer', 'employee'],
+        parameters: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string' },
+            role: { type: 'string' },
+          },
+          required: ['userId'],
+        },
+      },
+      wf_ticket_update: {
+        name: 'update_support_ticket',
+        label: 'Update Support Ticket',
+        description: 'Update ticket status (claim, resolve, etc).',
+        endpoint: '/webhook/librechat/support-ticket-update',
+        profileTypes: ['customer', 'employee'],
+        parameters: {
+          type: 'object',
+          properties: {
+            ticketId: { type: 'string' },
+            status: { type: 'string' },
+            assignedTo: { type: 'string' },
+          },
+          required: ['ticketId'],
+        },
+      },
+      wf_ticket_reply: {
+        name: 'support_ticket_reply',
+        label: 'Reply Support Ticket',
+        description: 'Add a message/reply to a ticket.',
+        endpoint: '/webhook/librechat/support-ticket-reply',
+        profileTypes: ['customer', 'employee'],
+        parameters: {
+          type: 'object',
+          properties: {
+            ticketId: { type: 'string' },
+            message: { type: 'string' },
+            userId: { type: 'string' },
+          },
+          required: ['ticketId', 'message'],
+        },
+      },
+      wf_ticket_delete: {
+        name: 'delete_support_ticket',
+        label: 'Delete Support Ticket',
+        description: 'Delete a ticket.',
+        endpoint: '/webhook/librechat/support-ticket-delete',
+        profileTypes: ['customer', 'employee'],
+        parameters: {
+          type: 'object',
+          properties: {
+            ticketId: { type: 'string' },
+          },
+          required: ['ticketId'],
+        },
+      },
+
+      // ===== 5. GENERAL =====
       wf_doc_search: {
         name: 'search_documents',
-        description:
-          'Search company documents and knowledge base. Use this when user wants to find documents, search for information, or access company resources.',
+        label: 'Document Search',
+        description: 'Search company documents and knowledge base.',
         endpoint: '/webhook/librechat/document-search',
         profileTypes: ['ceo', 'employee', 'customer'],
         parameters: {
           type: 'object',
           properties: {
-            query: {
-              type: 'string',
-              description: 'Search query or keywords',
-            },
-            documentType: {
-              type: 'string',
-              description: 'Filter by document type',
-              enum: ['all', 'pdf', 'doc', 'txt', 'xlsx'],
-              default: 'all',
-            },
-            category: {
-              type: 'string',
-              description: 'Document category',
-              enum: ['all', 'policies', 'procedures', 'reports', 'templates', 'guides'],
-              default: 'all',
-            },
-            limit: {
-              type: 'number',
-              description: 'Maximum number of results',
-              default: 10,
-            },
+            query: { type: 'string' },
           },
           required: ['query'],
         },
-        examples: [
-          'Search for employee handbook',
-          'Find Q4 reports',
-          'Look for onboarding documents',
-          'Search policies',
-        ],
       },
     };
   }
 
-  /**
-   * Get all available tools for a specific user profile
-   * @param {string} profileType - User's profile type (ceo, employee, customer)
-   * @returns {Array} Array of OpenAI function tool definitions
-   */
+  getWorkflowsForRole(role) {
+    const allWorkflows = this.workflowDefinitions;
+    const allowed = [];
+    for (const [key, def] of Object.entries(allWorkflows)) {
+      if (def.profileTypes.includes(role)) {
+        allowed.push({ workflowId: key, workflowName: def.label || def.name });
+      }
+    }
+    return allowed;
+  }
+
   async getToolsForProfile(profileType) {
-    try {
-      // Check cache first
-      const cacheKey = `tools_${profileType}`;
-      if (this.toolCache.has(cacheKey)) {
-        logger.info(`[N8nToolService] Returning cached tools for profile: ${profileType}`);
-        return this.toolCache.get(cacheKey);
-      }
+    const cacheKey = `tools_${profileType}`;
+    if (this.toolCache.has(cacheKey)) return this.toolCache.get(cacheKey);
 
-      // Get profile from database to verify allowed workflows
-      const profile = await Profile.findOne({ profileType });
-      if (!profile) {
-        logger.warn(`[N8nToolService] Profile not found: ${profileType}`);
-        return [];
-      }
+    const profile = await Profile.findOne({ profileType });
+    if (!profile) return [];
 
-      const tools = [];
-
-      // Convert each allowed workflow to OpenAI function tool
-      for (const workflow of profile.allowedWorkflows) {
-        const workflowDef = this.workflowDefinitions[workflow.workflowId];
-
-        if (!workflowDef) {
-          logger.warn(`[N8nToolService] Workflow definition not found: ${workflow.workflowId}`);
-          continue;
-        }
-
-        // Check if profile is allowed to use this workflow
-        if (!workflowDef.profileTypes.includes(profileType)) {
-          logger.warn(
-            `[N8nToolService] Profile ${profileType} not allowed for workflow ${workflow.workflowId}`,
-          );
-          continue;
-        }
-
-        // Create OpenAI function tool definition
-        const tool = {
+    const tools = [];
+    for (const workflow of profile.allowedWorkflows) {
+      const workflowDef = this.workflowDefinitions[workflow.workflowId];
+      if (workflowDef && workflowDef.profileTypes.includes(profileType)) {
+        tools.push({
           type: Tools.function,
           function: {
             name: workflowDef.name,
             description: workflowDef.description,
             parameters: workflowDef.parameters,
           },
-          // Store metadata for execution
           _metadata: {
             workflowId: workflow.workflowId,
             endpoint: workflowDef.endpoint,
             workflowName: workflow.workflowName,
             profileTypes: workflowDef.profileTypes,
           },
-        };
-
-        tools.push(tool);
-        logger.info(`[N8nToolService] Added tool: ${workflowDef.name} for profile ${profileType}`);
+        });
       }
-
-      // Cache the tools
-      this.toolCache.set(cacheKey, tools);
-
-      logger.info(`[N8nToolService] Loaded ${tools.length} tools for profile: ${profileType}`);
-      return tools;
-    } catch (error) {
-      logger.error('[N8nToolService] Error getting tools for profile:', error);
-      throw error;
     }
+    this.toolCache.set(cacheKey, tools);
+    return tools;
   }
 
-  /**
-   * Get a specific tool by function name
-   * @param {string} functionName - OpenAI function name
-   * @returns {Object|null} Tool definition with metadata
-   */
   getToolByName(functionName) {
     for (const [workflowId, definition] of Object.entries(this.workflowDefinitions)) {
-      if (definition.name === functionName) {
-        return {
-          ...definition,
-          workflowId,
-        };
-      }
+      if (definition.name === functionName) return { ...definition, workflowId };
     }
     return null;
   }
 
   /**
-   * Execute an n8n workflow via function call
-   * @param {string} functionName - OpenAI function name
-   * @param {Object} parameters - Function parameters
-   * @param {Object} context - User context (profileType, userId, username)
-   * @returns {Promise<Object>} Workflow execution result
+   * REVISI PENTING: Pengiriman Payload ke n8n
+   * Kita taruh 'role' dan 'profileType' di root object agar n8n mudah membacanya.
    */
   async executeWorkflow(functionName, parameters, context) {
     try {
-      logger.info(`[N8nToolService] Executing workflow: ${functionName}`, {
-        parameters,
-        context,
-      });
-
-      // Get tool definition
+      logger.info(`[N8nToolService] Executing workflow: ${functionName}`);
       const tool = this.getToolByName(functionName);
-      if (!tool) {
-        throw new Error(`Function not found: ${functionName}`);
-      }
 
-      // Verify profile has access
+      if (!tool) throw new Error(`Function not found: ${functionName}`);
       if (!tool.profileTypes.includes(context.profileType)) {
         throw new Error(`Profile ${context.profileType} not authorized for ${functionName}`);
       }
 
-      // Prepare request payload
+      // === PERBAIKAN DI SINI ===
+      // Kita kirim profileType langsung di luar, bukan cuma di dalam _context
+      // Supaya node "If" di n8n bisa langsung baca: {{ $json.role }}
       const payload = {
         ...parameters,
+        role: context.profileType, // <--- INI KUNCINYA
+        profileType: context.profileType, // Cadangan kalau n8n bacanya profileType
+        userId: context.userId,
+
+        // Tetap kirim _context untuk data lengkap
         _context: {
           profileType: context.profileType,
           userId: context.userId,
           username: context.username,
           timestamp: new Date().toISOString(),
           functionName: functionName,
-          // Include full profile info if available
-          profile: context.profile || {
-            profileType: context.profileType,
-          },
         },
       };
 
-      // Call n8n webhook
       const url = `${N8N_WEBHOOK_URL}${tool.endpoint}`;
-      logger.info(`[N8nToolService] Calling n8n: ${url}`, {
-        profileType: context.profileType,
-        hasFullProfile: !!context.profile,
-      });
+      logger.info(`[N8nToolService] Calling n8n: ${url}`);
 
       const response = await axios.post(url, payload, {
         timeout: N8N_TIMEOUT,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      logger.info(`[N8nToolService] Workflow executed successfully: ${functionName}`, {
-        status: response.status,
-        dataKeys: Object.keys(response.data || {}),
+        headers: { 'Content-Type': 'application/json' },
       });
 
       return {
         success: true,
         functionName,
         data: response.data,
-        executedAt: new Date().toISOString(),
       };
     } catch (error) {
-      logger.error(`[N8nToolService] Error executing workflow ${functionName}:`, {
-        message: error.message,
-        response: error.response?.data,
-      });
-
-      // Return error in structured format
+      logger.error(`[N8nToolService] Error: ${error.message}`);
       return {
         success: false,
         functionName,
-        error: {
-          message: error.message,
-          details: error.response?.data || null,
-          code: error.response?.status || 500,
-        },
-        executedAt: new Date().toISOString(),
+        error: { message: error.message, details: error.response?.data },
       };
     }
   }
 
-  /**
-   * Clear tool cache (useful after profile/workflow changes)
-   */
   clearCache() {
     this.toolCache.clear();
-    logger.info('[N8nToolService] Tool cache cleared');
   }
-
-  /**
-   * Get all available workflow definitions
-   * @returns {Object} All workflow definitions
-   */
   getAllWorkflows() {
     return this.workflowDefinitions;
   }
-
-  /**
-   * Validate if a profile can use a specific function
-   * @param {string} profileType - User's profile type
-   * @param {string} functionName - Function name to check
-   * @returns {boolean} True if authorized
-   */
   isAuthorized(profileType, functionName) {
     const tool = this.getToolByName(functionName);
-    if (!tool) {
-      return false;
-    }
-    return tool.profileTypes.includes(profileType);
+    return tool ? tool.profileTypes.includes(profileType) : false;
   }
 }
 
-// Singleton instance
 const n8nToolService = new N8nToolService();
-
 module.exports = n8nToolService;

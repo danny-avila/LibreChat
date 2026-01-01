@@ -2,20 +2,21 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
 const n8nToolService = require('../services/N8nToolService');
-const n8nToolExecutor = require('../services/N8nToolExecutor');
+// Kita hapus n8nToolExecutor agar tidak bingung, kita pakai Service langsung
 const profileAuth = require('../middleware/profileAuth');
 const Profile = require('../models/Profile');
 
 const router = express.Router();
 
 /**
+ * ==========================================
  * POST /api/n8n-tools/setup-profile
- * Initialize user profile (CEO/Employee/Customer)
- * Note: This does NOT use profileAuth because the profile doesn't exist yet.
+ * Initialize user profile
+ * ==========================================
  */
 router.post('/setup-profile', async (req, res) => {
   try {
-    // 1. Manual Auth Check (Bypassing profileAuth)
+    // 1. Manual Auth Check
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'No token provided' });
@@ -32,40 +33,24 @@ router.post('/setup-profile', async (req, res) => {
     }
 
     const userId = decoded.userId || decoded.id;
-    const { role } = req.body; // Expecting: { "role": "ceo" }
+    const { role } = req.body;
 
     if (!['ceo', 'employee', 'customer'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role. Use: ceo, employee, or customer' });
     }
 
-    // 2. Define Workflows based on Role
-    let workflows = [];
-    if (role === 'ceo') {
-      workflows = [
-        { workflowId: 'wf_financial_analytics', workflowName: 'Financial Analytics' },
-        { workflowId: 'wf_company_metrics', workflowName: 'Company Metrics' },
-        { workflowId: 'wf_doc_search', workflowName: 'Document Search' },
-      ];
-    } else if (role === 'employee') {
-      workflows = [
-        { workflowId: 'wf_task_management', workflowName: 'Task Management' },
-        { workflowId: 'wf_doc_search', workflowName: 'Document Search' },
-      ];
-    } else {
-      workflows = [
-        { workflowId: 'wf_support_ticket', workflowName: 'Support Tickets' },
-        { workflowId: 'wf_project_status', workflowName: 'Project Status' },
-      ];
-    }
+    // 2. Get Workflows Dynamic from Service (INI YANG BENAR)
+    // Kita tidak menulis array manual di sini lagi. Kita minta Service menyediakannya.
+    const workflows = n8nToolService.getWorkflowsForRole(role);
 
-    // 3. Save to MongoDB (Upsert = Create if not exists, Update if exists)
+    // 3. Save to MongoDB
     const profile = await Profile.findOneAndUpdate(
       { userId: userId },
       {
         userId: userId,
         profileType: role,
         permissions: ['read', 'write'],
-        allowedWorkflows: workflows,
+        allowedWorkflows: workflows, // Data dari service masuk ke sini
         metadata: {
           department: role === 'ceo' ? 'Executive' : 'Operations',
           companyId: 'JAMOT-HQ',
@@ -74,10 +59,12 @@ router.post('/setup-profile', async (req, res) => {
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
 
-    // Clear cache so the new profile is loaded immediately
+    // Clear cache agar profile baru terbaca
     n8nToolService.clearCache();
 
-    logger.info(`[Setup] Profile created for user ${userId} as ${role}`);
+    logger.info(
+      `[Setup] Profile created for user ${userId} as ${role} with ${workflows.length} workflows`,
+    );
 
     res.json({
       success: true,
@@ -91,12 +78,15 @@ router.post('/setup-profile', async (req, res) => {
 });
 
 /**
+ * ==========================================
  * GET /api/n8n-tools
- * Get available n8n tools for the authenticated user
+ * Get available tools
+ * ==========================================
  */
 router.get('/', profileAuth, async (req, res) => {
   try {
-    const tools = await n8nToolExecutor.loadUserTools(req.user);
+    // Gunakan service langsung untuk memastikan format sesuai definisi terbaru
+    const tools = await n8nToolService.getToolsForProfile(req.profile.profileType);
 
     res.json({
       success: true,
@@ -112,72 +102,58 @@ router.get('/', profileAuth, async (req, res) => {
     });
   } catch (error) {
     logger.error('[N8nToolsRoutes] Error getting tools:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 /**
+ * ==========================================
  * POST /api/n8n-tools/execute
- * Manually execute an n8n workflow tool (for testing/debugging)
+ * Execute Tool
+ * ==========================================
  */
 router.post('/execute', profileAuth, async (req, res) => {
   try {
     const { functionName, parameters } = req.body;
 
-    if (!functionName) {
-      return res.status(400).json({
-        success: false,
-        error: 'functionName is required',
-      });
-    }
+    if (!functionName)
+      return res.status(400).json({ success: false, error: 'functionName is required' });
 
-    // Verify user has access to this tool
+    // Verify Authorization
     if (!n8nToolService.isAuthorized(req.profile.profileType, functionName)) {
-      return res.status(403).json({
-        success: false,
-        error: `Not authorized to execute ${functionName}`,
-      });
+      return res
+        .status(403)
+        .json({ success: false, error: `Not authorized to execute ${functionName}` });
     }
 
-    // Prepare context
+    // Prepare Context
     const context = {
       profileType: req.profile.profileType,
       userId: req.user._id.toString(),
       username: req.user.username || req.user.email,
     };
 
-    // Execute workflow
+    // Execute
     const result = await n8nToolService.executeWorkflow(functionName, parameters || {}, context);
-
     res.json(result);
   } catch (error) {
     logger.error('[N8nToolsRoutes] Error executing tool:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 /**
+ * ==========================================
  * GET /api/n8n-tools/workflows
- * Get all available workflow definitions (admin only)
+ * Admin Only
+ * ==========================================
  */
 router.get('/workflows', profileAuth, async (req, res) => {
   try {
-    // Only allow admin or ceo to see all workflows
     if (!['admin', 'ceo'].includes(req.profile?.profileType)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Admin or CEO access required',
-      });
+      return res.status(403).json({ success: false, error: 'Admin or CEO access required' });
     }
-
     const workflows = n8nToolService.getAllWorkflows();
-
     res.json({
       success: true,
       workflows: Object.entries(workflows).map(([id, def]) => ({
@@ -186,82 +162,53 @@ router.get('/workflows', profileAuth, async (req, res) => {
         description: def.description,
         endpoint: def.endpoint,
         profileTypes: def.profileTypes,
-        parameters: def.parameters,
-        examples: def.examples,
+        parameters: def.parameters, // Tambahkan ini agar lengkap
       })),
     });
   } catch (error) {
-    logger.error('[N8nToolsRoutes] Error getting workflows:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 /**
  * POST /api/n8n-tools/clear-cache
- * Clear tool cache (admin only)
  */
 router.post('/clear-cache', profileAuth, async (req, res) => {
   try {
-    // Only allow admin
     if (req.profile?.profileType !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        error: 'Admin access required',
-      });
+      return res.status(403).json({ success: false, error: 'Admin access required' });
     }
-
     n8nToolService.clearCache();
-
-    res.json({
-      success: true,
-      message: 'Tool cache cleared successfully',
-    });
+    res.json({ success: true, message: 'Cache cleared' });
   } catch (error) {
-    logger.error('[N8nToolsRoutes] Error clearing cache:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 /**
  * GET /api/n8n-tools/test
- * Test endpoint to verify n8n tools are working
  */
 router.get('/test', profileAuth, async (req, res) => {
   try {
     const profile = req.profile;
-    const tools = await n8nToolExecutor.loadUserTools(req.user);
+    // Pakai Service langsung untuk test
+    const tools = await n8nToolService.getToolsForProfile(profile.profileType);
 
     res.json({
       success: true,
       message: 'N8n tools system is working',
-      user: {
-        id: req.user._id,
-        email: req.user.email,
-        username: req.user.username,
-      },
+      user: { id: req.user._id, email: req.user.email },
       profile: {
         profileType: profile.profileType,
-        permissions: profile.permissions,
         workflowCount: profile.allowedWorkflows?.length || 0,
       },
       tools: {
         count: tools.length,
         names: tools.map((t) => t.function.name),
       },
-      timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    logger.error('[N8nToolsRoutes] Test error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

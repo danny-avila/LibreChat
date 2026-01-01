@@ -1,0 +1,233 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "librechat/task-update",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "4dec423f-ef5a-42a8-a257-04ef5e8be0f4",
+      "name": "Webhook Update",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        64
+      ],
+      "webhookId": "task-update"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body;\n\n// Cek apakah ada perubahan Assignment?\nif (body.assignedTo) {\n  return [ { json: { lookupUser: true, ...body } } ]; \n} else {\n  return [ { json: { lookupUser: false, ...body } } ]; \n}"
+      },
+      "id": "8e59e83e-f3a8-46d8-b143-c7f9a1c73dd7",
+      "name": "Check Assignment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.lookupUser }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "da318b8b-5ccd-460a-9f5b-ca3ab12dc612",
+      "name": "User Changed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        0,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "collection": "users",
+        "options": {},
+        "query": "={ \"_id\": \"{{ $json.assignedTo }}\" }"
+      },
+      "id": "110f830e-80cf-41d8-9772-88b0dcbf9c64",
+      "name": "Find New User",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        224,
+        -64
+      ],
+      "database": "LibreChat",
+      "alwaysOutputData": true,
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputData = $(\"User Changed?\").first().json;\nconst userData = $json.email ? $json : {};\n\nconst userEmail = userData.email || 'unknown@system.local';\nconst userName = userData.name || userData.username || 'Unknown User';\n\nconst updateData = {\n  ...inputData,\n  assignedEmail: userEmail,\n  assignedName: userName,\n  updatedAt: new Date().toISOString()\n};\n\n// PENTING: Gunakan _id agar cocok dengan MongoDB\nconst cleanData = {\n  _id: inputData.taskId,\n  ...updateData\n};\n\n// Hapus field sampah\ndelete cleanData.taskId;\ndelete cleanData.lookupUser;\n\nreturn { json: cleanData };"
+      },
+      "id": "619547e9-998e-4ea4-8377-9c633642dc33",
+      "name": "Prep With New User",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputData = $json;\nconst updateData = { ...inputData };\n\nupdateData.updatedAt = new Date().toISOString();\n\n// PENTING: Gunakan _id agar cocok dengan MongoDB\nconst cleanData = {\n  _id: inputData.taskId,\n  ...updateData\n};\n\n// Hapus field sampah\ndelete cleanData.taskId;\ndelete cleanData.lookupUser;\n\nreturn { json: cleanData };"
+      },
+      "id": "4f4d0424-1445-42df-b9d9-a0fb2f09a70c",
+      "name": "Prep Simple Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "collection": "tasks",
+        "updateKey": "_id",
+        "fields": "title,description,status,priority,dueDate,assignedTo,assignedEmail,assignedName,updatedAt",
+        "options": {}
+      },
+      "id": "211f6f6a-b958-489e-9df6-86aea51abace",
+      "name": "Update MongoDB",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        672,
+        64
+      ],
+      "database": "librechat_enterprise",
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Task updated successfully\"\n}",
+        "options": {}
+      },
+      "id": "cbb1f072-d577-4f79-a375-6b928e80ab57",
+      "name": "Respond Safe",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        64
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Update": {
+      "main": [
+        [
+          {
+            "node": "Check Assignment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Assignment": {
+      "main": [
+        [
+          {
+            "node": "User Changed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "User Changed?": {
+      "main": [
+        [
+          {
+            "node": "Find New User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Simple Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find New User": {
+      "main": [
+        [
+          {
+            "node": "Prep With New User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep With New User": {
+      "main": [
+        [
+          {
+            "node": "Update MongoDB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Simple Update": {
+      "main": [
+        [
+          {
+            "node": "Update MongoDB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update MongoDB": {
+      "main": [
+        [
+          {
+            "node": "Respond Safe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "afecc94df1945fdbb46e597f19a01c5b4a51d2c9be0486277817e120a2bfbd46"
+  }
+}

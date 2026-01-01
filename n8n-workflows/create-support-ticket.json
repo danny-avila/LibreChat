@@ -1,0 +1,111 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "librechat/support-ticket-create",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "338e8028-a598-4656-aa61-0759b3d0197f",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        112,
+        144
+      ],
+      "webhookId": "support-ticket-create"
+    },
+    {
+      "parameters": {
+        "jsCode": "// VALIDASI INPUT\nconst { subject, description, priority, userId } = $json.body || $json;\n\nif (!subject || !description || !priority || !userId) {\n  throw new Error('Missing required fields: subject, description, priority, userId');\n}\n\n// Siapkan data untuk masuk DB\nreturn {\n  json: {\n    ticketId: `TKT-${Date.now()}`,\n    subject,\n    description,\n    priority,\n    status: 'open',\n    customerId: userId,\n    createdAt: new Date().toISOString(),\n    updatedAt: new Date().toISOString(),\n  }\n};"
+      },
+      "id": "7470974c-2dbb-4549-be96-424f65cad313",
+      "name": "Prepare Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "collection": "support_ticket",
+        "fields": "ticketId, subject, description, priority, status, customerId, createdAt, updatedAt",
+        "options": {}
+      },
+      "id": "e5eeddc6-7fa6-44e4-ac81-9f77838b9e4f",
+      "name": "Insert to MongoDB",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1.1,
+      "position": [
+        560,
+        144
+      ],
+      "credentials": {
+        "mongoDb": {
+          "id": "HC6Gjp2c6DcejmqQ",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, data: $json } }}",
+        "options": {}
+      },
+      "id": "d9171a96-7859-4cfd-b85e-0ae8782f2dd0",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        784,
+        144
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Data": {
+      "main": [
+        [
+          {
+            "node": "Insert to MongoDB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert to MongoDB": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "afecc94df1945fdbb46e597f19a01c5b4a51d2c9be0486277817e120a2bfbd46"
+  }
+}
