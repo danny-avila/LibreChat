@@ -11,20 +11,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('librechat-data-provider', () => ({
-  ErrorTypes: {
-    AUTH_FAILED: 'AUTH_FAILED',
-  },
-  SystemRoles: {
-    ADMIN: 'ADMIN',
-    USER: 'USER',
-  },
-  EModelEndpoint: {
-    azureOpenAI: 'azureOpenAI',
-    openAI: 'openAI',
-    agents: 'agents',
-    custom: 'custom',
-  },
-  errorsToString: jest.fn(),
+  ...jest.requireActual('librechat-data-provider'),
 }));
 
 jest.mock('@librechat/api', () => ({
