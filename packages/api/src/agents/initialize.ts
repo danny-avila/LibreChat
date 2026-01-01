@@ -150,6 +150,12 @@ export async function initializeAgent(
   const provider = agent.provider;
   agent.endpoint = provider;
 
+  /**
+   * Load conversation files for ALL agents, not just the initial agent.
+   * This enables handoff agents to access files that were uploaded earlier
+   * in the conversation. Without this, file_search and execute_code tools
+   * on handoff agents would fail to find previously attached files.
+   */
   if (conversationId != null && resendFiles) {
     const fileIds = (await db.getConvoFiles(conversationId)) ?? [];
     const toolResourceSet = new Set<EToolResources>();
