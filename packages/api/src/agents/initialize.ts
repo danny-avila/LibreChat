@@ -150,7 +150,7 @@ export async function initializeAgent(
   const provider = agent.provider;
   agent.endpoint = provider;
 
-  if (isInitialAgent && conversationId != null && resendFiles) {
+  if (conversationId != null && resendFiles) {
     const fileIds = (await db.getConvoFiles(conversationId)) ?? [];
     const toolResourceSet = new Set<EToolResources>();
     for (const tool of agent.tools ?? []) {
@@ -162,7 +162,7 @@ export async function initializeAgent(
     if (requestFiles.length || toolFiles.length) {
       currentFiles = (await db.updateFilesUsage(requestFiles.concat(toolFiles))) as IMongoFile[];
     }
-  } else if (isInitialAgent && requestFiles.length) {
+  } else if (requestFiles.length) {
     currentFiles = (await db.updateFilesUsage(requestFiles)) as IMongoFile[];
   }
 
