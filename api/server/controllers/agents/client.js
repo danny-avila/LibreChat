@@ -101,8 +101,13 @@ const AGENT_SUFFIX_PATTERN = /____(\d+)$/;
 /**
  * Creates a mapMethod for getMessagesForConversation that processes agent content.
  * - Strips agentId/groupId metadata from all content
- * - For multi-agent: filters to primary agent content only (no suffix or lowest suffix)
+ * - For parallel agents (addedConvo with groupId): filters to primary agent content only
+ * - For handoffs (agentId without groupId): keeps all content from all agents
  * - For multi-agent: applies agent labels to content
+ *
+ * The key distinction:
+ * - Parallel execution (addedConvo): Parts have both agentId AND groupId
+ * - Handoffs: Parts only have agentId, no groupId
  *
  * @param {Agent} primaryAgent - Primary agent configuration
  * @param {Map<string, Agent>} [agentConfigs] - Additional agent configurations
@@ -127,18 +132,37 @@ function createMultiAgentMapper(primaryAgent, agentConfigs) {
       return message;
     }
 
-    // Find primary agent ID (no suffix, or lowest suffix number) - only needed for multi-agent
-    let primaryAgentId = null;
+    // Check for metadata and determine if this is parallel (groupId) or handoff (agentId only)
     let hasAgentMetadata = false;
+    let hasGroupId = false;
 
-    if (hasMultipleAgents) {
+    for (const part of message.content) {
+      if (part?.agentId || part?.groupId != null) {
+        hasAgentMetadata = true;
+      }
+      if (part?.groupId != null) {
+        hasGroupId = true;
+        break;
+      }
+    }
+
+    if (!hasAgentMetadata) {
+      return message;
+    }
+
+    // For parallel execution (addedConvo): filter to primary agent only
+    // For handoffs: keep all content from all agents
+    const shouldFilterToOnePrimaryAgent = hasMultipleAgents && hasGroupId;
+
+    // Find primary agent ID only when filtering is needed
+    let primaryAgentId = null;
+    if (shouldFilterToOnePrimaryAgent) {
       let lowestSuffixIndex = Infinity;
       for (const part of message.content) {
         const agentId = part?.agentId;
         if (!agentId) {
           continue;
         }
-        hasAgentMetadata = true;
 
         const suffixMatch = agentId.match(AGENT_SUFFIX_PATTERN);
         if (!suffixMatch) {
@@ -151,13 +175,6 @@ function createMultiAgentMapper(primaryAgent, agentConfigs) {
           primaryAgentId = agentId;
         }
       }
-    } else {
-      // Single agent: just check if any metadata exists
-      hasAgentMetadata = message.content.some((part) => part?.agentId || part?.groupId);
-    }
-
-    if (!hasAgentMetadata) {
-      return message;
     }
 
     try {
@@ -168,8 +185,8 @@ function createMultiAgentMapper(primaryAgent, agentConfigs) {
 
       for (const part of message.content) {
         const agentId = part?.agentId;
-        // For single agent: include all parts; for multi-agent: filter to primary
-        if (!hasMultipleAgents || !agentId || agentId === primaryAgentId) {
+        // For parallel: filter to primary; for handoffs: include all
+        if (!shouldFilterToOnePrimaryAgent || !agentId || agentId === primaryAgentId) {
           const newIndex = filteredContent.length;
           const { agentId: _a, groupId: _g, ...cleanPart } = part;
           filteredContent.push(cleanPart);
