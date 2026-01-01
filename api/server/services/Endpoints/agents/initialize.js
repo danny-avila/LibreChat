@@ -5,6 +5,8 @@ const {
   validateAgentModel,
   getCustomEndpointConfig,
   createSequentialChainEdges,
+  createEdgeCollector,
+  filterOrphanedEdges,
 } = require('@librechat/api');
 const {
   EModelEndpoint,
@@ -153,7 +155,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         `[processAgent] Handoff agent ${agentId} not found, skipping (orphaned reference)`,
       );
       skippedAgentIds.add(agentId);
-      return;
+      return null;
     }
 
     const validationResult = await validateAgentModel({
@@ -194,37 +196,31 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       userMCPAuthMap = config.userMCPAuthMap;
     }
     agentConfigs.set(agentId, config);
+    return agent;
   }
 
-  let edges = primaryConfig.edges;
   const checkAgentInit = (agentId) => agentId === primaryConfig.id || agentConfigs.has(agentId);
-  if ((edges?.length ?? 0) > 0) {
-    for (const edge of edges) {
-      if (Array.isArray(edge.to)) {
-        for (const to of edge.to) {
-          if (checkAgentInit(to)) {
-            continue;
-          }
-          await processAgent(to);
-        }
-      } else if (typeof edge.to === 'string' && checkAgentInit(edge.to)) {
-        continue;
-      } else if (typeof edge.to === 'string') {
-        await processAgent(edge.to);
-      }
 
-      if (Array.isArray(edge.from)) {
-        for (const from of edge.from) {
-          if (checkAgentInit(from)) {
-            continue;
-          }
-          await processAgent(from);
-        }
-      } else if (typeof edge.from === 'string' && checkAgentInit(edge.from)) {
-        continue;
-      } else if (typeof edge.from === 'string') {
-        await processAgent(edge.from);
+  // Graph topology discovery for recursive agent handoffs (BFS)
+  const { edgeMap, agentsToProcess, collectEdges } = createEdgeCollector(
+    checkAgentInit,
+    skippedAgentIds,
+  );
+
+  // Seed with primary agent's edges
+  collectEdges(primaryConfig.edges);
+
+  // BFS to load and merge all connected agents (enables transitive handoffs: A->B->C)
+  while (agentsToProcess.size > 0) {
+    const agentId = agentsToProcess.values().next().value;
+    agentsToProcess.delete(agentId);
+    try {
+      const agent = await processAgent(agentId);
+      if (agent?.edges?.length) {
+        collectEdges(agent.edges);
       }
+    } catch (err) {
+      logger.error(`[initializeClient] Error processing agent ${agentId}:`, err);
     }
   }
 
@@ -236,10 +232,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       }
       await processAgent(agentId);
     }
-
     const chain = await createSequentialChainEdges([primaryConfig.id].concat(agent_ids), '{convo}');
-    edges = edges ? edges.concat(chain) : chain;
+    collectEdges(chain);
   }
+
+  let edges = Array.from(edgeMap.values());
 
   /** Multi-Convo: Process addedConvo for parallel agent execution */
   const { userMCPAuthMap: updatedMCPAuthMap } = await processAddedConvo({
@@ -268,12 +265,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     edges = [];
   }
 
-  if (edges && skippedAgentIds.size > 0) {
-    edges = edges.filter((edge) => {
-      const toIds = Array.isArray(edge.to) ? edge.to : [edge.to];
-      return !toIds.some((id) => skippedAgentIds.has(id));
-    });
-  }
+  // Filter out edges referencing non-existent agents (orphaned references)
+  edges = filterOrphanedEdges(edges, skippedAgentIds);
 
   primaryConfig.edges = edges;
 
