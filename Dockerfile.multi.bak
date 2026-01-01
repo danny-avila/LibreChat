@@ -1,14 +1,14 @@
 # Dockerfile.multi
 # v0.8.1-rc2
+
 # Base for all builds
-FROM node:20-slim AS base-min
-# Install dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    python3 \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+FROM node:20-alpine AS base-min
+# Install jemalloc
+RUN apk add --no-cache jemalloc
+# Set environment variable to use jemalloc
+ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
 WORKDIR /app
+RUN apk --no-cache add curl
 RUN npm config set fetch-retry-maxtimeout 600000 && \
     npm config set fetch-retries 5 && \
     npm config set fetch-retry-mintimeout 15000
@@ -19,22 +19,25 @@ COPY packages/data-schemas/package*.json ./packages/data-schemas/
 COPY packages/client/package*.json ./packages/client/
 COPY client/package*.json ./client/
 COPY api/package*.json ./api/
+
 # Install all dependencies for every build
 FROM base-min AS base
 WORKDIR /app
-RUN npm install --legacy-peer-deps && \
-    npm install @rollup/rollup-linux-x64-gnu --save-optional
+RUN npm ci
+
 # Build `data-provider` package
 FROM base AS data-provider-build
 WORKDIR /app/packages/data-provider
 COPY packages/data-provider ./
 RUN npm run build
+
 # Build `data-schemas` package
 FROM base AS data-schemas-build
 WORKDIR /app/packages/data-schemas
 COPY packages/data-schemas ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 RUN npm run build
+
 # Build `api` package
 FROM base AS api-package-build
 WORKDIR /app/packages/api
@@ -42,11 +45,13 @@ COPY packages/api ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 COPY --from=data-schemas-build /app/packages/data-schemas/dist /app/packages/data-schemas/dist
 RUN npm run build
+
 # Build `client` package
 FROM base AS client-package-build
 WORKDIR /app/packages/client
 COPY packages/client ./
 RUN npm run build
+
 # Client build
 FROM base AS client-build
 WORKDIR /app/client
@@ -56,29 +61,21 @@ COPY --from=client-package-build /app/packages/client/dist /app/packages/client/
 COPY --from=client-package-build /app/packages/client/src /app/packages/client/src
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run build
+
 # API setup (including client dist)
-FROM node:20-slim AS api-build
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    python3 \
-    && rm -rf /var/lib/apt/lists/*
+FROM base-min AS api-build
 # Add `uv` for extended MCP support
 COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
 RUN uv --version
 WORKDIR /app
-# Copy node_modules from build stage (root and api)
-COPY --from=base /app/node_modules ./node_modules
-COPY --from=base /app/api/node_modules ./api/node_modules
-COPY --from=base /app/package*.json ./
+# Install only production deps
+RUN npm ci --omit=dev
 COPY api ./api
 COPY config ./config
-COPY --from=data-provider-build /app/packages/data-provider ./packages/data-provider
-COPY --from=data-schemas-build /app/packages/data-schemas ./packages/data-schemas
-COPY --from=api-package-build /app/packages/api ./packages/api
+COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data-provider/dist
+COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-schemas/dist
+COPY --from=api-package-build /app/packages/api/dist ./packages/api/dist
 COPY --from=client-build /app/client/dist ./client/dist
-# Install missing peer dependencies and rebuild sharp for correct platform
-RUN npm install @opentelemetry/exporter-trace-otlp-http @opentelemetry/sdk-node @opentelemetry/api --legacy-peer-deps && \
-    cd /app/api && npm install sharp --os=linux --cpu=x64
 WORKDIR /app/api
 EXPOSE 3080
 ENV HOST=0.0.0.0
