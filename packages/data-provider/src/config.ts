@@ -359,6 +359,67 @@ export const azureEndpointSchema = z
 export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, 'groups'> &
   TAzureConfigValidationResult;
 
+/**
+ * Vertex AI model configuration - similar to Azure model config
+ * Allows specifying deployment name for each model
+ */
+export const vertexModelConfigSchema = z
+  .object({
+    /** The actual model ID/deployment name used by Vertex AI API */
+    deploymentName: z.string().optional(),
+  })
+  .or(z.boolean());
+
+export type TVertexModelConfig = z.infer<typeof vertexModelConfigSchema>;
+
+/**
+ * Vertex AI configuration schema for Anthropic models served via Google Cloud Vertex AI.
+ * Similar to Azure configuration, this allows running Anthropic models through Google Cloud.
+ */
+export const vertexAISchema = z.object({
+  /** Enable Vertex AI mode for Anthropic (defaults to true when vertex config is present) */
+  enabled: z.boolean().optional(),
+  /** Google Cloud Project ID (optional - auto-detected from service key file if not provided) */
+  projectId: z.string().optional(),
+  /** Vertex AI region (e.g., 'us-east5', 'europe-west1') */
+  region: z.string().default('us-east5'),
+  /** Optional: Path to service account key file */
+  serviceKeyFile: z.string().optional(),
+  /** Optional: Default deployment name for all models (can be overridden per model) */
+  deploymentName: z.string().optional(),
+  /** Optional: Available models - can be string array or object with deploymentName mapping */
+  models: z.union([z.array(z.string()), z.record(z.string(), vertexModelConfigSchema)]).optional(),
+});
+
+export type TVertexAISchema = z.infer<typeof vertexAISchema>;
+
+export type TVertexModelMap = Record<string, string>;
+
+/**
+ * Validated Vertex AI configuration result
+ */
+export type TVertexAIConfig = TVertexAISchema & {
+  isValid: boolean;
+  errors: string[];
+  modelNames?: string[];
+  modelDeploymentMap?: TVertexModelMap;
+};
+
+/**
+ * Anthropic endpoint schema with optional Vertex AI configuration.
+ * Extends baseEndpointSchema with Vertex AI support.
+ */
+export const anthropicEndpointSchema = baseEndpointSchema.merge(
+  z.object({
+    /** Vertex AI configuration for running Anthropic models on Google Cloud */
+    vertex: vertexAISchema.optional(),
+    /** Optional: List of available models */
+    models: z.array(z.string()).optional(),
+  }),
+);
+
+export type TAnthropicEndpoint = z.infer<typeof anthropicEndpointSchema>;
+
 const ttsOpenaiSchema = z.object({
   url: z.string().optional(),
   apiKey: z.string(),
@@ -886,7 +947,7 @@ export const configSchema = z.object({
       all: baseEndpointSchema.optional(),
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
       [EModelEndpoint.google]: baseEndpointSchema.optional(),
-      [EModelEndpoint.anthropic]: baseEndpointSchema.optional(),
+      [EModelEndpoint.anthropic]: anthropicEndpointSchema.optional(),
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
@@ -1499,6 +1560,12 @@ export enum AuthKeys {
    * Note: this is not for Environment Variables, but to access encrypted object values.
    */
   GOOGLE_API_KEY = 'GOOGLE_API_KEY',
+  /**
+   * API key to use Anthropic.
+   *
+   * Note: this is not for Environment Variables, but to access encrypted object values.
+   */
+  ANTHROPIC_API_KEY = 'ANTHROPIC_API_KEY',
 }
 
 /**
