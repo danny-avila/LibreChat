@@ -171,63 +171,13 @@ describe('batchResetMeiliFlags', () => {
     });
   });
 
-  describe('progress callback', () => {
-    it('should call onProgress callback with correct parameters', async () => {
-      const onProgress = jest.fn();
-      const collectionName = 'test_collection';
-
-      await testCollection.insertMany([
-        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
-        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
-        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
-      ]);
-
-      await batchResetMeiliFlags(testCollection, { onProgress, collectionName });
-
-      expect(onProgress).toHaveBeenCalled();
-      expect(onProgress).toHaveBeenCalledWith(3, collectionName);
-    });
-
-    it('should call onProgress multiple times for batched operations', async () => {
-      process.env.MEILI_SYNC_BATCH_SIZE = '2';
-      const onProgress = jest.fn();
-      const collectionName = 'test_collection';
-
-      // Need to clear the require cache to force re-reading env vars
-      // or the function will use the cached values
-      const docs = [];
-      for (let i = 0; i < 5; i++) {
-        docs.push({
-          _id: new mongoose.Types.ObjectId(),
-          expiredAt: null,
-          _meiliIndex: true,
-        });
-      }
-      await testCollection.insertMany(docs);
-
-      await batchResetMeiliFlags(testCollection, { onProgress, collectionName });
-
-      // Should be called 3 times: after batch 1 (2), batch 2 (4), batch 3 (5)
-      expect(onProgress).toHaveBeenCalledTimes(3);
-      expect(onProgress).toHaveBeenNthCalledWith(1, 2, collectionName);
-      expect(onProgress).toHaveBeenNthCalledWith(2, 4, collectionName);
-      expect(onProgress).toHaveBeenNthCalledWith(3, 5, collectionName);
-    });
-
-    it('should work without onProgress callback', async () => {
+  describe('return value', () => {
+    it('should return correct modified count', async () => {
       await testCollection.insertMany([
         { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
       ]);
 
       await expect(batchResetMeiliFlags(testCollection)).resolves.toBe(1);
-    });
-
-    it('should work with empty options object', async () => {
-      await testCollection.insertMany([
-        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
-      ]);
-
-      await expect(batchResetMeiliFlags(testCollection, {})).resolves.toBe(1);
     });
   });
 
@@ -340,7 +290,6 @@ describe('batchResetMeiliFlags', () => {
 
   describe('error handling', () => {
     it('should throw error with context when find operation fails', async () => {
-      const collectionName = 'test_collection';
       const mockCollection = {
         collectionName: 'test_meili_batch',
         find: jest.fn().mockReturnValue({
@@ -350,14 +299,12 @@ describe('batchResetMeiliFlags', () => {
         }),
       };
 
-      await expect(batchResetMeiliFlags(mockCollection, { collectionName })).rejects.toThrow(
-        "Failed to batch reset Meili flags for collection 'test_collection' after processing 0 documents: Network error",
+      await expect(batchResetMeiliFlags(mockCollection)).rejects.toThrow(
+        "Failed to batch reset Meili flags for collection 'test_meili_batch' after processing 0 documents: Network error",
       );
     });
 
     it('should throw error with context when updateMany operation fails', async () => {
-      const collectionName = 'test_collection';
-
       const mockCollection = {
         collectionName: 'test_meili_batch',
         find: jest.fn().mockReturnValue({
@@ -373,8 +320,8 @@ describe('batchResetMeiliFlags', () => {
         updateMany: jest.fn().mockRejectedValue(new Error('Connection lost')),
       };
 
-      await expect(batchResetMeiliFlags(mockCollection, { collectionName })).rejects.toThrow(
-        "Failed to batch reset Meili flags for collection 'test_collection' after processing 0 documents: Connection lost",
+      await expect(batchResetMeiliFlags(mockCollection)).rejects.toThrow(
+        "Failed to batch reset Meili flags for collection 'test_meili_batch' after processing 0 documents: Connection lost",
       );
     });
 
@@ -383,7 +330,6 @@ describe('batchResetMeiliFlags', () => {
       process.env.MEILI_SYNC_BATCH_SIZE = '2';
       process.env.MEILI_SYNC_DELAY_MS = '0'; // No delay for faster test
 
-      const collectionName = 'test_collection';
       let findCallCount = 0;
       let updateCallCount = 0;
 
@@ -418,12 +364,12 @@ describe('batchResetMeiliFlags', () => {
         }),
       };
 
-      await expect(batchResetMeiliFlags(mockCollection, { collectionName })).rejects.toThrow(
-        "Failed to batch reset Meili flags for collection 'test_collection' after processing 4 documents: Database timeout",
+      await expect(batchResetMeiliFlags(mockCollection)).rejects.toThrow(
+        "Failed to batch reset Meili flags for collection 'test_meili_batch' after processing 4 documents: Database timeout",
       );
     });
 
-    it('should use collection.collectionName when collectionName option is not provided', async () => {
+    it('should use collection.collectionName in error messages', async () => {
       const mockCollection = {
         collectionName: 'messages',
         find: jest.fn().mockReturnValue({
@@ -434,23 +380,7 @@ describe('batchResetMeiliFlags', () => {
       };
 
       await expect(batchResetMeiliFlags(mockCollection)).rejects.toThrow(
-        "Failed to batch reset Meili flags for collection 'undefined' after processing 0 documents: Permission denied",
-      );
-    });
-
-    it('should handle errors during progress callback execution', async () => {
-      const onProgress = jest.fn().mockImplementation(() => {
-        throw new Error('Progress callback error');
-      });
-
-      await testCollection.insertMany([
-        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
-      ]);
-
-      await expect(
-        batchResetMeiliFlags(testCollection, { onProgress, collectionName: 'test' }),
-      ).rejects.toThrow(
-        "Failed to batch reset Meili flags for collection 'test' after processing 1 documents: Progress callback error",
+        "Failed to batch reset Meili flags for collection 'messages' after processing 0 documents: Permission denied",
       );
     });
   });
@@ -546,18 +476,31 @@ describe('batchResetMeiliFlags', () => {
       expect(warnSpy).not.toHaveBeenCalled();
     });
 
-    it('should accept zero as a valid value without warnings', async () => {
+    it('should log warning and use default when MEILI_SYNC_BATCH_SIZE is zero', async () => {
       process.env.MEILI_SYNC_BATCH_SIZE = '0';
-      process.env.MEILI_SYNC_DELAY_MS = '0';
 
-      // Note: BATCH_SIZE of 0 would be problematic, but the function should still accept it
-      // This tests that the validation logic doesn't reject 0
       await testCollection.insertMany([
         { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
       ]);
 
-      // This might hang or fail depending on the implementation
-      // but at least we verify no warning is logged for 0
+      const result = await batchResetMeiliFlags(testCollection);
+
+      expect(result).toBe(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('MEILI_SYNC_BATCH_SIZE cannot be 0. Using default: 1000'),
+      );
+    });
+
+    it('should accept zero as a valid value for MEILI_SYNC_DELAY_MS without warnings', async () => {
+      process.env.MEILI_SYNC_DELAY_MS = '0';
+
+      await testCollection.insertMany([
+        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
+      ]);
+
+      const result = await batchResetMeiliFlags(testCollection);
+
+      expect(result).toBe(1);
       expect(warnSpy).not.toHaveBeenCalled();
     });
 

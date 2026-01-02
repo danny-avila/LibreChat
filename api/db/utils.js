@@ -5,15 +5,20 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /**
  * Batch update documents in chunks to avoid timeouts on weak instances
  * @param {mongoose.Collection} collection - MongoDB collection
- * @param {Object} [options] - Optional configuration
- * @param {Function} [options.onProgress] - Progress callback (totalModified, collectionName) => void
- * @param {string} [options.collectionName] - Name for progress reporting
  * @returns {Promise<number>} - Total modified count
  * @throws {Error} - Throws if database operations fail (e.g., network issues, connection loss, permission problems)
  */
-async function batchResetMeiliFlags(collection, options = {}) {
-  const { onProgress, collectionName } = options;
-  const BATCH_SIZE = parseEnvInt('MEILI_SYNC_BATCH_SIZE', 1000);
+async function batchResetMeiliFlags(collection) {
+  const DEFAULT_BATCH_SIZE = 1000;
+
+  let BATCH_SIZE = parseEnvInt('MEILI_SYNC_BATCH_SIZE', DEFAULT_BATCH_SIZE);
+  if (BATCH_SIZE === 0) {
+    logger.warn(
+      `[batchResetMeiliFlags] MEILI_SYNC_BATCH_SIZE cannot be 0. Using default: ${DEFAULT_BATCH_SIZE}`,
+    );
+    BATCH_SIZE = DEFAULT_BATCH_SIZE;
+  }
+
   const BATCH_DELAY_MS = parseEnvInt('MEILI_SYNC_DELAY_MS', 100);
   let totalModified = 0;
   let hasMore = true;
@@ -36,10 +41,9 @@ async function batchResetMeiliFlags(collection, options = {}) {
       );
 
       totalModified += result.modifiedCount;
-
-      if (onProgress) {
-        onProgress(totalModified, collectionName);
-      }
+      process.stdout.write(
+        `\r  Updating ${collection.collectionName}: ${totalModified} documents...`,
+      );
 
       if (docs.length < BATCH_SIZE) {
         hasMore = false;
@@ -53,7 +57,7 @@ async function batchResetMeiliFlags(collection, options = {}) {
     return totalModified;
   } catch (error) {
     throw new Error(
-      `Failed to batch reset Meili flags for collection '${collectionName}' after processing ${totalModified} documents: ${error.message}`,
+      `Failed to batch reset Meili flags for collection '${collection.collectionName}' after processing ${totalModified} documents: ${error.message}`,
     );
   }
 }
