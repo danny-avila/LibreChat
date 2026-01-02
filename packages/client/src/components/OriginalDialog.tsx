@@ -103,10 +103,18 @@ const DialogContent = React.forwardRef<
       (event: KeyboardEvent) => {
         const activeElement = document.activeElement;
 
-        // Check if a dropdown menu has focus (focus is within it)
-        const dropdownMenus = document.querySelectorAll('[role="menu"]');
-        for (const dropdownMenu of dropdownMenus) {
-          if (dropdownMenu.contains(activeElement)) {
+        // Check if active element is a trigger with an open popover (aria-expanded="true")
+        if (activeElement?.getAttribute('aria-expanded') === 'true') {
+          event.preventDefault();
+          return;
+        }
+
+        // Check if a dropdown menu, listbox, or combobox has focus (focus is within it)
+        const popoverElements = document.querySelectorAll(
+          '[role="menu"], [role="listbox"], [role="combobox"]',
+        );
+        for (const popover of popoverElements) {
+          if (popover.contains(activeElement)) {
             event.preventDefault();
             return;
           }
