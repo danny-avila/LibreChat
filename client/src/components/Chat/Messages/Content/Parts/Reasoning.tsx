@@ -121,6 +121,7 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
               isVisible={isBarVisible && isExpanded}
               isExpanded={isExpanded}
               onClick={handleClick}
+              content={reasoningText}
             />
           </div>
         </div>
