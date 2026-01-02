@@ -132,17 +132,6 @@ export class EcsStack extends cdk.Stack {
     }
     const librechatImage = `${this.account}.dkr.ecr.${this.region}.amazonaws.com/newjersey/librechat:${librechatTag}`;
 
-    const taskEnvironment = {
-      NODE_ENV: "production",
-      PORT: "3080",
-      HOST: "0.0.0.0",
-      LOG_LEVEL: "info",
-      MONGO_URI: mongoUri,
-      MEILI_HOST: "http://rag_api.internal:7700",
-      RAG_API_URL: "http://rag_api.internal:8000",
-      CONFIG_PATH: "/app/nj/nj-librechat.yaml",
-    }
-
     const librechatTaskDef = new ecs.FargateTaskDefinition(this, "LibreChatTaskDef", {
       cpu: 256,
       memoryLimitMiB: 512,
@@ -157,7 +146,7 @@ export class EcsStack extends cdk.Stack {
         PORT: "3080",
         HOST: "0.0.0.0",
         LOG_LEVEL: "info",
-        MONGO_URI: "mongodb://mongodb.internal:27017/LibreChat",
+        MONGO_URI: mongoUri,
         MEILI_HOST: "http://rag_api.internal:7700",
         RAG_API_URL: "http://rag_api.internal:8000",
         CONFIG_PATH: "/app/nj/nj-librechat.yaml",

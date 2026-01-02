@@ -23,11 +23,11 @@ export class DatabaseStack extends cdk.Stack {
             vpcId: props.envVars.vpcId,
         });
 
-        this.CreatePostgresRDSInstance(props, vpc);
-        this.CreateDocumentDBInstance(props, vpc);
+        this.CreatePostgresRDSInstance(vpc);
+        this.CreateDocumentDBInstance(vpc);
     }
 
-    private CreatePostgresRDSInstance(props: DatabaseStackProps, vpc: ec2.IVpc) {
+    private CreatePostgresRDSInstance(vpc: ec2.IVpc) {
         const rdsSecurityGroup = new ec2.SecurityGroup(this, "RDSSg", { vpc });
         rdsSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(5432));
         
@@ -78,7 +78,7 @@ export class DatabaseStack extends cdk.Stack {
         return instance.instanceArn;
     }
 
-    private CreateDocumentDBInstance(props: DatabaseStackProps, vpc: ec2.IVpc){
+    private CreateDocumentDBInstance(vpc: ec2.IVpc){
         const docDBSecurityGroup = new ec2.SecurityGroup(this, "DocDBSg", { vpc });
         docDBSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(5432));
 
