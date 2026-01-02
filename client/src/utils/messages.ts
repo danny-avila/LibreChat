@@ -2,7 +2,6 @@ import {
   QueryKeys,
   Constants,
   ContentTypes,
-  getResponseSender,
   isEphemeralAgentId,
   appendAgentIdSuffix,
   encodeEphemeralAgentId,
@@ -199,12 +198,14 @@ export const getMessageAriaLabel = (message: TMessage, localize: LocalizeFunctio
  * @param primaryConvo - The primary conversation configuration
  * @param addedConvo - The added conversation configuration
  * @param endpointsConfig - Endpoints configuration for getting model display labels
+ * @param modelSpecs - Model specs list for getting spec labels
  * @returns Array of content parts with agentId for side-by-side rendering
  */
 export const createDualMessageContent = (
   primaryConvo: TConversation,
   addedConvo: TConversation,
   endpointsConfig?: TEndpointsConfig,
+  modelSpecs?: { name: string; label?: string }[],
 ): TMessageContentParts[] => {
   // For real agents (agent_id starts with "agent_"), use agent_id directly
   // Otherwise create ephemeral ID from endpoint/model
@@ -214,11 +215,18 @@ export const createDualMessageContent = (
   } else {
     const primaryEndpoint = primaryConvo.endpoint;
     const primaryModel = primaryConvo.model ?? '';
-    const primarySender = getResponseSender({
-      modelDisplayLabel: primaryEndpoint
-        ? endpointsConfig?.[primaryEndpoint]?.modelDisplayLabel
-        : undefined,
-    });
+    // Look up model spec for label fallback
+    const primarySpec =
+      primaryConvo.spec != null && primaryConvo.spec !== ''
+        ? modelSpecs?.find((s) => s.name === primaryConvo.spec)
+        : undefined;
+    // For ephemeral agents, use modelLabel if provided, then model spec's label,
+    // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
+    const primarySender =
+      primaryConvo.modelLabel ??
+      primarySpec?.label ??
+      (primaryEndpoint ? endpointsConfig?.[primaryEndpoint]?.modelDisplayLabel : undefined) ??
+      '';
     primaryAgentId = encodeEphemeralAgentId({
       endpoint: primaryEndpoint ?? '',
       model: primaryModel,
@@ -247,11 +255,18 @@ export const createDualMessageContent = (
   } else {
     const addedEndpoint = addedConvo.endpoint;
     const addedModel = addedConvo.model ?? '';
-    const addedSender = addedEndpoint
-      ? getResponseSender({
-          modelDisplayLabel: endpointsConfig?.[addedEndpoint]?.modelDisplayLabel,
-        })
-      : '';
+    // Look up model spec for label fallback
+    const addedSpec =
+      addedConvo.spec != null && addedConvo.spec !== ''
+        ? modelSpecs?.find((s) => s.name === addedConvo.spec)
+        : undefined;
+    // For ephemeral agents, use modelLabel if provided, then model spec's label,
+    // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
+    const addedSender =
+      addedConvo.modelLabel ??
+      addedSpec?.label ??
+      (addedEndpoint ? endpointsConfig?.[addedEndpoint]?.modelDisplayLabel : undefined) ??
+      '';
     addedAgentId = encodeEphemeralAgentId({
       endpoint: addedEndpoint ?? '',
       model: addedModel,

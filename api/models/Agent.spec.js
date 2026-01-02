@@ -532,6 +532,49 @@ describe('models/Agent', () => {
       expect(aclEntriesAfter).toHaveLength(0);
     });
 
+    test('should remove handoff edges referencing deleted agent from other agents', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const targetAgentId = `agent_${uuidv4()}`;
+      const sourceAgentId = `agent_${uuidv4()}`;
+
+      // Create target agent (handoff destination)
+      await createAgent({
+        id: targetAgentId,
+        name: 'Target Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      // Create source agent with handoff edge to target
+      await createAgent({
+        id: sourceAgentId,
+        name: 'Source Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        edges: [
+          {
+            from: sourceAgentId,
+            to: targetAgentId,
+            edgeType: 'handoff',
+          },
+        ],
+      });
+
+      // Verify edge exists before deletion
+      const sourceAgentBefore = await getAgent({ id: sourceAgentId });
+      expect(sourceAgentBefore.edges).toHaveLength(1);
+      expect(sourceAgentBefore.edges[0].to).toBe(targetAgentId);
+
+      // Delete the target agent
+      await deleteAgent({ id: targetAgentId });
+
+      // Verify the edge is removed from source agent
+      const sourceAgentAfter = await getAgent({ id: sourceAgentId });
+      expect(sourceAgentAfter.edges).toHaveLength(0);
+    });
+
     test('should list agents by author', async () => {
       const authorId = new mongoose.Types.ObjectId();
       const otherAuthorId = new mongoose.Types.ObjectId();

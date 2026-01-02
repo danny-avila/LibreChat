@@ -18,6 +18,7 @@ import type {
   TMessage,
   TSubmission,
   TConversation,
+  TStartupConfig,
   TEndpointOption,
   TEndpointsConfig,
   EndpointSchemaKey,
@@ -169,6 +170,7 @@ export default function useChatFunctions({
     }
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+    const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
     const iconURL = conversation?.iconURL;
 
@@ -291,6 +293,7 @@ export default function useChatFunctions({
           conversation,
           addedConvo,
           endpointsConfig,
+          startupConfig?.modelSpecs?.list,
         );
       } else {
         initialResponse.content = [];
