@@ -27,7 +27,7 @@ interface MermaidProps {
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.25;
-const MIN_CONTAINER_HEIGHT = 100;
+const MIN_CONTAINER_HEIGHT = 200;
 const MAX_CONTAINER_HEIGHT = 500;
 
 const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
@@ -50,6 +50,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
   );
   const [containerWidth, setContainerWidth] = useState(700);
   const [isHovered, setIsHovered] = useState(false);
+  const [isFocusWithin, setIsFocusWithin] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [showMobileControls, setShowMobileControls] = useState(false);
 
@@ -408,7 +409,9 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
     };
   }, [isPanning]);
 
-  const showControls = isTouchDevice ? showMobileControls || showCode : isHovered || showCode;
+  const showControls = isTouchDevice
+    ? showMobileControls || showCode
+    : isHovered || isFocusWithin || showCode;
 
   const handleContainerClick = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
@@ -647,6 +650,12 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
           )}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
+          onFocus={() => setIsFocusWithin(true)}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+              setIsFocusWithin(false);
+            }
+          }}
           onClick={handleContainerClick}
         >
           <MermaidHeader
@@ -765,6 +774,12 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        onFocus={() => setIsFocusWithin(true)}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setIsFocusWithin(false);
+          }
+        }}
         onClick={handleContainerClick}
       >
         <MermaidHeader
