@@ -8,7 +8,6 @@ const {
   ResourceType,
   actionDelimiter,
   isAgentsEndpoint,
-  getResponseSender,
   isEphemeralAgentId,
   encodeEphemeralAgentId,
 } = require('librechat-data-provider');
@@ -150,7 +149,7 @@ const loadEphemeralAgent = async ({ req, spec, endpoint, model_parameters: _m })
 
   const instructions = req.body.promptPrefix;
 
-  // Compute display name using getResponseSender (same logic used for addedConvo agents)
+  // Get endpoint config for modelDisplayLabel fallback
   const appConfig = req.config;
   let endpointConfig = appConfig?.endpoints?.[endpoint];
   if (!isAgentsEndpoint(endpoint) && !endpointConfig) {
@@ -161,10 +160,10 @@ const loadEphemeralAgent = async ({ req, spec, endpoint, model_parameters: _m })
     }
   }
 
-  const sender = getResponseSender({
-    modelLabel: model_parameters?.modelLabel,
-    modelDisplayLabel: endpointConfig?.modelDisplayLabel,
-  });
+  // For ephemeral agents, use modelLabel if provided, then model spec's label,
+  // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
+  const sender =
+    model_parameters?.modelLabel ?? modelSpec?.label ?? endpointConfig?.modelDisplayLabel ?? '';
 
   // Encode ephemeral agent ID with endpoint, model, and computed sender for display
   const ephemeralId = encodeEphemeralAgentId({ endpoint, model, sender });
@@ -596,6 +595,11 @@ const deleteAgent = async (searchParameter) => {
       resourceType: ResourceType.AGENT,
       resourceId: agent._id,
     });
+    try {
+      await Agent.updateMany({ 'edges.to': agent.id }, { $pull: { edges: { to: agent.id } } });
+    } catch (error) {
+      logger.error('[deleteAgent] Error removing agent from handoff edges', error);
+    }
   }
   return agent;
 };

@@ -150,7 +150,13 @@ export async function initializeAgent(
   const provider = agent.provider;
   agent.endpoint = provider;
 
-  if (isInitialAgent && conversationId != null && resendFiles) {
+  /**
+   * Load conversation files for ALL agents, not just the initial agent.
+   * This enables handoff agents to access files that were uploaded earlier
+   * in the conversation. Without this, file_search and execute_code tools
+   * on handoff agents would fail to find previously attached files.
+   */
+  if (conversationId != null && resendFiles) {
     const fileIds = (await db.getConvoFiles(conversationId)) ?? [];
     const toolResourceSet = new Set<EToolResources>();
     for (const tool of agent.tools ?? []) {
@@ -162,7 +168,7 @@ export async function initializeAgent(
     if (requestFiles.length || toolFiles.length) {
       currentFiles = (await db.updateFilesUsage(requestFiles.concat(toolFiles))) as IMongoFile[];
     }
-  } else if (isInitialAgent && requestFiles.length) {
+  } else if (requestFiles.length) {
     currentFiles = (await db.updateFilesUsage(requestFiles)) as IMongoFile[];
   }
 
