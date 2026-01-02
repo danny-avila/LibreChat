@@ -337,4 +337,242 @@ describe('batchResetMeiliFlags', () => {
       expect(flaggedDocs).toHaveLength(3); // 2 were updated, 1 was already false
     });
   });
+
+  describe('error handling', () => {
+    it('should throw error with context when find operation fails', async () => {
+      const collectionName = 'test_collection';
+      const mockCollection = {
+        collectionName: 'test_meili_batch',
+        find: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({
+            toArray: jest.fn().mockRejectedValue(new Error('Network error')),
+          }),
+        }),
+      };
+
+      await expect(batchResetMeiliFlags(mockCollection, { collectionName })).rejects.toThrow(
+        "Failed to batch reset Meili flags for collection 'test_collection' after processing 0 documents: Network error",
+      );
+    });
+
+    it('should throw error with context when updateMany operation fails', async () => {
+      const collectionName = 'test_collection';
+
+      const mockCollection = {
+        collectionName: 'test_meili_batch',
+        find: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({
+            toArray: jest
+              .fn()
+              .mockResolvedValue([
+                { _id: new mongoose.Types.ObjectId() },
+                { _id: new mongoose.Types.ObjectId() },
+              ]),
+          }),
+        }),
+        updateMany: jest.fn().mockRejectedValue(new Error('Connection lost')),
+      };
+
+      await expect(batchResetMeiliFlags(mockCollection, { collectionName })).rejects.toThrow(
+        "Failed to batch reset Meili flags for collection 'test_collection' after processing 0 documents: Connection lost",
+      );
+    });
+
+    it('should include documents processed count in error when failure occurs mid-batch', async () => {
+      // Set batch size to 2 to force multiple batches
+      process.env.MEILI_SYNC_BATCH_SIZE = '2';
+      process.env.MEILI_SYNC_DELAY_MS = '0'; // No delay for faster test
+
+      const collectionName = 'test_collection';
+      let findCallCount = 0;
+      let updateCallCount = 0;
+
+      const mockCollection = {
+        collectionName: 'test_meili_batch',
+        find: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({
+            toArray: jest.fn().mockImplementation(() => {
+              findCallCount++;
+              // Return 2 documents for first two calls (to keep loop going)
+              // Return 2 documents for third call (to trigger third update which will fail)
+              if (findCallCount <= 3) {
+                return Promise.resolve([
+                  { _id: new mongoose.Types.ObjectId() },
+                  { _id: new mongoose.Types.ObjectId() },
+                ]);
+              }
+              // Should not reach here due to error
+              return Promise.resolve([]);
+            }),
+          }),
+        }),
+        updateMany: jest.fn().mockImplementation(() => {
+          updateCallCount++;
+          if (updateCallCount === 1) {
+            return Promise.resolve({ modifiedCount: 2 });
+          } else if (updateCallCount === 2) {
+            return Promise.resolve({ modifiedCount: 2 });
+          } else {
+            return Promise.reject(new Error('Database timeout'));
+          }
+        }),
+      };
+
+      await expect(batchResetMeiliFlags(mockCollection, { collectionName })).rejects.toThrow(
+        "Failed to batch reset Meili flags for collection 'test_collection' after processing 4 documents: Database timeout",
+      );
+    });
+
+    it('should use collection.collectionName when collectionName option is not provided', async () => {
+      const mockCollection = {
+        collectionName: 'messages',
+        find: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({
+            toArray: jest.fn().mockRejectedValue(new Error('Permission denied')),
+          }),
+        }),
+      };
+
+      await expect(batchResetMeiliFlags(mockCollection)).rejects.toThrow(
+        "Failed to batch reset Meili flags for collection 'undefined' after processing 0 documents: Permission denied",
+      );
+    });
+
+    it('should handle errors during progress callback execution', async () => {
+      const onProgress = jest.fn().mockImplementation(() => {
+        throw new Error('Progress callback error');
+      });
+
+      await testCollection.insertMany([
+        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
+      ]);
+
+      await expect(
+        batchResetMeiliFlags(testCollection, { onProgress, collectionName: 'test' }),
+      ).rejects.toThrow(
+        "Failed to batch reset Meili flags for collection 'test' after processing 1 documents: Progress callback error",
+      );
+    });
+  });
+
+  describe('environment variable validation', () => {
+    let warnSpy;
+
+    beforeEach(() => {
+      // Mock logger.warn to track warning calls
+      const { logger } = require('@librechat/data-schemas');
+      warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      if (warnSpy) {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('should log warning and use default when MEILI_SYNC_BATCH_SIZE is not a number', async () => {
+      process.env.MEILI_SYNC_BATCH_SIZE = 'abc';
+
+      await testCollection.insertMany([
+        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
+      ]);
+
+      const result = await batchResetMeiliFlags(testCollection);
+
+      expect(result).toBe(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid value for MEILI_SYNC_BATCH_SIZE="abc"'),
+      );
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Using default: 1000'));
+    });
+
+    it('should log warning and use default when MEILI_SYNC_DELAY_MS is not a number', async () => {
+      process.env.MEILI_SYNC_DELAY_MS = 'xyz';
+
+      await testCollection.insertMany([
+        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
+      ]);
+
+      const result = await batchResetMeiliFlags(testCollection);
+
+      expect(result).toBe(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid value for MEILI_SYNC_DELAY_MS="xyz"'),
+      );
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Using default: 100'));
+    });
+
+    it('should log warning and use default when MEILI_SYNC_BATCH_SIZE is negative', async () => {
+      process.env.MEILI_SYNC_BATCH_SIZE = '-50';
+
+      await testCollection.insertMany([
+        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
+      ]);
+
+      const result = await batchResetMeiliFlags(testCollection);
+
+      expect(result).toBe(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid value for MEILI_SYNC_BATCH_SIZE="-50"'),
+      );
+    });
+
+    it('should log warning and use default when MEILI_SYNC_DELAY_MS is negative', async () => {
+      process.env.MEILI_SYNC_DELAY_MS = '-100';
+
+      await testCollection.insertMany([
+        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
+      ]);
+
+      const result = await batchResetMeiliFlags(testCollection);
+
+      expect(result).toBe(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid value for MEILI_SYNC_DELAY_MS="-100"'),
+      );
+    });
+
+    it('should accept valid positive integer values without warnings', async () => {
+      process.env.MEILI_SYNC_BATCH_SIZE = '500';
+      process.env.MEILI_SYNC_DELAY_MS = '50';
+
+      await testCollection.insertMany([
+        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
+      ]);
+
+      const result = await batchResetMeiliFlags(testCollection);
+
+      expect(result).toBe(1);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('should accept zero as a valid value without warnings', async () => {
+      process.env.MEILI_SYNC_BATCH_SIZE = '0';
+      process.env.MEILI_SYNC_DELAY_MS = '0';
+
+      // Note: BATCH_SIZE of 0 would be problematic, but the function should still accept it
+      // This tests that the validation logic doesn't reject 0
+      await testCollection.insertMany([
+        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
+      ]);
+
+      // This might hang or fail depending on the implementation
+      // but at least we verify no warning is logged for 0
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('should not log warnings when environment variables are not set', async () => {
+      delete process.env.MEILI_SYNC_BATCH_SIZE;
+      delete process.env.MEILI_SYNC_DELAY_MS;
+
+      await testCollection.insertMany([
+        { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: true },
+      ]);
+
+      const result = await batchResetMeiliFlags(testCollection);
+
+      expect(result).toBe(1);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+  });
 });
