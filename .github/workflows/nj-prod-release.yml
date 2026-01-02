@@ -1,18 +1,17 @@
-name: Build & Push Docker Images (NJ)
+name: Push to prod ECR and update SSM parameter store with latest tag
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - prod
-    tags-ignore:
-      - '**'
+    tags:
+      - '*'
 
 jobs:
   docker:
     runs-on: ubuntu-latest
     environment:
-      name: dev
+      name: prod
     steps:
       - name: Log in to ECR
         uses: docker/login-action@v3
@@ -25,7 +24,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/newjersey/librechat:${{ github.sha }}
+          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/newjersey/librechat:${{ github.github.ref_name }}
       
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
@@ -34,8 +33,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Redeploy dev from latest
-        uses: apideck-libraries/ecs-restart-service@v1
+      - name: Update SSM parameter store
+        uses: joshghent/aws-ssm-parameter-store@v2.2.0
         with: 
-          service: ${{ secrets.DEV_SERVICE_NAME }}
-          cluster: ${{ secrets.DEV_CLUSTER_NAME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          ssm-path: /ai-assistant/prod-image-tag
+          ssm-value: ${{ github.github.ref_name }}

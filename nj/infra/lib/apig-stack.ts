@@ -9,7 +9,8 @@ import { Construct } from "constructs";
 export type EnvVars = {
     vpcId: string,
     domainName: string,
-    env: string, 
+    env: string,
+    isProd: boolean,
 }
 
 export interface ApigStackProps extends cdk.StackProps {
@@ -23,7 +24,7 @@ export class ApigStack extends cdk.Stack {
     const vpc = ec2.Vpc.fromLookup(this, "ExistingVpcForApi", {
       vpcId: props.envVars.vpcId,
     });
-    // use local vpc instead of props.vpc
+    
     const vpcLink = new apigatewayv2.VpcLink(this, "ServiceVpcLink", {
       vpc,
       subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },

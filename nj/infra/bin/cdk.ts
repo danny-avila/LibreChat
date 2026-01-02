@@ -42,13 +42,14 @@ const env = {
   region: process.env.CDK_DEFAULT_REGION,
 };
 
-const isProd = process.env.AWS_ENV?.includes("prod"); // looks jank, but it's required for github actions reasons
-const tagEnv = isProd ? "production" : "development"
+const isProd = process.env.AWS_ENV?.includes("prod") ? true : false; // looks jank, but cannot be undefined
+const tagEnv = isProd ? "production" : "development";
 
 const envVars = {
   vpcId: isProd ? "vpc-051d43046b343c516" : "vpc-06ea0349e255c4c59",
   domainName : isProd ? "ai-assistant.nj.gov" : "dev.ai-assistant.nj.gov",
   env: isProd ? "prod" : "dev", 
+  isProd: isProd
 }
 
 if (isProd) {
@@ -66,7 +67,6 @@ if (isProd) {
 const ecsStack = new EcsStack(app, "EcsStack", {
   env: env,
   envVars: envVars,
-  librechatImage: "152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/librechat:latest",
   mongoImage: "152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/mongo:latest",
   postgresImage: "152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/pgvector:0.8.0-pg15-trixie",
   certificateArn: "arn:aws:acm:us-east-1:152320432929:certificate/b795286d-3044-4e95-ba06-21e81fc5022e"

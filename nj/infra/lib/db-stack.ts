@@ -43,7 +43,6 @@ export class DatabaseStack extends cdk.Stack {
             multiAz: true,
             vpcSubnets: {
                 subnets: vpc.privateSubnets,
-                subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
             },
             securityGroups: [rdsSecurityGroup]
         });
@@ -87,10 +86,13 @@ export class DatabaseStack extends cdk.Stack {
             vpc,
             vpcSubnets: {
                 subnets: vpc.privateSubnets,
-                subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+            },
+            serverlessV2ScalingConfiguration: {
+                minCapacity: 0.5,
+                maxCapacity: 2,
             },
             securityGroup: docDBSecurityGroup,
-            masterUser: { username: "docdbadmin" }
+            masterUser: { username: "Librechat" }
         });
 
         const secret = cluster.secret;
