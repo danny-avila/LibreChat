@@ -183,8 +183,19 @@ router.post('/:conversationId/fork', async (req, res) => {
   try {
     const { conversationId } = req.params;
 
+    logger.debug('[fork] Starting fork request', {
+      conversationId,
+      userId: req.user.id,
+    });
+
     // Check if user has shared access
     const accessResult = await hasSharedAccess(req.user.id, conversationId);
+    logger.debug('[fork] Access check result', {
+      conversationId,
+      userId: req.user.id,
+      accessResult,
+    });
+
     if (!accessResult.hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }

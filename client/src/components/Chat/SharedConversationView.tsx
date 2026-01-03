@@ -1,9 +1,10 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useEffect } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Spinner } from '@librechat/client';
 import { buildTree } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import {
   useGetSharedConversationQuery,
@@ -19,6 +20,7 @@ import {
 import {
   useAddedResponse,
   useChatHelpers,
+  useLocalize,
 } from '~/hooks';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
@@ -40,6 +42,7 @@ function LoadingSpinner() {
 function SharedConversationView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
   const [searchParams] = useSearchParams();
+  const localize = useLocalize();
   const setConversation = useSetRecoilState(store.conversationByIndex(index));
 
   const isSharedView = searchParams.get('shared') === 'true';
@@ -60,6 +63,13 @@ function SharedConversationView({ index = 0 }: { index?: number }) {
       enabled: !!conversationId && isSharedView,
     },
   );
+
+  // Set the shared conversation to Recoil state so HoverButtons can access it
+  useEffect(() => {
+    if (sharedConvo && !isLoadingConvo) {
+      setConversation(sharedConvo as TConversation);
+    }
+  }, [sharedConvo, isLoadingConvo, setConversation]);
 
   const messagesTree = useMemo(() => {
     if (!messages || messages.length === 0) {

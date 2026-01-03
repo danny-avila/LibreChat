@@ -268,11 +268,22 @@ export function createSharedConversationMethods(mongoose: typeof import('mongoos
     conversationId: string,
   ): Promise<{ hasAccess: boolean; ownerId?: string }> {
     if (!userId || !conversationId) {
+      logger.debug('[hasSharedAccess] Missing userId or conversationId', { userId, conversationId });
       return { hasAccess: false };
     }
 
     try {
       const SharedConversation = mongoose.models.SharedConversation as Model<t.ISharedConversation>;
+
+      if (!SharedConversation) {
+        logger.error('[hasSharedAccess] SharedConversation model not found');
+        return { hasAccess: false };
+      }
+
+      logger.debug('[hasSharedAccess] Querying for share', {
+        conversationId,
+        sharedWithUserId: userId,
+      });
 
       const share = await SharedConversation.findOne({
         conversationId,
@@ -280,6 +291,11 @@ export function createSharedConversationMethods(mongoose: typeof import('mongoos
       })
         .select('ownerId')
         .lean();
+
+      logger.debug('[hasSharedAccess] Query result', {
+        foundShare: !!share,
+        ownerId: share?.ownerId,
+      });
 
       if (share) {
         return { hasAccess: true, ownerId: share.ownerId };
