@@ -83,6 +83,12 @@ export const conversationPreset = {
   thinkingBudget: {
     type: Number,
   },
+  thinkingLevel: {
+    type: String,
+  },
+  mediaResolution: {
+    type: String,
+  },
   system: {
     type: String,
   },

@@ -9,6 +9,8 @@ export enum ContentTypes {
   INPUT_AUDIO = 'input_audio',
   AGENT_UPDATE = 'agent_update',
   ERROR = 'error',
+  /** Google / Vertex AI reasoning content */
+  REASONING = 'reasoning',
 }
 
 export enum StepTypes {

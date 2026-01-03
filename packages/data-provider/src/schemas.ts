@@ -183,6 +183,22 @@ export enum Verbosity {
   high = 'high',
 }
 
+export enum ThinkingLevel {
+  unset = '',
+  minimal = 'minimal',
+  low = 'low',
+  medium = 'medium',
+  high = 'high',
+}
+
+export enum MediaResolution {
+  unset = '',
+  low = 'low',
+  medium = 'medium',
+  high = 'high',
+  ultra_high = 'ultra_high',
+}
+
 export const imageDetailNumeric = {
   [ImageDetail.low]: 0,
   [ImageDetail.auto]: 1,
@@ -199,6 +215,8 @@ export const eImageDetailSchema = z.nativeEnum(ImageDetail);
 export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
 export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);
 export const eVerbositySchema = z.nativeEnum(Verbosity);
+export const eThinkingLevelSchema = z.nativeEnum(ThinkingLevel);
+export const eMediaResolutionSchema = z.nativeEnum(MediaResolution);
 
 export const defaultAssistantFormValues = {
   assistant: '',
@@ -341,6 +359,12 @@ export const googleSettings = {
      * the budget based on the complexity of the request.
      */
     default: -1 as const,
+  },
+  thinkingLevel: {
+    default: ThinkingLevel.unset as const,
+  },
+  mediaResolution: {
+    default: MediaResolution.unset as const,
   },
 };
 
@@ -676,6 +700,8 @@ export const tConversationSchema = z.object({
   system: z.string().optional(),
   thinking: z.boolean().optional(),
   thinkingBudget: coerceNumber.optional(),
+  thinkingLevel: eThinkingLevelSchema.optional().nullable(),
+  mediaResolution: eMediaResolutionSchema.optional().nullable(),
   stream: z.boolean().optional(),
   /* artifacts */
   artifacts: z.string().optional(),
@@ -894,6 +920,8 @@ export const googleBaseSchema = tConversationSchema.pick({
   topK: true,
   thinking: true,
   thinkingBudget: true,
+  thinkingLevel: true,
+  mediaResolution: true,
   web_search: true,
   fileTokenLimit: true,
   iconURL: true,
@@ -925,9 +953,11 @@ export const googleGenConfigSchema = z
       .object({
         includeThoughts: z.boolean().optional(),
         thinkingBudget: coerceNumber.optional(),
+        thinkingLevel: eThinkingLevelSchema.optional(),
       })
       .optional(),
     web_search: z.boolean().optional(),
+    mediaResolution: eMediaResolutionSchema.optional(),
   })
   .strip()
   .optional();
