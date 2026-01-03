@@ -14,7 +14,6 @@ const {
 const {
   geminiToolkit,
   loadServiceKey,
-  isUserProvided,
   getBalanceConfig,
   getTransactionsConfig,
 } = require('@librechat/api');
@@ -80,37 +79,23 @@ async function convertImageFormat(inputBuffer, targetFormat) {
 
 /**
  * Initialize Gemini client (supports both Gemini API and Vertex AI)
- * Priority: User-provided key > Admin env vars (GEMINI_API_KEY > GOOGLE_KEY) > Vertex AI service account
+ * Priority: API key (from options, resolved by loadAuthValues) > Vertex AI service account
  * @param {Object} options - Initialization options
- * @param {string} [options.GEMINI_API_KEY] - User-provided Gemini API key
- * @param {string} [options.GOOGLE_KEY] - User-provided Google API key
+ * @param {string} [options.GEMINI_API_KEY] - Gemini API key (resolved by loadAuthValues)
+ * @param {string} [options.GOOGLE_KEY] - Google API key (resolved by loadAuthValues)
  * @returns {Promise<GoogleGenAI>} - The initialized client
  */
 async function initializeGeminiClient(options = {}) {
-  // Check for user-provided API keys first (passed from loadAuthValues)
-  const userGeminiKey = options.GEMINI_API_KEY;
-  if (userGeminiKey && !isUserProvided(userGeminiKey)) {
-    logger.debug('[GeminiImageGen] Using Gemini API with user-provided GEMINI_API_KEY');
-    return new GoogleGenAI({ apiKey: userGeminiKey });
+  const geminiKey = options.GEMINI_API_KEY;
+  if (geminiKey) {
+    logger.debug('[GeminiImageGen] Using Gemini API with GEMINI_API_KEY');
+    return new GoogleGenAI({ apiKey: geminiKey });
   }
 
-  const userGoogleKey = options.GOOGLE_KEY;
-  if (userGoogleKey && !isUserProvided(userGoogleKey)) {
-    logger.debug('[GeminiImageGen] Using Gemini API with user-provided GOOGLE_KEY');
-    return new GoogleGenAI({ apiKey: userGoogleKey });
-  }
-
-  // Check for admin-configured API keys from env vars
-  const adminGeminiKey = process.env.GEMINI_API_KEY;
-  if (adminGeminiKey && !isUserProvided(adminGeminiKey)) {
-    logger.debug('[GeminiImageGen] Using Gemini API with admin GEMINI_API_KEY');
-    return new GoogleGenAI({ apiKey: adminGeminiKey });
-  }
-
-  const adminGoogleKey = process.env.GOOGLE_KEY;
-  if (adminGoogleKey && !isUserProvided(adminGoogleKey)) {
-    logger.debug('[GeminiImageGen] Using Gemini API with admin GOOGLE_KEY');
-    return new GoogleGenAI({ apiKey: adminGoogleKey });
+  const googleKey = options.GOOGLE_KEY;
+  if (googleKey) {
+    logger.debug('[GeminiImageGen] Using Gemini API with GOOGLE_KEY');
+    return new GoogleGenAI({ apiKey: googleKey });
   }
 
   // Fall back to Vertex AI with service account
