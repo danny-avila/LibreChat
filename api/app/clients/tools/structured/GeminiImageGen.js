@@ -7,6 +7,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   geminiToolkit,
   loadServiceKey,
+  isUserProvided,
   getBalanceConfig,
   getTransactionsConfig,
 } = require('@librechat/api');
@@ -21,7 +22,7 @@ const { GoogleGenAI } = require('@google/genai');
  */
 function getDefaultServiceKeyPath() {
   return (
-    process.env.GOOGLE_SERVICE_KEY_FILE || path.join(__dirname, '../../../..', 'data', 'auth.json')
+    process.env.GOOGLE_SERVICE_KEY_FILE || path.join(process.cwd(), 'api', 'data', 'auth.json')
   );
 }
 
@@ -97,8 +98,11 @@ async function initializeGeminiClient(options = {}) {
   }
 
   // Set GOOGLE_APPLICATION_CREDENTIALS for any Google Cloud SDK dependencies
-  if (fs.existsSync(credentialsPath)) {
+  try {
+    await fs.promises.access(credentialsPath);
     process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
+  } catch {
+    // File doesn't exist, skip setting env var
   }
 
   return new GoogleGenAI({
@@ -121,12 +125,10 @@ async function saveImageLocally(base64Data, format, userId) {
   const imageName = `gemini-img-${v4()}.${safeFormat}`;
   const userDir = path.join(process.cwd(), 'client/public/images', safeUserId);
 
-  if (!fs.existsSync(userDir)) {
-    fs.mkdirSync(userDir, { recursive: true });
-  }
+  await fs.promises.mkdir(userDir, { recursive: true });
 
   const filePath = path.join(userDir, imageName);
-  fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+  await fs.promises.writeFile(filePath, Buffer.from(base64Data, 'base64'));
 
   logger.debug('[GeminiImageGen] Image saved locally to:', filePath);
   return `/images/${safeUserId}/${imageName}`;
