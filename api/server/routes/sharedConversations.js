@@ -1,5 +1,6 @@
 const express = require('express');
-const { logger } = require('@librechat/data-schemas');
+const { v4: uuidv4 } = require('uuid');
+const { logger, EModelEndpoint, Constants } = require('@librechat/data-schemas');
 const {
   shareConversationWithUsers,
   revokeConversationShare,
@@ -9,8 +10,8 @@ const {
 } = require('~/models');
 const { getConvo } = require('~/models/Conversation');
 const { getMessages } = require('~/models/Message');
+const { createImportBatchBuilder } = require('~/server/utils/import/importBatchBuilder');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
-const { forkConversation } = require('~/server/utils/import/fork');
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -181,7 +182,6 @@ router.post('/:conversationId/revoke', async (req, res) => {
 router.post('/:conversationId/fork', async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const { messageId } = req.body;
 
     // Check if user has shared access
     const accessResult = await hasSharedAccess(req.user.id, conversationId);
@@ -189,7 +189,13 @@ router.post('/:conversationId/fork', async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    // Get the original conversation to get the latest message if not provided
+    // Get the original conversation from the owner
+    const originalConvo = await getConvo(accessResult.ownerId, conversationId);
+    if (!originalConvo) {
+      return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    // Get the messages from the owner's conversation
     const originalMessages = await getMessages({
       user: accessResult.ownerId,
       conversationId,
@@ -199,23 +205,59 @@ router.post('/:conversationId/fork', async (req, res) => {
       return res.status(404).json({ message: 'No messages to fork' });
     }
 
-    const targetMessageId = messageId || originalMessages[originalMessages.length - 1].messageId;
+    // Create a new conversation for the requesting user with cloned messages
+    const importBatchBuilder = createImportBatchBuilder(req.user.id);
+    importBatchBuilder.startConversation(originalConvo.endpoint ?? EModelEndpoint.openAI);
 
-    // Fork the conversation for the current user
-    // We need to use the owner's ID to access the original, then save as the current user's
-    const result = await forkConversation({
-      requestUserId: req.user.id,
-      originalConvoId: conversationId,
-      targetMessageId,
-      records: true,
-      // Use owner ID to fetch original messages
-      builderFactory: (userId) => {
-        const { createImportBatchBuilder } = require('~/server/utils/import/importBatchBuilder');
-        return createImportBatchBuilder(userId);
-      },
+    // Clone messages with new IDs
+    const idMapping = new Map();
+    const sortedMessages = [...originalMessages].sort((a, b) => {
+      if (a.parentMessageId === Constants.NO_PARENT) return -1;
+      if (b.parentMessageId === Constants.NO_PARENT) return 1;
+      return 0;
     });
 
-    res.status(200).json(result);
+    for (const message of sortedMessages) {
+      const newMessageId = uuidv4();
+      idMapping.set(message.messageId, newMessageId);
+
+      const parentId =
+        message.parentMessageId && message.parentMessageId !== Constants.NO_PARENT
+          ? idMapping.get(message.parentMessageId)
+          : Constants.NO_PARENT;
+
+      const clonedMessage = {
+        ...message,
+        messageId: newMessageId,
+        parentMessageId: parentId,
+        createdAt: message.createdAt ? new Date(message.createdAt) : new Date(),
+      };
+
+      importBatchBuilder.saveMessage(clonedMessage);
+    }
+
+    const result = importBatchBuilder.finishConversation(
+      originalConvo.title,
+      new Date(),
+      originalConvo,
+    );
+    await importBatchBuilder.saveBatch();
+
+    logger.debug(
+      `user: ${req.user.id} | Forked shared conversation "${originalConvo.title}" from owner ${accessResult.ownerId}`,
+    );
+
+    // Get the newly created conversation and messages
+    const conversation = await getConvo(req.user.id, result.conversation.conversationId);
+    const messages = await getMessages({
+      user: req.user.id,
+      conversationId: conversation.conversationId,
+    });
+
+    res.status(200).json({
+      conversation,
+      messages,
+    });
   } catch (error) {
     logger.error('Error forking shared conversation:', error);
     res.status(500).json({

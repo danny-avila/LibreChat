@@ -283,16 +283,7 @@ const Conversations: FC<ConversationsProps> = ({
     items.push({ type: 'chats-header' });
 
     if (isChatsExpanded) {
-      groupedConversations.forEach(([groupName, convos]) => {
-        items.push({ type: 'header', groupName });
-        items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
-      });
-
-      if (isLoading) {
-        items.push({ type: 'loading' } as any);
-      }
-
-      // Add shared conversations section if there are any
+      // Add shared conversations section first (above Today) if there are any
       if (filteredSharedConversations.length > 0) {
         items.push({ type: 'shared-header' });
         items.push(
@@ -301,6 +292,15 @@ const Conversations: FC<ConversationsProps> = ({
             convo,
           })),
         );
+      }
+
+      groupedConversations.forEach(([groupName, convos]) => {
+        items.push({ type: 'header', groupName });
+        items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
+      });
+
+      if (isLoading) {
+        items.push({ type: 'loading' } as any);
       }
     }
     return items;
