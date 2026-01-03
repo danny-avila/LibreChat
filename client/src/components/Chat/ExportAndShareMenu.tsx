@@ -6,6 +6,7 @@ import { DropdownPopup, TooltipAnchor, useMediaQuery } from '@librechat/client';
 import type * as t from '~/common';
 import ExportModal from '~/components/Nav/ExportConversation/ExportModal';
 import { ShareButton } from '~/components/Conversations/ConvoOptions';
+import { useShareContext } from '~/Providers/ShareContext';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -18,12 +19,16 @@ export default function ExportAndShareMenu({
   const [showExports, setShowExports] = useState(false);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const { isSharedWithUser } = useShareContext();
 
   const menuId = useId();
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const conversation = useRecoilValue(store.conversationByIndex(0));
+
+  // Disable share button for users viewing shared conversations (view-only access)
+  const canShare = isSharedButtonEnabled && !isSharedWithUser;
 
   const exportable =
     conversation &&
@@ -48,7 +53,7 @@ export default function ExportAndShareMenu({
       label: localize('com_ui_share'),
       onClick: shareHandler,
       icon: <Share2 className="icon-md mr-2 text-text-secondary" />,
-      show: isSharedButtonEnabled,
+      show: canShare,
       /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
       hideOnClick: false,
       ref: shareButtonRef,

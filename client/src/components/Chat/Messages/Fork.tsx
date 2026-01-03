@@ -6,6 +6,7 @@ import { GitFork, InfoIcon } from 'lucide-react';
 import { useToastContext } from '@librechat/client';
 import { ForkOptions } from 'librechat-data-provider';
 import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
+import { useForkSharedConversationMutation } from 'librechat-data-provider/react-query';
 import { TranslationKeys, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useForkConvoMutation } from '~/data-provider';
 import { cn } from '~/utils';
@@ -205,12 +206,14 @@ export default function Fork({
   forkingSupported = false,
   latestMessageId,
   isLast = false,
+  isSharedConversation = false,
 }: {
   messageId: string;
   conversationId: string | null;
   forkingSupported?: boolean;
   latestMessageId?: string;
   isLast?: boolean;
+  isSharedConversation?: boolean;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -234,6 +237,31 @@ export default function Fork({
     'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
     isActive && 'active text-text-primary bg-surface-hover',
   );
+
+  // Mutation for forking shared conversations
+  const forkSharedConvo = useForkSharedConversationMutation({
+    onSuccess: (data) => {
+      if (data.conversation?.conversationId) {
+        window.location.href = `/c/${data.conversation.conversationId}`;
+      }
+      showToast({
+        message: localize('com_ui_fork_success'),
+        status: 'success',
+      });
+    },
+    onMutate: () => {
+      showToast({
+        message: localize('com_ui_fork_processing'),
+        status: 'info',
+      });
+    },
+    onError: () => {
+      showToast({
+        message: localize('com_ui_fork_error'),
+        status: 'error',
+      });
+    },
+  });
 
   const forkConvo = useForkConvoMutation({
     onSuccess: (data) => {
@@ -268,6 +296,23 @@ export default function Fork({
   const conversationId = _convoId ?? '';
   if (!forkingSupported || !conversationId || !messageId) {
     return null;
+  }
+
+  // For shared conversations, show a simple fork button that forks the entire conversation
+  if (isSharedConversation) {
+    return (
+      <button
+        className={buttonStyle}
+        onClick={() => {
+          forkSharedConvo.mutate({ conversationId });
+        }}
+        type="button"
+        title={localize('com_ui_fork_conversation')}
+        aria-label={localize('com_ui_fork_conversation')}
+      >
+        <GitFork size="19" aria-hidden="true" />
+      </button>
+    );
   }
 
   const onClick = (option: string) => {

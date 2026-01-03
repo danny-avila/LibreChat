@@ -1,10 +1,12 @@
 import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Share2 } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
-import type { TConversation } from 'librechat-data-provider';
+import { useGetSharedConversationsQuery } from 'librechat-data-provider/react-query';
+import type { TConversation, SharedConversationListItem } from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useFavorites, useShowMarketplace } from '~/hooks';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { useActiveJobs } from '~/data-provider';
@@ -114,7 +116,59 @@ type FlattenedItem =
   | { type: 'chats-header' }
   | { type: 'header'; groupName: string }
   | { type: 'convo'; convo: TConversation }
+  | { type: 'shared-header' }
+  | { type: 'shared-convo'; convo: SharedConversationListItem }
   | { type: 'loading' };
+
+interface SharedConvoItemProps {
+  convo: SharedConversationListItem;
+  isActive: boolean;
+  onClick: () => void;
+  toggleNav: () => void;
+  isSmallScreen: boolean;
+}
+
+const SharedConvoItem = memo(({ convo, isActive, onClick, isSmallScreen }: SharedConvoItemProps) => {
+  const localize = useLocalize();
+
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'group relative flex w-full items-center gap-2 rounded-lg text-left text-sm transition-colors',
+        isSmallScreen ? 'px-2 py-2.5' : 'px-2 py-1.5',
+        isActive
+          ? 'bg-surface-active text-text-primary'
+          : 'text-text-secondary hover:bg-surface-hover',
+      )}
+    >
+      <Share2 className="size-4 shrink-0 text-green-500" />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate">{convo.title || 'Untitled'}</span>
+        {convo.ownerName && (
+          <span className="truncate text-xs text-text-tertiary">
+            {localize('com_ui_shared_by', { name: convo.ownerName })}
+          </span>
+        )}
+      </div>
+    </button>
+  );
+});
+
+SharedConvoItem.displayName = 'SharedConvoItem';
+
+/** Header for shared conversations section */
+const SharedHeader: FC = memo(() => {
+  const localize = useLocalize();
+  return (
+    <div className="mt-3 flex items-center gap-1.5 px-1 py-1 text-xs text-text-tertiary">
+      <Share2 className="size-3 text-green-500" />
+      <span>{localize('com_ui_shared_with_me')}</span>
+    </div>
+  );
+});
+
+SharedHeader.displayName = 'SharedHeader';
 
 const MemoizedConvo = memo(
   ({
@@ -159,12 +213,34 @@ const Conversations: FC<ConversationsProps> = ({
   setIsChatsExpanded,
 }) => {
   const localize = useLocalize();
+  const navigate = useNavigate();
+  const { conversationId } = useParams();
   const search = useRecoilValue(store.search);
   const resumableEnabled = useRecoilValue(store.resumableStreams);
   const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
   const showAgentMarketplace = useShowMarketplace();
+
+  // Fetch shared conversations
+  const { data: sharedData } = useGetSharedConversationsQuery(
+    { pageSize: 25 },
+    { staleTime: 60000 },
+  );
+
+  // Filter shared conversations based on search query
+  const filteredSharedConversations = useMemo(() => {
+    const shares = sharedData?.shares || [];
+    if (!search.debouncedQuery) {
+      return shares;
+    }
+    const query = search.debouncedQuery.toLowerCase();
+    return shares.filter(
+      (share) =>
+        share.title?.toLowerCase().includes(query) ||
+        share.ownerName?.toLowerCase().includes(query),
+    );
+  }, [sharedData?.shares, search.debouncedQuery]);
 
   // Fetch active job IDs for showing generation indicators
   const { data: activeJobsData } = useActiveJobs(resumableEnabled);
@@ -187,6 +263,14 @@ const Conversations: FC<ConversationsProps> = ({
     [filteredConversations],
   );
 
+  const handleSharedConvoClick = useCallback(
+    (convoId: string) => {
+      navigate(`/c/${convoId}?shared=true`);
+      toggleNav();
+    },
+    [navigate, toggleNav],
+  );
+
   const flattenedItems = useMemo(() => {
     const items: FlattenedItem[] = [];
     // Only include favorites row if FavoritesList will render content
@@ -204,9 +288,20 @@ const Conversations: FC<ConversationsProps> = ({
       if (isLoading) {
         items.push({ type: 'loading' } as any);
       }
+
+      // Add shared conversations section if there are any
+      if (filteredSharedConversations.length > 0) {
+        items.push({ type: 'shared-header' });
+        items.push(
+          ...filteredSharedConversations.map((convo) => ({
+            type: 'shared-convo' as const,
+            convo,
+          })),
+        );
+      }
     }
     return items;
-  }, [groupedConversations, isLoading, isChatsExpanded, shouldShowFavorites]);
+  }, [groupedConversations, isLoading, isChatsExpanded, shouldShowFavorites, filteredSharedConversations]);
 
   // Store flattenedItems in a ref for keyMapper to access without recreating cache
   const flattenedItemsRef = useRef(flattenedItems);
@@ -234,6 +329,12 @@ const Conversations: FC<ConversationsProps> = ({
           }
           if (item.type === 'convo') {
             return `convo-${item.convo.conversationId}`;
+          }
+          if (item.type === 'shared-header') {
+            return 'shared-header';
+          }
+          if (item.type === 'shared-convo') {
+            return `shared-convo-${item.convo.conversationId}`;
           }
           if (item.type === 'loading') {
             return 'loading';
@@ -324,6 +425,29 @@ const Conversations: FC<ConversationsProps> = ({
         );
       }
 
+      if (item.type === 'shared-header') {
+        return (
+          <MeasuredRow key={key} {...rowProps}>
+            <SharedHeader />
+          </MeasuredRow>
+        );
+      }
+
+      if (item.type === 'shared-convo') {
+        const isActive = conversationId === item.convo.conversationId;
+        return (
+          <MeasuredRow key={key} {...rowProps}>
+            <SharedConvoItem
+              convo={item.convo}
+              isActive={isActive}
+              onClick={() => handleSharedConvoClick(item.convo.conversationId)}
+              toggleNav={toggleNav}
+              isSmallScreen={isSmallScreen}
+            />
+          </MeasuredRow>
+        );
+      }
+
       return null;
     },
     [
@@ -337,6 +461,8 @@ const Conversations: FC<ConversationsProps> = ({
       setIsChatsExpanded,
       shouldShowFavorites,
       activeJobIds,
+      conversationId,
+      handleSharedConvoClick,
     ],
   );
 

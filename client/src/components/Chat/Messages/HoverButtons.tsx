@@ -3,6 +3,7 @@ import { useRecoilState } from 'recoil';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '@librechat/client';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import { useShareContext } from '~/Providers/ShareContext';
 import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
@@ -126,6 +127,7 @@ const HoverButtons = ({
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
+  const { isSharedWithUser } = useShareContext();
 
   const endpoint = useMemo(() => {
     if (!conversation) {
@@ -159,6 +161,35 @@ const HoverButtons = ({
   }
 
   const { isCreatedByUser, error } = message;
+
+  // For shared conversations, only show copy and fork buttons
+  if (isSharedWithUser) {
+    const handleCopy = () => copyToClipboard(setIsCopied);
+    return (
+      <div className="group visible flex justify-center gap-0.5 self-end focus-within:outline-none lg:justify-start">
+        {/* Copy Button */}
+        <HoverButton
+          onClick={handleCopy}
+          title={
+            isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
+          }
+          icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
+          isLast={isLast}
+          className="ml-0 flex items-center gap-1.5 text-xs"
+        />
+
+        {/* Fork Button - always enabled for shared conversations */}
+        <Fork
+          messageId={message.messageId}
+          conversationId={conversation.conversationId}
+          forkingSupported={true}
+          latestMessageId={latestMessage?.messageId}
+          isLast={isLast}
+          isSharedConversation={true}
+        />
+      </div>
+    );
+  }
 
   if (error === true) {
     return (
