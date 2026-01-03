@@ -253,6 +253,67 @@ endpoints:
   #   minRelevanceScore: 0.45
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["execute_code", "file_search", "actions", "tools"]
+
+  # Anthropic endpoint configuration with Vertex AI support
+  # Use this to run Anthropic Claude models through Google Cloud Vertex AI
+  # anthropic:
+  #   # (optional) Stream rate limiting in milliseconds
+  #   streamRate: 20
+  #   # (optional) Title model for conversation titles
+  #   titleModel: claude-3.5-haiku  # Use the visible model name (key from models config)
+  #
+  #   # Vertex AI Configuration - enables running Claude models via Google Cloud
+  #   # This is similar to Azure OpenAI but for Anthropic models on Google Cloud
+  #   # Vertex AI is automatically enabled when this config section is present
+  #   vertex:
+  #     # Vertex AI region (optional, defaults to 'us-east5')
+  #     # Available regions: us-east5, us-central1, europe-west1, europe-west4, asia-southeast1
+  #     region: "us-east5"
+  #     # Path to Google service account key file (optional)
+  #     # If not specified, uses GOOGLE_SERVICE_KEY_FILE env var or default path (api/data/auth.json)
+  #     # The project_id is automatically extracted from the service key file
+  #     # serviceKeyFile: "/path/to/service-account.json"
+  #     # Google Cloud Project ID (optional) - auto-detected from service key file
+  #     # Only specify if you need to override the project_id in your service key
+  #     # projectId: "${VERTEX_PROJECT_ID}"
+  #
+  #     # ============================================================================
+  #     # Model Configuration - Set Visible Model Names and Deployment Mappings
+  #     # Similar to Azure OpenAI model naming pattern
+  #     # ============================================================================
+  #
+  #     # Option 1: Simple array (legacy format - model name = deployment name)
+  #     # Use this if you want the technical model IDs to show in the UI
+  #     # models:
+  #     #   - "claude-sonnet-4-20250514"
+  #     #   - "claude-3-7-sonnet-20250219"
+  #     #   - "claude-3-5-sonnet-v2@20241022"
+  #     #   - "claude-3-5-haiku@20241022"
+  #
+  #     # Option 2: Object format with custom visible names (RECOMMENDED)
+  #     # The key is the visible model name shown in the UI (can be any name you want)
+  #     # The deploymentName is the actual Vertex AI model ID used for API calls
+  #     # You can use friendly names (avoid spaces for cleaner YAML) or technical IDs as keys
+  #     models:
+  #       claude-opus-4.5:
+  #         deploymentName: claude-opus-4-5@20251101
+  #       claude-sonnet-4:
+  #         deploymentName: claude-sonnet-4-20250514
+  #       claude-3.7-sonnet:
+  #         deploymentName: claude-3-7-sonnet-20250219
+  #       claude-3.5-sonnet:
+  #         deploymentName: claude-3-5-sonnet-v2@20241022
+  #       claude-3.5-haiku:
+  #         deploymentName: claude-3-5-haiku@20241022
+  #
+  #     # Option 3: Mixed format with default deploymentName
+  #     # Set a default deploymentName and use boolean values for models
+  #     # deploymentName: claude-sonnet-4-20250514
+  #     # models:
+  #     #   claude-sonnet-4: true  # Will use the default deploymentName
+  #     #   claude-3.5-haiku:
+  #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
+
   custom:
     # Groq Example
     - name: 'groq'

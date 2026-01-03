@@ -96,33 +96,34 @@ const DialogContent = React.forwardRef<
     const depth = React.useContext(DialogDepthContext);
     const contentZIndex = 100 + (depth - 1) * 60;
 
-    /* Handle Escape key to prevent closing dialog if a tooltip or dropdown is open
+    /* Handle Escape key to prevent closing dialog if a tooltip or dropdown has focus
     (this is a workaround in order to achieve WCAG compliance which requires
     that our tooltips be dismissable with Escape key) */
     const handleEscapeKeyDown = React.useCallback(
       (event: KeyboardEvent) => {
-        const tooltips = document.querySelectorAll('.tooltip');
-        const dropdownMenus = document.querySelectorAll('[role="menu"]');
+        const activeElement = document.activeElement;
 
-        for (const tooltip of tooltips) {
-          const computedStyle = window.getComputedStyle(tooltip);
-          if (
-            computedStyle.display !== 'none' &&
-            computedStyle.visibility !== 'hidden' &&
-            parseFloat(computedStyle.opacity) > 0
-          ) {
+        // Check if active element is a trigger with an open popover (aria-expanded="true")
+        if (activeElement?.getAttribute('aria-expanded') === 'true') {
+          event.preventDefault();
+          return;
+        }
+
+        // Check if a dropdown menu, listbox, or combobox has focus (focus is within it)
+        const popoverElements = document.querySelectorAll(
+          '[role="menu"], [role="listbox"], [role="combobox"]',
+        );
+        for (const popover of popoverElements) {
+          if (popover.contains(activeElement)) {
             event.preventDefault();
             return;
           }
         }
 
-        for (const dropdownMenu of dropdownMenus) {
-          const computedStyle = window.getComputedStyle(dropdownMenu);
-          if (
-            computedStyle.display !== 'none' &&
-            computedStyle.visibility !== 'hidden' &&
-            parseFloat(computedStyle.opacity) > 0
-          ) {
+        // Check if a tooltip has focus (focus is within it)
+        const tooltips = document.querySelectorAll('.tooltip');
+        for (const tooltip of tooltips) {
+          if (tooltip.contains(activeElement)) {
             event.preventDefault();
             return;
           }

@@ -720,7 +720,7 @@ export function updateConversation(
 export function archiveConversation(
   payload: t.TArchiveConversationRequest,
 ): Promise<t.TArchiveConversationResponse> {
-  return request.post(endpoints.updateConversation(), { arg: payload });
+  return request.post(endpoints.archiveConversation(), { arg: payload });
 }
 
 export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
