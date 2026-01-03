@@ -294,12 +294,10 @@ export default function Fork({
   });
 
   const conversationId = _convoId ?? '';
-  if (!forkingSupported || !conversationId || !messageId) {
-    return null;
-  }
 
   // For shared conversations, show a simple fork button that forks the entire conversation
-  if (isSharedConversation) {
+  // This check comes first because shared conversations don't require messageId
+  if (isSharedConversation && forkingSupported && conversationId) {
     return (
       <button
         className={buttonStyle}
@@ -313,6 +311,10 @@ export default function Fork({
         <GitFork size="19" aria-hidden="true" />
       </button>
     );
+  }
+
+  if (!forkingSupported || !conversationId || !messageId) {
+    return null;
   }
 
   const onClick = (option: string) => {

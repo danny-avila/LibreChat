@@ -146,7 +146,10 @@ const SharedConvoItem = memo(({ convo, isActive, onClick, isSmallScreen }: Share
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate">{convo.title || 'Untitled'}</span>
         {convo.ownerName && (
-          <span className="truncate text-xs text-text-tertiary">
+          <span className={cn(
+            'truncate text-xs',
+            isActive ? 'text-text-secondary' : 'text-text-tertiary',
+          )}>
             {localize('com_ui_shared_by', { name: convo.ownerName })}
           </span>
         )}
@@ -163,7 +166,7 @@ const SharedHeader: FC = memo(() => {
   return (
     <div className="mt-3 flex items-center gap-1.5 px-1 py-1 text-xs text-text-tertiary">
       <Share2 className="size-3 text-green-500" />
-      <span>{localize('com_ui_shared_with_me')}</span>
+      <span>{localize('com_ui_shared_conversations')}</span>
     </div>
   );
 });
