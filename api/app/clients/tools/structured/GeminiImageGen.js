@@ -1,10 +1,16 @@
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
 const { v4 } = require('uuid');
 const { GoogleGenAI } = require('@google/genai');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
-const { FileContext, ContentTypes, FileSources } = require('librechat-data-provider');
+const {
+  FileContext,
+  ContentTypes,
+  FileSources,
+  EImageOutputType,
+} = require('librechat-data-provider');
 const {
   geminiToolkit,
   loadServiceKey,
@@ -46,6 +52,30 @@ function replaceUnwantedChars(inputString) {
 function getSafeFormat(format) {
   const allowedFormats = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
   return allowedFormats.includes(format?.toLowerCase()) ? format.toLowerCase() : 'png';
+}
+
+/**
+ * Convert image buffer to target format if needed
+ * @param {Buffer} inputBuffer - The input image buffer
+ * @param {string} targetFormat - The target format (png, jpeg, webp)
+ * @returns {Promise<{buffer: Buffer, format: string}>} - Converted buffer and format
+ */
+async function convertImageFormat(inputBuffer, targetFormat) {
+  const metadata = await sharp(inputBuffer).metadata();
+  const currentFormat = metadata.format;
+
+  // Normalize format names (jpg -> jpeg)
+  const normalizedTarget = targetFormat === 'jpg' ? 'jpeg' : targetFormat.toLowerCase();
+  const normalizedCurrent = currentFormat === 'jpg' ? 'jpeg' : currentFormat;
+
+  // If already in target format, return as-is
+  if (normalizedCurrent === normalizedTarget) {
+    return { buffer: inputBuffer, format: normalizedTarget };
+  }
+
+  // Convert to target format
+  const convertedBuffer = await sharp(inputBuffer).toFormat(normalizedTarget).toBuffer();
+  return { buffer: convertedBuffer, format: normalizedTarget };
 }
 
 /**
@@ -372,6 +402,8 @@ function createGeminiImageTool(fields = {}) {
     // When set as env var, it signals Vertex AI is configured and bypasses API key requirement
   } = fields;
 
+  const imageOutputType = fields.imageOutputType || EImageOutputType.PNG;
+
   const geminiImageGenTool = tool(
     async ({ prompt, image_ids, aspectRatio, imageSize }, _runnableConfig) => {
       if (!prompt) {
@@ -454,11 +486,10 @@ function createGeminiImageTool(fields = {}) {
         return [[{ type: ContentTypes.TEXT, text: errorMsg }], { content: [], file_ids: [] }];
       }
 
-      // Extract image data
-      const imageData = apiResponse.candidates?.[0]?.content?.parts?.find((p) => p.inlineData)
+      const rawImageData = apiResponse.candidates?.[0]?.content?.parts?.find((p) => p.inlineData)
         ?.inlineData?.data;
 
-      if (!imageData) {
+      if (!rawImageData) {
         logger.warn('[GeminiImageGen] No image data in response');
         return [
           [{ type: ContentTypes.TEXT, text: 'No image was generated. Please try again.' }],
@@ -466,21 +497,30 @@ function createGeminiImageTool(fields = {}) {
         ];
       }
 
-      // Save image
+      const rawBuffer = Buffer.from(rawImageData, 'base64');
+      const { buffer: convertedBuffer, format: outputFormat } = await convertImageFormat(
+        rawBuffer,
+        imageOutputType,
+      );
+      const imageData = convertedBuffer.toString('base64');
+      const mimeType = outputFormat === 'jpeg' ? 'image/jpeg' : `image/${outputFormat}`;
+
+      logger.debug('[GeminiImageGen] Image format:', { outputFormat, mimeType });
+
       let imageUrl;
       const useLocalStorage = !fileStrategy || fileStrategy === FileSources.local;
 
       if (useLocalStorage) {
         try {
-          imageUrl = await saveImageLocally(imageData, 'png', userId);
+          imageUrl = await saveImageLocally(imageData, outputFormat, userId);
         } catch (error) {
           logger.error('[GeminiImageGen] Local save failed:', error);
-          imageUrl = `data:image/png;base64,${imageData}`;
+          imageUrl = `data:${mimeType};base64,${imageData}`;
         }
       } else {
         const cloudUrl = await saveToCloudStorage({
           base64Data: imageData,
-          format: 'png',
+          format: outputFormat,
           processFileURL,
           fileStrategy,
           userId,
@@ -491,9 +531,9 @@ function createGeminiImageTool(fields = {}) {
         } else {
           // Fallback to local
           try {
-            imageUrl = await saveImageLocally(imageData, 'png', userId);
+            imageUrl = await saveImageLocally(imageData, outputFormat, userId);
           } catch (_error) {
-            imageUrl = `data:image/png;base64,${imageData}`;
+            imageUrl = `data:${mimeType};base64,${imageData}`;
           }
         }
       }
@@ -502,7 +542,7 @@ function createGeminiImageTool(fields = {}) {
 
       // For the artifact, we need a data URL (same as OpenAI)
       // The local file save is for persistence, but the response needs a data URL
-      const dataUrl = `data:image/png;base64,${imageData}`;
+      const dataUrl = `data:${mimeType};base64,${imageData}`;
 
       // Return in content_and_artifact format (same as OpenAI)
       const file_ids = [v4()];
