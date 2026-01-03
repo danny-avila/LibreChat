@@ -49,9 +49,7 @@ export async function initializeBedrock({
   void endpoint;
   const appConfig = req.config;
   const bedrockConfig = appConfig?.endpoints?.[EModelEndpoint.bedrock] as
-    | (typeof appConfig.endpoints[EModelEndpoint.bedrock] & {
-        guardrailConfig?: GuardrailConfiguration;
-      })
+    | ({ guardrailConfig?: GuardrailConfiguration } & Record<string, unknown>)
     | undefined;
 
   const {
@@ -104,8 +102,6 @@ export async function initializeBedrock({
       removeNullishValues({
         ...requestOptions,
         ...(model_parameters ?? {}),
-        // Apply guardrailConfig after model_parameters to prevent user override
-        ...(bedrockConfig?.guardrailConfig && { guardrailConfig: bedrockConfig.guardrailConfig }),
       }),
     ),
   ) as InitializeResultBase['llmConfig'] & {
@@ -115,6 +111,10 @@ export async function initializeBedrock({
     endpointHost?: string;
     guardrailConfig?: GuardrailConfiguration;
   };
+
+  if (bedrockConfig?.guardrailConfig) {
+    llmConfig.guardrailConfig = bedrockConfig.guardrailConfig;
+  }
 
   /** Only include credentials if they're complete (accessKeyId and secretAccessKey are both set) */
   const hasCompleteCredentials =

@@ -38,7 +38,6 @@ export const bedrockInputSchema = s.tConversationSchema
     thinking: true,
     thinkingBudget: true,
     promptCache: true,
-    guardrailConfig: true,
     /* Catch-all fields */
     topK: true,
     additionalModelRequestFields: true,
@@ -81,7 +80,6 @@ export const bedrockInputParser = s.tConversationSchema
     thinking: true,
     thinkingBudget: true,
     promptCache: true,
-    guardrailConfig: true,
     /* Catch-all fields */
     topK: true,
     additionalModelRequestFields: true,
@@ -105,7 +103,6 @@ export const bedrockInputParser = s.tConversationSchema
       'topP',
       'stop',
       'promptCache',
-      'guardrailConfig',
     ];
 
     const additionalFields: Record<string, unknown> = {};
