@@ -20,7 +20,6 @@ const {
   actionDelimiter,
   removeNullishValues,
   CacheKeys,
-  Time,
 } = require('librechat-data-provider');
 const {
   getListAgentsByAccess,
@@ -56,13 +55,16 @@ const systemTools = {
 const MAX_SEARCH_LEN = 100;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// Cache duration: 80% of S3 URL expiry (default 2 min), leaves buffer before URLs expire
+const s3UrlExpirySec = parseInt(process.env.S3_URL_EXPIRY_SECONDS, 10) || 120;
+const AVATAR_REFRESH_CACHE_MS = Math.floor(s3UrlExpirySec * 0.8 * 1000);
+
 /**
- * Opportunistically refreshes S3-backed avatars for agent list responses.
- * Only list responses are refreshed because they're the highest-traffic surface and
- * the avatar URLs have a short-lived TTL. The refresh is cached per-user for 30 minutes
- * via {@link CacheKeys.S3_EXPIRY_INTERVAL} so we refresh once per interval at most.
+ * Refreshes S3-backed avatars for agent list responses if they're close to expiring.
+ * Cached per-user to avoid checking on every request at scale.
+ * Cache duration is 80% of S3_URL_EXPIRY_SECONDS to ensure refresh before expiry.
  * @param {Array} agents - Agents being enriched with S3-backed avatars
- * @param {string} userId - User identifier used for the cache refresh key
+ * @param {string} userId - User ID for cache key
  */
 const refreshListAvatars = async (agents, userId) => {
   if (!agents?.length) {
@@ -70,9 +72,8 @@ const refreshListAvatars = async (agents, userId) => {
   }
 
   const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
-  const refreshKey = `${userId}:agents_list`;
-  const alreadyChecked = await cache.get(refreshKey);
-  if (alreadyChecked) {
+  const cacheKey = `${userId}:agents_list`;
+  if (await cache.get(cacheKey)) {
     return;
   }
 
@@ -93,7 +94,7 @@ const refreshListAvatars = async (agents, userId) => {
     }),
   );
 
-  await cache.set(refreshKey, true, Time.THIRTY_MINUTES);
+  await cache.set(cacheKey, true, AVATAR_REFRESH_CACHE_MS);
 };
 
 /**
