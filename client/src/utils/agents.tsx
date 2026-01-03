@@ -41,6 +41,7 @@ const LazyAgentAvatar = ({
   return (
     <>
       <img
+        key={url}
         src={url}
         alt={alt}
         className={imgClass}
