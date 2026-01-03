@@ -361,14 +361,13 @@ class AgentClient extends BaseClient {
     { instructions = null, additional_instructions = null },
     opts,
   ) {
-    const hasAddedConvo = this.options.req?.body?.addedConvo != null;
+    /** Always pass mapMethod; getMessagesForConversation applies it only to messages with addedConvo flag */
     const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
       summary: this.shouldSummarize,
-      mapMethod: hasAddedConvo
-        ? createMultiAgentMapper(this.options.agent, this.agentConfigs)
-        : undefined,
+      mapMethod: createMultiAgentMapper(this.options.agent, this.agentConfigs),
+      mapCondition: (message) => message.addedConvo === true,
     });
 
     let payload;
