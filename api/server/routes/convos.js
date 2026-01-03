@@ -13,7 +13,7 @@ const {
 const { getConvosByCursor, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
-const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
+const { deleteAllSharedLinks, deleteConvoSharedLink, deleteAllConversationShares, updateShareTitle } = require('~/models');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
 const { deleteToolCalls } = require('~/models/ToolCall');
@@ -132,6 +132,8 @@ router.delete('/', async (req, res) => {
     if (filter.conversationId) {
       await deleteToolCalls(req.user.id, filter.conversationId);
       await deleteConvoSharedLink(req.user.id, filter.conversationId);
+      // Also delete user-to-user sharing when conversation is deleted
+      await deleteAllConversationShares(req.user.id, filter.conversationId);
     }
     res.status(201).json(dbResponse);
   } catch (error) {
@@ -185,6 +187,8 @@ router.post('/update', validateConvoAccess, async (req, res) => {
       { conversationId, title: sanitizedTitle },
       { context: `POST /api/convos/update ${conversationId}` },
     );
+    // Update title in shared conversations
+    await updateShareTitle(req.user.id, conversationId, sanitizedTitle);
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error updating conversation', error);

@@ -315,6 +315,7 @@ if (cluster.isMaster) {
     app.use('/api/files', await routes.files.initialize());
     app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
     app.use('/api/share', routes.share);
+    app.use('/api/shared-conversations', routes.sharedConversations);
     app.use('/api/roles', routes.roles);
     app.use('/api/agents', routes.agents);
     app.use('/api/banner', routes.banner);

@@ -62,6 +62,12 @@ export enum QueryKeys {
   mcpServer = 'mcpServer',
   /* Active Jobs */
   activeJobs = 'activeJobs',
+  /* Shared Conversations (User-to-User) */
+  sharedConversations = 'sharedConversations',
+  sharedConversation = 'sharedConversation',
+  sharedConversationMessages = 'sharedConversationMessages',
+  conversationShares = 'conversationShares',
+  sharedConversationAccess = 'sharedConversationAccess',
 }
 
 // Dynamic query keys that require parameters

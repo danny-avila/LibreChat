@@ -1052,3 +1052,55 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+/* Shared Conversations (User-to-User Sharing) */
+export const getSharedConversations = (
+  params?: q.SharedConversationsListParams,
+): Promise<q.SharedConversationsResponse> => {
+  return request.get(endpoints.sharedConversations(params));
+};
+
+export const getSharedConversation = (
+  conversationId: string,
+): Promise<q.SharedConversation> => {
+  return request.get(endpoints.sharedConversation(conversationId));
+};
+
+export const getSharedConversationMessages = (
+  conversationId: string,
+): Promise<s.TMessage[]> => {
+  return request.get(endpoints.sharedConversationMessages(conversationId));
+};
+
+export const getConversationShares = (
+  conversationId: string,
+): Promise<q.GetConversationSharesResponse> => {
+  return request.get(endpoints.sharedConversationUsers(conversationId));
+};
+
+export const shareConversationWithUsers = (
+  conversationId: string,
+  payload: q.ShareWithUsersRequest,
+): Promise<q.ShareWithUsersResponse> => {
+  return request.post(endpoints.shareConversationWithUsers(conversationId), payload);
+};
+
+export const revokeConversationShare = (
+  conversationId: string,
+  payload: q.RevokeShareRequest,
+): Promise<q.RevokeShareResponse> => {
+  return request.post(endpoints.revokeConversationShare(conversationId), payload);
+};
+
+export const forkSharedConversation = (
+  conversationId: string,
+  payload?: { messageId?: string },
+): Promise<t.TForkConvoResponse> => {
+  return request.post(endpoints.forkSharedConversation(conversationId), payload);
+};
+
+export const getSharedConversationAccess = (
+  conversationId: string,
+): Promise<q.SharedConversationAccessResponse> => {
+  return request.get(endpoints.sharedConversationAccess(conversationId));
+};

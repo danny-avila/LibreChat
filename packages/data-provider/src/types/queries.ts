@@ -206,3 +206,66 @@ export type GraphTokenResponse = {
   expires_in: number;
   scope: string;
 };
+
+/* Shared Conversations (User-to-User Sharing) */
+export type SharedConversationUser = {
+  id: string;
+  name?: string;
+  email?: string;
+};
+
+export type SharedConversationListItem = {
+  conversationId: string;
+  ownerId: string;
+  ownerName?: string;
+  ownerEmail?: string;
+  title?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  endpoint?: string;
+};
+
+export interface SharedConversationsListParams {
+  cursor?: string;
+  pageSize?: number;
+}
+
+export interface SharedConversationsResponse {
+  shares: SharedConversationListItem[];
+  nextCursor?: Date;
+  hasNextPage: boolean;
+}
+
+export interface ShareWithUsersRequest {
+  userIds: string[];
+}
+
+export interface ShareWithUsersResponse {
+  success: boolean;
+  sharedWith: string[];
+  message: string;
+}
+
+export interface RevokeShareRequest {
+  userIds: string[];
+}
+
+export interface RevokeShareResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface GetConversationSharesResponse {
+  conversationId: string;
+  sharedWith: SharedConversationUser[];
+}
+
+export interface SharedConversationAccessResponse {
+  hasAccess: boolean;
+  ownerId?: string;
+}
+
+export interface SharedConversation extends s.TConversation {
+  isSharedWithUser?: boolean;
+  sharedByUserId?: string;
+}

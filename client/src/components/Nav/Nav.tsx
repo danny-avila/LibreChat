@@ -24,6 +24,7 @@ import {
   useNavScrolling,
 } from '~/hooks';
 import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
+import SharedConversations from '~/components/Conversations/SharedConversations';
 import { Conversations } from '~/components/Conversations';
 import SearchBar from './SearchBar';
 import NewChat from './NewChat';
@@ -234,6 +235,8 @@ const Nav = memo(
               isSmallScreen={isSmallScreen}
             />
             <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
+              {/* Shared Conversations Section */}
+              <SharedConversations toggleNav={itemToggleNav} />
               <Conversations
                 conversations={conversations}
                 moveToTop={moveToTop}

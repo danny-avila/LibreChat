@@ -29,3 +29,5 @@ export * from './group';
 export * from './web';
 /* MCP Servers */
 export * from './mcp';
+/* Shared Conversations */
+export * from './sharedConversation';

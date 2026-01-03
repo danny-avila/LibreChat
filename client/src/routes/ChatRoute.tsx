@@ -1,12 +1,13 @@
 import { useEffect } from 'react';
 import { Spinner } from '@librechat/client';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset } from 'librechat-data-provider';
 import { useGetConvoIdQuery, useGetStartupConfig, useGetEndpointsQuery } from '~/data-provider';
 import { useNewConvo, useAppStartup, useAssistantListMap, useIdChangeEffect } from '~/hooks';
+import SharedConversationView from '~/components/Chat/SharedConversationView';
 import { getDefaultModelSpec, getModelSpecPreset, logger } from '~/utils';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
@@ -17,6 +18,8 @@ import store from '~/store';
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
   const { isAuthenticated, user, roles } = useAuthRedirect();
+  const [searchParams] = useSearchParams();
+  const isSharedConversation = searchParams.get('shared') === 'true';
 
   const defaultTemporaryChat = useRecoilValue(temporaryStore.defaultTemporaryChat);
   const setIsTemporary = useRecoilCallback(
@@ -153,6 +156,15 @@ export default function ChatRoute() {
   // if conversationId is null
   if (!conversationId) {
     return null;
+  }
+
+  // Render SharedConversationView for shared conversations
+  if (isSharedConversation) {
+    return (
+      <ToolCallsMapProvider conversationId={conversationId}>
+        <SharedConversationView index={index} />
+      </ToolCallsMapProvider>
+    );
   }
 
   return (

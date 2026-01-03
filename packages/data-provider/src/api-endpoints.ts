@@ -397,3 +397,39 @@ export const getAllEffectivePermissions = (resourceType: ResourceType) =>
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+// Shared Conversations (User-to-User Sharing)
+const sharedConversationsRoot = `${BASE_URL}/api/shared-conversations`;
+
+export const sharedConversations = (params?: { cursor?: string; pageSize?: number }) => {
+  const queryParts: string[] = [];
+  if (params?.cursor) {
+    queryParts.push(`cursor=${encodeURIComponent(params.cursor)}`);
+  }
+  if (params?.pageSize) {
+    queryParts.push(`pageSize=${params.pageSize}`);
+  }
+  const query = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+  return `${sharedConversationsRoot}${query}`;
+};
+
+export const sharedConversation = (conversationId: string) =>
+  `${sharedConversationsRoot}/${conversationId}`;
+
+export const sharedConversationMessages = (conversationId: string) =>
+  `${sharedConversationsRoot}/${conversationId}/messages`;
+
+export const sharedConversationUsers = (conversationId: string) =>
+  `${sharedConversationsRoot}/${conversationId}/users`;
+
+export const shareConversationWithUsers = (conversationId: string) =>
+  `${sharedConversationsRoot}/${conversationId}/share`;
+
+export const revokeConversationShare = (conversationId: string) =>
+  `${sharedConversationsRoot}/${conversationId}/revoke`;
+
+export const forkSharedConversation = (conversationId: string) =>
+  `${sharedConversationsRoot}/${conversationId}/fork`;
+
+export const sharedConversationAccess = (conversationId: string) =>
+  `${sharedConversationsRoot}/${conversationId}/access`;

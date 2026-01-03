@@ -524,3 +524,133 @@ export const useMCPServerConnectionStatusQuery = (
     },
   );
 };
+
+/* Shared Conversations (User-to-User Sharing) */
+export const useGetSharedConversationsQuery = (
+  params?: q.SharedConversationsListParams,
+  config?: UseQueryOptions<q.SharedConversationsResponse>,
+): QueryObserverResult<q.SharedConversationsResponse> => {
+  return useQuery<q.SharedConversationsResponse>(
+    [QueryKeys.sharedConversations, params?.cursor, params?.pageSize],
+    () => dataService.getSharedConversations(params),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      staleTime: 30000,
+      ...config,
+    },
+  );
+};
+
+export const useGetSharedConversationQuery = (
+  conversationId: string,
+  config?: UseQueryOptions<q.SharedConversation>,
+): QueryObserverResult<q.SharedConversation> => {
+  return useQuery<q.SharedConversation>(
+    [QueryKeys.sharedConversation, conversationId],
+    () => dataService.getSharedConversation(conversationId),
+    {
+      enabled: !!conversationId,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      ...config,
+    },
+  );
+};
+
+export const useGetSharedConversationMessagesQuery = (
+  conversationId: string,
+  config?: UseQueryOptions<s.TMessage[]>,
+): QueryObserverResult<s.TMessage[]> => {
+  return useQuery<s.TMessage[]>(
+    [QueryKeys.sharedConversationMessages, conversationId],
+    () => dataService.getSharedConversationMessages(conversationId),
+    {
+      enabled: !!conversationId,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      ...config,
+    },
+  );
+};
+
+export const useGetConversationSharesQuery = (
+  conversationId: string,
+  config?: UseQueryOptions<q.GetConversationSharesResponse>,
+): QueryObserverResult<q.GetConversationSharesResponse> => {
+  return useQuery<q.GetConversationSharesResponse>(
+    [QueryKeys.conversationShares, conversationId],
+    () => dataService.getConversationShares(conversationId),
+    {
+      enabled:
+        !!conversationId &&
+        conversationId !== Constants.NEW_CONVO &&
+        conversationId !== Constants.PENDING_CONVO,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      ...config,
+    },
+  );
+};
+
+export const useGetSharedConversationAccessQuery = (
+  conversationId: string,
+  config?: UseQueryOptions<q.SharedConversationAccessResponse>,
+): QueryObserverResult<q.SharedConversationAccessResponse> => {
+  return useQuery<q.SharedConversationAccessResponse>(
+    [QueryKeys.sharedConversationAccess, conversationId],
+    () => dataService.getSharedConversationAccess(conversationId),
+    {
+      enabled: !!conversationId,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      staleTime: 30000,
+      ...config,
+    },
+  );
+};
+
+export const useShareConversationWithUsersMutation = (): UseMutationResult<
+  q.ShareWithUsersResponse,
+  Error,
+  { conversationId: string; userIds: string[] }
+> => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, userIds }) =>
+      dataService.shareConversationWithUsers(conversationId, { userIds }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries([QueryKeys.conversationShares, variables.conversationId]);
+    },
+  });
+};
+
+export const useRevokeConversationShareMutation = (): UseMutationResult<
+  q.RevokeShareResponse,
+  Error,
+  { conversationId: string; userIds: string[] }
+> => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, userIds }) =>
+      dataService.revokeConversationShare(conversationId, { userIds }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries([QueryKeys.conversationShares, variables.conversationId]);
+    },
+  });
+};
+
+export const useForkSharedConversationMutation = (): UseMutationResult<
+  t.TForkConvoResponse,
+  Error,
+  { conversationId: string; messageId?: string }
+> => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, messageId }) =>
+      dataService.forkSharedConversation(conversationId, messageId ? { messageId } : undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.allConversations]);
+    },
+  });
+};
