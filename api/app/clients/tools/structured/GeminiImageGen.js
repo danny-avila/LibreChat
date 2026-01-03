@@ -468,8 +468,7 @@ function createGeminiImageTool(fields = {}) {
 
       // Save image
       let imageUrl;
-      const useLocalStorage =
-        !fileStrategy || fileStrategy === FileSources.local || fileStrategy === 'local';
+      const useLocalStorage = !fileStrategy || fileStrategy === FileSources.local;
 
       if (useLocalStorage) {
         try {
