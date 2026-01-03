@@ -421,12 +421,14 @@ function createGeminiImageTool(fields = {}) {
         };
 
         // Add imageConfig if aspectRatio or imageSize is specified
-        if (aspectRatio || imageSize) {
+        // Note: gemini-2.5-flash-image doesn't support imageSize
+        const supportsImageSize = !geminiModel.includes('gemini-2.5-flash-image');
+        if (aspectRatio || (imageSize && supportsImageSize)) {
           config.imageConfig = {};
           if (aspectRatio) {
             config.imageConfig.aspectRatio = aspectRatio;
           }
-          if (imageSize) {
+          if (imageSize && supportsImageSize) {
             config.imageConfig.imageSize = imageSize;
           }
         }
