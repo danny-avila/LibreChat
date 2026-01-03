@@ -1,6 +1,5 @@
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
-const { logger, EModelEndpoint, Constants } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const {
   shareConversationWithUsers,
   revokeConversationShare,
@@ -10,7 +9,6 @@ const {
 } = require('~/models');
 const { getConvo } = require('~/models/Conversation');
 const { getMessages } = require('~/models/Message');
-const { createImportBatchBuilder } = require('~/server/utils/import/importBatchBuilder');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 
 const router = express.Router();
@@ -170,109 +168,6 @@ router.post('/:conversationId/revoke', async (req, res) => {
     logger.error('Error revoking conversation share:', error);
     res.status(500).json({
       message: 'Error revoking conversation share',
-      error: error.message,
-    });
-  }
-});
-
-/**
- * Fork a shared conversation (for recipients)
- * POST /api/shared-conversations/:conversationId/fork
- */
-router.post('/:conversationId/fork', async (req, res) => {
-  try {
-    const { conversationId } = req.params;
-
-    logger.debug('[fork] Starting fork request', {
-      conversationId,
-      userId: req.user.id,
-    });
-
-    // Check if user has shared access
-    const accessResult = await hasSharedAccess(req.user.id, conversationId);
-    logger.debug('[fork] Access check result', {
-      conversationId,
-      userId: req.user.id,
-      accessResult,
-    });
-
-    if (!accessResult.hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-
-    // Get the original conversation from the owner
-    const originalConvo = await getConvo(accessResult.ownerId, conversationId);
-    if (!originalConvo) {
-      return res.status(404).json({ message: 'Conversation not found' });
-    }
-
-    // Get the messages from the owner's conversation
-    const originalMessages = await getMessages({
-      user: accessResult.ownerId,
-      conversationId,
-    });
-
-    if (!originalMessages || originalMessages.length === 0) {
-      return res.status(404).json({ message: 'No messages to fork' });
-    }
-
-    // Create a new conversation for the requesting user with cloned messages
-    const importBatchBuilder = createImportBatchBuilder(req.user.id);
-    importBatchBuilder.startConversation(originalConvo.endpoint ?? EModelEndpoint.openAI);
-
-    // Clone messages with new IDs
-    const idMapping = new Map();
-    const sortedMessages = [...originalMessages].sort((a, b) => {
-      if (a.parentMessageId === Constants.NO_PARENT) return -1;
-      if (b.parentMessageId === Constants.NO_PARENT) return 1;
-      return 0;
-    });
-
-    for (const message of sortedMessages) {
-      const newMessageId = uuidv4();
-      idMapping.set(message.messageId, newMessageId);
-
-      const parentId =
-        message.parentMessageId && message.parentMessageId !== Constants.NO_PARENT
-          ? idMapping.get(message.parentMessageId)
-          : Constants.NO_PARENT;
-
-      const clonedMessage = {
-        ...message,
-        messageId: newMessageId,
-        parentMessageId: parentId,
-        createdAt: message.createdAt ? new Date(message.createdAt) : new Date(),
-      };
-
-      importBatchBuilder.saveMessage(clonedMessage);
-    }
-
-    const result = importBatchBuilder.finishConversation(
-      originalConvo.title,
-      new Date(),
-      originalConvo,
-    );
-    await importBatchBuilder.saveBatch();
-
-    logger.debug(
-      `user: ${req.user.id} | Forked shared conversation "${originalConvo.title}" from owner ${accessResult.ownerId}`,
-    );
-
-    // Get the newly created conversation and messages
-    const conversation = await getConvo(req.user.id, result.conversation.conversationId);
-    const messages = await getMessages({
-      user: req.user.id,
-      conversationId: conversation.conversationId,
-    });
-
-    res.status(200).json({
-      conversation,
-      messages,
-    });
-  } catch (error) {
-    logger.error('Error forking shared conversation:', error);
-    res.status(500).json({
-      message: 'Error forking shared conversation',
       error: error.message,
     });
   }

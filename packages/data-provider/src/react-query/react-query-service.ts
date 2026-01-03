@@ -640,17 +640,3 @@ export const useRevokeConversationShareMutation = (): UseMutationResult<
   });
 };
 
-export const useForkSharedConversationMutation = (): UseMutationResult<
-  t.TForkConvoResponse,
-  Error,
-  { conversationId: string; messageId?: string }
-> => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ conversationId, messageId }) =>
-      dataService.forkSharedConversation(conversationId, messageId ? { messageId } : undefined),
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.allConversations]);
-    },
-  });
-};

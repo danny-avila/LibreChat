@@ -5,6 +5,7 @@ const { createImportBatchBuilder } = require('./importBatchBuilder');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getConvo } = require('~/models/Conversation');
 const { getMessages } = require('~/models/Message');
+const { hasSharedAccess } = require('~/models');
 
 /**
  * Helper function to clone messages with proper parent-child relationships and timestamps
@@ -95,9 +96,29 @@ async function forkConversation({
   builderFactory = createImportBatchBuilder,
 }) {
   try {
-    const originalConvo = await getConvo(requestUserId, originalConvoId);
+    // First, try to get the conversation as the owner
+    let originalConvo = await getConvo(requestUserId, originalConvoId);
+    let sourceUserId = requestUserId;
+
+    // If user doesn't own the conversation, check if they have shared access
+    if (!originalConvo) {
+      const accessResult = await hasSharedAccess(requestUserId, originalConvoId);
+      if (!accessResult.hasAccess) {
+        throw new Error('Conversation not found or access denied');
+      }
+      // User has shared access - fetch from owner
+      sourceUserId = accessResult.ownerId;
+      originalConvo = await getConvo(sourceUserId, originalConvoId);
+      if (!originalConvo) {
+        throw new Error('Shared conversation not found');
+      }
+      logger.debug(
+        `user: ${requestUserId} | Forking shared conversation from owner ${sourceUserId}`,
+      );
+    }
+
     let originalMessages = await getMessages({
-      user: requestUserId,
+      user: sourceUserId,
       conversationId: originalConvoId,
     });
 
@@ -114,7 +135,10 @@ async function forkConversation({
 
     let messagesToClone = [];
 
-    if (option === ForkOptions.DIRECT_PATH) {
+    // If no targetMessageId is provided, clone all messages (entire conversation)
+    if (!targetMessageId) {
+      messagesToClone = originalMessages;
+    } else if (option === ForkOptions.DIRECT_PATH) {
       // Direct path only
       messagesToClone = BaseClient.getMessagesForConversation({
         messages: originalMessages,

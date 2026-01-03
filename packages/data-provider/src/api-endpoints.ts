@@ -428,8 +428,5 @@ export const shareConversationWithUsers = (conversationId: string) =>
 export const revokeConversationShare = (conversationId: string) =>
   `${sharedConversationsRoot}/${conversationId}/revoke`;
 
-export const forkSharedConversation = (conversationId: string) =>
-  `${sharedConversationsRoot}/${conversationId}/fork`;
-
 export const sharedConversationAccess = (conversationId: string) =>
   `${sharedConversationsRoot}/${conversationId}/access`;

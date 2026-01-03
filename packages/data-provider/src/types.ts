@@ -309,7 +309,7 @@ export type TDuplicateConvoResponse = {
 };
 
 export type TForkConvoRequest = {
-  messageId: string;
+  messageId?: string;
   conversationId: string;
   option?: string;
   splitAtTarget?: boolean;

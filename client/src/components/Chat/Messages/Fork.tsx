@@ -6,7 +6,6 @@ import { GitFork, InfoIcon } from 'lucide-react';
 import { useToastContext } from '@librechat/client';
 import { ForkOptions } from 'librechat-data-provider';
 import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
-import { useForkSharedConversationMutation } from 'librechat-data-provider/react-query';
 import { TranslationKeys, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useForkConvoMutation } from '~/data-provider';
 import { cn } from '~/utils';
@@ -238,31 +237,6 @@ export default function Fork({
     isActive && 'active text-text-primary bg-surface-hover',
   );
 
-  // Mutation for forking shared conversations
-  const forkSharedConvo = useForkSharedConversationMutation({
-    onSuccess: (data) => {
-      if (data.conversation?.conversationId) {
-        window.location.href = `/c/${data.conversation.conversationId}`;
-      }
-      showToast({
-        message: localize('com_ui_fork_success'),
-        status: 'success',
-      });
-    },
-    onMutate: () => {
-      showToast({
-        message: localize('com_ui_fork_processing'),
-        status: 'info',
-      });
-    },
-    onError: () => {
-      showToast({
-        message: localize('com_ui_fork_error'),
-        status: 'error',
-      });
-    },
-  });
-
   const forkConvo = useForkConvoMutation({
     onSuccess: (data) => {
       navigateToConvo(data.conversation);
@@ -302,7 +276,8 @@ export default function Fork({
       <button
         className={buttonStyle}
         onClick={() => {
-          forkSharedConvo.mutate({ conversationId });
+          // Fork entire conversation without specifying messageId
+          forkConvo.mutate({ conversationId });
         }}
         type="button"
         title={localize('com_ui_fork_conversation')}

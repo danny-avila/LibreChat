@@ -1092,13 +1092,6 @@ export const revokeConversationShare = (
   return request.post(endpoints.revokeConversationShare(conversationId), payload);
 };
 
-export const forkSharedConversation = (
-  conversationId: string,
-  payload?: { messageId?: string },
-): Promise<t.TForkConvoResponse> => {
-  return request.post(endpoints.forkSharedConversation(conversationId), payload);
-};
-
 export const getSharedConversationAccess = (
   conversationId: string,
 ): Promise<q.SharedConversationAccessResponse> => {
