@@ -205,14 +205,12 @@ export default function Fork({
   forkingSupported = false,
   latestMessageId,
   isLast = false,
-  isSharedConversation = false,
 }: {
   messageId: string;
   conversationId: string | null;
   forkingSupported?: boolean;
   latestMessageId?: string;
   isLast?: boolean;
-  isSharedConversation?: boolean;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -268,25 +266,6 @@ export default function Fork({
   });
 
   const conversationId = _convoId ?? '';
-
-  // For shared conversations, show a simple fork button that forks the entire conversation
-  // This check comes first because shared conversations don't require messageId
-  if (isSharedConversation && forkingSupported && conversationId) {
-    return (
-      <button
-        className={buttonStyle}
-        onClick={() => {
-          // Fork entire conversation without specifying messageId
-          forkConvo.mutate({ conversationId });
-        }}
-        type="button"
-        title={localize('com_ui_fork_conversation')}
-        aria-label={localize('com_ui_fork_conversation')}
-      >
-        <GitFork size="19" aria-hidden="true" />
-      </button>
-    );
-  }
 
   if (!forkingSupported || !conversationId || !messageId) {
     return null;

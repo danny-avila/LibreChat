@@ -185,7 +185,6 @@ const HoverButtons = ({
           forkingSupported={true}
           latestMessageId={latestMessage?.messageId}
           isLast={isLast}
-          isSharedConversation={true}
         />
       </div>
     );
