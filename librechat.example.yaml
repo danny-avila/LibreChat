@@ -437,6 +437,9 @@ endpoints:
 # - Only needs to be set on one spec per group (first one is used)
 # - Can be a URL or a built-in endpoint key (e.g., "openAI", "anthropic", "groq")
 # modelSpecs:
+#   enforce: false # If true, only model specs can be used, not base models
+#   prioritize: true # If true, model specs are shown before base models
+#   hideBaseModels: false # If true, hides base models when specs exist for an endpoint
 #   list:
 #     # Example 1: Nested under an endpoint (grouped with openAI endpoint)
 #     - name: "gpt-4o"
