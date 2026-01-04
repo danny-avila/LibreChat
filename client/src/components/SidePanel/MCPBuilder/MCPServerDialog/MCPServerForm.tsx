@@ -15,7 +15,7 @@ export default function MCPServerForm({ formHook }: MCPServerFormProps) {
 
   return (
     <FormProvider {...methods}>
-      <div className="max-h-[70vh] space-y-4 overflow-y-auto px-1 py-1">
+      <div className="space-y-4 px-1 py-1">
         <BasicInfoSection />
 
         <ConnectionSection />

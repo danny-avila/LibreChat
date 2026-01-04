@@ -1389,6 +1389,7 @@
   "com_ui_upload_file_context": "Upload File Context",
   "com_ui_upload_file_search": "Upload for File Search",
   "com_ui_upload_files": "Upload files",
+  "com_ui_upload_icon": "Upload icon image",
   "com_ui_upload_image": "Upload an image",
   "com_ui_upload_image_input": "Upload Image",
   "com_ui_upload_invalid": "Invalid file for upload. Must be an image not exceeding the limit",
