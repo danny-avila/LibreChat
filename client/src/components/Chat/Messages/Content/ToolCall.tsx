@@ -66,7 +66,6 @@ export default function ToolCall({
   const error =
     typeof output === 'string' && output.toLowerCase().includes('error processing tool');
 
-
   const args = useMemo(() => {
     if (typeof _args === 'string') {
       return _args;
