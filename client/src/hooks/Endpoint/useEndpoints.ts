@@ -54,6 +54,11 @@ export const useEndpoints = ({
     [assistantsMap],
   );
 
+  const e2bAssistants: Assistant[] = useMemo(
+    () => Object.values(assistantsMap?.[EModelEndpoint.e2bAssistants] ?? {}),
+    [assistantsMap],
+  );
+
   const filteredEndpoints = useMemo(() => {
     if (!interfaceConfig.modelSelect) {
       return [];
@@ -88,8 +93,10 @@ export const useEndpoints = ({
       const hasModels =
         (ep === EModelEndpoint.agents && (agents?.length ?? 0) > 0) ||
         (ep === EModelEndpoint.assistants && assistants?.length > 0) ||
+        (ep === EModelEndpoint.e2bAssistants && e2bAssistants?.length > 0) ||
         (ep !== EModelEndpoint.assistants &&
           ep !== EModelEndpoint.agents &&
+          ep !== EModelEndpoint.e2bAssistants &&
           (modelsQuery.data?.[ep]?.length ?? 0) > 0);
 
       // Base result object with formatted default icon
@@ -162,12 +169,32 @@ export const useEndpoints = ({
           },
           {},
         );
+      } else if (ep === EModelEndpoint.e2bAssistants && e2bAssistants.length > 0) {
+        result.models = e2bAssistants.map((assistant: { id: string }) => ({
+          name: assistant.id,
+          isGlobal: false,
+        }));
+        result.assistantNames = e2bAssistants.reduce(
+          (acc: Record<string, string>, assistant: Assistant) => {
+            acc[assistant.id] = assistant.name || '';
+            return acc;
+          },
+          {},
+        );
+        result.modelIcons = e2bAssistants.reduce(
+          (acc: Record<string, string | undefined>, assistant: Assistant) => {
+            acc[assistant.id] = assistant.metadata?.avatar;
+            return acc;
+          },
+          {},
+        );
       }
 
       // For other endpoints with models from the modelsQuery
       else if (
         ep !== EModelEndpoint.agents &&
         ep !== EModelEndpoint.assistants &&
+        ep !== EModelEndpoint.e2bAssistants &&
         (modelsQuery.data?.[ep]?.length ?? 0) > 0
       ) {
         result.models = modelsQuery.data?.[ep]?.map((model) => ({
@@ -178,7 +205,15 @@ export const useEndpoints = ({
 
       return result;
     });
-  }, [filteredEndpoints, endpointsConfig, modelsQuery.data, agents, assistants, azureAssistants]);
+  }, [
+    filteredEndpoints,
+    endpointsConfig,
+    modelsQuery.data,
+    agents,
+    assistants,
+    azureAssistants,
+    e2bAssistants,
+  ]);
 
   return {
     mappedEndpoints,

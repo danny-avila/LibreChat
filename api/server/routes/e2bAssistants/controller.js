@@ -1,5 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { nanoid } = require('nanoid');
+const { v4: uuidv4 } = require('uuid');
 const { sendEvent, sanitizeMessageForTransmit } = require('@librechat/api');
 const { 
   createE2BAssistantDoc, 
@@ -9,7 +10,7 @@ const {
 } = require('~/models/E2BAssistant');
 const E2BDataAnalystAgent = require('~/server/services/Agents/e2bAgent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
-const { saveMessage, getConvo } = require('~/models');
+const { saveMessage, getConvo, getMessages } = require('~/models');
 
 /**
  * Creates an E2B Assistant.
@@ -34,6 +35,7 @@ const createAssistant = async (req, res) => {
       conversation_starters,
       tools,
       tool_resources,
+      append_current_datetime,
       // ...other fields
     } = req.body;
     
@@ -68,6 +70,7 @@ const createAssistant = async (req, res) => {
       conversation_starters: conversation_starters || [],
       tools: tools || [],
       tool_resources: tool_resources || {},
+      append_current_datetime: append_current_datetime !== undefined ? append_current_datetime : false,
       // Access control defaults (to be refined by collaborators)
       is_public: false,
       access_level: 0,
@@ -76,9 +79,27 @@ const createAssistant = async (req, res) => {
     const assistant = await createE2BAssistantDoc(assistantData);
 
     logger.info(`[E2B Assistant] Created assistant: ${assistant.id}`);
+    logger.info(`[E2B Assistant] Assistant data: name=${assistant.name}, description=${assistant.description}, prompt=${assistant.prompt?.substring(0, 50)}...`);
     
     // DEBUG: Ensure response is safe JSON and log it
     const responseData = assistant.toObject ? assistant.toObject() : assistant;
+    
+    // Map prompt to instructions for frontend
+    responseData.instructions = responseData.prompt;
+    
+    // Ensure all frontend fields are included
+    if (!responseData.conversation_starters) {
+      responseData.conversation_starters = [];
+    }
+    if (responseData.append_current_datetime === undefined) {
+      responseData.append_current_datetime = false;
+    }
+    if (!responseData.tools) {
+      responseData.tools = [];
+    }
+    if (!responseData.tool_resources) {
+      responseData.tool_resources = {};
+    }
     
     let safeData;
     try {
@@ -90,6 +111,8 @@ const createAssistant = async (req, res) => {
       safeData = { 
         id: assistant.id, 
         name: assistant.name,
+        description: assistant.description,
+        instructions: assistant.prompt,
         error: 'Serialization failed but created' 
       };
     }
@@ -116,9 +139,33 @@ const listAssistants = async (req, res) => {
     
     const assistants = await getE2BAssistantDocs(query);
     
+    // Map prompt to instructions for frontend compatibility
+    const mappedAssistants = assistants.map(assistant => {
+      const mapped = {
+        ...assistant,
+        instructions: assistant.prompt,
+      };
+      
+      // Ensure all frontend fields exist
+      if (!mapped.conversation_starters) {
+        mapped.conversation_starters = [];
+      }
+      if (mapped.append_current_datetime === undefined) {
+        mapped.append_current_datetime = false;
+      }
+      if (!mapped.tools) {
+        mapped.tools = [];
+      }
+      if (!mapped.tool_resources) {
+        mapped.tool_resources = {};
+      }
+      
+      return mapped;
+    });
+    
     // Return in the same format as OpenAI/Azure Assistants
     // Frontend expects { data: [...] }
-    res.json({ data: assistants });
+    res.json({ data: mappedAssistants });
   } catch (error) {
     logger.error('[E2B Assistant] Error listing assistants:', error);
     res.status(500).json({ error: error.message });
@@ -148,7 +195,27 @@ const getAssistant = async (req, res) => {
        // return res.status(403).json({ error: 'Access denied' });
     }
     
-    res.json(assistant);
+    // Map prompt back to instructions for frontend compatibility
+    const assistantResponse = {
+      ...assistant,
+      instructions: assistant.prompt,
+    };
+    
+    // Ensure all frontend fields exist
+    if (!assistantResponse.conversation_starters) {
+      assistantResponse.conversation_starters = [];
+    }
+    if (assistantResponse.append_current_datetime === undefined) {
+      assistantResponse.append_current_datetime = false;
+    }
+    if (!assistantResponse.tools) {
+      assistantResponse.tools = [];
+    }
+    if (!assistantResponse.tool_resources) {
+      assistantResponse.tool_resources = {};
+    }
+    
+    res.json(assistantResponse);
   } catch (error) {
     logger.error('[E2B Assistant] Error getting assistant:', error);
     res.status(500).json({ error: error.message });
@@ -169,9 +236,32 @@ const updateAssistant = async (req, res) => {
     delete updateData.createdAt;
     delete updateData.updatedAt;
 
+    // Map instructions to prompt if present
     if (updateData.instructions) {
       updateData.prompt = updateData.instructions;
+      delete updateData.instructions;
     }
+    
+    // Explicitly handle all updatable fields
+    const fieldsToUpdate = {};
+    
+    if (updateData.name !== undefined) fieldsToUpdate.name = updateData.name;
+    if (updateData.description !== undefined) fieldsToUpdate.description = updateData.description;
+    if (updateData.prompt !== undefined) fieldsToUpdate.prompt = updateData.prompt;
+    if (updateData.model !== undefined) fieldsToUpdate.model = updateData.model;
+    if (updateData.conversation_starters !== undefined) fieldsToUpdate.conversation_starters = updateData.conversation_starters;
+    if (updateData.append_current_datetime !== undefined) fieldsToUpdate.append_current_datetime = updateData.append_current_datetime;
+    if (updateData.tools !== undefined) fieldsToUpdate.tools = updateData.tools;
+    if (updateData.tool_resources !== undefined) fieldsToUpdate.tool_resources = updateData.tool_resources;
+    if (updateData.file_ids !== undefined) fieldsToUpdate.file_ids = updateData.file_ids;
+    if (updateData.avatar !== undefined) fieldsToUpdate.avatar = updateData.avatar;
+    if (updateData.e2b_config !== undefined) fieldsToUpdate.e2b_config = updateData.e2b_config;
+    if (updateData.allowed_libraries !== undefined) fieldsToUpdate.allowed_libraries = updateData.allowed_libraries;
+    if (updateData.code_execution_mode !== undefined) fieldsToUpdate.code_execution_mode = updateData.code_execution_mode;
+    if (updateData.env_vars !== undefined) fieldsToUpdate.env_vars = updateData.env_vars;
+    if (updateData.has_internet_access !== undefined) fieldsToUpdate.has_internet_access = updateData.has_internet_access;
+    if (updateData.is_persistent !== undefined) fieldsToUpdate.is_persistent = updateData.is_persistent;
+    if (updateData.metadata !== undefined) fieldsToUpdate.metadata = updateData.metadata;
     
     // Validate ownership before update
     const assistants = await getE2BAssistantDocs({ id: assistant_id });
@@ -184,10 +274,30 @@ const updateAssistant = async (req, res) => {
 
     const assistant = await updateE2BAssistantDoc(
       { id: assistant_id },
-      updateData
+      fieldsToUpdate
     );
     
-    res.json(assistant);
+    // Map prompt to instructions for frontend compatibility
+    const assistantResponse = {
+      ...assistant,
+      instructions: assistant.prompt,
+    };
+    
+    // Ensure all frontend fields exist
+    if (!assistantResponse.conversation_starters) {
+      assistantResponse.conversation_starters = [];
+    }
+    if (assistantResponse.append_current_datetime === undefined) {
+      assistantResponse.append_current_datetime = false;
+    }
+    if (!assistantResponse.tools) {
+      assistantResponse.tools = [];
+    }
+    if (!assistantResponse.tool_resources) {
+      assistantResponse.tool_resources = {};
+    }
+    
+    res.json(assistantResponse);
   } catch (error) {
     logger.error('[E2B Assistant] Error updating assistant:', error);
     res.status(500).json({ error: error.message });
@@ -249,10 +359,10 @@ const chat = async (req, res) => {
       'Connection': 'keep-alive',
     });
 
-    // Generate IDs
-    const userMessageId = nanoid();
-    const responseMessageId = nanoid();
-    const finalConversationId = conversationId || nanoid();
+    // Generate IDs (use UUID for conversationId to pass validation)
+    const userMessageId = uuidv4();
+    const responseMessageId = uuidv4();
+    const finalConversationId = conversationId || uuidv4();
 
     // Create user message
     const userMessage = {
@@ -271,6 +381,19 @@ const chat = async (req, res) => {
       created: true 
     });
 
+    // CRITICAL: Save conversation FIRST (before messages)
+    // This ensures conversation exists in DB so saveMessage won't fail validation
+    const { saveConvo } = require('~/models/Conversation');
+    await saveConvo(req, {
+      conversationId: finalConversationId,
+      endpoint: 'e2bAssistants',
+      assistant_id,
+      title: text.substring(0, 50), // Use first 50 chars as title
+      model: assistant.model || 'gpt-4o',
+    }, {
+      context: 'api/server/routes/e2bAssistants/controller.js - save conversation BEFORE messages'
+    });
+
     // Save user message to database
     await saveMessage(req, userMessage, { 
       context: 'api/server/routes/e2bAssistants/controller.js - user message' 
@@ -278,6 +401,24 @@ const chat = async (req, res) => {
 
     // Initialize OpenAI client
     const { openai } = await getOpenAIClient({ req, res });
+
+    // Load conversation history if this is a continuing conversation
+    let history = [];
+    if (conversationId) {
+      try {
+        const dbMessages = await getMessages({ conversationId });
+        // Convert database messages to OpenAI format
+        history = dbMessages
+          .filter(msg => msg.messageId !== userMessageId) // Exclude current message
+          .map(msg => ({
+            role: msg.isCreatedByUser ? 'user' : 'assistant',
+            content: msg.text || ''
+          }));
+        logger.info(`[E2B Assistant] Loaded ${history.length} historical messages`);
+      } catch (error) {
+        logger.warn(`[E2B Assistant] Failed to load history: ${error.message}`);
+      }
+    }
 
     const agent = new E2BDataAnalystAgent({
       req,
@@ -289,8 +430,8 @@ const chat = async (req, res) => {
       files,
     });
 
-    // Run the agent
-    const result = await agent.processMessage(text);
+    // Run the agent with history
+    const result = await agent.processMessage(text, history);
     
     logger.info(`[E2B Assistant] Agent finished. Final text length: ${result.text?.length}`);
     

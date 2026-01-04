@@ -229,28 +229,63 @@ LibreChat/
 - **原因**: API 返回数组而非 `{ data: [...] }` 格式
 - **修复**: 统一 API 响应格式，与 Azure Assistants 保持一致
 
+#### ✅ 4. 助手配置保存问题 (已修复 - 2026-01-04)
+- **问题**: 创建助手后刷新页面，部分配置字段重置（description、instructions、conversation_starters、append_current_datetime、tools等）
+- **原因**: 
+  - Schema缺少 `append_current_datetime`、`tools`、`tool_resources` 字段定义
+  - Controller的 get/list/update 方法未映射所有字段
+  - `instructions` ↔ `prompt` 字段映射不完整
+- **修复**:
+  - 在 `e2bAssistantSchema` 中添加缺失字段（append_current_datetime、tools、tool_resources）
+  - 在 `createAssistant` 中保存所有前端发送的字段
+  - 在 `getAssistant`/`listAssistants` 中返回完整字段映射并设置默认值
+  - 在 `updateAssistant` 中使用白名单方式处理所有可更新字段
+
+#### ✅ 5. 对话历史丢失问题 (已修复 - 2026-01-04)
+- **问题**: 同一对话中的第二条消息不记得第一条说了什么
+- **原因**: `chat` 端点调用 `agent.processMessage(text)` 时未传递历史消息
+- **修复**:
+  - 在 `controller.js` 中添加 `getMessages` 导入
+  - 在调用 `processMessage` 前使用 `getMessages` 加载对话历史
+  - 将历史消息转换为 OpenAI 格式（role: user/assistant）并传递给 Agent
+
+#### ✅ 6. 图像路径替换失败 (已修复 - 2026-01-04)
+- **问题**: LLM生成的sandbox:路径无法在前端显示图像
+- **原因**: 
+  - `image_url_map` 中的路径模式不够全面
+  - 仅使用精确匹配，无法处理LLM生成的各种路径格式
+- **修复**:
+  - 在 `tools.js` 中添加更多sandbox路径模式（sandbox:/、sandbox://、/tmp/等）
+  - 在 `index.js` 中添加两层替换策略：
+    1. 精确匹配 `image_url_map` 中的所有模式
+    2. 使用正则表达式匹配任何包含图像文件名的sandbox:或文件路径
+  - 存储 `image_names` 和 `image_actual_paths` 用于模式匹配
+
 ### 9.3 当前功能状态
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
 | 助手创建 | ✅ 完成 | 支持通过 Builder 创建助手 |
+| 助手配置保存 | ✅ 完成 | 所有配置字段正确持久化 |
 | 助手列表 | ✅ 完成 | 刷新后正确显示 |
 | 文件上传 | ✅ 完成 | 支持 Local/S3/Azure 存储 |
 | 代码执行 | ✅ 完成 | E2B 沙箱执行 Python 代码 |
+| 图像生成 | ✅ 完成 | 自动提取并显示matplotlib/seaborn图表 |
 | 消息显示 | ✅ 完成 | SSE 流式返回消息 |
 | 数据持久化 | ✅ 完成 | 消息保存到 MongoDB |
-| 历史对话 | ✅ 完成 | 刷新后可查看历史 |
+| 历史对话 | ✅ 完成 | 多轮对话保持上下文 |
+| 沙箱复用 | ✅ 完成 | 同一对话复用沙箱实例 |
 
 ### 9.4 待优化功能
 
 - **流式响应**: 当前为批量返回，可优化为逐 token 流式输出
-- **图表下载**: 自动提取并显示生成的图表
 - **错误重试**: 增强 LLM 工具调用失败的重试机制
 - **Token 优化**: 减少系统提示词和工具定义的 Token 消耗
+- **访问控制**: 实现私有/公共助手权限管理（待协作人员完成）
 
 ---
 
 **创建日期**: 2025-12-23  
-**最后更新**: 2025-12-31  
-**当前状态**: 后端逻辑基本跑通，前端集成进行中，重点解决 LLM 配置和 UI 列表渲染问题。
+**最后更新**: 2026-01-04  
+**当前状态**: ✅ 核心功能全部完成！助手配置、历史对话、图像显示、沙箱复用均已正常工作。
 **当前分支**: `feature/e2b-integration`

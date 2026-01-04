@@ -132,22 +132,48 @@
 - [x] **API 响应格式修复**: 修改 `listAssistants` 返回格式为 `{ data: [...] }`，与 Azure Assistants 一致
 - [x] **刷新后可见**: 解决刷新页面后看不到已创建助手的问题
 
+### ✅ 助手配置完整持久化 (2026-01-04 下午)
+- [x] **Schema 扩展**: 在 `e2bAssistantSchema` 中添加缺失的 `append_current_datetime`、`tools`、`tool_resources` 字段
+- [x] **字段映射修复**: 在 `createAssistant`/`getAssistant`/`listAssistants`/`updateAssistant` 中实现完整字段映射
+- [x] **instructions ↔ prompt 映射**: 确保前后端字段名称转换正确
+- [x] **默认值处理**: 为所有可选字段设置合理的默认值
+- [x] **白名单更新**: 在 `updateAssistant` 中使用白名单方式处理所有可更新字段
+
+### ✅ 对话历史保持 (2026-01-04 下午)
+- [x] **历史消息加载**: 在 `controller.js` 中添加 `getMessages` 导入
+- [x] **上下文传递**: 调用 `processMessage` 前加载并转换历史消息为 OpenAI 格式
+- [x] **多轮对话**: Agent 现在能正确理解对话上下文，实现真正的多轮交互
+- [x] **沙箱复用验证**: 确认同一对话中沙箱实例被正确复用
+
+### ✅ 图像路径替换增强 (2026-01-04 下午)
+- [x] **扩展路径映射**: 在 `tools.js` 中添加 6 种常见 sandbox 路径模式（sandbox:/、sandbox://、/tmp/ 等）
+- [x] **双层替换策略**: 
+  - 第一层：精确匹配 `image_url_map` 中的所有预定义模式
+  - 第二层：使用正则表达式匹配任何包含图像文件名的路径
+- [x] **模式匹配增强**: 存储 `image_names` 和 `image_actual_paths` 用于灵活的模式匹配
+- [x] **日志优化**: 详细记录每种替换模式的匹配次数
+
 ### ✅ 文档更新
 - [x] **创建修复文档**: 编写 `docs/E2B_FILE_UPLOAD_FIX.md`，详细记录问题分析和修复方案
 - [x] **更新开发文档**: 更新 `E2B_DATA_ANALYST_AGENT_DEVELOPMENT.md`，反映最新状态
+- [x] **更新TODO文档**: 同步所有修复到 TODO.md
 
 ### 🎯 已验证功能
 - ✅ 助手创建和列表显示
+- ✅ 所有配置字段完整保存（刷新后不丢失）
 - ✅ 文件上传到 E2B 沙箱
 - ✅ 代码执行和结果返回
+- ✅ 图像生成和前端显示
 - ✅ 消息持久化到数据库
+- ✅ 多轮对话保持上下文
 - ✅ 刷新后历史对话可见
+- ✅ 沙箱实例智能复用
 
 ### ⏳ 待优化项
 - [ ] Agent 编排精调 (优化 Token 消耗)
 - [ ] 流式响应实现 (当前为批量返回)
-- [ ] 图表和文件下载功能完善
 - [ ] 错误重试机制优化
+- [ ] 访问控制实现（私有/公共助手）
 
 ---
 
@@ -274,7 +300,7 @@ E2B_DEFAULT_MAX_CPU_PERCENT=80
 
 **创建日期**: 2025-12-23  
 **最后更新**: 2026-01-04  
-**当前状态**: E2B Data Analyst Agent 核心功能已完成，文件上传、消息流、数据持久化全部调通。
+**当前状态**: ✅ E2B Data Analyst Agent 核心功能全部完成！助手配置、历史对话、图像显示、沙箱复用均已正常工作。
 **当前分支**: `feature/e2b-integration`
 
 ---

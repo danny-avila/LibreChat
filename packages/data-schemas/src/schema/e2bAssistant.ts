@@ -32,6 +32,7 @@ interface IE2BAssistantData {
   tools?: any[];
   tool_resources?: any;
   conversation_starters?: string[];
+  append_current_datetime?: boolean;
   
   // 访问控制 - 由协作人员实现
   is_public: boolean;
@@ -112,9 +113,24 @@ const e2bAssistantSchema = new Schema<IE2BAssistantData>(
       type: [String], 
       default: [] 
     },
+    tools: {
+      type: Schema.Types.Mixed,
+      default: [],
+      description: '启用的工具列表 (e.g., code_interpreter, file_search)',
+    },
+    tool_resources: {
+      type: Schema.Types.Mixed,
+      default: {},
+      description: '工具资源配置 (e.g., code_interpreter.file_ids)',
+    },
     conversation_starters: {
       type: [String],
       default: [],
+    },
+    append_current_datetime: {
+      type: Boolean,
+      default: false,
+      description: '是否在提示中添加当前日期和时间',
     },
     
     // 访问控制 - 由协作人员实现

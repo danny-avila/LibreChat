@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { EarthIcon, Pin, PinOff } from 'lucide-react';
-import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint, EModelEndpoint } from 'librechat-data-provider';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { useFavorites, useLocalize } from '~/hooks';
@@ -51,7 +51,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
   } else if (
     endpoint &&
     modelId &&
-    isAssistantsEndpoint(endpoint.value) &&
+    (isAssistantsEndpoint(endpoint.value) || endpoint.value === EModelEndpoint.e2bAssistants) &&
     endpoint.assistantNames?.[modelId]
   ) {
     modelName = endpoint.assistantNames[modelId];
@@ -81,7 +81,9 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
 
   const renderAvatar = () => {
     const isAgentOrAssistant =
-      isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value);
+      isAgentsEndpoint(endpoint.value) ||
+      isAssistantsEndpoint(endpoint.value) ||
+      endpoint.value === EModelEndpoint.e2bAssistants;
     const showEndpointIcon = isAgentOrAssistant && endpoint.icon;
 
     const getContent = () => {

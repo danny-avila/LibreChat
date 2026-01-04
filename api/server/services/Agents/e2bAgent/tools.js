@@ -49,6 +49,30 @@ const getToolFunctions = (userId, conversationId, req) => {
             file_id: f.file_id,
             filepath: f.filepath
           }));
+          
+          // Create URL mapping for sandbox: paths to actual storage paths
+          // Map both the image name and common sandbox path patterns
+          observation.image_url_map = {};
+          result.images.forEach((img, index) => {
+            if (persistedFiles[index]) {
+              const actualPath = persistedFiles[index].filepath;
+              // Map by image name (e.g., "plot-0.png")
+              observation.image_url_map[img.name] = actualPath;
+              // Map all common sandbox path patterns
+              observation.image_url_map[`sandbox:/${img.name}`] = actualPath;
+              observation.image_url_map[`sandbox://${img.name}`] = actualPath;
+              observation.image_url_map[`sandbox:/images/${userId}/${img.name}`] = actualPath;
+              observation.image_url_map[`sandbox:///home/user/${img.name}`] = actualPath;
+              observation.image_url_map[`/home/user/${img.name}`] = actualPath;
+              observation.image_url_map[`/tmp/${img.name}`] = actualPath;
+            }
+          });
+          
+          // Also store for later replacement in case LLM references images in text
+          observation.image_names = result.images.map(img => img.name);
+          observation.image_actual_paths = persistedFiles.map(f => f.filepath);
+          
+          logger.info(`[E2BAgent Tools] Created image URL map with ${Object.keys(observation.image_url_map).length} mappings`);
         }
 
         return observation;
