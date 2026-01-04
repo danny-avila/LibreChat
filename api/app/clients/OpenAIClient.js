@@ -1710,16 +1710,19 @@ ${convo}
     const requestBody = this.sanitizeResponsesOptions(modelOptions, shouldStream);
     requestBody.input = this.formatResponsesMessages(payload);
     requestBody.input = this.addOntarioAttachment(requestBody.input);
-    // Embed vector store on the file_search tool itself; drop tool_resources
     const tools = this.ensureFileSearchTool(requestBody.tools);
+    const toolResourceIds =
+      modelOptions?.tool_resources?.file_search?.vector_store_ids ??
+      tools.find((tool) => tool?.type === 'file_search')?.vector_store_ids ??
+      [DEFAULT_VECTOR_STORE_ID];
     requestBody.tools = tools.map((tool) =>
-      tool.type === 'file_search'
-        ? Object.assign({}, tool, {
-            vector_store_ids: [DEFAULT_VECTOR_STORE_ID],
-          })
+      tool?.type === 'file_search'
+        ? Object.assign({}, tool, { vector_store_ids: toolResourceIds })
         : tool,
     );
-    delete requestBody.tool_resources;
+    if (modelOptions.tool_resources) {
+      requestBody.tool_resources = modelOptions.tool_resources;
+    }
     /* Debug log to verify file_search attachments */
     logger.warn(
       `[OpenAIClient] buildResponsesRequest file_search resources: ${JSON.stringify(requestBody.tool_resources)}`,

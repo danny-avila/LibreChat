@@ -1,5 +1,5 @@
 const DEFAULT_ON_STORAGE_FILE_ID = 'file-CTN168WfihPUgthrxvCQsy';
-const ONTARIO_MODEL = process.env.ONTARIO_OPENAI_MODEL || 'gpt-5';
+const ONTARIO_MODEL = process.env.ONTARIO_OPENAI_MODEL || 'gpt-4.1-mini';
 
 const OntarioPromptConfig = {
   model: ONTARIO_MODEL,

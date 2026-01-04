@@ -1,16 +1,24 @@
 const { logger } = require('@librechat/data-schemas');
 const { v4: uuidv4 } = require('uuid');
 const { sendEvent } = require('@librechat/api');
-const { Constants } = require('librechat-data-provider');
+const { Constants, ContentTypes } = require('librechat-data-provider');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
 const { saveMessage } = require('~/models');
+const { createOnProgress } = require('~/server/utils');
 
 /**
  * Ontario-only direct Responses API handler (bypasses LangGraph/agents).
  * Streams or returns the response using OpenAIClient.handleResponsesApi.
  */
 async function ontarioDirectHandler(req, res) {
-  const { endpointOption, text, conversationId, parentMessageId = null } = req.body;
+  const {
+    endpointOption,
+    text,
+    conversationId,
+    parentMessageId = null,
+    messageId: clientMessageId,
+    responseMessageId: clientResponseMessageId,
+  } = req.body;
   const userId = req.user.id;
   const convoId = conversationId ?? uuidv4();
 
@@ -54,6 +62,17 @@ async function ontarioDirectHandler(req, res) {
 
   let aggregated = '';
   let sentFirstToken = false;
+  const { onProgress: progressCallback } = createOnProgress();
+  const responseMessageId =
+    clientResponseMessageId ?? (clientMessageId ? `${clientMessageId}_` : uuidv4());
+  const sendProgress = progressCallback({
+    res,
+    index: 0,
+    messageId: responseMessageId,
+    conversationId: convoId,
+    type: ContentTypes.TEXT,
+    thread_id: null,
+  });
   const onProgress =
     modelOptions.stream === true
       ? (delta) => {
@@ -62,16 +81,12 @@ async function ontarioDirectHandler(req, res) {
             sentFirstToken = true;
             req.traceStep?.('ontario_direct_first_token');
           }
-          // Stream interim tokens to client
-          sendEvent(res, {
-            event: 'token',
-            data: delta,
-          });
+          sendProgress(delta);
         }
       : undefined;
 
   // Prepare user message and save it so it appears in the timeline
-  const userMessageId = uuidv4();
+  const userMessageId = clientMessageId ?? uuidv4();
   const userMessage = {
     messageId: userMessageId,
     user: userId,
@@ -134,7 +149,6 @@ async function ontarioDirectHandler(req, res) {
           })
       : undefined;
 
-  const responseMessageId = uuidv4();
   const responseMessage = {
     messageId: responseMessageId,
     user: userId,
