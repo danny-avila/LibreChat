@@ -532,9 +532,20 @@ export default function useResumableSSE(
         }
       }
 
-      // All retries failed or non-network error
       console.error('[ResumableSSE] Error starting generation:', lastError);
-      errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
+
+      const axiosError = lastError as { response?: { data?: Record<string, unknown> } };
+      const errorData = axiosError?.response?.data;
+      if (errorData) {
+        errorHandler({
+          data: { text: JSON.stringify(errorData) } as unknown as Parameters<
+            typeof errorHandler
+          >[0]['data'],
+          submission: currentSubmission as EventSubmission,
+        });
+      } else {
+        errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
+      }
       setIsSubmitting(false);
       return null;
     },

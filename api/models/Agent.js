@@ -595,6 +595,11 @@ const deleteAgent = async (searchParameter) => {
       resourceType: ResourceType.AGENT,
       resourceId: agent._id,
     });
+    try {
+      await Agent.updateMany({ 'edges.to': agent.id }, { $pull: { edges: { to: agent.id } } });
+    } catch (error) {
+      logger.error('[deleteAgent] Error removing agent from handoff edges', error);
+    }
   }
   return agent;
 };

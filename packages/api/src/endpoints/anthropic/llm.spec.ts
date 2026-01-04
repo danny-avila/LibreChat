@@ -238,9 +238,12 @@ describe('getLLMConfig', () => {
   });
 
   describe('Edge cases', () => {
-    it('should handle missing apiKey', () => {
-      const result = getLLMConfig(undefined, { modelOptions: {} });
-      expect(result.llmConfig).not.toHaveProperty('apiKey');
+    it('should throw error when missing credentials', () => {
+      expect(() => {
+        getLLMConfig(undefined, { modelOptions: {} });
+      }).toThrow(
+        'Invalid credentials provided. Please provide either a valid Anthropic API key or service account credentials for Vertex AI.',
+      );
     });
 
     it('should handle empty modelOptions', () => {

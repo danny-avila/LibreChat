@@ -183,9 +183,8 @@ const createMeiliMongooseModel = ({
         );
 
         // Build query with resume capability
-        const query: FilterQuery<unknown> = {
-          expiredAt: { $exists: false }, // Do not sync TTL documents
-        };
+        // Do not sync TTL documents
+        const query: FilterQuery<unknown> = { expiredAt: null };
         if (options?.resumeFromId) {
           query._id = { $gt: options.resumeFromId };
         }
