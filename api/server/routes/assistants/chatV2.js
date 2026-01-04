@@ -7,6 +7,7 @@ const {
   validateModel,
   // validateEndpoint,
   buildEndpointOption,
+  trace,
 } = require('~/server/middleware');
 const validateConvoAccess = require('~/server/middleware/validate/convoAccess');
 const validateAssistant = require('~/server/middleware/assistants/validate');
@@ -24,6 +25,7 @@ router.post('/abort', handleAbort());
  */
 router.post(
   '/',
+  trace,
   validateModel,
   buildEndpointOption,
   validateAssistant,

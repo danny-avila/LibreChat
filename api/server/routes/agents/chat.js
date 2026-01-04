@@ -3,6 +3,7 @@ const { generateCheckAccess, skipAgentCheck } = require('@librechat/api');
 const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
 const {
   setHeaders,
+  trace,
   moderateText,
   // validateModel,
   validateConvoAccess,
@@ -17,6 +18,7 @@ const { ontarioDirectHandler } = require('~/server/controllers/agents/ontarioDir
 
 const router = express.Router();
 
+router.use(trace);
 router.use(moderateText);
 
 const checkAgentAccess = generateCheckAccess({

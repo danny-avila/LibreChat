@@ -17,6 +17,7 @@ import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/d
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import store from '~/store';
+import { logger } from '~/utils';
 
 const clearDraft = (conversationId?: string | null) => {
   if (conversationId) {
@@ -100,13 +101,24 @@ export default function useSSE(
     const payloadData = createPayload(submission);
     let { payload } = payloadData;
     payload = removeNullishValues(payload) as TPayload;
+    const trace = (submission as TSubmission & { trace?: { id: string; clientStartMs: number } })
+      .trace ?? { id: v4(), clientStartMs: Date.now() };
+    const traceId = trace.id ?? v4();
+    const clientStartMs = trace.clientStartMs ?? Date.now();
+    payload.traceId = traceId;
+    payload.clientStartMs = clientStartMs;
 
     let textIndex = null;
     clearStepMaps();
+    let firstTokenLogged = false;
 
     const sse = new SSE(payloadData.server, {
       payload: JSON.stringify(payload),
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'X-Trace-Id': traceId,
+      },
     });
 
     sse.addEventListener('attachment', (e: MessageEvent) => {
@@ -120,12 +132,31 @@ export default function useSSE(
 
     sse.addEventListener('message', (e: MessageEvent) => {
       const data = JSON.parse(e.data);
+      const shouldLogFirstToken =
+        data?.type != null ||
+        data?.message != null ||
+        data?.text != null ||
+        data?.response != null ||
+        data?.event != null;
+      if (!firstTokenLogged && shouldLogFirstToken && !data?.final) {
+        firstTokenLogged = true;
+        logger.log('trace', {
+          traceId,
+          stage: 'first_event',
+          durationMs: Date.now() - clientStartMs,
+        });
+      }
 
       if (data.final != null) {
         clearDraft(submission.conversation?.conversationId);
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins } as EventSubmission);
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
+        logger.log('trace', {
+          traceId,
+          stage: 'final',
+          durationMs: Date.now() - clientStartMs,
+        });
         console.log('final', data);
         return;
       } else if (data.created != null) {
@@ -170,6 +201,11 @@ export default function useSSE(
 
     sse.addEventListener('open', () => {
       setAbortScroll(false);
+      logger.log('trace', {
+        traceId,
+        stage: 'sse_open',
+        durationMs: Date.now() - clientStartMs,
+      });
       console.log('connection is opened');
     });
 
@@ -210,6 +246,7 @@ export default function useSSE(
           sse.headers = {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
+            'X-Trace-Id': traceId,
           };
 
           request.dispatchTokenUpdatedEvent(token);
@@ -222,6 +259,11 @@ export default function useSSE(
       }
 
       console.log('error in server stream.');
+      logger.log('trace', {
+        traceId,
+        stage: 'sse_error',
+        durationMs: Date.now() - clientStartMs,
+      });
       (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
 
       let data: TResData | undefined = undefined;

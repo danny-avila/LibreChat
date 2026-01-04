@@ -17,6 +17,7 @@ const validateModel = require('./validateModel');
 const moderateText = require('./moderateText');
 const logHeaders = require('./logHeaders');
 const setHeaders = require('./setHeaders');
+const trace = require('./trace');
 const validate = require('./validate');
 const limiters = require('./limiters');
 const uaParser = require('./uaParser');
@@ -34,6 +35,7 @@ module.exports = {
   checkBan,
   uaParser,
   setHeaders,
+  trace,
   logHeaders,
   moderateText,
   validateModel,

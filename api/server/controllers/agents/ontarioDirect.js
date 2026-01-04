@@ -14,6 +14,11 @@ async function ontarioDirectHandler(req, res) {
   const userId = req.user.id;
   const convoId = conversationId ?? uuidv4();
 
+  req.traceStep?.('ontario_direct_start', {
+    endpoint: endpointOption?.endpoint,
+    conversationId: convoId,
+  });
+
   // Build model options from endpointOption
   const modelOptions = Object.assign(
     {},
@@ -21,8 +26,8 @@ async function ontarioDirectHandler(req, res) {
   );
   // Force Responses API path; ensure stream flag matches client expectations
   modelOptions.useResponsesApi = true;
-  // Force non-stream so we can capture raw annotations; streaming handled via token events
-  modelOptions.stream = false;
+  // Stream tokens for faster perceived latency; capture final response for annotations
+  modelOptions.stream = true;
 
   const clientOptions = {
     req,
@@ -48,10 +53,15 @@ async function ontarioDirectHandler(req, res) {
   const abortController = new AbortController();
 
   let aggregated = '';
+  let sentFirstToken = false;
   const onProgress =
     modelOptions.stream === true
       ? (delta) => {
           aggregated += delta;
+          if (!sentFirstToken) {
+            sentFirstToken = true;
+            req.traceStep?.('ontario_direct_first_token');
+          }
           // Stream interim tokens to client
           sendEvent(res, {
             event: 'token',
@@ -75,14 +85,17 @@ async function ontarioDirectHandler(req, res) {
   await saveMessage(req, userMessage, {
     context: 'api/server/controllers/agents/ontarioDirect.js - user message',
   });
+  req.traceStep?.('ontario_direct_user_saved');
 
   // Run completion
+  req.traceStep?.('ontario_direct_llm_start');
   const completion = await client.chatCompletion({
     payload,
     onProgress,
     abortController,
     returnRaw: true,
   });
+  req.traceStep?.('ontario_direct_llm_end');
 
   const finalText =
     typeof completion === 'string'
@@ -138,6 +151,7 @@ async function ontarioDirectHandler(req, res) {
   await saveMessage(req, responseMessage, {
     context: 'api/server/controllers/agents/ontarioDirect.js - response',
   });
+  req.traceStep?.('ontario_direct_response_saved');
 
   // Emit final event
   sendEvent(res, {

@@ -297,6 +297,8 @@ export default function useChatFunctions({
       currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
     }
 
+    const trace = { id: v4(), clientStartMs: Date.now() };
+
     logger.log('message_state', initialResponse);
     const submission: TSubmission = {
       conversation: {
@@ -318,6 +320,7 @@ export default function useChatFunctions({
       ephemeralAgent,
       editedContent,
     };
+    (submission as TSubmission & { trace?: { id: string; clientStartMs: number } }).trace = trace;
 
     if (isRegenerate) {
       setMessages([...submission.messages, initialResponse]);

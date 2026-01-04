@@ -91,6 +91,7 @@ const chatV1 = async (req, res) => {
 
   /** @type {string} - The conversation UUID - created if undefined */
   const conversationId = convoId ?? v4();
+  req.traceStep?.('assistants_v1_start', { endpoint, conversationId });
 
   const cache = getLogStores(CacheKeys.ABORT_KEYS);
   const cacheKey = `${req.user.id}:${conversationId}`;
@@ -495,6 +496,7 @@ const chatV1 = async (req, res) => {
     let response;
 
     const processRun = async (retry = false) => {
+      req.traceStep?.('assistants_v1_run_start', { retry, endpoint });
       if (endpoint === EModelEndpoint.azureAssistants) {
         body.model = openai._options.model;
         openai.attachedFileIds = attachedFileIds;
@@ -506,6 +508,7 @@ const chatV1 = async (req, res) => {
             run_id,
             in_progress: openai.in_progress,
           });
+          req.traceStep?.('assistants_v1_run_end', { retry, endpoint });
           return;
         }
 
@@ -525,6 +528,7 @@ const chatV1 = async (req, res) => {
 
         // todo: retry logic
         response = await runAssistant({ openai, thread_id, run_id });
+        req.traceStep?.('assistants_v1_run_end', { retry, endpoint });
         return;
       }
 
@@ -557,6 +561,7 @@ const chatV1 = async (req, res) => {
       });
 
       response = streamRunManager;
+      req.traceStep?.('assistants_v1_run_end', { retry, endpoint });
     };
 
     await processRun();

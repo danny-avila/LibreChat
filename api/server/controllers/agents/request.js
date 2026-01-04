@@ -40,6 +40,11 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     responseMessageId: editedResponseMessageId = null,
   } = req.body;
 
+  req.traceStep?.('agents_request_start', {
+    endpoint: req.body?.endpointOption?.endpoint,
+    conversationId: req.body?.conversationId ?? null,
+  });
+
   let sender;
   let abortKey;
   let userMessage;
@@ -133,12 +138,14 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     };
     cleanupHandlers.push(removePrelimHandler);
     /** @type {{ client: TAgentClient; userMCPAuthMap?: Record<string, Record<string, string>> }} */
+    req.traceStep?.('agents_init_start');
     const result = await initializeClient({
       req,
       res,
       endpointOption,
       signal: prelimAbortController.signal,
     });
+    req.traceStep?.('agents_init_end');
     if (prelimAbortController.signal?.aborted) {
       prelimAbortController = null;
       throw new Error('Request was aborted before initialization could complete');
@@ -207,7 +214,9 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       },
     };
 
+    req.traceStep?.('agents_send_start');
     let response = await client.sendMessage(text, messageOptions);
+    req.traceStep?.('agents_send_end');
 
     // Extract what we need and immediately break reference
     const messageId = response.messageId;
@@ -220,6 +229,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
 
     // Resolve database-related data
     const { conversation: convoData = {} } = await databasePromise;
+    req.traceStep?.('agents_db_end');
     const conversation = { ...convoData };
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';

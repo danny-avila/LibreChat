@@ -1791,6 +1791,7 @@ ${convo}
         requestBody,
         onProgress,
         abortController,
+        returnRaw,
       });
     }
 
@@ -1833,7 +1834,7 @@ ${convo}
     return textOut;
   }
 
-  async streamResponses({ openai, requestBody, onProgress, abortController }) {
+  async streamResponses({ openai, requestBody, onProgress, abortController, returnRaw = false }) {
     console.log('[OpenAIClient] streamResponses invoked');
     const handlers = createStreamEventHandlers(this.options.res);
     this.streamHandler = new SplitStreamHandler({
@@ -1916,6 +1917,9 @@ ${convo}
       finalResponse = await stream.finalResponse();
     } catch (err) {
       if (err?.message?.includes('abort')) {
+        if (returnRaw) {
+          return { text: aggregated || this.getStreamText(), raw: null };
+        }
         return aggregated || this.getStreamText();
       }
       throw err;
@@ -1950,9 +1954,16 @@ ${convo}
       Array.isArray(this.streamHandler.reasoningTokens) &&
       this.streamHandler.reasoningTokens.length > 0
     ) {
-      return this.getStreamText();
+      const text = this.getStreamText();
+      if (returnRaw) {
+        return { text, raw: finalResponse };
+      }
+      return text;
     }
 
+    if (returnRaw) {
+      return { text: finalText || aggregated, raw: finalResponse };
+    }
     return finalText || aggregated;
   }
 }
