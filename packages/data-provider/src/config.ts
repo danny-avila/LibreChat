@@ -1395,6 +1395,10 @@ export enum CacheKeys {
    */
   S3_EXPIRY_INTERVAL = 'S3_EXPIRY_INTERVAL',
   /**
+ * Key for azure blob check intervals per user
+ */
+  AZURE_EXPIRY_INTERVAL = 'AZURE_EXPIRY_INTERVAL',
+  /**
    * key for open id exchanged tokens
    */
   OPENID_EXCHANGED_TOKENS = 'OPENID_EXCHANGED_TOKENS',
