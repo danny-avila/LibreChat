@@ -49,9 +49,15 @@ class FileHandler {
           }
           // OpenAI strategy: getDownloadStream(file_id, openai)
           stream = await strategy.getDownloadStream(fileDoc.file_id, openai);
+        } else if (source === FileSources.local) {
+          // Local strategy: ensure req.config is available
+          if (!req || !req.config || !req.config.paths) {
+            logger.error(`[FileHandler] req.config.paths is undefined for local file ${fileId}`);
+            throw new Error('Server configuration is missing for local file access');
+          }
+          stream = await strategy.getDownloadStream(req, fileDoc.filepath);
         } else {
-          // Local/S3/others: getDownloadStream(req, filepath)
-          // req is needed for Local strategy to access appConfig
+          // S3/Azure/others: getDownloadStream(req, filepath)
           stream = await strategy.getDownloadStream(req, fileDoc.filepath);
         }
         

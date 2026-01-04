@@ -198,28 +198,55 @@ LibreChat/
 
 ---
 
-## 9. 前端集成状态与已知问题 (2025-12-31)
+## 9. 前端集成状态与已知问题 (2026-01-04)
 
-### 9.1 已完成的集成
+### 9.1 已完成的集成 ✅
 - **图标支持**: E2B Assistants 现在使用 Sparkles (✨) 图标。
 - **助手创建**: 修复了 JSON 解析错误，助手可以成功创建并保存到数据库。
 - **后端路由**: 补全了 `/documents` 和 `/tools` 端点，消除了前端 404 错误。
+- **助手列表**: 修复 API 响应格式，刷新后可正确显示已创建的助手。
+- **文件上传**: 完整实现文件上传到 E2B 沙箱功能，支持多种存储后端（Local/S3/Azure）。
+- **消息流**: SSE 消息格式完全对齐前端预期，实现 created 和 final 事件。
+- **数据持久化**: 用户消息和响应消息正确保存到数据库。
 
-### 9.2 待修复的 Bug (Known Issues)
+### 9.2 修复的关键 Bug ✅
 
-#### 🐛 1. 聊天无响应 (Tools Not Supported)
-- **现象**: 能够进入聊天界面，但在发送消息后，Loading 指示器一直转圈，无内容输出。后端日志显示 `404 tools is not supported in this model`。
-- **原因**: 当前 LLM 配置（OpenAI/Azure/Proxy）不支持 `gpt-4o` 模型的 Tool Calling 功能，或者模型名称映射错误。
-- **计划修复**: 检查 `.env` 中的 LLM 配置，确保指向支持 Tool Calling 的端点（如 OpenRouter 或官方 OpenAI）。
+#### ✅ 1. 文件上传失败 (已修复)
+- **问题**: `Cannot read properties of undefined (reading 'paths')`
+- **原因**: E2B 路由缺少 `configMiddleware`，导致 `req.config` 未初始化
+- **修复**: 在路由中添加 `configMiddleware`，确保配置正确加载
 
-#### 🐛 2. 端点菜单显示错误 (UI Bug)
-- **现象**: 在左上角 "New Chat" 下拉菜单中选择 "E2B Data Analyst" 时，二级菜单显示的是预设的模型列表（如 `gpt-4o`, `gpt-3.5-turbo`），而不是用户已创建的助手列表。
-- **期望行为**: 应该像 Azure Assistants 那样，显示 "My Assistants" 列表供用户选择。
-- **技术原因**: 前端 `useEndpoints.ts` 钩子中缺少对 `EModelEndpoint.e2bAssistants` 的特殊处理逻辑，导致其回退到了默认的模型列表渲染逻辑。
+#### ✅ 2. 前端无输出 (已修复)
+- **问题**: 消息发送后前端无响应，显示 "2/2" 但无内容
+- **原因**: SSE 消息格式不符合前端预期，缺少必需字段
+- **修复**: 
+  - 实现完整的 SSE 事件流（created → final）
+  - 添加 conversation, requestMessage, responseMessage
+  - 使用 `sanitizeMessageForTransmit` 清理消息
 
-#### 🐛 3. 助手构建器 UI 优化
-- **现状**: 助手构建器（Builder）右侧的配置面板中，模型选择器工作正常（用于选择基座模型）。
-- **说明**: 这是符合预期的，构建器中的模型选择是用于定义 Assistant 使用的底层模型。
+#### ✅ 3. 助手列表不显示 (已修复)
+- **问题**: 刷新页面后看不到已创建的助手
+- **原因**: API 返回数组而非 `{ data: [...] }` 格式
+- **修复**: 统一 API 响应格式，与 Azure Assistants 保持一致
+
+### 9.3 当前功能状态
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 助手创建 | ✅ 完成 | 支持通过 Builder 创建助手 |
+| 助手列表 | ✅ 完成 | 刷新后正确显示 |
+| 文件上传 | ✅ 完成 | 支持 Local/S3/Azure 存储 |
+| 代码执行 | ✅ 完成 | E2B 沙箱执行 Python 代码 |
+| 消息显示 | ✅ 完成 | SSE 流式返回消息 |
+| 数据持久化 | ✅ 完成 | 消息保存到 MongoDB |
+| 历史对话 | ✅ 完成 | 刷新后可查看历史 |
+
+### 9.4 待优化功能
+
+- **流式响应**: 当前为批量返回，可优化为逐 token 流式输出
+- **图表下载**: 自动提取并显示生成的图表
+- **错误重试**: 增强 LLM 工具调用失败的重试机制
+- **Token 优化**: 减少系统提示词和工具定义的 Token 消耗
 
 ---
 

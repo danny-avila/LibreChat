@@ -1,11 +1,12 @@
 const express = require('express');
-const { uaParser, checkBan, requireJwtAuth } = require('~/server/middleware');
+const { uaParser, checkBan, requireJwtAuth, configMiddleware } = require('~/server/middleware');
 const controller = require('./controller');
 
 const router = express.Router();
 
 router.use(requireJwtAuth);
 router.use(checkBan);
+router.use(configMiddleware);
 router.use(uaParser);
 
 // CRUD Endpoints

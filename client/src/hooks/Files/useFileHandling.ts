@@ -7,6 +7,7 @@ import {
   QueryKeys,
   Constants,
   EToolResources,
+  EModelEndpoint,
   mergeFileConfig,
   isAssistantsEndpoint,
   getEndpointFileConfig,
@@ -183,8 +184,11 @@ const useFileHandling = (params?: UseFileHandling) => {
       }
     }
 
-    if (!isAssistantsEndpoint(endpointType ?? endpoint)) {
-      if (!agent_id) {
+    if (
+      !isAssistantsEndpoint(endpointType ?? endpoint) ||
+      endpoint === EModelEndpoint.e2bAssistants
+    ) {
+      if (!agent_id && endpoint !== EModelEndpoint.e2bAssistants) {
         formData.append('message_file', 'true');
       }
       const tool_resource = extendedFile.tool_resource;
@@ -193,6 +197,17 @@ const useFileHandling = (params?: UseFileHandling) => {
       }
       if (conversation?.agent_id != null && formData.get('agent_id') == null) {
         formData.append('agent_id', conversation.agent_id);
+      }
+
+      // For E2B: Use 'default' endpoint for simple storage without RAG indexing
+      // Mark as message_file to skip vector embedding
+      if (endpoint === EModelEndpoint.e2bAssistants) {
+        formData.set('endpoint', 'default');
+        formData.set('message_file', 'true');
+        // Store assistant_id for E2B context
+        if (conversation?.assistant_id) {
+          formData.append('e2b_assistant_id', conversation.assistant_id);
+        }
       }
 
       uploadFile.mutate(formData);

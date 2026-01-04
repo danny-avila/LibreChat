@@ -1,5 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { nanoid } = require('nanoid');
+const { sendEvent, sanitizeMessageForTransmit } = require('@librechat/api');
 const { 
   createE2BAssistantDoc, 
   getE2BAssistantDocs, 
@@ -8,6 +9,7 @@ const {
 } = require('~/models/E2BAssistant');
 const E2BDataAnalystAgent = require('~/server/services/Agents/e2bAgent');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
+const { saveMessage, getConvo } = require('~/models');
 
 /**
  * Creates an E2B Assistant.
@@ -113,7 +115,10 @@ const listAssistants = async (req, res) => {
     query.author = req.user.id;
     
     const assistants = await getE2BAssistantDocs(query);
-    res.json(assistants);
+    
+    // Return in the same format as OpenAI/Azure Assistants
+    // Frontend expects { data: [...] }
+    res.json({ data: assistants });
   } catch (error) {
     logger.error('[E2B Assistant] Error listing assistants:', error);
     res.status(500).json({ error: error.message });
@@ -215,24 +220,61 @@ const deleteAssistant = async (req, res) => {
 };
 
 /**
- * Chat endpoint.
+ * Chat endpoint with SSE streaming.
  */
 const chat = async (req, res) => {
   try {
     const assistant_id = req.params.assistant_id || req.body.assistant_id;
-    const { text, conversationId, parentMessageId } = req.body;
+    const { text, conversationId, parentMessageId, files } = req.body;
     
     if (!assistant_id) {
       return res.status(400).json({ error: 'Assistant ID is required' });
     }
     
     logger.info(`[E2B Assistant] Chat request: assistant=${assistant_id}, conversation=${conversationId}`);
+    if (files && files.length > 0) {
+      logger.info(`[E2B Assistant] Request contains ${files.length} files`);
+    }
     
     const assistants = await getE2BAssistantDocs({ id: assistant_id });
     if (!assistants || assistants.length === 0) {
       return res.status(404).json({ error: 'Assistant not found' });
     }
     const assistant = assistants[0];
+
+    // Set headers for SSE
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+
+    // Generate IDs
+    const userMessageId = nanoid();
+    const responseMessageId = nanoid();
+    const finalConversationId = conversationId || nanoid();
+
+    // Create user message
+    const userMessage = {
+      messageId: userMessageId,
+      conversationId: finalConversationId,
+      parentMessageId: parentMessageId || '00000000-0000-0000-0000-000000000000',
+      text,
+      isCreatedByUser: true,
+      sender: 'User',
+      user: req.user.id,
+    };
+
+    // Send created event (like other endpoints)
+    sendEvent(res, { 
+      message: userMessage, 
+      created: true 
+    });
+
+    // Save user message to database
+    await saveMessage(req, userMessage, { 
+      context: 'api/server/routes/e2bAssistants/controller.js - user message' 
+    });
 
     // Initialize OpenAI client
     const { openai } = await getOpenAIClient({ req, res });
@@ -242,28 +284,73 @@ const chat = async (req, res) => {
       res,
       openai,
       userId: req.user.id,
-      conversationId: conversationId || nanoid(),
+      conversationId: finalConversationId,
       assistant,
+      files,
     });
 
+    // Run the agent
     const result = await agent.processMessage(text);
     
+    logger.info(`[E2B Assistant] Agent finished. Final text length: ${result.text?.length}`);
+    
+    // Create response message
     const responseMessage = {
-      messageId: nanoid(),
-      conversationId: conversationId || nanoid(),
-      parentMessageId,
+      messageId: responseMessageId,
+      conversationId: finalConversationId,
+      parentMessageId: userMessageId,
       sender: assistant.name || 'E2B Agent',
       text: result.text,
       isCreatedByUser: false,
       error: false,
-      intermediateSteps: result.intermediateSteps,
+      unfinished: false,
+      user: req.user.id,
+      endpoint: 'e2bAssistants',
+      model: assistant.model || 'gpt-4o',
     };
 
-    res.json(responseMessage);
+    // Save response message to database
+    await saveMessage(req, responseMessage, { 
+      context: 'api/server/routes/e2bAssistants/controller.js - response message' 
+    });
+
+    // Get conversation data
+    let conversation = await getConvo(req.user.id, finalConversationId);
+    if (!conversation) {
+      conversation = {
+        conversationId: finalConversationId,
+        title: 'New Chat',
+        endpoint: 'e2bAssistants',
+        assistant_id,
+      };
+    }
+
+    // Send final event (matching other endpoints' format)
+    sendEvent(res, {
+      final: true,
+      conversation,
+      title: conversation.title || 'New Chat',
+      requestMessage: sanitizeMessageForTransmit(userMessage),
+      responseMessage: sanitizeMessageForTransmit(responseMessage),
+    });
+    
+    res.end();
 
   } catch (error) {
     logger.error('[E2B Assistant] Error in chat:', error);
-    res.status(500).json({ error: error.message });
+    // If headers sent, we must stream the error
+    if (res.headersSent) {
+      sendEvent(res, { 
+        message: {
+          text: `Error: ${error.message}`,
+          error: true,
+        },
+        error: true,
+      });
+      res.end();
+    } else {
+      res.status(500).json({ error: error.message });
+    }
   }
 };
 
