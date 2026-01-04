@@ -127,6 +127,15 @@ export default function useMentions({
           }),
         )
         .filter(Boolean),
+      [EModelEndpoint.e2bAssistants]: listMap[EModelEndpoint.e2bAssistants]
+        ?.map(
+          assistantMapFn({
+            endpoint: EModelEndpoint.e2bAssistants,
+            assistantMap,
+            endpointsConfig,
+          }),
+        )
+        .filter(Boolean),
     }),
     [listMap, assistantMap, endpointsConfig],
   );
@@ -216,6 +225,16 @@ export default function useMentions({
       includeAssistants &&
       interfaceConfig.modelSelect === true
         ? assistantListMap[EModelEndpoint.azureAssistants] || []
+        : []),
+      ...(endpointsConfig?.[EModelEndpoint.e2bAssistants] &&
+      includeAssistants &&
+      interfaceConfig.modelSelect === true
+        ? assistantListMap[EModelEndpoint.e2bAssistants] || []
+        : []),
+      ...(endpointsConfig?.[EModelEndpoint.e2bAssistants] &&
+      includeAssistants &&
+      interfaceConfig.modelSelect === true
+        ? assistantListMap[EModelEndpoint.e2bAssistants] || []
         : []),
       ...((interfaceConfig.modelSelect === true && interfaceConfig.presets === true
         ? presets

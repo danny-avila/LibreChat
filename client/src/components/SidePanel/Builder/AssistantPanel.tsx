@@ -112,19 +112,32 @@ export default function AssistantPanel({
 
   const create = useCreateAssistantMutation({
     onSuccess: (data) => {
-      setCurrentAssistantId(data.id);
-      showToast({
-        message: `${localize('com_assistants_create_success')} ${
-          data.name ?? localize('com_ui_assistant')
-        }`,
-      });
+      try {
+        console.log('[E2B Assistant] Created successfully:', data);
+        if (data && typeof data === 'object') {
+          setCurrentAssistantId(data.id);
+          showToast({
+            message: `${localize('com_assistants_create_success')} ${
+              data.name ?? localize('com_ui_assistant')
+            }`,
+          });
+        } else {
+          console.error('[E2B Assistant] Invalid data received in onSuccess:', data);
+          showToast({
+            message: localize('com_assistants_create_error'),
+            status: 'error',
+          });
+        }
+      } catch (error) {
+        console.error('[E2B Assistant] Error in onSuccess handler:', error);
+      }
     },
     onError: (err) => {
-      const error = err as Error;
+      const error = err as any;
+      console.error('[E2B Assistant] Creation error details:', error);
+      const detailedMessage = error.response?.data?.error || error.message || 'Unknown error';
       showToast({
-        message: `${localize('com_assistants_create_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
+        message: `${localize('com_assistants_create_error')}: ${detailedMessage}`,
         status: 'error',
       });
     },

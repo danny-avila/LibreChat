@@ -14,7 +14,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noImplicitAny": false,
-    "noEmit": false,
+    "emitDeclarationOnly": true,
     "declaration": true,
     "declarationDir": "./types",
     "jsx": "preserve",

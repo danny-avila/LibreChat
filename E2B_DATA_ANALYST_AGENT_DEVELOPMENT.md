@@ -198,25 +198,32 @@ LibreChat/
 
 ---
 
-## 9. 测试与验证
+## 9. 前端集成状态与已知问题 (2025-12-31)
 
-### 9.1 单元测试
-```bash
-cd api
-npx jest tests/e2b/codeExecutor.test.js
-npx jest tests/e2b/fileHandler.test.js
-```
+### 9.1 已完成的集成
+- **图标支持**: E2B Assistants 现在使用 Sparkles (✨) 图标。
+- **助手创建**: 修复了 JSON 解析错误，助手可以成功创建并保存到数据库。
+- **后端路由**: 补全了 `/documents` 和 `/tools` 端点，消除了前端 404 错误。
 
-### 9.2 端到端集成测试 (推荐)
-脚本 `api/tests/e2b/real_integration.js` 验证全链路逻辑（Controller -> Agent -> OpenAI -> E2B Sandbox）。
-**注意**：运行前请确保 `.env` 中已配置有效的 `E2B_SANDBOX_TEMPLATE`。
+### 9.2 待修复的 Bug (Known Issues)
 
-```bash
-node api/tests/e2b/real_integration.js
-```
+#### 🐛 1. 聊天无响应 (Tools Not Supported)
+- **现象**: 能够进入聊天界面，但在发送消息后，Loading 指示器一直转圈，无内容输出。后端日志显示 `404 tools is not supported in this model`。
+- **原因**: 当前 LLM 配置（OpenAI/Azure/Proxy）不支持 `gpt-4o` 模型的 Tool Calling 功能，或者模型名称映射错误。
+- **计划修复**: 检查 `.env` 中的 LLM 配置，确保指向支持 Tool Calling 的端点（如 OpenRouter 或官方 OpenAI）。
+
+#### 🐛 2. 端点菜单显示错误 (UI Bug)
+- **现象**: 在左上角 "New Chat" 下拉菜单中选择 "E2B Data Analyst" 时，二级菜单显示的是预设的模型列表（如 `gpt-4o`, `gpt-3.5-turbo`），而不是用户已创建的助手列表。
+- **期望行为**: 应该像 Azure Assistants 那样，显示 "My Assistants" 列表供用户选择。
+- **技术原因**: 前端 `useEndpoints.ts` 钩子中缺少对 `EModelEndpoint.e2bAssistants` 的特殊处理逻辑，导致其回退到了默认的模型列表渲染逻辑。
+
+#### 🐛 3. 助手构建器 UI 优化
+- **现状**: 助手构建器（Builder）右侧的配置面板中，模型选择器工作正常（用于选择基座模型）。
+- **说明**: 这是符合预期的，构建器中的模型选择是用于定义 Assistant 使用的底层模型。
 
 ---
 
 **创建日期**: 2025-12-23  
-**最后更新**: 2025-12-29  
-**当前状态**: 后端全链路已通。支持自定义模板和预装包。测试脚本已归档。
+**最后更新**: 2025-12-31  
+**当前状态**: 后端逻辑基本跑通，前端集成进行中，重点解决 LLM 配置和 UI 列表渲染问题。
+**当前分支**: `feature/e2b-integration`

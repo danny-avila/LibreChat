@@ -20,9 +20,18 @@ export default function useAssistantsMap({
       enabled: isAuthenticated,
     },
   );
+  const { data: e2bAssistants = {} } = useListAssistantsQuery(
+    EModelEndpoint.e2bAssistants,
+    undefined,
+    {
+      select: (res) => mapAssistants(res.data),
+      enabled: isAuthenticated,
+    },
+  );
 
   return {
     [EModelEndpoint.assistants]: assistants,
     [EModelEndpoint.azureAssistants]: azureAssistants,
+    [EModelEndpoint.e2bAssistants]: e2bAssistants,
   };
 }

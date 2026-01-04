@@ -66,6 +66,7 @@ export const icons: IconsRecord = {
   [EModelEndpoint.custom]: CustomMinimalIcon,
   [EModelEndpoint.assistants]: AssistantAvatar,
   [EModelEndpoint.azureAssistants]: AssistantAvatar,
+  [EModelEndpoint.e2bAssistants]: AssistantAvatar,
   [EModelEndpoint.agents]: AgentAvatar,
   [EModelEndpoint.bedrock]: Bedrock,
   unknown: UnknownIcon,

@@ -761,7 +761,7 @@ export const useCreateAssistantMutation = (
           return options?.onSuccess?.(newAssistant, variables, context);
         }
 
-        const currentAssistants = [newAssistant, ...JSON.parse(JSON.stringify(listRes.data))];
+        const currentAssistants = [newAssistant, ...JSON.parse(JSON.stringify(listRes.data ?? []))];
 
         queryClient.setQueryData<t.AssistantListResponse>(
           [QueryKeys.assistants, variables.endpoint, defaultOrderQuery],

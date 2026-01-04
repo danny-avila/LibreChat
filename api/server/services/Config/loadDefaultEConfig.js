@@ -18,6 +18,7 @@ async function loadDefaultEndpointsConfig(appConfig) {
     [EModelEndpoint.agents]: config[EModelEndpoint.agents],
     [EModelEndpoint.assistants]: assistants,
     [EModelEndpoint.azureAssistants]: azureAssistants,
+    [EModelEndpoint.e2bAssistants]: config[EModelEndpoint.e2bAssistants],
     [EModelEndpoint.azureOpenAI]: azureOpenAI,
     [EModelEndpoint.google]: google,
     [EModelEndpoint.anthropic]: config[EModelEndpoint.anthropic],

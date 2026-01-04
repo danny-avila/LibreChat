@@ -17,6 +17,8 @@ const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
  */
 const createAssistant = async (req, res) => {
   try {
+    logger.info('[E2B Assistant] CONTROLLER V3: Starting creation...');
+    
     const { 
       name, 
       description, 
@@ -28,6 +30,8 @@ const createAssistant = async (req, res) => {
       e2b_sandbox_template,
       allowed_libraries,
       conversation_starters,
+      tools,
+      tool_resources,
       // ...other fields
     } = req.body;
     
@@ -35,7 +39,7 @@ const createAssistant = async (req, res) => {
     
     // Default values if not provided
     const assistantData = {
-      id: nanoid(),
+      id: `asst_${nanoid()}`,
       name,
       description,
       instructions,
@@ -49,7 +53,8 @@ const createAssistant = async (req, res) => {
         max_cpu_percent: 80,
       },
       code_execution_mode: code_execution_mode || 'interactive',
-      e2b_sandbox_template: e2b_sandbox_template || 'python3-data-analysis',
+      // Use the specific ID provided in user config or default to a known template ID
+      e2b_sandbox_template: e2b_sandbox_template || 'xed696qfsyzpaei3ulh5',
       allowed_libraries: allowed_libraries || [
         'numpy', 'pandas', 'scipy', 'statsmodels', 
         'scikit-learn', 'xgboost', 'lightgbm',
@@ -59,6 +64,8 @@ const createAssistant = async (req, res) => {
         'requests', 'beautifulsoup4', 'networkx', 'sympy', 'yfinance', 'faker'
       ],
       conversation_starters: conversation_starters || [],
+      tools: tools || [],
+      tool_resources: tool_resources || {},
       // Access control defaults (to be refined by collaborators)
       is_public: false,
       access_level: 0,
@@ -67,7 +74,27 @@ const createAssistant = async (req, res) => {
     const assistant = await createE2BAssistantDoc(assistantData);
 
     logger.info(`[E2B Assistant] Created assistant: ${assistant.id}`);
-    res.status(201).json(assistant);
+    
+    // DEBUG: Ensure response is safe JSON and log it
+    const responseData = assistant.toObject ? assistant.toObject() : assistant;
+    
+    let safeData;
+    try {
+      // Remove potential circular refs or Map objects by stringifying
+      safeData = JSON.parse(JSON.stringify(responseData));
+    } catch (e) {
+      logger.error('[E2B Assistant] JSON serialization failed', e);
+      // Fallback to simple object
+      safeData = { 
+        id: assistant.id, 
+        name: assistant.name,
+        error: 'Serialization failed but created' 
+      };
+    }
+    
+    logger.info(`[E2B Assistant] Sending response: ${JSON.stringify(safeData).substring(0, 500)}...`);
+    
+    res.status(201).json(safeData);
   } catch (error) {
     logger.error('[E2B Assistant] Error creating assistant:', error);
     res.status(500).json({ error: error.message });
@@ -136,6 +163,10 @@ const updateAssistant = async (req, res) => {
     delete updateData.author;
     delete updateData.createdAt;
     delete updateData.updatedAt;
+
+    if (updateData.instructions) {
+      updateData.prompt = updateData.instructions;
+    }
     
     // Validate ownership before update
     const assistants = await getE2BAssistantDocs({ id: assistant_id });
@@ -188,8 +219,12 @@ const deleteAssistant = async (req, res) => {
  */
 const chat = async (req, res) => {
   try {
-    const { assistant_id } = req.params;
+    const assistant_id = req.params.assistant_id || req.body.assistant_id;
     const { text, conversationId, parentMessageId } = req.body;
+    
+    if (!assistant_id) {
+      return res.status(400).json({ error: 'Assistant ID is required' });
+    }
     
     logger.info(`[E2B Assistant] Chat request: assistant=${assistant_id}, conversation=${conversationId}`);
     
@@ -232,6 +267,33 @@ const chat = async (req, res) => {
   }
 };
 
+/**
+ * Gets documents for an assistant.
+ */
+const getAssistantDocuments = async (req, res) => {
+  try {
+    // E2B assistants currently don't store documents in the same way as OpenAI
+    // Return empty list for now to satisfy frontend
+    res.json([]);
+  } catch (error) {
+    logger.error('[E2B Assistant] Error getting documents:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Gets tools for an assistant.
+ */
+const getAssistantTools = async (req, res) => {
+  try {
+    // Return empty list or default tools
+    res.json([]);
+  } catch (error) {
+    logger.error('[E2B Assistant] Error getting tools:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   createAssistant,
   listAssistants,
@@ -239,4 +301,6 @@ module.exports = {
   updateAssistant,
   deleteAssistant,
   chat,
+  getAssistantDocuments,
+  getAssistantTools,
 };

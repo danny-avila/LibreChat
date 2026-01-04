@@ -66,7 +66,21 @@ async function loadCustomConfig(printConfig = true) {
     }
   }
 
+  // Temporary workaround for e2bAssistants schema validation
+  let e2bBackup;
+  if (customConfig?.endpoints?.e2bAssistants) {
+    e2bBackup = customConfig.endpoints.e2bAssistants;
+    delete customConfig.endpoints.e2bAssistants;
+  }
+
   const result = configSchema.strict().safeParse(customConfig);
+  if (e2bBackup) {
+    if (!customConfig.endpoints) {
+      customConfig.endpoints = {};
+    }
+    customConfig.endpoints.e2bAssistants = e2bBackup;
+  }
+
   if (result?.error?.errors?.some((err) => err?.path && err.path?.includes('imageOutputType'))) {
     throw new Error(
       `

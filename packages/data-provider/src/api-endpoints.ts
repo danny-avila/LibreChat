@@ -1,4 +1,5 @@
 import type { AssistantsEndpoint } from './schemas';
+import { EModelEndpoint } from './schemas';
 import * as q from './types/queries';
 import { ResourceType } from './accessPermissions';
 
@@ -190,7 +191,15 @@ export const assistants = ({
   version: number | string;
   isAvatar?: boolean;
 }) => {
-  let url = isAvatar === true ? `${images()}/assistants` : `${BASE_URL}/api/assistants/v${version}`;
+  const targetEndpoint = endpoint || (options as { endpoint?: AssistantsEndpoint })?.endpoint;
+  let url = '';
+  if (isAvatar === true) {
+    url = `${images()}/assistants`;
+  } else if (targetEndpoint === EModelEndpoint.e2bAssistants) {
+    url = `${BASE_URL}/api/e2b-assistants`;
+  } else {
+    url = `${BASE_URL}/api/assistants/v${version}`;
+  }
 
   if (path && path !== '') {
     url += `/${path}`;

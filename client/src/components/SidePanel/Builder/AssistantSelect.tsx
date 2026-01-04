@@ -76,8 +76,12 @@ export default function AssistantSelect({
   const query = useListAssistantsQuery(endpoint, undefined, {
     select: (res) =>
       res.data.map((_assistant) => {
-        const source =
-          endpoint === EModelEndpoint.assistants ? FileSources.openai : FileSources.azure;
+        let source = FileSources.openai;
+        if (endpoint === EModelEndpoint.azureAssistants) {
+          source = FileSources.azure;
+        } else if (endpoint === EModelEndpoint.e2bAssistants) {
+          source = FileSources.local;
+        }
         const assistant: TAssistantOption = {
           ..._assistant,
           label: _assistant.name ?? '',

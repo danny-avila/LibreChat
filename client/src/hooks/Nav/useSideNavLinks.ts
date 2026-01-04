@@ -79,7 +79,10 @@ export default function useSideNavLinks({
         endpointsConfig[EModelEndpoint.assistants].disableBuilder !== true) ||
         (endpoint === EModelEndpoint.azureAssistants &&
           endpointsConfig?.[EModelEndpoint.azureAssistants] &&
-          endpointsConfig[EModelEndpoint.azureAssistants].disableBuilder !== true)) &&
+          endpointsConfig[EModelEndpoint.azureAssistants].disableBuilder !== true) ||
+        (endpoint === EModelEndpoint.e2bAssistants &&
+          endpointsConfig?.[EModelEndpoint.e2bAssistants] &&
+          endpointsConfig[EModelEndpoint.e2bAssistants].disableBuilder !== true)) &&
       keyProvided
     ) {
       links.push({

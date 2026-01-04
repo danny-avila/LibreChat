@@ -206,7 +206,7 @@ export const createAssistant = ({
   version,
   ...data
 }: a.AssistantCreateParams): Promise<a.Assistant> => {
-  return request.post(endpoints.assistants({ version }), data);
+  return request.post(endpoints.assistants({ version, endpoint: data.endpoint }), data);
 };
 
 export const getAssistantById = ({
@@ -240,6 +240,7 @@ export const updateAssistant = ({
     endpoints.assistants({
       path: assistant_id,
       version,
+      endpoint: data.endpoint,
     }),
     data,
   );

@@ -42,6 +42,10 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     },
     [EModelEndpoint.assistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
     [EModelEndpoint.azureAssistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
+    [EModelEndpoint.e2bAssistants]: {
+      icon: <Sparkles className="icon-sm" />,
+      name: alternateName[EModelEndpoint.e2bAssistants],
+    },
     [EModelEndpoint.agents]: {
       icon: <Feather className="icon-sm" aria-hidden="true" />,
       name: props.modelLabel ?? alternateName[EModelEndpoint.agents],

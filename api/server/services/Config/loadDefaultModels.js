@@ -54,6 +54,7 @@ async function loadDefaultModels(req) {
       [EModelEndpoint.azureOpenAI]: azureOpenAI,
       [EModelEndpoint.assistants]: assistants,
       [EModelEndpoint.azureAssistants]: azureAssistants,
+      [EModelEndpoint.e2bAssistants]: assistants,
       [EModelEndpoint.bedrock]: bedrock,
     };
   } catch (error) {

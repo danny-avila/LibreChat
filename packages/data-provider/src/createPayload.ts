@@ -24,8 +24,8 @@ export default function createPayload(submission: t.TSubmission) {
   let server = `${EndpointURLs[s.EModelEndpoint.agents]}/${endpoint}`;
   if (s.isAssistantsEndpoint(endpoint)) {
     server =
-      EndpointURLs[(endpointType ?? endpoint) as 'assistants' | 'azureAssistants'] +
-      (isEdited ? '/modify' : '');
+      EndpointURLs[(endpointType ?? endpoint) as 'assistants' | 'azureAssistants' | 'e2bAssistants'] +
+      (isEdited && endpoint !== s.EModelEndpoint.e2bAssistants ? '/modify' : '');
   }
 
   const payload: t.TPayload = {

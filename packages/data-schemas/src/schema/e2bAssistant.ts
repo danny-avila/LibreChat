@@ -29,6 +29,8 @@ interface IE2BAssistantData {
   
   // 文件和工具
   file_ids?: string[];
+  tools?: any[];
+  tool_resources?: any;
   conversation_starters?: string[];
   
   // 访问控制 - 由协作人员实现
