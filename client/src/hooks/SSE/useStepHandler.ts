@@ -532,7 +532,13 @@ export default function useStepHandler({
           const progressData = runStepDelta.delta;
           const conversationId =
             submission?.initialResponse?.conversationId || userMessage.conversationId;
-          if (progressData.serverName && progressData.toolName && conversationId) {
+          if (
+            progressData.serverName &&
+            progressData.toolName &&
+            progressData.progressToken &&
+            progressData.progress != null &&
+            conversationId
+          ) {
             // Set active state when receiving progress updates
             setMcpActive((current) => ({
               ...current,

@@ -242,22 +242,19 @@ export namespace Agents {
     type: StepTypes.TOOL_CALLS;
     tool_calls: AgentToolCall[];
   };
-  export type ToolCallDelta =
-    | {
-        type: StepTypes.TOOL_CALLS | string;
-        tool_calls?: ToolCallChunk[];
-        auth?: string;
-        expires_at?: number;
-      }
-    | {
-        type: 'progress';
-        progressToken: string;
-        serverName: string;
-        toolName: string;
-        progress: number;
-        total?: number;
-        message?: string;
-      };
+  export type ToolCallDelta = {
+    type: StepTypes.TOOL_CALLS | string;
+    tool_calls?: ToolCallChunk[];
+    auth?: string;
+    expires_at?: number;
+    // Progress-related fields for MCP tools
+    progressToken?: string;
+    serverName?: string;
+    toolName?: string;
+    progress?: number;
+    total?: number;
+    message?: string;
+  };
   export type AgentToolCall = FunctionToolCall | ToolCall;
   export interface ExtendedMessageContent {
     type?: string;
