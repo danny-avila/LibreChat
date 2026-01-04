@@ -63,20 +63,9 @@ export default function ToolCall({
     };
   }, [name]);
 
-  // old:
-  // const error =
-  //   typeof output === 'string' && output.toLowerCase().includes('error processing tool');
+  const error =
+    typeof output === 'string' && output.toLowerCase().includes('error processing tool');
 
-  // Check for error using the isError flag from the MCP protocol
-  const error = useMemo(() => {
-    // If isError field is explicitly set (from MCP protocol), use it
-    if (typeof toolIsError === 'boolean') {
-      return toolIsError;
-    }
-    // Fallback: check if the response is a string containing "error"
-    // This is kept for backwards compatibility with non-MCP tools
-    return typeof output === 'string' && output.toLowerCase().includes('error processing tool');
-  }, [toolIsError, output]);
 
   const args = useMemo(() => {
     if (typeof _args === 'string') {
