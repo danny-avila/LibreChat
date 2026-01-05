@@ -11,6 +11,8 @@ import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@
 import { LangSelector } from '../Nav/SettingsTabs/General/General';
 import { LanguageOption } from '~/common';
 import Cookies from 'js-cookie';
+import { useRecoilState } from 'recoil';
+import store from '~/store';
 
 function AuthLayout({
   children,
@@ -34,13 +36,13 @@ function AuthLayout({
   const [isLangOpen, setIsLangOpen] = useState(() => {
     return !localStorage.getItem('lang_selected');
   });
-  const [langcode, setLangcode] = useState(
-    () => localStorage.getItem('lang') || 'en-US'
-  );
+  const [langcode, setLangcode] = useRecoilState(store.lang);
+
 
   const languageOptions: LanguageOption[] = [
     { value: 'en-US', label: 'English' },
     { value: 'pa', label: 'ਪੰਜਾਬੀ' },
+    { value: 'zh-Hant', label: 'test' },
   ];
 
 
