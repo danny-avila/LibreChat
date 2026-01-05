@@ -161,8 +161,9 @@ Option B: Local MongoDB
 MONGO_URI=mongodb://localhost:27017/LibreChat
 - Ensure MongoDB is running locally on port 27017
 1. Install Dependencies
-bash
+```bash
 npm install
+```
 2. Run the Application
 Development Mode (Recommended for testing):
 ```bash
@@ -179,8 +180,42 @@ npm run frontend
 # Start the backend
      npm run backend
 ```
-    1. Access the Application
-Open your browser and navigate to:
+## Common Development Commands (to build all from scratch)
+### Installation and Setup
+
+```bash
+# Install dependencies
+npm ci
+
+# Build packages in order (required before first run)
+npm run build:data-provider
+npm run build:data-schemas
+npm run build:api
+npm run build:client-package
+
+# Or build all packages at once
+npm run build:packages
+```
+
+### Running the Application
+
+```bash
+# Development mode (recommended) - runs both frontend and backend
+npm run dev
+
+# Or run separately:
+npm run backend:dev    # Backend on port 3080
+npm run frontend:dev   # Frontend dev server
+
+# Production mode
+npm run frontend       # Build frontend
+npm run backend        # Start backend
+```
+
+### Next
+1. Access the Application
+
+Open a browser and navigate to:
 - Development: http://localhost:3080
 - Production: Your configured DOMAIN_CLIENT from .env
 
@@ -192,7 +227,9 @@ Open your browser and navigate to:
 - API tests: cd api &amp;&amp; npm run test:ci
 
 ### Troubleshooting
-MongoDB Connection Issues: - Verify your MONGO_URI in the .env file is correct - Check if MongoDB service is running - For Atlas: Ensure IP whitelist is configured - Check firewall settings if using
+MongoDB Connection Issues: 
+- Verify your MONGO_URI in the .env file is correct 
+- Check if MongoDB service is running - For Atlas: Ensure IP whitelist is configured - Check firewall settings if using
 local MongoDB
 
 ### Port Conflicts:
