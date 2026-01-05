@@ -172,3 +172,4 @@ claude-flow
 hive-mind-prompt-*.txt
 
 **/*.env
+**/cdk.context.json

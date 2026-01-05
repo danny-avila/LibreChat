@@ -11,11 +11,19 @@ jobs:
     environment:
       name: prod
     steps:
-      - name: Fail if branch is not prod
-        if: github.ref != 'refs/heads/prod'
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Ensure tag is reachable from prod
         run: |
-          echo "This workflow should not be triggered with workflow_dispatch on a branch other than prod"
-          exit 1
+          TAG_COMMIT=$(git rev-list -n 1 "$GITHUB_REF_NAME")
+
+          if git merge-base --is-ancestor "$TAG_COMMIT" origin/prod; then
+            echo "Tag is reachable from prod"
+          else
+            echo "Tag is NOT reachable from prod"
+            exit 1
+          fi
 
       - name: Validate tag prefix
         run: |
