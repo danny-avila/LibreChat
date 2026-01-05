@@ -135,6 +135,73 @@
 
 [For a thorough review of our features, see our docs here](https://docs.librechat.ai/) 📚
 
+## Quick Start
+### Run the App
+- Navigate to the Project Directory
+
+- Create and Configure .env File:
+
+- Copy the contents of .env.example to a new file named .env.
+Fill in any necessary values.
+For an in-depth environment configuration, see the .env File Configuration Guide.
+Start the Application:
+
+Run the following command:
+```bash 
+docker compose up -d
+```
+
+### Dev Environment
+1. MongoDB Configuration
+Before running the application, ensure your MongoDB connection is properly configured:
+Option A: MongoDB Atlas (Cloud)    - Add your IP address to the MongoDB Atlas whitelist    - Visit: https://cloud.mongodb.com/    - Navigate to: Network Access → Add IP Address    - Add your current IP
+or use 0.0.0.0/0 for testing (not recommended for production)
+Option B: Local MongoDB
+- Update the MONGO_URI in your .env file:
+MONGO_URI=mongodb://localhost:27017/LibreChat
+- Ensure MongoDB is running locally on port 27017
+1. Install Dependencies
+bash
+npm install
+2. Run the Application
+Development Mode (Recommended for testing):
+```bash
+# Run both frontend and backend together
+npm run dev
+# Or run separately:
+     npm run backend:dev    # Backend server on port 3080
+     npm run frontend:dev   # Frontend development server
+```
+### Production Mode:
+```bash
+# Build the frontend
+npm run frontend
+# Start the backend
+     npm run backend
+```
+    1. Access the Application
+Open your browser and navigate to:
+- Development: http://localhost:3080
+- Production: Your configured DOMAIN_CLIENT from .env
+
+### Additional Commands
+- Build only the client: npm run build:client
+- Build packages: npm run build:packages
+- Run tests:
+- Client tests: cd client &amp;&amp; npm run test:ci
+- API tests: cd api &amp;&amp; npm run test:ci
+
+### Troubleshooting
+MongoDB Connection Issues: - Verify your MONGO_URI in the .env file is correct - Check if MongoDB service is running - For Atlas: Ensure IP whitelist is configured - Check firewall settings if using
+local MongoDB
+
+### Port Conflicts:
+- Default port is 3080. Change PORT in .env if needed
+- Ensure no other services are using the same port
+  For detailed setup instructions, visit our Installation Guide① .
+  [1] https://docs.librechat.ai/install
+
+
 ## 🪶 All-In-One AI Conversations with LibreChat
 
 LibreChat brings together the future of assistant AIs with the revolutionary technology of OpenAI's ChatGPT. Celebrating the original styling, LibreChat gives you the ability to integrate multiple AI models. It also integrates and enhances original client features such as conversation and message search, prompt templates and plugins.
