@@ -342,6 +342,7 @@ export type TAskProps = {
   conversationId?: string | null;
   messageId?: string | null;
   clientTimestamp?: string;
+  position?: { latitude: number; longitude: number }
 };
 
 export type TOptions = {

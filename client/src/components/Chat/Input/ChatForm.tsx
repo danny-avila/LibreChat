@@ -19,7 +19,7 @@ import {
   useSubmitMessage,
   useFocusChatEffect,
 } from '~/hooks';
-import { mainTextareaId, BadgeItem } from '~/common';
+import { mainTextareaId, BadgeItem, TAskProps } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';
 import { cn, removeFocusRings } from '~/utils';
@@ -46,6 +46,12 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const [visualRowCount, setVisualRowCount] = useState(1);
   const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
   const [backupBadges, setBackupBadges] = useState<Pick<BadgeItem, 'id'>[]>([]);
+
+
+  // Location access state
+  const [position, setPosition] = useState<TAskProps['position'] | null>(null);
+  const [locationAllowed, setLocationAllowed] = useState(false);
+
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
@@ -201,9 +207,37 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     [isCollapsed, isMoreThanThreeRows],
   );
 
+  // Location permission
+  useEffect(() => {
+    // Request location only if not already allowed
+    if (!locationAllowed) {
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            try {
+              const { latitude, longitude } = pos.coords;
+              setPosition({ latitude, longitude });
+              setLocationAllowed(true);
+            } catch (err) {
+              console.error('Error fetching location data:', err);
+            }
+          },
+          (error) => {
+            console.error('Geolocation error:', error);
+            setLocationAllowed(false);
+          },
+        );
+      } else {
+        console.warn('Geolocation is not supported by your browser.');
+      }
+    }
+  }, [locationAllowed]);
+
   return (
     <form
-      onSubmit={methods.handleSubmit(submitMessage)}
+      onSubmit={methods.handleSubmit((data) =>
+        submitMessage(data, position ? position : undefined),
+      )}
       className={cn(
         'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:px-2',
         maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',

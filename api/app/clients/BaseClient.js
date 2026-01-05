@@ -592,6 +592,7 @@ class BaseClient {
 
   async sendMessage(message, opts = {}) {
     const appConfig = this.options.req?.config;
+    
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =

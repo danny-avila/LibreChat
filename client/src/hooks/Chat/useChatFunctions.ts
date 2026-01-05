@@ -82,6 +82,7 @@ export default function useChatFunctions({
       parentMessageId = null,
       conversationId = null,
       messageId = null,
+      position
     },
     {
       editedContent = null,
@@ -200,8 +201,13 @@ export default function useChatFunctions({
     }
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
+    const positionText =
+      position && position.latitude && position.longitude
+        ? `\n\n(location): latitude:${position.latitude}, longitude:${position.longitude})`
+        : '';
+
     const currentMsg: TMessage = {
-      text,
+      text: `${text}${positionText}`,
       sender: 'User',
       clientTimestamp: new Date().toLocaleString('sv').replace(' ', 'T'),
       isCreatedByUser: true,
