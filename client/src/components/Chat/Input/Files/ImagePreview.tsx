@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { Button } from '@librechat/client';
 import { Maximize2, X } from 'lucide-react';
 import { FileSources } from 'librechat-data-provider';
-import { Button } from '@librechat/client';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import ProgressCircle from './ProgressCircle';
 import SourceIcon from './SourceIcon';
 import { cn } from '~/utils';
