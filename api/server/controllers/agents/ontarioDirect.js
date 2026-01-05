@@ -97,9 +97,29 @@ async function ontarioDirectHandler(req, res) {
     conversationId: convoId,
     parentMessageId: parentMessageId ?? Constants.NO_PARENT,
   };
-  await saveMessage(req, userMessage, {
-    context: 'api/server/controllers/agents/ontarioDirect.js - user message',
-  });
+  try {
+    logger.info('[Ontario] Saving user message', {
+      conversationId: convoId,
+      messageId: userMessageId,
+      userId,
+    });
+    await saveMessage(req, userMessage, {
+      context: 'api/server/controllers/agents/ontarioDirect.js - user message',
+    });
+    logger.info('[Ontario] Saved user message', {
+      conversationId: convoId,
+      messageId: userMessageId,
+      userId,
+    });
+  } catch (error) {
+    logger.error('[Ontario] Failed to save user message', {
+      conversationId: convoId,
+      messageId: userMessageId,
+      userId,
+      error,
+    });
+    throw error;
+  }
   req.traceStep?.('ontario_direct_user_saved');
 
   // Run completion
@@ -162,9 +182,29 @@ async function ontarioDirectHandler(req, res) {
   };
 
   // Save response message
-  await saveMessage(req, responseMessage, {
-    context: 'api/server/controllers/agents/ontarioDirect.js - response',
-  });
+  try {
+    logger.info('[Ontario] Saving response message', {
+      conversationId: convoId,
+      messageId: responseMessageId,
+      userId,
+    });
+    await saveMessage(req, responseMessage, {
+      context: 'api/server/controllers/agents/ontarioDirect.js - response',
+    });
+    logger.info('[Ontario] Saved response message', {
+      conversationId: convoId,
+      messageId: responseMessageId,
+      userId,
+    });
+  } catch (error) {
+    logger.error('[Ontario] Failed to save response message', {
+      conversationId: convoId,
+      messageId: responseMessageId,
+      userId,
+      error,
+    });
+    throw error;
+  }
   req.traceStep?.('ontario_direct_response_saved');
 
   // Emit final event
