@@ -47,7 +47,7 @@ const isProd = process.env.AWS_ENV?.includes("prod") ? true : false; // looks ja
 const tagEnv = isProd ? "production" : "development";
 
 const envVars = {
-  domainName : isProd ? "ai-assistant.nj.gov" : "dev.ai-assistant.nj.gov",
+  domainName : isProd ? "prod.ai-assistant.nj.gov" : "dev.ai-assistant.nj.gov",
   env: isProd ? "prod" : "dev", 
   isProd: isProd
 }
