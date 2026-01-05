@@ -140,6 +140,10 @@ const messageSchema: Schema<IMessage> = new Schema(
     expiredAt: {
       type: Date,
     },
+    addedConvo: {
+      type: Boolean,
+      default: undefined,
+    },
   },
   { timestamps: true },
 );

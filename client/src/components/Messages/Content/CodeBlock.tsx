@@ -112,7 +112,7 @@ const FloatingCodeBar: React.FC<FloatingCodeBarProps> = React.memo(
         ) : (
           <>
             {allowExecution === true && (
-              <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} />
+              <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} iconOnly />
             )}
             <TooltipAnchor
               description={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}

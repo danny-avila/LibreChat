@@ -1,8 +1,8 @@
-import { useState, useMemo, memo, useCallback, useRef } from 'react';
+import { useState, useMemo, memo, useCallback, useRef, type MouseEvent } from 'react';
 import { useAtomValue } from 'jotai';
 import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
-import type { MouseEvent, FocusEvent, FC } from 'react';
+import type { FocusEvent, FC } from 'react';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
 import { useLocalize } from '~/hooks';
@@ -122,7 +122,7 @@ export const ThinkingButton = memo(
 );
 
 /**
- * FloatingThinkingBar - Floating bar with expand/collapse button
+ * FloatingThinkingBar - Floating bar with expand/collapse and copy buttons
  * Shows on hover/focus, positioned at bottom right of thinking content
  * Inspired by CodeBlock's FloatingCodeBar pattern
  */
@@ -131,15 +131,35 @@ export const FloatingThinkingBar = memo(
     isVisible,
     isExpanded,
     onClick,
+    content,
   }: {
     isVisible: boolean;
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
+    content?: string;
   }) => {
     const localize = useLocalize();
-    const tooltipText = isExpanded
+    const [isCopied, setIsCopied] = useState(false);
+
+    const handleCopy = useCallback(
+      (e: MouseEvent<HTMLButtonElement>) => {
+        e.stopPropagation();
+        if (content) {
+          navigator.clipboard.writeText(content);
+          setIsCopied(true);
+          setTimeout(() => setIsCopied(false), 2000);
+        }
+      },
+      [content],
+    );
+
+    const collapseTooltip = isExpanded
       ? localize('com_ui_collapse_thoughts')
       : localize('com_ui_expand_thoughts');
+
+    const copyTooltip = isCopied
+      ? localize('com_ui_copied_to_clipboard')
+      : localize('com_ui_copy_thoughts_to_clipboard');
 
     return (
       <div
@@ -149,13 +169,13 @@ export const FloatingThinkingBar = memo(
         )}
       >
         <TooltipAnchor
-          description={tooltipText}
+          description={collapseTooltip}
           render={
             <button
               type="button"
               tabIndex={isVisible ? 0 : -1}
               onClick={onClick}
-              aria-label={tooltipText}
+              aria-label={collapseTooltip}
               className={cn(
                 'flex items-center justify-center rounded-lg bg-surface-secondary p-1.5 text-text-secondary-alt shadow-sm',
                 'hover:bg-surface-hover hover:text-text-primary',
@@ -170,6 +190,30 @@ export const FloatingThinkingBar = memo(
             </button>
           }
         />
+        {content && (
+          <TooltipAnchor
+            description={copyTooltip}
+            render={
+              <button
+                type="button"
+                tabIndex={isVisible ? 0 : -1}
+                onClick={handleCopy}
+                aria-label={copyTooltip}
+                className={cn(
+                  'flex items-center justify-center rounded-lg bg-surface-secondary p-1.5 text-text-secondary-alt shadow-sm',
+                  'hover:bg-surface-hover hover:text-text-primary',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+                )}
+              >
+                {isCopied ? (
+                  <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
+                ) : (
+                  <Clipboard size="18" aria-hidden="true" />
+                )}
+              </button>
+            }
+          />
+        )}
       </div>
     );
   },
@@ -265,6 +309,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
             isVisible={isBarVisible && isExpanded}
             isExpanded={isExpanded}
             onClick={handleClick}
+            content={textContent}
           />
         </div>
       </div>

@@ -1553,23 +1553,19 @@ describe('MCP Routes', () => {
       );
     });
 
-    it('should create MCP server with valid stdio config', async () => {
-      const validConfig = {
+    it('should reject stdio config for security reasons', async () => {
+      const stdioConfig = {
         type: 'stdio',
         command: 'node',
         args: ['server.js'],
         title: 'Test Stdio Server',
       };
 
-      mockRegistryInstance.addServer.mockResolvedValue({
-        serverName: 'test-stdio-server',
-        config: validConfig,
-      });
+      const response = await request(app).post('/api/mcp/servers').send({ config: stdioConfig });
 
-      const response = await request(app).post('/api/mcp/servers').send({ config: validConfig });
-
-      expect(response.status).toBe(201);
-      expect(response.body.serverName).toBe('test-stdio-server');
+      // Stdio transport is not allowed via API - only admins can configure it via YAML
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
     });
 
     it('should return 400 for invalid configuration', async () => {

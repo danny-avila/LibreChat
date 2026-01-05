@@ -427,6 +427,22 @@ endpoints:
       forcePrompt: false
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
+
+  # AWS Bedrock Example
+  # Note: Bedrock endpoint is configured via environment variables
+  # bedrock:
+  #   # Guardrail Configuration
+  #   guardrailConfig:
+  #     guardrailIdentifier: "your-guardrail-id"
+  #     guardrailVersion: "1"
+  #     
+  #     # Trace behavior for debugging (optional)
+  #     # - "enabled": Include basic trace information about guardrail assessments
+  #     # - "enabled_full": Include comprehensive trace details (recommended for debugging)
+  #     # - "disabled": No trace information (default)
+  #     # Trace output is logged to application log files for compliance auditing
+  #     trace: "enabled"
+
 # Example modelSpecs configuration showing grouping options
 # The 'group' field organizes model specs in the UI selector:
 # - If 'group' matches an endpoint name (e.g., "openAI", "groq"), the spec appears nested under that endpoint
