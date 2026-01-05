@@ -48,15 +48,12 @@ const ImagePreview = ({
     }
   }, []);
 
-  // Handle click on background areas to close
+  // Handle click on background areas to close (only if clicking the overlay/content directly)
   const handleBackgroundClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLElement;
-      // Don't close if clicking on interactive elements
-      if (target.closest('button') || target.closest('img') || imageRef.current?.contains(target)) {
-        return;
+      if (e.target === e.currentTarget) {
+        handleOpenChange(false);
       }
-      handleOpenChange(false);
     },
     [handleOpenChange],
   );

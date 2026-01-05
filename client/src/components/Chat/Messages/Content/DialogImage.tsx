@@ -160,17 +160,11 @@ export default function DialogImage({
     setIsDragging(false);
   }, []);
 
-  // Handle click on empty areas to close (overlay or content background)
+  // Handle click on empty areas to close (only if clicking overlay/content directly, not children)
   const handleBackgroundClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLElement;
-      // Don't close if clicking on interactive elements
-      if (
-        target.closest('button') ||
-        target.closest('[data-side-panel]') ||
-        target.closest('img') ||
-        imageRef.current?.contains(target)
-      ) {
+      // Only close if clicking directly on overlay/content background
+      if (e.target !== e.currentTarget) {
         return;
       }
       // Don't close if zoomed (user might be panning)
@@ -234,10 +228,13 @@ export default function DialogImage({
     ? localize('com_ui_hide_image_details')
     : localize('com_ui_show_image_details');
 
-  // Calculate image max dimensions accounting for side panel
+  // Calculate image max dimensions accounting for side panel (w-80 = 320px)
   const getImageMaxWidth = () => {
     if (isPromptOpen) {
-      return 'calc(90vw - 320px)';
+      // On mobile, panel overlays so use full width; on desktop, subtract panel width
+      return typeof window !== 'undefined' && window.innerWidth >= 640
+        ? 'calc(90vw - 320px)'
+        : '90vw';
     }
     return '90vw';
   };
@@ -280,7 +277,7 @@ export default function DialogImage({
             />
           </div>
 
-          {/* Action buttons - top right */}
+          {/* Action buttons - top right (336px = 320px panel + 16px gap) */}
           <div
             className={`absolute top-4 z-20 flex items-center gap-2 transition-[right] duration-300 ${isPromptOpen ? 'right-[336px]' : 'right-4'}`}
           >
