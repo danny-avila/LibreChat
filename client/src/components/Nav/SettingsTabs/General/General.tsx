@@ -6,6 +6,7 @@ import ArchivedChats from './ArchivedChats';
 import ToggleSwitch from '../ToggleSwitch';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
+import { LanguageOption } from '~/common';
 
 const toggleSwitchConfigs = [
   {
@@ -79,14 +80,16 @@ export const LangSelector = ({
   langcode,
   onChange,
   portal = true,
+  defaultLanguageOptions,
 }: {
   langcode: string;
   onChange: (value: string) => void;
   portal?: boolean;
+  defaultLanguageOptions?: LanguageOption[];
 }) => {
   const localize = useLocalize();
 
-  const languageOptions = [
+  const languageOptions:LanguageOption[] = [
     { value: 'auto', label: localize('com_nav_lang_auto') },
     { value: 'en-US', label: localize('com_nav_lang_english') },
     { value: 'zh-Hans', label: localize('com_nav_lang_chinese') },
@@ -130,14 +133,14 @@ export const LangSelector = ({
   const labelId = 'language-selector-label';
 
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between text-gray-700 dark:text-gray-100">
       <div id={labelId}>{localize('com_nav_language')}</div>
 
       <Dropdown
         value={langcode}
         onChange={onChange}
         sizeClasses="[--anchor-max-height:256px] max-h-[60vh]"
-        options={languageOptions}
+        options={defaultLanguageOptions || languageOptions}
         className="z-50"
         aria-labelledby={labelId}
         portal={portal}
