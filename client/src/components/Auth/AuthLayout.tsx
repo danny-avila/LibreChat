@@ -6,6 +6,13 @@ import SocialLoginRender from './SocialLoginRender';
 import { BlinkAnimation } from './BlinkAnimation';
 import { Banner } from '../Banners';
 import Footer from './Footer';
+import { useCallback, useState } from 'react';
+import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
+import { LangSelector } from '../Nav/SettingsTabs/General/General';
+import { LanguageOption } from '~/common';
+import Cookies from 'js-cookie';
+import { useRecoilState } from 'recoil';
+import store from '~/store';
 
 function AuthLayout({
   children,
@@ -25,6 +32,41 @@ function AuthLayout({
   error: TranslationKeys | null;
 }) {
   const localize = useLocalize();
+
+  const [isLangOpen, setIsLangOpen] = useState(() => {
+    return !localStorage.getItem('lang_selected');
+  });
+  const [langcode, setLangcode] = useRecoilState(store.lang);
+
+
+  const languageOptions: LanguageOption[] = [
+    { value: 'auto', label: 'Auto' },
+    { value: 'en-US', label: 'English' },
+    { value: 'pa', label: 'ਪੰਜਾਬੀ' },
+  ];
+
+
+  const handleLangChange = useCallback(
+    (value: string) => {
+      let userLang = value;
+      if (value === 'auto') {
+        userLang =
+          (typeof navigator !== 'undefined'
+            ? navigator.language || navigator.languages?.[0]
+            : null) ?? 'en-US';
+      }
+
+      requestAnimationFrame(() => {
+        document.documentElement.lang = userLang;
+      });
+
+      setLangcode(userLang);
+      localStorage.setItem('lang_selected', 'true');
+      setIsLangOpen(false);
+      Cookies.set('lang', userLang, { expires: 365 });
+    },
+    [setLangcode],
+  );
 
   const hasStartupConfigError = startupConfigError !== null && startupConfigError !== undefined;
   const DisplayError = () => {
@@ -58,6 +100,86 @@ function AuthLayout({
 
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
+
+
+      <Transition appear show={isLangOpen}>
+        <Dialog
+          as="div"
+          className="relative z-50"
+          onClose={() => {
+            handleLangChange("auto");
+            setIsLangOpen(false);
+          }}
+        > {/* Backdrop */}
+          <TransitionChild
+            enter="ease-out duration-200"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black/40 dark:bg-black/70" />
+          </TransitionChild>
+
+          {/* Panel */}
+          <TransitionChild
+            enter="ease-out duration-200"
+            enterFrom="opacity-0 scale-95"
+            enterTo="opacity-100 scale-100"
+            leave="ease-in duration-100"
+            leaveFrom="opacity-100 scale-100"
+            leaveTo="opacity-0 scale-95"
+          >
+            <div className="fixed inset-0 flex items-center justify-center p-4">
+              <DialogPanel
+                className="
+            w-full max-w-sm
+            rounded-2xl
+            bg-white dark:bg-gray-900
+            p-6
+            shadow-2xl
+            ring-1 ring-black/5 dark:ring-white/10
+          "
+              >
+                <DialogTitle className="mb-5 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    Select Language
+                  </h2>
+
+                  <button
+                    onClick={() => setIsLangOpen(false)}
+                    className="
+                rounded-md p-1
+                text-gray-500 hover:text-gray-900
+                dark:text-gray-400 dark:hover:text-gray-100
+                transition
+              "
+                    aria-label="Close"
+                  >
+                    ✕
+                  </button>
+                </DialogTitle>
+
+                <LangSelector
+                  langcode={langcode}
+                  // onChange={(value) => {
+                  //   localStorage.setItem('lang', value);
+                  //   localStorage.setItem('lang_selected', 'true');
+                  //   setLangcode(value);
+                  //   setIsLangOpen(false);
+                  // }}
+                  onChange={handleLangChange}
+                  defaultLanguageOptions={languageOptions}
+                  portal={false}
+                />
+              </DialogPanel>
+            </div>
+          </TransitionChild>
+        </Dialog>
+      </Transition>
+
+
       <Banner />
       <BlinkAnimation active={isFetching}>
         <div className="mt-6 h-10 w-full bg-cover">

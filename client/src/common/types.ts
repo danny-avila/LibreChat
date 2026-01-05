@@ -141,10 +141,10 @@ export interface NavProps {
 
 export interface DataColumnMeta {
   meta:
-    | {
-        size: number | string;
-      }
-    | undefined;
+  | {
+    size: number | string;
+  }
+  | undefined;
 }
 
 export enum Panel {
@@ -636,3 +636,50 @@ declare global {
     google_tag_manager?: unknown;
   }
 }
+
+
+export type LanguageCode =
+  | 'auto'
+  | 'en-US'
+  | 'zh-Hans'
+  | 'zh-Hant'
+  | 'ar-EG'
+  | 'bs'
+  | 'da-DK'
+  | 'de-DE'
+  | 'es-ES'
+  | 'ca-ES'
+  | 'et-EE'
+  | 'fa-IR'
+  | 'fr-FR'
+  | 'he-HE'
+  | 'hu-HU'
+  | 'hy-AM'
+  | 'it-IT'
+  | 'nb'
+  | 'pl-PL'
+  | 'pt-BR'
+  | 'pt-PT'
+  | 'ru-RU'
+  | 'ja-JP'
+  | 'ka-GE'
+  | 'cs-CZ'
+  | 'sv-SE'
+  | 'ko-KR'
+  | 'lv-LV'
+  | 'vi-VN'
+  | 'th-TH'
+  | 'tr-TR'
+  | 'ug'
+  | 'nl-NL'
+  | 'id-ID'
+  | 'fi-FI'
+  | 'sl'
+  | 'bo'
+  | 'uk-UA'
+  | 'pa';
+
+export type LanguageOption = {
+  value: LanguageCode;
+  label: string;
+};
