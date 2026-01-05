@@ -381,8 +381,14 @@ router.post('/', async (req, res) => {
       return await processFileUpload({ req, res, metadata });
     }
 
-    /** Check agent permissions for agent file uploads (not message attachments) */
-    if (metadata.agent_id && metadata.tool_resource) {
+    /**
+     * Check agent permissions for permanent agent file uploads (not message attachments).
+     * Message attachments (message_file=true) are temporary files for a single conversation
+     * and should be allowed for users who can chat with the agent.
+     * Permanent file uploads to tool_resources require EDIT permission.
+     */
+    const isMessageAttachment = metadata.message_file === true || metadata.message_file === 'true';
+    if (metadata.agent_id && metadata.tool_resource && !isMessageAttachment) {
       const userId = req.user.id;
 
       /** Admin users bypass permission checks */
