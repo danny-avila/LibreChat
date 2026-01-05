@@ -11,7 +11,7 @@
     },
     "EcsStack": {
       "type": "aws:cloudformation:stack",
-      "environment": "aws://***REMOVED***/us-east-1",
+      "environment": "aws://152320432929/us-east-1",
       "properties": {
         "templateFile": "EcsStack.template.json",
         "terminationProtection": false,
@@ -21,16 +21,16 @@
           "Project": "AIAssistantService"
         },
         "validateOnSynth": false,
-        "assumeRoleArn": "arn:${AWS::Partition}:iam::***REMOVED***:role/cdk-hnb659fds-deploy-role-***REMOVED***-us-east-1",
-        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::***REMOVED***:role/cdk-hnb659fds-cfn-exec-role-***REMOVED***-us-east-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-***REMOVED***-us-east-1/da227ace4bafd6e287de0fae31e81d0727298429be5b4e4ac1a1f63f0c7e1381.json",
+        "assumeRoleArn": "arn:${AWS::Partition}:iam::152320432929:role/cdk-hnb659fds-deploy-role-152320432929-us-east-1",
+        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::152320432929:role/cdk-hnb659fds-cfn-exec-role-152320432929-us-east-1",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-152320432929-us-east-1/da227ace4bafd6e287de0fae31e81d0727298429be5b4e4ac1a1f63f0c7e1381.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
           "EcsStack.assets"
         ],
         "lookupRole": {
-          "arn": "arn:${AWS::Partition}:iam::***REMOVED***:role/cdk-hnb659fds-lookup-role-***REMOVED***-us-east-1",
+          "arn": "arn:${AWS::Partition}:iam::152320432929:role/cdk-hnb659fds-lookup-role-152320432929-us-east-1",
           "requiresBootstrapStackVersion": 8,
           "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
         }
@@ -631,7 +631,7 @@
     },
     "ApiGatewayStack": {
       "type": "aws:cloudformation:stack",
-      "environment": "aws://***REMOVED***/us-east-1",
+      "environment": "aws://152320432929/us-east-1",
       "properties": {
         "templateFile": "ApiGatewayStack.template.json",
         "terminationProtection": false,
@@ -642,16 +642,16 @@
           "Project": "AIAssistantService"
         },
         "validateOnSynth": false,
-        "assumeRoleArn": "arn:${AWS::Partition}:iam::***REMOVED***:role/cdk-hnb659fds-deploy-role-***REMOVED***-us-east-1",
-        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::***REMOVED***:role/cdk-hnb659fds-cfn-exec-role-***REMOVED***-us-east-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-***REMOVED***-us-east-1/5ddb5004810ac5b4787ec567c01f96ddfac4b059d632315d6bb0cfc7495e6fb9.json",
+        "assumeRoleArn": "arn:${AWS::Partition}:iam::152320432929:role/cdk-hnb659fds-deploy-role-152320432929-us-east-1",
+        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::152320432929:role/cdk-hnb659fds-cfn-exec-role-152320432929-us-east-1",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-152320432929-us-east-1/5ddb5004810ac5b4787ec567c01f96ddfac4b059d632315d6bb0cfc7495e6fb9.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
           "ApiGatewayStack.assets"
         ],
         "lookupRole": {
-          "arn": "arn:${AWS::Partition}:iam::***REMOVED***:role/cdk-hnb659fds-lookup-role-***REMOVED***-us-east-1",
+          "arn": "arn:${AWS::Partition}:iam::152320432929:role/cdk-hnb659fds-lookup-role-152320432929-us-east-1",
           "requiresBootstrapStackVersion": 8,
           "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
         }

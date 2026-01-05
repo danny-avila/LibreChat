@@ -1,0 +1,55 @@
+name: Push to prod ECR and update SSM parameter store with latest tag
+
+on:
+  push:
+    tags:
+      - 'release/*'
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    environment:
+      name: prod
+    steps:
+      - name: Fail if branch is not prod
+        if: github.ref != 'refs/heads/prod'
+        run: |
+          echo "This workflow should not be triggered with workflow_dispatch on a branch other than prod"
+          exit 1
+
+      - name: Validate tag prefix
+        run: |
+          case "$GITHUB_REF_NAME" in
+            release/*) echo "Valid tag prefix" ;;
+            *)
+              echo "Invalid tag prefix: $GITHUB_REF_NAME"
+              exit 1
+              ;;
+          esac
+
+      - name: Log in to ECR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          username: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          password: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/newjersey/librechat:${{ github.github.ref_name }}
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update SSM parameter store
+        uses: joshghent/aws-ssm-parameter-store@v2.2.0
+        with: 
+          aws-region: ${{ secrets.AWS_REGION }}
+          ssm-path: /ai-assistant/prod-image-tag
+          ssm-value: ${{ github.github.ref_name }}

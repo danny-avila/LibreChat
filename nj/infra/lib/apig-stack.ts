@@ -7,9 +7,9 @@ import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import { Construct } from "constructs";
 
 export type EnvVars = {
-    vpcId: string,
     domainName: string,
-    env: string, 
+    env: string,
+    isProd: boolean,
 }
 
 export interface ApigStackProps extends cdk.StackProps {
@@ -21,9 +21,11 @@ export class ApigStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApigStackProps) {
     super(scope, id, props);
     const vpc = ec2.Vpc.fromLookup(this, "ExistingVpcForApi", {
-      vpcId: props.envVars.vpcId,
+      tags: {
+          'Name': 'VPC-Innov-Platform-*'
+      }
     });
-    // use local vpc instead of props.vpc
+
     const vpcLink = new apigatewayv2.VpcLink(this, "ServiceVpcLink", {
       vpc,
       subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },

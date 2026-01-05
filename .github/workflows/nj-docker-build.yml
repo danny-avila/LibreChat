@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - prod
+    tags-ignore:
+      - '**'
 
 jobs:
   docker:

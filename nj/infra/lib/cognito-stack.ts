@@ -3,7 +3,6 @@ import * as cognito from "aws-cdk-lib/aws-cognito";
 import { Construct } from "constructs";
 
 export type EnvVars = {
-    vpcId: string,
     domainName: string,
     env: string, 
 }

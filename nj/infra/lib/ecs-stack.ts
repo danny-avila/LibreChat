@@ -6,21 +6,20 @@ import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as efs from "aws-cdk-lib/aws-efs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as s3 from "aws-cdk-lib/aws-s3";
-import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 
 export type EnvVars = {
-    vpcId: string,
-    domainName: string,
-    env: string, 
+  domainName: string,
+  env: string,
+  isProd: boolean
 }
 
 export interface EcsServicesProps extends cdk.StackProps {
   envVars: EnvVars,
-  librechatImage: string;
   mongoImage: string;
   postgresImage: string;
-  certificateArn: string;
+  // certificateArn: string; // Pending OIT
 }
 
 export class EcsStack extends cdk.Stack {
@@ -30,13 +29,28 @@ export class EcsStack extends cdk.Stack {
 
   constructor(scope: Construct, id: string, props: EcsServicesProps) {
     super(scope, id, props);
-    const vpc = ec2.Vpc.fromLookup(this, "ExistingVpc", {
-      vpcId: props.envVars.vpcId,
+    const vpc = ec2.Vpc.fromLookup(this, 'ExistingVpc', {
+      tags: {
+          'Name': 'VPC-Innov-Platform-*'
+      }
     });
-    const librechatImage = props.librechatImage;
-    const mongoImage = props.mongoImage;
-    const postgresImage = props.postgresImage;
+    const isProd = props.envVars.env.includes("prod")
 
+    this.CreateVPCEndpoints(isProd, vpc);
+    const cluster = this.CreateCluster(vpc);
+    const commonExecRole = this.CreateCommonExecRole(isProd);
+
+    const librechatService = this.CreateLibrechatService(props, cluster, commonExecRole, isProd);
+    this.listener = librechatService.listener;
+    this.loadBalancer = librechatService.loadBalancer;
+    this.service = librechatService.service;
+
+    if (!isProd) {
+      this.CreateDatabaseSidecars(props, commonExecRole, vpc, cluster, librechatService)
+    }
+  }
+
+  private CreateVPCEndpoints(isProd: boolean, vpc: ec2.IVpc) {
     const endpointsSg = new ec2.SecurityGroup(this, "VpcEndpointsSg", { vpc });
     vpc.addInterfaceEndpoint("EcrDockerEndpoint", {
       service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
@@ -53,26 +67,37 @@ export class EcsStack extends cdk.Stack {
     vpc.addInterfaceEndpoint("BedrockRuntimeEndpoint", {
       service: ec2.InterfaceVpcEndpointAwsService.BEDROCK_RUNTIME,
       securityGroups: [endpointsSg],
-    });    
+    });
     vpc.addInterfaceEndpoint("CognitoEndpoint", {
       service: ec2.InterfaceVpcEndpointAwsService.COGNITO_IDP,
       securityGroups: [endpointsSg],
       subnets: {
         subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
         availabilityZones: ['us-east-1a']
-  }
+      }
     });
     vpc.addGatewayEndpoint("S3GatewayEndpoint", {
       service: ec2.GatewayVpcEndpointAwsService.S3,
     });
-    
+    if (isProd) {
+      vpc.addInterfaceEndpoint("RdsEndpoint", {
+        service: ec2.InterfaceVpcEndpointAwsService.RDS,
+        securityGroups: [endpointsSg],
+      });
+    }
+  };
+
+  private CreateCluster(vpc: ec2.IVpc) {
     const cluster = new ecs.Cluster(this, "AIAssistantCluster", {
       vpc,
       clusterName: "ai-assistant-cluster",
     });
     cluster.addDefaultCloudMapNamespace({ name: "internal" });
 
-    // Shared execution role for all task definitions
+    return cluster;
+  };
+
+  private CreateCommonExecRole(isProd: boolean) {
     const commonExecRole = new iam.Role(this, "CommonTaskExecutionRole", {
       assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
       description: "Execution role for pulling ECR images and writing logs",
@@ -83,8 +108,29 @@ export class EcsStack extends cdk.Stack {
     commonExecRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonS3ReadOnlyAccess")
     );
+    if (isProd) {
+      commonExecRole.addManagedPolicy(
+        iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonRDSFullAccess")
+      );
+      commonExecRole.addManagedPolicy(
+        iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonDocDBFullAccess")
+      );
+    }
+    return commonExecRole;
+  };
 
-    // Create LibreChat task definition using the shared execution role
+  private CreateLibrechatService(props: EcsServicesProps, cluster: ecs.Cluster, commonExecRole: iam.Role, isProd: boolean) {
+    var mongoUri = "mongodb://mongodb.internal:27017/LibreChat"
+    var librechatTag = "latest"
+    if (isProd) {
+      const docdbHost = cdk.Fn.importValue("DocumentDBHostname");
+      const docdbPort = cdk.Fn.importValue("DocDbEndpointPortExport");
+      mongoUri = `mongodb://${docdbHost}:${docdbPort}/Librechat`
+
+      librechatTag = ssm.StringParameter.valueForStringParameter(this, '/ai-assistant/prod-image-tag');
+    }
+    const librechatImage = `${this.account}.dkr.ecr.${this.region}.amazonaws.com/newjersey/librechat:${librechatTag}`;
+
     const librechatTaskDef = new ecs.FargateTaskDefinition(this, "LibreChatTaskDef", {
       cpu: 256,
       memoryLimitMiB: 512,
@@ -99,7 +145,7 @@ export class EcsStack extends cdk.Stack {
         PORT: "3080",
         HOST: "0.0.0.0",
         LOG_LEVEL: "info",
-        MONGO_URI: "mongodb://mongodb.internal:27017/LibreChat",
+        MONGO_URI: mongoUri,
         MEILI_HOST: "http://rag_api.internal:7700",
         RAG_API_URL: "http://rag_api.internal:8000",
         CONFIG_PATH: "/app/nj/nj-librechat.yaml",
@@ -108,10 +154,11 @@ export class EcsStack extends cdk.Stack {
         ecs.EnvironmentFile.fromBucket(s3.Bucket.fromBucketArn(this, "EnvFilesBucket", "arn:aws:s3:::nj-librechat-env-files"), `${props.envVars.env}.env`),
       ],
       portMappings: [{ containerPort: 3080 }],
-      command: ["npm","run","backend"], 
+      command: ["npm", "run", "backend"],
     });
-    
-    const aiAssistantCertificate = acm.Certificate.fromCertificateArn(this, 'aiAssistantCertificate', props.certificateArn);
+
+    // Re-enable when OIT does load balancer things
+    // const aiAssistantCertificate = acm.Certificate.fromCertificateArn(this, 'aiAssistantCertificate', props.certificateArn);
 
     const librechatService = new ecsPatterns.ApplicationLoadBalancedFargateService(
       this,
@@ -126,10 +173,12 @@ export class EcsStack extends cdk.Stack {
         // certificate: aiAssistantCertificate, // uncomment when OIT is done with imperva
       }
     );
-    this.listener = librechatService.listener;
-    this.loadBalancer = librechatService.loadBalancer;
-    this.service = librechatService.service;
 
+    new cdk.CfnOutput(this, "LibrechatImageUri", { value: librechatImage });
+    return librechatService;
+  };
+
+  private CreateDatabaseSidecars(props: EcsServicesProps, commonExecRole: iam.Role, vpc: ec2.IVpc, cluster: ecs.Cluster, librechatService: ecsPatterns.ApplicationLoadBalancedFargateService) {
     const mongoFs = new efs.FileSystem(this, "MongoFs", {
       vpc,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -151,7 +200,7 @@ export class EcsStack extends cdk.Stack {
     });
 
     const mongoContainer = mongoTaskDef.addContainer("mongodb", {
-      image: ecs.ContainerImage.fromRegistry(mongoImage),
+      image: ecs.ContainerImage.fromRegistry(props.mongoImage),
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: "mongodb" }),
       command: ["mongod", "--noauth"],
       portMappings: [{ containerPort: 27017 }],
@@ -193,7 +242,7 @@ export class EcsStack extends cdk.Stack {
     });
 
     const pgContainer = pgTaskDef.addContainer("vectordb", {
-      image: ecs.ContainerImage.fromRegistry(postgresImage),
+      image: ecs.ContainerImage.fromRegistry(props.postgresImage),
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: "vectordb" }),
       environment: {
         POSTGRES_DB: "mydatabase",
@@ -224,8 +273,8 @@ export class EcsStack extends cdk.Stack {
     mongoFs.connections.allowDefaultPortFrom(mongoService);
     pgFs.connections.allowDefaultPortFrom(vectordbService);
 
-    new cdk.CfnOutput(this, "LibrechatImageUri", { value: librechatImage });
-    new cdk.CfnOutput(this, "MongoImageUri", { value: mongoImage });
-    new cdk.CfnOutput(this, "PostgresImageUri", { value: postgresImage });
+    new cdk.CfnOutput(this, "MongoImageUri", { value: props.mongoImage });
+    new cdk.CfnOutput(this, "PostgresImageUri", { value: props.postgresImage });
   }
 }
+
