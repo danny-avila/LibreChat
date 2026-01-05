@@ -10,6 +10,7 @@ Next Pieces
 - Create iOS app version
 - Find out speed issue
 - Implement in-app billing for paid plans
+- Help and FAQ
 
 
 

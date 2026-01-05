@@ -3,7 +3,8 @@ const { v4: uuidv4 } = require('uuid');
 const { sendEvent } = require('@librechat/api');
 const { Constants, ContentTypes } = require('librechat-data-provider');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
-const { saveMessage } = require('~/models');
+const { saveMessage, saveConvo, getConvo } = require('~/models');
+const addTitle = require('~/server/services/Endpoints/openAI/title');
 const { createOnProgress } = require('~/server/utils');
 
 /**
@@ -49,6 +50,10 @@ async function ontarioDirectHandler(req, res) {
   };
 
   const client = new OpenAIClient(endpointOption?.model_parameters?.apiKey, clientOptions);
+
+  const existingConvo = await getConvo(userId, convoId);
+  const isNewConvo = existingConvo == null;
+  const isRootMessage = (parentMessageId ?? Constants.NO_PARENT) === Constants.NO_PARENT;
 
   // Prepare message payload for OpenAIClient
   const payload = [
@@ -121,6 +126,28 @@ async function ontarioDirectHandler(req, res) {
     throw error;
   }
   req.traceStep?.('ontario_direct_user_saved');
+  let conversation = null;
+  try {
+    conversation = await saveConvo(
+      req,
+      {
+        conversationId: convoId,
+        endpoint: endpointOption?.endpoint,
+        endpointType: endpointOption?.endpointType,
+      },
+      { context: 'api/server/controllers/agents/ontarioDirect.js - saveConvo (user)' },
+    );
+    logger.info('[Ontario] Saved conversation (user)', {
+      conversationId: convoId,
+      userId,
+    });
+  } catch (error) {
+    logger.error('[Ontario] Failed to save conversation (user)', {
+      conversationId: convoId,
+      userId,
+      error,
+    });
+  }
 
   // Run completion
   req.traceStep?.('ontario_direct_llm_start');
@@ -206,18 +233,54 @@ async function ontarioDirectHandler(req, res) {
     throw error;
   }
   req.traceStep?.('ontario_direct_response_saved');
+  try {
+    conversation = await saveConvo(
+      req,
+      {
+        conversationId: convoId,
+        endpoint: endpointOption?.endpoint,
+        endpointType: endpointOption?.endpointType,
+      },
+      { context: 'api/server/controllers/agents/ontarioDirect.js - saveConvo (response)' },
+    );
+    logger.info('[Ontario] Saved conversation (response)', {
+      conversationId: convoId,
+      userId,
+    });
+  } catch (error) {
+    logger.error('[Ontario] Failed to save conversation (response)', {
+      conversationId: convoId,
+      userId,
+      error,
+    });
+  }
 
   // Emit final event
   sendEvent(res, {
     final: true,
-    conversation: {
-      conversationId: convoId,
-    },
-    title: null,
+    conversation: conversation || { conversationId: convoId },
+    title: conversation?.title ?? null,
     requestMessage: userMessage,
     responseMessage,
   });
   res.end();
+
+  if (addTitle && isNewConvo && isRootMessage) {
+    addTitle(req, {
+      text,
+      response: responseMessage,
+      client,
+    })
+      .then(() => {
+        logger.debug('[Ontario] Title generation started');
+      })
+      .catch((err) => {
+        logger.error('[Ontario] Error in title generation', err);
+      })
+      .finally(() => {
+        logger.debug('[Ontario] Title generation completed');
+      });
+  }
 }
 
 module.exports = { ontarioDirectHandler };
