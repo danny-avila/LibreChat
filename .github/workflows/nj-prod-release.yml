@@ -35,7 +35,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/newjersey/librechat:${{ github.github.ref_name }}
+          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/newjersey/librechat:${{ github.ref_name }}
       
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
@@ -49,4 +49,4 @@ jobs:
         with: 
           aws-region: ${{ secrets.AWS_REGION }}
           ssm-path: /ai-assistant/prod-image-tag
-          ssm-value: ${{ github.github.ref_name }}
+          ssm-value: ${{ github.ref_name }}
