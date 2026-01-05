@@ -69,23 +69,23 @@ setup:
 		echo ".env file already exists. Skipping..."; \
 	fi
 	@if [ ! -f docker-compose.override.yml ]; then \
-		@bash scripts/add-ldap-user.sh list
+		bash scripts/add-ldap-user.sh list; \
 		echo "      - 8001:8000" >> docker-compose.override.yml; \
 		echo "    extra_hosts:" >> docker-compose.override.yml; \
 		echo "      - \"host.docker.internal:host-gateway\"" >> docker-compose.override.yml; \
-		@services=$$(docker compose config --services 2>/dev/null); \
-		@if [ -z "$$services" ]; then \
+		services=$$(docker compose config --services 2>/dev/null); \
+		if [ -z "$$services" ]; then \
 			echo "⚠️  Unable to read services from docker compose config."; \
 			exit 1; \
 		fi; \
-		@states=$$(docker compose ps --format '{{.Service}}\t{{.State}}' 2>/dev/null); \
-		@printf '%-30s %s\n' "SERVICE" "STATUS"; \
-		@printf '%-30s %s\n' "-------" "------"; \
+		states=$$(docker compose ps --format '{{.Service}}\t{{.State}}' 2>/dev/null); \
+		printf '%-30s %s\n' "SERVICE" "STATUS"; \
+		printf '%-30s %s\n' "-------" "------"; \
 		for svc in $$services; do \
 			status=$$(printf '%s\n' "$$states" | awk -v service="$$svc" 'BEGIN {st="not created"} $1==service {st=$2; for (i=3;i<=NF;i++) st=st" " $i} END {print st}'); \
 			if [ -z "$$status" ]; then status="not created"; fi; \
 			printf '%-30s %s\n' "$$svc" "$$status"; \
-		done
+		done; \
 		sed -i.bak 's/use: false/use: true/' librechat.yaml && rm -f librechat.yaml.bak; \
 		echo "" >> librechat.yaml; \
 		echo "# MCP Servers Configuration" >> librechat.yaml; \
@@ -140,6 +140,10 @@ setup:
 # Install dependencies
 install:
 	@echo "Installing dependencies..."
+	@if ! command -v npm >/dev/null 2>&1; then \
+		echo "npm is required but not installed. Please install Node.js/npm first."; \
+		exit 1; \
+	fi
 	npm install
 	cd api && npm install
 	cd client && npm install
