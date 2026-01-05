@@ -125,6 +125,7 @@ export const LangSelector = ({
     { value: 'sl', label: localize('com_nav_lang_slovenian') },
     { value: 'bo', label: localize('com_nav_lang_tibetan') },
     { value: 'uk-UA', label: localize('com_nav_lang_ukrainian') },
+    { value: 'pa', label: localize('com_nav_lang_punjabi') },
   ];
 
   const labelId = 'language-selector-label';
