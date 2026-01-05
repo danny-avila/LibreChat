@@ -160,6 +160,8 @@ const ContentRender = memo(
                 isCreatedByUser={msg.isCreatedByUser}
                 conversationId={conversation?.conversationId}
                 content={msg.content as Array<TMessageContentParts | undefined>}
+                endpoint={msg.endpoint}
+                model={msg.model}
               />
             </div>
             {hasNoChildren && effectiveIsSubmitting ? (

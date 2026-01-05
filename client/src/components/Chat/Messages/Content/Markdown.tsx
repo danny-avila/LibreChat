@@ -10,6 +10,11 @@ import remarkDirective from 'remark-directive';
 import type { Pluggable } from 'unified';
 import { Citation, CompositeCitation, HighlightedText } from '~/components/Web/Citation';
 import {
+  PerplexityCitation,
+  PerplexityCompositeCitation,
+  PerplexityHighlightedText,
+} from '~/components/Web/PerplexityCitation';
+import {
   mcpUIResourcePlugin,
   MCPUIResource,
   MCPUIResourceCarousel,
@@ -25,11 +30,20 @@ import store from '~/store';
 type TContentProps = {
   content: string;
   isLatestMessage: boolean;
+  endpoint?: string;
+  model?: string;
 };
 
-const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
+const isPerplexityModel = (model?: string): boolean => {
+  if (!model) return false;
+  const lowerModel = model.toLowerCase();
+  return lowerModel.includes('sonar') || lowerModel.includes('perplexity');
+};
+
+const Markdown = memo(({ content = '', isLatestMessage, endpoint, model }: TContentProps) => {
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
+  const isPerplexity = endpoint === 'perplexity' || isPerplexityModel(model);
 
   const currentContent = useMemo(() => {
     if (isInitializing) {
@@ -89,9 +103,11 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
                 p,
                 img,
                 artifact: Artifact,
-                citation: Citation,
-                'highlighted-text': HighlightedText,
-                'composite-citation': CompositeCitation,
+                citation: isPerplexity ? PerplexityCitation : Citation,
+                'highlighted-text': isPerplexity ? PerplexityHighlightedText : HighlightedText,
+                'composite-citation': isPerplexity
+                  ? PerplexityCompositeCitation
+                  : CompositeCitation,
                 'mcp-ui-resource': MCPUIResource,
                 'mcp-ui-carousel': MCPUIResourceCarousel,
               } as {

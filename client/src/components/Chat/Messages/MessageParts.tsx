@@ -144,6 +144,8 @@ export default function Message(props: TMessageProps) {
                     conversationId={conversation?.conversationId}
                     isLatestMessage={messageId === latestMessage?.messageId}
                     content={message.content as Array<TMessageContentParts | undefined>}
+                    endpoint={message.endpoint}
+                    model={message.model}
                   />
                 </div>
                 {isLast && isSubmitting ? (
