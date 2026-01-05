@@ -116,6 +116,7 @@ async function ontarioDirectHandler(req, res) {
       messageId: userMessageId,
       userId,
     });
+    sendEvent(res, { message: userMessage, created: true });
   } catch (error) {
     logger.error('[Ontario] Failed to save user message', {
       conversationId: convoId,
