@@ -643,6 +643,15 @@ class OpenAIClient extends BaseClient {
   async titleConvo({ text, conversationId, responseText = '' }) {
     const appConfig = this.options.req?.config;
     this.conversationId = conversationId;
+    const originalUseResponsesApi =
+      this.options?.modelOptions?.useResponsesApi ?? this.modelOptions?.useResponsesApi;
+    const originalDropParams = this.options?.dropParams;
+    this.options.dropParams = [
+      ...(originalDropParams || []),
+      'model_parameters',
+      'promptPrefix',
+      'useResponsesApi',
+    ];
 
     if (this.options.attachments) {
       delete this.options.attachments;
@@ -668,6 +677,7 @@ class OpenAIClient extends BaseClient {
       presence_penalty: 0,
       frequency_penalty: 0,
       max_tokens: 16,
+      useResponsesApi: false,
     };
 
     const azureConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
@@ -758,6 +768,11 @@ ${convo}
     if (this.options.titleMethod === 'completion') {
       await titleChatCompletion();
       logger.debug('[OpenAIClient] Convo Title: ' + title);
+      if (this.options?.modelOptions) {
+        this.options.modelOptions.useResponsesApi = originalUseResponsesApi;
+      }
+      this.modelOptions.useResponsesApi = originalUseResponsesApi;
+      this.options.dropParams = originalDropParams;
       return title;
     }
 
@@ -785,6 +800,11 @@ ${convo}
     }
 
     logger.debug('[OpenAIClient] Convo Title: ' + title);
+    if (this.options?.modelOptions) {
+      this.options.modelOptions.useResponsesApi = originalUseResponsesApi;
+    }
+    this.modelOptions.useResponsesApi = originalUseResponsesApi;
+    this.options.dropParams = originalDropParams;
     return title;
   }
 
