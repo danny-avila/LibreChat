@@ -95,13 +95,15 @@ export default function AudioRecorder({
   };
 
   const renderIcon = () => {
+    const iconClassName = 'sm:w-5 sm:h-5 w-8 h-8';
+
     if (isListening === true) {
-      return <MicOff className="stroke-red-500" />;
+      return <MicOff className={cn('stroke-red-500', iconClassName)} />;
     }
     if (isLoading === true) {
-      return <Spinner className="stroke-text-secondary" />;
+      return <Spinner className={cn('stroke-text-secondary', iconClassName)} />;
     }
-    return <ListeningIcon className="stroke-text-secondary" />;
+    return <ListeningIcon className={cn('stroke-text-secondary', iconClassName)} />;
   };
 
   return (
@@ -115,7 +117,9 @@ export default function AudioRecorder({
           onClick={isListening === true ? handleStopRecording : handleStartRecording}
           disabled={disabled}
           className={cn(
-            'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
+            'flex size-9 sm:size-9 items-center justify-center rounded-full p-1 transition-all duration-200 hover:bg-surface-hover',
+            isListening && 'animate-pulse bg-red-500/10 hover:bg-red-500/20',
+            'active:scale-95'
           )}
           title={localize('com_ui_use_micrphone')}
           aria-pressed={isListening}
