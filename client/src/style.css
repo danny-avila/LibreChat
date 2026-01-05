@@ -55,6 +55,7 @@
   --gizmo-gray-500: #999;
   --gizmo-gray-600: #666;
   --gizmo-gray-950: #0f0f0f;
+  --yellow-text: rgb(255, 243, 42);
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
@@ -126,7 +127,7 @@ html {
 .dark {
   --brand-purple: #ab68ff;
   --presentation: var(--gray-800);
-  --text-primary: var(--gray-100);
+  --text-primary: var(--yellow-text);
   --text-secondary: var(--gray-300);
   --text-secondary-alt: var(--gray-400);
   --text-tertiary: var(--gray-500);
@@ -159,19 +160,19 @@ html {
   /* These are test styles */
 
   --background: 0 0% 7%;
-  --foreground: 0 0% 98%;
+  --foreground: 56.7 100% 58.2%;
   --card: 0 0% 3.9%;
-  --card-foreground: 0 0% 98%;
-  --primary: 0 0% 98%;
+  --card-foreground: 56.7 100% 58.2%;
+  --primary: 56.7 100% 58.2%;
   --primary-foreground: 0 0% 9%;
   --secondary: 0 0% 14.9%;
-  --secondary-foreground: 0 0% 98%;
+  --secondary-foreground: 56.7 100% 58.2%;
   --muted: 0 0% 14.9%;
   --muted-foreground: 0 0% 63.9%;
   --accent: 0 0% 14.9%;
-  --accent-foreground: 0 0% 98%;
+  --accent-foreground: 56.7 100% 58.2%;
   --destructive: 0 62.8% 40.6%;
-  --destructive-foreground: 0 0% 98%;
+  --destructive-foreground: 56.7 100% 58.2%;
   --border: 0 0% 14.9%;
   --input: 0 0% 14.9%;
   --ring: 0 0% 83.1%;
@@ -195,7 +196,7 @@ html {
   --border-xheavy: rgba(0, 0, 0, 0.25);
 }
 .gizmo.dark {
-  --text-primary: var(--gray-100);
+  --text-primary: var(--yellow-text);
   --text-secondary: var(--gray-300);
   --text-tertiary: var(--gizmo-gray-500);
   --surface-primary: var(--gray-900);

@@ -160,5 +160,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "@jest/globals": "^30.2.0"
   }
 }

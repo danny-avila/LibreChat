@@ -3,13 +3,14 @@
 
 services:
   api:
-    container_name: LibreChat
+    container_name: LibreChat-3T
     ports:
       - "${PORT}:${PORT}"
     depends_on:
       - mongodb
       - rag_api
-    image: ghcr.io/danny-avila/librechat-dev:latest
+#    image: ghcr.io/danny-avila/librechat-dev:latest
+    image: librechat-3t:latest
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:
@@ -28,7 +29,7 @@ services:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
   mongodb:
-    container_name: librechat-mongodb
+    container_name: mongodb
     image: mongo:8.2.3
     restart: always
     user: "${UID}:${GID}"
@@ -36,7 +37,7 @@ services:
       - ./data-node:/data/db
     command: mongod --noauth
   meilisearch:
-    container_name: librechat-meilisearch
+    container_name: meilisearch
     image: getmeili/meilisearch:v1.12.3
     restart: always
     user: "${UID}:${GID}"
@@ -47,7 +48,7 @@ services:
     volumes:
       - ./meili_data_v1.12:/meili_data
   vectordb:
-    container_name: chat-vectordb
+    container_name: vectordb
     image: pgvector/pgvector:0.8.0-pg15-trixie
     environment:
       POSTGRES_DB: mydatabase
@@ -57,7 +58,7 @@ services:
     volumes:
       - pgdata2:/var/lib/postgresql/data
   rag_api:
-    container_name: chat-rag_api
+    container_name: rag_api
     image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:latest
     environment:
       - DB_HOST=vectordb
