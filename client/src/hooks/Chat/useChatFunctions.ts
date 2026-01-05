@@ -203,7 +203,7 @@ export default function useChatFunctions({
 
     const positionText =
       position && position.latitude && position.longitude
-        ? `\n\n(location): latitude:${position.latitude}, longitude:${position.longitude})`
+        ? `\n\n(location): latitude:${position.latitude}, longitude:${position.longitude}`
         : '';
 
     const currentMsg: TMessage = {
