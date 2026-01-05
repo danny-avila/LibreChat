@@ -123,6 +123,13 @@ class StableDiffusionAPI extends Tool {
     const { imageOutput: imageOutputPath, clientPath } = paths;
     const filepath = path.join(imageOutputPath, this.userId, imageName);
     this.relativePath = path.relative(clientPath, imageOutputPath);
+    const generatedAt = new Date().toISOString();
+    logger.info('[StableDiffusion] Image generated', {
+      imageName,
+      generatedAt,
+      userId: this.userId,
+      filepath,
+    });
 
     if (!fs.existsSync(path.join(imageOutputPath, this.userId))) {
       fs.mkdirSync(path.join(imageOutputPath, this.userId), { recursive: true });

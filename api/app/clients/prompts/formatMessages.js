@@ -42,7 +42,19 @@ const formatVisionMessage = ({ message, image_urls, endpoint }) => {
  * @returns {(Object|HumanMessage|AIMessage|SystemMessage)} - The formatted message.
  */
 const formatMessage = ({ message, userName, assistantName, endpoint, langChain = false }) => {
-  let { role: _role, _name, sender, text, content: _content, lc_id } = message;
+  let { role: _role, _name, sender, text, content: _content, lc_id, documents } = message;
+  
+  // CRITICAL: Strip documents with raw file_data to prevent sending binary to LLM
+  if (documents && Array.isArray(documents)) {
+    const hasRawFileData = documents.some(
+      doc => doc?.file?.file_data || doc?.file_data || doc?.data
+    );
+    if (hasRawFileData) {
+      console.warn('[formatMessage] Stripped documents with raw file_data from message');
+      documents = undefined;
+    }
+  }
+  
   if (lc_id && lc_id[2] && !langChain) {
     const roleMapping = {
       SystemMessage: 'system',
@@ -90,11 +102,30 @@ const formatMessage = ({ message, userName, assistantName, endpoint, langChain =
   }
 
   if (!langChain) {
+    // Don't include documents with raw file_data in the formatted message
+    if (documents && Array.isArray(documents)) {
+      const cleanDocuments = documents.filter(
+        doc => !doc?.file?.file_data && !doc?.file_data && !doc?.data
+      );
+      if (cleanDocuments.length > 0) {
+        formattedMessage.documents = cleanDocuments;
+      }
+    }
     return formattedMessage;
   }
 
   if (role === 'user') {
-    return new HumanMessage(formattedMessage);
+    const userMsg = new HumanMessage(formattedMessage);
+    // Don't attach documents with raw binary to LangChain messages
+    if (documents && Array.isArray(documents)) {
+      const hasRawData = documents.some(
+        doc => doc?.file?.file_data || doc?.file_data || doc?.data
+      );
+      if (!hasRawData && documents.length > 0) {
+        userMsg.documents = documents;
+      }
+    }
+    return userMsg;
   } else if (role === 'assistant') {
     return new AIMessage(formattedMessage);
   } else {
@@ -142,6 +173,17 @@ const formatAgentMessages = (payload) => {
   const messages = [];
 
   for (const message of payload) {
+    // CRITICAL: Strip documents with raw file_data before processing
+    if (message.documents && Array.isArray(message.documents)) {
+      const hasRawFileData = message.documents.some(
+        doc => doc?.file?.file_data || doc?.file_data || doc?.data
+      );
+      if (hasRawFileData) {
+        console.warn('[formatAgentMessages] Stripped documents with raw file_data from message');
+        delete message.documents;
+      }
+    }
+    
     if (typeof message.content === 'string') {
       message.content = [{ type: ContentTypes.TEXT, [ContentTypes.TEXT]: message.content }];
     }

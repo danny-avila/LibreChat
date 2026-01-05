@@ -35,6 +35,7 @@ const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
+const { chunkText } = require('~/server/utils/textChunks');
 const { STTService } = require('./Audio/STTService');
 
 /**
@@ -393,6 +394,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
   }
 
   const { file } = req;
+
   const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
   const {
     id,
@@ -489,6 +491,27 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
+  const fileConfig = mergeFileConfig(appConfig.fileConfig);
+
+  let parsedText;
+  let parsedTextChunks;
+  let vectorStorageMetadata;
+
+  const shouldParseForVectors =
+    metadata.message_file &&
+    tool_resource !== EToolResources.file_search &&
+    fileConfig.checkType(file.mimetype, fileConfig.text?.supportedMimeTypes || []);
+
+  if (shouldParseForVectors) {
+    const parsedResult = await parseText({ req, file, file_id });
+    parsedText = parsedResult?.text?.trim() ?? '';
+    parsedTextChunks = parsedText ? chunkText(parsedText) : [];
+    vectorStorageMetadata = removeNullishValues({
+      filename: sanitizeFilename(file.originalname),
+      text: parsedText,
+      chunk_count: parsedTextChunks.length || undefined,
+    });
+  }
   if (tool_resource === EToolResources.execute_code) {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
@@ -608,6 +631,16 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   const source = getFileStrategy(appConfig, { isImage: isImageFile });
 
   if (tool_resource === EToolResources.file_search) {
+    const parsedResult = await parseText({ req, file, file_id });
+    parsedText = parsedResult?.text?.trim() ?? '';
+    parsedTextChunks = parsedText ? chunkText(parsedText) : [];
+
+    vectorStorageMetadata = removeNullishValues({
+      filename: sanitizeFilename(file.originalname),
+      text: parsedText,
+      chunk_count: parsedTextChunks.length || undefined,
+    });
+
     // FIRST: Upload to Storage for permanent backup (S3/local/etc.)
     const { handleFileUpload } = getStrategyFunctions(source);
     const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
@@ -622,12 +655,23 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     // SECOND: Upload to Vector DB
     const { uploadVectors } = require('./VectorDB/crud');
 
-    embeddingResult = await uploadVectors({
-      req,
-      file,
-      file_id,
-      entity_id,
-    });
+    try {
+      embeddingResult = await uploadVectors({
+        req,
+        file,
+        file_id,
+        entity_id,
+        storageMetadata: vectorStorageMetadata,
+        parsedText,
+        parsedTextChunks,
+      });
+    } catch (error) {
+      logger.error(
+        `[processAgentFileUpload] Failed to upload vectors for agent ${agent_id} file ${file.originalname}`,
+        error,
+      );
+      embeddingResult = { embedded: false };
+    }
 
     // Vector status will be stored at root level, no need for metadata
     fileInfoMetadata = {};
@@ -642,11 +686,43 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       basePath,
       entity_id,
     });
+
+    if (metadata.message_file && parsedText) {
+      logger.debug(`[processAgentFileUpload] parsedTextChunks length: ${parsedTextChunks?.length}, text length: ${parsedText?.length}`);
+      const providerVectorMetadata = removeNullishValues({
+        filename: sanitizeFilename(file.originalname),
+        text: parsedText,
+        chunk_count: parsedTextChunks?.length || undefined,
+      });
+      logger.debug(`[processAgentFileUpload] providerVectorMetadata:`, providerVectorMetadata);
+      fileInfoMetadata = providerVectorMetadata;
+
+      const { uploadVectors: uploadProviderVectors } = require('./VectorDB/crud');
+      try {
+        embeddingResult = await uploadProviderVectors({
+          req,
+          file,
+          file_id,
+          entity_id,
+          storageMetadata: providerVectorMetadata,
+          parsedText,
+          parsedTextChunks,
+        });
+      } catch (error) {
+        logger.error(
+          `[processAgentFileUpload] Failed to upload provider vectors for agent ${agent_id} file ${file.originalname}`,
+          error,
+        );
+        embeddingResult = { embedded: false };
+      }
+    }
   }
 
   let { bytes, filename, filepath: _filepath, height, width } = storageResult;
-  // For RAG files, use embedding result; for others, use storage result
   let embedded = storageResult.embedded;
+  if (embeddingResult?.embedded != null && tool_resource !== EToolResources.file_search) {
+    embedded = embeddingResult.embedded;
+  }
   if (tool_resource === EToolResources.file_search) {
     embedded = embeddingResult?.embedded;
     filename = embeddingResult?.filename || filename;
@@ -683,6 +759,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
     model: messageAttachment ? undefined : req.body.model,
     metadata: fileInfoMetadata,
+    text: parsedText,
     type: file.mimetype,
     embedded,
     source,
@@ -956,9 +1033,10 @@ async function saveBase64Image(
  */
 function filterFile({ req, image, isAvatar }) {
   const { file } = req;
-  const { endpoint, endpointType, file_id, width, height } = req.body;
+  const { endpoint, endpointType, file_id: clientFileId, width, height } = req.body;
+  const effectiveFileId = isAvatar ? clientFileId : clientFileId ?? req.file_id;
 
-  if (!file_id && !isAvatar) {
+  if (!effectiveFileId && !isAvatar) {
     throw new Error('No file_id provided');
   }
 
@@ -968,7 +1046,18 @@ function filterFile({ req, image, isAvatar }) {
 
   /* parse to validate api call, throws error on fail */
   if (!isAvatar) {
-    isUUID.parse(file_id);
+    try {
+      isUUID.parse(effectiveFileId);
+    } catch (error) {
+      logger.error('[/files] filter failure', {
+        client_file_id: clientFileId,
+        fallback_file_id: req.file_id,
+        effective_file_id: effectiveFileId,
+        body: req.body,
+      });
+      throw error;
+    }
+    req.file_id = effectiveFileId;
   }
 
   if (!endpoint && !isAvatar) {

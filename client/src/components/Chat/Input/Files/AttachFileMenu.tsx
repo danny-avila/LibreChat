@@ -39,6 +39,25 @@ import { cn } from '~/utils';
 
 type FileUploadType = 'image' | 'document' | 'image_document' | 'image_document_video_audio';
 
+const documentAcceptTypes = [
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.txt',
+  '.xls',
+  '.xlsx',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
+  'text/*',
+];
+const documentAcceptList = documentAcceptTypes.join(',');
+const imageAccept = 'image/*';
+const videoAudioAccept = 'video/*,audio/*';
+
 interface AttachFileMenuProps {
   agentId?: string | null;
   endpoint?: string | null;
@@ -94,13 +113,13 @@ const AttachFileMenu = ({
     }
     inputRef.current.value = '';
     if (fileType === 'image') {
-      inputRef.current.accept = 'image/*';
+      inputRef.current.accept = imageAccept;
     } else if (fileType === 'document') {
-      inputRef.current.accept = '.pdf,application/pdf';
+      inputRef.current.accept = documentAcceptList;
     } else if (fileType === 'image_document') {
-      inputRef.current.accept = 'image/*,.pdf,application/pdf';
+      inputRef.current.accept = `${imageAccept},${documentAcceptList}`;
     } else if (fileType === 'image_document_video_audio') {
-      inputRef.current.accept = 'image/*,.pdf,application/pdf,video/*,audio/*';
+      inputRef.current.accept = `${imageAccept},${documentAcceptList},${videoAudioAccept}`;
     } else {
       inputRef.current.accept = '';
     }

@@ -28,8 +28,31 @@ export async function encodeAndFormatDocuments(
   getStrategyFunctions: (source: string) => StrategyFunctions,
 ): Promise<DocumentResult> {
   const { provider, endpoint, useResponsesApi } = params;
+  
+  console.error('[encodeAndFormatDocuments] CALLED:', {
+    filesCount: files?.length,
+    provider,
+    endpoint,
+    fileTypes: files?.map(f => f.type),
+  });
+  
   if (!files?.length) {
     return { documents: [], files: [] };
+  }
+
+  // For agent endpoints, NEVER include raw file_data in documents
+  // Files must be parsed to text and sent via fileContext instead
+  const isAgentEndpoint = endpoint === 'agents' || endpoint === 'azureAgents';
+  
+  console.error('[encodeAndFormatDocuments] Endpoint check:', {
+    endpoint,
+    isAgentEndpoint,
+  });
+  
+  if (isAgentEndpoint) {
+    console.error('[encodeAndFormatDocuments] RETURNING EMPTY for agent endpoint');
+    // Return empty documents - text extraction happens separately via extractFileContext
+    return { documents: [], files: files.map(f => ({ file_id: f.file_id, filename: f.filename, type: f.type })) };
   }
 
   const encodingMethods: Record<string, StrategyFunctions> = {};

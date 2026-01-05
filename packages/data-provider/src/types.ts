@@ -59,6 +59,7 @@ export type TEndpointOption = Pick<
   | 'iconURL'
   | 'greeting'
   | 'spec'
+   | 'guardrail'
   // Artifacts
   | 'artifacts'
   // Files
@@ -198,6 +199,8 @@ export type TUser = {
   avatar: string;
   role: string;
   provider: string;
+  guardrail?: string;
+  guardrails?: string[];
   plugins?: string[];
   twoFactorEnabled?: boolean;
   backupCodes?: TBackupCode[];

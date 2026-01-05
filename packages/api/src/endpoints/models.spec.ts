@@ -234,6 +234,14 @@ describe('getOpenAIModels', () => {
       }),
     );
   });
+
+  it('returns defaults without calling OpenAI when the env key is user_provided', async () => {
+    process.env.OPENAI_API_KEY = 'user_provided';
+    const models = await getOpenAIModels({});
+
+    expect(models).toEqual(defaultModels[EModelEndpoint.openAI]);
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+  });
 });
 
 describe('getOpenAIModels sorting behavior', () => {

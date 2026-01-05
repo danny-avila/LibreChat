@@ -1,0 +1,21 @@
+Auth Guardrail Test Report — 2025-12-29T18:22:36.224Z
+Template: /workspace/scripts/templates/org-template.json
+
+[PASS] Users exist in the template — 4 users seeded.
+[PASS] User admin has status field — found status "active"
+[PASS] User admin contains users group — groups: [users, superuser]
+[PASS] All groups for admin exist — groups: users, superuser
+[PASS] User supervisor has status field — found status "active"
+[PASS] User supervisor contains users group — groups: [users, orgadmin]
+[PASS] All groups for supervisor exist — groups: users, orgadmin
+[PASS] User alpha has status field — found status "active"
+[PASS] User alpha contains users group — groups: [users, marketing, normal]
+[PASS] All groups for alpha exist — groups: users, marketing, normal
+[PASS] User beta has status field — found status "active"
+[PASS] User beta contains users group — groups: [users, finance, normal]
+[PASS] All groups for beta exist — groups: users, finance, normal
+[PASS] Guardrail group marketing defines rules — rules: {"promptScope":"marketing","documentScope":"marketing","permissions":["chat"]}
+[PASS] Guardrail group finance defines rules — rules: {"promptScope":"finance","documentScope":"finance","permissions":["chat"]}
+[PASS] Guardrail group normal defines rules — rules: {"promptScope":"general","documentScope":"general","permissions":["chat"]}
+
+Summary: 16 passed, 0 failed (16 checks)

@@ -152,6 +152,14 @@ const userSchema = new Schema<IUser>(
       ],
       default: [],
     },
+    guardrail: {
+      type: String,
+      default: 'general',
+    },
+    guardrails: {
+      type: [String],
+      default: ['general'],
+    },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {
       type: String,

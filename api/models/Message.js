@@ -54,6 +54,34 @@ async function saveMessage(req, params, metadata) {
       messageId: params.newMessageId || params.messageId,
     };
 
+    // CRITICAL: Strip raw file_data from documents before saving to database
+    // For agent endpoints, documents should never contain raw binary data
+    if (update.documents && Array.isArray(update.documents) && update.documents.length > 0) {
+      update.documents = update.documents.map(doc => {
+        if (doc?.file?.file_data) {
+          logger.warn(
+            `[saveMessage] Stripping file_data from document before DB save`,
+            { 
+              messageId: update.messageId,
+              filename: doc.file.filename,
+              context: metadata?.context,
+            }
+          );
+          const { file_data, ...fileWithoutData } = doc.file;
+          return { ...doc, file: fileWithoutData };
+        }
+        if (doc?.file_data) {
+          logger.warn(`[saveMessage] Stripping file_data field from document before DB save`, {
+            messageId: update.messageId,
+            context: metadata?.context,
+          });
+          const { file_data, ...docWithoutData } = doc;
+          return docWithoutData;
+        }
+        return doc;
+      });
+    }
+
     if (req?.body?.isTemporary) {
       try {
         const appConfig = req.config;
@@ -300,6 +328,44 @@ async function deleteMessagesSince(req, { messageId, conversationId }) {
 }
 
 /**
+ * Sanitizes message documents by removing raw file_data that should never reach the LLM.
+ * @param {TMessage} message - The message to sanitize
+ * @returns {TMessage} The sanitized message
+ */
+function sanitizeMessageDocuments(message) {
+  if (!message?.documents || !Array.isArray(message.documents) || message.documents.length === 0) {
+    return message;
+  }
+
+  let hadFileData = false;
+  message.documents = message.documents.map(doc => {
+    if (doc?.file?.file_data) {
+      hadFileData = true;
+      const { file_data, ...fileWithoutData } = doc.file;
+      return { ...doc, file: fileWithoutData };
+    }
+    if (doc?.file_data) {
+      hadFileData = true;
+      const { file_data, ...docWithoutData } = doc;
+      return docWithoutData;
+    }
+    return doc;
+  });
+
+  if (hadFileData) {
+    logger.warn(
+      `[getMessages] Stripped file_data from message loaded from database`,
+      { 
+        messageId: message.messageId,
+        conversationId: message.conversationId,
+      }
+    );
+  }
+
+  return message;
+}
+
+/**
  * Retrieves messages from the database.
  * @async
  * @function getMessages
@@ -310,11 +376,16 @@ async function deleteMessagesSince(req, { messageId, conversationId }) {
  */
 async function getMessages(filter, select) {
   try {
+    let messages;
     if (select) {
-      return await Message.find(filter).select(select).sort({ createdAt: 1 }).lean();
+      messages = await Message.find(filter).select(select).sort({ createdAt: 1 }).lean();
+    } else {
+      messages = await Message.find(filter).sort({ createdAt: 1 }).lean();
     }
 
-    return await Message.find(filter).sort({ createdAt: 1 }).lean();
+    // CRITICAL: Strip file_data from documents loaded from database
+    // This prevents old messages with raw binary from polluting the conversation history
+    return messages.map(sanitizeMessageDocuments);
   } catch (err) {
     logger.error('Error getting messages:', err);
     throw err;
@@ -331,10 +402,16 @@ async function getMessages(filter, select) {
  */
 async function getMessage({ user, messageId }) {
   try {
-    return await Message.findOne({
+    const message = await Message.findOne({
       user,
       messageId,
     }).lean();
+    
+    if (message) {
+      return sanitizeMessageDocuments(message);
+    }
+    
+    return null;
   } catch (err) {
     logger.error('Error getting message:', err);
     throw err;

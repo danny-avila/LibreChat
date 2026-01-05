@@ -623,7 +623,8 @@ Already configured in `librechat.yaml`:
 mcpServers:
   clickhouse-playground:
     type: sse
-    url: http://host.docker.internal:8001/sse
+    url: http://mcp-clickhouse:8000/sse
+    # Inside Docker talk directly to mcp-clickhouse; from outside use host.docker.internal:8001/sse
 ```
 
 ### Using Your Own ClickHouse Database
@@ -662,7 +663,7 @@ Access local files:
 mcpServers:
   clickhouse-playground:
     type: sse
-    url: http://host.docker.internal:8001/sse
+    url: http://mcp-clickhouse:8000/sse
   
   filesystem:
     type: stdio

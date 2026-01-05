@@ -24,6 +24,33 @@ const ollamaPayloadSchema = z.object({
   model: z.string(),
 });
 
+const UNSUPPORTED_OLLAMA_OPTIONS = new Set([
+  'mirostat',
+  'mirostat_eta',
+  'mirostat_tau',
+  'tfs_z',
+]);
+
+const sanitizeOllamaParameters = (params) => {
+  const dropped = [];
+  const enabledEntries = Object.entries(params).filter(([key, value]) => {
+    if (value === undefined) {
+      return false;
+    }
+    if (UNSUPPORTED_OLLAMA_OPTIONS.has(key)) {
+      dropped.push(key);
+      return false;
+    }
+    return true;
+  });
+
+  if (dropped.length > 0) {
+    logger.debug('[OllamaClient] Dropping unsupported parameters:', dropped);
+  }
+
+  return Object.fromEntries(enabledEntries);
+};
+
 /**
  * @param {string} imageUrl
  * @returns {string}
@@ -131,13 +158,12 @@ class OllamaClient {
     let intermediateReply = '';
 
     const parameters = ollamaPayloadSchema.parse(payload);
+    const sanitizedParameters = sanitizeOllamaParameters(parameters);
     const messages = OllamaClient.formatOpenAIMessages(payload.messages);
+    const requestOptions = { messages, ...sanitizedParameters };
 
     if (parameters.stream) {
-      const stream = await this.client.chat({
-        messages,
-        ...parameters,
-      });
+      const stream = await this.client.chat(requestOptions);
 
       for await (const chunk of stream) {
         const token = chunk.message.content;
@@ -153,7 +179,7 @@ class OllamaClient {
     }
     // TODO: regular completion
     else {
-      // const generation = await this.client.generate(payload);
+      // const generation = await this.client.generate(requestOptions);
     }
 
     return intermediateReply;

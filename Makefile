@@ -1,5 +1,7 @@
 .PHONY: help setup install build up down restart logs clean rebuild ollama-models ollama-pull-qwen ollama-pull-llama ldap-up ldap-down ldap-test ldap-integration-test keycloak-up keycloak-down keycloak-test
 
+ROOT_DIR := $(shell pwd)
+
 # Default target
 help:
 	@echo "Bintybyte - LibreChat Makefile Commands"
@@ -30,6 +32,7 @@ help:
 	@echo "  make logs-ollama    - View Ollama container logs"
 	@echo "  make list-users     - List LDAP users in the configured users OU"
 	@echo "  make list-services  - Show container/service statuses from docker compose"
+	@echo "  make auth-guardrails-test - Run auth guardrail seed validations (reports/auth-guardrails.txt)"
 	@echo "  make clean          - Remove containers, volumes, and images"
 	@echo "  make shell          - Open shell in API container"
 	@echo "  make shell-ollama   - Open shell in Ollama container"
@@ -453,6 +456,11 @@ clean:
 	else \
 		echo "❌ Cleanup cancelled."; \
 	fi
+
+# Run the auth guardrail validation script inside Node Docker so Node stays inside containers and results persist on the host via reports/
+auth-guardrails-test:
+	@echo "Running auth guardrail validation inside docker node image..."
+	docker run --rm -v "$(ROOT_DIR)":/workspace -w /workspace node:20 node scripts/tests/auth-guardrails.js --template scripts/templates/org-template.json --report reports/auth-guardrails.txt
 
 # Reset database
 reset:

@@ -33,6 +33,35 @@ function createCloseHandler(abortController) {
  * Returns streamId immediately, client subscribes separately via SSE.
  */
 const ResumableAgentController = async (req, res, next, initializeClient, addTitle) => {
+  // CRITICAL FIX: Strip file_data from req.body.files BEFORE processing
+  // This prevents raw binary data from reaching the LLM
+  if (req.body.files && Array.isArray(req.body.files)) {
+    req.body.files = req.body.files.map(file => {
+      if (file?.file_data) {
+        logger.warn('[ResumableAgentController] Stripping file_data from req.body.files', {
+          filename: file.filename,
+          hasFileData: true,
+        });
+        const { file_data, ...fileWithoutData } = file;
+        return fileWithoutData;
+      }
+      // Also strip from documents if they exist in file object
+      if (file?.documents && Array.isArray(file.documents)) {
+        file.documents = file.documents.map(doc => {
+          if (doc?.file?.file_data) {
+            logger.warn('[ResumableAgentController] Stripping file_data from file.documents', {
+              filename: doc.file.filename,
+            });
+            const { file_data, ...cleanFile } = doc.file;
+            return { ...doc, file: cleanFile };
+          }
+          return doc;
+        });
+      }
+      return file;
+    });
+  }
+
   const {
     text,
     isRegenerate,
@@ -44,6 +73,56 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     overrideParentMessageId = null,
     responseMessageId: editedResponseMessageId = null,
   } = req.body;
+
+  logger.error('[ResumableAgentController] ENTRY - req.body inspection:', {
+    hasText: !!text,
+    hasFiles: !!req.body.files,
+    filesCount: req.body.files?.length,
+    hasMessage: !!req.body.message,
+    messageKeys: req.body.message ? Object.keys(req.body.message) : [],
+    messageHasDocuments: req.body.message?.documents ? true : false,
+    documentsCount: req.body.message?.documents?.length,
+  });
+
+  if (req.body.message?.documents) {
+    logger.error('[ResumableAgentController] req.body.message.documents detected - STRIPPING NOW:', {
+      documents: req.body.message.documents.map(d => ({
+        filename: d?.file?.filename || d?.filename,
+        hasFileData: !!(d?.file?.file_data || d?.file_data),
+        hasData: !!(d?.data),
+      })),
+    });
+    
+    // CRITICAL: Strip file_data from message.documents too
+    req.body.message.documents = req.body.message.documents.map(doc => {
+      if (doc?.file?.file_data) {
+        logger.error('[ResumableAgentController] STRIPPING file_data from doc.file', {
+          filename: doc.file.filename,
+        });
+        const { file_data, ...cleanFile } = doc.file;
+        return { ...doc, file: cleanFile };
+      }
+      if (doc?.file_data) {
+        logger.error('[ResumableAgentController] STRIPPING doc.file_data directly');
+        const { file_data, ...cleanDoc } = doc;
+        return cleanDoc;
+      }
+      if (doc?.data) {
+        logger.error('[ResumableAgentController] STRIPPING doc.data field');
+        const { data, ...cleanDoc } = doc;
+        return cleanDoc;
+      }
+      return doc;
+    });
+    
+    logger.error('[ResumableAgentController] After stripping:', {
+      documents: req.body.message.documents.map(d => ({
+        filename: d?.file?.filename || d?.filename,
+        hasFileData: !!(d?.file?.file_data || d?.file_data),
+        hasData: !!(d?.data),
+      })),
+    });
+  }
 
   const userId = req.user.id;
 

@@ -243,7 +243,7 @@ class BaseClient {
   }
 
   createUserMessage({ messageId, parentMessageId, conversationId, text }) {
-    return {
+    const msg = {
       messageId,
       parentMessageId,
       conversationId,
@@ -251,6 +251,14 @@ class BaseClient {
       text,
       isCreatedByUser: true,
     };
+    
+    logger.error('[BaseClient.createUserMessage] ===== MESSAGE CREATED (NO DOCUMENTS) =====:', {
+      messageId,
+      text: text?.substring(0, 50),
+      hasDocuments: !!msg.documents,
+    });
+    
+    return msg;
   }
 
   async handleStartMethods(message, opts) {
@@ -587,15 +595,55 @@ class BaseClient {
       maxContextTokens: this.maxContextTokens,
     });
 
+    if (isAgentsEndpoint(this.options.endpoint)) {
+      for (const message of payload) {
+        if (Array.isArray(message.documents)) {
+          delete message.documents;
+        }
+      }
+    }
+
     return { payload, tokenCountMap, promptTokens, messages: orderedWithInstructions };
   }
 
   async sendMessage(message, opts = {}) {
+    logger.error('[BaseClient.sendMessage] ENTRY - Received message parameter:', {
+      messageType: typeof message,
+      messageText: typeof message === 'string' ? message.substring(0, 50) : 'not-string',
+      messageKeys: typeof message === 'object' ? Object.keys(message) : [],
+      hasDocuments: typeof message === 'object' && !!message?.documents,
+      documentsCount: typeof message === 'object' ? message?.documents?.length : 0,
+    });
+    
+    if (typeof message === 'object' && message?.documents) {
+      logger.error('[BaseClient.sendMessage] Message object has documents:', {
+        documentsCount: message.documents.length,
+        documents: message.documents.map(d => ({
+          filename: d?.file?.filename || d?.filename,
+          hasFileData: !!(d?.file?.file_data || d?.file_data),
+        })),
+      });
+    }
+    
     const appConfig = this.options.req?.config;
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
       await this.handleStartMethods(message, opts);
+
+    if (isAgentsEndpoint(this.options.endpoint) && Array.isArray(userMessage.documents)) {
+      logger.error('[BaseClient.sendMessage] Removing documents from userMessage for agents endpoint', {
+        messageId: userMessage.messageId,
+        documentsCount: userMessage.documents.length,
+      });
+      userMessage.documents = undefined;
+    }
+
+    logger.error('[BaseClient.sendMessage] ===== AFTER handleStartMethods =====', {
+      messageId: userMessage.messageId,
+      hasDocuments: !!userMessage.documents,
+      documentsCount: userMessage.documents?.length,
+    });
 
     if (opts.progressCallback) {
       opts.onProgress = opts.progressCallback.call(null, {
@@ -639,6 +687,28 @@ class BaseClient {
       this.continued = true;
     } else {
       this.currentMessages.push(userMessage);
+    }
+
+    // CRITICAL DEBUG: Check if userMessage has documents with file_data
+    if (userMessage?.documents && Array.isArray(userMessage.documents)) {
+      for (const doc of userMessage.documents) {
+        if (doc?.file?.file_data || doc?.file_data) {
+          logger.error('[BaseClient.sendMessage] CRITICAL: userMessage has file_data BEFORE buildMessages!', {
+            messageId: userMessage.messageId,
+            filename: doc?.file?.filename || doc?.filename,
+            hasFileData: true,
+          });
+          // STRIP IT NOW
+          if (doc?.file?.file_data) {
+            delete doc.file.file_data;
+            logger.warn('[BaseClient.sendMessage] STRIPPED file.file_data');
+          }
+          if (doc?.file_data) {
+            delete doc.file_data;
+            logger.warn('[BaseClient.sendMessage] STRIPPED doc.file_data');
+          }
+        }
+      }
     }
 
     /**
@@ -696,6 +766,9 @@ class BaseClient {
         },
       });
     }
+
+    // Validate that no raw binary files reach the LLM
+    this.validateDocumentsBeforeCompletion(payload);
 
     const { completion, metadata } = await this.sendCompletion(payload, opts);
     if (this.abortController) {
@@ -1177,6 +1250,59 @@ class BaseClient {
    * @param {string} editedType - The type of content being edited
    * @returns {Array} The merged content array
    */
+  /**
+   * Validates that documents in the payload don't contain raw binary/base64 file_data.
+   * This ensures only parsed text reaches the LLM, never raw file content.
+   * @param {string | ChatCompletionMessageParam[]} payload - The payload to validate
+   * @throws {Error} If raw file_data is detected in documents
+   */
+  validateDocumentsBeforeCompletion(payload) {
+    if (!payload || typeof payload === 'string') {
+      return;
+    }
+
+    if (!Array.isArray(payload)) {
+      return;
+    }
+
+    for (const message of payload) {
+      if (!message?.documents || !Array.isArray(message.documents)) {
+        continue;
+      }
+
+      for (const doc of message.documents) {
+        // Check for raw file_data in various document formats
+        if (doc?.file?.file_data) {
+          logger.error(
+            '[BaseClient] Blocked raw file_data from reaching LLM API',
+            {
+              messageId: message.messageId,
+              filename: doc.file.filename,
+              hasFileData: true,
+            },
+          );
+          throw new Error(
+            `Document "${doc.file.filename || 'unknown'}" contains raw binary data. Files must be parsed to text before sending to the LLM. Please ensure document parsing completed successfully.`,
+          );
+        }
+
+        // Also check for base64 data in other formats
+        if (doc?.file_data || doc?.data) {
+          logger.error(
+            '[BaseClient] Blocked raw base64 data from reaching LLM API',
+            {
+              messageId: message.messageId,
+              docType: doc.type,
+            },
+          );
+          throw new Error(
+            'Document contains raw base64 data that cannot be sent to the LLM. Files must be parsed to text first.',
+          );
+        }
+      }
+    }
+  }
+
   mergeEditedContent(existingContent, newCompletion, editedType) {
     if (!newCompletion.length) {
       return existingContent.concat(newCompletion);
@@ -1223,6 +1349,49 @@ class BaseClient {
   }
 
   async addDocuments(message, attachments) {
+    logger.error('[BaseClient.addDocuments] ===== ENTRY =====', {
+      endpoint: this.options.endpoint,
+      agentEndpoint: this.options.agent?.endpoint,
+      hasAgent: !!this.options.agent,
+      attachmentsCount: attachments?.length,
+      messageId: message?.messageId,
+      attachments: attachments?.map(f => ({
+        filename: f.filename,
+        type: f.type,
+        hasText: !!f.text,
+      })),
+    });
+    
+    // For agent endpoints, NEVER include documents with raw file_data
+    // Files must be parsed to text and sent via fileContext instead
+    const isAgentEndpoint = 
+      this.options.endpoint === EModelEndpoint.agents || 
+      this.options.agent?.endpoint === 'agents' ||
+      this.options.agent?.endpoint === 'azureAgents';
+    
+    logger.error('[BaseClient.addDocuments] Endpoint Check Result:', {
+      endpoint: this.options.endpoint,
+      EModelEndpoint_agents: EModelEndpoint.agents,
+      agentEndpoint: this.options.agent?.endpoint,
+      isAgentEndpoint,
+      willReturnEarly: isAgentEndpoint,
+    });
+    
+    const hasEmbeddings = attachments.length > 0 && attachments.every((file) => file.embedded);
+    if (isAgentEndpoint || hasEmbeddings) {
+      logger.error(
+        '[BaseClient.addDocuments] ===== RETURNING EARLY - SKIPPING DOCUMENT ENCODING =====',
+      );
+      // For agent uploads or already vectorized files, return only metadata
+      return attachments.map((f) => ({
+        file_id: f.file_id,
+        filename: f.filename,
+        type: f.type,
+      }));
+    }
+
+    logger.error('[BaseClient.addDocuments] CONTINUING - Will call encodeAndFormatDocuments');
+
     const documentResult = await encodeAndFormatDocuments(
       this.options.req,
       attachments,
@@ -1233,6 +1402,27 @@ class BaseClient {
       },
       getStrategyFunctions,
     );
+
+    // Safety check: strip any file_data that shouldn't be there
+    if (documentResult.documents && documentResult.documents.length > 0) {
+      documentResult.documents = documentResult.documents.map(doc => {
+        if (doc?.file?.file_data) {
+          logger.warn(
+            '[BaseClient] Stripped file_data from document - this should not happen',
+            { filename: doc.file.filename },
+          );
+          const { file_data, ...fileWithoutData } = doc.file;
+          return { ...doc, file: fileWithoutData };
+        }
+        if (doc?.file_data) {
+          logger.warn('[BaseClient] Stripped file_data field from document');
+          const { file_data, ...docWithoutData } = doc;
+          return docWithoutData;
+        }
+        return doc;
+      });
+    }
+
     message.documents =
       documentResult.documents && documentResult.documents.length
         ? documentResult.documents
@@ -1290,6 +1480,19 @@ class BaseClient {
   }
 
   async processAttachments(message, attachments) {
+    logger.error('[BaseClient.processAttachments] Entry:', {
+      messageId: message?.messageId,
+      attachmentsCount: attachments?.length,
+      attachments: attachments?.map(f => ({
+        filename: f.filename,
+        type: f.type,
+        source: f.source,
+        embedded: f.embedded,
+        hasFileIdentifier: !!f.metadata?.fileIdentifier,
+      })),
+    });
+    const isAgentEndpoint = isAgentsEndpoint(this.options.endpoint);
+    
     const categorizedAttachments = {
       images: [],
       videos: [],
@@ -1314,7 +1517,9 @@ class BaseClient {
       if (file.type.startsWith('image/')) {
         categorizedAttachments.images.push(file);
       } else if (file.type === 'application/pdf') {
-        categorizedAttachments.documents.push(file);
+        if (!isAgentEndpoint) {
+          categorizedAttachments.documents.push(file);
+        }
         allFiles.push(file);
       } else if (file.type.startsWith('video/')) {
         categorizedAttachments.videos.push(file);
@@ -1329,7 +1534,7 @@ class BaseClient {
       categorizedAttachments.images.length > 0
         ? this.addImageURLs(message, categorizedAttachments.images)
         : Promise.resolve([]),
-      categorizedAttachments.documents.length > 0
+      !isAgentEndpoint && categorizedAttachments.documents.length > 0
         ? this.addDocuments(message, categorizedAttachments.documents)
         : Promise.resolve([]),
       categorizedAttachments.videos.length > 0

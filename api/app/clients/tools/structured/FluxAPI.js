@@ -289,6 +289,13 @@ class FluxAPI extends Tool {
     // Try saving the image locally
     const imageUrl = resultData.sample;
     const imageName = `img-${uuidv4()}.png`;
+    const generatedAt = new Date().toISOString();
+    logger.info('[FluxAPI] Image generated', {
+      imageName,
+      generatedAt,
+      userId: this.userId,
+      imageUrl,
+    });
 
     if (this.isAgent) {
       try {

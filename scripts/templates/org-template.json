@@ -1,0 +1,164 @@
+{
+  "organizations": [
+    {
+      "name": "LibreChat",
+      "description": "Global tenant that owns the LDAP hierarchy plus admin/supervisor scopes."
+    }
+  ],
+  "groups": [
+    {
+      "name": "superuser",
+      "org": "LibreChat",
+      "guardrail": "superuser",
+      "services": "config,llm,mcp,backup",
+      "vectorDb": "global",
+      "members": ["admin"],
+      "description": "Full platform administrators who configure LibreChat, map groups to models, and manage backups.",
+      "rules": {
+        "modelAccess": "all",
+        "permissions": ["configure","backup","ldap-group-mapping"]
+      }
+    },
+    {
+      "name": "orgadmin",
+      "org": "LibreChat",
+      "guardrail": "orgadmin",
+      "services": "config,llm,backup",
+      "vectorDb": "org-specific",
+      "members": ["supervisor"],
+      "description": "Supervisors who manage a single LDAP organisation, model catalog, and vector DB.",
+      "rules": {
+        "modelAccess": "org-specific",
+        "permissions": ["configure","backup","user-management"]
+      }
+    },
+    {
+      "name": "users",
+      "org": "LibreChat",
+      "guardrail": "general",
+      "services": "llm",
+      "vectorDb": "users-global",
+      "members": ["alpha", "beta"],
+      "description": "Baseline users with general question access paired with departmental guardrails.",
+      "rules": {
+        "modelAccess": "general",
+        "permissions": ["chat"]
+      }
+    },
+    {
+      "name": "marketing",
+      "org": "LibreChat",
+      "guardrail": "marketing",
+      "services": "llm",
+      "members": ["alpha"],
+      "description": "Marketing department: allows marketing-only chats and document access.",
+      "rules": {
+        "promptScope": "marketing",
+        "documentScope": "marketing",
+        "permissions": ["chat"]
+      }
+    },
+    {
+      "name": "finance",
+      "org": "LibreChat",
+      "guardrail": "finance",
+      "services": "llm",
+      "members": ["beta"],
+      "description": "Finance department: allows finance-only chats and document access.",
+      "rules": {
+        "promptScope": "finance",
+        "documentScope": "finance",
+        "permissions": ["chat"]
+      }
+    },
+    {
+      "name": "normal",
+      "org": "LibreChat",
+      "guardrail": "normal",
+      "services": "llm",
+      "members": ["alpha", "beta"],
+      "description": "General audience: can ask normal questions only.",
+      "rules": {
+        "promptScope": "general",
+        "documentScope": "general",
+        "permissions": ["chat"]
+      }
+    },
+    {
+      "name": "hr",
+      "org": "LibreChat",
+      "guardrail": "hr",
+      "services": "llm",
+      "vectorDb": "hr-db",
+      "members": ["sigma"],
+      "description": "Human resources guardrail exposing HR-only documents and prompts.",
+      "rules": {
+        "promptScope": "hr",
+        "documentScope": "hr",
+        "permissions": ["chat"]
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "firstname": "Platform",
+      "lastname": "Admin",
+      "email": "admin@librechat.local",
+      "password": "AdminPass123!",
+      "groups": "users,superuser",
+      "org": "LibreChat",
+      "status": "active"
+    },
+    {
+      "username": "supervisor",
+      "firstname": "Org",
+      "lastname": "Supervisor",
+      "email": "supervisor@librechat.local",
+      "password": "SupervisorPass123!",
+      "groups": "users,orgadmin",
+      "org": "LibreChat",
+      "status": "active"
+    },
+    {
+      "username": "alpha",
+      "firstname": "Alpha",
+      "lastname": "User",
+      "email": "alpha@librechat.local",
+      "password": "AlphaPass123!",
+      "groups": "users,marketing,normal",
+      "org": "LibreChat",
+      "status": "active"
+    },
+    {
+      "username": "beta",
+      "firstname": "Beta",
+      "lastname": "User",
+      "email": "beta@librechat.local",
+      "password": "BetaPass123!",
+      "groups": "users,finance,normal",
+      "org": "LibreChat",
+      "status": "active"
+    },
+    {
+      "username": "gamma",
+      "firstname": "Gamma",
+      "lastname": "User",
+      "email": "gamma@librechat.local",
+      "password": "GammaPass123!",
+      "groups": "users,normal",
+      "org": "LibreChat",
+      "status": "active"
+    },
+    {
+      "username": "sigma",
+      "firstname": "Sigma",
+      "lastname": "HR",
+      "email": "sigma@librechat.local",
+      "password": "SigmaPass123!",
+      "groups": "users,hr",
+      "org": "LibreChat",
+      "status": "active"
+    }
+  ]
+}

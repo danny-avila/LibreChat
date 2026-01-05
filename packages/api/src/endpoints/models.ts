@@ -203,7 +203,10 @@ export async function fetchOpenAIModels(
   _models: string[] = [],
 ): Promise<string[]> {
   let models = _models.slice() ?? [];
-  const apiKey = opts.openAIApiKey ?? process.env.OPENAI_API_KEY;
+  const envOpenAIApiKey = process.env.OPENAI_API_KEY;
+  const envHasUserProvidedKey = isUserProvided(envOpenAIApiKey);
+  const resolvedEnvApiKey = envHasUserProvidedKey ? undefined : envOpenAIApiKey;
+  const apiKey = opts.openAIApiKey ?? resolvedEnvApiKey;
   const openaiBaseURL = 'https://api.openai.com/v1';
   let baseURL = openaiBaseURL;
   let reverseProxyUrl = process.env.OPENAI_REVERSE_PROXY;
@@ -211,6 +214,10 @@ export async function fetchOpenAIModels(
   if (opts.assistants && process.env.ASSISTANTS_BASE_URL) {
     reverseProxyUrl = process.env.ASSISTANTS_BASE_URL;
   } else if (opts.azure) {
+    return models;
+  }
+
+  if (!apiKey && (opts.userProvidedOpenAI || envHasUserProvidedKey)) {
     return models;
   }
 

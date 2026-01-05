@@ -713,6 +713,7 @@ export const tConversationSchema = z.object({
   instructions: z.string().optional(),
   additional_instructions: z.string().optional(),
   append_current_datetime: z.boolean().optional(),
+  guardrail: z.string().optional(),
   /** Used to overwrite active conversation settings when saving a Preset */
   presetOverride: z.record(z.unknown()).optional(),
   stop: z.array(z.string()).optional(),
@@ -960,6 +961,7 @@ const assistantBaseSchema = tConversationSchema.pick({
   greeting: true,
   spec: true,
   append_current_datetime: true,
+  guardrail: true,
 });
 
 export const assistantSchema = assistantBaseSchema
@@ -983,6 +985,7 @@ export const assistantSchema = assistantBaseSchema
     greeting: undefined,
     spec: undefined,
     append_current_datetime: false,
+    guardrail: undefined,
   }));
 
 const compactAssistantBaseSchema = tConversationSchema.pick({
@@ -1015,8 +1018,8 @@ export const agentsBaseSchema = tConversationSchema.pick({
   iconURL: true,
   greeting: true,
   maxContextTokens: true,
+  guardrail: true,
 });
-
 export const agentsSchema = agentsBaseSchema
   .transform((obj) => ({
     ...obj,

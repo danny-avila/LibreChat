@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { FileSources, mergeFileConfig } from 'librechat-data-provider';
+import { mergeFileConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
 import { processTextWithTokenLimit } from '~/utils/text';
@@ -37,24 +37,41 @@ export async function extractFileContext({
   let resultText = '';
 
   for (const file of attachments) {
-    const source = file.source ?? FileSources.local;
-    if (source === FileSources.text && file.text) {
-      const { text: limitedText, wasTruncated } = await processTextWithTokenLimit({
-        text: file.text,
-        tokenLimit: fileTokenLimit,
-        tokenCountFn,
-      });
-
-      if (wasTruncated) {
-        logger.debug(
-          `[extractFileContext] Text content truncated for file: ${file.filename} due to token limits`,
-        );
-      }
-
-      resultText += `${!resultText ? 'Attached document(s):\n```md' : '\n\n---\n\n'}# "${file.filename}"\n${limitedText}\n`;
+    if (!file.text) {
+      continue;
     }
-  }
 
+    const { text: limitedText, wasTruncated } = await processTextWithTokenLimit({
+      text: file.text,
+      tokenLimit: fileTokenLimit,
+      tokenCountFn,
+    });
+
+    if (!limitedText) {
+      continue;
+    }
+
+    if (wasTruncated) {
+      logger.debug(
+        `[extractFileContext] Text content truncated for file: ${file.filename} due to token limits`,
+      );
+    }
+
+    resultText += `${!resultText ? 'Attached document(s):\n```md' : '\n\n---\n\n'}# "${file.filename}"\n${limitedText}\n`;
+  }
+  // Validate: if we have document files but no extracted text, parsing failed
+  const documentFiles = attachments.filter(
+    f => f.type === 'application/pdf' || f.type?.startsWith('application/')
+  );
+  if (documentFiles.length > 0 && !resultText) {
+    const filenames = documentFiles.map(f => f.filename).join(', ');
+    logger.error(
+      `[extractFileContext] Document parsing failed - no text extracted from: ${filenames}`,
+    );
+    throw new Error(
+      `Failed to extract text from document(s): ${filenames}. The document could not be parsed. Please try re-uploading the file or use a different format.`,
+    );
+  }
   if (resultText) {
     resultText += '\n```';
     return resultText;

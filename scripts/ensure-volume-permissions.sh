@@ -4,13 +4,30 @@ set -euo pipefail
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly ENV_FILE="$ROOT_DIR/.env"
 
+ENV_UID=""
+ENV_GID=""
+ENV_HOST_UID=""
+ENV_HOST_GID=""
+
+parse_env_value() {
+  local key="$1"
+  if [[ ! -f "$ENV_FILE" ]]; then
+    return
+  fi
+  local raw
+  raw=$(grep -E "^${key}=" "$ENV_FILE" | tail -n 1 || true)
+  echo "${raw#${key}=}"
+}
+
 if [[ -f "$ENV_FILE" ]]; then
-  # shellcheck source=/dev/null
-  source "$ENV_FILE"
+  ENV_UID=$(parse_env_value 'UID')
+  ENV_GID=$(parse_env_value 'GID')
+  ENV_HOST_UID=$(parse_env_value 'HOST_UID')
+  ENV_HOST_GID=$(parse_env_value 'HOST_GID')
 fi
 
-TARGET_UID="${UID:-$(id -u)}"
-TARGET_GID="${GID:-$(id -g)}"
+TARGET_UID="${ENV_HOST_UID:-${ENV_UID:-${UID:-$(id -u)}}}"
+TARGET_GID="${ENV_HOST_GID:-${ENV_GID:-${GID:-$(id -g)}}}"
 CURRENT_UID="$(id -u)"
 CURRENT_GID="$(id -g)"
 

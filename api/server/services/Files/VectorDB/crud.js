@@ -5,6 +5,32 @@ const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
 const { logAxiosError, generateShortLivedToken } = require('@librechat/api');
 
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+};
+
+const VECTOR_UPLOAD_MAX_ATTEMPTS = parsePositiveInt(process.env.VECTOR_UPLOAD_MAX_ATTEMPTS, 3);
+const VECTOR_UPLOAD_RETRY_DELAY_MS = parsePositiveInt(
+  process.env.VECTOR_UPLOAD_RETRY_DELAY_MS,
+  1000,
+);
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const shouldRetryUpload = (error) => {
+  if (!axios.isAxiosError(error)) {
+    return false;
+  }
+
+  if (!error.response) {
+    return true;
+  }
+
+  const status = error.response.status;
+  return status >= 500 && status < 600;
+};
+
 /**
  * Deletes a file from the vector database. This function takes a file object, constructs the full path, and
  * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
@@ -64,35 +90,75 @@ const deleteVectors = async (req, file) => {
  *            - filepath: The path where the file is saved.
  *            - bytes: The size of the file in bytes.
  */
-async function uploadVectors({ req, file, file_id, entity_id, storageMetadata }) {
+async function uploadVectors({
+  req,
+  file,
+  file_id,
+  entity_id,
+  storageMetadata,
+  parsedText,
+  parsedTextChunks,
+}) {
   if (!process.env.RAG_API_URL) {
     throw new Error('RAG_API_URL not defined');
   }
 
   try {
     const jwtToken = generateShortLivedToken(req.user.id);
-    const formData = new FormData();
-    formData.append('file_id', file_id);
-    formData.append('file', fs.createReadStream(file.path));
-    if (entity_id != null && entity_id) {
-      formData.append('entity_id', entity_id);
-    }
 
-    // Include storage metadata for RAG API to store with embeddings
-    if (storageMetadata) {
-      formData.append('storage_metadata', JSON.stringify(storageMetadata));
-    }
+    const buildFormData = () => {
+      const formData = new FormData();
+      formData.append('file_id', file_id);
+      formData.append('file', fs.createReadStream(file.path));
+      if (entity_id != null && entity_id) {
+        formData.append('entity_id', entity_id);
+      }
 
-    const formHeaders = formData.getHeaders();
+      if (storageMetadata) {
+        formData.append('storage_metadata', JSON.stringify(storageMetadata));
+      }
 
-    const response = await axios.post(`${process.env.RAG_API_URL}/embed`, formData, {
-      headers: {
-        Authorization: `Bearer ${jwtToken}`,
-        accept: 'application/json',
-        ...formHeaders,
-      },
-    });
+      if (parsedText) {
+        formData.append('parsed_text', JSON.stringify(parsedText));
+      }
 
+      if (parsedTextChunks?.length) {
+        formData.append('parsed_text_chunks', JSON.stringify(parsedTextChunks));
+      }
+
+      return formData;
+    };
+
+    const attemptUpload = async () => {
+      let lastError;
+      for (let attempt = 1; attempt <= VECTOR_UPLOAD_MAX_ATTEMPTS; attempt += 1) {
+        const formData = buildFormData();
+        const formHeaders = formData.getHeaders();
+        try {
+          const response = await axios.post(`${process.env.RAG_API_URL}/embed`, formData, {
+            headers: {
+              Authorization: `Bearer ${jwtToken}`,
+              accept: 'application/json',
+              ...formHeaders,
+            },
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+          });
+          return response;
+        } catch (error) {
+          lastError = error;
+
+          if (attempt === VECTOR_UPLOAD_MAX_ATTEMPTS || !shouldRetryUpload(error)) {
+            throw lastError;
+          }
+
+          await wait(VECTOR_UPLOAD_RETRY_DELAY_MS * attempt);
+        }
+      }
+      throw lastError; // should never happen but satisfies linting
+    };
+
+    const response = await attemptUpload();
     const responseData = response.data;
     logger.debug('Response from embedding file', responseData);
 

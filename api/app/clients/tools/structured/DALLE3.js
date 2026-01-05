@@ -193,6 +193,7 @@ Error Message: ${error.message}`);
 
     const extension = imageExt.startsWith('.') ? imageExt.slice(1) : imageExt;
     const imageName = `img-${uuidv4()}.${extension}`;
+    const generatedAt = new Date().toISOString();
 
     logger.debug('[DALL-E-3]', {
       imageName,
@@ -201,6 +202,13 @@ Error Message: ${error.message}`);
       extension,
       theImageUrl,
       data: resp.data[0],
+      generatedAt,
+    });
+
+    logger.info('[DALL-E-3] Image generated', {
+      imageName,
+      generatedAt,
+      userId: this.userId,
     });
 
     try {

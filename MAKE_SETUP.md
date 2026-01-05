@@ -281,7 +281,8 @@ endpoints:
 mcpServers:
   mcp-clickhouse:
     type: sse
-    url: http://host.docker.internal:8001/sse
+    url: http://mcp-clickhouse:8000/sse
+    # In Docker use mcp-clickhouse:8000; the host port 8001 is for host-level access
 ```
 
 **D. Web Search Configuration:**

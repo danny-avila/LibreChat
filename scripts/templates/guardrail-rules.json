@@ -1,0 +1,95 @@
+{
+  "guardrails": [
+    {
+      "name": "general",
+      "guardrail": "general",
+      "description": "Base guardrail that every LDAP user inherits through the `users` group.",
+      "services": ["llm"],
+      "modelAccess": "general",
+      "promptScope": "general",
+      "documentScope": "general",
+      "vectorDb": "users-global",
+      "permissions": ["chat"],
+      "defaultGroups": ["users"],
+      "allowAdminOverride": false
+    },
+    {
+      "name": "marketing",
+      "guardrail": "marketing",
+      "description": "Marketing specialists can only query marketing topics and related documents.",
+      "services": ["llm"],
+      "modelAccess": "marketing",
+      "promptScope": "marketing",
+      "documentScope": "marketing",
+      "vectorDb": "marketing-db",
+      "permissions": ["chat"],
+      "defaultGroups": ["marketing"],
+      "allowAdminOverride": true
+    },
+    {
+      "name": "normal",
+      "guardrail": "normal",
+      "description": "General audience guardrail for everyday user questions and documents.",
+      "services": ["llm"],
+      "modelAccess": "general",
+      "promptScope": "general",
+      "documentScope": "general",
+      "vectorDb": "users-global",
+      "permissions": ["chat"],
+      "defaultGroups": ["normal"],
+      "allowAdminOverride": false
+    },
+    {
+      "name": "finance",
+      "guardrail": "finance",
+      "description": "Finance users can only access budgets, reports and other finance content.",
+      "services": ["llm"],
+      "modelAccess": "finance",
+      "promptScope": "finance",
+      "documentScope": "finance",
+      "vectorDb": "finance-db",
+      "permissions": ["chat"],
+      "defaultGroups": ["finance"],
+      "allowAdminOverride": true
+    },
+    {
+      "name": "orgadmin",
+      "guardrail": "orgadmin",
+      "description": "Organisation supervisors monitor a single tenant and can configure models/documents for their org.",
+      "services": ["config", "llm", "backup"],
+      "modelAccess": "org-specific",
+      "promptScope": "orgadmin",
+      "documentScope": "org-specific",
+      "vectorDb": "org-specific",
+      "permissions": ["configure", "backup", "user-management"],
+      "defaultGroups": ["orgadmin"],
+      "allowAdminOverride": true
+    },
+    {
+      "name": "superuser",
+      "guardrail": "superuser",
+      "description": "Platform administrators with access to every model, tenant and document.",
+      "services": ["config", "llm", "mcp", "backup"],
+      "modelAccess": "all",
+      "promptScope": "superuser",
+      "documentScope": "all",
+      "vectorDb": "global",
+      "permissions": ["configure", "backup", "ldap-group-mapping"],
+      "defaultGroups": ["superuser"],
+      "allowAdminOverride": true
+    },
+    {
+      "name": "hr",
+      "guardrail": "hr",
+      "description": "HR-only guardrail that routes prompts to hr-specific documents.",
+      "services": ["llm"],
+      "modelAccess": "hr",
+      "promptScope": "hr",
+      "documentScope": "hr",
+      "vectorDb": "hr-db",
+      "permissions": ["chat"],
+      "defaultGroups": ["hr"],
+      "allowAdminOverride": false
+    }
+  ]
+}

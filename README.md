@@ -670,7 +670,8 @@ And referenced in `librechat.yaml`:
 mcpServers:
   clickhouse-playground:
     type: sse
-    url: http://host.docker.internal:8001/sse
+    url: http://mcp-clickhouse:8000/sse
+    # When running inside Docker, use the service host; from your host machine you can hit host.docker.internal:8001/sse
 ```
 
 #### Adding More MCP Servers
@@ -682,7 +683,7 @@ To add additional MCP servers, edit `librechat.yaml`:
 mcpServers:
   clickhouse-playground:
     type: sse
-    url: http://host.docker.internal:8001/sse
+    url: http://mcp-clickhouse:8000/sse
   powered by open-source technologies.
 
 Special thanks to:

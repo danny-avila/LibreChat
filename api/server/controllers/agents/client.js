@@ -51,6 +51,39 @@ const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
+const TRUNCATE_LENGTH = 300;
+
+const summarizeMessageForLog = (message) => {
+  const contentSummary = (() => {
+    if (typeof message.content === 'string') {
+      return message.content;
+    }
+    if (Array.isArray(message.content)) {
+      return message.content
+        .map((part) => {
+          if (typeof part === 'string') return part;
+          if (part.type === ContentTypes.TEXT) {
+            return part[ContentTypes.TEXT] ?? '';
+          }
+          return `[${part.type}]`;
+        })
+        .join(' ');
+    }
+    return '';
+  })();
+
+  let summary = contentSummary;
+  if (summary.length > TRUNCATE_LENGTH) {
+    summary = `${summary.slice(0, TRUNCATE_LENGTH)}…`;
+  }
+
+  return {
+    role: message.role,
+    name: message.name,
+    content: summary,
+  };
+};
+
 const omitTitleOptions = new Set([
   'stream',
   'thinking',
@@ -873,6 +906,34 @@ class AgentClient extends BaseClient {
    * @param {AbortController} [params.abortController]
    */
   async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
+    logger.error('[AgentClient.chatCompletion] ENTRY - Received payload:', {
+      payloadType: typeof payload,
+      payloadLength: Array.isArray(payload) ? payload.length : 'not-array',
+      firstMessage: Array.isArray(payload) && payload[0] ? {
+        role: payload[0].role,
+        hasDocuments: !!payload[0].documents,
+        documentsLength: payload[0].documents?.length,
+        hasFileData: payload[0].documents?.some(d => d?.file?.file_data || d?.file_data),
+      } : null,
+    });
+    
+    if (Array.isArray(payload)) {
+      for (let i = 0; i < payload.length; i++) {
+        const msg = payload[i];
+        if (msg?.documents && msg.documents.length > 0) {
+          logger.error(`[AgentClient.chatCompletion] Message ${i} has documents:`, {
+            role: msg.role,
+            documentsCount: msg.documents.length,
+            documents: msg.documents.map(d => ({
+              filename: d?.file?.filename || d?.filename,
+              hasFileData: !!(d?.file?.file_data || d?.file_data),
+              fileDataLength: (d?.file?.file_data || d?.file_data)?.length,
+            })),
+          });
+        }
+      }
+    }
+    
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
@@ -882,6 +943,7 @@ class AgentClient extends BaseClient {
     const appConfig = this.options.req.config;
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
+    let formattedMessagesForLog = null;
     try {
       if (!abortController) {
         abortController = new AbortController();
@@ -910,12 +972,58 @@ class AgentClient extends BaseClient {
         version: 'v2',
       };
 
+      // CRITICAL FIX: Strip file_data from payload BEFORE formatting
+      // This is the final safety net to ensure no raw binary reaches the LLM
+      if (Array.isArray(payload)) {
+        payload = payload.map(msg => {
+          if (msg?.documents && Array.isArray(msg.documents)) {
+            const cleanedDocuments = msg.documents.map(doc => {
+              if (doc?.file?.file_data) {
+                logger.warn('[AgentClient] Stripped file_data from payload before formatting', {
+                  messageId: msg.messageId,
+                  filename: doc.file.filename,
+                });
+                const { file_data, ...fileWithoutData } = doc.file;
+                return { ...doc, file: fileWithoutData };
+              }
+              if (doc?.file_data) {
+                logger.warn('[AgentClient] Stripped file_data field from payload before formatting');
+                const { file_data, ...docWithoutData } = doc;
+                return docWithoutData;
+              }
+              return doc;
+            });
+            return { ...msg, documents: cleanedDocuments };
+          }
+          return msg;
+        });
+      }
+
       const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
       let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
         payload,
         this.indexTokenCountMap,
         toolSet,
       );
+      formattedMessagesForLog = initialMessages;
+
+      // DEBUG: Check if documents with file_data still exist after formatting
+      for (const msg of initialMessages) {
+        if (msg?.documents && Array.isArray(msg.documents)) {
+          for (const doc of msg.documents) {
+            if (doc?.file?.file_data || doc?.file_data) {
+              logger.error(
+                '[AgentClient] CRITICAL: Documents with file_data detected after formatAgentMessages',
+                {
+                  hasFileData: !!doc?.file?.file_data,
+                  hasFileDataDirect: !!doc?.file_data,
+                  filename: doc?.file?.filename || doc?.filename,
+                },
+              );
+            }
+          }
+        }
+      }
 
       /**
        * @param {BaseMessage[]} messages
@@ -1031,6 +1139,12 @@ class AgentClient extends BaseClient {
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
           err,
         );
+        if (formattedMessagesForLog) {
+          logger.debug(
+            '[api/server/controllers/agents/client.js #sendCompletion] Last payload snapshot',
+            formattedMessagesForLog.map(summarizeMessageForLog),
+          );
+        }
         this.contentParts.push({
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
