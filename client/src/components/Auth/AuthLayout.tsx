@@ -40,9 +40,9 @@ function AuthLayout({
 
 
   const languageOptions: LanguageOption[] = [
+    { value: 'auto', label: 'Auto' },
     { value: 'en-US', label: 'English' },
     { value: 'pa', label: 'ਪੰਜਾਬੀ' },
-    { value: 'zh-Hant', label: 'test' },
   ];
 
 
@@ -103,8 +103,14 @@ function AuthLayout({
 
 
       <Transition appear show={isLangOpen}>
-        <Dialog as="div" className="relative z-50" onClose={setIsLangOpen}>
-          {/* Backdrop */}
+        <Dialog
+          as="div"
+          className="relative z-50"
+          onClose={() => {
+            handleLangChange("auto");
+            setIsLangOpen(false);
+          }}
+        > {/* Backdrop */}
           <TransitionChild
             enter="ease-out duration-200"
             enterFrom="opacity-0"
