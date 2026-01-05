@@ -180,6 +180,10 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
     }
   }, [isPromptOpen, zoom]);
 
+  const imageDetailsLabel = isPromptOpen
+    ? localize('com_ui_hide_image_details')
+    : localize('com_ui_show_image_details');
+
   return (
     <OGDialog open={isOpen} onOpenChange={onOpenChange}>
       <OGDialogContent
@@ -198,8 +202,9 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
                 onClick={() => onOpenChange(false)}
                 variant="ghost"
                 className="h-10 w-10 p-0 hover:bg-surface-hover"
+                aria-label={localize('com_ui_close')}
               >
-                <X className="size-7 sm:size-6" />
+                <X className="size-7 sm:size-6" aria-hidden="true" />
               </Button>
             }
           />
@@ -208,8 +213,13 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
               <TooltipAnchor
                 description={localize('com_ui_reset_zoom')}
                 render={
-                  <Button onClick={resetZoom} variant="ghost" className="h-10 w-10 p-0">
-                    <RotateCcw className="size-6" />
+                  <Button
+                    onClick={resetZoom}
+                    variant="ghost"
+                    className="h-10 w-10 p-0"
+                    aria-label={localize('com_ui_reset_zoom')}
+                  >
+                    <RotateCcw className="size-6" aria-hidden="true" />
                   </Button>
                 }
               />
@@ -217,27 +227,29 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
             <TooltipAnchor
               description={localize('com_ui_download')}
               render={
-                <Button onClick={() => downloadImage()} variant="ghost" className="h-10 w-10 p-0">
-                  <ArrowDownToLine className="size-6" />
+                <Button
+                  onClick={() => downloadImage()}
+                  variant="ghost"
+                  className="h-10 w-10 p-0"
+                  aria-label={localize('com_ui_download')}
+                >
+                  <ArrowDownToLine className="size-6" aria-hidden="true" />
                 </Button>
               }
             />
             <TooltipAnchor
-              description={
-                isPromptOpen
-                  ? localize('com_ui_hide_image_details')
-                  : localize('com_ui_show_image_details')
-              }
+              description={imageDetailsLabel}
               render={
                 <Button
                   onClick={() => setIsPromptOpen(!isPromptOpen)}
                   variant="ghost"
                   className="h-10 w-10 p-0"
+                  aria-label={imageDetailsLabel}
                 >
                   {isPromptOpen ? (
-                    <PanelLeftOpen className="size-7 sm:size-6" />
+                    <PanelLeftOpen className="size-7 sm:size-6" aria-hidden="true" />
                   ) : (
-                    <PanelLeftClose className="size-7 sm:size-6" />
+                    <PanelLeftClose className="size-7 sm:size-6" aria-hidden="true" />
                   )}
                 </Button>
               }
@@ -310,7 +322,7 @@ export default function DialogImage({ isOpen, onOpenChange, src = '', downloadIm
                 variant="ghost"
                 className="h-12 w-12 p-0"
               >
-                <X className="size-6" />
+                <X className="size-6" aria-hidden="true" />
               </Button>
             </div>
 

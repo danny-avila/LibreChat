@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback, useMemo } from 'react';
+import React, { memo, useState, useCallback, useMemo, useEffect } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { CheckboxButton } from '@librechat/client';
 import { ArtifactModes } from 'librechat-data-provider';
@@ -18,6 +18,7 @@ function Artifacts() {
   const { toggleState, debouncedChange, isPinned } = artifacts;
 
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [isButtonExpanded, setIsButtonExpanded] = useState(false);
 
   const currentState = useMemo<ArtifactsToggleState>(() => {
     if (typeof toggleState === 'string' && toggleState) {
@@ -33,10 +34,25 @@ function Artifacts() {
   const handleToggle = useCallback(() => {
     if (isEnabled) {
       debouncedChange({ value: '' });
+      setIsButtonExpanded(false);
     } else {
       debouncedChange({ value: ArtifactModes.DEFAULT });
     }
   }, [isEnabled, debouncedChange]);
+
+  const handleMenuButtonClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setIsButtonExpanded(!isButtonExpanded);
+    },
+    [isButtonExpanded],
+  );
+
+  useEffect(() => {
+    if (!isPopoverOpen) {
+      setIsButtonExpanded(false);
+    }
+  }, [isPopoverOpen]);
 
   const handleShadcnToggle = useCallback(() => {
     if (isShadcnEnabled) {
@@ -66,7 +82,7 @@ function Artifacts() {
         setValue={handleToggle}
         label={localize('com_ui_artifacts')}
         isCheckedClassName="border-amber-600/40 bg-amber-500/10 hover:bg-amber-700/10"
-        icon={<WandSparkles className="icon-md" />}
+        icon={<WandSparkles className="icon-md" aria-hidden="true" />}
       />
 
       {isEnabled && (
@@ -77,21 +93,25 @@ function Artifacts() {
               'border-amber-600/40 bg-amber-500/10 hover:bg-amber-700/10',
               'transition-colors',
             )}
-            onClick={(e) => e.stopPropagation()}
+            onClick={handleMenuButtonClick}
           >
-            <ChevronDown className="ml-1 h-4 w-4 text-text-secondary md:ml-0" />
+            <ChevronDown
+              className={cn(
+                'ml-1 h-4 w-4 text-text-secondary transition-transform duration-300 md:ml-0.5',
+                isButtonExpanded && 'rotate-180',
+              )}
+              aria-hidden="true"
+            />
           </Ariakit.MenuButton>
 
           <Ariakit.Menu
-            gutter={8}
+            gutter={4}
             className={cn(
-              'animate-popover z-50 flex max-h-[300px]',
-              'flex-col overflow-auto overscroll-contain rounded-xl',
-              'bg-surface-secondary px-1.5 py-1 text-text-primary shadow-lg',
-              'border border-border-light',
-              'min-w-[250px] outline-none',
+              'animate-popover-top-left z-40 flex min-w-[250px] flex-col rounded-xl',
+              'border border-border-light bg-surface-secondary shadow-lg',
             )}
-            portal
+            portal={true}
+            unmountOnHide={true}
           >
             <div className="px-2 py-1.5">
               <div className="mb-2 text-xs font-medium text-text-secondary">
@@ -106,18 +126,16 @@ function Artifacts() {
                   event.stopPropagation();
                   handleShadcnToggle();
                 }}
-                disabled={isCustomEnabled}
                 className={cn(
-                  'mb-1 flex items-center justify-between rounded-lg px-2 py-2',
-                  'cursor-pointer outline-none transition-colors',
-                  'hover:bg-black/[0.075] dark:hover:bg-white/10',
-                  'data-[active-item]:bg-black/[0.075] dark:data-[active-item]:bg-white/10',
-                  isCustomEnabled && 'cursor-not-allowed opacity-50',
+                  'mb-1 flex items-center justify-between gap-2 rounded-lg px-2 py-2',
+                  'cursor-pointer bg-surface-secondary text-text-primary outline-none transition-colors',
+                  'hover:bg-surface-hover data-[active-item]:bg-surface-hover',
+                  isShadcnEnabled && 'bg-surface-active',
                 )}
               >
-                <div className="flex items-center gap-2">
+                <span className="text-sm">{localize('com_ui_include_shadcnui' as any)}</span>
+                <div className="ml-auto flex items-center">
                   <Ariakit.MenuItemCheck checked={isShadcnEnabled} />
-                  <span className="text-sm">{localize('com_ui_include_shadcnui' as any)}</span>
                 </div>
               </Ariakit.MenuItem>
 
@@ -130,15 +148,15 @@ function Artifacts() {
                   handleCustomToggle();
                 }}
                 className={cn(
-                  'flex items-center justify-between rounded-lg px-2 py-2',
-                  'cursor-pointer outline-none transition-colors',
-                  'hover:bg-black/[0.075] dark:hover:bg-white/10',
-                  'data-[active-item]:bg-black/[0.075] dark:data-[active-item]:bg-white/10',
+                  'mb-1 flex items-center justify-between gap-2 rounded-lg px-2 py-2',
+                  'cursor-pointer bg-surface-secondary text-text-primary outline-none transition-colors',
+                  'hover:bg-surface-hover data-[active-item]:bg-surface-hover',
+                  isCustomEnabled && 'bg-surface-active',
                 )}
               >
-                <div className="flex items-center gap-2">
+                <span className="text-sm">{localize('com_ui_custom_prompt_mode' as any)}</span>
+                <div className="ml-auto flex items-center">
                   <Ariakit.MenuItemCheck checked={isCustomEnabled} />
-                  <span className="text-sm">{localize('com_ui_custom_prompt_mode' as any)}</span>
                 </div>
               </Ariakit.MenuItem>
             </div>

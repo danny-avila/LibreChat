@@ -4,7 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { useRecoilState, useSetRecoilState, useResetRecoilState } from 'recoil';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
-import { cn, getFileType, logger } from '~/utils';
+import { cn, getFileType, logger, isArtifactRoute } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -37,7 +37,7 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
       return;
     }
 
-    if (!location.pathname.includes('/c/')) {
+    if (!isArtifactRoute(location.pathname)) {
       return;
     }
 
@@ -57,8 +57,6 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
     <div className="group relative my-4 rounded-xl text-sm text-text-primary">
       {(() => {
         const handleClick = () => {
-          if (!location.pathname.includes('/c/')) return;
-
           if (isSelected) {
             resetCurrentArtifactId();
             setVisible(false);

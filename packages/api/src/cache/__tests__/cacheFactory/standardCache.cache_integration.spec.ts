@@ -30,18 +30,13 @@ describe('standardCache', () => {
   beforeEach(() => {
     originalEnv = { ...process.env };
 
-    // Clear cache-related env vars
-    delete process.env.USE_REDIS;
-    delete process.env.REDIS_URI;
-    delete process.env.USE_REDIS_CLUSTER;
-    delete process.env.REDIS_PING_INTERVAL;
-    delete process.env.REDIS_KEY_PREFIX;
-    delete process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES;
-
-    // Set test configuration
+    // Set test configuration with fallback defaults for local testing
     process.env.REDIS_PING_INTERVAL = '0';
     process.env.REDIS_KEY_PREFIX = 'Cache-Integration-Test';
     process.env.REDIS_RETRY_MAX_ATTEMPTS = '5';
+    process.env.USE_REDIS = process.env.USE_REDIS || 'true';
+    process.env.USE_REDIS_CLUSTER = 'false';
+    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
 
     // Clear require cache to reload modules
     jest.resetModules();
@@ -119,10 +114,6 @@ describe('standardCache', () => {
 
   describe('when connecting to a Redis server', () => {
     test('should handle different namespaces with correct prefixes', async () => {
-      process.env.USE_REDIS = 'true';
-      process.env.USE_REDIS_CLUSTER = 'false';
-      process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
       const cacheFactory = await import('../../cacheFactory');
 
       const cache1 = cacheFactory.standardCache('namespace-one');
@@ -147,10 +138,40 @@ describe('standardCache', () => {
       await cache2.clear();
     });
 
+    test('clear() should only clear keys in its own namespace', async () => {
+      const cacheFactory = await import('../../cacheFactory');
+
+      const cache1 = cacheFactory.standardCache('namespace-clear-test-1');
+      const cache2 = cacheFactory.standardCache('namespace-clear-test-2');
+
+      // Add data to both caches
+      await cache1.set('key1', 'value1-cache1');
+      await cache1.set('key2', 'value2-cache1');
+      await cache2.set('key1', 'value1-cache2');
+      await cache2.set('key2', 'value2-cache2');
+
+      // Verify both caches have their data
+      expect(await cache1.get('key1')).toBe('value1-cache1');
+      expect(await cache1.get('key2')).toBe('value2-cache1');
+      expect(await cache2.get('key1')).toBe('value1-cache2');
+      expect(await cache2.get('key2')).toBe('value2-cache2');
+
+      // Clear cache1 only
+      await cache1.clear();
+
+      // cache1 should be empty
+      expect(await cache1.get('key1')).toBeUndefined();
+      expect(await cache1.get('key2')).toBeUndefined();
+
+      // cache2 should still have its data
+      expect(await cache2.get('key1')).toBe('value1-cache2');
+      expect(await cache2.get('key2')).toBe('value2-cache2');
+
+      // Cleanup
+      await cache2.clear();
+    });
+
     test('should respect FORCED_IN_MEMORY_CACHE_NAMESPACES', async () => {
-      process.env.USE_REDIS = 'true';
-      process.env.USE_REDIS_CLUSTER = 'false';
-      process.env.REDIS_URI = 'redis://127.0.0.1:6379';
       process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES = 'ROLES'; // Use a valid cache key
 
       const cacheFactory = await import('../../cacheFactory');
@@ -167,10 +188,6 @@ describe('standardCache', () => {
     });
 
     test('should handle TTL correctly', async () => {
-      process.env.USE_REDIS = 'true';
-      process.env.USE_REDIS_CLUSTER = 'false';
-      process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
       const cacheFactory = await import('../../cacheFactory');
       testCache = cacheFactory.standardCache('ttl-test', 1000); // 1 second TTL
 

@@ -157,6 +157,7 @@ export const ArtifactCodeEditor = function ({
   artifact,
   editorRef,
   sharedProps,
+  readOnly: externalReadOnly,
 }: {
   fileKey: string;
   artifact: Artifact;
@@ -164,6 +165,7 @@ export const ArtifactCodeEditor = function ({
   template: SandpackProviderProps['template'];
   sharedProps: Partial<SandpackProviderProps>;
   editorRef: React.MutableRefObject<CodeEditorRef>;
+  readOnly?: boolean;
 }) {
   const { data: config } = useGetStartupConfig();
   const { isSubmitting } = useArtifactsContext();
@@ -177,10 +179,11 @@ export const ArtifactCodeEditor = function ({
       bundlerURL: template === 'static' ? config.staticBundlerURL : config.bundlerURL,
     };
   }, [config, template, fileKey]);
-  const [readOnly, setReadOnly] = useState(isSubmitting ?? false);
+  const initialReadOnly = (externalReadOnly ?? false) || (isSubmitting ?? false);
+  const [readOnly, setReadOnly] = useState(initialReadOnly);
   useEffect(() => {
-    setReadOnly(isSubmitting ?? false);
-  }, [isSubmitting]);
+    setReadOnly((externalReadOnly ?? false) || (isSubmitting ?? false));
+  }, [isSubmitting, externalReadOnly]);
 
   if (Object.keys(files).length === 0) {
     return null;

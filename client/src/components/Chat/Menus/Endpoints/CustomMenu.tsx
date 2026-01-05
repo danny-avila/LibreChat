@@ -9,6 +9,7 @@ export interface CustomMenuProps extends Ariakit.MenuButtonProps<'div'> {
   searchValue?: string;
   onSearch?: (value: string) => void;
   combobox?: Ariakit.ComboboxProps['render'];
+  comboboxLabel?: string;
   trigger?: Ariakit.MenuButtonProps['render'];
   defaultOpen?: boolean;
 }
@@ -22,6 +23,7 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
     searchValue,
     onSearch,
     combobox,
+    comboboxLabel,
     trigger,
     defaultOpen,
     ...props
@@ -46,8 +48,8 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
           !parent &&
             'flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border-light px-3 py-2 text-sm text-text-primary',
           menuStore.useState('open')
-            ? 'bg-surface-tertiary hover:bg-surface-tertiary'
-            : 'bg-surface-secondary hover:bg-surface-tertiary',
+            ? 'bg-surface-active-alt hover:bg-surface-active-alt'
+            : 'bg-presentation hover:bg-surface-active-alt',
           props.className,
         )}
         render={parent ? <CustomMenuItem render={trigger} /> : trigger}
@@ -62,9 +64,10 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
         unmountOnHide
         gutter={parent ? -4 : 4}
         className={cn(
-          `${parent ? 'animate-popover-left ml-3' : 'animate-popover'} outline-none! z-50 flex max-h-[min(450px,var(--popover-available-height))] w-full`,
+          parent ? 'animate-popover-left ml-3' : 'animate-popover',
+          'outline-none! z-40 flex max-h-[min(450px,var(--popover-available-height))] w-full',
           'w-[var(--menu-width,auto)] min-w-[300px] flex-col overflow-auto rounded-xl border border-border-light',
-          'bg-surface-secondary px-3 py-2 text-sm text-text-primary shadow-lg',
+          'bg-presentation px-3 py-2 text-sm text-text-primary shadow-lg',
           'max-w-[calc(100vw-4rem)] sm:max-h-[calc(65vh)] sm:max-w-[400px]',
           searchable && 'p-0',
         )}
@@ -73,15 +76,22 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
           {searchable ? (
             <>
               <div className="sticky top-0 z-10 bg-inherit p-1">
-                <Ariakit.Combobox
-                  autoSelect
-                  render={combobox}
-                  className={cn(
-                    'h-10 w-full rounded-lg border-none bg-transparent px-2 text-base',
-                    'sm:h-8 sm:text-sm',
-                    'focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-white',
+                <div className="relative">
+                  <Ariakit.Combobox
+                    autoSelect
+                    render={combobox}
+                    className={cn(
+                      'peer flex h-10 w-full items-center justify-center rounded-lg border-none bg-transparent px-2 text-base',
+                      'sm:h-8 sm:text-sm',
+                      'focus:outline-none focus:ring-0 focus-visible:ring-2 focus-visible:ring-primary',
+                    )}
+                  />
+                  {comboboxLabel && (
+                    <label className="pointer-events-none absolute left-2.5 top-2.5 text-sm text-text-secondary transition-all duration-200 peer-[:not(:placeholder-shown)]:-top-1.5 peer-[:not(:placeholder-shown)]:left-1.5 peer-[:not(:placeholder-shown)]:bg-presentation peer-[:not(:placeholder-shown)]:text-xs sm:top-1.5">
+                      {comboboxLabel}
+                    </label>
                   )}
-                />
+                </div>
               </div>
               <Ariakit.ComboboxList className="p-0.5 pt-0">{children}</Ariakit.ComboboxList>
             </>
@@ -159,7 +169,7 @@ export const CustomMenuItem = React.forwardRef<HTMLDivElement, CustomMenuItemPro
       blurOnHoverEnd: false,
       ...props,
       className: cn(
-        'relative flex cursor-default items-center gap-2 rounded-lg p-2 outline-none! scroll-m-1 scroll-mt-[calc(var(--combobox-height,0px)+var(--label-height,4px))] aria-disabled:opacity-25 data-[active-item]:bg-black/[0.075] data-[active-item]:text-black dark:data-[active-item]:bg-white/10 dark:data-[active-item]:text-white sm:py-1 sm:text-sm min-w-0 w-full before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:bg-transparent before:rounded-full data-[active-item]:before:bg-black dark:data-[active-item]:before:bg-white',
+        'relative flex cursor-default items-center gap-2 rounded-lg px-2 py-1 outline-none! scroll-m-1 scroll-mt-[calc(var(--combobox-height,0px)+var(--label-height,4px))] aria-disabled:opacity-25 data-[active-item]:bg-black/[0.075] data-[active-item]:text-black dark:data-[active-item]:bg-white/10 dark:data-[active-item]:text-white sm:text-sm min-w-0 w-full before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:bg-transparent before:rounded-full data-[active-item]:before:bg-black dark:data-[active-item]:before:bg-white',
         props.className,
       ),
     };

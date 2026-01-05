@@ -1,5 +1,6 @@
 import _ from 'lodash';
 import { MeiliSearch } from 'meilisearch';
+import { parseTextParts } from 'librechat-data-provider';
 import type { SearchResponse, SearchParams, Index } from 'meilisearch';
 import type {
   CallbackWithoutResultAndOptionalError,
@@ -26,11 +27,6 @@ interface MongoMeiliOptions {
 interface MeiliIndexable {
   [key: string]: unknown;
   _meiliIndex?: boolean;
-}
-
-interface ContentItem {
-  type: string;
-  text?: string;
 }
 
 interface SyncProgress {
@@ -99,29 +95,6 @@ const getSyncConfig = () => ({
   batchSize: parseInt(process.env.MEILI_SYNC_BATCH_SIZE || '100', 10),
   delayMs: parseInt(process.env.MEILI_SYNC_DELAY_MS || '100', 10),
 });
-
-/**
- * Local implementation of parseTextParts to avoid dependency on librechat-data-provider
- * Extracts text content from an array of content items
- */
-const parseTextParts = (content: ContentItem[]): string => {
-  if (!Array.isArray(content)) {
-    return '';
-  }
-
-  return content
-    .filter((item) => item.type === 'text' && typeof item.text === 'string')
-    .map((item) => item.text)
-    .join(' ')
-    .trim();
-};
-
-/**
- * Local implementation to handle Bing convoId conversion
- */
-const cleanUpPrimaryKeyValue = (value: string): string => {
-  return value.replace(/--/g, '|');
-};
 
 /**
  * Validates the required options for configuring the mongoMeili plugin.
@@ -210,7 +183,8 @@ const createMeiliMongooseModel = ({
         );
 
         // Build query with resume capability
-        const query: FilterQuery<unknown> = {};
+        // Do not sync TTL documents
+        const query: FilterQuery<unknown> = { expiredAt: null };
         if (options?.resumeFromId) {
           query._id = { $gt: options.resumeFromId };
         }
@@ -393,9 +367,7 @@ const createMeiliMongooseModel = ({
 
       if (populate) {
         const query: Record<string, unknown> = {};
-        query[primaryKey] = _.map(data.hits, (hit) =>
-          cleanUpPrimaryKeyValue(hit[primaryKey] as string),
-        );
+        query[primaryKey] = _.map(data.hits, (hit) => hit[primaryKey]);
 
         const projection = Object.keys(this.schema.obj).reduce<Record<string, number>>(
           (results, key) => {
@@ -459,6 +431,11 @@ const createMeiliMongooseModel = ({
       this: DocumentWithMeiliIndex,
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
+      // If this conversation or message has a TTL, don't index it
+      if (!_.isNil(this.expiredAt)) {
+        return next();
+      }
+
       const object = this.preprocessObjectForIndex!();
       const maxRetries = 3;
       let retryCount = 0;

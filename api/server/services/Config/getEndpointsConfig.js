@@ -19,7 +19,11 @@ async function getEndpointsConfig(req) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   const cachedEndpointsConfig = await cache.get(CacheKeys.ENDPOINT_CONFIG);
   if (cachedEndpointsConfig) {
-    return cachedEndpointsConfig;
+    if (cachedEndpointsConfig.gptPlugins) {
+      await cache.delete(CacheKeys.ENDPOINT_CONFIG);
+    } else {
+      return cachedEndpointsConfig;
+    }
   }
 
   const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
@@ -35,6 +39,14 @@ async function getEndpointsConfig(req) {
   if (appConfig.endpoints?.[EModelEndpoint.azureOpenAI]) {
     /** @type {Omit<TConfig, 'order'>} */
     mergedConfig[EModelEndpoint.azureOpenAI] = {
+      userProvide: false,
+    };
+  }
+
+  // Enable Anthropic endpoint when Vertex AI is configured in YAML
+  if (appConfig.endpoints?.[EModelEndpoint.anthropic]?.vertexConfig?.enabled) {
+    /** @type {Omit<TConfig, 'order'>} */
+    mergedConfig[EModelEndpoint.anthropic] = {
       userProvide: false,
     };
   }

@@ -33,11 +33,26 @@ export namespace Agents {
     image_url: string | { url: string; detail?: ImageDetail };
   };
 
+  export type MessageContentVideoUrl = {
+    type: ContentTypes.VIDEO_URL;
+    video_url: { url: string };
+  };
+
+  export type MessageContentInputAudio = {
+    type: ContentTypes.INPUT_AUDIO;
+    input_audio: {
+      data: string;
+      format: string;
+    };
+  };
+
   export type MessageContentComplex =
     | ReasoningContentText
     | AgentUpdate
     | MessageContentText
     | MessageContentImageUrl
+    | MessageContentVideoUrl
+    | MessageContentInputAudio
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     | (Record<string, any> & { type?: ContentTypes | string })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -166,11 +181,40 @@ export namespace Agents {
     type: StepTypes;
     id: string; // #new
     runId?: string; // #new
+    agentId?: string; // #new
     index: number; // #new
     stepIndex?: number; // #new
+    /** Group ID for parallel content - parts with same groupId are displayed in columns */
+    groupId?: number; // #new
     stepDetails: StepDetails;
     usage: null | object;
   };
+
+  /** Content part for aggregated message content */
+  export interface ContentPart {
+    type: string;
+    text?: string;
+    [key: string]: unknown;
+  }
+
+  /** User message metadata for rebuilding submission on reconnect */
+  export interface UserMessageMeta {
+    messageId: string;
+    parentMessageId?: string;
+    conversationId?: string;
+    text?: string;
+  }
+
+  /** State data sent to reconnecting clients */
+  export interface ResumeState {
+    runSteps: RunStep[];
+    /** Aggregated content parts - can be MessageContentComplex[] or ContentPart[] */
+    aggregatedContent?: MessageContentComplex[];
+    userMessage?: UserMessageMeta;
+    responseMessageId?: string;
+    conversationId?: string;
+    sender?: string;
+  }
   /**
    * Represents a run step delta i.e. any changed fields on a run step during
    * streaming.
@@ -266,6 +310,8 @@ export namespace Agents {
     | ContentTypes.THINK
     | ContentTypes.TEXT
     | ContentTypes.IMAGE_URL
+    | ContentTypes.VIDEO_URL
+    | ContentTypes.INPUT_AUDIO
     | string;
 }
 
@@ -333,7 +379,7 @@ export type ActionMetadataRuntime = ActionMetadata & {
 };
 
 export type MCP = {
-  mcp_id: string;
+  serverName: string;
   metadata: MCPMetadata;
 } & ({ assistant_id: string; agent_id?: never } | { assistant_id?: never; agent_id?: string });
 

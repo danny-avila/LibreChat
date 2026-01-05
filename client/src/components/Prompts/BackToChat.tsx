@@ -19,7 +19,7 @@ export default function BackToChat({ className }: { className?: string }) {
       href="/"
       onClick={clickHandler}
     >
-      <ArrowLeft className="icon-xs mr-2" />
+      <ArrowLeft className="icon-xs mr-2" aria-hidden="true" />
       {localize('com_ui_back_to_chat')}
     </a>
   );

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Skeleton } from '@librechat/client';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
+import { apiBaseUrl } from 'librechat-data-provider';
 import { cn, scaleImage } from '~/utils';
 import DialogImage from './DialogImage';
 
@@ -36,6 +37,24 @@ const Image = ({
 
   const handleImageLoad = () => setIsLoaded(true);
 
+  // Fix image path to include base path for subdirectory deployments
+  const absoluteImageUrl = useMemo(() => {
+    if (!imagePath) return imagePath;
+
+    // If it's already an absolute URL or doesn't start with /images/, return as is
+    if (
+      imagePath.startsWith('http') ||
+      imagePath.startsWith('data:') ||
+      !imagePath.startsWith('/images/')
+    ) {
+      return imagePath;
+    }
+
+    // Get the base URL and prepend it to the image path
+    const baseURL = apiBaseUrl();
+    return `${baseURL}${imagePath}`;
+  }, [imagePath]);
+
   const { width: scaledWidth, height: scaledHeight } = useMemo(
     () =>
       scaleImage({
@@ -48,7 +67,7 @@ const Image = ({
 
   const downloadImage = async () => {
     try {
-      const response = await fetch(imagePath);
+      const response = await fetch(absoluteImageUrl);
       if (!response.ok) {
         throw new Error(`Failed to fetch image: ${response.status}`);
       }
@@ -67,7 +86,7 @@ const Image = ({
     } catch (error) {
       console.error('Download failed:', error);
       const link = document.createElement('a');
-      link.href = imagePath;
+      link.href = absoluteImageUrl;
       link.download = altText || 'image.png';
       document.body.appendChild(link);
       link.click();
@@ -97,7 +116,7 @@ const Image = ({
               'opacity-100 transition-opacity duration-100',
               isLoaded ? 'opacity-100' : 'opacity-0',
             )}
-            src={imagePath}
+            src={absoluteImageUrl}
             style={{
               width: `${scaledWidth}`,
               height: 'auto',
@@ -117,7 +136,7 @@ const Image = ({
           <DialogImage
             isOpen={isOpen}
             onOpenChange={setIsOpen}
-            src={imagePath}
+            src={absoluteImageUrl}
             downloadImage={downloadImage}
             args={args}
           />

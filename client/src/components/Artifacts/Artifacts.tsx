@@ -4,10 +4,10 @@ import { Code, Play, RefreshCw, X } from 'lucide-react';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { Button, Spinner, useMediaQuery, Radio } from '@librechat/client';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
+import { useShareContext, useMutationState } from '~/Providers';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
-import { useMutationState } from '~/Providers/EditorContext';
 import ArtifactTabs from './ArtifactTabs';
 import { CopyCodeButton } from './Code';
 import { useLocalize } from '~/hooks';
@@ -20,6 +20,7 @@ const MAX_BACKDROP_OPACITY = 0.3;
 export default function Artifacts() {
   const localize = useLocalize();
   const { isMutating } = useMutationState();
+  const { isSharedConvo } = useShareContext();
   const isMobile = useMediaQuery('(max-width: 868px)');
   const editorRef = useRef<CodeEditorRef>();
   const previewRef = useRef<SandpackPreviewRef>();
@@ -256,7 +257,11 @@ export default function Artifacts() {
                   {isRefreshing ? (
                     <Spinner size={16} />
                   ) : (
-                    <RefreshCw size={16} className="transition-transform duration-200" />
+                    <RefreshCw
+                      size={16}
+                      className="transition-transform duration-200"
+                      aria-hidden="true"
+                    />
                   )}
                 </Button>
               )}
@@ -283,7 +288,7 @@ export default function Artifacts() {
                 onClick={closeArtifacts}
                 aria-label={localize('com_ui_close')}
               >
-                <X size={16} />
+                <X size={16} aria-hidden="true" />
               </Button>
             </div>
           </div>
@@ -294,6 +299,7 @@ export default function Artifacts() {
                 artifact={currentArtifact}
                 editorRef={editorRef as React.MutableRefObject<CodeEditorRef>}
                 previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
+                isSharedConvo={isSharedConvo}
               />
             </div>
 

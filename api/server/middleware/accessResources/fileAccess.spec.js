@@ -4,7 +4,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const { fileAccess } = require('./fileAccess');
 const { User, Role, AclEntry } = require('~/db/models');
 const { createAgent } = require('~/models/Agent');
-const { createFile } = require('~/models/File');
+const { createFile } = require('~/models');
 
 describe('fileAccess middleware', () => {
   let mongoServer;
