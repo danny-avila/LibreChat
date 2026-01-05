@@ -118,6 +118,7 @@ module.exports = {
         'border-medium-alt': 'var(--border-medium-alt)',
         'border-heavy': 'var(--border-heavy)',
         'border-xheavy': 'var(--border-xheavy)',
+        'yellow-text': 'var(--yellow-text)',
         /* These are test styles */
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
