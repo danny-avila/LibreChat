@@ -14,10 +14,11 @@ import type {
   LLMConfig,
 } from '@librechat/agents';
 import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
-import type { ObjectId, MemoryMethods } from '@librechat/data-schemas';
+import type { ObjectId, MemoryMethods, IUser } from '@librechat/data-schemas';
 import type { BaseMessage, ToolMessage } from '@langchain/core/messages';
 import type { Response as ServerResponse } from 'express';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
+import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { Tokenizer } from '~/utils';
 
 type RequiredMemoryMethods = Pick<
@@ -285,6 +286,7 @@ export async function processMemory({
   tokenLimit,
   totalTokens = 0,
   streamId = null,
+  user,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -300,6 +302,7 @@ export async function processMemory({
   totalTokens?: number;
   llmConfig?: Partial<LLMConfig>;
   streamId?: string | null;
+  user?: IUser;
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({
@@ -366,6 +369,14 @@ ${memory ?? 'No existing memories'}`;
       }
     }
 
+    const llmConfigWithHeaders = finalLLMConfig as OpenAIClientOptions;
+    if (llmConfigWithHeaders?.configuration?.defaultHeaders != null) {
+      llmConfigWithHeaders.configuration.defaultHeaders = resolveHeaders({
+        headers: llmConfigWithHeaders.configuration.defaultHeaders as Record<string, string>,
+        user: user ? createSafeUser(user) : undefined,
+      });
+    }
+
     const artifactPromises: Promise<TAttachment | null>[] = [];
     const memoryCallback = createMemoryCallback({ res, artifactPromises, streamId });
     const customHandlers = {
@@ -421,6 +432,7 @@ export async function createMemoryProcessor({
   conversationId,
   config = {},
   streamId = null,
+  user,
 }: {
   res: ServerResponse;
   messageId: string;
@@ -429,6 +441,7 @@ export async function createMemoryProcessor({
   memoryMethods: RequiredMemoryMethods;
   config?: MemoryConfig;
   streamId?: string | null;
+  user?: IUser;
 }): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
@@ -456,6 +469,7 @@ export async function createMemoryProcessor({
           instructions: finalInstructions,
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,
+          user,
         });
       } catch (error) {
         logger.error('Memory Agent failed to process memory', error);
