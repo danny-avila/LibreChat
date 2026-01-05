@@ -29,6 +29,7 @@ export type FavoriteItem = {
   agentId?: string;
   model?: string;
   endpoint?: string;
+  spec?: string;
 };
 
 export function getFavorites(): Promise<FavoriteItem[]> {

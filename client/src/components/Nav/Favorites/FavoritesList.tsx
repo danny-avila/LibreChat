@@ -16,8 +16,8 @@ import {
   useNewConvo,
 } from '~/hooks';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useSelectMention from '~/hooks/Input/useSelectMention';
-import { useGetEndpointsQuery } from '~/data-provider';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
 
@@ -134,9 +134,23 @@ export default function FavoritesList({
   const assistantsMap = useAssistantsMapContext();
   const agentsMap = useAgentsMapContext();
   const { data: endpointsConfig = {} as t.TEndpointsConfig } = useGetEndpointsQuery();
+  const { data: startupConfig } = useGetStartupConfig();
 
-  const { onSelectEndpoint: _onSelectEndpoint } = useSelectMention({
-    modelSpecs: [],
+  const modelSpecs = useMemo(
+    () => startupConfig?.modelSpecs?.list ?? [],
+    [startupConfig?.modelSpecs?.list],
+  );
+
+  const specsMap = useMemo(() => {
+    const map: Record<string, t.TModelSpec> = {};
+    for (const spec of modelSpecs) {
+      map[spec.name] = spec;
+    }
+    return map;
+  }, [modelSpecs]);
+
+  const { onSelectEndpoint: _onSelectEndpoint, onSelectSpec: _onSelectSpec } = useSelectMention({
+    modelSpecs,
     assistantsMap,
     endpointsConfig,
     getConversation,
@@ -152,6 +166,16 @@ export default function FavoritesList({
       }
     },
     [_onSelectEndpoint, isSmallScreen, toggleNav],
+  );
+
+  const onSelectSpec = useCallback(
+    (...args: Parameters<NonNullable<typeof _onSelectSpec>>) => {
+      _onSelectSpec?.(...args);
+      if (isSmallScreen && toggleNav) {
+        toggleNav();
+      }
+    },
+    [_onSelectSpec, isSmallScreen, toggleNav],
   );
 
   const marketplaceRef = useRef<HTMLDivElement>(null);
@@ -366,6 +390,28 @@ export default function FavoritesList({
                       type="agent"
                       onSelectEndpoint={onSelectEndpoint}
                       onRemoveFocus={handleRemoveFocus}
+                    />
+                  </DraggableFavoriteItem>
+                );
+              } else if (fav.spec) {
+                const spec = specsMap[fav.spec];
+                if (!spec) {
+                  return null;
+                }
+                return (
+                  <DraggableFavoriteItem
+                    key={`spec-${fav.spec}`}
+                    id={`spec-${fav.spec}`}
+                    index={index}
+                    moveItem={moveItem}
+                    onDrop={handleDrop}
+                  >
+                    <FavoriteItem
+                      item={spec}
+                      type="spec"
+                      onSelectSpec={onSelectSpec}
+                      onRemoveFocus={handleRemoveFocus}
+                      endpointsConfig={endpointsConfig}
                     />
                   </DraggableFavoriteItem>
                 );
