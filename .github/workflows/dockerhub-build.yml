@@ -110,9 +110,9 @@ jobs:
               --env=prod \
               --projectId='${{ secrets.INFISICAL_PROJECT_ID }}' \
               --path='/annam-ajrasakha/LibreChat' \
-              > $ENV_FILE
+              > .env
         
-            chmod 600 $ENV_FILE
+            chmod 600 .env
         
             echo "Stopping old container (if any)"
             docker stop $CONTAINER || true
@@ -123,12 +123,9 @@ jobs:
               --name $CONTAINER \
               --restart unless-stopped \
               -p 3081:3080 \
-              --env-file $ENV_FILE \
+              --env-file .env \
               $IMAGE \
               npm run backend
-        
-            echo "Cleaning up env file"
-            rm -f $ENV_FILE
         
             echo "Deployment complete"
           EOF
