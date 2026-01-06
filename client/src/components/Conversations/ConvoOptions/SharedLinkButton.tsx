@@ -10,8 +10,9 @@ import {
   TooltipAnchor,
   OGDialogTitle,
   OGDialogHeader,
-  useToastContext,
+  OGDialogFooter,
   OGDialogContent,
+  useToastContext,
 } from '@librechat/client';
 import type { TSharedLinkGetResponse } from 'librechat-data-provider';
 import {
@@ -132,12 +133,6 @@ export default function SharedLinkButton({
   return (
     <>
       <div className="flex gap-2">
-        {!shareId && (
-          <Button disabled={isCreateLoading} variant="submit" onClick={createShareLink}>
-            {!isCreateLoading && localize('com_ui_create_link')}
-            {isCreateLoading && <Spinner className="size-4" />}
-          </Button>
-        )}
         {shareId && (
           <div className="flex items-center gap-2">
             <TooltipAnchor
@@ -194,6 +189,14 @@ export default function SharedLinkButton({
             />
           </div>
         )}
+        {!shareId && (
+          <OGDialogFooter>
+            <Button disabled={isCreateLoading} variant="submit" onClick={createShareLink}>
+              {!isCreateLoading && localize('com_ui_create_link')}
+              {isCreateLoading && <Spinner className="size-4" />}
+            </Button>
+          </OGDialogFooter>
+        )}
         <OGDialog
           open={showDeleteDialog}
           triggerRef={deleteButtonRef}
@@ -214,7 +217,7 @@ export default function SharedLinkButton({
                 </Label>
               </div>
             </div>
-            <div className="flex justify-end gap-4 pt-4">
+            <OGDialogFooter className="pt-4">
               <OGDialogClose asChild>
                 <Button variant="outline">{localize('com_ui_cancel')}</Button>
               </OGDialogClose>
@@ -229,7 +232,7 @@ export default function SharedLinkButton({
                   localize('com_ui_delete')
                 )}
               </Button>
-            </div>
+            </OGDialogFooter>
           </OGDialogContent>
         </OGDialog>
       </div>
