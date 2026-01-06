@@ -199,11 +199,6 @@ export default function ToolCall({
           error={cancelled}
         />
       </div>
-      {parsedQuery && (
-        <div className="clickhouse-codeblock my-2">
-          <CodeBlock language="sql">{parsedQuery}</CodeBlock>
-        </div>
-      )}
       <div
         className="relative"
         style={{
@@ -246,6 +241,11 @@ export default function ToolCall({
           </div>
         </div>
       </div>
+      {parsedQuery && (
+        <div className="clickhouse-codeblock my-2">
+          <CodeBlock language="sql">{parsedQuery}</CodeBlock>
+        </div>
+      )}
       {auth != null && auth && progress < 1 && !cancelled && (
         <div className="flex w-full flex-col gap-2.5">
           <div className="mb-1 mt-2">
