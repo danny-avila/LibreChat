@@ -1,7 +1,25 @@
 name: Push Container Image to DockerHub
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:    
+    inputs:
+      should_build:
+        description: "Build and Push"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      should_deploy:
+        description: "Deploy"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
 
 permissions:
   contents: read
@@ -14,6 +32,7 @@ env:
 
 jobs:
   build:
+    if: github.event.inputs.should_build == 'true'
     name: Build & Push Image
     runs-on: ubuntu-latest
 
@@ -40,3 +59,26 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+  deploy:
+    if: github.event.inputs.should_deploy == 'true'
+    name: Deploy to GCP VM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TS_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_SECRET }}
+          tags: tag:ci-cd
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+      - name: Run Docker hello-world on VM
+        run: |
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} \
+            "docker run --rm hello-world"
