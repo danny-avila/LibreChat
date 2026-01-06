@@ -82,43 +82,54 @@ jobs:
         run: |
           ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
             set -e
-      
+        
             IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
             CONTAINER=ajrasakha-client
-      
+            ENV_FILE=/tmp/ajrasakha.env
+        
             echo "Pulling image: $IMAGE"
             docker pull $IMAGE
-      
+        
+            echo "Authenticating with Infisical (outside container)"
+            export INFISICAL_TOKEN=$(
+              infisical login \
+                --method=universal-auth \
+                --client-id='${{ secrets.INFISICAL_CLIENT_ID }}' \
+                --client-secret='${{ secrets.INFISICAL_CLIENT_SECRET }}' \
+                --silent \
+                --plain
+            )
+        
+            if [ -z "$INFISICAL_TOKEN" ]; then
+              echo "✗ Infisical auth failed"
+              exit 1
+            fi
+        
+            echo "Exporting secrets from Infisical"
+            infisical export \
+              --env=prod \
+              --projectId='${{ secrets.INFISICAL_PROJECT_ID }}' \
+              --path='/annam-ajrasakha/LibreChat' \
+              --format=dotenv-export \
+              > $ENV_FILE
+        
+            chmod 600 $ENV_FILE
+        
             echo "Stopping old container (if any)"
             docker stop $CONTAINER || true
             docker rm $CONTAINER || true
-      
-            echo "Starting new container"
+        
+            echo "Starting new container on port 3081"
             docker run -d \
               --name $CONTAINER \
               --restart unless-stopped \
               -p 3081:3080 \
-              -e INFISICAL_CLIENT_ID=${{ secrets.INFISICAL_CLIENT_ID }} \
-              -e INFISICAL_CLIENT_SECRET=${{ secrets.INFISICAL_CLIENT_SECRET }} \
-              -e INFISICAL_PROJECT_ID=${{ secrets.INFISICAL_PROJECT_ID }} \
-              -e INFISICAL_ENV_PATH=/annam-ajrasakha/LibreChat \
+              --env-file $ENV_FILE \
               $IMAGE \
-              sh -c '
-                export INFISICAL_TOKEN=$(
-                  npx @infisical/cli@0.43.40 login \
-                    --method=universal-auth \
-                    --client-id="$INFISICAL_CLIENT_ID" \
-                    --client-secret="$INFISICAL_CLIENT_SECRET" \
-                    --silent \
-                    --plain
-                ) &&
-                [ -z "$INFISICAL_TOKEN" ] && echo "✗ Infisical auth failed" && exit 1 &&
-                exec proxychains4 -q \
-                  npx @infisical/cli@0.43.40 run \
-                    --env=prod \
-                    --projectId="$INFISICAL_PROJECT_ID" \
-                    --path="$INFISICAL_ENV_PATH" \
-                    -- npm run backend
-              '
+              npm run backend
+        
+            echo "Cleaning up secrets file"
+            rm -f $ENV_FILE
+        
+            echo "Deployment completed successfully"
           EOF
-      
