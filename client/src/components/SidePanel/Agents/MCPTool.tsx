@@ -27,6 +27,7 @@ import {
   useLocalize,
 } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
+import { renderMCPIcon } from '~/components/MCP/renderMCPIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { cn } from '~/utils';
 
@@ -177,17 +178,15 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
               >
                 {statusIcon && <div className="flex items-center">{statusIcon}</div>}
 
-                {serverInfo.metadata.icon && (
-                  <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full">
-                    <div
-                      className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-center bg-no-repeat dark:bg-white/20"
-                      style={{
-                        backgroundImage: `url(${serverInfo.metadata.icon})`,
-                        backgroundSize: 'cover',
-                      }}
-                    />
-                  </div>
-                )}
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center">
+                  {renderMCPIcon({
+                    iconPath: serverInfo.metadata.icon,
+                    serverName: currentServerName,
+                    displayName: currentServerName,
+                    className: 'h-6 w-6 rounded-full object-cover',
+                    wrapDefault: true,
+                  })}
+                </div>
                 <div
                   className="grow px-2 py-1.5"
                   style={{ textOverflow: 'ellipsis', wordBreak: 'break-all', overflow: 'hidden' }}
