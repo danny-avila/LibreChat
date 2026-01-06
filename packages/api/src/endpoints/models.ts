@@ -1,8 +1,11 @@
+import path from 'path';
 import axios from 'axios';
+import { GoogleAuth } from 'google-auth-library';
 import { logger } from '@librechat/data-schemas';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { CacheKeys, KnownEndpoints, EModelEndpoint, defaultModels } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
+import type { GoogleServiceKey } from '~/utils';
 import {
   processModelData,
   extractBaseURL,
@@ -11,6 +14,8 @@ import {
   deriveBaseURL,
   logAxiosError,
   inputSchema,
+  loadServiceKey,
+  isEnabled,
 } from '~/utils';
 import { standardCache } from '~/cache';
 
@@ -366,16 +371,206 @@ export async function getAnthropicModels(
   }
 }
 
-/**
- * Gets Google models from environment or defaults.
- * @returns Array of model IDs
- */
-export function getGoogleModels(): string[] {
-  let models = defaultModels[EModelEndpoint.google];
-  if (process.env.GOOGLE_MODELS) {
-    models = splitAndTrim(process.env.GOOGLE_MODELS);
+function normalizeGoogleModelName(name?: string | null): string | null {
+  if (!name || typeof name !== 'string') {
+    return null;
   }
-  return models;
+
+  const cleaned = name
+    .replace(/^models\//, '')
+    .replace(/^projects\/[^/]+\/locations\/[^/]+\/publishers\/google\/models\//, '');
+
+  if (!cleaned) {
+    return null;
+  }
+
+  return cleaned;
+}
+
+function isGeminiModel(model?: string | null): boolean {
+  if (!model) {
+    return false;
+  }
+  const lower = model.toLowerCase();
+  if (!lower.includes('gemini')) {
+    return false;
+  }
+  return !lower.includes('embedding');
+}
+
+function tryParseServiceKey(raw?: string | null): GoogleServiceKey | null {
+  if (!raw || raw === 'user_provided') {
+    return null;
+  }
+
+  const trimmed = raw.trim();
+
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parsed && typeof parsed === 'object' ? (parsed as GoogleServiceKey) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  if (/^[A-Za-z0-9+/]+=*$/.test(trimmed)) {
+    try {
+      const decoded = Buffer.from(trimmed, 'base64').toString('utf-8');
+      const parsed = JSON.parse(decoded);
+      return parsed && typeof parsed === 'object' ? (parsed as GoogleServiceKey) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+async function fetchGoogleAiStudioModels(apiKey: string): Promise<string[]> {
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+  try {
+    const res = await axios.get<{ models?: Array<{ name?: string }> }>(url, {
+      params: { key: apiKey },
+      timeout: 5000,
+    });
+
+    const models = res.data?.models ?? [];
+    const names = models
+      .map((model) => normalizeGoogleModelName(model?.name))
+      .filter(isGeminiModel) as string[];
+
+    return Array.from(new Set(names));
+  } catch (error) {
+    logAxiosError({
+      message: 'Failed to fetch Google (Gemini) models from AI Studio',
+      error: error as Error,
+    });
+    return [];
+  }
+}
+
+async function fetchGoogleVertexModels(options: {
+  serviceKey: GoogleServiceKey;
+  location?: string;
+  projectId?: string | null;
+}): Promise<string[]> {
+  const { serviceKey, location = process.env.GOOGLE_LOC || 'us-central1' } = options;
+  const projectId = options.projectId || serviceKey.project_id;
+
+  if (!projectId) {
+    logger.error('Vertex model fetch skipped: missing projectId');
+    return [];
+  }
+
+  try {
+    const auth = new GoogleAuth({
+      credentials: serviceKey,
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+      projectId,
+    });
+
+    const client = await auth.getClient();
+    const accessTokenResponse = await client.getAccessToken();
+    const token =
+      typeof accessTokenResponse === 'string' ? accessTokenResponse : accessTokenResponse?.token;
+
+    if (!token) {
+      logger.error('Vertex model fetch failed: no access token obtained');
+      return [];
+    }
+
+    const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models`;
+    const res = await axios.get<{ models?: Array<{ name?: string }> }>(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      timeout: 5000,
+    });
+
+    const models = res.data?.models ?? [];
+    const names = models
+      .map((model) => normalizeGoogleModelName(model?.name))
+      .filter(isGeminiModel) as string[];
+
+    return Array.from(new Set(names));
+  } catch (error) {
+    logAxiosError({
+      message: 'Failed to fetch Google (Gemini) models from Vertex AI',
+      error: error as Error,
+    });
+    return [];
+  }
+}
+
+/**
+ * Gets Google models from environment, remote API (optional), or defaults.
+ * @returns Promise resolving to model IDs
+ */
+export async function getGoogleModels(): Promise<string[]> {
+  const defaults = defaultModels[EModelEndpoint.google];
+
+  if (process.env.GOOGLE_MODELS) {
+    return splitAndTrim(process.env.GOOGLE_MODELS);
+  }
+
+  const shouldFetch = isEnabled(process.env.GOOGLE_FETCH_MODELS);
+  if (!shouldFetch) {
+    return defaults;
+  }
+
+  const googleKey = process.env.GOOGLE_KEY;
+
+  const parsedServiceKey = tryParseServiceKey(googleKey);
+  if (parsedServiceKey?.project_id) {
+    try {
+      const fetched = await fetchGoogleVertexModels({
+        serviceKey: parsedServiceKey,
+        projectId: process.env.VERTEX_PROJECT_ID,
+      });
+      if (fetched.length) {
+        return fetched;
+      }
+    } catch (err) {
+      logger.error('getGoogleModels: Vertex (parsed key) fetch failed: %s', String(err));
+    }
+  }
+
+  if (googleKey && googleKey !== 'user_provided' && !parsedServiceKey) {
+    try {
+      const fetched = await fetchGoogleAiStudioModels(googleKey);
+      if (fetched.length) {
+        return fetched;
+      }
+    } catch (err) {
+      logger.error('getGoogleModels: AI Studio fetch failed: %s', String(err));
+    }
+  }
+
+  const serviceKeyPath =
+    process.env.GOOGLE_SERVICE_KEY_FILE || path.join(process.cwd(), 'api', 'data', 'auth.json');
+  const serviceKey = await loadServiceKey(serviceKeyPath);
+
+  if (serviceKey) {
+    try {
+      const fetched = await fetchGoogleVertexModels({
+        serviceKey,
+        projectId: process.env.VERTEX_PROJECT_ID,
+      });
+      if (fetched.length) {
+        return fetched;
+      }
+    } catch (err) {
+      logger.error('getGoogleModels: Vertex (file) fetch failed: %s', String(err));
+    }
+  } else {
+    logger.warn(
+      'Google auto-fetch enabled but no valid GOOGLE_KEY or service key found; using defaults',
+    );
+  }
+
+  return defaults;
 }
 
 /**

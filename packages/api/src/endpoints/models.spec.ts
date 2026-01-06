@@ -590,15 +590,16 @@ describe('getGoogleModels', () => {
     process.env = originalEnv;
   });
 
-  it('returns default models when GOOGLE_MODELS is not set', () => {
+  it('returns default models when GOOGLE_MODELS is not set', async () => {
     delete process.env.GOOGLE_MODELS;
-    const models = getGoogleModels();
+    delete process.env.GOOGLE_FETCH_MODELS;
+    const models = await getGoogleModels();
     expect(models).toEqual(defaultModels[EModelEndpoint.google]);
   });
 
-  it('returns models from GOOGLE_MODELS when set', () => {
+  it('returns models from GOOGLE_MODELS when set', async () => {
     process.env.GOOGLE_MODELS = 'gemini-pro, bard ';
-    const models = getGoogleModels();
+    const models = await getGoogleModels();
     expect(models).toEqual(['gemini-pro', 'bard']);
   });
 });
