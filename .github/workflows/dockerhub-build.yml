@@ -94,7 +94,6 @@ jobs:
             export INFISICAL_TOKEN=$(
               npx @infisical/cli@0.43.40 login \
                 --method=universal-auth \
-                --projectId='${{ secrets.INFISICAL_PROJECT_ID }}' \
                 --client-id='${{ secrets.INFISICAL_CLIENT_ID }}' \
                 --client-secret='${{ secrets.INFISICAL_CLIENT_SECRET }}' \
                 --silent \
@@ -111,7 +110,6 @@ jobs:
               --env=prod \
               --projectId='${{ secrets.INFISICAL_PROJECT_ID }}' \
               --path='/annam-ajrasakha/LibreChat' \
-              --format=dotenv-export \
               > $ENV_FILE
         
             chmod 600 $ENV_FILE
