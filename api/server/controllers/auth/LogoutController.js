@@ -39,7 +39,12 @@ const logoutController = async (req, res) => {
           ? openIdConfig.serverMetadata().end_session_endpoint
           : null;
         if (endSessionEndpoint) {
-          response.redirect = endSessionEndpoint;
+          const endSessionUrl = new URL(endSessionEndpoint);
+          /** Redirect back to app's login page after IdP logout */
+          const postLogoutRedirectUri =
+            process.env.OPENID_POST_LOGOUT_REDIRECT_URI || `${process.env.DOMAIN_CLIENT}/login`;
+          endSessionUrl.searchParams.set('post_logout_redirect_uri', postLogoutRedirectUri);
+          response.redirect = endSessionUrl.toString();
         } else {
           logger.warn(
             '[logoutController] end_session_endpoint not found in OpenID issuer metadata. Please verify that the issuer is correct.',
