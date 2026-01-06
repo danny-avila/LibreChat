@@ -2,9 +2,10 @@ import { useState, useRef } from 'react';
 import { MCPIcon } from '@librechat/client';
 import { PermissionBits, hasPermissions } from 'librechat-data-provider';
 import type { MCPServerStatusIconProps } from '~/components/MCP/MCPServerStatusIcon';
+import ClickHouseIcon from '~/components/MCP/ClickHouseIcon';
 import type { MCPServerDefinition } from '~/hooks';
-import MCPServerDialog from './MCPServerDialog';
 import { getStatusDotColor } from './MCPStatusBadge';
+import MCPServerDialog from './MCPServerDialog';
 import MCPCardActions from './MCPCardActions';
 import { useMCPServerManager, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -70,6 +71,29 @@ export default function MCPServerCard({
     setDialogOpen(true);
   };
 
+  const renderIcon = () => {
+    if (server.config?.iconPath) {
+      return (
+        <img
+          src={server.config.iconPath}
+          className="size-8 rounded-lg object-cover"
+          alt=""
+          aria-hidden="true"
+        />
+      );
+    }
+
+    if (server.serverName.toLowerCase().includes('clickhouse')) {
+      return <ClickHouseIcon className="size-8 rounded-lg object-cover" alt="" />;
+    }
+
+    return (
+      <div className="flex size-8 items-center justify-center rounded-lg bg-surface-tertiary">
+        <MCPIcon className="size-5 text-text-secondary" aria-hidden="true" />
+      </div>
+    );
+  };
+
   // Determine status text for accessibility
   const getStatusText = () => {
     if (isInitializing) return localize('com_nav_mcp_status_initializing');
@@ -97,18 +121,7 @@ export default function MCPServerCard({
       >
         {/* Server Icon with Status Dot */}
         <div className="relative flex-shrink-0">
-          {server.config?.iconPath ? (
-            <img
-              src={server.config.iconPath}
-              className="size-8 rounded-lg object-cover"
-              alt=""
-              aria-hidden="true"
-            />
-          ) : (
-            <div className="flex size-8 items-center justify-center rounded-lg bg-surface-tertiary">
-              <MCPIcon className="size-5 text-text-secondary" aria-hidden="true" />
-            </div>
-          )}
+          {renderIcon()}
           {/* Status dot - color indicates connection state */}
           <div
             className={cn(
