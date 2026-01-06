@@ -236,6 +236,21 @@ export interface IEventTransport {
   /** Publish an error event */
   emitError(streamId: string, error: string): void;
 
+  /**
+   * Publish an abort signal to all replicas (Redis mode).
+   * Enables cross-replica abort: user aborts on Replica B,
+   * generating Replica A receives signal and stops.
+   * Optional - only implemented in Redis transport.
+   */
+  emitAbort?(streamId: string): void;
+
+  /**
+   * Register callback for abort signals from any replica (Redis mode).
+   * Called when abort is triggered from any replica.
+   * Optional - only implemented in Redis transport.
+   */
+  onAbort?(streamId: string, callback: () => void): void;
+
   /** Get subscriber count for a stream */
   getSubscriberCount(streamId: string): number;
 
