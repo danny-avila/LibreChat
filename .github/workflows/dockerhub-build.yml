@@ -92,7 +92,7 @@ jobs:
         
             echo "Authenticating with Infisical"
             export INFISICAL_TOKEN=$(
-              npx @infisical/0.43.40 login \
+              npx @infisical/cli@0.43.40 login \
                 --method=universal-auth \
                 --client-id='${{ secrets.INFISICAL_CLIENT_ID }}' \
                 --client-secret='${{ secrets.INFISICAL_CLIENT_SECRET }}' \
