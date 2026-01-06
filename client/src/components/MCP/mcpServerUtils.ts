@@ -24,6 +24,7 @@ export function getSelectedServerIcons(
   maxIcons: number = 3,
 ): { icons: SelectedIconInfo[]; overflowCount: number; defaultServerNames: string[] } {
   const customIcons: SelectedIconInfo[] = [];
+  const clickhouseServers: SelectedIconInfo[] = [];
   const defaultServerNames: string[] = [];
 
   for (const server of selectedServers) {
@@ -35,17 +36,25 @@ export function getSelectedServerIcons(
         iconPath: server.config.iconPath,
         displayName,
       });
+    } else if (server.serverName.toLowerCase().includes('clickhouse')) {
+      clickhouseServers.push({
+        key: server.serverName,
+        serverName: server.serverName,
+        iconPath: 'clickhouse',
+        displayName,
+      });
     } else {
       defaultServerNames.push(server.serverName);
     }
   }
 
   // Add one default icon entry if any server uses default icon
-  // Custom icons are prioritized first, default icon comes last
-  const allIcons: SelectedIconInfo[] =
-    defaultServerNames.length > 0
+  // Custom icons are prioritized first, ClickHouse icons second, default icon comes last
+  const allIcons: SelectedIconInfo[] = [
+    ...customIcons,
+    ...clickhouseServers,
+    ...(defaultServerNames.length > 0
       ? [
-          ...customIcons,
           {
             key: '_default_',
             serverName: defaultServerNames[0],
@@ -53,7 +62,8 @@ export function getSelectedServerIcons(
             displayName: 'MCP',
           },
         ]
-      : customIcons;
+      : []),
+  ];
 
   const visibleIcons = allIcons.slice(0, maxIcons);
   const overflowCount = Math.max(0, allIcons.length - maxIcons);

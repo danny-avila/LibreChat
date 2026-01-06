@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { MCPIcon } from '@librechat/client';
 import type { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 import { getSelectedServerIcons } from './mcpServerUtils';
+import ClickHouseIcon from './ClickHouseIcon';
 import { cn } from '~/utils';
 
 interface StackedMCPIconsProps {
@@ -58,8 +59,31 @@ export default function StackedMCPIcons({
   const sizes = sizeConfig[iconSize];
   const colors = variantConfig[variant];
 
+  const renderIcon = (icon: { iconPath: string | null; displayName: string }) => {
+    if (icon.iconPath === 'clickhouse') {
+      return (
+        <ClickHouseIcon
+          className={cn('rounded-full object-cover', sizes.icon)}
+          alt={icon.displayName}
+        />
+      );
+    }
+
+    if (icon.iconPath) {
+      return (
+        <img
+          src={icon.iconPath}
+          alt={icon.displayName}
+          className={cn('rounded-full object-cover', sizes.icon)}
+        />
+      );
+    }
+
+    return <MCPIcon className={cn('text-text-primary', sizes.icon)} />;
+  };
+
   return (
-    <div className="flex items-center" aria-hidden="true">
+    <div className="flex items-center">
       {icons.map((icon, index) => (
         <div
           key={icon.key}
@@ -73,15 +97,7 @@ export default function StackedMCPIcons({
           )}
           style={{ zIndex: icons.length - index }}
         >
-          {icon.iconPath ? (
-            <img
-              src={icon.iconPath}
-              alt={icon.displayName}
-              className={cn('rounded-full object-cover', sizes.icon)}
-            />
-          ) : (
-            <MCPIcon className={cn('text-text-primary', sizes.icon)} />
-          )}
+          {renderIcon(icon)}
         </div>
       ))}
       {overflowCount > 0 && (
