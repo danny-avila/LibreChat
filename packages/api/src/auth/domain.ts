@@ -283,7 +283,8 @@ export async function isActionDomainAllowed(
 }
 
 /**
- * Extracts domain from MCP server config URL.
+ * Extracts full domain spec (protocol://hostname:port) from MCP server config URL.
+ * Returns the full origin for proper protocol/port matching against allowedDomains.
  * Returns null for stdio transports (no URL) or invalid URLs.
  * @param config - MCP server configuration (accepts any config with optional url field)
  */
@@ -296,7 +297,9 @@ export function extractMCPServerDomain(config: Record<string, unknown>): string 
 
   try {
     const parsedUrl = new URL(url);
-    return parsedUrl.hostname.replace(/^www\./i, '');
+    // Return full origin (protocol://hostname:port) for proper domain validation
+    // This allows admins to restrict by protocol/port in allowedDomains
+    return parsedUrl.origin;
   } catch {
     return null;
   }
