@@ -5,11 +5,23 @@ const { logoutUser } = require('~/server/services/AuthService');
 const { getOpenIdConfig } = require('~/strategies');
 
 const logoutController = async (req, res) => {
-  const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
+  const parsedCookies = req.headers.cookie ? cookies.parse(req.headers.cookie) : {};
+  const isOpenIdUser = req.user?.openidId != null;
+
+  /** For OpenID users, read refresh token from session; for others, use cookie */
+  let refreshToken;
+  if (isOpenIdUser && req.session?.openidTokens) {
+    refreshToken = req.session.openidTokens.refreshToken;
+    delete req.session.openidTokens;
+  }
+  refreshToken = refreshToken || parsedCookies.refreshToken;
+
   try {
     const logout = await logoutUser(req, refreshToken);
     const { status, message } = logout;
+
     res.clearCookie('refreshToken');
+    res.clearCookie('openid_access_token');
     res.clearCookie('token_provider');
     const response = { message };
     if (
