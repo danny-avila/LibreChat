@@ -1,4 +1,4 @@
-import React, { useContext, useCallback } from 'react';
+import React, { useContext, useCallback, useState } from 'react';
 import Cookies from 'js-cookie';
 import { useRecoilState } from 'recoil';
 import { Dropdown, ThemeContext } from '@librechat/client';
@@ -150,10 +150,17 @@ function General() {
   const { theme, setTheme } = useContext(ThemeContext);
 
   const [langcode, setLangcode] = useRecoilState(store.lang);
+  const [themeSelection, setThemeSelection] = useState(theme);
 
   const changeTheme = useCallback(
     (value: string) => {
-      setTheme(value);
+      setThemeSelection(value);
+      if (value === 'system') {
+        const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        setTheme(prefersDarkScheme ? 'dark' : 'light');
+      } else {
+        setTheme(value);
+      }
     },
     [setTheme],
   );
@@ -177,7 +184,7 @@ function General() {
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
       <div className="pb-3">
-        <ThemeSelector theme={theme} onChange={changeTheme} />
+        <ThemeSelector theme={themeSelection} onChange={changeTheme} />
       </div>
       <div className="pb-3">
         <LangSelector langcode={langcode} onChange={changeLang} />
