@@ -97,7 +97,7 @@ jobs:
             docker run -d \
               --name $CONTAINER \
               --restart unless-stopped \
-              -p 3080:3080 \
+              -p 3081:3080 \
               -e INFISICAL_CLIENT_ID=${{ secrets.INFISICAL_CLIENT_ID }} \
               -e INFISICAL_CLIENT_SECRET=${{ secrets.INFISICAL_CLIENT_SECRET }} \
               -e INFISICAL_PROJECT_ID=${{ secrets.INFISICAL_PROJECT_ID }} \
