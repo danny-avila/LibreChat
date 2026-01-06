@@ -201,9 +201,7 @@ export default function ToolCall({
       </div>
       {parsedQuery && (
         <div className="clickhouse-codeblock my-2">
-          <CodeBlock language="sql" showLineNumbers>
-            {parsedQuery}
-          </CodeBlock>
+          <CodeBlock language="sql">{parsedQuery}</CodeBlock>
         </div>
       )}
       <div
