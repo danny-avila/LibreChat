@@ -40,7 +40,7 @@ export function getSelectedServerIcons(
       clickhouseServers.push({
         key: server.serverName,
         serverName: server.serverName,
-        iconPath: 'clickhouse',
+        iconPath: null,
         displayName,
       });
     } else {

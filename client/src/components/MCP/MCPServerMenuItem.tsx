@@ -1,16 +1,15 @@
 import * as Ariakit from '@ariakit/react';
 import { Check } from 'lucide-react';
-import { MCPIcon } from '@librechat/client';
 import type { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 import type { MCPServerStatusIconProps } from './MCPServerStatusIcon';
 import MCPServerStatusIcon from './MCPServerStatusIcon';
-import ClickHouseIcon from './ClickHouseIcon';
 import {
   getStatusColor,
   getStatusTextKey,
   shouldShowActionButton,
   type ConnectionStatusMap,
 } from './mcpServerUtils';
+import { renderMCPIcon } from './renderMCPIcon';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -41,28 +40,6 @@ export default function MCPServerMenuItem({
   // Include status in aria-label so screen readers announce it
   const accessibleLabel = `${displayName}, ${statusText}`;
 
-  const renderIcon = () => {
-    if (server.config?.iconPath) {
-      return (
-        <img
-          src={server.config.iconPath}
-          className="h-8 w-8 rounded-lg object-cover"
-          alt={displayName}
-        />
-      );
-    }
-
-    if (server.serverName.toLowerCase().includes('clickhouse')) {
-      return <ClickHouseIcon className="h-8 w-8 rounded-lg object-cover" alt={displayName} />;
-    }
-
-    return (
-      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-tertiary">
-        <MCPIcon className="h-5 w-5 text-text-secondary" />
-      </div>
-    );
-  };
-
   return (
     <Ariakit.MenuItemCheckbox
       hideOnClick={false}
@@ -81,7 +58,13 @@ export default function MCPServerMenuItem({
     >
       {/* Server Icon with Status Dot */}
       <div className="relative flex-shrink-0">
-        {renderIcon()}
+        {renderMCPIcon({
+          iconPath: server.config?.iconPath,
+          serverName: server.serverName,
+          displayName,
+          className: 'h-8 w-8 rounded-lg object-cover',
+          wrapDefault: true,
+        })}
         {/* Status dot - decorative, status is announced via aria-label on MenuItem */}
         <div
           aria-hidden="true"

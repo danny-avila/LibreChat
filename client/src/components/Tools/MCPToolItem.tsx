@@ -1,6 +1,6 @@
 import { XCircle, PlusCircleIcon, Wrench } from 'lucide-react';
 import type { AgentToolType } from 'librechat-data-provider';
-import ClickHouseIcon from '~/components/MCP/ClickHouseIcon';
+import { renderMCPIcon } from '~/components/MCP/renderMCPIcon';
 import { useLocalize } from '~/hooks';
 
 type MCPToolItemProps = {
@@ -72,34 +72,23 @@ function MCPToolItem({
 
   const buttonState = getButtonState();
 
-  const renderIcon = () => {
-    if (icon) {
-      return (
-        <img
-          src={icon}
-          alt={localize('com_ui_logo', { 0: name })}
-          className="h-full w-full rounded-[5px] bg-white"
-        />
-      );
-    }
-
-    if (name.toLowerCase().includes('clickhouse')) {
-      return <ClickHouseIcon className="h-full w-full rounded-[5px] object-cover" alt={name} />;
-    }
-
-    return (
-      <div className="flex h-full w-full items-center justify-center rounded-[5px] border border-border-medium bg-transparent">
-        <Wrench className="h-8 w-8 text-text-secondary" />
-      </div>
-    );
-  };
-
   return (
     <div className="flex flex-col gap-4 rounded border border-border-medium bg-transparent p-6">
       <div className="flex gap-4">
         <div className="h-[70px] w-[70px] shrink-0">
           <div className="relative h-full w-full">
-            {renderIcon()}
+            {renderMCPIcon({
+              iconPath: icon,
+              serverName: name,
+              displayName: name,
+              className: 'h-full w-full rounded-[5px] object-cover',
+              alt: localize('com_ui_logo', { 0: name }),
+              fallbackIcon: (
+                <div className="flex h-full w-full items-center justify-center rounded-[5px] border border-border-medium bg-transparent">
+                  <Wrench className="h-8 w-8 text-text-secondary" />
+                </div>
+              ),
+            })}
             <div className="absolute inset-0 rounded-[5px] ring-1 ring-inset ring-black/10"></div>
           </div>
         </div>
