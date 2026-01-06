@@ -264,6 +264,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           isNewConvo &&
           !wasAbortedBeforeComplete;
 
+        // Save user message BEFORE sending final event to avoid race condition
+        // where client refetch happens before database is updated
+        if (!client.skipSaveUserMessage && userMessage) {
+          await saveMessage(req, userMessage, {
+            context: 'api/server/controllers/agents/request.js - resumable user message',
+          });
+        }
+
         if (!wasAbortedBeforeComplete) {
           const finalEvent = {
             final: true,
@@ -296,12 +304,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId, 'Request aborted');
           await decrementPendingRequest(userId);
-        }
-
-        if (!client.skipSaveUserMessage && userMessage) {
-          await saveMessage(req, userMessage, {
-            context: 'api/server/controllers/agents/request.js - resumable user message',
-          });
         }
 
         if (shouldGenerateTitle) {
