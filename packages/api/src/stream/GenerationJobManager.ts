@@ -235,7 +235,9 @@ class GenerationJobManagerClass {
       if (currentRuntime) {
         currentRuntime.syncSent = false;
         // Persist syncSent=false to Redis for cross-replica consistency
-        this.jobStore.updateJob(streamId, { syncSent: false });
+        this.jobStore.updateJob(streamId, { syncSent: false }).catch((err) => {
+          logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
+        });
         // Call registered handlers (from job.emitter.on('allSubscribersLeft', ...))
         if (currentRuntime.allSubscribersLeftHandlers) {
           this.jobStore
@@ -429,7 +431,9 @@ class GenerationJobManagerClass {
       if (currentRuntime) {
         currentRuntime.syncSent = false;
         // Persist syncSent=false to Redis
-        this.jobStore.updateJob(streamId, { syncSent: false });
+        this.jobStore.updateJob(streamId, { syncSent: false }).catch((err) => {
+          logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
+        });
         // Call registered handlers
         if (currentRuntime.allSubscribersLeftHandlers) {
           this.jobStore
@@ -453,6 +457,20 @@ class GenerationJobManagerClass {
         }
       }
     });
+
+    // Set up cross-replica abort listener (Redis mode only)
+    // This ensures lazily-initialized jobs can receive abort signals
+    if (this.eventTransport.onAbort) {
+      this.eventTransport.onAbort(streamId, () => {
+        const currentRuntime = this.runtimeState.get(streamId);
+        if (currentRuntime && !currentRuntime.abortController.signal.aborted) {
+          logger.debug(
+            `[GenerationJobManager] Received cross-replica abort for lazily-init job ${streamId}`,
+          );
+          currentRuntime.abortController.abort();
+        }
+      });
+    }
 
     return runtime;
   }
@@ -931,7 +949,9 @@ class GenerationJobManagerClass {
       runtime.syncSent = true;
     }
     // Persist to Redis for cross-replica consistency
-    this.jobStore.updateJob(streamId, { syncSent: true });
+    this.jobStore.updateJob(streamId, { syncSent: true }).catch((err) => {
+      logger.error(`[GenerationJobManager] Failed to persist syncSent flag:`, err);
+    });
   }
 
   /**
@@ -958,11 +978,9 @@ class GenerationJobManagerClass {
       runtime.finalEvent = event;
     }
     // Persist finalEvent to Redis for cross-replica consistency
-    try {
-      this.jobStore.updateJob(streamId, { finalEvent: JSON.stringify(event) });
-    } catch (err) {
+    this.jobStore.updateJob(streamId, { finalEvent: JSON.stringify(event) }).catch((err) => {
       logger.error(`[GenerationJobManager] Failed to persist finalEvent:`, err);
-    }
+    });
     this.eventTransport.emitDone(streamId, event);
   }
 

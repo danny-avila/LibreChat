@@ -641,6 +641,65 @@ describe('GenerationJobManager Integration Tests', () => {
       await GenerationJobManager.destroy();
     });
 
+    test('should handle abort for lazily-initialized cross-replica jobs', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      // This test validates that jobs created on Replica A and lazily-initialized
+      // on Replica B can still receive and handle abort signals.
+
+      const { createStreamServices } = await import('../createStreamServices');
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+
+      // === Replica A: Create job directly in Redis ===
+      const replicaAJobStore = new RedisJobStore(ioredisClient);
+      await replicaAJobStore.initialize();
+
+      const streamId = `lazy-abort-${Date.now()}`;
+      await replicaAJobStore.createJob(streamId, 'user-1');
+
+      // === Replica B: Fresh manager that lazily initializes the job ===
+      jest.resetModules();
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      await GenerationJobManager.initialize();
+
+      // Get job triggers lazy initialization of runtime state
+      const job = await GenerationJobManager.getJob(streamId);
+      expect(job).not.toBeNull();
+
+      // Track abort signal
+      let abortSignaled = false;
+      job!.abortController.signal.addEventListener('abort', () => {
+        abortSignaled = true;
+      });
+
+      // Wait for abort listener to be set up via Redis subscription
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Abort the job - this should emit abort signal via Redis pub/sub
+      // The lazily-initialized runtime should receive it
+      await GenerationJobManager.abortJob(streamId);
+
+      // Wait for signal propagation
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Verify the lazily-initialized job received the abort signal
+      expect(abortSignaled).toBe(true);
+      expect(job!.abortController.signal.aborted).toBe(true);
+
+      await GenerationJobManager.destroy();
+      await replicaAJobStore.destroy();
+    });
+
     test('should abort generation when abort signal received from another replica', async () => {
       if (!ioredisClient) {
         console.warn('Redis not available, skipping test');
