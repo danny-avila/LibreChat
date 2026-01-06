@@ -106,7 +106,7 @@ jobs:
             fi
         
             echo "Exporting secrets to env file"
-            infisical export \
+            npx @infisical/cli@0.43.40 export \
               --env=prod \
               --projectId='${{ secrets.INFISICAL_PROJECT_ID }}' \
               --path='/annam-ajrasakha/LibreChat' \
