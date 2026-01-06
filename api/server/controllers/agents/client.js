@@ -676,7 +676,7 @@ class AgentClient extends BaseClient {
         getFormattedMemories: db.getFormattedMemories,
       },
       res: this.options.res,
-      user: this.options.req.user,
+      user: createSafeUser(this.options.req.user),
     });
 
     this.processMemory = processMemory;

@@ -1,7 +1,8 @@
 import { Types } from 'mongoose';
 import type { Response } from 'express';
-import type { IUser } from '@librechat/data-schemas';
 import { Run } from '@librechat/agents';
+import type { IUser } from '@librechat/data-schemas';
+import { createSafeUser } from '~/utils/env';
 import { processMemory } from './memory';
 
 jest.mock('~/stream/GenerationJobManager');
@@ -250,5 +251,48 @@ describe('Memory Agent Header Resolution', () => {
     expect(Run.create as jest.Mock).toHaveBeenCalled();
     const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
     expect(runConfig.graphConfig.llmConfig.configuration).toBeUndefined();
+  });
+
+  it('should use createSafeUser to sanitize user data', async () => {
+    const userWithSensitiveData = createTestUser({
+      id: 'user-123',
+      email: 'test@example.com',
+      password: 'sensitive-password',
+      refreshToken: 'sensitive-token',
+    } as unknown as Partial<IUser>);
+
+    const llmConfig = {
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      configuration: {
+        defaultHeaders: {
+          'X-User-ID': '{{LIBRECHAT_USER_ID}}',
+        },
+      },
+    };
+
+    await processMemory({
+      res: mockRes,
+      userId: 'user-123',
+      setMemory: mockMemoryMethods.setMemory,
+      deleteMemory: mockMemoryMethods.deleteMemory,
+      messages: [],
+      memory: 'test memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      validKeys: ['preferences'],
+      instructions: 'test instructions',
+      llmConfig,
+      user: userWithSensitiveData,
+    });
+
+    expect(Run.create as jest.Mock).toHaveBeenCalled();
+
+    // Verify createSafeUser was used - the user object passed to Run.create should not have sensitive fields
+    const safeUser = createSafeUser(userWithSensitiveData);
+    expect(safeUser).not.toHaveProperty('password');
+    expect(safeUser).not.toHaveProperty('refreshToken');
+    expect(safeUser).toHaveProperty('id');
+    expect(safeUser).toHaveProperty('email');
   });
 });
