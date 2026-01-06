@@ -69,7 +69,7 @@ jobs:
         uses: tailscale/github-action@v2
         with:
           oauth-client-id:  ${{ secrets.TS_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_SECRET }}
+          oauth-secret: ${{ secrets.TS_CLIENT_SECRET }}
           tags: tag:ci-cd
 
       - name: Setup SSH
