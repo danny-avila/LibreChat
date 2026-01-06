@@ -90,7 +90,12 @@ jobs:
             echo "Pulling image: $IMAGE"
             docker pull $IMAGE
         
-            echo "Authenticating with Infisical (outside container)"
+            echo "Ensuring Infisical CLI is installed"
+            if ! command -v infisical >/dev/null 2>&1; then
+              npm install -g @infisical/cli@0.43.40
+            fi
+        
+            echo "Authenticating with Infisical"
             export INFISICAL_TOKEN=$(
               infisical login \
                 --method=universal-auth \
@@ -101,11 +106,11 @@ jobs:
             )
         
             if [ -z "$INFISICAL_TOKEN" ]; then
-              echo "✗ Infisical auth failed"
+              echo "✗ Infisical authentication failed"
               exit 1
             fi
         
-            echo "Exporting secrets from Infisical"
+            echo "Exporting secrets to env file"
             infisical export \
               --env=prod \
               --projectId='${{ secrets.INFISICAL_PROJECT_ID }}' \
@@ -119,7 +124,7 @@ jobs:
             docker stop $CONTAINER || true
             docker rm $CONTAINER || true
         
-            echo "Starting new container on port 3081"
+            echo "Starting new container (port 3081 → 3080)"
             docker run -d \
               --name $CONTAINER \
               --restart unless-stopped \
@@ -128,8 +133,8 @@ jobs:
               $IMAGE \
               npm run backend
         
-            echo "Cleaning up secrets file"
+            echo "Cleaning up env file"
             rm -f $ENV_FILE
         
-            echo "Deployment completed successfully"
+            echo "Deployment complete"
           EOF
