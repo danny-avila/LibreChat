@@ -294,6 +294,154 @@ describe('RedisEventTransport Integration Tests', () => {
     });
   });
 
+  describe('Cross-Replica Abort', () => {
+    test('should emit and receive abort signals on same instance', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber = (ioredisClient as Redis).duplicate();
+      const transport = new RedisEventTransport(ioredisClient, subscriber);
+
+      const streamId = `abort-same-${Date.now()}`;
+      let abortReceived = false;
+
+      // Register abort callback
+      transport.onAbort(streamId, () => {
+        abortReceived = true;
+      });
+
+      // Wait for subscription to be established
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Emit abort
+      transport.emitAbort(streamId);
+
+      // Wait for signal to propagate
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(abortReceived).toBe(true);
+
+      transport.destroy();
+      subscriber.disconnect();
+    });
+
+    test('should deliver abort signals across transport instances', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      // Two separate instances (simulating two servers)
+      const subscriber1 = (ioredisClient as Redis).duplicate();
+      const subscriber2 = (ioredisClient as Redis).duplicate();
+
+      const transport1 = new RedisEventTransport(ioredisClient, subscriber1);
+      const transport2 = new RedisEventTransport(ioredisClient, subscriber2);
+
+      const streamId = `abort-cross-${Date.now()}`;
+      let instance1AbortReceived = false;
+
+      // Instance 1 registers abort callback (simulates server running generation)
+      transport1.onAbort(streamId, () => {
+        instance1AbortReceived = true;
+      });
+
+      // Wait for subscription
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Instance 2 emits abort (simulates server receiving abort request)
+      transport2.emitAbort(streamId);
+
+      // Wait for cross-instance delivery
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Instance 1 should receive abort signal
+      expect(instance1AbortReceived).toBe(true);
+
+      transport1.destroy();
+      transport2.destroy();
+      subscriber1.disconnect();
+      subscriber2.disconnect();
+    });
+
+    test('should call multiple abort callbacks', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber = (ioredisClient as Redis).duplicate();
+      const transport = new RedisEventTransport(ioredisClient, subscriber);
+
+      const streamId = `abort-multi-${Date.now()}`;
+      let callback1Called = false;
+      let callback2Called = false;
+
+      // Multiple abort callbacks
+      transport.onAbort(streamId, () => {
+        callback1Called = true;
+      });
+      transport.onAbort(streamId, () => {
+        callback2Called = true;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      transport.emitAbort(streamId);
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(callback1Called).toBe(true);
+      expect(callback2Called).toBe(true);
+
+      transport.destroy();
+      subscriber.disconnect();
+    });
+
+    test('should cleanup abort callbacks on stream cleanup', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber = (ioredisClient as Redis).duplicate();
+      const transport = new RedisEventTransport(ioredisClient, subscriber);
+
+      const streamId = `abort-cleanup-${Date.now()}`;
+      let abortReceived = false;
+
+      transport.onAbort(streamId, () => {
+        abortReceived = true;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Cleanup the stream
+      transport.cleanup(streamId);
+
+      // Emit abort after cleanup
+      transport.emitAbort(streamId);
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Should NOT receive abort since stream was cleaned up
+      expect(abortReceived).toBe(false);
+
+      transport.destroy();
+      subscriber.disconnect();
+    });
+  });
+
   describe('Cleanup', () => {
     test('should clean up stream resources', async () => {
       if (!ioredisClient) {
