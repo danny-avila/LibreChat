@@ -77,8 +77,48 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
-      - name: Run Docker hello-world on VM
+                ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+      - name: Deploy ajrasakha-client on VM
         run: |
-          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} \
-            "docker run --rm hello-world"
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+            set -e
+      
+            IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
+            CONTAINER=ajrasakha-client
+      
+            echo "Pulling image: $IMAGE"
+            docker pull $IMAGE
+      
+            echo "Stopping old container (if any)"
+            docker stop $CONTAINER || true
+            docker rm $CONTAINER || true
+      
+            echo "Starting new container"
+            docker run -d \
+              --name $CONTAINER \
+              --restart unless-stopped \
+              -p 3080:3080 \
+              -e INFISICAL_CLIENT_ID=${{ secrets.INFISICAL_CLIENT_ID }} \
+              -e INFISICAL_CLIENT_SECRET=${{ secrets.INFISICAL_CLIENT_SECRET }} \
+              -e INFISICAL_PROJECT_ID=${{ secrets.INFISICAL_PROJECT_ID }} \
+              -e INFISICAL_ENV_PATH=/annam-ajrasakha/LibreChat \
+              $IMAGE \
+              sh -c '
+                export INFISICAL_TOKEN=$(
+                  npx @infisical/cli@0.43.40 login \
+                    --method=universal-auth \
+                    --client-id="$INFISICAL_CLIENT_ID" \
+                    --client-secret="$INFISICAL_CLIENT_SECRET" \
+                    --silent \
+                    --plain
+                ) &&
+                [ -z "$INFISICAL_TOKEN" ] && echo "✗ Infisical auth failed" && exit 1 &&
+                exec proxychains4 -q \
+                  npx @infisical/cli@0.43.40 run \
+                    --env=prod \
+                    --projectId="$INFISICAL_PROJECT_ID" \
+                    --path="$INFISICAL_ENV_PATH" \
+                    -- npm run backend
+              '
+          EOF
+      
