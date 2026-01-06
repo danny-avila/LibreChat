@@ -161,26 +161,12 @@ Option B: Local MongoDB
 MONGO_URI=mongodb://localhost:27017/LibreChat
 - Ensure MongoDB is running locally on port 27017
 1. Install Dependencies
-```bash
+bash
 npm install
-```
 2. Run the Application
 Development Mode (Recommended for testing):
-```bash
-# Run both frontend and backend together
-npm run dev
-# Or run separately:
-     npm run backend:dev    # Backend server on port 3080
-     npm run frontend:dev   # Frontend development server
-```
-### Production Mode:
-```bash
-# Build the frontend
-npm run frontend
-# Start the backend
-     npm run backend
-```
-## Common Development Commands (to build all from scratch)
+## Common Development Commands
+
 ### Installation and Setup
 
 ```bash
@@ -197,8 +183,8 @@ npm run build:client-package
 npm run build:packages
 ```
 
-### Running the Application
-
+### Development Mode:
+#### Building the Application
 ```bash
 # Development mode (recommended) - runs both frontend and backend
 npm run dev
@@ -212,10 +198,22 @@ npm run frontend       # Build frontend
 npm run backend        # Start backend
 ```
 
-### Next
-1. Access the Application
-
-Open a browser and navigate to:
+```bash
+# Run both frontend and backend together
+npm run dev
+# Or run separately:
+     npm run backend:dev    # Backend server on port 3080
+     npm run frontend:dev   # Frontend development server
+```
+### Production Mode:
+#### Running the Application
+```bash
+# Build the frontend
+npm run frontend
+# Start the backend
+     npm run backend
+```
+Access the Application by opening the browser and navigating to:
 - Development: http://localhost:3080
 - Production: Your configured DOMAIN_CLIENT from .env
 
@@ -227,9 +225,7 @@ Open a browser and navigate to:
 - API tests: cd api &amp;&amp; npm run test:ci
 
 ### Troubleshooting
-MongoDB Connection Issues: 
-- Verify your MONGO_URI in the .env file is correct 
-- Check if MongoDB service is running - For Atlas: Ensure IP whitelist is configured - Check firewall settings if using
+MongoDB Connection Issues: - Verify your MONGO_URI in the .env file is correct - Check if MongoDB service is running - For Atlas: Ensure IP whitelist is configured - Check firewall settings if using
 local MongoDB
 
 ### Port Conflicts:
