@@ -12,6 +12,7 @@ import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
 import { useHasAccess } from '~/hooks';
 import { AnimatePresence, motion } from 'framer-motion';
+import { PDFBuilderTrigger } from '~/components/PDFBuilder';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -58,6 +59,7 @@ export default function Header() {
 
           <div className={navVisible ? 'flex items-center gap-2' : 'ml-2 flex items-center gap-2'}>
             <ModelSelector startupConfig={startupConfig} />
+            <PDFBuilderTrigger />
             {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
             {hasAccessToBookmarks === true && <BookmarkMenu />}
             {hasAccessToMultiConvo === true && <AddMultiConvo />}
