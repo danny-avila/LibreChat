@@ -40,3 +40,4 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           ssm-path: /ai-assistant/prod-image-tag
           ssm-value: ${{ github.ref_name }}
+          ssm-value-type: String
