@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react';
+import { FileText, Plus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button, Skeleton } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
@@ -53,14 +53,22 @@ export default function List({
             Array.from({ length: 10 }).map((_, index: number) => (
               <Skeleton key={index} className="w-100 mx-2 my-2 flex h-14 rounded-lg border-0 p-4" />
             ))}
-          {!isLoading && groups.length === 0 && isChatRoute && (
-            <div className="my-2 flex h-[84px] w-full items-center justify-center rounded-2xl border border-border-light bg-transparent px-3 pb-4 pt-3 text-text-primary">
-              {localize('com_ui_nothing_found')}
-            </div>
-          )}
-          {!isLoading && groups.length === 0 && !isChatRoute && (
-            <div className="my-12 flex w-full items-center justify-center text-lg font-semibold text-text-primary">
-              {localize('com_ui_nothing_found')}
+          {!isLoading && groups.length === 0 && (
+            <div
+              className={cn(
+                'flex flex-col items-center justify-center rounded-lg border border-border-light bg-transparent p-6 text-center',
+                isChatRoute ? 'my-2' : 'mx-2 my-4',
+              )}
+            >
+              <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-surface-tertiary">
+                <FileText className="size-5 text-text-secondary" aria-hidden="true" />
+              </div>
+              <p className="text-sm font-medium text-text-primary">
+                {localize('com_ui_no_prompts_title')}
+              </p>
+              <p className="mt-0.5 text-xs text-text-secondary">
+                {localize('com_ui_add_first_prompt')}
+              </p>
             </div>
           )}
           {groups.map((group) => {

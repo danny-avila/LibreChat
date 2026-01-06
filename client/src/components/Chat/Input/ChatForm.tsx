@@ -320,7 +320,9 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                 <AttachFileChat conversation={conversation} disableInputs={disableInputs} />
               </div>
               <BadgeRow
-                showEphemeralBadges={!isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)}
+                showEphemeralBadges={
+                  !!endpoint && !isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)
+                }
                 isSubmitting={isSubmitting}
                 conversationId={conversationId}
                 onChange={setBadges}
