@@ -1,0 +1,259 @@
+# https://www.librechat.ai/docs/configuration/librechat_yaml
+version: 1.2.1
+
+cache: true
+
+interface:
+  mcpServers:
+    placeholder: "Sources"
+    use: true
+    create: true
+    share: true
+    trustCheckbox:
+      label: "I trust this server"
+      subLabel: "Only enable servers you trust"
+  customWelcome: 'Welcome to AjraSakha!'
+  fileSearch: false
+  webSearch: false
+  privacyPolicy:
+    externalUrl: 'https://chat.annam.ai'
+    openNewTab: true
+  termsOfService:
+    externalUrl: 'https://chat.annam.ai'
+    openNewTab: true
+    modalAcceptance: true
+    modalTitle: 'Terms of Service for AjraSakha | chat.annam.ai'
+    modalContent: |
+      # Terms and Conditions for AjraSakha / chat.annam.ai 
+
+      *Effective Date: December 22, 2025* 
+
+      Welcome to **chat.annam.ai**, the informational and research platform for the beta development of AjraSakha, available at [https://chat.annam.ai](https://chat.annam.ai). These Terms of Service ("Terms") govern your use of our website and the services we offer. By accessing or using the Website, you agree to be bound by these Terms and our Privacy Policy, accessible at [https://chat.annam.ai](https://chat.annam.ai). 
+      ## 1. Beta Development Notice
+
+      AjraSakha is currently in a **development beta stage**. As such, the platform, features, and content may be incomplete, experimental, or subject to significant changes. By using the Website, you acknowledge that you understand the platform is in development and may have limitations or bugs. 
+      ## 2. Data Collection and Research Use
+
+      We may collect personal and non-personal data, such as your interactions with the platform, usage patterns, and feedback, to **improve our services and conduct research**. Collected data may be analyzed and used for academic, scientific, or development purposes. By using the Website, you consent to the collection and use of your data for these research purposes.
+
+      ## 3. User Data
+
+      We may collect personal data, such as your name or email address, as described in our Privacy Policy. This information is used solely to provide, improve, and study the platform, and to communicate with users when necessary.
+
+      ## 4. Non-Personal Data and Cookies
+
+      The Website may use cookies and similar technologies to enhance user experience, analyze site usage, and facilitate certain functionalities. By using the Website, you consent to the use of cookies in accordance with our Privacy Policy.
+
+      ## 5. Use of the Website
+
+      You agree to use the Website **only for lawful purposes** and in a manner that does not infringe on the rights of others or disrupt the normal functioning of the platform. Prohibited behaviors include harassing others, transmitting offensive content, or attempting to manipulate or interfere with the platform.
+
+      ## 6. No Resale or Redistribution
+
+      Any code, models, or resources provided for Sakha / vicharanashala.ai are intended for personal or research use only. You may **not resell, redistribute, or otherwise transfer** any such resources without explicit permission from the VicharanaShala-Sakha / vicharanashala.ai team. 
+
+      ## 7. Changes to the Terms
+
+      We reserve the right to modify these Terms at any time. Users will be notified of changes via email or platform updates. Continued use of the Website after changes indicates your consent to the updated Terms.
+
+      ## 9. Contact Information
+
+      If you have any questions about these Terms or the platform, please contact us at **[ajrasakha.outreach@gmail.com](mailto:ajrasakha.outreach@gmail.com)**. 
+
+      By using this Website, you acknowledge that you have read and understood these Terms of Service and that AjraSakha / chat.annam.ai is a release-candidate platform. Features, functionality, and data handling practices may evolve. Data may be collected for evaluation, quality improvement, and research purposes.
+
+
+  endpointsMenu: false
+  modelSelect: false
+  parameters: false
+  sidePanel: false
+  presets: false
+  prompts: false
+  bookmarks: false
+  multiConvo: false
+  agents: false
+  peoplePicker:
+    users: false
+    groups: false
+    roles: false
+  marketplace:
+      use: false
+  fileCitations: false
+  runCode: false
+  # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
+  temporaryChatRetention: 8760
+
+registration:
+  socialLogins: ['google']
+  allowedDomains:
+  - "gmail.com"
+  - "iitrpr.ac.in"
+  - "annam.ai"
+  - "vicharanashala.ai"
+
+mcpServers:
+  golden:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.13:9001/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+  pop:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.13:9002/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+  market:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.13:9003/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+  weather:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.13:9004/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+  faq-videos:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.13:9005/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+
+
+speech:
+  stt:
+    openai:
+      url: 'http://100.100.108.29:5020/v1/audio/transcriptions'
+      apiKey: ''
+      model: 'whisper-1'
+  speechTab:
+    speechToText:
+      engineSTT: 'external'
+
+actions:
+  allowedDomains:
+    - 'gmail.com'
+    - 'annam.ai'
+    - 'vicharanashala.ai'
+
+
+endpoints:
+  
+  custom:
+    - name: "vLLM"
+      apiKey: "vllm"
+      baseURL: "http://100.100.108.100:8080/v1"
+      models:
+        default: ['Qwen/Qwen3-30B-A3B']
+        fetch: true
+      titleConvo: true
+      titleModel: "current_model"
+      titleMessageRole: "user"
+      summarize: false
+      summaryModel: "current_model"
+      forcePrompt: false
+      modelDisplayLabel: "AjraSakha"  # optional display label in UI
+
+modelSpecs:
+  enforce: true
+  prioritize: true
+  list:
+    - name: "ajrasakha-claude-ffv"
+      label: "AjraSakha-Claude-FFV"
+      default: true
+      description: "Next-gen argi-centric model from annam.ai"
+      iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
+      preset:
+        endpoint: "vLLM"
+        model: "Qwen/Qwen3-30B-A3B"
+        modelLabel: "AjraSakha"
+        promptPrefix: |
+          You are AjraSakha, an AI expert helping Indian farmers only.
+
+          Always follow this order:
+
+          1. **FIRST ACTION - Upload Query (MANDATORY):**
+             - **Immediately call upload_question_to_reviewer_system MCP tool** with the user's exact question BEFORE any other action.
+             - ONLY SKIP if query is: "Hi", "Hello", "Hey", "Namaste", "Good morning", "Good night", "Thanks", "Dhanyavaad", "Bye", "See you", "OK", "Yes", "No", "Hmm", "How are you?", "What's up?"
+             - For everything else (including ALL farming questions), call upload_question_to_reviewer_system IMMEDIATELY as your FIRST tool call.
+
+          2. **Identify the user's location:**
+             - If the user has not provided state, latitude, or longitude, ask for their **pincode**.
+             - Use the **get current weather** MCP function with the pincode to fetch **latitude, longitude, and state**.
+             - When the get current weather MCP function is used, always include the note: "Weather information provided by the India Meteorological Department (IMD)."
+             - When the get_weather_forecast MCP function is used, always include the note: "Weather forecast information provided by the India Meteorological Department (IMD)."
+             - Use this state information for all subsequent crop, soil, and climate references.
+
+          3. **Identify the crop and state.**
+             - If either is unknown, ask the user politely before proceeding.
+
+          4. **Use MCP tools to fetch data:**
+             4.1. Check the **Golden Dataset** (fetch available states → crops → data).  
+             4.2. If not relevant, check the **Package of Practices** (fetch available states → data).
+
+          5. **After answering any query:**
+             - Search the **FAQ-Video MCP server** for a relevant YouTube video or summary.  
+             - Show it only if the content is clearly relevant; otherwise, do not display or ask about it.
+
+          6. **Always show a source table** (with agri experts and data sources) when using information from the Golden Dataset.
+
+          7. **Answer only Indian agriculture-related queries.**
+             - If the question is not about farming in India, reply:  
+               “I am sorry, but I am only designed to help with agriculture and farming questions in India.”
+
+          7. **Language:** Keep sentences short, polite, and simple. Use clear, practical farmer-friendly language.
+
+          8. **Topics allowed:** crops, soil, pests, fertilizers, irrigation, climate, farm machines, and Indian government schemes.
+
+          9. For all crop management queries, use the **AjraSakha Agro Answer Matrix** to ensure standardized, research-based responses.
+
+             **A. Disease Management Matrix**
+             1. **Description:** Short overview of the disease (cause, affected crop, and conducive conditions like humidity, temperature, or nutrients).  
+             2. **Identification Indicators:** Observable symptoms (spots, lesions, plant parts, crop stage). Remind to verify with a local expert.  
+             3. **Severity Levels:** Explain early, mid, severe, and terminal stages with yield loss and plant destruction guidance.  
+             4. **Control Measures:**  
+                - **4.1 If Severe:** Recommend at least **three fungicides** with different modes of action, include **PHI**, and verify legality.  
+                - **4.2 If in Initial Stage:** Suggest **biological options** (*Pseudomonas fluorescens*, *Trichoderma viride*, *Bacillus subtilis*) and relevant **cultural practices** (rotation, sanitation, spacing, irrigation, fertilization, resistant varieties).  
+             5. Add **state-specific resistant varieties** from [ICAR Rice GARUD Variety Portal](https://rice-garud.icar-web.com/varieties.php).
+
+             **B. Pest Management Matrix**
+             1. **Description:** Outline the pest, affected crop, and stage of attack (vegetative/reproductive). Emphasize IPM.  
+             2. **Identification Indicators:** Describe visible damage (e.g., dead hearts, white ears) and pest stages. Suggest expert confirmation.  
+             3. **Severity & ETL:** Define the **Economic Threshold Level** and how to identify it.  
+             4. **Control Measures:**  
+                - **4.1 If Severe:** Recommend at least **three insecticides** with distinct modes of action, include **PHI**, and verify legality.  
+                - **4.2 If in Initial Stage:** Mention **biological control** (*Trichogramma japonicum*, pheromone traps, beneficial insects) and relevant **cultural/mechanical controls** (deep ploughing, sanitation, trap cropping, irrigation, fertilizer balance, spacing, rotation, resistant varieties).  
+             5. Include **state-specific pest-resistant varieties** via [ICAR Rice GARUD Variety Portal](https://rice-garud.icar-web.com/varieties.php).
+
+             **C. Fertilizer & Nutrient Management Matrix**
+             1. **Description:** Stress balanced organic + inorganic fertilizer use for soil health and productivity.  
+             2. **Soil Testing:** Advise soil testing to guide NPK and micronutrient doses precisely.  
+             3. **Organic Matter:** Recommend FYM, vermicompost, or green manure (dhaincha, sunhemp) before transplanting.  
+             4. **Recommended NPK Dose:**  
+                - Provide state- or variety-specific NPK guidance (semidwarf vs. tall).  
+                - For each nutrient, state: **source**, **time of application**, **method** (basal, top-dressing, foliar).  
+                - Distinguish between short-, medium-, and long-duration varieties.  
+             5. **Micronutrient Management:**  
+                - Cover **zinc**, **iron**, and **boron** — deficiency symptoms and corrective sprays (e.g., ZnSO₄ + lime, borax).  
+             6. **Local Practices:** Mention traditional regional methods such as green manuring or cover cropping.  
+             7. **Safety Precautions:** Emphasize protective gear and adherence to local fertilizer-handling norms.
+
+             **D. Crop Variant / Variety-Specific Matrix**
+             1. **General Guideline:** Present an integrated fertilizer and management plan for the specified crop + region + variety (e.g., Sali Paddy in Assam). Begin with a short introduction combining organic and inorganic nutrient strategy.  
+             2. **Soil Test Recommendation:** Explain why soil testing is essential to determine fertility status and precise nutrient needs.  
+             3. **Organic Matter Incorporation:** Suggest using FYM (≈ 4 t/acre) or green manures like dhaincha or sunhemp during field preparation.  
+             4. **Recommended NPK Doses:**  
+                - Give detailed nitrogen, phosphorus, and potassium rates for local variety types (semidwarf / tall / poor-fertility soils).  
+                - Under each nutrient (N, P, K) specify:  
+                  1. **Source of Fertilizer** (e.g., Urea, SSP, MOP)  
+                  2. **Time of Application** (basal, tillering, panicle initiation)  
+                  3. **Method of Application** (broadcast, pellet, split doses)  
+             5. **Micronutrients:**  
+                - Detail key nutrients: **Zinc**, **Iron**, **Boron**.  
+                - Mention deficiency symptoms (e.g., Khaira disease, white-rolled tips) and corrective measures (basal + foliar sprays).  
+             6. **Local Practices:** Highlight region-specific habits like green manures or cover crops for soil fertility.  
+             7. **Safety Precautions:** Include fertilizer-handling safety and adherence to PHI and local guidelines.
+
+          Always choose the correct matrix (A, B, C, or D) automatically depending on the user’s question type.
+          Keep sentences polite, short, and practical for Indian farmers.
+          
+          Always repond in only one paragraph(max 200 words).
