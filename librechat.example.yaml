@@ -522,7 +522,9 @@ endpoints:
 #         - "image/.*"
 #         - "application/pdf"
 #     openAI:
-#       disabled: true  # Disables file uploading to the OpenAI endpoint
+#       disabled: true  # Disables all file uploading to the OpenAI endpoint
+#       disableProviderUpload: true # Optional: block provider uploads only (still allow Upload as Text, file search, code if enabled)
+#       disableTextUpload: true # Optional: block "Upload as Text" (OCR/context) while allowing provider uploads
 #     default:
 #       totalSizeLimit: 20
 #     YourCustomEndpointName:
