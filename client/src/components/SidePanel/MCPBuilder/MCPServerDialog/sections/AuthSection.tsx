@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
+import { Copy, CopyCheck } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { Label, Input, Checkbox, SecretInput, Radio, useToastContext } from '@librechat/client';
-import { Copy, CopyCheck } from 'lucide-react';
-import { useLocalize, useCopyToClipboard } from '~/hooks';
-import { cn } from '~/utils';
 import { AuthTypeEnum, AuthorizationTypeEnum } from '../hooks/useMCPServerForm';
 import type { MCPServerFormData } from '../hooks/useMCPServerForm';
+import { useLocalize, useCopyToClipboard } from '~/hooks';
+import { cn } from '~/utils';
 
 interface AuthSectionProps {
   isEditMode: boolean;

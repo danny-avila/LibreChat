@@ -60,7 +60,7 @@ const AdminSettings = () => {
       }}
     >
       <OGDialogTemplate
-        showCloseButton={true}
+        showCloseButton={false}
         title={localize('com_ui_confirm_change')}
         className="w-11/12 max-w-lg"
         main={<p className="mb-4">{localize('com_ui_confirm_admin_use_change')}</p>}

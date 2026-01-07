@@ -4,7 +4,6 @@ import { Button, Spinner } from '@librechat/client';
 import { useLocalize, useMCPServerManager, useMCPConnectionStatus } from '~/hooks';
 
 interface ServerInitializationSectionProps {
-  sidePanel?: boolean;
   serverName: string;
   requiresOAuth: boolean;
   hasCustomUserVars?: boolean;
@@ -15,7 +14,6 @@ export default function ServerInitializationSection({
   serverName,
   requiresOAuth,
   conversationId,
-  sidePanel = false,
   hasCustomUserVars = false,
 }: ServerInitializationSectionProps) {
   const localize = useLocalize();
@@ -106,10 +104,10 @@ export default function ServerInitializationSection({
         </Button>
       )}
       <Button
+        size="sm"
         variant={buttonVariant}
         onClick={() => initializeServer(serverName, false)}
         disabled={isServerInitializing}
-        size={sidePanel ? 'sm' : 'default'}
         className="flex-1"
       >
         {icon}

@@ -11,6 +11,7 @@ import {
   Spinner,
   OGDialog,
   Dropdown,
+  OGDialogClose,
   OGDialogTitle,
   OGDialogHeader,
   OGDialogFooter,
@@ -104,43 +105,41 @@ const RevokeKeysButton = ({
   const isLoading = revokeKeyMutation.isLoading || revokeKeysMutation.isLoading;
 
   return (
-    <div className="flex items-center justify-between">
-      <OGDialog open={open} onOpenChange={setOpen}>
-        <OGDialogTrigger asChild>
+    <OGDialog open={open} onOpenChange={setOpen}>
+      <OGDialogTrigger asChild>
+        <Button
+          variant="destructive"
+          className="flex w-full items-center justify-center rounded-lg transition-colors duration-200"
+          onClick={() => setOpen(true)}
+          disabled={disabled}
+        >
+          {localize('com_ui_revoke')}
+        </Button>
+      </OGDialogTrigger>
+      <OGDialogContent className="max-w-[450px]">
+        <OGDialogHeader>
+          <OGDialogTitle>{localize('com_ui_revoke_key_endpoint', { 0: endpoint })}</OGDialogTitle>
+        </OGDialogHeader>
+        <div className="py-4">
+          <Label className="text-left text-sm font-medium">
+            {localize('com_ui_revoke_key_confirm')}
+          </Label>
+        </div>
+        <OGDialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            {localize('com_ui_cancel')}
+          </Button>
           <Button
             variant="destructive"
-            className="flex items-center justify-center rounded-lg transition-colors duration-200"
-            onClick={() => setOpen(true)}
-            disabled={disabled}
+            onClick={onClick}
+            disabled={isLoading}
+            className="bg-destructive text-white transition-all duration-200 hover:bg-destructive/80"
           >
-            {localize('com_ui_revoke')}
+            {isLoading ? <Spinner /> : localize('com_ui_revoke')}
           </Button>
-        </OGDialogTrigger>
-        <OGDialogContent className="max-w-[450px]">
-          <OGDialogHeader>
-            <OGDialogTitle>{localize('com_ui_revoke_key_endpoint', { 0: endpoint })}</OGDialogTitle>
-          </OGDialogHeader>
-          <div className="py-4">
-            <Label className="text-left text-sm font-medium">
-              {localize('com_ui_revoke_key_confirm')}
-            </Label>
-          </div>
-          <OGDialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              {localize('com_ui_cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={onClick}
-              disabled={isLoading}
-              className="bg-destructive text-white transition-all duration-200 hover:bg-destructive/80"
-            >
-              {isLoading ? <Spinner /> : localize('com_ui_revoke')}
-            </Button>
-          </OGDialogFooter>
-        </OGDialogContent>
-      </OGDialog>
-    </div>
+        </OGDialogFooter>
+      </OGDialogContent>
+    </OGDialog>
   );
 };
 
@@ -276,7 +275,7 @@ const SetKeyDialog = ({
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogContent className="w-11/12 max-w-2xl">
+      <OGDialogContent className="w-11/12 max-w-2xl" showCloseButton={false}>
         <OGDialogHeader>
           <OGDialogTitle>
             {`${localize('com_endpoint_config_key_for')} ${alternateName[endpoint] ?? endpoint}`}
@@ -310,11 +309,16 @@ const SetKeyDialog = ({
           <HelpText endpoint={endpoint} />
         </div>
         <OGDialogFooter>
-          <RevokeKeysButton
-            endpoint={endpoint}
-            disabled={!(expiryTime ?? '')}
-            setDialogOpen={onOpenChange}
-          />
+          <OGDialogClose asChild>
+            <Button variant="outline">{localize('com_ui_cancel')}</Button>
+          </OGDialogClose>
+          {expiryTime && (
+            <RevokeKeysButton
+              endpoint={endpoint}
+              disabled={!expiryTime}
+              setDialogOpen={onOpenChange}
+            />
+          )}
           <Button variant="submit" onClick={submit}>
             {localize('com_ui_submit')}
           </Button>

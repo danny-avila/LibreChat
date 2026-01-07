@@ -9,6 +9,7 @@ import {
   OGDialog,
   OGDialogTitle,
   OGDialogClose,
+  OGDialogFooter,
   OGDialogContent,
   OGDialogTrigger,
   useToastContext,
@@ -277,7 +278,7 @@ export default function GenericGrantAccessDialog({
           </div>
         </OGDialogTitle>
 
-        <div className="space-y-6 p-2">
+        <div className="space-y-6 py-2">
           {/* Unified Search and Management Section */}
           <div className="space-y-4">
             {/* Search Bar with Default Permission Setting */}
@@ -359,68 +360,53 @@ export default function GenericGrantAccessDialog({
           )}
 
           {/* Footer Actions */}
-          <div className="flex justify-between pt-4">
-            <div className="flex gap-2">
-              {resourceId && resourceUrl && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (isCopying) return;
-                    copyResourceUrl(setIsCopying);
-                    showToast({
-                      message: localize('com_ui_agent_url_copied'),
-                      status: 'success',
-                    });
-                  }}
-                  disabled={isCopying}
-                  className={cn('shrink-0', isCopying ? 'cursor-default' : '')}
-                  aria-label={localize('com_ui_copy_url_to_clipboard')}
-                  title={
-                    isCopying
-                      ? config?.getCopyUrlMessage()
-                      : localize('com_ui_copy_url_to_clipboard')
-                  }
-                >
-                  {isCopying ? (
-                    <CopyCheck className="h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    <Link className="h-4 w-4" aria-hidden="true" />
-                  )}
-                </Button>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <PeoplePickerAdminSettings />
-              <OGDialogClose asChild>
-                <Button
-                  variant="outline"
-                  onClick={handleCancel}
-                  aria-label={localize('com_ui_cancel')}
-                >
-                  {localize('com_ui_cancel')}
-                </Button>
-              </OGDialogClose>
+          <OGDialogFooter className="pt-4">
+            {resourceId && resourceUrl && (
               <Button
-                onClick={handleSave}
-                disabled={
-                  updatePermissionsMutation.isLoading ||
-                  !submitButtonActive ||
-                  (hasChanges && !hasAtLeastOneOwner)
+                variant="outline"
+                onClick={() => {
+                  if (isCopying) return;
+                  copyResourceUrl(setIsCopying);
+                  showToast({
+                    message: localize('com_ui_agent_url_copied'),
+                    status: 'success',
+                  });
+                }}
+                disabled={isCopying}
+                className={cn('shrink-0', isCopying ? 'cursor-default' : '')}
+                aria-label={localize('com_ui_copy_url_to_clipboard')}
+                title={
+                  isCopying ? config?.getCopyUrlMessage() : localize('com_ui_copy_url_to_clipboard')
                 }
-                className="min-w-[120px]"
-                aria-label={localize('com_ui_save_changes')}
               >
-                {updatePermissionsMutation.isLoading ? (
-                  <div className="flex items-center gap-2">
-                    <Spinner className="h-4 w-4" />
-                    {localize('com_ui_saving')}
-                  </div>
+                {isCopying ? (
+                  <CopyCheck className="h-4 w-4" aria-hidden="true" />
                 ) : (
-                  localize('com_ui_save_changes')
+                  <Link className="h-4 w-4" aria-hidden="true" />
                 )}
               </Button>
-            </div>
-          </div>
+            )}
+            <PeoplePickerAdminSettings />
+            <Button
+              onClick={handleSave}
+              disabled={
+                updatePermissionsMutation.isLoading ||
+                !submitButtonActive ||
+                (hasChanges && !hasAtLeastOneOwner)
+              }
+              className="min-w-[120px]"
+              aria-label={localize('com_ui_save_changes')}
+            >
+              {updatePermissionsMutation.isLoading ? (
+                <div className="flex items-center gap-2">
+                  <Spinner className="h-4 w-4" />
+                  {localize('com_ui_saving')}
+                </div>
+              ) : (
+                localize('com_ui_save_changes')
+              )}
+            </Button>
+          </OGDialogFooter>
         </div>
       </OGDialogContent>
     </OGDialog>

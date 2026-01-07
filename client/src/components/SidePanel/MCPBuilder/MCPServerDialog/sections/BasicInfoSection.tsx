@@ -1,9 +1,9 @@
 import { useFormContext } from 'react-hook-form';
-import { Input, Label, TextareaAutosize } from '@librechat/client';
+import { Input, Label, Textarea } from '@librechat/client';
+import type { MCPServerFormData } from '../hooks/useMCPServerForm';
+import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
-import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 
 export default function BasicInfoSection() {
   const localize = useLocalize();
@@ -50,26 +50,23 @@ export default function BasicInfoSection() {
                 message: localize('com_ui_mcp_title_invalid'),
               },
             })}
-            className={cn(errors.title && 'border-red-500 focus:border-red-500')}
+            className={cn(errors.title && 'border-text-destructive')}
           />
-          {errors.title && <p className="text-xs text-red-500">{errors.title.message}</p>}
+          {errors.title && <p className="text-xs text-text-destructive">{errors.title.message}</p>}
         </div>
       </div>
 
-      {/* Description - always visible, full width */}
+      {/* Description */}
       <div className="space-y-1.5">
         <Label htmlFor="description" className="text-sm font-medium">
           {localize('com_ui_description')}{' '}
           <span className="text-xs text-text-secondary">{localize('com_ui_optional')}</span>
         </Label>
-        <TextareaAutosize
+        <Textarea
           id="description"
           aria-label={localize('com_ui_description')}
           placeholder={localize('com_agents_mcp_description_placeholder')}
           {...register('description')}
-          minRows={2}
-          maxRows={4}
-          className="w-full resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none"
         />
       </div>
     </div>

@@ -918,7 +918,7 @@
   "com_ui_edit": "Edit",
   "com_ui_edit_editing_image": "Editing image",
   "com_ui_edit_mcp_server": "Edit MCP Server",
-  "com_ui_edit_mcp_server_dialog_description": "Unique Server Identifier: {{serverName}}",
+  "com_ui_edit_mcp_server_dialog_description": "Server ID: {{serverName}}",
   "com_ui_edit_memory": "Edit Memory",
   "com_ui_edit_preset_title": "Edit Preset - {{title}}",
   "com_ui_edit_prompt_page": "Edit Prompt Page",

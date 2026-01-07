@@ -75,38 +75,32 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
       </OGDialogHeader>
       <div className={cn('px-0 py-2', mainClassName)}>{main != null ? main : null}</div>
       <OGDialogFooter className={footerClassName}>
-        <div>
-          {leftButtons != null ? (
-            <div className="mt-3 flex h-auto gap-3 max-sm:w-full max-sm:flex-col sm:mt-0 sm:flex-row">
-              {leftButtons}
-            </div>
-          ) : null}
-        </div>
-        <div className="flex h-auto gap-3 max-sm:w-full max-sm:flex-col sm:flex-row">
-          {showCancelButton && (
-            <OGDialogClose asChild>
-              <Button variant="outline" aria-label={localize('com_ui_cancel')}>
-                {localize('com_ui_cancel')}
-              </Button>
-            </OGDialogClose>
-          )}
-          {buttons != null ? buttons : null}
-          {selection ? (
-            <OGDialogClose
-              onClick={selectHandler}
-              disabled={isLoading}
-              className={`${
-                selectClasses ?? defaultSelect
-              } flex h-10 items-center justify-center rounded-lg border-none px-4 py-2 text-sm disabled:opacity-80 max-sm:order-first max-sm:w-full sm:order-none`}
-            >
-              {isLoading === true ? (
-                <Spinner className="size-4 text-white" />
-              ) : (
-                (selectText as React.JSX.Element)
-              )}
-            </OGDialogClose>
-          ) : null}
-        </div>
+        {leftButtons != null ? (
+          <div className="mr-auto flex flex-row gap-2">{leftButtons}</div>
+        ) : null}
+        {showCancelButton && (
+          <OGDialogClose asChild>
+            <Button variant="outline" aria-label={localize('com_ui_cancel')}>
+              {localize('com_ui_cancel')}
+            </Button>
+          </OGDialogClose>
+        )}
+        {buttons != null ? buttons : null}
+        {selection ? (
+          <OGDialogClose
+            onClick={selectHandler}
+            disabled={isLoading}
+            className={`${
+              selectClasses ?? defaultSelect
+            } flex h-10 items-center justify-center rounded-lg border-none px-4 py-2 text-sm disabled:opacity-80`}
+          >
+            {isLoading === true ? (
+              <Spinner className="size-4 text-white" />
+            ) : (
+              (selectText as React.JSX.Element)
+            )}
+          </OGDialogClose>
+        ) : null}
       </OGDialogFooter>
     </OGDialogContent>
   );

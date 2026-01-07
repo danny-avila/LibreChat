@@ -180,9 +180,11 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
                 )}
               >
                 <div className="flex flex-col items-center gap-2">
-                  <Search className="h-8 w-8 text-text-tertiary opacity-50" />
-                  <div className="font-medium">{localize('com_ui_no_results_found')}</div>
-                  <div className="text-xs text-text-tertiary">
+                  <Search className="h-8 w-8 text-text-primary opacity-50" />
+                  <div className="font-medium text-text-primary">
+                    {localize('com_ui_no_results_found')}
+                  </div>
+                  <div className="text-xs text-text-secondary">
                     {localize('com_ui_try_adjusting_search')}
                   </div>
                 </div>
