@@ -46,6 +46,9 @@ services:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_NO_ANALYTICS=true
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - HTTPS_PROXY=${PROXY:-}
+      - HTTP_PROXY=${PROXY:-}
+      - NO_PROXY=${NO_PROXY:-}
     volumes:
       - ./meili_data_v1.12:/meili_data
   vectordb:
