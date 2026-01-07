@@ -24,20 +24,16 @@
  * @module packages/api/src/tools/classification
  */
 
-import {
-  EnvVar,
-  createProgrammaticToolCallingTool,
-  createToolSearchRegexTool,
-} from '@librechat/agents';
-import type {
-  LCTool,
-  LCToolRegistry,
-  AllowedCaller,
-  JsonSchemaType,
-  GenericTool,
-} from '@librechat/agents';
-import { Constants } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
+import { Constants } from 'librechat-data-provider';
+import { EnvVar, createProgrammaticToolCallingTool, createToolSearch } from '@librechat/agents';
+import type {
+  LCToolRegistry,
+  JsonSchemaType,
+  AllowedCaller,
+  GenericTool,
+  LCTool,
+} from '@librechat/agents';
 
 export type { LCTool, LCToolRegistry, AllowedCaller, JsonSchemaType };
 
@@ -401,7 +397,7 @@ export async function buildToolClassification(
     }
 
     if (hasDeferredTools) {
-      const toolSearchTool = createToolSearchRegexTool({
+      const toolSearchTool = createToolSearch({
         apiKey: codeApiKey,
         toolRegistry,
       });
