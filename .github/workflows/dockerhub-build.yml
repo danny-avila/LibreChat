@@ -123,8 +123,7 @@ jobs:
               -e INFISICAL_PROJECT_ID='${{ secrets.INFISICAL_PROJECT_ID }}' \
               -e INFISICAL_SECRET_PATH='${{ env.INFISICAL_SECRET_PATH }}' \
               -e INFISICAL_TOKEN="$INFISICAL_TOKEN" \
-              $IMAGE \
-              npm run backend
+              $IMAGE
         
             echo "Deployment complete"
           EOF
