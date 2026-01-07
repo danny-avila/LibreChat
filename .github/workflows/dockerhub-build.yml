@@ -1,5 +1,4 @@
-name: Push Container Image to DockerHub
-
+name: Build Container Image, Deploy to Production
 on:
   workflow_dispatch:    
     inputs:
@@ -63,7 +62,10 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}
   deploy:
     needs: [build]
-    if: github.event.inputs.should_deploy == 'true'
+    if: |
+      always() &&
+      github.event.inputs.should_deploy == 'true' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped')
     name: Deploy to GCP VM
     runs-on: ubuntu-latest
 
