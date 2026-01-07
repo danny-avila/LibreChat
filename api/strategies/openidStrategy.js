@@ -4,7 +4,6 @@ const fetch = require('node-fetch');
 const passport = require('passport');
 const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
-const { HttpsProxyAgent } = require('https-proxy-agent');
 const { hashToken, logger } = require('@librechat/data-schemas');
 const { CacheKeys, ErrorTypes } = require('librechat-data-provider');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
@@ -13,6 +12,7 @@ const {
   logHeaders,
   safeStringify,
   findOpenIDUser,
+  getProxyAgent,
   getBalanceConfig,
   isEmailDomainAllowed,
 } = require('@librechat/api');
@@ -57,7 +57,11 @@ async function customFetch(url, options) {
       logger.info(`[openidStrategy] proxy agent configured: ${process.env.PROXY}`);
       fetchOptions = {
         ...options,
-        dispatcher: new undici.ProxyAgent(process.env.PROXY),
+        dispatcher: new undici.EnvHttpProxyAgent({
+          httpProxy: process.env.PROXY,
+          httpsProxy: process.env.PROXY,
+          // NO_PROXY/no_proxy is automatically read from environment
+        }),
       };
     }
 
@@ -217,8 +221,9 @@ const downloadImage = async (url, config, accessToken, sub) => {
       },
     };
 
-    if (process.env.PROXY) {
-      options.agent = new HttpsProxyAgent(process.env.PROXY);
+    const proxyAgent = getProxyAgent(url);
+    if (proxyAgent) {
+      options.agent = proxyAgent;
     }
 
     const response = await fetch(url, options);

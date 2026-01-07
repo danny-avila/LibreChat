@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { logger } from '@librechat/data-schemas';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import type { HttpsProxyAgent } from 'https-proxy-agent';
 import { CacheKeys, KnownEndpoints, EModelEndpoint, defaultModels } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import {
@@ -10,6 +10,7 @@ import {
   resolveHeaders,
   deriveBaseURL,
   logAxiosError,
+  getProxyAgent,
   inputSchema,
 } from '~/utils';
 import { standardCache } from '~/cache';
@@ -147,8 +148,9 @@ export async function fetchModels({
       options.headers.Authorization = `Bearer ${apiKey}`;
     }
 
-    if (process.env.PROXY) {
-      options.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+    const httpsAgent = getProxyAgent(baseURL);
+    if (httpsAgent) {
+      options.httpsAgent = httpsAgent;
     }
 
     if (process.env.OPENAI_ORGANIZATION && baseURL?.includes('openai')) {

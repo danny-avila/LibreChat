@@ -1,5 +1,5 @@
 const OpenAI = require('openai');
-const { ProxyAgent } = require('undici');
+const { EnvHttpProxyAgent } = require('undici');
 const { isUserProvided, checkUserKeyExpiry } = require('@librechat/api');
 const { ErrorTypes, EModelEndpoint } = require('librechat-data-provider');
 const { getUserKeyValues, getUserKeyExpiry } = require('~/models');
@@ -46,7 +46,11 @@ const initializeClient = async ({ req, res, version }) => {
   }
 
   if (PROXY) {
-    const proxyAgent = new ProxyAgent(PROXY);
+    const proxyAgent = new EnvHttpProxyAgent({
+      httpProxy: PROXY,
+      httpsProxy: PROXY,
+      // NO_PROXY/no_proxy is automatically read from environment
+    });
     opts.fetchOptions = {
       dispatcher: proxyAgent,
     };

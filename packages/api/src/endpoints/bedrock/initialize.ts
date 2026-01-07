@@ -9,7 +9,7 @@ import {
   removeNullishValues,
 } from 'librechat-data-provider';
 import type { BaseInitializeParams, InitializeResultBase, BedrockCredentials } from '~/types';
-import { checkUserKeyExpiry } from '~/utils';
+import { checkUserKeyExpiry, shouldBypassProxy } from '~/utils';
 
 /**
  * Initializes Bedrock endpoint configuration.
@@ -106,7 +106,16 @@ export async function initializeBedrock({
     typeof credentials.secretAccessKey === 'string' &&
     credentials.secretAccessKey !== '';
 
-  if (PROXY) {
+  // Determine the target endpoint URL for NO_PROXY checking
+  const region = (llmConfig.region as string) ?? BEDROCK_AWS_DEFAULT_REGION;
+  const targetEndpoint = BEDROCK_REVERSE_PROXY
+    ? `https://${BEDROCK_REVERSE_PROXY}`
+    : `https://bedrock-runtime.${region}.amazonaws.com`;
+
+  // Only use proxy if PROXY is set and URL is not in NO_PROXY
+  const useProxy = PROXY && !shouldBypassProxy(targetEndpoint);
+
+  if (useProxy) {
     const proxyAgent = new HttpsProxyAgent(PROXY);
 
     // Create a custom BedrockRuntimeClient with proxy-enabled request handler.
@@ -115,7 +124,7 @@ export async function initializeBedrock({
     // the AWS SDK's default credential provider chain is used (instance profiles,
     // AWS profiles, environment variables, etc.)
     const customClient = new BedrockRuntimeClient({
-      region: (llmConfig.region as string) ?? BEDROCK_AWS_DEFAULT_REGION,
+      region,
       ...(hasCompleteCredentials && {
         credentials: credentials as { accessKeyId: string; secretAccessKey: string },
       }),
@@ -124,7 +133,7 @@ export async function initializeBedrock({
         httpsAgent: proxyAgent,
       }),
       ...(BEDROCK_REVERSE_PROXY && {
-        endpoint: `https://${BEDROCK_REVERSE_PROXY}`,
+        endpoint: targetEndpoint,
       }),
     });
 

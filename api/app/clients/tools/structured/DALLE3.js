@@ -2,7 +2,7 @@ const { z } = require('zod');
 const path = require('path');
 const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
-const { ProxyAgent, fetch } = require('undici');
+const { EnvHttpProxyAgent, fetch } = require('undici');
 const { Tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { getImageBasename, extractBaseURL } = require('@librechat/api');
@@ -44,7 +44,11 @@ class DALLE3 extends Tool {
     }
 
     if (process.env.PROXY) {
-      const proxyAgent = new ProxyAgent(process.env.PROXY);
+      const proxyAgent = new EnvHttpProxyAgent({
+        httpProxy: process.env.PROXY,
+        httpsProxy: process.env.PROXY,
+        // NO_PROXY/no_proxy is automatically read from environment
+      });
       config.fetchOptions = {
         dispatcher: proxyAgent,
       };
@@ -164,7 +168,11 @@ Error Message: ${error.message}`);
     if (this.isAgent) {
       let fetchOptions = {};
       if (process.env.PROXY) {
-        const proxyAgent = new ProxyAgent(process.env.PROXY);
+        const proxyAgent = new EnvHttpProxyAgent({
+          httpProxy: process.env.PROXY,
+          httpsProxy: process.env.PROXY,
+          // NO_PROXY/no_proxy is automatically read from environment
+        });
         fetchOptions.dispatcher = proxyAgent;
       }
       const imageResponse = await fetch(theImageUrl, fetchOptions);

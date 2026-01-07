@@ -2,12 +2,11 @@ const axios = require('axios');
 const { v4 } = require('uuid');
 const OpenAI = require('openai');
 const FormData = require('form-data');
-const { ProxyAgent } = require('undici');
+const { EnvHttpProxyAgent } = require('undici');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
-const { HttpsProxyAgent } = require('https-proxy-agent');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
-const { logAxiosError, oaiToolkit, extractBaseURL } = require('@librechat/api');
+const { logAxiosError, oaiToolkit, extractBaseURL, getProxyAgent } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFiles } = require('~/models');
 
@@ -122,7 +121,11 @@ function createOpenAIImageTools(fields = {}) {
       }
       const clientConfig = { ...closureConfig };
       if (process.env.PROXY) {
-        const proxyAgent = new ProxyAgent(process.env.PROXY);
+        const proxyAgent = new EnvHttpProxyAgent({
+          httpProxy: process.env.PROXY,
+          httpsProxy: process.env.PROXY,
+          // NO_PROXY/no_proxy is automatically read from environment
+        });
         clientConfig.fetchOptions = {
           dispatcher: proxyAgent,
         };
@@ -232,7 +235,11 @@ Error Message: ${error.message}`);
 
       const clientConfig = { ...closureConfig };
       if (process.env.PROXY) {
-        const proxyAgent = new ProxyAgent(process.env.PROXY);
+        const proxyAgent = new EnvHttpProxyAgent({
+          httpProxy: process.env.PROXY,
+          httpsProxy: process.env.PROXY,
+          // NO_PROXY/no_proxy is automatically read from environment
+        });
         clientConfig.fetchOptions = {
           dispatcher: proxyAgent,
         };
@@ -347,8 +354,9 @@ Error Message: ${error.message}`);
           baseURL,
         };
 
-        if (process.env.PROXY) {
-          axiosConfig.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+        const httpsAgent = getProxyAgent(baseURL);
+        if (httpsAgent) {
+          axiosConfig.httpsAgent = httpsAgent;
         }
 
         if (process.env.IMAGE_GEN_OAI_AZURE_API_VERSION && process.env.IMAGE_GEN_OAI_BASEURL) {

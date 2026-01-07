@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { ProxyAgent, fetch } = require('undici');
+const { EnvHttpProxyAgent, fetch } = require('undici');
 const { tool } = require('@langchain/core/tools');
 const { getApiKey } = require('./credentials');
 
@@ -29,7 +29,11 @@ function createTavilySearchTool(fields = {}) {
       };
 
       if (process.env.PROXY) {
-        fetchOptions.dispatcher = new ProxyAgent(process.env.PROXY);
+        fetchOptions.dispatcher = new EnvHttpProxyAgent({
+          httpProxy: process.env.PROXY,
+          httpsProxy: process.env.PROXY,
+          // NO_PROXY/no_proxy is automatically read from environment
+        });
       }
 
       const response = await fetch('https://api.tavily.com/search', fetchOptions);

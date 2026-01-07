@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import FormData from 'form-data';
 import { logger } from '@librechat/data-schemas';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { getProxyAgent } from '~/utils';
 import {
   FileSources,
   envVarRegex,
@@ -88,8 +88,9 @@ export async function uploadDocumentToMistral({
     maxContentLength: Infinity,
   };
 
-  if (process.env.PROXY) {
-    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  const httpsAgent = getProxyAgent(`${baseURL}/files`);
+  if (httpsAgent) {
+    config.httpsAgent = httpsAgent;
   }
 
   return axios
@@ -117,8 +118,9 @@ export async function getSignedUrl({
     },
   };
 
-  if (process.env.PROXY) {
-    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  const httpsAgent = getProxyAgent(`${baseURL}/files/${fileId}/url`);
+  if (httpsAgent) {
+    config.httpsAgent = httpsAgent;
   }
 
   return axios
@@ -161,8 +163,9 @@ export async function performOCR({
     },
   };
 
-  if (process.env.PROXY) {
-    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  const httpsAgent = getProxyAgent(`${baseURL}/ocr`);
+  if (httpsAgent) {
+    config.httpsAgent = httpsAgent;
   }
 
   return axios
@@ -209,8 +212,9 @@ export async function deleteMistralFile({
     },
   };
 
-  if (process.env.PROXY) {
-    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  const httpsAgent = getProxyAgent(`${baseURL}/files/${fileId}`);
+  if (httpsAgent) {
+    config.httpsAgent = httpsAgent;
   }
 
   try {
@@ -578,8 +582,9 @@ async function exchangeJWTForAccessToken(jwt: string): Promise<string> {
     },
   };
 
-  if (process.env.PROXY) {
-    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  const httpsAgent = getProxyAgent('https://oauth2.googleapis.com/token');
+  if (httpsAgent) {
+    config.httpsAgent = httpsAgent;
   }
 
   const response = await axios.post(
@@ -651,8 +656,9 @@ async function performGoogleVertexOCR({
     },
   };
 
-  if (process.env.PROXY) {
-    config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+  const httpsAgent = getProxyAgent(baseURL);
+  if (httpsAgent) {
+    config.httpsAgent = httpsAgent;
   }
 
   return axios
