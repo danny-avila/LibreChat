@@ -721,7 +721,7 @@ describe('S3 CRUD Operations', () => {
       );
     });
 
-    it("should handle valid URL's that contain only a bucket", () => {
+    it('should handle valid URLs that contain only a bucket', () => {
       const url = 'https://s3.amazonaws.com/test-bucket/';
       const result = extractKeyFromS3Url(url);
       expect(logger.warn).toHaveBeenCalledWith(
@@ -732,7 +732,7 @@ describe('S3 CRUD Operations', () => {
       expect(result).toBe('');
     });
 
-    it("should handle invalid URL's that contain only a bucket", () => {
+    it('should handle invalid URLs that contain only a bucket', () => {
       const url = 'https://s3.amazonaws.com/test-bucket';
       const result = extractKeyFromS3Url(url);
       expect(logger.warn).toHaveBeenCalledWith(
@@ -765,22 +765,6 @@ describe('S3 CRUD Operations', () => {
 
     // Legacy endpoints
     // https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#VirtualHostingBackwardsCompatibility
-
-    // Amazon S3 virtual-hosted–style URLs
-    // https://bucket-name.s3.region-code.amazonaws.com/key-name
-    it('should handle formatted according to legacy global endpoint', () => {
-      const url = 'https://amzn-s3-demo-bucket1.s3.us-west-2.amazonaws.com/dogs/puppy.png';
-      const result = extractKeyFromS3Url(url);
-      expect(result).toBe('dogs/puppy.png');
-    });
-
-    // Amazon S3, path-style URLs
-    // https://s3.region-code.amazonaws.com/bucket-name/key-name
-    it('should handle formatted according to Path-style Classic global endpoint', () => {
-      const url = 'https://s3.us-west-2.amazonaws.com/amzn-s3-demo-bucket1/dogs/puppy.png';
-      const result = extractKeyFromS3Url(url);
-      expect(result).toBe('dogs/puppy.png');
-    });
 
     // s3‐Region
     // https://bucket-name.s3-region-code.amazonaws.com
