@@ -1,15 +1,14 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { ArrowUpLeft } from 'lucide-react';
-import { useSetRecoilState } from 'recoil';
 import {
-  Button,
-  Input,
   Table,
+  Button,
+  TableRow,
+  TableHead,
   TableBody,
   TableCell,
-  TableHead,
+  FilterInput,
   TableHeader,
-  TableRow,
   useToastContext,
 } from '@librechat/client';
 import {
@@ -33,10 +32,10 @@ import {
   getEndpointFileConfig,
   type TFile,
 } from 'librechat-data-provider';
+import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useFileMapContext, useChatContext } from '~/Providers';
 import { useLocalize, useUpdateFiles } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
-import store from '~/store';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -49,7 +48,8 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [{ pageIndex, pageSize }, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
-  const setShowFiles = useSetRecoilState(store.showFiles);
+  const [showFilesModal, setShowFilesModal] = useState(false);
+  const manageFilesRef = useRef<HTMLButtonElement>(null);
 
   const pagination = useMemo(
     () => ({
@@ -182,22 +182,12 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
   return (
     <div role="region" aria-label={localize('com_files_table')} className="mt-2 space-y-2">
-      <div className="relative flex items-center gap-4">
-        <Input
-          id="filename-filter"
-          placeholder=" "
-          value={filenameFilter ?? ''}
-          onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-          aria-label={localize('com_files_filter')}
-          className="peer"
-        />
-        <label
-          htmlFor="filename-filter"
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary transition-all duration-200 peer-focus:top-0 peer-focus:bg-background peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:bg-background peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs"
-        >
-          {localize('com_files_filter')}
-        </label>
-      </div>
+      <FilterInput
+        inputId="filename-filter"
+        label={localize('com_files_filter')}
+        value={filenameFilter ?? ''}
+        onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
+      />
 
       <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
         <div className="overflow-x-auto">
@@ -301,9 +291,10 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
       <div className="flex items-center justify-between">
         <Button
+          ref={manageFilesRef}
           variant="outline"
           size="sm"
-          onClick={() => setShowFiles(true)}
+          onClick={() => setShowFilesModal(true)}
           aria-label={localize('com_sidepanel_manage_files')}
         >
           <ArrowUpLeft className="h-4 w-4" aria-hidden="true" />
@@ -334,6 +325,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           </Button>
         </div>
       </div>
+      <MyFilesModal
+        open={showFilesModal}
+        onOpenChange={setShowFilesModal}
+        triggerRef={manageFilesRef}
+      />
     </div>
   );
 }

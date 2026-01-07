@@ -4,6 +4,7 @@ const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const { isEnabled, FlowStateManager } = require('@librechat/api');
 const { getLogStores } = require('~/cache');
+const { batchResetMeiliFlags } = require('./utils');
 
 const Conversation = mongoose.models.Conversation;
 const Message = mongoose.models.Message;
@@ -189,16 +190,16 @@ async function ensureFilterableAttributes(client) {
  */
 async function performSync(flowManager, flowId, flowType) {
   try {
+    if (indexingDisabled === true) {
+      logger.info('[indexSync] Indexing is disabled, skipping...');
+      return { messagesSync: false, convosSync: false };
+    }
+
     const client = MeiliSearchClient.getInstance();
 
     const { status } = await client.health();
     if (status !== 'available') {
       throw new Error('Meilisearch not available');
-    }
-
-    if (indexingDisabled === true) {
-      logger.info('[indexSync] Indexing is disabled, skipping...');
-      return { messagesSync: false, convosSync: false };
     }
 
     /** Ensures indexes have proper filterable attributes configured */
@@ -215,11 +216,8 @@ async function performSync(flowManager, flowId, flowType) {
       );
 
       // Reset sync flags to force full re-sync
-      await Message.collection.updateMany({ _meiliIndex: true }, { $set: { _meiliIndex: false } });
-      await Conversation.collection.updateMany(
-        { _meiliIndex: true },
-        { $set: { _meiliIndex: false } },
-      );
+      await batchResetMeiliFlags(Message.collection);
+      await batchResetMeiliFlags(Conversation.collection);
     }
 
     // Check if we need to sync messages

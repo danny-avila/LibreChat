@@ -130,7 +130,7 @@ export async function fetchModels({
     const options: {
       headers: Record<string, string>;
       timeout: number;
-      httpsAgent?: HttpsProxyAgent;
+      httpsAgent?: HttpsProxyAgent<string>;
     } = {
       headers: {
         ...(headers ?? {}),
@@ -340,8 +340,16 @@ export async function fetchAnthropicModels(
  * @param opts - Options for fetching models
  * @returns Promise resolving to array of model IDs
  */
-export async function getAnthropicModels(opts: { user?: string } = {}): Promise<string[]> {
+export async function getAnthropicModels(
+  opts: { user?: string; vertexModels?: string[] } = {},
+): Promise<string[]> {
   const models = defaultModels[EModelEndpoint.anthropic];
+
+  // Vertex AI models from YAML config take priority
+  if (opts.vertexModels && opts.vertexModels.length > 0) {
+    return opts.vertexModels;
+  }
+
   if (process.env.ANTHROPIC_MODELS) {
     return splitAndTrim(process.env.ANTHROPIC_MODELS);
   }

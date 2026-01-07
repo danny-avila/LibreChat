@@ -8,7 +8,12 @@ import {
   bedrockOutputParser,
   removeNullishValues,
 } from 'librechat-data-provider';
-import type { BaseInitializeParams, InitializeResultBase, BedrockCredentials } from '~/types';
+import type {
+  BaseInitializeParams,
+  InitializeResultBase,
+  BedrockCredentials,
+  GuardrailConfiguration,
+} from '~/types';
 import { checkUserKeyExpiry } from '~/utils';
 
 /**
@@ -42,6 +47,11 @@ export async function initializeBedrock({
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
   void endpoint;
+  const appConfig = req.config;
+  const bedrockConfig = appConfig?.endpoints?.[EModelEndpoint.bedrock] as
+    | ({ guardrailConfig?: GuardrailConfiguration } & Record<string, unknown>)
+    | undefined;
+
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
@@ -89,14 +99,22 @@ export async function initializeBedrock({
 
   const llmConfig = bedrockOutputParser(
     bedrockInputParser.parse(
-      removeNullishValues({ ...requestOptions, ...(model_parameters ?? {}) }),
+      removeNullishValues({
+        ...requestOptions,
+        ...(model_parameters ?? {}),
+      }),
     ),
   ) as InitializeResultBase['llmConfig'] & {
     region?: string;
     client?: BedrockRuntimeClient;
     credentials?: BedrockCredentials;
     endpointHost?: string;
+    guardrailConfig?: GuardrailConfiguration;
   };
+
+  if (bedrockConfig?.guardrailConfig) {
+    llmConfig.guardrailConfig = bedrockConfig.guardrailConfig;
+  }
 
   /** Only include credentials if they're complete (accessKeyId and secretAccessKey are both set) */
   const hasCompleteCredentials =

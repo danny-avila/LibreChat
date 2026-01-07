@@ -6,6 +6,7 @@ import {
   LocalStorageKeys,
   getEndpointField,
   isAgentsEndpoint,
+  isEphemeralAgentId,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
@@ -26,7 +27,7 @@ export function clearModelForNonEphemeralAgent<
   if (
     isAgentsEndpoint(template.endpoint) &&
     template.agent_id &&
-    template.agent_id !== Constants.EPHEMERAL_AGENT_ID
+    !isEphemeralAgentId(template.agent_id)
   ) {
     template.model = undefined as T['model'];
   }
@@ -150,7 +151,7 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
   if (
     !isAgentsEndpoint(newEndpoint) &&
     template.agent_id &&
-    template.agent_id !== Constants.EPHEMERAL_AGENT_ID
+    !isEphemeralAgentId(template.agent_id)
   ) {
     template.agent_id = Constants.EPHEMERAL_AGENT_ID;
   }

@@ -1,65 +1,44 @@
-import { useState, useRef } from 'react';
-import { GearIcon, MCPIcon, OGDialogTrigger } from '@librechat/client';
-import {
-  PermissionBits,
-  PermissionTypes,
-  Permissions,
-  hasPermissions,
-} from 'librechat-data-provider';
-import { useLocalize, useHasAccess, MCPServerDefinition } from '~/hooks';
-import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
-import MCPServerDialog from './MCPServerDialog';
+import { MCPIcon } from '@librechat/client';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import type { MCPServerStatusIconProps } from '~/components/MCP/MCPServerStatusIcon';
+import type { MCPServerDefinition } from '~/hooks';
+import { useLocalize, useHasAccess } from '~/hooks';
+import MCPServerCard from './MCPServerCard';
 
 interface MCPServerListProps {
   servers: MCPServerDefinition[];
-  getServerStatusIconProps: (
-    serverName: string,
-  ) => React.ComponentProps<typeof MCPServerStatusIcon>;
+  getServerStatusIconProps: (serverName: string) => MCPServerStatusIconProps;
   isFiltered?: boolean;
 }
 
-// Self-contained edit button component (follows MemoryViewer pattern)
-const EditMCPServerButton = ({ server }: { server: MCPServerDefinition }) => {
-  const localize = useLocalize();
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-
-  return (
-    <MCPServerDialog open={open} onOpenChange={setOpen} triggerRef={triggerRef} server={server}>
-      <OGDialogTrigger asChild>
-        <button
-          ref={triggerRef}
-          onClick={() => setOpen(true)}
-          className="flex h-5 w-5 items-center justify-center rounded hover:bg-surface-secondary"
-          aria-label={localize('com_ui_edit')}
-        >
-          <GearIcon className="h-4 w-4" />
-        </button>
-      </OGDialogTrigger>
-    </MCPServerDialog>
-  );
-};
-
+/**
+ * Renders a list of MCP server cards with empty state handling
+ */
 export default function MCPServerList({
   servers,
   getServerStatusIconProps,
   isFiltered = false,
 }: MCPServerListProps) {
+  const localize = useLocalize();
   const canCreateEditMCPs = useHasAccess({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.CREATE,
   });
-  const localize = useLocalize();
 
   if (servers.length === 0) {
     return (
-      <div className="rounded-lg border border-border-light bg-transparent p-8 text-center shadow-sm">
+      <div className="flex flex-col items-center justify-center rounded-lg border border-border-light bg-transparent p-6 text-center">
+        <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-surface-tertiary">
+          <MCPIcon className="size-5 text-text-secondary" aria-hidden="true" />
+        </div>
         {isFiltered ? (
           <p className="text-sm text-text-secondary">{localize('com_ui_no_mcp_servers_match')}</p>
         ) : (
           <>
-            <p className="text-sm text-text-secondary">{localize('com_ui_no_mcp_servers')}</p>
-            <p className="mt-1 text-xs text-text-tertiary">
+            <p className="text-sm font-medium text-text-primary">
+              {localize('com_ui_no_mcp_servers')}
+            </p>
+            <p className="mt-0.5 text-xs text-text-secondary">
               {localize('com_ui_add_first_mcp_server')}
             </p>
           </>
@@ -69,36 +48,16 @@ export default function MCPServerList({
   }
 
   return (
-    <div className="space-y-2">
-      {servers.map((server) => {
-        const canEditThisServer = hasPermissions(server.effectivePermissions, PermissionBits.EDIT);
-        const displayName = server.config?.title || server.serverName;
-        const serverKey = `key_${server.serverName}`;
-
-        return (
-          <div key={serverKey} className="rounded-lg border border-border-light bg-transparent p-3">
-            <div className="flex items-center gap-3">
-              {/* Server Icon */}
-              {server.config?.iconPath ? (
-                <img src={server.config.iconPath} className="h-5 w-5 rounded" alt={displayName} />
-              ) : (
-                <MCPIcon className="h-5 w-5" />
-              )}
-
-              {/* Server Info */}
-              <div className="min-w-0 flex-1">
-                <h3 className="truncate font-semibold text-text-primary">{displayName}</h3>
-              </div>
-
-              {/* Edit Button - Only for DB servers and when user has CREATE access */}
-              {canCreateEditMCPs && canEditThisServer && <EditMCPServerButton server={server} />}
-
-              {/* Connection Status Icon */}
-              <MCPServerStatusIcon {...getServerStatusIconProps(server.serverName)} />
-            </div>
-          </div>
-        );
-      })}
+    <div className="space-y-2" role="list" aria-label={localize('com_ui_mcp_servers')}>
+      {servers.map((server) => (
+        <div key={`card_${server.serverName}`} role="listitem">
+          <MCPServerCard
+            server={server}
+            getServerStatusIconProps={getServerStatusIconProps}
+            canCreateEditMCPs={canCreateEditMCPs}
+          />
+        </div>
+      ))}
     </div>
   );
 }

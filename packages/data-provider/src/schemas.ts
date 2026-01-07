@@ -49,7 +49,8 @@ export const documentSupportedProviders = new Set<string>([
   EModelEndpoint.anthropic,
   EModelEndpoint.openAI,
   EModelEndpoint.custom,
-  EModelEndpoint.azureOpenAI,
+  // handled in AttachFileMenu and DragDropModal since azureOpenAI only supports documents with Use Responses API set to true
+  // EModelEndpoint.azureOpenAI,
   EModelEndpoint.google,
   Providers.VERTEXAI,
   Providers.MISTRALAI,
@@ -165,6 +166,7 @@ export enum ReasoningEffort {
   low = 'low',
   medium = 'medium',
   high = 'high',
+  xhigh = 'xhigh',
 }
 
 export enum ReasoningSummary {
@@ -901,7 +903,7 @@ export const googleBaseSchema = tConversationSchema.pick({
 });
 
 export const googleSchema = googleBaseSchema
-  .transform((obj: Partial<TConversation>) => removeNullishValues(obj))
+  .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
   .catch(() => ({}));
 
 /**
@@ -1099,7 +1101,7 @@ export const compactGoogleSchema = googleBaseSchema
       delete newObj.topK;
     }
 
-    return removeNullishValues(newObj);
+    return removeNullishValues(newObj, true);
   })
   .catch(() => ({}));
 

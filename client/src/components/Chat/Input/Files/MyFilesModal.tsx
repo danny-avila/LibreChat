@@ -5,7 +5,15 @@ import { useGetFiles } from '~/data-provider';
 import { DataTable, columns } from './Table';
 import { useLocalize } from '~/hooks';
 
-export default function Files({ open, onOpenChange }) {
+export function MyFilesModal({
+  open,
+  onOpenChange,
+  triggerRef,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  triggerRef?: React.RefObject<HTMLButtonElement | HTMLDivElement | null>;
+}) {
   const localize = useLocalize();
 
   const { data: files = [] } = useGetFiles<TFile[]>({
@@ -18,7 +26,7 @@ export default function Files({ open, onOpenChange }) {
   });
 
   return (
-    <OGDialog open={open} onOpenChange={onOpenChange}>
+    <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
       <OGDialogContent
         title={localize('com_nav_my_files')}
         className="w-11/12 bg-background text-text-primary shadow-2xl"

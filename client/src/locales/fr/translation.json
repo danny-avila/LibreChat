@@ -701,7 +701,6 @@
   "com_ui_bookmarks": "Signets",
   "com_ui_bookmarks_add": "Ajouter des signets",
   "com_ui_bookmarks_add_to_conversation": "Ajouter à la conversation en cours",
-  "com_ui_bookmarks_count": "Nombre",
   "com_ui_bookmarks_create_error": "Une erreur est survenue lors de la création du signet",
   "com_ui_bookmarks_create_exists": "Ce signet existe déjà",
   "com_ui_bookmarks_create_success": "Signet créé avec succès",
