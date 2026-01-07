@@ -1,4 +1,5 @@
 import { useState, useMemo, memo, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { PermissionBits, ResourceType } from 'librechat-data-provider';
 import { Menu as MenuIcon, Edit as EditIcon, EarthIcon, TextSearch } from 'lucide-react';
 import {
@@ -9,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@librechat/client';
 import type { TPromptGroup } from 'librechat-data-provider';
-import { useLocalize, useSubmitMessage, useCustomLink, useResourcePermissions } from '~/hooks';
+import { useLocalize, useSubmitMessage, useResourcePermissions } from '~/hooks';
 import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
 import PreviewPrompt from '~/components/Prompts/PreviewPrompt';
 import ListCard from '~/components/Prompts/Groups/ListCard';
@@ -26,7 +27,6 @@ function ChatGroupItem({
   const { submitPrompt } = useSubmitMessage();
   const [isPreviewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [isVariableDialogOpen, setVariableDialogOpen] = useState(false);
-  const onEditClick = useCustomLink<HTMLDivElement>(`/d/prompts/${group._id}`);
 
   const groupIsGlobal = useMemo(
     () => instanceProjectId != null && group.projectIds?.includes(instanceProjectId),
@@ -120,16 +120,12 @@ function ChatGroupItem({
                   <DropdownMenuItem
                     disabled={!canEdit}
                     className="cursor-pointer rounded-lg text-text-primary hover:bg-surface-hover focus:bg-surface-hover disabled:cursor-not-allowed"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEditClick(e);
-                    }}
-                    onKeyDown={(e) => {
-                      e.stopPropagation();
-                    }}
+                    asChild
                   >
-                    <EditIcon className="mr-2 h-4 w-4 text-text-primary" aria-hidden="true" />
-                    <span>{localize('com_ui_edit')}</span>
+                    <Link to={`/d/prompts/${group._id}`}>
+                      <EditIcon className="mr-2 h-4 w-4 text-text-primary" aria-hidden="true" />
+                      <span>{localize('com_ui_edit')}</span>
+                    </Link>
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
               )}

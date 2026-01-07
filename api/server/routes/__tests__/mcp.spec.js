@@ -2,6 +2,7 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { getBasePath } = require('@librechat/api');
 
 const mockRegistryInstance = {
   getServerConfig: jest.fn(),
@@ -281,27 +282,30 @@ describe('MCP Routes', () => {
         error: 'access_denied',
         state: 'test-flow-id',
       });
+      const basePath = getBasePath();
 
       expect(response.status).toBe(302);
-      expect(response.headers.location).toBe('/oauth/error?error=access_denied');
+      expect(response.headers.location).toBe(`${basePath}/oauth/error?error=access_denied`);
     });
 
     it('should redirect to error page when code is missing', async () => {
       const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
         state: 'test-flow-id',
       });
+      const basePath = getBasePath();
 
       expect(response.status).toBe(302);
-      expect(response.headers.location).toBe('/oauth/error?error=missing_code');
+      expect(response.headers.location).toBe(`${basePath}/oauth/error?error=missing_code`);
     });
 
     it('should redirect to error page when state is missing', async () => {
       const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
         code: 'test-auth-code',
       });
+      const basePath = getBasePath();
 
       expect(response.status).toBe(302);
-      expect(response.headers.location).toBe('/oauth/error?error=missing_state');
+      expect(response.headers.location).toBe(`${basePath}/oauth/error?error=missing_state`);
     });
 
     it('should redirect to error page when flow state is not found', async () => {
@@ -311,9 +315,10 @@ describe('MCP Routes', () => {
         code: 'test-auth-code',
         state: 'invalid-flow-id',
       });
+      const basePath = getBasePath();
 
       expect(response.status).toBe(302);
-      expect(response.headers.location).toBe('/oauth/error?error=invalid_state');
+      expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_state`);
     });
 
     it('should handle OAuth callback successfully', async () => {
@@ -368,9 +373,10 @@ describe('MCP Routes', () => {
         code: 'test-auth-code',
         state: 'test-flow-id',
       });
+      const basePath = getBasePath();
 
       expect(response.status).toBe(302);
-      expect(response.headers.location).toBe('/oauth/success?serverName=test-server');
+      expect(response.headers.location).toBe(`${basePath}/oauth/success?serverName=test-server`);
       expect(MCPOAuthHandler.completeOAuthFlow).toHaveBeenCalledWith(
         'test-flow-id',
         'test-auth-code',
@@ -404,9 +410,10 @@ describe('MCP Routes', () => {
         code: 'test-auth-code',
         state: 'test-flow-id',
       });
+      const basePath = getBasePath();
 
       expect(response.status).toBe(302);
-      expect(response.headers.location).toBe('/oauth/error?error=callback_failed');
+      expect(response.headers.location).toBe(`${basePath}/oauth/error?error=callback_failed`);
     });
 
     it('should handle system-level OAuth completion', async () => {
@@ -439,9 +446,10 @@ describe('MCP Routes', () => {
         code: 'test-auth-code',
         state: 'test-flow-id',
       });
+      const basePath = getBasePath();
 
       expect(response.status).toBe(302);
-      expect(response.headers.location).toBe('/oauth/success?serverName=test-server');
+      expect(response.headers.location).toBe(`${basePath}/oauth/success?serverName=test-server`);
       expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('test-flow-id', 'mcp_get_tokens');
     });
 
@@ -484,9 +492,10 @@ describe('MCP Routes', () => {
         code: 'test-auth-code',
         state: 'test-flow-id',
       });
+      const basePath = getBasePath();
 
       expect(response.status).toBe(302);
-      expect(response.headers.location).toBe('/oauth/success?serverName=test-server');
+      expect(response.headers.location).toBe(`${basePath}/oauth/success?serverName=test-server`);
       expect(MCPTokenStorage.storeTokens).toHaveBeenCalled();
       expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('test-flow-id', 'mcp_get_tokens');
     });
@@ -525,9 +534,10 @@ describe('MCP Routes', () => {
         code: 'test-auth-code',
         state: 'test-flow-id',
       });
+      const basePath = getBasePath();
 
       expect(response.status).toBe(302);
-      expect(response.headers.location).toBe('/oauth/error?error=callback_failed');
+      expect(response.headers.location).toBe(`${basePath}/oauth/error?error=callback_failed`);
       expect(mockMcpManager.getUserConnection).not.toHaveBeenCalled();
     });
 
@@ -583,9 +593,10 @@ describe('MCP Routes', () => {
         code: 'test-auth-code',
         state: 'test-flow-id',
       });
+      const basePath = getBasePath();
 
       expect(response.status).toBe(302);
-      expect(response.headers.location).toBe('/oauth/success?serverName=test-server');
+      expect(response.headers.location).toBe(`${basePath}/oauth/success?serverName=test-server`);
 
       // Verify storeTokens was called with ORIGINAL flow state credentials
       expect(MCPTokenStorage.storeTokens).toHaveBeenCalledWith(
@@ -624,9 +635,10 @@ describe('MCP Routes', () => {
         code: 'test-auth-code',
         state: 'test-flow-id',
       });
+      const basePath = getBasePath();
 
       expect(response.status).toBe(302);
-      expect(response.headers.location).toBe('/oauth/success?serverName=test-server');
+      expect(response.headers.location).toBe(`${basePath}/oauth/success?serverName=test-server`);
 
       // Verify completeOAuthFlow was NOT called (prevented duplicate)
       expect(MCPOAuthHandler.completeOAuthFlow).not.toHaveBeenCalled();
@@ -1395,8 +1407,10 @@ describe('MCP Routes', () => {
         .get('/api/mcp/test-server/oauth/callback?code=test-code&state=test-flow-id')
         .expect(302);
 
+      const basePath = getBasePath();
+
       expect(mockFlowManager.completeFlow).not.toHaveBeenCalled();
-      expect(response.headers.location).toContain('/oauth/success');
+      expect(response.headers.location).toContain(`${basePath}/oauth/success`);
     });
 
     it('should handle null cached tools in OAuth callback (triggers || {} fallback)', async () => {
@@ -1443,7 +1457,9 @@ describe('MCP Routes', () => {
         .get('/api/mcp/test-server/oauth/callback?code=test-code&state=test-flow-id')
         .expect(302);
 
-      expect(response.headers.location).toContain('/oauth/success');
+      const basePath = getBasePath();
+
+      expect(response.headers.location).toContain(`${basePath}/oauth/success`);
     });
   });
 
@@ -1537,23 +1553,19 @@ describe('MCP Routes', () => {
       );
     });
 
-    it('should create MCP server with valid stdio config', async () => {
-      const validConfig = {
+    it('should reject stdio config for security reasons', async () => {
+      const stdioConfig = {
         type: 'stdio',
         command: 'node',
         args: ['server.js'],
         title: 'Test Stdio Server',
       };
 
-      mockRegistryInstance.addServer.mockResolvedValue({
-        serverName: 'test-stdio-server',
-        config: validConfig,
-      });
+      const response = await request(app).post('/api/mcp/servers').send({ config: stdioConfig });
 
-      const response = await request(app).post('/api/mcp/servers').send({ config: validConfig });
-
-      expect(response.status).toBe(201);
-      expect(response.body.serverName).toBe('test-stdio-server');
+      // Stdio transport is not allowed via API - only admins can configure it via YAML
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid configuration');
     });
 
     it('should return 400 for invalid configuration', async () => {

@@ -33,6 +33,23 @@ export default function ProgressText({
       return localize('com_ui_getting_started');
     }
 
+    // Gemini image generation
+    if (toolName === 'gemini_image_gen') {
+      if (progress >= 1) {
+        return localize('com_ui_image_created');
+      }
+      if (progress >= 0.7) {
+        return localize('com_ui_final_touch');
+      }
+      if (progress >= 0.5) {
+        return localize('com_ui_adding_details');
+      }
+      if (progress >= 0.3) {
+        return localize('com_ui_creating_image');
+      }
+      return localize('com_ui_getting_started');
+    }
+
     if (progress >= 1) {
       return localize('com_ui_image_created');
     }

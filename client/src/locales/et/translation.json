@@ -548,7 +548,6 @@
   "com_ui_bookmarks": "Järjehoidjad",
   "com_ui_bookmarks_add": "Lisa järjehoidjaid",
   "com_ui_bookmarks_add_to_conversation": "Lisa praegusesse vestlusse",
-  "com_ui_bookmarks_count": "Hulk",
   "com_ui_bookmarks_create_error": "Järjehoidja loomisel tekkis viga",
   "com_ui_bookmarks_create_exists": "See järjehoidja on juba olemas",
   "com_ui_bookmarks_create_success": "Järjehoidja loomine õnnestus",

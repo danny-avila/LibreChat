@@ -14,6 +14,7 @@ const {
   getBalanceConfig,
   getProviderConfig,
   memoryInstructions,
+  GenerationJobManager,
   getTransactionsConfig,
   createMemoryProcessor,
   filterMalformedContentParts,
@@ -36,14 +37,13 @@ const {
   EModelEndpoint,
   PermissionTypes,
   isAgentsEndpoint,
-  AgentCapabilities,
+  isEphemeralAgentId,
   bedrockInputSchema,
   removeNullishValues,
 } = require('librechat-data-provider');
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
-const { checkCapability } = require('~/server/services/Config');
 const { getConvoFiles } = require('~/models/Conversation');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getRoleByName } = require('~/models/Role');
@@ -95,59 +95,137 @@ function logToolError(graph, error, toolId) {
   });
 }
 
-/**
- * Applies agent labeling to conversation history when multi-agent patterns are detected.
- * Labels content parts by their originating agent to prevent identity confusion.
- *
- * @param {TMessage[]} orderedMessages - The ordered conversation messages
- * @param {Agent} primaryAgent - The primary agent configuration
- * @param {Map<string, Agent>} agentConfigs - Map of additional agent configurations
- * @returns {TMessage[]} Messages with agent labels applied where appropriate
- */
-function applyAgentLabelsToHistory(orderedMessages, primaryAgent, agentConfigs) {
-  const shouldLabelByAgent = (primaryAgent.edges?.length ?? 0) > 0 || (agentConfigs?.size ?? 0) > 0;
+/** Regex pattern to match agent ID suffix (____N) */
+const AGENT_SUFFIX_PATTERN = /____(\d+)$/;
 
-  if (!shouldLabelByAgent) {
-    return orderedMessages;
+/**
+ * Finds the primary agent ID within a set of agent IDs.
+ * Primary = no suffix (____N) or lowest suffix number.
+ * @param {Set<string>} agentIds
+ * @returns {string | null}
+ */
+function findPrimaryAgentId(agentIds) {
+  let primaryAgentId = null;
+  let lowestSuffixIndex = Infinity;
+
+  for (const agentId of agentIds) {
+    const suffixMatch = agentId.match(AGENT_SUFFIX_PATTERN);
+    if (!suffixMatch) {
+      return agentId;
+    }
+    const suffixIndex = parseInt(suffixMatch[1], 10);
+    if (suffixIndex < lowestSuffixIndex) {
+      lowestSuffixIndex = suffixIndex;
+      primaryAgentId = agentId;
+    }
   }
 
-  const processedMessages = [];
+  return primaryAgentId;
+}
 
-  for (let i = 0; i < orderedMessages.length; i++) {
-    const message = orderedMessages[i];
+/**
+ * Creates a mapMethod for getMessagesForConversation that processes agent content.
+ * - Strips agentId/groupId metadata from all content
+ * - For parallel agents (addedConvo with groupId): filters each group to its primary agent
+ * - For handoffs (agentId without groupId): keeps all content from all agents
+ * - For multi-agent: applies agent labels to content
+ *
+ * The key distinction:
+ * - Parallel execution (addedConvo): Parts have both agentId AND groupId
+ * - Handoffs: Parts only have agentId, no groupId
+ *
+ * @param {Agent} primaryAgent - Primary agent configuration
+ * @param {Map<string, Agent>} [agentConfigs] - Additional agent configurations
+ * @returns {(message: TMessage) => TMessage} Map method for processing messages
+ */
+function createMultiAgentMapper(primaryAgent, agentConfigs) {
+  const hasMultipleAgents = (primaryAgent.edges?.length ?? 0) > 0 || (agentConfigs?.size ?? 0) > 0;
 
-    /** @type {Record<string, string>} */
-    const agentNames = { [primaryAgent.id]: primaryAgent.name || 'Assistant' };
-
+  /** @type {Record<string, string> | null} */
+  let agentNames = null;
+  if (hasMultipleAgents) {
+    agentNames = { [primaryAgent.id]: primaryAgent.name || 'Assistant' };
     if (agentConfigs) {
       for (const [agentId, agentConfig] of agentConfigs.entries()) {
         agentNames[agentId] = agentConfig.name || agentConfig.id;
       }
     }
-
-    if (
-      !message.isCreatedByUser &&
-      message.metadata?.agentIdMap &&
-      Array.isArray(message.content)
-    ) {
-      try {
-        const labeledContent = labelContentByAgent(
-          message.content,
-          message.metadata.agentIdMap,
-          agentNames,
-        );
-
-        processedMessages.push({ ...message, content: labeledContent });
-      } catch (error) {
-        logger.error('[AgentClient] Error applying agent labels to message:', error);
-        processedMessages.push(message);
-      }
-    } else {
-      processedMessages.push(message);
-    }
   }
 
-  return processedMessages;
+  return (message) => {
+    if (message.isCreatedByUser || !Array.isArray(message.content)) {
+      return message;
+    }
+
+    // Check for metadata
+    const hasAgentMetadata = message.content.some((part) => part?.agentId || part?.groupId != null);
+    if (!hasAgentMetadata) {
+      return message;
+    }
+
+    try {
+      // Build a map of groupId -> Set of agentIds, to find primary per group
+      /** @type {Map<number, Set<string>>} */
+      const groupAgentMap = new Map();
+
+      for (const part of message.content) {
+        const groupId = part?.groupId;
+        const agentId = part?.agentId;
+        if (groupId != null && agentId) {
+          if (!groupAgentMap.has(groupId)) {
+            groupAgentMap.set(groupId, new Set());
+          }
+          groupAgentMap.get(groupId).add(agentId);
+        }
+      }
+
+      // For each group, find the primary agent
+      /** @type {Map<number, string>} */
+      const groupPrimaryMap = new Map();
+      for (const [groupId, agentIds] of groupAgentMap) {
+        const primary = findPrimaryAgentId(agentIds);
+        if (primary) {
+          groupPrimaryMap.set(groupId, primary);
+        }
+      }
+
+      /** @type {Array<TMessageContentParts>} */
+      const filteredContent = [];
+      /** @type {Record<number, string>} */
+      const agentIdMap = {};
+
+      for (const part of message.content) {
+        const agentId = part?.agentId;
+        const groupId = part?.groupId;
+
+        // Filtering logic:
+        // - No groupId (handoffs): always include
+        // - Has groupId (parallel): only include if it's the primary for that group
+        const isParallelPart = groupId != null;
+        const groupPrimary = isParallelPart ? groupPrimaryMap.get(groupId) : null;
+        const shouldInclude = !isParallelPart || !agentId || agentId === groupPrimary;
+
+        if (shouldInclude) {
+          const newIndex = filteredContent.length;
+          const { agentId: _a, groupId: _g, ...cleanPart } = part;
+          filteredContent.push(cleanPart);
+          if (agentId && hasMultipleAgents) {
+            agentIdMap[newIndex] = agentId;
+          }
+        }
+      }
+
+      const finalContent =
+        Object.keys(agentIdMap).length > 0 && agentNames
+          ? labelContentByAgent(filteredContent, agentIdMap, agentNames)
+          : filteredContent;
+
+      return { ...message, content: finalContent };
+    } catch (error) {
+      logger.error('[AgentClient] Error processing multi-agent message:', error);
+      return message;
+    }
+  };
 }
 
 class AgentClient extends BaseClient {
@@ -199,8 +277,6 @@ class AgentClient extends BaseClient {
     this.indexTokenCountMap = {};
     /** @type {(messages: BaseMessage[]) => Promise<void>} */
     this.processMemory;
-    /** @type {Record<number, string> | null} */
-    this.agentIdMap = null;
   }
 
   /**
@@ -210,9 +286,7 @@ class AgentClient extends BaseClient {
     return this.contentParts;
   }
 
-  setOptions(options) {
-    logger.info('[api/server/controllers/agents/client.js] setOptions', options);
-  }
+  setOptions(_options) {}
 
   /**
    * `AgentClient` is not opinionated about vision requests, so we don't do anything here
@@ -287,17 +361,14 @@ class AgentClient extends BaseClient {
     { instructions = null, additional_instructions = null },
     opts,
   ) {
-    let orderedMessages = this.constructor.getMessagesForConversation({
+    /** Always pass mapMethod; getMessagesForConversation applies it only to messages with addedConvo flag */
+    const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
       summary: this.shouldSummarize,
+      mapMethod: createMultiAgentMapper(this.options.agent, this.agentConfigs),
+      mapCondition: (message) => message.addedConvo === true,
     });
-
-    orderedMessages = applyAgentLabelsToHistory(
-      orderedMessages,
-      this.options.agent,
-      this.agentConfigs,
-    );
 
     let payload;
     /** @type {number | undefined} */
@@ -550,10 +621,9 @@ class AgentClient extends BaseClient {
         agent: prelimAgent,
         allowedProviders,
         endpointOption: {
-          endpoint:
-            prelimAgent.id !== Constants.EPHEMERAL_AGENT_ID
-              ? EModelEndpoint.agents
-              : memoryConfig.agent?.provider,
+          endpoint: !isEphemeralAgentId(prelimAgent.id)
+            ? EModelEndpoint.agents
+            : memoryConfig.agent?.provider,
         },
       },
       {
@@ -593,10 +663,12 @@ class AgentClient extends BaseClient {
     const userId = this.options.req.user.id + '';
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
+    const streamId = this.options.req?._resumableStreamId || null;
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
       config,
       messageId,
+      streamId,
       conversationId,
       memoryMethods: {
         setMemory: db.setMemory,
@@ -604,6 +676,7 @@ class AgentClient extends BaseClient {
         getFormattedMemories: db.getFormattedMemories,
       },
       res: this.options.res,
+      user: createSafeUser(this.options.req.user),
     });
 
     this.processMemory = processMemory;
@@ -690,9 +763,7 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
-    const metadata = this.agentIdMap ? { agentIdMap: this.agentIdMap } : undefined;
-
-    return { completion, metadata };
+    return { completion };
   }
 
   /**
@@ -713,10 +784,16 @@ class AgentClient extends BaseClient {
     if (!collectedUsage || !collectedUsage.length) {
       return;
     }
+    // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
+    const firstUsage = collectedUsage[0];
     const input_tokens =
-      (collectedUsage[0]?.input_tokens || 0) +
-      (Number(collectedUsage[0]?.input_token_details?.cache_creation) || 0) +
-      (Number(collectedUsage[0]?.input_token_details?.cache_read) || 0);
+      (firstUsage?.input_tokens || 0) +
+      (Number(firstUsage?.input_token_details?.cache_creation) ||
+        Number(firstUsage?.cache_creation_input_tokens) ||
+        0) +
+      (Number(firstUsage?.input_token_details?.cache_read) ||
+        Number(firstUsage?.cache_read_input_tokens) ||
+        0);
 
     let output_tokens = 0;
     let previousTokens = input_tokens; // Start with original input
@@ -726,8 +803,13 @@ class AgentClient extends BaseClient {
         continue;
       }
 
-      const cache_creation = Number(usage.input_token_details?.cache_creation) || 0;
-      const cache_read = Number(usage.input_token_details?.cache_read) || 0;
+      // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
+      const cache_creation =
+        Number(usage.input_token_details?.cache_creation) ||
+        Number(usage.cache_creation_input_tokens) ||
+        0;
+      const cache_read =
+        Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
 
       const txMetadata = {
         context,
@@ -888,12 +970,10 @@ class AgentClient extends BaseClient {
        */
       const runAgents = async (messages) => {
         const agents = [this.options.agent];
-        if (
-          this.agentConfigs &&
-          this.agentConfigs.size > 0 &&
-          ((this.options.agent.edges?.length ?? 0) > 0 ||
-            (await checkCapability(this.options.req, AgentCapabilities.chain)))
-        ) {
+        // Include additional agents when:
+        // - agentConfigs has agents (from addedConvo parallel execution or agent handoffs)
+        // - Agents without incoming edges become start nodes and run in parallel automatically
+        if (this.agentConfigs && this.agentConfigs.size > 0) {
           agents.push(...this.agentConfigs.values());
         }
 
@@ -953,6 +1033,12 @@ class AgentClient extends BaseClient {
         }
 
         this.run = run;
+
+        const streamId = this.options.req?._resumableStreamId;
+        if (streamId && run.Graph) {
+          GenerationJobManager.setGraph(streamId, run.Graph);
+        }
+
         if (userMCPAuthMap != null) {
           config.configurable.userMCPAuthMap = userMCPAuthMap;
         }
@@ -982,24 +1068,6 @@ class AgentClient extends BaseClient {
             part.tool_call_ids
           );
         });
-      }
-
-      try {
-        /** Capture agent ID map if we have edges or multiple agents */
-        const shouldStoreAgentMap =
-          (this.options.agent.edges?.length ?? 0) > 0 || (this.agentConfigs?.size ?? 0) > 0;
-        if (shouldStoreAgentMap && run?.Graph) {
-          const contentPartAgentMap = run.Graph.getContentPartAgentMap();
-          if (contentPartAgentMap && contentPartAgentMap.size > 0) {
-            this.agentIdMap = Object.fromEntries(contentPartAgentMap);
-            logger.debug('[AgentClient] Captured agent ID map:', {
-              totalParts: this.contentParts.length,
-              mappedParts: Object.keys(this.agentIdMap).length,
-            });
-          }
-        }
-      } catch (error) {
-        logger.error('[AgentClient] Error capturing agent ID map:', error);
       }
     } catch (err) {
       logger.error(
