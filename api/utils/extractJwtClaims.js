@@ -3,10 +3,10 @@ const { logger } = require('@librechat/data-schemas');
 
 /**
  * JWT Claim Extraction Utilities for OIDC Group Synchronization
- * 
+ *
  * Provides safe extraction and sanitization of groups/roles from JWT tokens
  * for various OpenID Connect providers (Keycloak, Auth0, Okta, etc.)
- * 
+ *
  * TODO: Future enhancements:
  * - Add claim path validation against OIDC provider metadata
  * - Add caching for frequently accessed claims
@@ -33,7 +33,7 @@ function extractClaimFromToken(token, claimPath) {
     }
 
     const decoded = jwtDecode(token);
-    
+
     if (!decoded || typeof decoded !== 'object') {
       logger.warn('[extractClaimFromToken] Failed to decode token');
       return null;
@@ -42,7 +42,7 @@ function extractClaimFromToken(token, claimPath) {
     // Navigate the claim path
     const pathParts = claimPath.split('.');
     let value = decoded;
-    
+
     for (const part of pathParts) {
       if (value === null || value === undefined || typeof value !== 'object') {
         logger.debug(`[extractClaimFromToken] Claim path '${claimPath}' not found in token`);
@@ -57,14 +57,16 @@ function extractClaimFromToken(token, claimPath) {
     }
 
     if (Array.isArray(value)) {
-      return value.filter(item => typeof item === 'string' && item.trim().length > 0);
+      return value.filter((item) => typeof item === 'string' && item.trim().length > 0);
     }
 
     if (typeof value === 'string' && value.trim().length > 0) {
       return [value];
     }
 
-    logger.warn(`[extractClaimFromToken] Claim at path '${claimPath}' is not a string or array: ${typeof value}`);
+    logger.warn(
+      `[extractClaimFromToken] Claim at path '${claimPath}' is not a string or array: ${typeof value}`,
+    );
     return null;
   } catch (error) {
     logger.error('[extractClaimFromToken] Error extracting claim from token:', error);
@@ -116,30 +118,39 @@ function shouldExcludeGroup(groupName, exclusionPattern) {
     return false;
   }
 
-  const patterns = exclusionPattern.split(',').map(p => p.trim()).filter(Boolean);
-  
+  const patterns = exclusionPattern
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+
   for (const pattern of patterns) {
     // Check if it's a regex pattern
     if (pattern.startsWith('regex:')) {
       try {
         const regexStr = pattern.substring(6); // Remove 'regex:' prefix
-        
+
         // Security: Prevent ReDoS attacks by limiting regex complexity
         if (regexStr.length > 200) {
-          logger.warn(`[shouldExcludeGroup] Regex pattern too long (${regexStr.length} chars), skipping: ${pattern.substring(0, 50)}...`);
+          logger.warn(
+            `[shouldExcludeGroup] Regex pattern too long (${regexStr.length} chars), skipping: ${pattern.substring(0, 50)}...`,
+          );
           continue;
         }
-        
+
         // Security: Detect potentially dangerous regex patterns (nested quantifiers, catastrophic backtracking)
-        const dangerousPatterns = /(\*\*|\+\+|\*\+|\+\*)|((\(.*\)){2,}[\*\+])|(\[[^\]]{100,}\])/;
+        const dangerousPatterns = /(\*\*|\+\+|\*\+|\+\*)|((\(.*\)){2,}[*+])|(\[[^\]]{100,}\])/;
         if (dangerousPatterns.test(regexStr)) {
-          logger.warn(`[shouldExcludeGroup] Potentially dangerous regex pattern detected, skipping: ${pattern}`);
+          logger.warn(
+            `[shouldExcludeGroup] Potentially dangerous regex pattern detected, skipping: ${pattern}`,
+          );
           continue;
         }
-        
+
         const regex = new RegExp(regexStr, 'i'); // Case-insensitive
         if (regex.test(groupName)) {
-          logger.debug(`[shouldExcludeGroup] Excluding '${groupName}' (matched regex: ${regexStr})`);
+          logger.debug(
+            `[shouldExcludeGroup] Excluding '${groupName}' (matched regex: ${regexStr})`,
+          );
           return true;
         }
       } catch (error) {
@@ -165,7 +176,12 @@ function shouldExcludeGroup(groupName, exclusionPattern) {
  * @param {string|null} exclusionPattern - Optional exclusion pattern for filtering groups
  * @returns {Array<string>} Array of sanitized group names
  */
-function extractGroupsFromToken(tokenset, claimPath, tokenKind = 'access', exclusionPattern = null) {
+function extractGroupsFromToken(
+  tokenset,
+  claimPath,
+  tokenKind = 'access',
+  exclusionPattern = null,
+) {
   try {
     if (!tokenset || typeof tokenset !== 'object') {
       logger.warn('[extractGroupsFromToken] Invalid tokenset provided');
@@ -182,18 +198,18 @@ function extractGroupsFromToken(tokenset, claimPath, tokenKind = 'access', exclu
     const claimValues = extractClaimFromToken(token, claimPath);
 
     if (!claimValues || claimValues.length === 0) {
-      logger.debug(`[extractGroupsFromToken] No groups found in ${tokenKind} token at path: ${claimPath}`);
+      logger.debug(
+        `[extractGroupsFromToken] No groups found in ${tokenKind} token at path: ${claimPath}`,
+      );
       return [];
     }
 
     // Sanitize all group names
-    const sanitizedGroups = claimValues
-      .map(sanitizeGroupName)
-      .filter(name => name.length > 0);
+    const sanitizedGroups = claimValues.map(sanitizeGroupName).filter((name) => name.length > 0);
 
     // Apply exclusion filter
-    const filteredGroups = exclusionPattern 
-      ? sanitizedGroups.filter(g => !shouldExcludeGroup(g, exclusionPattern))
+    const filteredGroups = exclusionPattern
+      ? sanitizedGroups.filter((g) => !shouldExcludeGroup(g, exclusionPattern))
       : sanitizedGroups;
 
     // Remove duplicates
@@ -225,4 +241,3 @@ module.exports = {
   extractGroupsFromToken,
   shouldExcludeGroup,
 };
-

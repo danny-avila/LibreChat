@@ -550,10 +550,10 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
 /**
  * Sync user's OIDC groups from JWT token claims to LibreChat's Group database
  * Extracts groups/roles from JWT token and syncs group memberships automatically on login
- * 
+ *
  * Supports any OpenID Connect provider (Keycloak, Auth0, Okta, etc.) by reading groups/roles
  * from configurable JWT claim paths.
- * 
+ *
  * TODO: Future improvements:
  * - Add transaction wrapping for full atomicity (currently relies on passed session)
  * - Implement bulk query optimization for large group counts (>20 groups)
@@ -561,7 +561,7 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
  * - Add orphaned group cleanup (groups with no members)
  * - Add manual sync trigger via admin API
  * - Add support for URL-based claim paths (e.g., Auth0 custom namespaces)
- * 
+ *
  * @param {Object} user - User object from authentication
  * @param {string} user.idOnTheSource - User's external ID (oid or sub from token claims)
  * @param {string} user.provider - Authentication provider ('openid')
@@ -578,7 +578,9 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
 
     // Validate user authentication
     if (!user || user.provider !== 'openid' || !user.idOnTheSource) {
-      logger.debug('[PermissionService.syncUserOidcGroupsFromToken] User not eligible for OIDC group sync');
+      logger.debug(
+        '[PermissionService.syncUserOidcGroupsFromToken] User not eligible for OIDC group sync',
+      );
       return;
     }
 
@@ -588,7 +590,9 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
       user.idOnTheSource.trim().length === 0 ||
       /[${}.]/.test(user.idOnTheSource)
     ) {
-      logger.warn('[PermissionService.syncUserOidcGroupsFromToken] Invalid idOnTheSource: contains special characters or is empty');
+      logger.warn(
+        '[PermissionService.syncUserOidcGroupsFromToken] Invalid idOnTheSource: contains special characters or is empty',
+      );
       return;
     }
 
@@ -666,7 +670,7 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
       sessionOptions,
     );
 
-    const existingMap = new Map(existingGroups.map(g => [g.idOnTheSource, g]));
+    const existingMap = new Map(existingGroups.map((g) => [g.idOnTheSource, g]));
     const groupsToCreate = [];
     const groupsToUpdate = [];
 
@@ -680,9 +684,7 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
           memberIds: [user.idOnTheSource],
         });
       } else if (
-        !existing.memberIds.some(
-          (memberId) => String(memberId) === String(user.idOnTheSource),
-        )
+        !existing.memberIds.some((memberId) => String(memberId) === String(user.idOnTheSource))
       ) {
         groupsToUpdate.push(existing._id);
       }
@@ -711,10 +713,10 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
         await Group.updateMany(
           { _id: { $in: groupsToUpdate } },
           { $addToSet: { memberIds: user.idOnTheSource } },
-          sessionOptions
+          sessionOptions,
         );
         for (const groupId of groupsToUpdate) {
-          const group = existingGroups.find(g => g._id.equals(groupId));
+          const group = existingGroups.find((g) => g._id.equals(groupId));
           logger.debug(
             `[PermissionService.syncUserOidcGroupsFromToken] Added user to group: ${group ? group.idOnTheSource : groupId}`,
           );
@@ -749,10 +751,7 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
       `[PermissionService.syncUserOidcGroupsFromToken] Successfully synced groups for user ${user.email}`,
     );
   } catch (error) {
-    logger.error(
-      `[PermissionService.syncUserOidcGroupsFromToken] Error syncing groups:`,
-      error,
-    );
+    logger.error(`[PermissionService.syncUserOidcGroupsFromToken] Error syncing groups:`, error);
   }
 };
 

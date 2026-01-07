@@ -241,14 +241,14 @@ describe('syncUserOidcGroupsFromToken', () => {
       const tokenset = { access_token: 'token' };
 
       extractGroupsFromToken.mockReturnValue(['admin']);
-      
+
       const existingGroup = {
         _id: 'group-id',
         idOnTheSource: 'admin',
         name: 'admin',
         memberIds: ['other-user'],
       };
-      
+
       Group.find = jest.fn().mockResolvedValue([existingGroup]);
       Group.insertMany = jest.fn().mockResolvedValue([]);
       Group.updateMany = jest.fn().mockResolvedValue({});
@@ -273,14 +273,14 @@ describe('syncUserOidcGroupsFromToken', () => {
       const tokenset = { access_token: 'token' };
 
       extractGroupsFromToken.mockReturnValue(['admin']);
-      
+
       const existingGroup = {
         _id: 'group-id',
         idOnTheSource: 'admin',
         name: 'admin',
         memberIds: ['user-123', 'other-user'],
       };
-      
+
       Group.find = jest.fn().mockResolvedValue([existingGroup]);
       Group.insertMany = jest.fn().mockResolvedValue([]);
       Group.updateMany = jest.fn().mockResolvedValue({});
@@ -415,7 +415,7 @@ describe('syncUserOidcGroupsFromToken', () => {
       const tokenset = { access_token: 'token' };
 
       extractGroupsFromToken.mockReturnValue(['admin', 'developer', 'user']);
-      
+
       Group.find = jest.fn().mockResolvedValue([]);
       Group.insertMany = jest.fn().mockRejectedValue(new Error('Database error'));
       Group.updateMany = jest.fn().mockResolvedValue({});
@@ -450,15 +450,10 @@ describe('syncUserOidcGroupsFromToken', () => {
 
       await syncUserOidcGroupsFromToken(user, tokenset, session);
 
-      expect(Group.insertMany).toHaveBeenCalledWith(
-        expect.any(Array),
-        { session },
-      );
-      expect(Group.updateMany).toHaveBeenCalledWith(
-        expect.any(Object),
-        expect.any(Object),
-        { session },
-      );
+      expect(Group.insertMany).toHaveBeenCalledWith(expect.any(Array), { session });
+      expect(Group.updateMany).toHaveBeenCalledWith(expect.any(Object), expect.any(Object), {
+        session,
+      });
     });
   });
 
@@ -497,9 +492,7 @@ describe('syncUserOidcGroupsFromToken', () => {
         expect.any(Object),
       );
       expect(Group.insertMany).toHaveBeenCalledWith(
-        expect.not.arrayContaining([
-          expect.objectContaining({ name: 'group5' }),
-        ]),
+        expect.not.arrayContaining([expect.objectContaining({ name: 'group5' })]),
         expect.any(Object),
       );
     });
@@ -602,4 +595,3 @@ describe('syncUserOidcGroupsFromToken', () => {
     });
   });
 });
-
