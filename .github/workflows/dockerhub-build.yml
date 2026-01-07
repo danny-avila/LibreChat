@@ -104,16 +104,7 @@ jobs:
               echo "✗ Infisical authentication failed"
               exit 1
             fi
-        
-            echo "Exporting secrets to env file"
-            npx @infisical/cli@0.43.40 export \
-              --env=prod \
-              --projectId='${{ secrets.INFISICAL_PROJECT_ID }}' \
-              --path='/annam-ajrasakha/LibreChat' \
-              > .env
-        
-            chmod 600 .env
-        
+      
             echo "Stopping old container (if any)"
             docker stop $CONTAINER || true
             docker rm $CONTAINER || true
@@ -123,7 +114,10 @@ jobs:
               --name $CONTAINER \
               --restart unless-stopped \
               -p 3081:3080 \
-              --env-file .env \
+              -e INFISICAL_ENVIRONMENT='${{ secrets.INFISICAL_ENVIRONMENT }}' \
+              -e INFISICAL_PROJECT_ID='${{ secrets.INFISICAL_PROJECT_ID }}' \
+              -e INFISICAL_SECRET_PATH='${{ secrets.INFISICAL_SECRET_PATH }}' \
+              -e INFISICAL_TOKEN="$INFISICAL_TOKEN" \
               $IMAGE \
               npm run backend
         
