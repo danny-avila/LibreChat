@@ -55,7 +55,7 @@ RUN \
     npm cache clean --force
 
 # Node API setup
-EXPOSE 3081
+EXPOSE 3080
 ENV HOST=0.0.0.0
 CMD ["sh", "-c", "infisical run --env=\"$INFISICAL_ENVIRONMENT\" --projectId=\"$INFISICAL_PROJECT_ID\" --path=\"$INFISICAL_SECRET_PATH\" -- npm run backend"]
 
