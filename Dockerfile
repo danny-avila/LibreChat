@@ -6,6 +6,7 @@ FROM node:20-alpine AS node
 # Install jemalloc
 RUN apk add --no-cache jemalloc
 RUN apk add --no-cache python3 py3-pip uv
+RUN apk add --no-cache bash curl sudo
 
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
@@ -13,6 +14,12 @@ ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
 # Add `uv` for extended MCP support
 COPY --from=ghcr.io/astral-sh/uv:0.9.5-python3.12-alpine /usr/local/bin/uv /usr/local/bin/uvx /bin/
 RUN uv --version
+
+# Install Infisical CLI
+RUN curl -1sLf \
+    'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.alpine.sh' \
+    | bash && \
+    apk update && apk add infisical
 
 # Set configurable max-old-space-size with default
 ARG NODE_MAX_OLD_SPACE_SIZE=6144
@@ -50,7 +57,8 @@ RUN \
 # Node API setup
 EXPOSE 3081
 ENV HOST=0.0.0.0
-CMD ["npm", "run", "backend"]
+CMD ["sh", "-c", "infisical run --env=\"$INFISICAL_ENVIRONMENT\" --projectId=\"$INFISICAL_PROJECT_ID\" --path=\"$INFISICAL_SECRET_PATH\" -- npm run backend"]
+
 
 # Optional: for client with nginx routing
 # FROM nginx:stable-alpine AS nginx-client
