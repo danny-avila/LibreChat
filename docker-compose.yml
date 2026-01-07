@@ -22,6 +22,11 @@ services:
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
       - PROXY=${PROXY:-}
       - NO_PROXY=${NO_PROXY:-}
+      - HTTP_PROXY=${PROXY:-}
+      - HTTPS_PROXY=${PROXY:-}
+      - http_proxy=${PROXY:-}
+      - https_proxy=${PROXY:-}
+      - no_proxy=${NO_PROXY:-}
     volumes:
       - type: bind
         source: ./.env
