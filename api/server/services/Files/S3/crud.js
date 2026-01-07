@@ -252,7 +252,25 @@ function extractKeyFromS3Url(fileUrlOrKey) {
 
   try {
     const url = new URL(fileUrlOrKey);
-    return url.pathname.substring(1);
+    const hostname = url.hostname;
+    const pathname = url.pathname.substring(1); // Remove leading slash
+
+    // Check if it's path-style URL (s3.amazonaws.com or s3.region.amazonaws.com)
+    if (hostname === 's3.amazonaws.com' || hostname.match(/^s3[.-][a-z0-9-]+\.amazonaws\.com$/)) {
+      // Path-style: https://s3.amazonaws.com/bucket-name/key
+      // Need to strip the bucket name (first path segment)
+      const firstSlashIndex = pathname.indexOf('/');
+      if (firstSlashIndex > 0) {
+        const key = pathname.substring(firstSlashIndex + 1);
+        logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`);
+        return key;
+      }
+    }
+
+    // Virtual-hosted-style or other: https://bucket-name.s3.amazonaws.com/key
+    // Just return the pathname without leading slash
+    logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${pathname}`);
+    return pathname;
   } catch (error) {
     const parts = fileUrlOrKey.split('/');
 
@@ -260,7 +278,11 @@ function extractKeyFromS3Url(fileUrlOrKey) {
       return fileUrlOrKey;
     }
 
-    return fileUrlOrKey.startsWith('/') ? fileUrlOrKey.substring(1) : fileUrlOrKey;
+    const key = fileUrlOrKey.startsWith('/') ? fileUrlOrKey.substring(1) : fileUrlOrKey;
+    logger.debug(
+      `[extractKeyFromS3Url] FALLBACK. fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`,
+    );
+    return key;
   }
 }
 
@@ -482,4 +504,5 @@ module.exports = {
   refreshS3Url,
   needsRefresh,
   getNewS3URL,
+  extractKeyFromS3Url,
 };
