@@ -28,6 +28,8 @@ permissions:
 
 env:
   DOCKER_IMAGE: ajrasakha-client
+  INFISICAL_ENVIRONMENT: prod
+  INFISICAL_SECRET_PATH: /annam-ajrasakha/LibreChat
 
 
 jobs:
