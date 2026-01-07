@@ -43,6 +43,8 @@ function createProxyDispatcher(timeout?: number) {
   return new EnvHttpProxyAgent({
     httpProxy: PROXY,
     httpsProxy: PROXY,
+    bodyTimeout: effectiveTimeout,
+    headersTimeout: effectiveTimeout,
     // NO_PROXY/no_proxy is automatically read from environment by EnvHttpProxyAgent
   });
 }
