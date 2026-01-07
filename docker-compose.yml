@@ -49,6 +49,9 @@ services:
       - HTTPS_PROXY=${PROXY:-}
       - HTTP_PROXY=${PROXY:-}
       - NO_PROXY=${NO_PROXY:-}
+      - https_proxy=${PROXY:-}
+      - http_proxy=${PROXY:-}
+      - no_proxy=${NO_PROXY:-}
     volumes:
       - ./meili_data_v1.12:/meili_data
   vectordb:
