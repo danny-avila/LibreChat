@@ -62,6 +62,7 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}
   deploy:
+    needs: [build]
     if: github.event.inputs.should_deploy == 'true'
     name: Deploy to GCP VM
     runs-on: ubuntu-latest
