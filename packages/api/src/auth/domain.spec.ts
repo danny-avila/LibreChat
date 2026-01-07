@@ -341,6 +341,32 @@ describe('isActionDomainAllowed', () => {
 
   // Protocol and Port Restrictions (Recommendation #2)
   describe('protocol and port restrictions', () => {
+    describe('OpenAPI Actions reject WebSocket protocols', () => {
+      it('should reject ws:// URLs (not part of OpenAPI spec)', async () => {
+        expect(await isActionDomainAllowed('ws://example.com', ['example.com'])).toBe(false);
+        expect(await isActionDomainAllowed('ws://example.com', null)).toBe(false);
+      });
+
+      it('should reject wss:// URLs (not part of OpenAPI spec)', async () => {
+        expect(await isActionDomainAllowed('wss://example.com', ['example.com'])).toBe(false);
+        expect(await isActionDomainAllowed('wss://example.com', null)).toBe(false);
+      });
+
+      it('should reject WebSocket URLs even if explicitly in allowedDomains', async () => {
+        expect(await isActionDomainAllowed('wss://ws.example.com', ['wss://ws.example.com'])).toBe(
+          false,
+        );
+        expect(await isActionDomainAllowed('ws://ws.example.com', ['ws://ws.example.com'])).toBe(
+          false,
+        );
+      });
+
+      it('should allow only HTTP/HTTPS for OpenAPI Actions', async () => {
+        expect(await isActionDomainAllowed('http://example.com', ['example.com'])).toBe(true);
+        expect(await isActionDomainAllowed('https://example.com', ['example.com'])).toBe(true);
+      });
+    });
+
     describe('protocol-only restrictions', () => {
       const httpsOnlyDomains = ['https://api.example.com', 'https://secure.test.com'];
 
@@ -437,35 +463,40 @@ describe('extractMCPServerDomain', () => {
     jest.clearAllMocks();
   });
 
-  describe('URL extraction', () => {
-    it('should extract domain from HTTPS URL', () => {
+  describe('URL extraction (returns full origin for protocol/port matching)', () => {
+    it('should extract full origin from HTTPS URL', () => {
       const config = { url: 'https://api.example.com/sse' };
-      expect(extractMCPServerDomain(config)).toBe('api.example.com');
+      expect(extractMCPServerDomain(config)).toBe('https://api.example.com');
     });
 
-    it('should extract domain from HTTP URL', () => {
+    it('should extract full origin from HTTP URL', () => {
       const config = { url: 'http://api.example.com/sse' };
-      expect(extractMCPServerDomain(config)).toBe('api.example.com');
+      expect(extractMCPServerDomain(config)).toBe('http://api.example.com');
     });
 
-    it('should extract domain from WebSocket URL', () => {
+    it('should extract full origin from WebSocket URL', () => {
       const config = { url: 'wss://ws.example.com' };
-      expect(extractMCPServerDomain(config)).toBe('ws.example.com');
+      expect(extractMCPServerDomain(config)).toBe('wss://ws.example.com');
     });
 
-    it('should handle URL with port', () => {
+    it('should include port in origin when specified', () => {
       const config = { url: 'https://localhost:3001/sse' };
-      expect(extractMCPServerDomain(config)).toBe('localhost');
+      expect(extractMCPServerDomain(config)).toBe('https://localhost:3001');
     });
 
-    it('should strip www prefix', () => {
+    it('should include port for non-default ports', () => {
+      const config = { url: 'http://host.docker.internal:8044/mcp' };
+      expect(extractMCPServerDomain(config)).toBe('http://host.docker.internal:8044');
+    });
+
+    it('should preserve www prefix in origin (matching handles www normalization)', () => {
       const config = { url: 'https://www.example.com/api' };
-      expect(extractMCPServerDomain(config)).toBe('example.com');
+      expect(extractMCPServerDomain(config)).toBe('https://www.example.com');
     });
 
-    it('should handle URL with path and query parameters', () => {
+    it('should strip path and query parameters', () => {
       const config = { url: 'https://api.example.com/v1/sse?token=abc' };
-      expect(extractMCPServerDomain(config)).toBe('api.example.com');
+      expect(extractMCPServerDomain(config)).toBe('https://api.example.com');
     });
   });
 
@@ -635,6 +666,94 @@ describe('isMCPDomainAllowed', () => {
     it('should allow config with invalid URL (treated as stdio)', async () => {
       const config = { url: 'not-a-valid-url' };
       expect(await isMCPDomainAllowed(config, ['example.com'])).toBe(true);
+    });
+  });
+
+  describe('Docker/internal hostname handling (SSRF protection)', () => {
+    it('should block host.docker.internal without allowedDomains (ends with .internal)', async () => {
+      const config = { url: 'http://host.docker.internal:8044/mcp' };
+      expect(await isMCPDomainAllowed(config, null)).toBe(false);
+      expect(await isMCPDomainAllowed(config, undefined)).toBe(false);
+      expect(await isMCPDomainAllowed(config, [])).toBe(false);
+    });
+
+    it('should allow host.docker.internal when explicitly in allowedDomains', async () => {
+      const config = { url: 'http://host.docker.internal:8044/mcp' };
+      expect(await isMCPDomainAllowed(config, ['host.docker.internal'])).toBe(true);
+    });
+
+    it('should allow host.docker.internal with protocol/port restriction', async () => {
+      const config = { url: 'http://host.docker.internal:8044/mcp' };
+      expect(await isMCPDomainAllowed(config, ['http://host.docker.internal:8044'])).toBe(true);
+    });
+
+    it('should reject host.docker.internal with wrong protocol restriction', async () => {
+      const config = { url: 'http://host.docker.internal:8044/mcp' };
+      expect(await isMCPDomainAllowed(config, ['https://host.docker.internal:8044'])).toBe(false);
+    });
+
+    it('should reject host.docker.internal with wrong port restriction', async () => {
+      const config = { url: 'http://host.docker.internal:8044/mcp' };
+      expect(await isMCPDomainAllowed(config, ['http://host.docker.internal:9000'])).toBe(false);
+    });
+
+    it('should block .local TLD without allowedDomains', async () => {
+      const config = { url: 'http://myserver.local/mcp' };
+      expect(await isMCPDomainAllowed(config, null)).toBe(false);
+    });
+
+    it('should allow .local TLD when explicitly in allowedDomains', async () => {
+      const config = { url: 'http://myserver.local/mcp' };
+      expect(await isMCPDomainAllowed(config, ['myserver.local'])).toBe(true);
+    });
+  });
+
+  describe('protocol/port matching with full origin extraction', () => {
+    it('should match unrestricted allowedDomain against full origin', async () => {
+      // When allowedDomain has no protocol/port, it should match any protocol/port
+      const config = { url: 'https://api.example.com:8443/sse' };
+      expect(await isMCPDomainAllowed(config, ['api.example.com'])).toBe(true);
+    });
+
+    it('should enforce protocol restriction from allowedDomain', async () => {
+      const config = { url: 'http://api.example.com/sse' };
+      expect(await isMCPDomainAllowed(config, ['https://api.example.com'])).toBe(false);
+      expect(await isMCPDomainAllowed(config, ['http://api.example.com'])).toBe(true);
+    });
+
+    it('should enforce port restriction from allowedDomain', async () => {
+      const config = { url: 'https://api.example.com:8443/sse' };
+      expect(await isMCPDomainAllowed(config, ['https://api.example.com:8443'])).toBe(true);
+      expect(await isMCPDomainAllowed(config, ['https://api.example.com:443'])).toBe(false);
+    });
+  });
+
+  describe('WebSocket URL handling (MCP supports ws/wss)', () => {
+    it('should allow WebSocket URL when hostname is in allowedDomains', async () => {
+      const config = { url: 'wss://ws.example.com/mcp' };
+      expect(await isMCPDomainAllowed(config, ['ws.example.com'])).toBe(true);
+    });
+
+    it('should allow WebSocket URL with protocol restriction', async () => {
+      const config = { url: 'wss://ws.example.com/mcp' };
+      expect(await isMCPDomainAllowed(config, ['wss://ws.example.com'])).toBe(true);
+    });
+
+    it('should reject WebSocket URL with wrong protocol restriction', async () => {
+      const config = { url: 'wss://ws.example.com/mcp' };
+      expect(await isMCPDomainAllowed(config, ['ws://ws.example.com'])).toBe(false);
+    });
+
+    it('should allow ws:// URL when hostname is in allowedDomains', async () => {
+      const config = { url: 'ws://localhost:8080/mcp' };
+      expect(await isMCPDomainAllowed(config, ['localhost'])).toBe(true);
+    });
+
+    it('should allow all MCP protocols (http, https, ws, wss)', async () => {
+      expect(await isMCPDomainAllowed({ url: 'http://example.com' }, ['example.com'])).toBe(true);
+      expect(await isMCPDomainAllowed({ url: 'https://example.com' }, ['example.com'])).toBe(true);
+      expect(await isMCPDomainAllowed({ url: 'ws://example.com' }, ['example.com'])).toBe(true);
+      expect(await isMCPDomainAllowed({ url: 'wss://example.com' }, ['example.com'])).toBe(true);
     });
   });
 });

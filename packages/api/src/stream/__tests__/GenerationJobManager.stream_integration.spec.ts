@@ -377,6 +377,426 @@ describe('GenerationJobManager Integration Tests', () => {
     });
   });
 
+  describe('Cross-Replica Support (Redis)', () => {
+    /**
+     * Problem: In k8s with Redis and multiple replicas, when a user sends a message:
+     * 1. POST /api/agents/chat hits Replica A, creates job
+     * 2. GET /api/agents/chat/stream/:streamId hits Replica B
+     * 3. Replica B calls getJob() which returned undefined because runtimeState
+     *    was only in Replica A's memory
+     * 4. Stream endpoint returns 404
+     *
+     * Fix: getJob() and subscribe() now lazily create runtime state from Redis
+     * when the job exists in Redis but not in local memory.
+     */
+    test('should NOT return 404 when stream endpoint hits different replica than job creator', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+
+      // === REPLICA A: Creates the job ===
+      // Simulate Replica A creating the job directly in Redis
+      // (In real scenario, this happens via GenerationJobManager.createJob on Replica A)
+      const replicaAJobStore = new RedisJobStore(ioredisClient);
+      await replicaAJobStore.initialize();
+
+      const streamId = `cross-replica-404-test-${Date.now()}`;
+      const userId = 'test-user';
+
+      // Create job in Redis (simulates Replica A's createJob)
+      await replicaAJobStore.createJob(streamId, userId);
+
+      // === REPLICA B: Receives the stream request ===
+      // Fresh GenerationJobManager that does NOT have this job in its local runtimeState
+      jest.resetModules();
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { createStreamServices } = await import('../createStreamServices');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      await GenerationJobManager.initialize();
+
+      // This is what the stream endpoint does:
+      // const job = await GenerationJobManager.getJob(streamId);
+      // if (!job) return res.status(404).json({ error: 'Stream not found' });
+
+      const job = await GenerationJobManager.getJob(streamId);
+
+      // BEFORE FIX: job would be undefined → 404
+      // AFTER FIX: job should exist via lazy runtime state creation
+      expect(job).not.toBeNull();
+      expect(job).toBeDefined();
+      expect(job?.streamId).toBe(streamId);
+
+      // The stream endpoint then calls subscribe:
+      // const result = await GenerationJobManager.subscribe(streamId, onChunk, onDone, onError);
+      // if (!result) return res.status(404).json({ error: 'Failed to subscribe' });
+
+      const subscription = await GenerationJobManager.subscribe(
+        streamId,
+        () => {}, // onChunk
+        () => {}, // onDone
+        () => {}, // onError
+      );
+
+      // BEFORE FIX: subscription would be null → 404
+      // AFTER FIX: subscription should succeed
+      expect(subscription).not.toBeNull();
+      expect(subscription).toBeDefined();
+      expect(typeof subscription?.unsubscribe).toBe('function');
+
+      // Cleanup
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+      await replicaAJobStore.destroy();
+    });
+
+    test('should lazily create runtime state for jobs created on other replicas', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      // Simulate two instances - one creates job, other tries to get it
+      const { createStreamServices } = await import('../createStreamServices');
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+
+      // Instance 1: Create the job directly in Redis (simulating another replica)
+      const jobStore = new RedisJobStore(ioredisClient);
+      await jobStore.initialize();
+
+      const streamId = `cross-replica-${Date.now()}`;
+      const userId = 'test-user';
+
+      // Create job data directly in jobStore (as if from another instance)
+      await jobStore.createJob(streamId, userId);
+
+      // Instance 2: Fresh GenerationJobManager that doesn't have this job in memory
+      jest.resetModules();
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      await GenerationJobManager.initialize();
+
+      // This should work even though the job was created by "another instance"
+      // The manager should lazily create runtime state from Redis data
+      const job = await GenerationJobManager.getJob(streamId);
+
+      expect(job).not.toBeNull();
+      expect(job?.streamId).toBe(streamId);
+      expect(job?.status).toBe('running');
+
+      // Should also be able to subscribe
+      const chunks: unknown[] = [];
+      const subscription = await GenerationJobManager.subscribe(streamId, (event) => {
+        chunks.push(event);
+      });
+
+      expect(subscription).not.toBeNull();
+
+      subscription?.unsubscribe();
+      await GenerationJobManager.destroy();
+      await jobStore.destroy();
+    });
+
+    test('should persist syncSent to Redis for cross-replica consistency', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { createStreamServices } = await import('../createStreamServices');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      await GenerationJobManager.initialize();
+
+      const streamId = `sync-sent-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      // Initially syncSent should be false
+      let wasSent = await GenerationJobManager.wasSyncSent(streamId);
+      expect(wasSent).toBe(false);
+
+      // Mark sync sent
+      GenerationJobManager.markSyncSent(streamId);
+
+      // Wait for async Redis update
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should now be true
+      wasSent = await GenerationJobManager.wasSyncSent(streamId);
+      expect(wasSent).toBe(true);
+
+      // Verify it's actually in Redis by checking via jobStore
+      const jobStore = services.jobStore;
+      const jobData = await jobStore.getJob(streamId);
+      expect(jobData?.syncSent).toBe(true);
+
+      await GenerationJobManager.destroy();
+    });
+
+    test('should persist finalEvent to Redis for cross-replica access', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { createStreamServices } = await import('../createStreamServices');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure({
+        ...services,
+        cleanupOnComplete: false, // Keep job for verification
+      });
+      await GenerationJobManager.initialize();
+
+      const streamId = `final-event-${Date.now()}`;
+      await GenerationJobManager.createJob(streamId, 'user-1');
+
+      // Emit done event with final data
+      const finalEventData = {
+        final: true,
+        conversation: { conversationId: streamId },
+        responseMessage: { text: 'Hello world' },
+      };
+      GenerationJobManager.emitDone(streamId, finalEventData as never);
+
+      // Wait for async Redis update
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Verify finalEvent is in Redis
+      const jobStore = services.jobStore;
+      const jobData = await jobStore.getJob(streamId);
+      expect(jobData?.finalEvent).toBeDefined();
+
+      const storedFinalEvent = JSON.parse(jobData!.finalEvent!);
+      expect(storedFinalEvent.final).toBe(true);
+      expect(storedFinalEvent.conversation.conversationId).toBe(streamId);
+
+      await GenerationJobManager.destroy();
+    });
+
+    test('should emit cross-replica abort signal via Redis pub/sub', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+      const { createStreamServices } = await import('../createStreamServices');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      await GenerationJobManager.initialize();
+
+      const streamId = `abort-signal-${Date.now()}`;
+      const job = await GenerationJobManager.createJob(streamId, 'user-1');
+
+      // Track if abort controller was signaled
+      let abortSignaled = false;
+      job.abortController.signal.addEventListener('abort', () => {
+        abortSignaled = true;
+      });
+
+      // Wait for abort listener setup
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Abort the job - this should emit abort signal via Redis
+      await GenerationJobManager.abortJob(streamId);
+
+      // Wait for signal propagation
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // The local abort controller should be signaled
+      expect(abortSignaled).toBe(true);
+      expect(job.abortController.signal.aborted).toBe(true);
+
+      await GenerationJobManager.destroy();
+    });
+
+    test('should handle abort for lazily-initialized cross-replica jobs', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      // This test validates that jobs created on Replica A and lazily-initialized
+      // on Replica B can still receive and handle abort signals.
+
+      const { createStreamServices } = await import('../createStreamServices');
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+
+      // === Replica A: Create job directly in Redis ===
+      const replicaAJobStore = new RedisJobStore(ioredisClient);
+      await replicaAJobStore.initialize();
+
+      const streamId = `lazy-abort-${Date.now()}`;
+      await replicaAJobStore.createJob(streamId, 'user-1');
+
+      // === Replica B: Fresh manager that lazily initializes the job ===
+      jest.resetModules();
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      await GenerationJobManager.initialize();
+
+      // Get job triggers lazy initialization of runtime state
+      const job = await GenerationJobManager.getJob(streamId);
+      expect(job).not.toBeNull();
+
+      // Track abort signal
+      let abortSignaled = false;
+      job!.abortController.signal.addEventListener('abort', () => {
+        abortSignaled = true;
+      });
+
+      // Wait for abort listener to be set up via Redis subscription
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Abort the job - this should emit abort signal via Redis pub/sub
+      // The lazily-initialized runtime should receive it
+      await GenerationJobManager.abortJob(streamId);
+
+      // Wait for signal propagation
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Verify the lazily-initialized job received the abort signal
+      expect(abortSignaled).toBe(true);
+      expect(job!.abortController.signal.aborted).toBe(true);
+
+      await GenerationJobManager.destroy();
+      await replicaAJobStore.destroy();
+    });
+
+    test('should abort generation when abort signal received from another replica', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      // This test simulates:
+      // 1. Replica A creates a job and starts generation
+      // 2. Replica B receives abort request and emits abort signal
+      // 3. Replica A receives signal and aborts its AbortController
+
+      const { createStreamServices } = await import('../createStreamServices');
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      // Create the job on "Replica A"
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      await GenerationJobManager.initialize();
+
+      const streamId = `cross-abort-${Date.now()}`;
+      const job = await GenerationJobManager.createJob(streamId, 'user-1');
+
+      let abortSignaled = false;
+      job.abortController.signal.addEventListener('abort', () => {
+        abortSignaled = true;
+      });
+
+      // Wait for abort listener to be set up via Redis subscription
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Simulate "Replica B" emitting abort signal directly via Redis
+      // This is what would happen if abortJob was called on a different replica
+      const subscriber2 = (ioredisClient as unknown as { duplicate: () => unknown }).duplicate();
+      const replicaBTransport = new RedisEventTransport(
+        ioredisClient as never,
+        subscriber2 as never,
+      );
+
+      // Emit abort signal (as if from Replica B)
+      replicaBTransport.emitAbort(streamId);
+
+      // Wait for cross-replica signal propagation
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Replica A's abort controller should be signaled
+      expect(abortSignaled).toBe(true);
+      expect(job.abortController.signal.aborted).toBe(true);
+
+      replicaBTransport.destroy();
+      (subscriber2 as { disconnect: () => void }).disconnect();
+      await GenerationJobManager.destroy();
+    });
+
+    test('should handle wasSyncSent for cross-replica scenarios', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { createStreamServices } = await import('../createStreamServices');
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+
+      // Create job directly in Redis with syncSent: true
+      const jobStore = new RedisJobStore(ioredisClient);
+      await jobStore.initialize();
+
+      const streamId = `cross-sync-${Date.now()}`;
+      await jobStore.createJob(streamId, 'user-1');
+      await jobStore.updateJob(streamId, { syncSent: true });
+
+      // Fresh manager that doesn't have this job locally
+      jest.resetModules();
+      const { GenerationJobManager } = await import('../GenerationJobManager');
+
+      const services = createStreamServices({
+        useRedis: true,
+        redisClient: ioredisClient,
+      });
+
+      GenerationJobManager.configure(services);
+      await GenerationJobManager.initialize();
+
+      // wasSyncSent should check Redis even without local runtime
+      const wasSent = await GenerationJobManager.wasSyncSent(streamId);
+      expect(wasSent).toBe(true);
+
+      await GenerationJobManager.destroy();
+      await jobStore.destroy();
+    });
+  });
+
   describe('createStreamServices Auto-Detection', () => {
     test('should auto-detect Redis when USE_REDIS is true', async () => {
       if (!ioredisClient) {

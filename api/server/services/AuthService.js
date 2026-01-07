@@ -411,14 +411,17 @@ const setAuthTokens = async (userId, res, _session = null) => {
 /**
  * @function setOpenIDAuthTokens
  * Set OpenID Authentication Tokens
- * //type tokenset from openid-client
+ * Stores tokens server-side in express-session to avoid large cookie sizes
+ * that can exceed HTTP/2 header limits (especially for users with many group memberships).
+ *
  * @param {import('openid-client').TokenEndpointResponse & import('openid-client').TokenEndpointResponseHelpers} tokenset
  * - The tokenset object containing access and refresh tokens
+ * @param {Object} req - request object (for session access)
  * @param {Object} res - response object
  * @param {string} [userId] - Optional MongoDB user ID for image path validation
  * @returns {String} - access token
  */
-const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
+const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) => {
   try {
     if (!tokenset) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
@@ -445,18 +448,30 @@ const setOpenIDAuthTokens = (tokenset, res, userId, existingRefreshToken) => {
       return;
     }
 
-    res.cookie('refreshToken', refreshToken, {
-      expires: expirationDate,
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
-    });
-    res.cookie('openid_access_token', tokenset.access_token, {
-      expires: expirationDate,
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
-    });
+    /** Store tokens server-side in session to avoid large cookies */
+    if (req.session) {
+      req.session.openidTokens = {
+        accessToken: tokenset.access_token,
+        refreshToken: refreshToken,
+        expiresAt: expirationDate.getTime(),
+      };
+    } else {
+      logger.warn('[setOpenIDAuthTokens] No session available, falling back to cookies');
+      res.cookie('refreshToken', refreshToken, {
+        expires: expirationDate,
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'strict',
+      });
+      res.cookie('openid_access_token', tokenset.access_token, {
+        expires: expirationDate,
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'strict',
+      });
+    }
+
+    /** Small cookie to indicate token provider (required for auth middleware) */
     res.cookie('token_provider', 'openid', {
       expires: expirationDate,
       httpOnly: true,

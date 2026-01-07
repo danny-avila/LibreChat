@@ -17,6 +17,7 @@ const EventTypes = {
   CHUNK: 'chunk',
   DONE: 'done',
   ERROR: 'error',
+  ABORT: 'abort',
 } as const;
 
 interface PubSubMessage {
@@ -39,6 +40,8 @@ interface StreamSubscribers {
     }
   >;
   allSubscribersLeftCallbacks: Array<() => void>;
+  /** Abort callbacks - called when abort signal is received from any replica */
+  abortCallbacks: Array<() => void>;
 }
 
 /**
@@ -119,6 +122,20 @@ export class RedisEventTransport implements IEventTransport {
           case EventTypes.ERROR:
             handlers.onError?.(parsed.error ?? 'Unknown error');
             break;
+          case EventTypes.ABORT:
+            // Abort is handled at stream level, not per-handler
+            break;
+        }
+      }
+
+      // Handle abort signals at stream level (not per-handler)
+      if (parsed.type === EventTypes.ABORT) {
+        for (const callback of streamState.abortCallbacks) {
+          try {
+            callback();
+          } catch (err) {
+            logger.error(`[RedisEventTransport] Error in abort callback:`, err);
+          }
         }
       }
     } catch (err) {
@@ -149,6 +166,7 @@ export class RedisEventTransport implements IEventTransport {
         count: 0,
         handlers: new Map(),
         allSubscribersLeftCallbacks: [],
+        abortCallbacks: [],
       });
     }
 
@@ -263,6 +281,53 @@ export class RedisEventTransport implements IEventTransport {
         count: 0,
         handlers: new Map(),
         allSubscribersLeftCallbacks: [callback],
+        abortCallbacks: [],
+      });
+    }
+  }
+
+  /**
+   * Publish an abort signal to all replicas.
+   * This enables cross-replica abort: when a user aborts on Replica B,
+   * the generating Replica A receives the signal and stops.
+   */
+  emitAbort(streamId: string): void {
+    const channel = CHANNELS.events(streamId);
+    const message: PubSubMessage = { type: EventTypes.ABORT };
+
+    this.publisher.publish(channel, JSON.stringify(message)).catch((err) => {
+      logger.error(`[RedisEventTransport] Failed to publish abort:`, err);
+    });
+  }
+
+  /**
+   * Register callback for abort signals from any replica.
+   * Called when abort is triggered on any replica (including this one).
+   *
+   * @param streamId - The stream identifier
+   * @param callback - Called when abort signal is received
+   */
+  onAbort(streamId: string, callback: () => void): void {
+    const channel = CHANNELS.events(streamId);
+    let state = this.streams.get(streamId);
+
+    if (!state) {
+      state = {
+        count: 0,
+        handlers: new Map(),
+        allSubscribersLeftCallbacks: [],
+        abortCallbacks: [],
+      };
+      this.streams.set(streamId, state);
+    }
+
+    state.abortCallbacks.push(callback);
+
+    // Subscribe to Redis channel if not already subscribed
+    if (!this.subscribedChannels.has(channel)) {
+      this.subscribedChannels.add(channel);
+      this.subscriber.subscribe(channel).catch((err) => {
+        logger.error(`[RedisEventTransport] Failed to subscribe to ${channel}:`, err);
       });
     }
   }
@@ -282,9 +347,10 @@ export class RedisEventTransport implements IEventTransport {
     const state = this.streams.get(streamId);
 
     if (state) {
-      // Clear all handlers
+      // Clear all handlers and callbacks
       state.handlers.clear();
       state.allSubscribersLeftCallbacks = [];
+      state.abortCallbacks = [];
     }
 
     // Unsubscribe from Redis channel

@@ -177,22 +177,29 @@ registration:
 #     userMax: 50
 #     userWindowInMinutes: 60  # Rate limit window for conversation imports per user
 
-# Example Actions Object Structure
+# Agent Actions domain restrictions (OpenAPI spec validation)
+# SECURITY: If not configured, SSRF targets are blocked (localhost, private IPs, .internal/.local TLDs).
+# To allow internal targets, you MUST explicitly add them to allowedDomains.
+# Supports wildcards: '*.example.com' and protocol/port restrictions: 'https://api.example.com:8443'
 actions:
   allowedDomains:
     - 'swapi.dev'
     - 'librechat.ai'
     - 'google.com'
+    # - 'http://10.225.26.25:7894'  # Internal IP with protocol/port (uncomment if needed)
 
 # MCP Server domain restrictions for remote transports (SSE, WebSocket, HTTP)
-# Stdio transports (local processes) are not restricted.
-# If not configured, all domains are allowed (permissive default).
+# SECURITY: If not configured, SSRF targets are blocked (localhost, private IPs, .internal/.local TLDs).
+# To allow internal targets like host.docker.internal, you MUST explicitly add them to allowedDomains.
 # Supports wildcards: '*.example.com' matches 'api.example.com', 'staging.example.com', etc.
+# Supports protocol/port restrictions: 'https://api.example.com:8443' restricts to specific protocol/port.
 # mcpSettings:
 #   allowedDomains:
-#     - 'localhost'
-#     - '*.example.com'
-#     - 'trusted-mcp-provider.com'
+#     - 'host.docker.internal'    # Docker host access (required for Docker setups)
+#     - 'localhost'               # Local development
+#     - '*.example.com'           # Wildcard subdomain
+#     - 'https://secure.api.com'  # Protocol-restricted
+#     - 'http://internal:8080'    # Protocol and port restricted
 
 # Example MCP Servers Object Structure
 # mcpServers:
