@@ -16,8 +16,8 @@ const {
 } = process.env ?? {};
 
 /**
- * The Entra ID authentication is a synchronous service, so we set a placeholder token here.
- * The actual token is retrieved asynchronously in initialize functions (initializeOpenAI,
+ * Entra ID mode detection via shouldUseEntraId() is synchronous, so we set a placeholder token here.
+ * The actual Entra ID access token is retrieved asynchronously in initialize functions (initializeOpenAI,
  * initializeClient) via getEntraIdAccessToken() and set in headers['Authorization'].
  * The placeholder is never used for authentication - it only satisfies config validation.
  */
