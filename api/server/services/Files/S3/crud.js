@@ -256,14 +256,29 @@ function extractKeyFromS3Url(fileUrlOrKey) {
     const pathname = url.pathname.substring(1); // Remove leading slash
 
     // Check if it's path-style URL (s3.amazonaws.com or s3.region.amazonaws.com)
-    if (hostname === 's3.amazonaws.com' || hostname.match(/^s3[.-][a-z0-9-]+\.amazonaws\.com$/)) {
+    if (hostname === 's3.amazonaws.com' || hostname.match(/^s3[-.][a-z0-9-]+\.amazonaws\.com$/)) {
       // Path-style: https://s3.amazonaws.com/bucket-name/key
       // Need to strip the bucket name (first path segment)
       const firstSlashIndex = pathname.indexOf('/');
       if (firstSlashIndex > 0) {
         const key = pathname.substring(firstSlashIndex + 1);
-        logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`);
+
+        if (key === '') {
+          logger.warn(
+            `[extractKeyFromS3Url] Extracted key is empty after removing bucket name from URL: ${fileUrlOrKey}`,
+          );
+        } else {
+          logger.debug(
+            `[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`,
+          );
+        }
+
         return key;
+      } else {
+        logger.warn(
+          `[extractKeyFromS3Url] Unable to extract key from path-style URL: ${fileUrlOrKey}`,
+        );
+        return '';
       }
     }
 
