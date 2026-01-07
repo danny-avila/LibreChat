@@ -226,8 +226,18 @@ class E2BClientManager {
     try {
       logger.info(`[E2B] Downloading file ${path} from sandbox ${sandboxData.id} as ${format}`);
       
-      // 修正：使用 sandbox.files 而不是 sandbox.filesystem
-      const content = await sandboxData.sandbox.files.read(path, { format });
+      // E2B files.read() returns a Response object
+      const response = await sandboxData.sandbox.files.read(path);
+      
+      // Parse response based on format
+      let content;
+      if (format === 'buffer' || format === 'bytes') {
+        const arrayBuffer = await response.arrayBuffer();
+        content = Buffer.from(arrayBuffer);
+      } else {
+        // Default to text format
+        content = await response.text();
+      }
       
       logger.info(`[E2B] File downloaded successfully from sandbox ${sandboxData.id}`);
       return content;

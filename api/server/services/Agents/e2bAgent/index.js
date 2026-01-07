@@ -37,9 +37,10 @@ class E2BDataAnalystAgent {
    * 
    * @param {string} userText - 用户输入的文本
    * @param {Array} history - 历史消息数组 (可选)
+   * @param {Function} onToken - 流式传输回调函数 (可选)
    * @returns {Promise<Object>} 包含结果消息和元数据的对象
    */
-  async processMessage(userText, history = []) {
+  async processMessage(userText, history = [], onToken = null) {
     try {
       logger.info(`[E2BAgent] Starting message processing for conversation ${this.conversationId}`);
 
@@ -93,6 +94,7 @@ class E2BDataAnalystAgent {
 
       let iteration = 0;
       let finalContent = '';
+      let accumulatedContent = ''; // Track accumulated content in streaming mode
       const intermediateSteps = [];
 
       while (iteration < this.maxIterations) {
@@ -101,6 +103,10 @@ class E2BDataAnalystAgent {
 
         // 4. 调用 LLM
         const model = this.assistant.model || 'gpt-4o';
+        const streamingEnabled = !!onToken;
+        
+        logger.info(`[E2BAgent] LLM call - streaming: ${streamingEnabled}, iteration: ${iteration}`);
+        
         try {
           const response = await this.openai.chat.completions.create({
             model,
@@ -108,50 +114,153 @@ class E2BDataAnalystAgent {
             tools: getToolsDefinitions(),
             tool_choice: 'auto',
             temperature: this.assistant.model_parameters?.temperature ?? 0,
+            stream: streamingEnabled, // Enable streaming if callback provided
           });
 
-          const message = response.choices[0].message;
-          messages.push(message);
-
-          // 如果没有工具调用，说明已得到最终答案
-          if (!message.tool_calls || message.tool_calls.length === 0) {
-            finalContent = message.content;
-            break;
-          }
-
-          // 5. 执行工具调用 (ReAct 模式)
-          for (const toolCall of message.tool_calls) {
-            const { id, function: func } = toolCall;
-            const name = func.name;
-            const args = JSON.parse(func.arguments);
-
-            logger.info(`[E2BAgent] Calling tool: ${name}`);
+          // Handle streaming response
+          if (streamingEnabled) {
+            logger.info(`[E2BAgent] ✓ Processing streaming response`);
+            let message = { role: 'assistant', content: '', tool_calls: [] };
+            let currentToolCall = null;
+            let tokenCount = 0;
             
-            let result;
-            try {
-              if (this.tools[name]) {
-                result = await this.tools[name](args);
-              } else {
-                result = { success: false, error: `Tool ${name} not found` };
+            for await (const chunk of response) {
+              const delta = chunk.choices[0]?.delta;
+              
+              if (delta?.content) {
+                message.content += delta.content;
+                accumulatedContent += delta.content; // Also accumulate for final processing
+                tokenCount++;
+                onToken(delta.content); // Send token to client
               }
-            } catch (err) {
-              logger.error(`[E2BAgent] Error executing tool ${name}:`, err);
-              result = { success: false, error: err.message };
+              
+              if (delta?.tool_calls) {
+                for (const toolCallDelta of delta.tool_calls) {
+                  const index = toolCallDelta.index;
+                  
+                  if (!message.tool_calls[index]) {
+                    message.tool_calls[index] = {
+                      id: toolCallDelta.id || '',
+                      type: 'function',
+                      function: { name: '', arguments: '' }
+                    };
+                  }
+                  
+                  if (toolCallDelta.id) {
+                    message.tool_calls[index].id = toolCallDelta.id;
+                  }
+                  if (toolCallDelta.function?.name) {
+                    message.tool_calls[index].function.name = toolCallDelta.function.name;
+                  }
+                  if (toolCallDelta.function?.arguments) {
+                    message.tool_calls[index].function.arguments += toolCallDelta.function.arguments;
+                  }
+                }
+              }
+            }
+            
+            if (tokenCount > 0) {
+              logger.info(`[E2BAgent] ✓ Streamed ${tokenCount} tokens, total content: ${message.content.length} chars`);
+            }
+            
+            messages.push(message);
+
+            // 如果没有工具调用，说明已得到最终答案
+            if (!message.tool_calls || message.tool_calls.length === 0) {
+              finalContent = message.content;
+              break;
             }
 
-            // 记录中间步骤
-            intermediateSteps.push({
-              tool: name,
-              arguments: args,
-              observation: result
-            });
+            // 5. 执行工具调用 (ReAct 模式)
+            for (const toolCall of message.tool_calls) {
+              const { id, function: func } = toolCall;
+              const name = func.name;
+              const args = JSON.parse(func.arguments);
 
-            // 将工具结果反馈给 LLM
-            messages.push({
-              role: 'tool',
-              tool_call_id: id,
-              content: JSON.stringify(result)
-            });
+              logger.info(`[E2BAgent] Calling tool: ${name}`);
+              logger.debug(`[E2BAgent] Tool arguments:`, JSON.stringify(args, null, 2));
+              
+              // Send tool call indicator to client
+              const toolIndicator = `\n\n[执行工具: ${name}]\n`;
+              accumulatedContent += toolIndicator;
+              onToken(toolIndicator);
+              
+              let result;
+              try {
+                if (this.tools[name]) {
+                  result = await this.tools[name](args);
+                } else {
+                  result = { success: false, error: `Tool ${name} not found` };
+                }
+              } catch (err) {
+                logger.error(`[E2BAgent] Error executing tool ${name}:`, err);
+                result = { success: false, error: err.message };
+              }
+
+              logger.debug(`[E2BAgent] Streaming tool result:`, JSON.stringify(result, null, 2));
+
+              // 记录中间步骤
+              intermediateSteps.push({
+                tool: name,
+                arguments: args,
+                observation: result
+              });
+
+              // 将工具结果反馈给 LLM
+              messages.push({
+                role: 'tool',
+                tool_call_id: id,
+                content: JSON.stringify(result)
+              });
+            }
+          } else {
+            // Non-streaming mode (original behavior)
+            const message = response.choices[0].message;
+            messages.push(message);
+
+            // 如果没有工具调用，说明已得到最终答案
+            if (!message.tool_calls || message.tool_calls.length === 0) {
+              finalContent = message.content;
+              break;
+            }
+
+            // 5. 执行工具调用 (ReAct 模式)
+            for (const toolCall of message.tool_calls) {
+              const { id, function: func } = toolCall;
+              const name = func.name;
+              const args = JSON.parse(func.arguments);
+
+              logger.info(`[E2BAgent] Calling tool: ${name}`);
+              logger.debug(`[E2BAgent] Tool call arguments:`, JSON.stringify(args, null, 2));
+              
+              let result;
+              try {
+                if (this.tools[name]) {
+                  result = await this.tools[name](args);
+                } else {
+                  result = { success: false, error: `Tool ${name} not found` };
+                }
+              } catch (err) {
+                logger.error(`[E2BAgent] Error executing tool ${name}:`, err);
+                result = { success: false, error: err.message };
+              }
+
+              logger.debug(`[E2BAgent] Non-streaming tool result:`, JSON.stringify(result, null, 2));
+
+              // 记录中间步骤
+              intermediateSteps.push({
+                tool: name,
+                arguments: args,
+                observation: result
+              });
+
+              // 将工具结果反馈给 LLM
+              messages.push({
+                role: 'tool',
+                tool_call_id: id,
+                content: JSON.stringify(result)
+              });
+            }
           }
         } catch (llmError) {
            logger.error(`[E2BAgent] OpenAI call failed. Model: ${model}. Error:`, llmError);
@@ -164,61 +273,28 @@ class E2BDataAnalystAgent {
       }
 
       // Log the raw final content for debugging
-      logger.debug(`[E2BAgent] Raw final content preview: ${finalContent?.substring(0, 500)}...`);
-
-      // Replace sandbox: image paths with actual storage URLs
-      let processedText = finalContent;
-      let totalReplacements = 0;
+      logger.info(`[E2BAgent] Raw final content length: ${finalContent?.length}, accumulated: ${accumulatedContent?.length}`);
       
-      for (const step of intermediateSteps) {
-        if (step.observation && step.observation.image_url_map) {
-          logger.debug(`[E2BAgent] Processing image URL map with ${Object.keys(step.observation.image_url_map).length} entries`);
-          
-          // First, try exact matches from the map
-          Object.entries(step.observation.image_url_map).forEach(([pathPattern, actualPath]) => {
-            // Escape special regex characters in the pattern
-            const escapedPattern = pathPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const regex = new RegExp(escapedPattern, 'g');
-            const beforeCount = (processedText.match(regex) || []).length;
-            
-            if (beforeCount > 0) {
-              processedText = processedText.replace(regex, actualPath);
-              totalReplacements += beforeCount;
-              logger.debug(`[E2BAgent] Replaced ${beforeCount} occurrences of "${pathPattern}" with "${actualPath}"`);
-            }
-          });
-          
-          // Then, use aggressive pattern matching for any sandbox: or file paths
-          if (step.observation.image_names && step.observation.image_actual_paths) {
-            step.observation.image_names.forEach((imageName, idx) => {
-              const actualPath = step.observation.image_actual_paths[idx];
-              // Match any sandbox: protocol or local file path with this image name
-              const sandboxPattern = new RegExp(`sandbox:[^\\s\\)\\]"']*${imageName.replace(/\./g, '\\.')}`, 'gi');
-              const filePathPattern = new RegExp(`(?:/home/user|/tmp|/images/[^\\s\\)\\]"']*/)${imageName.replace(/\./g, '\\.')}`, 'gi');
-              
-              const sandboxMatches = (processedText.match(sandboxPattern) || []).length;
-              const fileMatches = (processedText.match(filePathPattern) || []).length;
-              
-              if (sandboxMatches > 0) {
-                processedText = processedText.replace(sandboxPattern, actualPath);
-                totalReplacements += sandboxMatches;
-                logger.debug(`[E2BAgent] Replaced ${sandboxMatches} sandbox: patterns for ${imageName}`);
-              }
-              
-              if (fileMatches > 0) {
-                processedText = processedText.replace(filePathPattern, actualPath);
-                totalReplacements += fileMatches;
-                logger.debug(`[E2BAgent] Replaced ${fileMatches} file path patterns for ${imageName}`);
-              }
-            });
-          }
-        }
+      // In streaming mode, use accumulated content if finalContent is empty
+      if (!finalContent && accumulatedContent) {
+        logger.info(`[E2BAgent] Using accumulated content from streaming (${accumulatedContent.length} chars)`);
+        finalContent = accumulatedContent;
       }
+
+      // No path replacement needed - LLM uses paths from observation.image_paths and observation.images_markdown
+      // These are already correct /images/userId/timestamp-filename.png paths
+      let processedText = finalContent;
       
-      if (totalReplacements > 0) {
-        logger.info(`[E2BAgent] Completed ${totalReplacements} image path replacements`);
-      } else {
-        logger.warn(`[E2BAgent] No image paths found to replace in final text`);
+      logger.info(`[E2BAgent] Skipping path replacement - using direct paths from observation`);
+      
+      // Log all image markdown patterns in the final text for debugging
+      const imageMarkdownPattern = /!\[[^\]]*\]\([^)]+\)/g;
+      const imageMarkdowns = processedText.match(imageMarkdownPattern) || [];
+      if (imageMarkdowns.length > 0) {
+        logger.info(`[E2BAgent] Found ${imageMarkdowns.length} image markdown entries in final text:`);
+        imageMarkdowns.forEach((md, idx) => {
+          logger.info(`[E2BAgent]   Image ${idx + 1}: ${md}`);
+        });
       }
 
       return {

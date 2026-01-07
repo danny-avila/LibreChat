@@ -68,6 +68,14 @@ class CodeExecutor {
       
       if (images.length > 0) {
         logger.info(`[CodeExecutor] Execution finished. Images found: ${images.length}`);
+        logger.debug(`[CodeExecutor] Full result:`, JSON.stringify({
+          success: response.success,
+          stdout: response.stdout?.substring(0, 500),
+          stderr: response.stderr?.substring(0, 500),
+          error: response.error,
+          hasVisualization: response.hasVisualization,
+          imageCount: images.length
+        }, null, 2));
       }
       return response;
     } catch (error) {

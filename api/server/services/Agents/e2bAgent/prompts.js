@@ -91,23 +91,6 @@ function getToolsDefinitions() {
         },
       },
     },
-    {
-      type: 'function',
-      function: {
-        name: 'download_file',
-        description: 'Downloads a file from the sandbox environment.',
-        parameters: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Path to the file in the sandbox (e.g., /home/user/output.csv).',
-            },
-          },
-          required: ['path'],
-        },
-      },
-    },
   ];
 }
 

@@ -414,6 +414,31 @@ const chat = async (req, res) => {
             role: msg.isCreatedByUser ? 'user' : 'assistant',
             content: msg.text || ''
           }));
+        
+        // Check if files were uploaded in this conversation (either now or previously)
+        let conversationFiles = files || [];
+        
+        // If no new files but history exists, check if files were mentioned in first message
+        if (conversationFiles.length === 0 && history.length > 0) {
+          // Look for file references in the conversation
+          const firstMessage = dbMessages.find(msg => msg.isCreatedByUser);
+          if (firstMessage && firstMessage.files && firstMessage.files.length > 0) {
+            conversationFiles = firstMessage.files;
+          }
+        }
+        
+        // If this is a continuation and files exist in the conversation, remind the model
+        if (history.length > 0 && conversationFiles.length > 0) {
+          const fileNames = conversationFiles.map(f => f.filename || f.filepath?.split('/').pop() || f.file_id).filter(Boolean);
+          if (fileNames.length > 0) {
+            const fileContext = `注意：用户在此对话中已上传以下文件：${fileNames.join(', ')}。这些文件仍在sandbox中可用于分析。`;
+            // Insert context before the first user message
+            if (history.length > 0 && history[0].role === 'user') {
+              history[0].content = fileContext + '\n\n' + history[0].content;
+            }
+          }
+        }
+        
         logger.info(`[E2B Assistant] Loaded ${history.length} historical messages`);
       } catch (error) {
         logger.warn(`[E2B Assistant] Failed to load history: ${error.message}`);
@@ -430,10 +455,45 @@ const chat = async (req, res) => {
       files,
     });
 
-    // Run the agent with history
-    const result = await agent.processMessage(text, history);
+    // Accumulate full response text for final message
+    let fullResponseText = '';
+    let tokenCount = 0;
+    let eventsSent = 0;
     
-    logger.info(`[E2B Assistant] Agent finished. Final text length: ${result.text?.length}`);
+    // Stream callback - send every token immediately for real-time streaming
+    const onToken = (token) => {
+      fullResponseText += token;
+      tokenCount++;
+      eventsSent++;
+      
+      const eventData = {
+        message: true,
+        initial: tokenCount === 1,
+        text: fullResponseText,
+        messageId: responseMessageId,
+        parentMessageId: userMessageId,
+        conversationId: finalConversationId,
+      };
+      
+      if (eventsSent <= 3 || eventsSent % 10 === 0) {
+        logger.debug(`[E2B Streaming] Event #${eventsSent}: tokens=${tokenCount}, textLen=${fullResponseText.length}, initial=${eventData.initial}`);
+      }
+      
+      sendEvent(res, eventData);
+    };
+    
+    logger.info(`[E2B Assistant] onToken callback created for messageId=${responseMessageId}`);
+
+    logger.info(`[E2B Assistant] Starting agent with streaming enabled`);
+    
+    // Run the agent with history and streaming callback
+    const result = await agent.processMessage(text, history, onToken);
+    
+    // CRITICAL: Use result.text which has image paths replaced, not fullResponseText!
+    const finalText = result.text;
+    
+    logger.info(`[E2B Assistant] Agent finished. Accumulated: ${fullResponseText.length} chars, Final (with image paths): ${result.text?.length} chars`);
+    logger.info(`[E2B Assistant] Final text preview: ${finalText?.substring(0, 200)}...`);
     
     // Create response message
     const responseMessage = {
@@ -441,7 +501,7 @@ const chat = async (req, res) => {
       conversationId: finalConversationId,
       parentMessageId: userMessageId,
       sender: assistant.name || 'E2B Agent',
-      text: result.text,
+      text: finalText,
       isCreatedByUser: false,
       error: false,
       unfinished: false,
