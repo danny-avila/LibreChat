@@ -117,9 +117,9 @@ jobs:
               --name $CONTAINER \
               --restart unless-stopped \
               -p 3081:3080 \
-              -e INFISICAL_ENVIRONMENT='${{ secrets.INFISICAL_ENVIRONMENT }}' \
+              -e INFISICAL_ENVIRONMENT='${{ env.INFISICAL_ENVIRONMENT }}' \
               -e INFISICAL_PROJECT_ID='${{ secrets.INFISICAL_PROJECT_ID }}' \
-              -e INFISICAL_SECRET_PATH='${{ secrets.INFISICAL_SECRET_PATH }}' \
+              -e INFISICAL_SECRET_PATH='${{ env.INFISICAL_SECRET_PATH }}' \
               -e INFISICAL_TOKEN="$INFISICAL_TOKEN" \
               $IMAGE \
               npm run backend
