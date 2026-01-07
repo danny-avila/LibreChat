@@ -657,10 +657,14 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     const sessionOptions = session ? { session } : {};
 
     // Bulk optimization: Fetch all existing groups in one query
-    const existingGroups = await Group.find({
-      idOnTheSource: { $in: groupNames },
-      source: groupSource,
-    });
+    const existingGroups = await Group.find(
+      {
+        idOnTheSource: { $in: groupNames },
+        source: groupSource,
+      },
+      null,
+      sessionOptions,
+    );
 
     const existingMap = new Map(existingGroups.map(g => [g.idOnTheSource, g]));
     const groupsToCreate = [];
@@ -675,7 +679,11 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
           source: groupSource,
           memberIds: [user.idOnTheSource],
         });
-      } else if (!existing.memberIds.includes(user.idOnTheSource)) {
+      } else if (
+        !existing.memberIds.some(
+          (memberId) => String(memberId) === String(user.idOnTheSource),
+        )
+      ) {
         groupsToUpdate.push(existing._id);
       }
     }
@@ -720,15 +728,22 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     }
 
     // Remove user from groups they are no longer part of
-    await Group.updateMany(
-      {
-        source: groupSource,
-        memberIds: user.idOnTheSource,
-        idOnTheSource: { $nin: groupNames },
-      },
-      { $pull: { memberIds: user.idOnTheSource } },
-      sessionOptions,
-    );
+    try {
+      await Group.updateMany(
+        {
+          source: groupSource,
+          memberIds: user.idOnTheSource,
+          idOnTheSource: { $nin: groupNames },
+        },
+        { $pull: { memberIds: user.idOnTheSource } },
+        sessionOptions,
+      );
+    } catch (error) {
+      logger.error(
+        `[PermissionService.syncUserOidcGroupsFromToken] Error removing user from old groups:`,
+        error,
+      );
+    }
 
     logger.info(
       `[PermissionService.syncUserOidcGroupsFromToken] Successfully synced groups for user ${user.email}`,
