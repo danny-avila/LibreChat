@@ -1,4 +1,4 @@
-import { ProxyAgent } from 'undici';
+import { EnvHttpProxyAgent } from 'undici';
 import { Providers } from '@librechat/agents';
 import { KnownEndpoints, EModelEndpoint } from 'librechat-data-provider';
 import type * as t from '~/types';
@@ -138,8 +138,13 @@ export function getOpenAIConfig(
     configOptions.defaultQuery = defaultQuery;
   }
 
+  // Use EnvHttpProxyAgent which natively handles NO_PROXY bypass
   if (proxy) {
-    const proxyAgent = new ProxyAgent(proxy);
+    const proxyAgent = new EnvHttpProxyAgent({
+      httpProxy: proxy,
+      httpsProxy: proxy,
+      // NO_PROXY/no_proxy is automatically read from environment
+    });
     configOptions.fetchOptions = {
       dispatcher: proxyAgent,
     };

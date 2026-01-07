@@ -1,4 +1,4 @@
-import { Dispatcher, ProxyAgent } from 'undici';
+import { Dispatcher, EnvHttpProxyAgent } from 'undici';
 import { AnthropicClientOptions } from '@librechat/agents';
 import { anthropicSettings, removeNullishValues } from 'librechat-data-provider';
 import type { AnthropicLLMConfigResult, AnthropicConfigOptions } from '~/types/anthropic';
@@ -106,8 +106,13 @@ function getLLMConfig(
     requestOptions.clientOptions.defaultHeaders = headers;
   }
 
+  // Use EnvHttpProxyAgent which natively handles NO_PROXY bypass
   if (options.proxy && requestOptions.clientOptions) {
-    const proxyAgent = new ProxyAgent(options.proxy);
+    const proxyAgent = new EnvHttpProxyAgent({
+      httpProxy: options.proxy,
+      httpsProxy: options.proxy,
+      // NO_PROXY/no_proxy is automatically read from environment
+    });
     requestOptions.clientOptions.fetchOptions = {
       dispatcher: proxyAgent,
     };

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
-import { fetch as undiciFetch, Agent } from 'undici';
+import { fetch as undiciFetch, Agent, EnvHttpProxyAgent } from 'undici';
 import {
   StdioClientTransport,
   getDefaultEnvironment,
@@ -24,6 +24,28 @@ import { sanitizeUrlForLogging } from './utils';
 import { mcpConfig } from './mcpConfig';
 
 type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
+
+/**
+ * Creates a dispatcher that respects PROXY and NO_PROXY environment variables.
+ * Uses undici's EnvHttpProxyAgent which natively handles NO_PROXY patterns.
+ */
+function createProxyDispatcher(timeout?: number) {
+  const PROXY = process.env.PROXY;
+  const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
+
+  if (!PROXY) {
+    return new Agent({
+      bodyTimeout: effectiveTimeout,
+      headersTimeout: effectiveTimeout,
+    });
+  }
+
+  return new EnvHttpProxyAgent({
+    httpProxy: PROXY,
+    httpsProxy: PROXY,
+    // NO_PROXY/no_proxy is automatically read from environment by EnvHttpProxyAgent
+  });
+}
 
 function isStdioOptions(options: t.MCPOptions): options is t.StdioOptions {
   return 'command' in options;
@@ -162,18 +184,14 @@ export class MCPConnection extends EventEmitter {
     getHeaders: () => Record<string, string> | null | undefined,
     timeout?: number,
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
+    const dispatcher = createProxyDispatcher(timeout);
     return function customFetch(
       input: UndiciRequestInfo,
       init?: UndiciRequestInit,
     ): Promise<UndiciResponse> {
       const requestHeaders = getHeaders();
-      const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
-      const agent = new Agent({
-        bodyTimeout: effectiveTimeout,
-        headersTimeout: effectiveTimeout,
-      });
       if (!requestHeaders) {
-        return undiciFetch(input, { ...init, dispatcher: agent });
+        return undiciFetch(input, { ...init, dispatcher });
       }
 
       let initHeaders: Record<string, string> = {};
@@ -193,7 +211,7 @@ export class MCPConnection extends EventEmitter {
           ...initHeaders,
           ...requestHeaders,
         },
-        dispatcher: agent,
+        dispatcher,
       });
     };
   }
@@ -259,6 +277,7 @@ export class MCPConnection extends EventEmitter {
           }
 
           const timeoutValue = this.timeout || DEFAULT_TIMEOUT;
+          const dispatcher = createProxyDispatcher(timeoutValue);
           const transport = new SSEClientTransport(url, {
             requestInit: {
               headers,
@@ -267,13 +286,9 @@ export class MCPConnection extends EventEmitter {
             eventSourceInit: {
               fetch: (url, init) => {
                 const fetchHeaders = new Headers(Object.assign({}, init?.headers, headers));
-                const agent = new Agent({
-                  bodyTimeout: timeoutValue,
-                  headersTimeout: timeoutValue,
-                });
                 return undiciFetch(url, {
                   ...init,
-                  dispatcher: agent,
+                  dispatcher,
                   headers: fetchHeaders,
                 });
               },
