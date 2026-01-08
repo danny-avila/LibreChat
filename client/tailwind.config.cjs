@@ -73,17 +73,17 @@ module.exports = {
           900: '#0d0d0d',
         },
         green: {
-          50: '#f1f9f7',
-          100: '#def2ed',
-          200: '#a6e5d6',
-          300: '#6dc8b9',
-          400: '#41a79d',
-          500: '#10a37f',
-          550: '#349072',
-          600: '#126e6b',
-          700: '#0a4f53',
-          800: '#06373e',
-          900: '#031f29',
+          50:  '#E0F7FA', // Cyan 50
+          100: '#B2EBF2', // Cyan 100
+          200: '#80DEEA', // Cyan 200
+          300: '#4DD0E1', // Cyan 300
+          400: '#26C6DA', // Cyan 400
+          500: '#00BCD4', // Cyan 500
+          550: '#00AFC4', // interpolated between 500 & 600
+          600: '#00ACC1', // Cyan 600
+          700: '#0097A7', // Cyan 700
+          800: '#00838F', // Cyan 800
+          900: '#006064', // Cyan 900
         },
         'brand-purple': 'var(--brand-purple)',
         presentation: 'var(--presentation)',
