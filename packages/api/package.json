@@ -90,7 +90,7 @@
     "@langchain/core": "^0.3.80",
     "@librechat/agents": "^3.0.66",
     "@librechat/data-schemas": "*",
-    "@modelcontextprotocol/sdk": "^1.25.1",
+    "@modelcontextprotocol/sdk": "^1.25.2",
     "@smithy/node-http-handler": "^4.4.5",
     "axios": "^1.12.1",
     "connect-redis": "^8.1.0",

@@ -109,6 +109,10 @@ const createAgentHandler = async (req, res) => {
     const validatedData = agentCreateSchema.parse(req.body);
     const { tools = [], ...agentData } = removeNullishValues(validatedData);
 
+    if (agentData.model_parameters && typeof agentData.model_parameters === 'object') {
+      agentData.model_parameters = removeNullishValues(agentData.model_parameters, true);
+    }
+
     const { id: userId } = req.user;
 
     agentData.id = `agent_${nanoid()}`;
@@ -259,6 +263,11 @@ const updateAgentHandler = async (req, res) => {
     // Preserve explicit null for avatar to allow resetting the avatar
     const { avatar: avatarField, _id, ...rest } = validatedData;
     const updateData = removeNullishValues(rest);
+
+    if (updateData.model_parameters && typeof updateData.model_parameters === 'object') {
+      updateData.model_parameters = removeNullishValues(updateData.model_parameters, true);
+    }
+
     if (avatarField === null) {
       updateData.avatar = avatarField;
     }

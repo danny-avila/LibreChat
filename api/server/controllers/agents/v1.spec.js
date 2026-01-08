@@ -357,6 +357,46 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       });
     });
 
+    test('should remove empty strings from model_parameters (Issue Fix)', async () => {
+      // This tests the fix for empty strings being sent to API instead of being omitted
+      // When a user clears a numeric field (like max_tokens), it should be removed, not sent as ""
+      const dataWithEmptyModelParams = {
+        provider: 'azureOpenAI',
+        model: 'gpt-4',
+        name: 'Agent with Empty Model Params',
+        model_parameters: {
+          temperature: 0.7, // Valid number - should be preserved
+          max_tokens: '', // Empty string - should be removed
+          maxContextTokens: '', // Empty string - should be removed
+          topP: 0, // Zero value - should be preserved (not treated as empty)
+          frequency_penalty: '', // Empty string - should be removed
+        },
+      };
+
+      mockReq.body = dataWithEmptyModelParams;
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+
+      const createdAgent = mockRes.json.mock.calls[0][0];
+      expect(createdAgent.model_parameters).toBeDefined();
+      // Valid numbers should be preserved
+      expect(createdAgent.model_parameters.temperature).toBe(0.7);
+      expect(createdAgent.model_parameters.topP).toBe(0);
+      // Empty strings should be removed
+      expect(createdAgent.model_parameters.max_tokens).toBeUndefined();
+      expect(createdAgent.model_parameters.maxContextTokens).toBeUndefined();
+      expect(createdAgent.model_parameters.frequency_penalty).toBeUndefined();
+
+      // Verify in database
+      const agentInDb = await Agent.findOne({ id: createdAgent.id });
+      expect(agentInDb.model_parameters.temperature).toBe(0.7);
+      expect(agentInDb.model_parameters.topP).toBe(0);
+      expect(agentInDb.model_parameters.max_tokens).toBeUndefined();
+      expect(agentInDb.model_parameters.maxContextTokens).toBeUndefined();
+    });
+
     test('should handle invalid avatar format', async () => {
       const dataWithInvalidAvatar = {
         provider: 'openai',
@@ -537,6 +577,49 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(updatedAgent.tool_resources.context).toBeDefined();
       expect(updatedAgent.tool_resources.execute_code).toBeDefined();
       expect(updatedAgent.tool_resources.invalid_tool).toBeUndefined();
+    });
+
+    test('should remove empty strings from model_parameters during update (Issue Fix)', async () => {
+      // First create an agent with valid model_parameters
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          model_parameters: {
+            temperature: 0.5,
+            max_tokens: 1000,
+            maxContextTokens: 2000,
+          },
+        },
+      );
+
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      // Simulate user clearing the fields (sends empty strings)
+      mockReq.body = {
+        model_parameters: {
+          temperature: 0.7, // Change to new value
+          max_tokens: '', // Clear this field (should be removed, not sent as "")
+          maxContextTokens: '', // Clear this field (should be removed, not sent as "")
+        },
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.model_parameters).toBeDefined();
+      // Valid number should be updated
+      expect(updatedAgent.model_parameters.temperature).toBe(0.7);
+      // Empty strings should be removed, not sent as ""
+      expect(updatedAgent.model_parameters.max_tokens).toBeUndefined();
+      expect(updatedAgent.model_parameters.maxContextTokens).toBeUndefined();
+
+      // Verify in database
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.model_parameters.temperature).toBe(0.7);
+      expect(agentInDb.model_parameters.max_tokens).toBeUndefined();
+      expect(agentInDb.model_parameters.maxContextTokens).toBeUndefined();
     });
 
     test('should return 404 for non-existent agent', async () => {

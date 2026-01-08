@@ -32,7 +32,7 @@ router.get('/', async (req, res) => {
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
   const search = req.query.search ? decodeURIComponent(req.query.search) : undefined;
-  const sortBy = req.query.sortBy || 'createdAt';
+  const sortBy = req.query.sortBy || 'updatedAt';
   const sortDirection = req.query.sortDirection || 'desc';
 
   let tags;
