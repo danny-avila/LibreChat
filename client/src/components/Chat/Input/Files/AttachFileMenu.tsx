@@ -21,8 +21,10 @@ import {
   DropdownPopup,
   AttachmentIcon,
   SharePointIcon,
+  FILE_TYPE_MAP,
 } from '@librechat/client';
 import type { EndpointFileConfig } from 'librechat-data-provider';
+import type { FileType } from '@librechat/client';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,
@@ -37,7 +39,7 @@ import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 
-type FileUploadType = 'image' | 'document' | 'image_document' | 'image_document_video_audio';
+type FileUploadType = FileType;
 
 interface AttachFileMenuProps {
   agentId?: string | null;
@@ -93,14 +95,8 @@ const AttachFileMenu = ({
       return;
     }
     inputRef.current.value = '';
-    if (fileType === 'image') {
-      inputRef.current.accept = 'image/*,.heif,.heic';
-    } else if (fileType === 'document') {
-      inputRef.current.accept = '.pdf,application/pdf';
-    } else if (fileType === 'image_document') {
-      inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf';
-    } else if (fileType === 'image_document_video_audio') {
-      inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf,video/*,audio/*';
+    if (fileType && fileType in FILE_TYPE_MAP) {
+      inputRef.current.accept = FILE_TYPE_MAP[fileType];
     } else {
       inputRef.current.accept = '';
     }

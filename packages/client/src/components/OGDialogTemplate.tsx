@@ -1,4 +1,4 @@
-import { forwardRef, ReactNode, Ref } from 'react';
+import { forwardRef, isValidElement, ReactNode, Ref } from 'react';
 import {
   OGDialogTitle,
   OGDialogClose,
@@ -19,13 +19,39 @@ type SelectionProps = {
   isLoading?: boolean;
 };
 
+/**
+ * Type guard to check if selection is a legacy SelectionProps object
+ */
+function isSelectionProps(selection: unknown): selection is SelectionProps {
+  return (
+    typeof selection === 'object' &&
+    selection !== null &&
+    !isValidElement(selection) &&
+    ('selectHandler' in selection ||
+      'selectClasses' in selection ||
+      'selectText' in selection ||
+      'isLoading' in selection)
+  );
+}
+
 type DialogTemplateProps = {
   title: string;
   description?: string;
   main?: ReactNode;
   buttons?: ReactNode;
   leftButtons?: ReactNode;
-  selection?: SelectionProps;
+  /**
+   * Selection button configuration. Can be either:
+   * - An object with selectHandler, selectClasses, selectText, isLoading (legacy)
+   * - A ReactNode for custom selection component
+   * @example
+   * // Legacy usage
+   * selection={{ selectHandler: () => {}, selectText: 'Confirm' }}
+   * @example
+   * // Custom component
+   * selection={<Button onClick={handleConfirm}>Confirm</Button>}
+   */
+  selection?: SelectionProps | ReactNode;
   className?: string;
   overlayClassName?: string;
   headerClassName?: string;
@@ -49,14 +75,40 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
     mainClassName,
     headerClassName,
     footerClassName,
-    showCloseButton,
+    showCloseButton = false,
     overlayClassName,
     showCancelButton = true,
   } = props;
-  const { selectHandler, selectClasses, selectText, isLoading } = selection || {};
+
+  const isLegacySelection = selection && isSelectionProps(selection);
+  const { selectHandler, selectClasses, selectText, isLoading } = isLegacySelection
+    ? selection
+    : {};
 
   const defaultSelect =
     'bg-gray-800 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-200 dark:text-gray-800 dark:hover:bg-gray-200';
+
+  let selectionContent = null;
+  if (isLegacySelection) {
+    selectionContent = (
+      <OGDialogClose
+        onClick={selectHandler}
+        disabled={isLoading}
+        className={`${
+          selectClasses ?? defaultSelect
+        } flex h-10 items-center justify-center rounded-lg border-none px-4 py-2 text-sm disabled:opacity-80`}
+      >
+        {isLoading === true ? (
+          <Spinner className="size-4 text-text-primary" />
+        ) : (
+          (selectText as React.JSX.Element)
+        )}
+      </OGDialogClose>
+    );
+  } else if (selection) {
+    selectionContent = selection;
+  }
+
   return (
     <OGDialogContent
       overlayClassName={overlayClassName}
@@ -86,21 +138,7 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
           </OGDialogClose>
         )}
         {buttons != null ? buttons : null}
-        {selection ? (
-          <OGDialogClose
-            onClick={selectHandler}
-            disabled={isLoading}
-            className={`${
-              selectClasses ?? defaultSelect
-            } flex h-10 items-center justify-center rounded-lg border-none px-4 py-2 text-sm disabled:opacity-80`}
-          >
-            {isLoading === true ? (
-              <Spinner className="size-4 text-white" />
-            ) : (
-              (selectText as React.JSX.Element)
-            )}
-          </OGDialogClose>
-        ) : null}
+        {selectionContent}
       </OGDialogFooter>
     </OGDialogContent>
   );
