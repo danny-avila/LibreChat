@@ -117,6 +117,9 @@ mcpServers:
     url: http://100.100.108.13:9005/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
     initTimeout: 120000
+  faq-server:
+    url: http://100.100.108.42:9010/mcp
+    type: streamable-http
 
 
 speech:
