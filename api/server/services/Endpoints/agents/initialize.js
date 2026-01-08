@@ -49,8 +49,17 @@ function createToolLoader(signal, streamId = null) {
    *   toolRegistry?: import('@librechat/agents').LCToolRegistry
    * } | undefined>}
    */
-  return async function loadTools({ req, res, agentId, tools, provider, model, tool_resources }) {
-    const agent = { id: agentId, tools, provider, model };
+  return async function loadTools({
+    req,
+    res,
+    tools,
+    model,
+    agentId,
+    provider,
+    tool_options,
+    tool_resources,
+  }) {
+    const agent = { id: agentId, tools, provider, model, tool_options };
     try {
       return await loadAgentTools({
         req,

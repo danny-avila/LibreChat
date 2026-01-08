@@ -10,6 +10,7 @@ import {
 } from 'librechat-data-provider';
 import type {
   AgentToolResources,
+  AgentToolOptions,
   TEndpointOption,
   TFile,
   Agent,
@@ -65,6 +66,7 @@ export interface InitializeAgentParams {
     agentId: string;
     tools: string[];
     model: string | null;
+    tool_options: AgentToolOptions | undefined;
     tool_resources: AgentToolResources | undefined;
   }) => Promise<{
     tools: GenericTool[];
@@ -214,6 +216,7 @@ export async function initializeAgent(
     agentId: agent.id,
     tools: agent.tools ?? [],
     model: agent.model,
+    tool_options: agent.tool_options,
     tool_resources,
   })) ?? { tools: [], toolContextMap: {}, userMCPAuthMap: undefined, toolRegistry: undefined };
 
