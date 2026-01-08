@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { ChevronDown, Clock } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { Constants } from 'librechat-data-provider';
@@ -34,50 +34,20 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
   const [isHovering, setIsHovering] = useState(false);
   const [accordionValue, setAccordionValue] = useState<string>('');
 
-  /** Local state for optimistic updates */
-  const [localDeferredTools, setLocalDeferredTools] = useState<Set<string>>(new Set());
-
-  /** Watch form tool_options for sync */
   const formToolOptions = useWatch({ control, name: 'tool_options' });
 
-  /** Sync local state with form state */
-  useEffect(() => {
-    const newDeferred = new Set<string>();
-    if (formToolOptions) {
-      for (const [toolId, options] of Object.entries(formToolOptions)) {
-        if (options?.defer_loading) {
-          newDeferred.add(toolId);
-        }
-      }
-    }
-    setLocalDeferredTools(newDeferred);
-  }, [formToolOptions]);
-
-  /** Check if a specific tool has defer_loading enabled (uses local state for optimistic UI) */
+  /** Check if a specific tool has defer_loading enabled */
   const isToolDeferred = useCallback(
-    (toolId: string): boolean => localDeferredTools.has(toolId),
-    [localDeferredTools],
+    (toolId: string): boolean => formToolOptions?.[toolId]?.defer_loading === true,
+    [formToolOptions],
   );
 
-  /** Toggle defer_loading for a specific tool with optimistic update */
+  /** Toggle defer_loading for a specific tool */
   const toggleToolDefer = useCallback(
     (toolId: string) => {
-      const newDeferred = !localDeferredTools.has(toolId);
-
-      /** Optimistic update */
-      setLocalDeferredTools((prev) => {
-        const next = new Set(prev);
-        if (newDeferred) {
-          next.add(toolId);
-        } else {
-          next.delete(toolId);
-        }
-        return next;
-      });
-
-      /** Update form state */
       const currentOptions = getValues('tool_options') || {};
       const currentToolOptions = currentOptions[toolId] || {};
+      const newDeferred = !currentToolOptions.defer_loading;
 
       const updatedOptions: AgentToolOptions = {
         ...currentOptions,
@@ -87,42 +57,26 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
         },
       };
 
-      /** Clean up if no options remain for this tool */
       if (!newDeferred && Object.keys(updatedOptions[toolId]).length === 1) {
         delete updatedOptions[toolId];
       }
 
       setValue('tool_options', updatedOptions, { shouldDirty: true });
     },
-    [localDeferredTools, getValues, setValue],
+    [getValues, setValue],
   );
 
-  /** Check if all server tools are deferred (uses local state) */
+  /** Check if all server tools are deferred */
   const areAllToolsDeferred =
     serverInfo?.tools &&
     serverInfo.tools.length > 0 &&
-    serverInfo.tools.every((tool) => localDeferredTools.has(tool.tool_id));
+    serverInfo.tools.every((tool) => formToolOptions?.[tool.tool_id]?.defer_loading === true);
 
-  /** Toggle defer_loading for all tools from this server with optimistic update */
+  /** Toggle defer_loading for all tools from this server */
   const toggleDeferAll = useCallback(() => {
     if (!serverInfo?.tools) return;
 
     const shouldDefer = !areAllToolsDeferred;
-
-    /** Optimistic update */
-    setLocalDeferredTools((prev) => {
-      const next = new Set(prev);
-      for (const tool of serverInfo.tools!) {
-        if (shouldDefer) {
-          next.add(tool.tool_id);
-        } else {
-          next.delete(tool.tool_id);
-        }
-      }
-      return next;
-    });
-
-    /** Update form state */
     const currentOptions = getValues('tool_options') || {};
     const updatedOptions: AgentToolOptions = { ...currentOptions };
 
@@ -135,7 +89,6 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
       } else {
         if (updatedOptions[tool.tool_id]) {
           delete updatedOptions[tool.tool_id].defer_loading;
-          /** Clean up empty tool options */
           if (Object.keys(updatedOptions[tool.tool_id]).length === 0) {
             delete updatedOptions[tool.tool_id];
           }
