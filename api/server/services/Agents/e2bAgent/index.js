@@ -1,6 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { getToolFunctions } = require('./tools');
 const { getSystemPrompt, getToolsDefinitions } = require('./prompts');
+const ContextManager = require('./contextManager');
 const e2bClientManager = require('~/server/services/Endpoints/e2bAssistants/initialize').e2bClientManager;
 const fileHandler = require('~/server/services/Sandbox/fileHandler');
 
@@ -28,8 +29,14 @@ class E2BDataAnalystAgent {
     this.assistant = assistant;
     this.files = files; // Store files
     
-    this.tools = getToolFunctions(userId, conversationId, req);
-    this.maxIterations = 10; // 防止无限循环
+    // Initialize Context Manager for session state
+    this.contextManager = new ContextManager({
+      userId: this.userId,
+      conversationId: this.conversationId
+    });
+    
+    this.tools = getToolFunctions(userId, conversationId, req, this.contextManager);
+    this.maxIterations = 20; // 防止无限循环，允许更复杂的分析
   }
 
   /**
@@ -54,6 +61,42 @@ class E2BDataAnalystAgent {
           this.conversationId,
           this.assistant.e2b_config
         );
+        
+        // CRITICAL: After creating new sandbox, check if we need to restore files
+        // This handles the case where sandbox expired and needs to be recreated
+        const existingFiles = this.contextManager.sessionState.uploadedFiles;
+        if (existingFiles && existingFiles.length > 0) {
+          logger.info(`[E2BAgent] New sandbox created, but Context Manager has ${existingFiles.length} files from previous session`);
+          logger.info(`[E2BAgent] Attempting to restore files from history...`);
+          
+          try {
+            // Extract file IDs that we need to restore
+            const fileIdsToRestore = existingFiles
+              .map(f => f.file_id)
+              .filter(id => id);
+            
+            if (fileIdsToRestore.length > 0) {
+              logger.info(`[E2BAgent] Restoring ${fileIdsToRestore.length} files to new sandbox`);
+              
+              const restoredFiles = await fileHandler.syncFilesToSandbox({
+                req: this.req,
+                userId: this.userId,
+                conversationId: this.conversationId,
+                fileIds: fileIdsToRestore
+              });
+              
+              logger.info(`[E2BAgent] ✓ Successfully restored ${restoredFiles.length} files after sandbox recreation`);
+              
+              // Update Context Manager with restored files (refresh file info)
+              if (restoredFiles.length > 0) {
+                this.contextManager.updateUploadedFiles(restoredFiles);
+              }
+            }
+          } catch (restoreError) {
+            logger.error(`[E2BAgent] Failed to restore files to new sandbox:`, restoreError);
+            // Don't throw - continue with empty sandbox, let error recovery handle it later
+          }
+        }
       } else {
         logger.info(`[E2BAgent] Reusing existing sandbox ${sandbox.id}`);
       }
@@ -75,16 +118,80 @@ class E2BDataAnalystAgent {
         
         if (uploadedFiles.length > 0) {
           logger.info(`[E2BAgent] Successfully synced files: ${uploadedFiles.map(f => f.filename).join(', ')}`);
+          
+          // Update Context Manager with uploaded files
+          logger.info(`[E2BAgent] Calling contextManager.updateUploadedFiles with:`, JSON.stringify(uploadedFiles.map(f => ({ filename: f.filename, size: f.size, type: f.type }))));
+          this.contextManager.updateUploadedFiles(uploadedFiles);
+          logger.info(`[E2BAgent] Context Manager updated. Current state:`, JSON.stringify(this.contextManager.getSummary()));
         }
       }
 
       // 3. 构建初始消息列表
-      // 将上传的文件信息注入到系统提示词中
-      const fileContext = uploadedFiles.length > 0 
-        ? `\n\nUser has uploaded the following files to /home/user/:\n${uploadedFiles.map(f => `- ${f.filename}`).join('\n')}`
-        : '';
-
-      const systemPrompt = getSystemPrompt(this.assistant) + fileContext;
+      // 使用Context Manager生成结构化的动态上下文
+      // Context Manager是LLM获取会话状态的唯一真实来源
+      
+      // CRITICAL: If no files were uploaded in THIS request but files exist in history,
+      // we need to restore them to Context Manager for multi-turn conversations
+      logger.info(`[E2BAgent] File restoration check: uploadedFiles.length=${uploadedFiles.length}, history.length=${history.length}`);
+      
+      if (uploadedFiles.length === 0 && history.length > 0) {
+        logger.info(`[E2BAgent] Attempting to restore files from database history...`);
+        // Try to get file info from first message in database
+        try {
+          const { getMessages } = require('~/models/Message');
+          const dbMessages = await getMessages({ conversationId: this.conversationId });
+          logger.info(`[E2BAgent] Retrieved ${dbMessages.length} messages from database`);
+          
+          const firstUserMessage = dbMessages.find(msg => msg.isCreatedByUser && msg.files && msg.files.length > 0);
+          logger.info(`[E2BAgent] First user message with files: ${firstUserMessage ? 'Found' : 'Not found'}`);
+          
+          if (firstUserMessage && firstUserMessage.files) {
+            logger.info(`[E2BAgent] First message has ${firstUserMessage.files.length} files:`, JSON.stringify(firstUserMessage.files.map(f => ({ filename: f.filename, file_id: f.file_id, filepath: f.filepath }))));
+            
+            // Extract file_ids to restore actual files to the new sandbox
+            const fileIdsToRestore = firstUserMessage.files
+              .map(f => f.file_id)
+              .filter(id => id); // Filter out null/undefined
+            
+            logger.info(`[E2BAgent] Found ${fileIdsToRestore.length} file IDs to restore`);
+            
+            if (fileIdsToRestore.length > 0) {
+              // CRITICAL: Actually sync files to the new sandbox
+              logger.info(`[E2BAgent] Restoring ${fileIdsToRestore.length} files to new sandbox...`);
+              const restoredFiles = await fileHandler.syncFilesToSandbox({
+                req: this.req,
+                userId: this.userId,
+                conversationId: this.conversationId,
+                fileIds: fileIdsToRestore,
+                openai: this.openai,
+              });
+              
+              logger.info(`[E2BAgent] Successfully restored ${restoredFiles.length} files: ${restoredFiles.map(f => f.filename).join(', ')}`);
+              
+              if (restoredFiles.length > 0) {
+                this.contextManager.updateUploadedFiles(restoredFiles);
+                logger.info(`[E2BAgent] ✓ Files restored to sandbox and Context Manager updated`);
+              }
+            } else {
+              logger.warn(`[E2BAgent] No file_ids found in database to restore`);
+            }
+          } else {
+            logger.warn(`[E2BAgent] No user message with files found in database`);
+          }
+        } catch (error) {
+          logger.error(`[E2BAgent] Failed to restore files from history: ${error.message}`, error.stack);
+        }
+      } else {
+        logger.info(`[E2BAgent] Skipping file restoration: ${uploadedFiles.length > 0 ? 'Files already uploaded' : 'No history available'}`);
+      }
+      
+      const dynamicContext = this.contextManager.generateSystemContext();
+      
+      const systemPrompt = getSystemPrompt(this.assistant) + dynamicContext;
+      
+      logger.debug(`[E2BAgent] Context Manager state: ${JSON.stringify(this.contextManager.getSummary())}`);
+      logger.info(`[E2BAgent] Dynamic context length: ${dynamicContext.length} chars`);
+      logger.info(`[E2BAgent] System prompt preview (last 500 chars): ...${systemPrompt.slice(-500)}`);
 
       const messages = [
         { role: 'system', content: systemPrompt },
@@ -188,7 +295,12 @@ class E2BDataAnalystAgent {
               let result;
               try {
                 if (this.tools[name]) {
-                  result = await this.tools[name](args);
+                  // Pass context with assistant_id for potential sandbox recovery
+                  const toolContext = {
+                    assistant_id: this.assistant.id,
+                    assistant_config: this.assistant
+                  };
+                  result = await this.tools[name](args, toolContext);
                 } else {
                   result = { success: false, error: `Tool ${name} not found` };
                 }
@@ -207,10 +319,17 @@ class E2BDataAnalystAgent {
               });
 
               // 将工具结果反馈给 LLM
+              // If approaching max iterations, remind LLM to provide final answer
+              let toolResponseContent = JSON.stringify(result);
+              if (iteration >= this.maxIterations - 3) {
+                toolResponseContent = JSON.stringify(result) + `\n\n⚠️ IMPORTANT: You have ${this.maxIterations - iteration} iterations remaining. Please provide your final analysis and conclusions now, instead of executing more code.`;
+                logger.info(`[E2BAgent] Approaching max iterations (${iteration}/${this.maxIterations}), added reminder to LLM`);
+              }
+              
               messages.push({
                 role: 'tool',
                 tool_call_id: id,
-                content: JSON.stringify(result)
+                content: toolResponseContent
               });
             }
           } else {
@@ -255,10 +374,17 @@ class E2BDataAnalystAgent {
               });
 
               // 将工具结果反馈给 LLM
+              // If approaching max iterations, remind LLM to provide final answer
+              let toolResponseContent = JSON.stringify(result);
+              if (iteration >= this.maxIterations - 3) {
+                toolResponseContent = JSON.stringify(result) + `\n\n⚠️ IMPORTANT: You have ${this.maxIterations - iteration} iterations remaining. Please provide your final analysis and conclusions now, instead of executing more code.`;
+                logger.info(`[E2BAgent] Approaching max iterations (${iteration}/${this.maxIterations}), added reminder to LLM`);
+              }
+              
               messages.push({
                 role: 'tool',
                 tool_call_id: id,
-                content: JSON.stringify(result)
+                content: toolResponseContent
               });
             }
           }

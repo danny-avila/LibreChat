@@ -373,6 +373,7 @@ const chat = async (req, res) => {
       isCreatedByUser: true,
       sender: 'User',
       user: req.user.id,
+      files: files || [], // CRITICAL: Include files so they're saved to DB and visible in frontend
     };
 
     // Send created event (like other endpoints)
@@ -407,13 +408,20 @@ const chat = async (req, res) => {
     if (conversationId) {
       try {
         const dbMessages = await getMessages({ conversationId });
-        // Convert database messages to OpenAI format
+        
+        // CRITICAL: Clean history to remove ANY file_id exposure
+        // We ONLY keep text content, NO tool_calls or internal data
         history = dbMessages
           .filter(msg => msg.messageId !== userMessageId) // Exclude current message
-          .map(msg => ({
-            role: msg.isCreatedByUser ? 'user' : 'assistant',
-            content: msg.text || ''
-          }));
+          .map(msg => {
+            // Only include role and cleaned content
+            // DO NOT include tool_calls as they may contain file_id UUIDs
+            return {
+              role: msg.isCreatedByUser ? 'user' : 'assistant',
+              content: (msg.text || '').replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}__/gi, '')
+              // Remove any UUID__ patterns that might have leaked into text
+            };
+          });
         
         // Check if files were uploaded in this conversation (either now or previously)
         let conversationFiles = files || [];
@@ -429,17 +437,34 @@ const chat = async (req, res) => {
         
         // If this is a continuation and files exist in the conversation, remind the model
         if (history.length > 0 && conversationFiles.length > 0) {
-          const fileNames = conversationFiles.map(f => f.filename || f.filepath?.split('/').pop() || f.file_id).filter(Boolean);
+          // IMPORTANT: Only use clean filename, NEVER expose file_id to prevent LLM confusion
+          const fileNames = conversationFiles.map(f => f.filename || f.filepath?.split('/').pop()).filter(Boolean);
           if (fileNames.length > 0) {
-            const fileContext = `注意：用户在此对话中已上传以下文件：${fileNames.join(', ')}。这些文件仍在sandbox中可用于分析。`;
-            // Insert context before the first user message
-            if (history.length > 0 && history[0].role === 'user') {
-              history[0].content = fileContext + '\n\n' + history[0].content;
-            }
+            const filePathExamples = fileNames.map(name => `  • ${name} → use: /home/user/${name}`).join('\n');
+            const fileContext = `## REMINDER: Available Files\nFiles uploaded in this conversation:\n${filePathExamples}\n\n⚠️ IMPORTANT: Use complete paths like /home/user/${fileNames[0]} - do NOT add UUID prefixes!`;
+            // Insert context at the beginning as system-level reminder
+            history.unshift({ role: 'system', content: fileContext });
           }
         }
         
-        logger.info(`[E2B Assistant] Loaded ${history.length} historical messages`);
+        logger.info(`[E2B Assistant] Loaded ${history.length} historical messages for conversation ${conversationId}`);
+        
+        // Log a sample of history to debug potential cross-conversation pollution
+        if (history.length > 0) {
+          logger.info(`[E2B Assistant] History sample (first 2 messages):`);
+          history.slice(0, 2).forEach((msg, idx) => {
+            const preview = msg.content.substring(0, 100).replace(/\n/g, ' ');
+            logger.info(`[E2B Assistant]   ${idx + 1}. ${msg.role}: "${preview}..."`);
+          });
+          
+          // Check for image paths in history
+          const historyText = history.map(h => h.content).join(' ');
+          const imageMatches = historyText.match(/\/images\/[^\s)]+/g) || [];
+          if (imageMatches.length > 0) {
+            logger.info(`[E2B Assistant] Found ${imageMatches.length} image paths in history:`);
+            imageMatches.slice(0, 5).forEach(img => logger.info(`[E2B Assistant]   - ${img}`));
+          }
+        }
       } catch (error) {
         logger.warn(`[E2B Assistant] Failed to load history: ${error.message}`);
       }

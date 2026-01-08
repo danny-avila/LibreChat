@@ -151,11 +151,35 @@
 ```
 
 **预期结果**:
-- ✅ 文本分段流式显示（思考阶段）
+- ✅ 文本分段流式显示(思考阶段)
 - ✅ 显示工具执行提示："[执行工具: execute_code]"
 - ✅ 工具执行后继续流式输出结果
 - ✅ 所有图表正确生成和显示
 - ✅ 最终文本完整
+
+**已知行为**:
+- ⚠️ 复杂分析最大支持20次迭代
+- ✅ 系统会在第17次迭代时提醒 LLM 提供总结
+- ✅ LLM 应在接近限制时提供结论而非继续执行代码
+- ℹ️ 大多数分析应在10次迭代内完成
+
+**错误处理策略**:
+- ✅ **关键错误**(如文件路径、模块导入)会提供具体指导
+- ✅ **其他错误**会提供通用调试思路,让LLM自行分析traceback解决
+- ✅ 避免为每种特定错误硬编码解决方案,保持系统灵活性
+
+**常见错误示例**(LLM会自动处理):
+- ❌ `ValueError: could not convert string to float`
+  - LLM应检查数据类型,使用 `df.dtypes` 分析,选择正确的列
+- ❌ `KeyError: 'column_name'`
+  - LLM应检查可用列名,使用 `df.columns.tolist()`
+- ❌ `TypeError: unsupported operand type(s)`  
+  - LLM应检查操作的数据类型是否匹配
+
+**系统会提供特定指导的错误**:
+- ❌ `FileNotFoundError` → 显示可用文件路径
+- ❌ `'seaborn' is not a valid package style` → 提供替代样式
+- ❌ `ModuleNotFoundError` → 提示检查允许的库列表
 
 ---
 
@@ -181,7 +205,7 @@
 **操作**: 上传 `titanic.csv`
 **Prompt**:
 ```
-生成3个图表并保存。在生成图表时，请使用matplotlib保存图片到不同的路径格式，观察系统如何处理。
+生成3个图表来分析数据并保存。在生成图表时，请使用matplotlib保存图片到不同的路径格式，观察系统如何处理。
 ```
 
 **预期结果**:
@@ -219,6 +243,10 @@
 
 **说明**:
 此测试验证 download_file 工具已被移除，所有图片持久化由 execute_code 自动处理。LLM 应直接使用 observation 中提供的 image_paths。
+
+**常见错误**:
+- ❌ LLM 尝试 `plt.savefig('/images/plot.png')` - /images/ 目录在 sandbox 中不存在
+- ✅ 正确做法: 只需 `plt.show()` 或 `plt.savefig('/tmp/plot.png')` 然后 `plt.show()`
 
 ---
 

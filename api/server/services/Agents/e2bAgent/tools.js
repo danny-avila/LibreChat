@@ -8,14 +8,16 @@ const { logger } = require('@librechat/data-schemas');
  * @param {string} userId - 用户 ID。
  * @param {string} conversationId - 对话 ID。
  * @param {ServerRequest} req - Express 请求对象，用于获取存储配置。
+ * @param {ContextManager} contextManager - Context Manager实例，用于追踪状态。
  * @returns {Object} 包含工具函数实现的对象。
  */
-const getToolFunctions = (userId, conversationId, req) => {
+const getToolFunctions = (userId, conversationId, req, contextManager) => {
   return {
     /**
      * 在沙箱中执行 Python 代码。
+     * 支持自动恢复：如果sandbox失效，会自动重建并恢复文件状态
      */
-    execute_code: async ({ code }) => {
+    execute_code: async ({ code }, context = {}) => {
       try {
         logger.debug(`[E2BAgent Tools] Executing code for user ${userId}`);
         const result = await codeExecutor.execute(userId, conversationId, code);
@@ -27,6 +29,13 @@ const getToolFunctions = (userId, conversationId, req) => {
           error: result.error,
           has_plots: result.hasVisualization,
         };
+        
+        // Use Context Manager for error recovery guidance
+        if (!result.success && result.error) {
+          const recoveryGuidance = contextManager.generateErrorRecoveryContext(result.error);
+          observation.recovery_guidance = recoveryGuidance;
+          logger.debug('[E2BAgent Tools] Added error recovery guidance');
+        }
 
         if (result.hasVisualization) {
           observation.plot_count = result.images.length;
@@ -44,21 +53,15 @@ const getToolFunctions = (userId, conversationId, req) => {
             }))
           });
           
-          observation.persisted_files = persistedFiles.map(f => ({
-            filename: f.filename,
-            file_id: f.file_id,
-            filepath: f.filepath
-          }));
-          
-          // IMPORTANT: Provide ready-to-use image paths for LLM
-          // This eliminates the need for complex path replacement logic
+          // IMPORTANT: Only provide essential information to LLM
+          // Do NOT expose file_id or internal database details
           observation.image_paths = persistedFiles.map(f => f.filepath);
           observation.images_markdown = persistedFiles.map((f, idx) => 
             `![Plot ${idx}](${f.filepath})`
           ).join('\n');
           
           // Add a helper message for LLM
-          observation.plot_info = `Generated ${result.images.length} plot(s). Use the following paths to display them:\n${observation.images_markdown}`;
+          observation.plot_info = `Generated ${result.images.length} plot(s). Use the following markdown to display them:\n${observation.images_markdown}`;
           
           // Keep the URL map for backward compatibility (but simplified)
           observation.image_url_map = {};
@@ -89,6 +92,18 @@ const getToolFunctions = (userId, conversationId, req) => {
           observation.image_paths.forEach((path, idx) => {
             logger.info(`[E2BAgent Tools]   Image ${idx}: ${path}`);
           });
+          
+          // Track generated artifacts in Context Manager
+          persistedFiles.forEach((file, idx) => {
+            contextManager.addGeneratedArtifact({
+              type: 'image',
+              name: file.filename,
+              path: file.filepath,
+              description: `Plot ${idx} generated from code execution`
+            });
+          });
+          logger.debug(`[E2BAgent Tools] Tracked ${persistedFiles.length} artifacts in Context Manager`);
+          
           logger.debug(`[E2BAgent Tools] Full observation:`, JSON.stringify(observation, null, 2));
           logger.debug(`[E2BAgent Tools] plot_info: ${observation.plot_info}`);
         }
@@ -96,7 +111,113 @@ const getToolFunctions = (userId, conversationId, req) => {
         return observation;
       } catch (error) {
         logger.error(`[E2BAgent Tools] Error in execute_code:`, error);
-        // Return consistent format even on error
+        
+        // 检测sandbox失效错误并自动恢复
+        if (error.message?.includes('Sandbox expired') || 
+            error.message?.includes('sandbox was not found')) {
+          logger.warn(`[E2BAgent Tools] Sandbox expired, attempting automatic recovery...`);
+          
+          try {
+            // 获取E2B client manager
+            const e2bClientManager = require('~/server/services/Endpoints/e2bAssistants/initialize').e2bClientManager;
+            
+            // 从传入的context获取assistant配置
+            const assistantConfig = context.assistant_config || {};
+            
+            // 重新创建sandbox
+            logger.info(`[E2BAgent Tools] Recreating sandbox for conversation ${conversationId}`);
+            await e2bClientManager.createSandbox(
+              assistantConfig.e2b_sandbox_template,
+              userId,
+              conversationId,
+              assistantConfig
+            );
+            
+            // 恢复文件状态（从Context Manager获取文件列表）
+            const uploadedFiles = contextManager.sessionState.uploadedFiles;
+            if (uploadedFiles && uploadedFiles.length > 0) {
+              logger.info(`[E2BAgent Tools] Restoring ${uploadedFiles.length} files to new sandbox`);
+              
+              // 提取file_ids
+              const fileIdsToRestore = uploadedFiles
+                .map(f => f.file_id)
+                .filter(id => id); // 过滤掉undefined
+              
+              if (fileIdsToRestore.length > 0) {
+                // 重新同步文件到sandbox
+                const resyncedFiles = await fileHandler.syncFilesToSandbox({
+                  req,
+                  userId,
+                  conversationId,
+                  fileIds: fileIdsToRestore
+                });
+                
+                logger.info(`[E2BAgent Tools] Successfully restored ${resyncedFiles.length} files`);
+              }
+            }
+            
+            // 重新执行代码
+            logger.info(`[E2BAgent Tools] Retrying code execution after sandbox recovery`);
+            const result = await codeExecutor.execute(userId, conversationId, code);
+            
+            const observation = {
+              success: result.success,
+              stdout: result.stdout,
+              stderr: result.stderr,
+              error: result.error,
+              has_plots: result.hasVisualization,
+              _recovery_note: 'Sandbox was automatically recreated due to timeout'
+            };
+            
+            // Handle visualization results (same as above)
+            if (result.hasVisualization) {
+              observation.plot_count = result.images.length;
+              observation.plot_names = result.images.map(img => img.name);
+              
+              const persistedFiles = await fileHandler.persistArtifacts({
+                req,
+                userId,
+                conversationId,
+                artifacts: result.images.map(img => ({
+                  name: img.name,
+                  path: img.name, 
+                  type: img.mime,
+                  content: img.base64,
+                }))
+              });
+              
+              observation.image_paths = persistedFiles.map(f => f.filepath);
+              observation.images_markdown = persistedFiles.map((f, idx) => 
+                `![Plot ${idx}](${f.filepath})`
+              ).join('\n');
+              
+              persistedFiles.forEach((file, idx) => {
+                contextManager.addGeneratedArtifact({
+                  type: 'image',
+                  name: file.filename,
+                  path: file.filepath,
+                  description: `Plot ${idx} generated from code execution`
+                });
+              });
+            }
+            
+            logger.info(`[E2BAgent Tools] ✓ Sandbox recovery successful`);
+            return observation;
+            
+          } catch (recoveryError) {
+            logger.error(`[E2BAgent Tools] Failed to recover from sandbox expiration:`, recoveryError);
+            return {
+              success: false,
+              error: `Sandbox expired and automatic recovery failed: ${recoveryError.message}. Please try again.`,
+              stdout: '',
+              stderr: recoveryError.message,
+              has_plots: false,
+              plot_count: 0,
+            };
+          }
+        }
+        
+        // 其他错误，正常返回
         const errorObservation = {
           success: false,
           error: error.message,

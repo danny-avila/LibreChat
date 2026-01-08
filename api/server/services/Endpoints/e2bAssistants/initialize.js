@@ -148,12 +148,27 @@ class E2BClientManager {
           logger.info(`[E2B] Code execution result in sandbox ${sandboxData.id}`);
         },
         onError: (error) => {
-          logger.error(`[E2B] Code execution error in sandbox ${sandboxData.id}:`, error);
+          const errorDetails = {
+            message: error?.message || String(error),
+            name: error?.name,
+            stack: error?.stack
+          };
+          logger.error(`[E2B] Code execution error in sandbox ${sandboxData.id}: ${JSON.stringify(errorDetails, null, 2)}`);
         },
         timeoutMs: options.timeoutMs || sandboxData.config?.timeout_ms || this.defaultConfig.timeoutMs,
       });
       
       logger.info(`[E2B] Code execution completed in sandbox ${sandboxData.id}`);
+      
+      // 如果有错误，记录详细信息
+      if (result.error) {
+        const pythonError = {
+          name: result.error.name,
+          message: result.error.message || result.error.value,
+          traceback: result.error.traceback
+        };
+        logger.error(`[E2B] Execution result contains error: ${JSON.stringify(pythonError, null, 2)}`);
+      }
       
       // 修正：根据E2B v2结构，stdout和stderr在logs对象中
       return {
@@ -167,7 +182,24 @@ class E2BClientManager {
         runtime: result.runtime || 0,
       };
     } catch (error) {
-      logger.error(`[E2B] Error executing code in sandbox ${sandboxData.id}:`, error);
+      const exceptionDetails = {
+        message: error.message,
+        name: error.name,
+        code: error.code,
+        stack: error.stack
+      };
+      logger.error(`[E2B] Error executing code in sandbox ${sandboxData.id}: ${JSON.stringify(exceptionDetails, null, 2)}`);
+      
+      // 如果是超时或sandbox不存在错误,清理并重新抛出带提示的错误
+      if (error.message?.includes('sandbox was not found') || 
+          error.message?.includes('timeout') || 
+          error.code === 502) {
+        logger.warn(`[E2B] Sandbox ${sandboxData.id} expired or timed out, cleaning up local reference`);
+        const key = `${userId}:${conversationId}`;
+        this.sandboxes.delete(key);
+        throw new Error('Sandbox expired due to inactivity. Please try again - a new sandbox will be created.');
+      }
+      
       throw new Error(`Code execution failed: ${error.message}`);
     }
   }

@@ -177,47 +177,182 @@
 
 ---
 
-## 2026-01-07 架构优化与Bug修复 ✅
+## 2026-01-07 ~ 2026-01-08 核心系统完善与架构优化 ✅
 
-### ✅ 图片路径架构简化 (Critical)
-- [x] **移除路径替换逻辑**: 彻底移除 `index.js` 中的复杂路径替换代码
-- [x] **直接路径提供**: 在 `tools.js` 中通过 observation 直接提供正确的图片路径给 LLM
-- [x] **observation 增强**: 添加 `image_paths`、`images_markdown`、`plot_info` 等字段
-- [x] **System Prompt 优化**: 明确指示 LLM 使用 observation 中提供的路径
-- [x] **问题解决**: 修复了图片路径双重嵌套问题（如 `/images/.../timestamp-/images/.../plot-0.png`）
+### ✅ 1. Context Manager 完整实现 (架构核心)
+- [x] **Single Source of Truth**: 统一管理会话状态、文件、生成的工件
+- [x] **内部/外部隔离**: 内部存储 `file_id`（带UUID前缀），外部只暴露 clean filename
+- [x] **结构化上下文生成**: 
+  - `generateFilesContext()` - 文件列表上下文
+  - `generateArtifactsContext()` - 生成工件历史
+  - `generateErrorRecoveryContext()` - 动态错误恢复指导
+- [x] **conversationId 追踪**: 每个 artifact 记录所属对话，防止混淆
+- [x] **详细日志**: 构造函数和关键操作的完整日志记录
 
-### ✅ 无限重试循环修复 (Critical)
-- [x] **统一 observation 格式**: 确保成功和失败时返回的 observation 结构完全一致
-- [x] **错误信息标准化**: 失败时返回完整的 `{ success: false, error, stdout: '', stderr, has_plots: false, plot_count: 0 }` 
-- [x] **防止无限循环**: 修复因 observation 格式不一致导致 LLM 无限重试相同代码的问题
-- [x] **maxIterations 保护**: 确保 maxIterations=10 限制正常工作
+### ✅ 2. 双层沙箱恢复系统 (会话持久性)
+- [x] **Layer 1 - 初始化恢复** (`index.js` lines 50-100):
+  - 检测对话中是否已有文件但沙箱不存在
+  - 从 Context Manager 提取 file_ids
+  - 调用 `syncFilesToSandbox` 实际上传文件
+  - **关键修复**: 不仅更新 Context Manager，还要真正上传
+- [x] **Layer 2 - 执行超时恢复** (`tools.js`):
+  - 检测沙箱连接超时/过期
+  - 自动重建沙箱并恢复所有文件
+  - 重新执行用户代码
+- [x] **文件恢复流程**:
+  ```
+  Database (UUID__ prefix) 
+    → Query first message with files
+    → Extract file_ids
+    → syncFilesToSandbox (strips prefix automatically)
+    → Context Manager stores clean name + file_id
+    → LLM only sees: /home/user/titanic.csv
+  ```
+- [x] **恢复日志验证**: "Restoring X files to new sandbox...", "File uploaded successfully"
 
-### ✅ 工具精简与优化
-- [x] **移除 download_file 工具**: 发现该工具与 execute_code 的自动图片持久化功能冗余
-- [x] **更新 System Prompt**: 从提示词中移除 download_file 引用
-- [x] **更新工具定义**: 在 `prompts.js` 中只保留 execute_code 和 upload_file
-- [x] **E2B downloadFile API 修复**: 修复 `initialize.js` 中的 API 调用错误（`response.arrayBuffer()` / `response.text()`）
-- [x] **测试用例更新**: 在 `E2B_AGENT_TEST_CASES.md` 中添加自动图片持久化测试
+### ✅ 3. 迭代控制系统优化 (性能与稳定性)
+- [x] **迭代限制提升**: 从 10 次增加到 **20 次** (`index.js` line 39)
+- [x] **提前提醒机制**: 
+  - 提醒阈值: `maxIterations - 3` (第 17 次迭代)
+  - 消息内容: "⚠️ IMPORTANT: You have X iterations remaining. Please provide your final analysis..."
+  - 触发位置: 流式和非流式模式都实现 (lines 318-330, 373-385)
+- [x] **System Prompt 强化**: 添加 "CRITICAL - Always Provide Explanations" 章节
+  - 强调每次代码执行后必须提供文字说明
+  - 防止无限工具调用循环
+- [x] **问题修复**: 解决 Agent 达到 max iterations 但无任何输出的问题
 
-### ✅ Debug 日志增强
-- [x] **codeExecutor 日志**: 添加完整的执行结果 JSON 日志（stdout, stderr, images）
-- [x] **tools.js 日志**: 添加完整 observation 对象日志（成功和错误）
-- [x] **Agent 流程日志**: 添加工具调用参数和结果的详细日志
-- [x] **流式/非流式分离**: 为流式和非流式模式分别添加 debug 日志
-- [x] **可控可见性**: 使用 `logger.debug()`，需 `DEBUG_LOGGING=true` 或 `LOG_LEVEL=debug` 启用
+### ✅ 4. 错误恢复策略重构 (灵活性与可维护性)
+- [x] **从具体到通用的转变**:
+  ```
+  旧方案: 为每种错误类型硬编码解决方案
+         → pandas ValueError 特定代码
+         → KeyError 特定代码
+         → TypeError 特定代码
+         ✗ 不可扩展，遇到新错误需要修改代码
+  
+  新方案: 分层错误处理
+         → Tier 1: 关键错误（FileNotFound, ImportError, matplotlib）
+         → Tier 2: 通用调试指导（所有其他错误）
+         → Tier 3: LLM 自主分析和修复
+         ✓ 可扩展，无需为每种错误编码
+  ```
+- [x] **移除的方法**: `_generatePandasDataTypeRecovery()` (~20 lines)
+- [x] **新增的方法**: `_generateGenericErrorGuidance()` (contextManager.js lines 320-345)
+  ```javascript
+  💡 DEBUGGING TIPS:
+  1. Read the error traceback carefully
+  2. Check data types - Use df.dtypes, df.info()
+  3. Inspect data - Use df.head(), df.describe()
+  4. Common issues: wrong data types, missing values, wrong columns
+  5. Fix strategy: df.select_dtypes(), df.dropna(), df.astype()
+  ```
+- [x] **设计哲学**: "Teach how to debug" > "Memorize solutions"
 
-### ⏳ 进行中的调试
-- [ ] **高级统计分析失败诊断**: 复杂统计任务（卡方检验、T检验、方差分析等）达到 max iterations
-- [ ] **Debug 日志分析**: 需启用 DEBUG 模式重新测试，查看完整工具交互流程
-- [ ] **根因修复**: 基于 debug 日志确定 LLM 循环原因并修复
+### ✅ 5. 可视化路径问题修复 (用户体验)
+- [x] **System Prompt 增强** (`prompts.js` lines 18-26):
+  ```javascript
+  ## 🎨 VISUALIZATION RULES (CRITICAL)
+  - ✅ CORRECT: Just call plt.show()
+  - ❌ WRONG: plt.savefig('/images/myplot.png')  // /images/ doesn't exist in sandbox
+  ```
+- [x] **Context Manager 动态提醒**: 在文件上下文中提醒 LLM 不要保存到 /images/
+- [x] **问题根源**: LLM 看到用户侧的 `/images/userId/timestamp-plot.png` 路径，误以为沙箱中也有这个目录
+- [x] **解决效果**: LLM 现在只使用 `plt.show()` 或保存到 `/tmp/`，由系统自动持久化
 
-### 📝 文档更新
-- [x] **创建架构文档**: 编写 `E2B_ARCHITECTURE_AND_FIXES.md`，详细记录：
-  - 2026-01-07 的所有问题和解决方案
-  - 完整的系统架构说明
-  - Agent、LLM、E2B Sandbox 的角色和交互
-  - 与 Azure Assistant 的详细对比
-  - 未来优化方向
+### ✅ 6. 图片路径架构简化 (2026-01-07)
+- [x] **移除复杂逻辑**: 彻底删除 `index.js` 中的 `replaceImagePaths()` 方法
+- [x] **直接路径提供**: 在 `tools.js` observation 中直接提供最终路径
+  ```javascript
+  observation.image_paths = persistedFiles.map(f => f.filepath);
+  observation.images_markdown = persistedFiles.map((f, i) => 
+    `![Plot ${i}](${f.filepath})`
+  ).join('\n');
+  ```
+- [x] **System Prompt 指导**: 明确告知 LLM "Use the image paths provided in observation"
+- [x] **修复问题**: 解决路径双重嵌套 bug (`/images/.../timestamp-/images/.../plot-0.png`)
+- [x] **根本原因**: LLM 引用历史图片路径 → 路径替换匹配到子串 → 重复替换 → 嵌套
+- [x] **新架构优势**: 
+  - 不依赖字符串匹配和替换
+  - LLM 直接获得正确路径
+  - 多轮对话中引用历史图片不会出错
+
+### ✅ 7. 无限重试循环修复 (Critical Bug)
+- [x] **问题表现**:
+  ```
+  iteration 1: execute_code → error
+  iteration 2-10: 重复执行相同代码（没有改进）
+  最终: Reached max iterations
+  ```
+- [x] **根本原因**: observation 格式不一致
+  - 成功: `{ success: true, stdout, stderr, has_plots, plot_count, image_paths, ... }`
+  - 失败: `{ success: false, error }` ⚠️ 缺少关键字段
+- [x] **LLM 行为**: 因缺少结构化信息，无法判断失败原因，只能重试
+- [x] **修复方案**: 统一格式，失败时也返回完整结构
+  ```javascript
+  return {
+    success: false,
+    error: error.message,
+    stdout: '',
+    stderr: error.message,
+    has_plots: false,
+    plot_count: 0,
+    image_paths: [],
+    images_markdown: '',
+    plot_info: ''
+  };
+  ```
+- [x] **验证结果**: LLM 现在能正确分析失败原因并调整策略
+
+### ✅ 8. 工具精简与优化
+- [x] **移除 download_file 工具**:
+  - 发现与 execute_code 的自动图片持久化功能 100% 冗余
+  - LLM 困惑何时使用哪个工具
+- [x] **保留工具**: 只有 `execute_code` 和 `upload_file`
+- [x] **System Prompt 更新**: 移除 download_file 引用，强调自动持久化
+- [x] **E2B API 修复** (`initialize.js`):
+  ```javascript
+  // 修复前
+  const content = await sandbox.files.read(path, { format });
+  
+  // 修复后
+  const response = await sandbox.files.read(path, { format });
+  let content;
+  if (format === 'buffer') {
+    const arrayBuffer = await response.arrayBuffer();
+    content = Buffer.from(arrayBuffer);
+  } else {
+    content = await response.text();
+  }
+  ```
+- [x] **测试用例更新**: E2B_AGENT_TEST_CASES.md 添加自动持久化测试
+
+### ✅ 9. 诊断日志增强 (Debug Infrastructure)
+- [x] **codeExecutor.js**:
+  ```javascript
+  logger.debug(`[CodeExecutor] Full result:`, JSON.stringify({
+    success, stdout: stdout?.substring(0, 500), 
+    stderr: stderr?.substring(0, 500), error, 
+    hasVisualization, imageCount
+  }, null, 2));
+  ```
+- [x] **tools.js**:
+  - 成功: 完整 observation 对象
+  - 失败: 完整 error observation
+  - 代码执行前后的状态
+- [x] **index.js**:
+  - 工具调用参数 (JSON.stringify)
+  - 工具执行结果（流式和非流式分别记录）
+  - 迭代计数和状态
+- [x] **控制方式**: 
+  - 使用 `logger.debug()` 而非 `logger.info()`
+  - 需要 `DEBUG_LOGGING=true` 或 `LOG_LEVEL=debug` 启用
+  - 避免生产环境日志污染
+- [x] **用途**: 诊断复杂问题（如高级统计分析为何失败）
+
+### 📝 架构文档
+- [x] **E2B_ARCHITECTURE_AND_FIXES.md**: 完整的系统架构说明
+- [x] **E2B_AGENT_TEST_CASES.md**: 更新错误处理策略说明
+- [x] **TODO.md**: 完整的开发历史和修复记录
 
 ---
 

@@ -76,10 +76,12 @@ class FileHandler {
         if (result.success) {
           logger.debug(`[FileHandler] Successfully synced ${filename} to E2B`);
           return {
-            fileId,
+            file_id: fileId, // Use consistent naming with database schema
+            fileId, // Keep for backwards compatibility
             filename,
             remotePath,
-            size: fileContent.length
+            size: fileContent.length,
+            type: fileDoc.type
           };
         }
         return null;
