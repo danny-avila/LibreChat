@@ -117,7 +117,7 @@ endpoints:
   custom:
     - name: "vLLM"
       apiKey: "vllm"
-      baseURL: "http://100.100.108.100:8080/v1"
+      baseURL: "http://100.100.108.100:8081/v1"
       models:
         default: ['Qwen/Qwen3-30B-A3B']
         fetch: true
@@ -136,7 +136,7 @@ modelSpecs:
   list:
     - name: "sakha-vllm"
       label: "Sakha-vLLM"
-      default: false
+      default: true
       description: " Friedly assistant to help you know more on vicharanashala"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-vled.png"
       preset:
@@ -156,7 +156,7 @@ modelSpecs:
 
     - name: "sakha-claude"
       label: "Sakha-Claude"
-      default: true
+      default: false
       description: " Friedly assistant to help you know more on vicharanashala"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-vled.png"
       preset:
