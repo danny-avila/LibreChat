@@ -1,0 +1,177 @@
+# https://www.librechat.ai/docs/configuration/librechat_yaml
+version: 1.2.1
+
+cache: true
+
+interface:
+  mcpServers:
+    placeholder: "Sources"
+    use: true
+    create: true
+    share: true
+    trustCheckbox:
+      label: "I trust this server"
+      subLabel: "Only enable servers you trust"
+  customWelcome: 'Welcome to Sakha!'
+  fileSearch: false
+  webSearch: false
+  privacyPolicy:
+    externalUrl: 'https://vicharanashala.ai'
+    openNewTab: true
+  termsOfService:
+    externalUrl: 'https://vicharanashala.ai'
+    openNewTab: true
+    modalAcceptance: true
+    modalTitle: 'Terms of Service for Sakha | sakha.vicharanashala.ai'
+    modalContent: |
+      # Terms and Conditions for Sakha / sakha.vicharanashala.ai 
+
+      *Effective Date: December 22, 2025* 
+
+      Welcome to **sakha.vicharanashala.ai**, the informational and research platform for the beta development of Sakha, available at [https://sakha.vicharanashala.ai](https://sakha.vicharanashala.ai). These Terms of Service ("Terms") govern your use of our website and the services we offer. By accessing or using the Website, you agree to be bound by these Terms and our Privacy Policy, accessible at [https://sakha.vicharanashala.ai](https://sakha.vicharanashala.ai). 
+
+      ## 1. Beta Development Notice
+
+      Sakha is currently in a **development beta stage**. As such, the platform, features, and content may be incomplete, experimental, or subject to significant changes. By using the Website, you acknowledge that you understand the platform is in development and may have limitations or bugs. 
+      ## 2. Data Collection and Research Use
+
+      We may collect personal and non-personal data, such as your interactions with the platform, usage patterns, and feedback, to **improve our services and conduct research**. Collected data may be analyzed and used for academic, scientific, or development purposes. By using the Website, you consent to the collection and use of your data for these research purposes.
+
+      ## 3. User Data
+
+      We may collect personal data, such as your name or email address, as described in our Privacy Policy. This information is used solely to provide, improve, and study the platform, and to communicate with users when necessary.
+
+      ## 4. Non-Personal Data and Cookies
+
+      The Website may use cookies and similar technologies to enhance user experience, analyze site usage, and facilitate certain functionalities. By using the Website, you consent to the use of cookies in accordance with our Privacy Policy.
+
+      ## 5. Use of the Website
+
+      You agree to use the Website **only for lawful purposes** and in a manner that does not infringe on the rights of others or disrupt the normal functioning of the platform. Prohibited behaviors include harassing others, transmitting offensive content, or attempting to manipulate or interfere with the platform.
+
+      ## 6. No Resale or Redistribution
+
+      Any code, models, or resources provided for Sakha / vicharanashala.ai are intended for personal or research use only. You may **not resell, redistribute, or otherwise transfer** any such resources without explicit permission from the VicharanaShala-Sakha / vicharanashala.ai team. 
+
+      ## 7. Changes to the Terms
+
+      We reserve the right to modify these Terms at any time. Users will be notified of changes via email or platform updates. Continued use of the Website after changes indicates your consent to the updated Terms.
+
+      ## 9. Contact Information
+
+      If you have any questions about these Terms or the platform, please contact us at **[dled@iitrpr.ac.in](mailto:dled@iitrpr.ac.in)**. 
+
+      By using the Website, you acknowledge that you have read these Terms of Service and understand that Sakha / vicharanashala.ai is a **development beta** platform with data collected for **research purposes**.
+
+
+  endpointsMenu: false
+  modelSelect: false
+  parameters: false
+  sidePanel: false
+  presets: false
+  prompts: false
+  bookmarks: false
+  multiConvo: false
+  agents: false
+  peoplePicker:
+    users: false
+    groups: false
+    roles: false
+  marketplace:
+      use: false
+  fileCitations: false
+  runCode: false
+  # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
+  temporaryChatRetention: 8760
+
+registration:
+  socialLogins: ['google']
+  allowedDomains:
+  - "gmail.com"
+
+mcpServers:
+  golden:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.13:9001/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+  pop:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.13:9002/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+  market:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.13:9003/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+  weather:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.13:9004/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+  faq-videos:
+    type: streamable-http # type can optionally be omitted
+    url: http://100.100.108.13:9005/mcp
+    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+    initTimeout: 120000
+
+
+speech:
+  stt:
+    openai:
+      url: 'http://100.100.108.29:5020/v1/audio/transcriptions'
+      apiKey: ''
+      model: 'whisper-1'
+  speechTab:
+    speechToText:
+      engineSTT: 'external'
+
+actions:
+  allowedDomains:
+    - 'swapi.dev'
+    - 'librechat.ai'
+    - 'google.com'
+
+
+endpoints:
+  
+  custom:
+    - name: "vLLM"
+      apiKey: "vllm"
+      baseURL: "http://iitrpr-vm03:8001/v1"
+      models:
+        default: ['Qwen/Qwen2.5-3B-Instruct']
+        fetch: true
+      titleConvo: true
+      titleModel: "current_model"
+      titleMessageRole: "user"
+      summarize: false
+      summaryModel: "current_model"
+      forcePrompt: false
+      modelDisplayLabel: "Sakha"  # optional display label in UI
+
+
+modelSpecs:
+  enforce: false
+  prioritize: true
+  list:
+    - name: "sakha"
+      label: "Sakha"
+      default: true
+      description: " Friedly assistant to help you know more on vicharanashala"
+      iconURL: "https://storage.googleapis.com/annam-temp-images/logo-vled.png"
+      preset:
+        endpoint: "vLLM"
+        model: "Qwen/Qwen2.5-3B-Instruct"
+        modelLabel: "Sakha"
+        promptPrefix: |
+          You are Sakha, an AI expert helping people know about VicharanaShala Organization.
+
+          Your responses should be informative, concise, and friendly.
+          Do not respond to any inappropriate requests.
+
+          VicharanaShala is a lab led by Dr. S.R. Sudarshan Iyengar at IIT Ropar, India. The lab focuses on research and development in the field of intersection of Education and Artificial Intelligence.
+          The lab aims to create innovative AI-driven solutions to enhance learning experiences and educational outcomes.
+
+          Currently, there is a MERN Stack bootcamp for top achiever interns from NPTEL. 
