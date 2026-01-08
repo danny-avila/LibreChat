@@ -49,16 +49,20 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
       const currentToolOptions = currentOptions[toolId] || {};
       const newDeferred = !currentToolOptions.defer_loading;
 
-      const updatedOptions: AgentToolOptions = {
-        ...currentOptions,
-        [toolId]: {
-          ...currentToolOptions,
-          defer_loading: newDeferred,
-        },
-      };
+      const updatedOptions: AgentToolOptions = { ...currentOptions };
 
-      if (!newDeferred && Object.keys(updatedOptions[toolId]).length === 1) {
-        delete updatedOptions[toolId];
+      if (newDeferred) {
+        updatedOptions[toolId] = {
+          ...currentToolOptions,
+          defer_loading: true,
+        };
+      } else {
+        const { defer_loading: _, ...restOptions } = currentToolOptions;
+        if (Object.keys(restOptions).length === 0) {
+          delete updatedOptions[toolId];
+        } else {
+          updatedOptions[toolId] = restOptions;
+        }
       }
 
       setValue('tool_options', updatedOptions, { shouldDirty: true });
