@@ -63,6 +63,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, isDeepResear
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
   }
+
   const appConfig = req.config;
 
   // TODO: use endpointOption to determine options/modelOptions
@@ -135,10 +136,10 @@ const initializeClient = async ({ req, res, signal, endpointOption, isDeepResear
   );
 
   // Enhance agent instructions for Deep Research mode
-  if (isDeepResearch && primaryConfig.instructions) {
+  if (isDeepResearch) {
     logger.info('[initializeClient] Enhancing agent instructions for Deep Research mode');
-    primaryConfig.instructions = `${primaryConfig.instructions}
 
+    const deepResearchInstructions = `
 === DEEP RESEARCH MODE ACTIVATED ===
 
 You are now conducting in-depth research. Please:
@@ -154,6 +155,12 @@ You are now conducting in-depth research. Please:
 Take your time to think deeply about the question and provide a comprehensive response.
 
 ====================================`;
+
+    if (primaryConfig.instructions) {
+      primaryConfig.instructions = `${primaryConfig.instructions}\n${deepResearchInstructions}`;
+    } else {
+      primaryConfig.instructions = deepResearchInstructions;
+    }
   }
 
   const agent_ids = primaryConfig.agent_ids;
