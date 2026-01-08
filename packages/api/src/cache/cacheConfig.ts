@@ -90,6 +90,17 @@ const cacheConfig = {
   REDIS_USE_ALTERNATIVE_DNS_LOOKUP: isEnabled(process.env.REDIS_USE_ALTERNATIVE_DNS_LOOKUP),
   /** Enable redis cluster without the need of multiple URIs */
   USE_REDIS_CLUSTER: isEnabled(process.env.USE_REDIS_CLUSTER ?? 'false'),
+  /**
+   * Force single-key operations for Redis commands even in non-cluster mode.
+   * Required for AWS ElastiCache Serverless which internally shards data but
+   * doesn't support the Redis Cluster protocol. This avoids CROSSSLOT errors
+   * when using batch operations on a sharded backend.
+   *
+   * Note: When USE_REDIS_CLUSTER=true, single-key operations are always used.
+   * This option only affects behavior when USE_REDIS_CLUSTER=false.
+   * @default false
+   */
+  REDIS_SINGLE_KEY_OPS: isEnabled(process.env.REDIS_SINGLE_KEY_OPS ?? 'false'),
   CI: isEnabled(process.env.CI),
   DEBUG_MEMORY_CACHE: isEnabled(process.env.DEBUG_MEMORY_CACHE),
 

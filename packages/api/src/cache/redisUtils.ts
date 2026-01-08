@@ -31,17 +31,24 @@ export async function batchDeleteKeys(
   }
 
   const size = chunkSize ?? cacheConfig.REDIS_DELETE_CHUNK_SIZE;
-  const mode = cacheConfig.USE_REDIS_CLUSTER ? 'cluster' : 'single-node';
+  // Use single-key operations if cluster mode OR if explicitly enabled for sharded backends like ElastiCache Serverless
+  const useSingleKeyOps = cacheConfig.USE_REDIS_CLUSTER || cacheConfig.REDIS_SINGLE_KEY_OPS;
+  const mode = cacheConfig.USE_REDIS_CLUSTER
+    ? 'cluster'
+    : cacheConfig.REDIS_SINGLE_KEY_OPS
+      ? 'single-key-ops'
+      : 'single-node';
   const deletePromises = [];
 
-  if (cacheConfig.USE_REDIS_CLUSTER) {
-    // Cluster mode: Delete each key individually in parallel chunks to avoid CROSSSLOT errors
+  if (useSingleKeyOps) {
+    // Single-key mode: Delete each key individually in parallel chunks to avoid CROSSSLOT errors
+    // Required for Redis Cluster or sharded backends like AWS ElastiCache Serverless
     for (let i = 0; i < keys.length; i += size) {
       const chunk = keys.slice(i, i + size);
       deletePromises.push(Promise.all(chunk.map((key) => client.del(key))));
     }
   } else {
-    // Single-node mode: Batch delete chunks using DEL with array
+    // Batch mode: Delete chunks using DEL with array (only safe for true single-node Redis)
     for (let i = 0; i < keys.length; i += size) {
       const chunk = keys.slice(i, i + size);
       deletePromises.push(client.del(chunk));
