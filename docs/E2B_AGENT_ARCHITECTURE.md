@@ -1,270 +1,412 @@
-# E2B Agent 架构与问题解决文档
+# E2B Agent 系统架构文档
 
 ## 📋 目录
-1. [问题回顾与解决方案](#1-问题回顾与解决方案)
-2. [Agent 架构详解](#2-agent-架构详解)
-3. [与 Azure Assistant 的对比](#3-与-azure-assistant-的对比)
-4. [优化方向](#4-优化方向)
+1. [系统概述](#1-系统概述)
+2. [整体架构](#2-整体架构)
+3. [核心模块详解](#3-核心模块详解)
+4. [数据流详解](#4-数据流详解)
+5. [与 Azure Assistant 对比](#5-与-azure-assistant-对比)
 
 ---
 
-## 1. 问题回顾与解决方案
+## 1. 系统概述
 
-### 1.1 图片路径双重嵌套问题
+### 1.1 设计目标
+- 提供可扩展的数据分析 Agent 框架
+- 支持自定义工具和 Python 沙箱执行
+- 完全透明的执行流程和调试能力
+- 避免供应商锁定
 
-**问题表现**：
+### 1.2 技术栈
+- **后端**: Node.js + Express.js
+- **LLM**: OpenAI ChatGPT 4o
+- **沙箱**: E2B Cloud Sandbox
+- **数据库**: MongoDB
+- **存储**: Local/S3/Azure Blob
+
+### 1.3 代码统计
 ```
-/images/userId/timestamp-/images/userId/timestamp-plot-0.png
+总代码量: ~3000 行
+核心模块:
+- Controller:       619 行 (api/server/routes/e2bAssistants/controller.js)
+- E2BAgent:         446 行 (api/server/services/Agents/e2bAgent/index.js)
+- Context Manager:  387 行 (api/server/services/Agents/e2bAgent/contextManager.js)
+- Tools:            266 行 (api/server/services/Agents/e2bAgent/tools.js)
+- System Prompts:   154 行 (api/server/services/Agents/e2bAgent/prompts.js)
+- File Handler:     172 行 (api/server/services/Sandbox/fileHandler.js)
+- Code Executor:    163 行 (api/server/services/Sandbox/codeExecutor.js)
+- Sandbox Manager:  748 行 (api/server/services/Endpoints/e2bAssistants/initialize.js)
 ```
-
-**根本原因**：
-- LLM 在多轮对话中会引用之前生成的图片路径
-- 路径替换逻辑会匹配到已经正确的路径中的 `plot-0.png` 子串
-- 导致对已经正确的路径再次进行替换，造成嵌套
-
-**解决方案**：
-```javascript
-// 方案1: 复杂的过滤逻辑（已放弃）
-const validPatterns = Object.keys(imageUrlMap).filter(pattern => 
-  !pattern.startsWith('/images/') && pattern !== actualPath
-);
-
-// 方案2: 完全移除路径替换（最终采用）
-// 在 tools.js 中直接提供正确的路径给 LLM
-observation.image_paths = persistedFiles.map(f => f.filepath);
-observation.images_markdown = persistedFiles.map((f, i) => 
-  `![Plot ${i}](${f.filepath})`
-).join('\n');
-
-// 在 index.js 中不再进行任何替换
-const processedText = finalContent; // 直接使用，不替换
-```
-
-**关键改进**：
-- 移除 `api/server/services/Agents/e2bAgent/index.js` 中的 `replaceImagePaths()` 逻辑
-- 在 `api/server/services/Agents/e2bAgent/tools.js` 的 `execute_code` 返回中直接提供正确路径
-- 在 system prompt 中明确指示 LLM 使用提供的路径
 
 ---
 
-### 1.2 无限重试循环问题
+## 2. 整体架构
 
-**问题表现**：
-```
-iteration 1: execute_code -> fetch failed
-iteration 2-10: 重复执行相同代码
-最终: Reached max iterations (10)
-```
-
-**根本原因**：
-- 代码执行失败时返回的 observation 格式不一致
-- 成功时：`{ success: true, stdout, stderr, has_plots, plot_count, ... }`
-- 失败时：`{ success: false, error }` ⚠️ 缺少关键字段
-- LLM 无法正确理解错误，导致不断重试相同操作
-
-**解决方案**：
-```javascript
-// 文件: api/server/services/Agents/e2bAgent/tools.js
-// 统一错误时的 observation 格式
-return {
-  success: false,
-  error: error.message,
-  stdout: '',
-  stderr: error.message,  // 将错误信息放到 stderr
-  has_plots: false,
-  plot_count: 0,
-  image_paths: [],
-  images_markdown: '',
-  plot_info: ''
-};
-```
-
-**关键改进**：
-- 确保成功和失败时返回的 observation 结构一致
-- LLM 能够从 `stderr` 中读取错误信息
-- 避免因为字段缺失导致 LLM confused
-
----
-
-### 1.3 `download_file` 工具错误
-
-**问题表现**：
-```
-Error: response[parseAs] is not a function
-```
-
-**根本原因**：
-- E2B SDK v2.x 的 `files.read()` 返回的是 Response 对象
-- 需要调用 `.arrayBuffer()` 或 `.text()` 方法解析内容
-- 代码直接使用了返回值，导致方法调用失败
-
-**解决方案**：
-```javascript
-// 文件: api/server/services/Endpoints/e2bAssistants/initialize.js
-// 修复前
-const content = await sandboxData.sandbox.files.read(path, { format });
-
-// 修复后
-const response = await sandboxData.sandbox.files.read(path, { format });
-let content;
-if (format === 'buffer') {
-  const arrayBuffer = await response.arrayBuffer();
-  content = Buffer.from(arrayBuffer);
-} else {
-  content = await response.text();
-}
-```
-
-**最终决策**：
-- 修复了 API 调用问题后，发现 `download_file` 工具是**冗余的**
-- `execute_code` 已经自动持久化所有生成的图片
-- 移除该工具简化了系统，避免 LLM 混淆
-
----
-
-## 2. Agent 架构详解
-
-### 2.1 整体架构图
+### 2.1 系统架构图
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        User Interface                        │
-│                  (LibreChat Frontend)                        │
+│                    LibreChat Frontend                        │
+│                     (React + TypeScript)                     │
 └────────────────────────────┬────────────────────────────────┘
-                             │
+                             │ HTTP/SSE
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    Express.js Backend                        │
-│  /api/assistants/:assistantId/chat (POST)                   │
+│         POST /api/e2b-assistants/:assistantId/chat           │
 └────────────────────────────┬────────────────────────────────┘
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              E2B Assistant Controller                        │
-│  api/server/controllers/assistants/e2b.js                   │
-│  - 初始化 E2BAgent                                           │
-│  - 处理流式响应                                              │
-│  - 调用 sendMessage()                                        │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      E2BAgent                                │
-│  api/server/services/Agents/e2bAgent/index.js               │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  Core Loop (max 10 iterations)                      │    │
-│  │  1. Call LLM with messages + tool definitions       │    │
-│  │  2. LLM responds: text or tool_calls                │    │
-│  │  3. Execute tools (if tool_calls exist)             │    │
-│  │  4. Add tool results to messages                    │    │
-│  │  5. Repeat until LLM stops or max iterations        │    │
-│  └─────────────────────────────────────────────────────┘    │
+│               Controller (619 行)                            │
+│    api/server/routes/e2bAssistants/controller.js            │
 │                                                              │
-│  Components:                                                 │
-│  - Message Management (历史消息)                            │
-│  - Tool Execution (工具调用)                                │
-│  - Streaming Handler (流式输出)                             │
-│  - Sandbox Management (沙箱生命周期)                        │
-└────────────┬──────────────────────┬─────────────────────────┘
-             │                      │
-             ▼                      ▼
-┌────────────────────┐    ┌────────────────────────────┐
-│   LLM Provider     │    │   E2B Sandbox Manager      │
-│   (Anthropic)      │    │   (e2bClientManager)       │
-│                    │    │                            │
-│ - Claude 3.5       │    │ - Sandbox 创建/复用        │
-│ - Tool calling     │    │ - 代码执行                 │
-│ - Streaming        │    │ - 文件上传/下载            │
-└────────────────────┘    └────────┬───────────────────┘
-                                   │
-                                   ▼
-                        ┌────────────────────────┐
-                        │   E2B Cloud Sandbox    │
-                        │   (Python Runtime)     │
-                        │                        │
-                        │ - matplotlib           │
-                        │ - pandas               │
-                        │ - numpy                │
-                        │ - scikit-learn         │
-                        └────────────────────────┘
+│  职责:                                                       │
+│  - 加载历史消息 (getMessages)                                │
+│  - 初始化 E2BAgent                                           │
+│  - 处理 SSE 流式响应                                         │
+│  - 消息持久化 (saveMessage)                                  │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  E2BAgent 核心 (446 行)                      │
+│    api/server/services/Agents/e2bAgent/index.js             │
+│                                                              │
+│  ┌────────────────────────────────────────────────┐         │
+│  │  ReAct 循环 (最大 20 次迭代)                   │         │
+│  │  1. 构建消息 (系统提示 + 历史 + 用户消息)     │         │
+│  │  2. 调用 LLM (messages + tools)               │         │
+│  │  3. 解析响应 (text / tool_calls)              │         │
+│  │  4. 执行工具 (如有 tool_calls)                │         │
+│  │  5. 添加结果到消息历史                         │         │
+│  │  6. 重复直到 LLM 结束或达到最大迭代            │         │
+│  └────────────────────────────────────────────────┘         │
+│                                                              │
+│  依赖组件:                                                   │
+│  - Context Manager (387 行) - 状态管理                      │
+│  - System Prompts (154 行) - 提示词生成                     │
+│  - Tools (266 行) - 工具执行                                │
+└──────────┬──────────────────────┬──────────────────────────┘
+           │                      │
+           ▼                      ▼
+┌──────────────────┐    ┌─────────────────────────────────┐
+│  OpenAI API   │    │   E2B Sandbox Manager (748 行)  │
+│                  │    │   initialize.js                 │
+│ - ChatGPT 4O     │    │                                 │
+│ - Tool calling   │    │ 职责:                           │
+│ - Streaming      │    │ - 沙箱创建/复用/销毁            │
+└──────────────────┘    │ - 文件上传/下载/列表            │
+                        │ - 代码执行接口                  │
+                        └────────┬────────────────────────┘
+                                 │
+                                 ▼
+                      ┌────────────────────────┐
+                      │   E2B Cloud Sandbox    │
+                      │   (Python 3.11+)       │
+                      │                        │
+                      │ 预装库:                │
+                      │ - pandas, numpy        │
+                      │ - matplotlib, seaborn  │
+                      │ - scikit-learn         │
+                      │ - xgboost              │
+                      └────────────────────────┘
+```
+
+### 2.2 请求流程概览
+
+```
+用户发送消息 "分析 titanic.csv"
+  ↓
+Controller: 加载历史消息
+  ↓
+Controller: 初始化 E2BAgent
+  ↓
+Agent: 检查沙箱，恢复文件 (Layer 1)
+  ↓
+Agent: 开始 ReAct 循环
+  │
+  ├─> Iteration 1:
+  │   ├─> LLM 调用 (history + user message)
+  │   ├─> LLM 响应: tool_use(execute_code)
+  │   ├─> Tools: 执行代码 → E2B Sandbox
+  │   ├─> Tools: 检测超时 → 恢复 (Layer 2 如需要)
+  │   ├─> Tools: 持久化图片
+  │   └─> 将结果添加到 messages
+  │
+  ├─> Iteration 2:
+  │   ├─> LLM 调用 (with tool result)
+  │   ├─> LLM 响应: text + stop
+  │   └─> 循环结束
+  │
+  ↓
+Controller: SSE 流式返回
+  ↓
+Controller: 保存消息到数据库
 ```
 
 ---
 
-### 2.2 核心组件详解
+## 3. 核心模块详解
 
-#### 2.2.1 E2BAgent (`index.js`)
+### 3.1 E2BAgent (index.js - 446 行)
 
-**职责**：
-- 协调 LLM 和工具之间的交互
-- 管理对话历史和工具调用记录
-- 处理流式响应
-- 控制迭代次数防止无限循环
+**文件位置**: `api/server/services/Agents/e2bAgent/index.js`
 
-**核心方法**：
+#### 职责
+- 协调 LLM 和工具的交互（ReAct 循环）
+- 管理对话历史和上下文
+- 控制迭代次数和流式输出
+- 管理沙箱生命周期
+
+#### 核心属性
 ```javascript
-class E2BAgent {
-  async sendMessage(userMessage, options) {
-    // 1. 构建初始消息数组
-    const messages = this._buildMessages(userMessage);
+class E2BDataAnalystAgent {
+  constructor(options) {
+    this.userId               // 用户 ID
+    this.conversationId       // 对话 ID
+    this.assistantId          // 助手 ID
+    this.llmProvider          // Anthropic Claude 实例
+    this.tools                // 可用工具 [execute_code, upload_file]
+    this.sandbox              // E2B 沙箱实例
+    this.contextManager       // Context Manager 实例
+    this.maxIterations = 20   // 最大迭代次数
+  }
+}
+```
+
+#### 关键方法
+
+**1. processMessage()** - 消息处理入口 (第 44-102 行)
+```javascript
+功能:
+  - 检查并创建沙箱
+  - Layer 1 沙箱恢复: 从数据库恢复文件
+  - 调用 _runAgent() 执行主逻辑
+
+关键逻辑 (第 50-100 行):
+  if (existingFiles.length > 0 && !sandbox) {
+    // 从数据库查询 file_ids
+    const fileIdsToRestore = existingFiles.map(f => f.file_id);
     
-    // 2. 迭代循环
-    while (iteration <= this.maxIterations) {
-      // 3. 调用 LLM
-      const response = await this.llmProvider.complete(messages, {
-        tools: this.tools,
-        stream: true
-      });
-      
-      // 4. 处理响应
-      if (response.stop_reason === 'tool_use') {
-        // 执行工具
-        const toolResults = await this._executeTools(response.content);
-        messages.push({ role: 'assistant', content: response.content });
-        messages.push({ role: 'user', content: toolResults });
-      } else {
-        // LLM 结束，返回最终内容
-        return response.content;
+    // 实际上传到新沙箱 (关键修复)
+    const restoredFiles = await fileHandler.syncFilesToSandbox({
+      userId, conversationId, fileIds, sandbox
+    });
+    
+    // 更新 Context Manager
+    this.contextManager.updateUploadedFiles(restoredFiles);
+  }
+```
+
+**2. _runAgent()** - ReAct 循环 (第 189-371 行)
+```javascript
+功能:
+  - 构建消息数组 (system + history + user)
+  - 迭代调用 LLM
+  - 检测 tool_calls 并执行
+  - 累积最终内容
+
+流式模式 (第 189-279 行):
+  while (iteration <= this.maxIterations) {
+    const response = await llmProvider.createMessage({
+      messages,
+      tools,
+      stream: true
+    });
+    
+    // 处理流式 token
+    for await (const chunk of response) {
+      if (chunk.type === 'content_block_delta') {
+        this.emit('token', chunk.delta.text);
       }
     }
+    
+    // 检测 tool_calls
+    if (stop_reason === 'tool_use') {
+      const toolResult = await this._executeTools(toolCalls);
+      messages.push(...); // 添加到历史
+      iteration++;
+      continue;
+    }
+    
+    // 迭代提醒 (第 318-330 行)
+    if (iteration >= this.maxIterations - 3) {
+      toolResponseContent += "\n\n⚠️ IMPORTANT: You have X iterations remaining...";
+    }
   }
-}
 ```
 
-**关键特性**：
-- **流式处理**：通过 `onToken` 回调实时返回 LLM 生成的文本
-- **工具编排**：自动检测工具调用并执行
-- **错误恢复**：捕获工具执行错误并返回给 LLM
-- **沙箱管理**：跨轮对话复用同一个沙箱
+**3. _executeTools()** - 工具执行 (第 387-432 行)
+```javascript
+功能:
+  - 遍历 tool_calls 数组
+  - 调用对应的工具函数
+  - 捕获错误并格式化
+
+代码:
+  for (const toolCall of toolCalls) {
+    const toolFunc = this.tools[toolCall.name];
+    const result = await toolFunc(toolCall.input, this);
+    results.push({ tool_use_id, content: result });
+  }
+```
+
+#### 与其他模块的交互
+
+```javascript
+// → Context Manager
+this.contextManager.addUploadedFile(file);
+this.contextManager.generateFilesContext();
+this.contextManager.generateErrorRecoveryContext(error);
+
+// → E2B Sandbox Manager
+const sandbox = await e2bClientManager.getSandbox(userId, conversationId);
+await e2bClientManager.killSandbox(userId, conversationId);
+
+// → LLM Provider
+const response = await this.llmProvider.createMessage({
+  messages,
+  tools: this.tools,
+  stream: true
+});
+
+// → Tools
+const result = await execute_code({ code: '...' }, agent);
+```
 
 ---
 
-#### 2.2.2 Tools (`tools.js`)
+### 3.2 Context Manager (contextManager.js - 387 行)
 
-**当前可用工具**：
+**文件位置**: `api/server/services/Agents/e2bAgent/contextManager.js`
 
-##### 1. `execute_code`
+#### 职责
+- **Single Source of Truth**: 统一管理会话状态
+- 内部存储 file_id (带 UUID 前缀)，外部暴露 clean filename
+- 生成结构化的 LLM 上下文
+- 提供动态错误恢复指导
+
+#### 核心数据结构
 ```javascript
-{
-  name: 'execute_code',
-  description: 'Execute Python code in a sandboxed environment...',
-  input_schema: {
-    type: 'object',
-    properties: {
-      code: { type: 'string', description: 'Python code to execute' }
-    },
-    required: ['code']
+class ContextManager {
+  constructor(userId, conversationId, assistantId) {
+    this.userId = userId;
+    this.conversationId = conversationId;
+    this.assistantId = assistantId;
+    
+    // 核心状态
+    this.uploadedFiles = [];      // [{ filename, file_id, filepath }]
+    this.generatedArtifacts = [];  // [{ name, type, path, conversationId }]
+    this.recentErrors = [];        // [{ type, message, timestamp }]
   }
 }
 ```
 
-**功能**：
-- 在 E2B 沙箱中执行 Python 代码
-- 自动捕获 stdout/stderr
-- 自动提取并持久化图片（matplotlib 等）
-- 返回执行结果和图片路径
+#### 核心方法
 
-**返回格式**：
+**1. 文件管理**
+```javascript
+addUploadedFile(file)         // 添加上传的文件
+updateUploadedFiles(files)    // 批量更新（用于恢复）
+getUploadedFiles()            // 获取文件列表
+```
+
+**2. 工件管理**
+```javascript
+addGeneratedArtifact(artifact)  // 记录生成的图片/文件
+  位置: 第 56-70 行
+  功能: 
+    - 关联 conversationId
+    - 防止跨对话混淆
+    - 增强日志记录
+
+getGeneratedArtifacts()         // 获取工件列表
+```
+
+**3. 上下文生成**
+
+**generateFilesContext()** (第 128-169 行)
+```markdown
+输出示例:
+
+📁 AVAILABLE FILES:
+1. titanic.csv
+   Path: /home/user/titanic.csv
+   Uploaded: 2 minutes ago
+
+💡 IMPORTANT:
+- Use these exact paths in your code
+- Files persist across conversation turns
+- DO NOT try to save plots to /images/ directory
+```
+
+**generateArtifactsContext()** (第 171-196 行)
+```markdown
+输出示例:
+
+📊 GENERATED ARTIFACTS (2):
+1. plot-0.png (image)
+   Path: /images/userId/timestamp-plot-0.png
+2. analysis.csv (data)
+   Path: /images/userId/timestamp-analysis.csv
+```
+
+**generateErrorRecoveryContext()** (第 228-256 行)
+```javascript
+分层错误处理:
+
+Tier 1 - 关键错误 (环境相关):
+  if (error.includes('FileNotFoundError')) {
+    return _generateFileRecoveryGuidance();
+  }
+  if (error.includes('ModuleNotFoundError')) {
+    return _generateLibraryGuidance();
+  }
+
+Tier 2 - 通用调试 (第 320-345 行):
+  return _generateGenericErrorGuidance();
+  
+  输出:
+  💡 DEBUGGING TIPS:
+  1. Read the error traceback carefully
+  2. Check data types - Use df.dtypes, df.info()
+  3. Inspect data - Use df.head(), df.describe()
+  4. Common issues: wrong data types, missing values, wrong columns
+  5. Fix strategies: df.select_dtypes(), df.dropna(), df.astype()
+```
+
+#### 设计理念
+
+**Explicit over Implicit (明确优于隐式)**
+- LLM 不看到内部 UUID 前缀
+- 提供清晰的文件路径和使用说明
+- 动态生成针对性的错误指导
+
+**Single Source of Truth**
+- 所有状态集中管理
+- 避免状态分散导致不一致
+
+---
+
+### 3.3 Tools (tools.js - 266 行)
+
+**文件位置**: `api/server/services/Agents/e2bAgent/tools.js`
+
+#### 职责
+- 定义工具的 schema
+- 实现工具执行逻辑
+- 格式化 observation 返回
+- 处理图片持久化
+- Layer 2 沙箱恢复
+
+#### 可用工具
+
+**execute_code** (第 29-220 行)
+
+**功能**: 在 E2B 沙箱中执行 Python 代码
+
+**返回格式**:
 ```javascript
 {
   success: true,
@@ -276,819 +418,588 @@ class E2BAgent {
     "/images/userId/timestamp-plot-0.png",
     "/images/userId/timestamp-plot-1.png"
   ],
-  images_markdown: "![Plot 0](/images/.../plot-0.png)\n![Plot 1](...)",
-  plot_info: "Generated 2 plot(s). Use the following paths to display them..."
+  images_markdown: "![Plot 0](/images/.../plot-0.png)\n...",
+  plot_info: "Generated 2 plot(s). Use these paths directly..."
 }
 ```
 
-##### 2. `list_files`
+**关键特性**:
+
+**① Layer 2 沙箱恢复** (第 64-109 行)
 ```javascript
-{
-  name: 'list_files',
-  description: 'List files in the sandbox directory',
-  input_schema: {
-    properties: {
-      path: { type: 'string', default: '/home/user' }
-    }
+try {
+  result = await codeExecutor.execute(...);
+} catch (error) {
+  // 检测沙箱超时
+  if (error.message?.includes('timeout') || 
+      error.message?.includes('502')) {
+    
+    logger.warn('Sandbox timeout detected, recreating...');
+    
+    // 重建沙箱
+    sandbox = await e2bClientManager.createSandbox(...);
+    
+    // 恢复文件
+    const existingFiles = agent.contextManager.getUploadedFiles();
+    const fileIds = existingFiles.map(f => f.file_id);
+    const restoredFiles = await fileHandler.syncFilesToSandbox({...});
+    
+    // 重新执行代码
+    result = await codeExecutor.execute(...);
   }
 }
 ```
 
-**功能**：
-- 列出沙箱中指定目录的文件
-- 用于检查数据文件、生成的文件等
+**② 图片自动持久化** (第 117-180 行)
+```javascript
+if (result.images && result.images.length > 0) {
+  // 持久化到存储后端 (Local/S3/Azure)
+  const persistedFiles = await fileHandler.persistArtifacts(
+    agent.userId,
+    sandbox.sandboxId,
+    result.images
+  );
+  
+  // 添加到 Context Manager
+  persistedFiles.forEach(file => {
+    agent.contextManager.addGeneratedArtifact({
+      name: file.filename,
+      type: 'image',
+      path: file.filepath
+    });
+  });
+  
+  // 直接提供正确路径给 LLM
+  observation.image_paths = persistedFiles.map(f => f.filepath);
+  observation.images_markdown = persistedFiles.map((f, i) => 
+    `![Plot ${i}](${f.filepath})`
+  ).join('\n');
+}
+```
+
+**③ 统一错误格式** (第 192-209 行)
+```javascript
+// 失败时也返回完整结构，防止 LLM 无限重试
+return {
+  success: false,
+  error: error.message,
+  stdout: '',
+  stderr: error.message,  // 提供 traceback
+  has_plots: false,
+  plot_count: 0,
+  image_paths: [],
+  images_markdown: '',
+  plot_info: ''
+};
+```
+
+**upload_file** (第 222-237 行)
+- 上传文件到沙箱
+- 记录到 Context Manager
 
 ---
 
-#### 2.2.3 E2B Sandbox Manager (`initialize.js`)
+### 3.4 System Prompts (prompts.js - 154 行)
 
-**职责**：
-- 管理沙箱的生命周期（创建、复用、清理）
-- 提供代码执行接口
-- 处理文件操作（上传、下载、列表）
+**文件位置**: `api/server/services/Agents/e2bAgent/prompts.js`
 
-**核心特性**：
+#### 职责
+- 定义 Agent 的行为规范
+- 说明工具使用方法
+- 提供可视化和错误处理指导
 
-##### 沙箱复用策略
+#### 核心章节
+
+**1. 身份定义** (第 3-7 行)
+```
+You are a data analysis expert with access to a Python sandbox environment.
+You help users analyze data, create visualizations, and derive insights.
+```
+
+**2. 可视化规则** (第 18-26 行)
+```
+## 🎨 VISUALIZATION RULES (CRITICAL)
+- ✅ CORRECT: Just call plt.show()
+- ❌ WRONG: plt.savefig('/images/myplot.png')
+
+The /images/ directory doesn't exist in the sandbox.
+ALL plots are automatically saved and persisted.
+```
+
+**3. 重要指导** (第 86-91 行)
+```
+⚠️ CRITICAL - Always Provide Explanations:
+- After executing code, ALWAYS provide text explanation
+- Don't just execute code repeatedly without analysis
+- Each execution should be followed by interpretation
+```
+
+---
+
+### 3.5 E2B Sandbox Manager (initialize.js - 748 行)
+
+**文件位置**: `api/server/services/Endpoints/e2bAssistants/initialize.js`
+
+#### 职责
+- 管理沙箱的创建、复用、销毁
+- 提供文件操作接口
+- 自动清理过期沙箱
+
+#### 核心类
 ```javascript
 class E2BClientManager {
-  async getSandbox(userId, conversationId) {
-    const key = `${userId}:${conversationId}`;
-    
-    // 1. 检查是否已存在
-    if (this.sandboxes.has(key)) {
-      const sandbox = this.sandboxes.get(key);
-      if (await sandbox.isAlive()) {
-        return sandbox; // 复用
-      }
-    }
-    
-    // 2. 创建新沙箱
-    const newSandbox = await Sandbox.create({
-      template: this.templateId,
-      timeoutMs: 5 * 60 * 1000 // 5分钟
-    });
-    
-    this.sandboxes.set(key, newSandbox);
-    return newSandbox;
+  constructor() {
+    this.sandboxes = new Map();  // key: userId:conversationId
+    this.apiKey = process.env.E2B_API_KEY;
+    this.templateId = process.env.E2B_SANDBOX_TEMPLATE;
+    this.defaultTimeout = 5 * 60 * 1000; // 5 分钟
   }
 }
 ```
 
-**好处**：
-- 同一对话中文件和变量持久化
-- 减少沙箱创建开销
-- 支持多轮交互式分析
+#### 核心方法
+
+**getSandbox()** - 获取或创建 (第 72-115 行)
+```javascript
+const key = `${userId}:${conversationId}`;
+
+// 检查是否已存在
+if (this.sandboxes.has(key)) {
+  const existingSandbox = this.sandboxes.get(key);
+  // 验证沙箱是否活跃
+  if (await this._isSandboxAlive(existingSandbox.sandbox)) {
+    return existingSandbox;  // 复用
+  }
+}
+
+// 创建新沙箱
+return await this.createSandbox(userId, conversationId);
+```
+
+**createSandbox()** - 创建新沙箱 (第 117-170 行)
+- 调用 E2B SDK
+- 存储到 Map
+- 设置超时自动清理
+
+**文件操作接口**
+- uploadFile() (第 172-197 行)
+- listFiles() (第 199-219 行)
+- downloadFile() (第 221-251 行)
 
 ---
 
-#### 2.2.4 Code Executor (`codeExecutor.js`)
+### 3.6 Code Executor (codeExecutor.js - 163 行)
 
-**职责**：
+**文件位置**: `api/server/services/Sandbox/codeExecutor.js`
+
+#### 职责
 - 代码安全验证
 - 调用 E2B 执行代码
-- 提取和格式化图片
+- 提取图片
 - 统一返回格式
 
-**安全验证**：
+#### 核心方法
+
+**execute()** - 执行代码 (第 32-120 行)
 ```javascript
-validateCode(code) {
-  const issues = [];
-  
-  // 检查危险函数
-  const critical = ['exec(', 'eval(', 'compile(', '__import__'];
-  for (const func of critical) {
-    if (code.includes(func)) {
-      issues.push({ level: 'critical', message: `Restricted: ${func}` });
-    }
-  }
-  
-  // 检查敏感导入
-  const warnings = ['import os', 'import sys', 'import subprocess'];
-  for (const lib of warnings) {
-    if (code.includes(lib)) {
-      issues.push({ level: 'warning', message: `Sensitive: ${lib}` });
-    }
-  }
-  
-  return {
-    valid: issues.filter(i => i.level === 'critical').length === 0,
-    issues
-  };
-}
+流程:
+  1. validateCode() - 安全验证
+  2. sandbox.run_python(code)
+  3. _extractImages() - 提取图片
+  4. 格式化返回
 ```
 
----
-
-#### 2.2.5 File Handler (`fileHandler.js`)
-
-**职责**：
-- 持久化沙箱中的 artifacts（图片、数据文件等）
-- 同步用户上传的文件到沙箱
-- 生成唯一的文件路径（timestamp + filename）
-
-**持久化流程**：
+**validateCode()** - 安全验证 (第 122-161 行)
 ```javascript
-async persistArtifact(userId, sandboxId, filename, content) {
-  // 1. 生成唯一路径
-  const timestamp = Date.now();
-  const filepath = `/images/${userId}/${timestamp}-${filename}`;
-  
-  // 2. 保存到本地存储
-  await fs.writeFile(filepath, content);
-  
-  // 3. 返回可访问的 URL
-  return { filepath, filename, size: content.length };
-}
+检查项:
+  Critical: exec(), eval(), compile(), __import__()
+  Warning: import os, import sys, import subprocess
 ```
+
+**_extractImages()** - 图片提取
+- 从 execution.results 提取
+- 支持 PNG, JPEG, SVG
+- Base64 → Buffer
 
 ---
 
-### 2.3 数据流详解
+### 3.7 File Handler (fileHandler.js - 172 行)
 
-#### 完整的请求-响应流程
+**文件位置**: `api/server/services/Sandbox/fileHandler.js`
 
-```
-1. 用户发送消息
-   └─> POST /api/assistants/:id/chat
-       Body: {
-         message: "对 titanic.csv 进行分析",
-         files: [{ file_id: "xxx" }]
-       }
+#### 职责
+- 多存储后端支持 (Local/S3/Azure)
+- 同步文件到沙箱
+- 持久化沙箱生成的文件
+- 创建数据库记录
 
-2. Controller 初始化 E2BAgent
-   └─> new E2BAgent({
-         userId,
-         conversationId,
-         assistantId,
-         llmProvider,
-         tools: [execute_code, list_files]
-       })
+#### 核心方法
 
-3. Agent 同步文件到沙箱
-   └─> fileHandler.syncFilesToSandbox(files)
-       ├─> 下载文件内容
-       ├─> 上传到 E2B sandbox:/home/user/titanic.csv
-       └─> 记录文件映射
-
-4. Agent 开始迭代循环
-   Iteration 1:
-   ├─> LLM 调用 (messages: [user: "分析 titanic.csv"])
-   ├─> LLM 响应: tool_use(execute_code)
-   │   code: "import pandas as pd\ndf = pd.read_csv('titanic.csv')..."
-   │
-   ├─> 执行工具
-   │   ├─> codeExecutor.execute(code)
-   │   ├─> E2B sandbox 执行 Python 代码
-   │   ├─> 提取图片: [plot-0.png, plot-1.png]
-   │   ├─> 持久化图片到 /images/userId/timestamp-plot-X.png
-   │   └─> 返回 observation
-   │
-   └─> 将 tool result 添加到 messages
-
-   Iteration 2:
-   ├─> LLM 调用 (messages: [..., tool_result])
-   ├─> LLM 响应: text + stop
-   │   "这是对 Titanic 数据集的分析结果：\n
-   │    ![Age Distribution](/images/.../plot-0.png)..."
-   │
-   └─> 流式返回最终文本
-
-5. 返回响应给前端
-   └─> SSE stream 或 完整响应
-```
-
----
-
-### 2.4 LLM 的角色与能力
-
-**LLM Provider**: Anthropic Claude 3.5 Sonnet
-
-**关键能力**：
-1. **工具调用（Tool Use）**
-   - 理解用户意图，决定是否需要调用工具
-   - 生成符合工具 schema 的参数
-   - 处理工具返回的结果
-
-2. **代码生成**
-   - 根据用户需求生成 Python 代码
-   - 处理数据分析、可视化、机器学习等任务
-   - 代码质量较高，通常能一次成功
-
-3. **结果解释**
-   - 解读代码执行结果（stdout/stderr）
-   - 分析数据统计结果
-   - 生成带图片的 markdown 响应
-
-4. **上下文管理**
-   - 记住对话历史
-   - 理解文件依赖关系（如记得 titanic.csv 已上传）
-   - 多轮交互中保持连贯性
-
-**System Prompt 优化**：
-```
-You are a data analysis expert with access to a Python sandbox.
-
-Available tools:
-- execute_code: Run Python code. Generated plots are automatically saved.
-  You will receive 'image_paths' in the result. Use these paths directly.
-- list_files: Check available files in the sandbox.
-
-Guidelines:
-1. All matplotlib plots are automatically saved - DO NOT call download_file
-2. Use the 'image_paths' from execute_code results for displaying images
-3. Format: ![Description](image_paths[0])
-4. If code fails, check stderr and adjust your approach
-...
-```
-
----
-
-### 2.5 E2B Sandbox 的角色与能力
-
-**E2B Sandbox**: 云端隔离的 Python 运行时环境
-
-**技术栈**：
-- **Base**: Ubuntu-based container
-- **Python**: 3.11+
-- **预装库**:
-  - 数据处理: pandas, numpy, scipy
-  - 可视化: matplotlib, seaborn, plotly
-  - 机器学习: scikit-learn, xgboost
-  - 深度学习: tensorflow, pytorch (可选)
-
-**核心特性**：
-
-1. **安全隔离**
-   - 每个用户/对话有独立的沙箱
-   - 无法访问宿主机系统
-   - 网络访问受限（可配置）
-
-2. **持久化存储**
-   - 沙箱生命周期内文件持久化
-   - 支持跨多轮对话
-   - 自动清理过期沙箱
-
-3. **资源限制**
-   - CPU/内存配额
-   - 超时控制（默认 5 分钟）
-   - 防止资源滥用
-
-4. **实时输出**
-   - 流式 stdout/stderr
-   - 支持长时间运行的任务
-   - 中途终止能力
-
-**生命周期管理**：
+**syncFilesToSandbox()** - 同步文件 (第 38-136 行)
 ```javascript
-// 创建沙箱
-const sandbox = await Sandbox.create({ template: 'python-data-analysis' });
+功能:
+  - 从数据库获取文件元数据
+  - 从存储后端下载内容
+  - 上传到 E2B 沙箱
+  - 自动清理 UUID 前缀 (第 84-86 行)
+    const cleanFilename = filepath.replace(/^UUID__[0-9a-f-]+__/, '');
+```
 
-// 使用沙箱
-await sandbox.process.start({ cmd: 'python -c "..."' });
-await sandbox.files.write('/home/user/data.csv', content);
-const result = await sandbox.process.start({ cmd: 'python analysis.py' });
-
-// 沙箱自动超时销毁 (5分钟)
-// 或手动销毁
-await sandbox.kill();
+**persistArtifacts()** - 持久化 (第 138-256 行)
+```javascript
+功能:
+  - 从沙箱下载文件
+  - 保存到存储后端
+  - 创建数据库记录
+  - 生成唯一路径: timestamp-filename
 ```
 
 ---
 
-## 3. 与 Azure Assistant 的对比
+### 3.8 Controller (controller.js - 619 行)
 
-### 3.1 架构对比
+**文件位置**: `api/server/routes/e2bAssistants/controller.js`
 
-| 维度 | E2B Agent (自建) | Azure OpenAI Assistant |
-|------|------------------|------------------------|
-| **代码执行** | E2B Cloud Sandbox (自托管) | Azure Code Interpreter (托管) |
-| **LLM** | Anthropic Claude 3.5 | OpenAI GPT-4 |
-| **控制力** | 完全控制（工具、流程、prompt） | 受限于 Azure API |
-| **自定义工具** | 可任意添加自定义工具 | 仅支持预定义工具 |
-| **成本** | E2B + Anthropic 费用 | Azure 按 token 计费 |
-| **流式输出** | 完全自定义控制 | Azure 标准流式 |
-| **沙箱环境** | 可自定义 template | Azure 固定环境 |
-| **文件持久化** | 自行管理（本地/S3） | Azure 文件存储 |
-| **调试能力** | 完全透明（日志、中间状态） | 黑盒，调试困难 |
+#### 职责
+- 处理 HTTP 请求
+- 加载历史消息
+- 初始化 E2BAgent
+- 处理 SSE 流式响应
+- 消息持久化
+
+#### 核心方法
+
+**chat()** - 对话入口 (第 395-588 行)
+```javascript
+流程:
+  1. 验证权限
+  2. 加载助手配置
+  3. 加载历史消息 → 转换为 OpenAI 格式
+  4. 初始化 E2BAgent
+  5. 调用 agent.processMessage()
+  6. SSE 流式返回
+  7. 保存消息到数据库
+```
+
+**历史消息处理** (第 410-463 行)
+```javascript
+// 加载历史
+const messages = await getMessages({ conversationId });
+
+// 转换为 OpenAI 格式
+const history = messages.map(msg => ({
+  role: msg.isCreatedByUser ? 'user' : 'assistant',
+  content: msg.text || msg.content || ''
+}));
+
+// 增强日志 (采样前 2 条)
+logger.info('[E2B Assistant] History sample:');
+messages.slice(0, 2).forEach((msg, i) => {
+  logger.info(`  Message ${i + 1}: ${msg.text?.substring(0, 100)}...`);
+});
+
+// 检测图片路径（防止混淆）
+const imageMatches = historyText.match(/\/images\/[^\s)]+/g) || [];
+```
+
+**SSE 响应** (第 475-530 行)
+```javascript
+// created 事件
+res.write(`event: message\ndata: ${JSON.stringify({
+  type: 'created',
+  message: sanitizeMessageForTransmit(requestMessage)
+})}\n\n`);
+
+// token 流式输出
+agent.on('token', (token) => {
+  res.write(`event: message\ndata: ${JSON.stringify({
+    type: 'content',
+    text: token
+  })}\n\n`);
+});
+
+// final 事件
+res.write(`event: message\ndata: ${JSON.stringify({
+  type: 'final',
+  conversation,
+  requestMessage,
+  responseMessage
+})}\n\n`);
+```
 
 ---
 
-### 3.2 优势分析
+## 4. 数据流详解
 
-#### E2B Agent 的优势
+### 4.1 完整请求-响应流程
 
-✅ **更强的可控性**
-- 完全控制工具定义和执行逻辑
-- 可以添加任意自定义工具（如数据库查询、API 调用等）
+```
+┌────────────────────────────────────────────────────────┐
+│ 1. 用户发送消息                                         │
+│    POST /api/e2b-assistants/:assistantId/chat          │
+│    Body: {                                             │
+│      message: "对 titanic.csv 进行分析",               │
+│      conversationId: "xxx"                             │
+│    }                                                   │
+└────────────────────┬───────────────────────────────────┘
+                     │
+                     ▼
+┌────────────────────────────────────────────────────────┐
+│ 2. Controller.chat()                                   │
+│    - getMessages(conversationId)                       │
+│    - 转换为: [{ role: 'user', content: '...' }, ...]  │
+└────────────────────┬───────────────────────────────────┘
+                     │
+                     ▼
+┌────────────────────────────────────────────────────────┐
+│ 3. new E2BDataAnalystAgent({...})                      │
+│    - 初始化 Context Manager                            │
+│    - 加载工具定义                                      │
+└────────────────────┬───────────────────────────────────┘
+                     │
+                     ▼
+┌────────────────────────────────────────────────────────┐
+│ 4. Agent.processMessage()                              │
+│    Layer 1 沙箱恢复:                                   │
+│    - contextManager.getUploadedFiles()                 │
+│    - 从数据库查询 file_ids                             │
+│    - fileHandler.syncFilesToSandbox()                  │
+│    - contextManager.updateUploadedFiles()              │
+└────────────────────┬───────────────────────────────────┘
+                     │
+                     ▼
+┌────────────────────────────────────────────────────────┐
+│ 5. Agent._runAgent() - ReAct 循环                      │
+│    Iteration 1:                                        │
+│    ┌──────────────────────────────────────────┐       │
+│    │ a. 构建 messages                         │       │
+│    │    [system, ...history, user]            │       │
+│    │                                          │       │
+│    │ b. LLM 调用                              │       │
+│    │    llmProvider.createMessage({           │       │
+│    │      messages,                           │       │
+│    │      tools: [execute_code, upload_file], │       │
+│    │      stream: true                        │       │
+│    │    })                                    │       │
+│    │                                          │       │
+│    │ c. LLM 响应: tool_use                    │       │
+│    │    { name: 'execute_code',               │       │
+│    │      input: { code: '...' } }            │       │
+│    └──────────────────────────────────────────┘       │
+└────────────────────┬───────────────────────────────────┘
+                     │
+                     ▼
+┌────────────────────────────────────────────────────────┐
+│ 6. Agent._executeTools()                               │
+│    → tools.execute_code({ code })                      │
+│      ├─> 检测沙箱超时 (Layer 2 恢复)                   │
+│      ├─> codeExecutor.execute(code)                    │
+│      │   └─> E2B: sandbox.run_python(code)            │
+│      ├─> 提取图片                                      │
+│      ├─> fileHandler.persistArtifacts()                │
+│      │   └─> 保存到 Local/S3/Azure                    │
+│      ├─> contextManager.addGeneratedArtifact()         │
+│      └─> 返回 observation:                             │
+│          { success: true,                              │
+│            image_paths: ["/images/.../plot-0.png"],   │
+│            images_markdown: "![Plot 0](...)..." }      │
+└────────────────────┬───────────────────────────────────┘
+                     │
+                     ▼
+┌────────────────────────────────────────────────────────┐
+│ 7. Agent._runAgent() - Iteration 2                     │
+│    - 将 tool result 添加到 messages                    │
+│    - 再次调用 LLM                                      │
+│    - LLM 响应: text + stop                            │
+│      "分析结果: ![Age](...)..."                        │
+│    - stop_reason === 'end_turn' → 循环结束            │
+└────────────────────┬───────────────────────────────────┘
+                     │
+                     ▼
+┌────────────────────────────────────────────────────────┐
+│ 8. Controller: SSE 流式返回                            │
+│    - 'created' 事件 (用户消息)                         │
+│    - 'content' 事件 (逐 token)                         │
+│    - 'final' 事件 (完整响应)                           │
+└────────────────────┬───────────────────────────────────┘
+                     │
+                     ▼
+┌────────────────────────────────────────────────────────┐
+│ 9. Controller: 保存消息到数据库                        │
+│    - saveMessage(requestMessage)                       │
+│    - saveMessage(responseMessage)                      │
+└────────────────────────────────────────────────────────┘
+```
+
+### 4.2 双层沙箱恢复详解
+
+```
+场景: 用户刷新页面，沙箱已过期
+├─> Layer 1: 初始化时恢复 (index.js processMessage)
+│   │
+│   ├─> 1. 检查 Context Manager
+│   │      existingFiles = contextManager.getUploadedFiles()
+│   │      → [{ filename: 'titanic.csv', file_id: 'xxx' }]
+│   │
+│   ├─> 2. 检查沙箱状态
+│   │      sandbox = await getSandbox(userId, convId)
+│   │      → null (已过期)
+│   │
+│   ├─> 3. 触发恢复
+│   │      // 从数据库查询第一条包含文件的消息
+│   │      const firstMessage = await Message.findOne({
+│   │        conversationId,
+│   │        files: { $exists: true, $ne: [] }
+│   │      });
+│   │      
+│   │      // 提取 file_ids
+│   │      const fileIds = firstMessage.files.map(f => f.file_id);
+│   │      
+│   │      // 实际上传到新沙箱
+│   │      const restoredFiles = await fileHandler
+│   │        .syncFilesToSandbox({ userId, conversationId, fileIds, sandbox });
+│   │      
+│   │      // 更新 Context Manager
+│   │      contextManager.updateUploadedFiles(restoredFiles);
+│   │
+│   └─> 结果: 文件恢复完成，用户无感知
+│
+└─> Layer 2: 执行时恢复 (tools.js execute_code)
+    │
+    ├─> 1. 尝试执行代码
+    │      try {
+    │        result = await codeExecutor.execute(code);
+    │      } catch (error) {
+    │
+    ├─> 2. 检测沙箱超时
+    │        if (error.message.includes('timeout') || 
+    │            error.message.includes('502')) {
+    │
+    ├─> 3. 重建沙箱
+    │          sandbox = await e2bClientManager
+    │            .createSandbox(userId, conversationId);
+    │
+    ├─> 4. 恢复文件
+    │          const existingFiles = agent.contextManager
+    │            .getUploadedFiles();
+    │          const fileIds = existingFiles.map(f => f.file_id);
+    │          await fileHandler.syncFilesToSandbox({...});
+    │
+    ├─> 5. 重新执行代码
+    │          result = await codeExecutor.execute(code);
+    │        }
+    │      }
+    │
+    └─> 结果: 自动恢复并重试，用户无感知
+```
+
+**关键点**:
+- Layer 1: 主动检测和恢复（初始化时）
+- Layer 2: 被动触发恢复（执行失败时）
+- 双保险: 确保会话连续性
+- 实际上传: 不仅更新状态，真正调用 E2B API
+
+---
+
+## 5. 与 Azure Assistant 对比
+
+### 5.1 架构对比
+
+| 维度 | E2B Agent | Azure OpenAI Assistant |
+|------|-----------|----------------------|
+| **控制力** | 完全控制（ReAct 循环、工具、prompt） | 受限于 Azure API |
+| **透明度** | 完全透明（日志、中间状态） | 黑盒 |
+| **自定义工具** | 任意添加 | 仅预定义工具 |
+| **LLM** | 可切换（Claude, GPT-4, etc.） | 仅 GPT-4 |
+| **沙箱** | 自定义环境（任意 Python 库） | 固定环境 |
+| **调试** | 完整日志追踪 | 困难 |
+| **成本** | 精确控制 LLM 调用 | 按 token 计费 |
+| **供应商锁定** | 低 | 高 |
+
+### 5.2 E2B Agent 的优势
+
+✅ **更强可控性**
+- 完全控制 ReAct 循环逻辑
+- 自定义工具（数据库查询、API 调用等）
 - System prompt 完全自定义
 
-✅ **更好的调试体验**
-- 完整的日志追踪（LLM 调用、工具执行、沙箱交互）
-- 可以查看每个 iteration 的中间状态
-- 错误处理逻辑透明
+✅ **更好调试体验**
+- 完整的日志（LLM、工具、沙箱）
+- 可查看每次迭代的中间状态
+- 透明的错误处理
 
 ✅ **更灵活的沙箱**
-- 可以自定义 Python 环境（安装任意库）
-- 可以控制资源限制和超时
-- 支持更多运行时（Node.js, R, Julia 等）
+- 自定义 Python 环境
+- 控制资源限制和超时
+- 支持多种运行时
 
-✅ **更低的供应商锁定**
-- 可以随时切换 LLM provider（OpenAI, Anthropic, Cohere 等）
-- 可以切换沙箱服务（E2B, Modal, AWS Lambda 等）
+✅ **更低供应商锁定**
+- 随时切换 LLM provider
+- 随时切换沙箱服务
 - 不依赖单一云服务商
 
-✅ **更好的成本控制**
-- 可以精确控制 LLM 调用次数
-- 可以设置更细粒度的速率限制
-- 沙箱按需创建和销毁
+### 5.3 适用场景
 
----
+**E2B Agent 更适合**:
+- 需要自定义工具和数据源
+- 需要特定 Python 环境
+- 需要深度调试
+- 大规模部署（成本敏感）
+- 避免供应商锁定
 
-#### Azure Assistant 的优势
-
-✅ **更简单的集成**
-- 开箱即用，无需管理沙箱基础设施
-- Azure 统一的身份和计费系统
-
-✅ **企业级支持**
-- Azure SLA 保证
-- 合规性认证（GDPR, HIPAA 等）
-
-✅ **更快的上手**
-- 不需要理解底层实现
-- API 简单直接
-
----
-
-### 3.3 E2B Agent 是否更优越？
-
-**结论**: **在以下场景中 E2B Agent 更优越**
-
-1. **需要自定义工具**
-   - 如连接内部数据库、调用私有 API
-   - Azure Assistant 无法做到
-
-2. **需要特定 Python 库**
-   - 如特定版本的 PyTorch、TensorFlow
-   - 或公司内部的 Python 包
-
-3. **需要深度调试**
-   - 复杂的数据分析流程
-   - 需要查看中间状态
-
-4. **成本敏感**
-   - 大量用户/请求
-   - 需要精确控制 LLM 调用
-
-5. **避免供应商锁定**
-   - 希望保留切换 LLM 的灵活性
-   - 或切换到自托管模型
-
-**Azure Assistant 更适合**：
+**Azure Assistant 更适合**:
 - 快速原型开发
 - 不需要自定义功能
 - 企业级合规要求
-- 团队没有 DevOps 资源
+- 团队缺乏 DevOps 资源
 
 ---
 
-## 4. 优化方向
+## 6. 总结
 
-### 4.1 短期优化（1-2 周）
+### 6.1 系统特点
 
-#### 4.1.1 增强错误处理
-```javascript
-// 当前问题：LLM 可能陷入无限重试
-// 优化：检测重复失败并提前终止
-
-class E2BAgent {
-  constructor() {
-    this.failureTracker = new Map(); // 跟踪失败的工具调用
-  }
-
-  async _executeTools(toolCalls) {
-    for (const toolCall of toolCalls) {
-      const key = `${toolCall.name}:${hash(toolCall.input)}`;
-      
-      // 检查是否重复失败
-      if (this.failureTracker.get(key) >= 2) {
-        return {
-          error: 'This operation has failed multiple times. Please try a different approach.',
-          success: false
-        };
-      }
-      
-      try {
-        const result = await this.tools[toolCall.name](toolCall.input);
-        this.failureTracker.delete(key); // 成功则清除
-        return result;
-      } catch (error) {
-        this.failureTracker.set(key, (this.failureTracker.get(key) || 0) + 1);
-        throw error;
-      }
-    }
-  }
-}
-```
-
----
-
-#### 4.1.2 添加代码缓存
-```javascript
-// 避免重复执行相同代码
-class CodeExecutor {
-  constructor() {
-    this.cache = new LRU({ max: 100, ttl: 60 * 60 * 1000 }); // 1小时
-  }
-
-  async execute(userId, conversationId, code, options) {
-    const cacheKey = `${conversationId}:${hash(code)}`;
-    
-    // 检查缓存
-    if (this.cache.has(cacheKey) && !options.forceExecute) {
-      logger.info('[CodeExecutor] Using cached result');
-      return this.cache.get(cacheKey);
-    }
-    
-    // 执行并缓存
-    const result = await this._executeInternal(code);
-    this.cache.set(cacheKey, result);
-    return result;
-  }
-}
-```
-
----
-
-#### 4.1.3 改进 Prompt Engineering
-```javascript
-// system prompt 中添加更明确的指引
-const IMPROVED_SYSTEM_PROMPT = `
-You are a data analysis expert. Follow these guidelines strictly:
-
-1. CODE EXECUTION:
-   - Write clean, well-commented code
-   - Handle missing data explicitly
-   - Use try-except blocks for error-prone operations
-
-2. ERROR HANDLING:
-   - If code fails with an error, DO NOT retry the exact same code
-   - Analyze the error message and adjust your approach
-   - If stuck after 2 attempts, explain the issue to the user
-
-3. VISUALIZATION:
-   - All matplotlib plots are automatically saved
-   - You will receive 'image_paths' array in the tool result
-   - Use these paths directly: ![Description](image_paths[0])
-   - DO NOT try to save or download plots manually
-
-4. DATA FILES:
-   - Files uploaded by user are in /home/user/
-   - List files first if unsure about availability
-   - Remember file names across conversation turns
-
-5. MEMORY:
-   - Remember previous analysis results
-   - Avoid redundant calculations
-   - Reference earlier findings when relevant
-`;
-```
-
----
-
-### 4.2 中期优化（1-2 月）
-
-#### 4.2.1 添加数据库连接工具
-```javascript
-// 新工具: query_database
-{
-  name: 'query_database',
-  description: 'Execute SQL query on connected databases',
-  input_schema: {
-    type: 'object',
-    properties: {
-      database: {
-        type: 'string',
-        enum: ['postgres', 'mysql', 'mongodb'],
-        description: 'Database type'
-      },
-      query: {
-        type: 'string',
-        description: 'SQL query or MongoDB aggregation pipeline'
-      },
-      connection_id: {
-        type: 'string',
-        description: 'User\'s database connection ID'
-      }
-    },
-    required: ['database', 'query', 'connection_id']
-  }
-}
-
-// 实现
-async function queryDatabase({ database, query, connection_id }) {
-  // 1. 从用户配置中获取连接信息（加密存储）
-  const connection = await getUserConnection(connection_id);
-  
-  // 2. 在沙箱中执行查询（安全隔离）
-  const result = await sandbox.executeQuery(database, query, connection);
-  
-  // 3. 限制返回行数，避免内存溢出
-  return {
-    rows: result.rows.slice(0, 1000),
-    total_rows: result.total,
-    truncated: result.total > 1000
-  };
-}
-```
-
----
-
-#### 4.2.2 添加 Web 搜索工具
-```javascript
-// 新工具: web_search
-{
-  name: 'web_search',
-  description: 'Search the web for current information',
-  input_schema: {
-    type: 'object',
-    properties: {
-      query: { type: 'string' },
-      num_results: { type: 'number', default: 5 }
-    }
-  }
-}
-
-// 使用案例
-// User: "2024年美国GDP增长率是多少？"
-// LLM: 调用 web_search("美国2024年GDP增长率")
-// 返回最新数据，然后生成回答
-```
-
----
-
-#### 4.2.3 支持多语言沙箱
-```javascript
-// 扩展 execute_code 支持多种语言
-const SUPPORTED_LANGUAGES = {
-  python: { template: 'python-data-analysis', ext: '.py' },
-  javascript: { template: 'node-analysis', ext: '.js' },
-  r: { template: 'r-statistics', ext: '.R' }
-};
-
-async function execute_code({ code, language = 'python' }) {
-  const config = SUPPORTED_LANGUAGES[language];
-  if (!config) {
-    throw new Error(`Unsupported language: ${language}`);
-  }
-  
-  const sandbox = await getSandbox(userId, conversationId, config.template);
-  return await sandbox.execute(code);
-}
-```
-
----
-
-### 4.3 长期优化（3-6 月）
-
-#### 4.3.1 多 Agent 协作
-```javascript
-// Coordinator Agent 协调多个专业 Agent
-class CoordinatorAgent {
-  constructor() {
-    this.agents = {
-      data_analyst: new DataAnalystAgent(),
-      ml_engineer: new MLEngineerAgent(),
-      web_researcher: new WebResearchAgent()
-    };
-  }
-
-  async process(userMessage) {
-    // 1. 分析任务类型
-    const taskType = await this.classifyTask(userMessage);
-    
-    // 2. 分配给专业 Agent
-    if (taskType === 'data_analysis') {
-      return await this.agents.data_analyst.handle(userMessage);
-    } else if (taskType === 'ml_training') {
-      return await this.agents.ml_engineer.handle(userMessage);
-    }
-    
-    // 3. 或协调多个 Agent
-    const dataResult = await this.agents.data_analyst.analyze(data);
-    const insights = await this.agents.web_researcher.findContext(dataResult);
-    return this.synthesize(dataResult, insights);
-  }
-}
-```
-
----
-
-#### 4.3.2 长期记忆系统
-```javascript
-// 使用向量数据库存储对话历史
-class MemoryManager {
-  constructor() {
-    this.vectorDB = new PineconeClient(); // 或 Weaviate, Milvus
-  }
-
-  async storeInteraction(conversationId, interaction) {
-    // 1. 生成 embedding
-    const embedding = await this.embed(interaction.text);
-    
-    // 2. 存储到向量数据库
-    await this.vectorDB.upsert({
-      id: interaction.id,
-      vector: embedding,
-      metadata: {
-        conversation_id: conversationId,
-        timestamp: Date.now(),
-        type: interaction.type, // 'analysis', 'visualization', etc.
-        files_used: interaction.files,
-        results: interaction.results
-      }
-    });
-  }
-
-  async recall(conversationId, query, limit = 5) {
-    // 3. 语义搜索相关历史
-    const queryEmbedding = await this.embed(query);
-    const results = await this.vectorDB.query({
-      vector: queryEmbedding,
-      filter: { conversation_id: conversationId },
-      topK: limit
-    });
-    
-    return results.matches;
-  }
-}
-
-// 使用
-class E2BAgent {
-  async sendMessage(userMessage) {
-    // 检索相关历史
-    const relevantHistory = await this.memory.recall(
-      this.conversationId,
-      userMessage,
-      3
-    );
-    
-    // 添加到 context
-    const messages = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...relevantHistory.map(h => ({ role: 'assistant', content: h.text })),
-      { role: 'user', content: userMessage }
-    ];
-    
-    // 继续正常流程...
-  }
-}
-```
-
----
-
-#### 4.3.3 自动化测试和评估
-```javascript
-// 建立测试套件
-const TEST_CASES = [
-  {
-    name: 'Basic data analysis',
-    prompt: '对 sales.csv 进行基础统计分析',
-    files: ['sales.csv'],
-    expectedOutputs: {
-      hasVisualization: true,
-      minCharts: 2,
-      mentionsStats: ['mean', 'median', 'std']
-    }
-  },
-  {
-    name: 'ML prediction',
-    prompt: '使用逻辑回归预测客户流失',
-    files: ['customers.csv'],
-    expectedOutputs: {
-      hasVisualization: true,
-      mentionsMetrics: ['accuracy', 'precision', 'recall']
-    }
-  }
-];
-
-// 自动化评估
-class AgentEvaluator {
-  async evaluate(agent, testCase) {
-    const result = await agent.sendMessage(testCase.prompt, {
-      files: testCase.files
-    });
-    
-    const score = {
-      completed: result.success,
-      hasVisualization: result.images?.length > 0,
-      chartCount: result.images?.length || 0,
-      mentionsExpectedTerms: this.checkTerms(result.text, testCase.expectedOutputs.mentionsStats)
-    };
-    
-    return score;
-  }
-
-  async runSuite(agent) {
-    const results = [];
-    for (const testCase of TEST_CASES) {
-      const score = await this.evaluate(agent, testCase);
-      results.push({ testCase: testCase.name, score });
-    }
-    
-    return this.generateReport(results);
-  }
-}
-```
-
----
-
-### 4.4 性能优化
-
-#### 4.4.1 并行工具执行
-```javascript
-// 当前：顺序执行多个工具调用
-// 优化：并行执行独立的工具调用
-
-async _executeTools(toolCalls) {
-  // 分析依赖关系
-  const independent = toolCalls.filter(t => !this.hasDependency(t));
-  const dependent = toolCalls.filter(t => this.hasDependency(t));
-  
-  // 并行执行独立工具
-  const results = await Promise.all(
-    independent.map(t => this.tools[t.name](t.input))
-  );
-  
-  // 顺序执行依赖工具
-  for (const toolCall of dependent) {
-    const result = await this.tools[toolCall.name](toolCall.input);
-    results.push(result);
-  }
-  
-  return results;
-}
-```
-
----
-
-#### 4.4.2 沙箱预热
-```javascript
-// 在用户发起请求前预热沙箱
-class SandboxPrewarmer {
-  constructor() {
-    this.pool = new Set();
-    this.targetSize = 3;
-  }
-
-  async maintain() {
-    setInterval(async () => {
-      while (this.pool.size < this.targetSize) {
-        const sandbox = await Sandbox.create({ template: 'python-data-analysis' });
-        this.pool.add(sandbox);
-      }
-    }, 30000); // 每30秒检查一次
-  }
-
-  async getSandbox() {
-    if (this.pool.size > 0) {
-      const sandbox = this.pool.values().next().value;
-      this.pool.delete(sandbox);
-      this.maintain(); // 异步补充
-      return sandbox;
-    }
-    
-    return await Sandbox.create({ template: 'python-data-analysis' });
-  }
-}
-```
-
----
-
-## 5. 总结
-
-### 5.1 当前系统的优势
 ✅ **完全可控**: 工具、prompt、执行流程完全自定义  
 ✅ **高度透明**: 完整的日志和调试能力  
-✅ **灵活扩展**: 可以轻松添加新工具和能力  
+✅ **灵活扩展**: 轻松添加新工具和能力  
 ✅ **成本优化**: 精确控制 LLM 调用和资源使用  
-✅ **供应商独立**: 可以随时切换 LLM 或沙箱服务  
+✅ **供应商独立**: 可随时切换 LLM 或沙箱服务  
 
-### 5.2 当前系统的局限
-⚠️ **复杂性**: 需要管理更多基础设施  
-⚠️ **维护成本**: 需要持续优化和监控  
-⚠️ **学习曲线**: 团队需要理解整个系统架构  
+### 6.2 核心模块总览
 
-### 5.3 适用场景
-- ✅ 需要自定义工具和数据源
-- ✅ 需要特定 Python 环境或库
-- ✅ 需要深度调试和日志追踪
-- ✅ 大规模部署，需要成本控制
-- ✅ 希望避免供应商锁定
+```
+Controller (619 行)
+  ├─> E2BAgent (446 行)
+  │    ├─> Context Manager (387 行)
+  │    ├─> System Prompts (154 行)
+  │    └─> Tools (266 行)
+  │         ├─> Code Executor (163 行)
+  │         └─> File Handler (172 行)
+  └─> E2B Sandbox Manager (748 行)
+```
+
+### 6.3 数据流总结
+
+```
+用户消息 → Controller → Agent → Context Manager
+                               ↓
+                          LLM (Claude)
+                               ↓
+                       Tool Calls (execute_code)
+                               ↓
+                    E2B Sandbox (Python)
+                               ↓
+                      图片持久化 + 数据库
+                               ↓
+                          最终响应
+```
 
 ---
 
-**文档版本**: v1.0  
-**最后更新**: 2026-01-07  
-**维护者**: LibreChat E2B Agent Team
+**文档版本**: v2.0  
+**最后更新**: 2026-01-08  
+**维护者**: LibreChat E2B Agent Team  
+**相关文档**: 
+- [问题解决文档](./E2B_AGENT_FIXES.md)
+- [开发文档](./E2B_DATA_ANALYST_AGENT_DEVELOPMENT.md)
+- [测试用例](./E2B_AGENT_TEST_CASES.md)
