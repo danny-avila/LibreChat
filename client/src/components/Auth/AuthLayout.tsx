@@ -13,6 +13,8 @@ import { LanguageOption } from '~/common';
 import Cookies from 'js-cookie';
 import { useRecoilState } from 'recoil';
 import store from '~/store';
+import { Languages } from 'lucide-react';
+
 
 function AuthLayout({
   children,
@@ -191,9 +193,31 @@ function AuthLayout({
         </div>
       </BlinkAnimation>
       <DisplayError />
-      <div className="absolute bottom-0 left-0 md:m-4">
-        <ThemeSelector />
+
+      <div className="absolute bottom-4 left-4 flex items-center gap-2">
+        <ThemeSelector returnThemeOnly />
+
+        <button
+          onClick={() => setIsLangOpen(true)}
+          aria-label="Select language"
+          className="
+            flex items-center
+            rounded-lg
+            p-2
+            text-foreground
+            transition-colors
+            hover:bg-surface-hover
+            focus-visible:outline-none
+            focus-visible:ring-2
+            focus-visible:ring-blue-600
+            focus-visible:ring-offset-2
+            dark:focus-visible:ring-0
+          "
+        >
+          <Languages className="h-5 w-5 stroke-[1.5]" />
+        </button>
       </div>
+
 
       <main className="flex flex-grow items-center justify-center">
         <div className="w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
