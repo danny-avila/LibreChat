@@ -287,6 +287,10 @@ function extractKeyFromS3Url(fileUrlOrKey) {
     logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${pathname}`);
     return pathname;
   } catch (error) {
+    logger.error(
+      `[extractKeyFromS3Url] Error parsing URL: ${fileUrlOrKey}, Error: ${error.message}`,
+    );
+
     const parts = fileUrlOrKey.split('/');
 
     if (parts.length >= 3 && !fileUrlOrKey.startsWith('http') && !fileUrlOrKey.startsWith('/')) {
