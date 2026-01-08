@@ -134,14 +134,34 @@ modelSpecs:
   enforce: false
   prioritize: true
   list:
-    - name: "sakha"
-      label: "Sakha"
-      default: true
+    - name: "sakha-vllm"
+      label: "Sakha-vLLM"
+      default: false
       description: " Friedly assistant to help you know more on vicharanashala"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-vled.png"
       preset:
         endpoint: "vLLM"
         model: "Qwen/Qwen3-30B-A3B"
+        modelLabel: "Sakha"
+        promptPrefix: |
+          You are Sakha, an AI expert helping people know about VicharanaShala Organization.
+
+          Your responses should be informative, concise, and friendly.
+          Do not respond to any inappropriate requests.
+
+          VicharanaShala is a lab led by Dr. S.R. Sudarshan Iyengar at IIT Ropar, India. The lab focuses on research and development in the field of intersection of Education and Artificial Intelligence.
+          The lab aims to create innovative AI-driven solutions to enhance learning experiences and educational outcomes.
+
+          Currently, there is a MERN Stack bootcamp for top achiever interns from NPTEL. 
+
+    - name: "sakha-claude"
+      label: "Sakha-Claude"
+      default: true
+      description: " Friedly assistant to help you know more on vicharanashala"
+      iconURL: "https://storage.googleapis.com/annam-temp-images/logo-vled.png"
+      preset:
+        endpoint: "anthropic"
+        model: "claude-sonnet-4-5-20250929"
         modelLabel: "Sakha"
         promptPrefix: |
           You are Sakha, an AI expert helping people know about VicharanaShala Organization.
