@@ -374,6 +374,7 @@ async function processRequiredActions(client, requiredActions) {
  *   toolContextMap?: Record<string, unknown>;
  *   userMCPAuthMap?: Record<string, Record<string, string>>;
  *   toolRegistry?: Map<string, import('~/utils/toolClassification').LCTool>;
+ *   hasDeferredTools?: boolean;
  * }>} The agent tools and registry.
  */
 async function loadAgentTools({
@@ -518,7 +519,7 @@ async function loadAgentTools({
   }, {});
 
   /** Build tool registry from MCP tools and create PTC/tool search tools if configured */
-  const { toolRegistry, additionalTools } = await buildToolClassification({
+  const { toolRegistry, additionalTools, hasDeferredTools } = await buildToolClassification({
     loadedTools,
     userId: req.user.id,
     agentId: agent.id,
@@ -533,6 +534,7 @@ async function loadAgentTools({
       userMCPAuthMap,
       toolContextMap,
       toolRegistry,
+      hasDeferredTools,
     };
   }
 
@@ -546,6 +548,7 @@ async function loadAgentTools({
       userMCPAuthMap,
       toolContextMap,
       toolRegistry,
+      hasDeferredTools,
     };
   }
 
@@ -674,6 +677,7 @@ async function loadAgentTools({
     toolContextMap,
     userMCPAuthMap,
     toolRegistry,
+    hasDeferredTools,
   };
 }
 

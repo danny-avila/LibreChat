@@ -335,6 +335,8 @@ export interface BuildToolClassificationResult {
   toolRegistry?: LCToolRegistry;
   /** Additional tools created (PTC and/or tool search) */
   additionalTools: GenericTool[];
+  /** Whether any tools have defer_loading enabled (precomputed for efficiency) */
+  hasDeferredTools: boolean;
 }
 
 /**
@@ -410,12 +412,12 @@ export async function buildToolClassification(
     logger.debug(
       `[buildToolClassification] Agent ${agentId ?? 'undefined'} not allowed for classification, skipping`,
     );
-    return { toolRegistry: undefined, additionalTools };
+    return { toolRegistry: undefined, additionalTools, hasDeferredTools: false };
   }
 
   const mcpTools = loadedTools.filter(isMCPTool);
   if (mcpTools.length === 0) {
-    return { toolRegistry: undefined, additionalTools };
+    return { toolRegistry: undefined, additionalTools, hasDeferredTools: false };
   }
 
   const mcpToolDefs = mcpTools.map(extractMCPToolDefinition);
@@ -433,7 +435,7 @@ export async function buildToolClassification(
     toolRegistry = buildToolRegistryFromEnv(mcpToolDefs);
   } else {
     /** No agent-level config and env-based classification not enabled */
-    return { toolRegistry: undefined, additionalTools };
+    return { toolRegistry: undefined, additionalTools, hasDeferredTools: false };
   }
 
   /** Clean up temporary mcpJsonSchema property from tools now that registry is populated */
@@ -451,7 +453,7 @@ export async function buildToolClassification(
     logger.debug(
       `[buildToolClassification] Agent ${agentId} has no programmatic or deferred tools, skipping PTC/ToolSearch`,
     );
-    return { toolRegistry, additionalTools };
+    return { toolRegistry, additionalTools, hasDeferredTools: false };
   }
 
   /** Tool search uses local mode (no API key needed) */
@@ -485,5 +487,5 @@ export async function buildToolClassification(
     }
   }
 
-  return { toolRegistry, additionalTools };
+  return { toolRegistry, additionalTools, hasDeferredTools };
 }
