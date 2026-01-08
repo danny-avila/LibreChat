@@ -82,7 +82,7 @@ export class DatabaseStack extends cdk.Stack {
 
     private CreateDocumentDBInstance(vpc: ec2.IVpc){
         const docDBSecurityGroup = new ec2.SecurityGroup(this, "DocDBSg", { vpc });
-        docDBSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(5432));
+        docDBSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(27017));
 
         const cluster = new docdb.DatabaseCluster(this, "DocDB", {
             vpc,

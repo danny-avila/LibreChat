@@ -62,23 +62,26 @@ if (isProd) {
   cdk.Tags.of(databaseStack).add("ManagedBy", "CDK");
   cdk.Tags.of(databaseStack).add("Environment", tagEnv);
 }
-
+const certId = isProd ? "d2e66629-d5cc-44ee-9fc7-59228a653d7c" : "b795286d-3044-4e95-ba06-21e81fc5022e"
 // TODO: Add SSM Parameter check for latest librechat version for prod
 const ecsStack = new EcsStack(app, "EcsStack", {
   env: env,
   envVars: envVars,
   mongoImage: `${env.account}.dkr.ecr.${env.region}.amazonaws.com/newjersey/mongo:latest`,
   postgresImage: `${env.account}.dkr.ecr.${env.region}.amazonaws.com/newjersey/pgvector:0.8.0-pg15-trixie`,
+  certificateArn: `arn:aws:acm:${env.region}:${env.account}:certificate/${certId}`
 });
 
-const apiGatewayStack = new ApigStack(app, "ApiGatewayStack", {
-  env: env,
-  envVars: envVars,
-  listener: ecsStack.listener,
-});
-cdk.Tags.of(apiGatewayStack).add("Project", "AIAssistantService");
-cdk.Tags.of(apiGatewayStack).add("ManagedBy", "CDK");
-cdk.Tags.of(apiGatewayStack).add("Environment", tagEnv);
+if (isProd) {
+  const apiGatewayStack = new ApigStack(app, "ApiGatewayStack", {
+    env: env,
+    envVars: envVars,
+    listener: ecsStack.listener,
+  });
+  cdk.Tags.of(apiGatewayStack).add("Project", "AIAssistantService");
+  cdk.Tags.of(apiGatewayStack).add("ManagedBy", "CDK");
+  cdk.Tags.of(apiGatewayStack).add("Environment", tagEnv);
+}
 
 const cognitoStack = new CognitoStack(app, "CognitoStack", {
   env: env,
