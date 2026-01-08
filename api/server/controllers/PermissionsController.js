@@ -19,6 +19,7 @@ const {
   searchPrincipals: searchLocalPrincipals,
   sortPrincipalsByRelevance,
   calculateRelevanceScore,
+  isUserMemberOfGroup,
 } = require('~/models');
 const {
   entraIdPrincipalFeatureEnabled,
@@ -41,6 +42,26 @@ const validateResourceType = (resourceType) => {
     throw new Error(`Invalid resourceType: ${resourceType}. Valid types: ${validTypes.join(', ')}`);
   }
 };
+
+/**
+ * Validates that user is a member of groups they're trying to share with
+ * Prevents users from granting permissions to groups they have no authority over
+ * @param {string} userId - User ID attempting to share
+ * @param {Array<TPrincipal>} principals - List of principals to validate
+ * @throws {Error} If user attempts to share with a group they're not a member of
+ */
+async function validateGroupMembership(userId, principals) {
+  for (const principal of principals) {
+    if (principal.type === PrincipalType.GROUP && principal.id) {
+      const isMember = await isUserMemberOfGroup(userId, principal.id);
+      if (!isMember) {
+        throw new Error(
+          `You can only share with groups you are a member of. Group: ${principal.name || principal.id}`,
+        );
+      }
+    }
+  }
+}
 
 /**
  * Bulk update permissions for a resource (grant, update, remove)
@@ -131,6 +152,20 @@ const updateResourcePermissions = async (req, res) => {
         // Continue with other principals instead of failing the entire operation
         continue;
       }
+    }
+
+    // NEW: Validate group membership before granting permissions
+    try {
+      await validateGroupMembership(userId, validatedPrincipals);
+    } catch (error) {
+      logger.warn('[updateResourcePermissions] Group membership validation failed:', {
+        userId,
+        error: error.message,
+      });
+      return res.status(403).json({
+        error: 'Insufficient permissions',
+        message: error.message,
+      });
     }
 
     // Add removed principals
@@ -391,7 +426,14 @@ const searchPrincipals = async (req, res) => {
       typeFilters = validTypes.length > 0 ? validTypes : null;
     }
 
-    const localResults = await searchLocalPrincipals(query.trim(), searchLimit, typeFilters);
+    // Pass userId to filter groups by membership (only show groups user is member of)
+    const localResults = await searchLocalPrincipals(
+      query.trim(),
+      searchLimit,
+      typeFilters,
+      undefined,
+      req.user.id,
+    );
     let allPrincipals = [...localResults];
 
     const useEntraId = entraIdPrincipalFeatureEnabled(req.user);

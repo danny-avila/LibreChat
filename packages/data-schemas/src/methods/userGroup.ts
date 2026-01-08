@@ -111,6 +111,51 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
+   * Check if a user is a member of a specific group
+   * Supports both MongoDB _id and idOnTheSource for OIDC/Entra users
+   * @param userId - The user ID (ObjectId or string)
+   * @param groupId - The group ID (ObjectId or string)
+   * @param session - Optional MongoDB session for transactions
+   * @returns Promise<boolean> - true if user is a member, false otherwise
+   */
+  async function isUserMemberOfGroup(
+    userId: string | Types.ObjectId,
+    groupId: string | Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<boolean> {
+    const User = mongoose.models.User as Model<IUser>;
+    const Group = mongoose.models.Group as Model<IGroup>;
+
+    // Get user's idOnTheSource for OIDC group matching
+    const userQuery = User.findById(userId, 'idOnTheSource');
+    if (session) {
+      userQuery.session(session);
+    }
+    const user = await userQuery.lean();
+    const userIdOnTheSource = user?.idOnTheSource;
+
+    // Check if user is in group's memberIds
+    const groupQuery = Group.findById(groupId, 'memberIds');
+    if (session) {
+      groupQuery.session(session);
+    }
+    const group = await groupQuery.lean();
+
+    if (!group || !group.memberIds || group.memberIds.length === 0) {
+      return false;
+    }
+
+    // Check both user._id (as string) and user.idOnTheSource
+    const userIdStr = userId.toString();
+    return group.memberIds.some(
+      (memberId) =>
+        memberId === userIdStr ||
+        memberId === userId ||
+        (userIdOnTheSource && memberId === userIdOnTheSource),
+    );
+  }
+
+  /**
    * Create a new group
    * @param groupData - Group data including name, source, and optional idOnTheSource
    * @param session - Optional MongoDB session for transactions
@@ -497,6 +542,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    * @param limitPerType - Maximum number of results to return
    * @param typeFilter - Optional array of types to filter by, or null for all types
    * @param session - Optional MongoDB session for transactions
+   * @param userId - Optional user ID to filter groups by membership (only shows groups user is member of)
    * @returns Array of principals in TPrincipalSearchResult format
    */
   async function searchPrincipals(
@@ -504,6 +550,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     limitPerType: number = 10,
     typeFilter: Array<PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE> | null = null,
     session?: ClientSession,
+    userId?: string | Types.ObjectId,
   ): Promise<TPrincipalSearchResult[]> {
     if (!searchPattern || searchPattern.trim().length === 0) {
       return [];
@@ -549,9 +596,33 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
 
     if (!typeFilter || typeFilter.includes(PrincipalType.GROUP)) {
       promises.push(
-        findGroupsByNamePattern(trimmedPattern, null, limitPerType, session).then((groups) =>
-          groups.map(transformGroupToTPrincipalSearchResult),
-        ),
+        findGroupsByNamePattern(trimmedPattern, null, limitPerType, session).then(async (groups) => {
+          // Filter groups by membership if userId is provided
+          if (userId) {
+            const User = mongoose.models.User as Model<IUser>;
+            const userQuery = User.findById(userId, 'idOnTheSource');
+            if (session) {
+              userQuery.session(session);
+            }
+            const user = await userQuery.lean();
+            const userIdOnTheSource = user?.idOnTheSource;
+            const userIdStr = userId.toString();
+
+            // Only show groups where user is a member
+            groups = groups.filter((group) => {
+              if (!group.memberIds || group.memberIds.length === 0) {
+                return false;
+              }
+              return group.memberIds.some(
+                (memberId) =>
+                  memberId === userIdStr ||
+                  memberId === userId ||
+                  (userIdOnTheSource && memberId === userIdOnTheSource),
+              );
+            });
+          }
+          return groups.map(transformGroupToTPrincipalSearchResult);
+        }),
       );
     } else {
       promises.push(Promise.resolve([]));
@@ -594,6 +665,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     findGroupByExternalId,
     findGroupsByNamePattern,
     findGroupsByMemberId,
+    isUserMemberOfGroup,
     createGroup,
     upsertGroupByExternalId,
     addUserToGroup,
