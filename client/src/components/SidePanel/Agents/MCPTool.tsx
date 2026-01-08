@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
-import { useFormContext } from 'react-hook-form';
+import React, { useState, useCallback, useEffect } from 'react';
+import { ChevronDown, Clock } from 'lucide-react';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { Constants } from 'librechat-data-provider';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
+import type { AgentToolOptions } from 'librechat-data-provider';
 import {
   Label,
   ESide,
@@ -10,6 +11,7 @@ import {
   OGDialog,
   Accordion,
   TrashIcon,
+  TooltipAnchor,
   InfoHoverCard,
   AccordionItem,
   OGDialogTrigger,
@@ -25,12 +27,124 @@ import { cn } from '~/utils';
 export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) {
   const localize = useLocalize();
   const { removeTool } = useRemoveMCPTool();
-  const { getValues, setValue } = useFormContext<AgentForm>();
+  const { getValues, setValue, control } = useFormContext<AgentForm>();
   const { getServerStatusIconProps, getConfigDialogProps } = useMCPServerManager();
 
   const [isFocused, setIsFocused] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const [accordionValue, setAccordionValue] = useState<string>('');
+
+  /** Local state for optimistic updates */
+  const [localDeferredTools, setLocalDeferredTools] = useState<Set<string>>(new Set());
+
+  /** Watch form tool_options for sync */
+  const formToolOptions = useWatch({ control, name: 'tool_options' });
+
+  /** Sync local state with form state */
+  useEffect(() => {
+    const newDeferred = new Set<string>();
+    if (formToolOptions) {
+      for (const [toolId, options] of Object.entries(formToolOptions)) {
+        if (options?.defer_loading) {
+          newDeferred.add(toolId);
+        }
+      }
+    }
+    setLocalDeferredTools(newDeferred);
+  }, [formToolOptions]);
+
+  /** Check if a specific tool has defer_loading enabled (uses local state for optimistic UI) */
+  const isToolDeferred = useCallback(
+    (toolId: string): boolean => localDeferredTools.has(toolId),
+    [localDeferredTools],
+  );
+
+  /** Toggle defer_loading for a specific tool with optimistic update */
+  const toggleToolDefer = useCallback(
+    (toolId: string) => {
+      const newDeferred = !localDeferredTools.has(toolId);
+
+      /** Optimistic update */
+      setLocalDeferredTools((prev) => {
+        const next = new Set(prev);
+        if (newDeferred) {
+          next.add(toolId);
+        } else {
+          next.delete(toolId);
+        }
+        return next;
+      });
+
+      /** Update form state */
+      const currentOptions = getValues('tool_options') || {};
+      const currentToolOptions = currentOptions[toolId] || {};
+
+      const updatedOptions: AgentToolOptions = {
+        ...currentOptions,
+        [toolId]: {
+          ...currentToolOptions,
+          defer_loading: newDeferred,
+        },
+      };
+
+      /** Clean up if no options remain for this tool */
+      if (!newDeferred && Object.keys(updatedOptions[toolId]).length === 1) {
+        delete updatedOptions[toolId];
+      }
+
+      setValue('tool_options', updatedOptions, { shouldDirty: true });
+    },
+    [localDeferredTools, getValues, setValue],
+  );
+
+  /** Check if all server tools are deferred (uses local state) */
+  const areAllToolsDeferred =
+    serverInfo?.tools &&
+    serverInfo.tools.length > 0 &&
+    serverInfo.tools.every((tool) => localDeferredTools.has(tool.tool_id));
+
+  /** Toggle defer_loading for all tools from this server with optimistic update */
+  const toggleDeferAll = useCallback(() => {
+    if (!serverInfo?.tools) return;
+
+    const shouldDefer = !areAllToolsDeferred;
+
+    /** Optimistic update */
+    setLocalDeferredTools((prev) => {
+      const next = new Set(prev);
+      for (const tool of serverInfo.tools!) {
+        if (shouldDefer) {
+          next.add(tool.tool_id);
+        } else {
+          next.delete(tool.tool_id);
+        }
+      }
+      return next;
+    });
+
+    /** Update form state */
+    const currentOptions = getValues('tool_options') || {};
+    const updatedOptions: AgentToolOptions = { ...currentOptions };
+
+    for (const tool of serverInfo.tools) {
+      if (shouldDefer) {
+        updatedOptions[tool.tool_id] = {
+          ...(updatedOptions[tool.tool_id] || {}),
+          defer_loading: true,
+        };
+      } else {
+        if (updatedOptions[tool.tool_id]) {
+          delete updatedOptions[tool.tool_id].defer_loading;
+          /** Clean up empty tool options */
+          if (Object.keys(updatedOptions[tool.tool_id]).length === 0) {
+            delete updatedOptions[tool.tool_id];
+          }
+        }
+      }
+    }
+
+    setValue('tool_options', updatedOptions, { shouldDirty: true });
+  }, [serverInfo?.tools, getValues, setValue, areAllToolsDeferred]);
 
   if (!serverInfo) {
     return null;
@@ -170,6 +284,47 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                           />
                         </div>
 
+                        {/* Defer All toggle - icon only with tooltip */}
+                        <TooltipAnchor
+                          description={
+                            areAllToolsDeferred
+                              ? localize('com_ui_mcp_undefer_all')
+                              : localize('com_ui_mcp_defer_all')
+                          }
+                          side="top"
+                          role="button"
+                          tabIndex={isExpanded ? 0 : -1}
+                          aria-label={
+                            areAllToolsDeferred
+                              ? localize('com_ui_mcp_undefer_all')
+                              : localize('com_ui_mcp_defer_all')
+                          }
+                          aria-pressed={areAllToolsDeferred}
+                          className={cn(
+                            'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
+                            'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                            isExpanded ? 'visible' : 'pointer-events-none invisible',
+                            areAllToolsDeferred
+                              ? 'bg-amber-500/20 text-amber-500 hover:bg-amber-500/30'
+                              : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary',
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleDeferAll();
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              toggleDeferAll();
+                            }
+                          }}
+                        >
+                          <Clock
+                            className={cn('h-4 w-4', areAllToolsDeferred && 'fill-amber-500/30')}
+                          />
+                        </TooltipAnchor>
+
                         <div className="flex items-center gap-1">
                           {/* Caret button for accordion */}
                           <AccordionPrimitive.Trigger asChild>
@@ -230,52 +385,95 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
 
           <AccordionContent className="relative ml-1 pt-1 before:absolute before:bottom-2 before:left-0 before:top-0 before:w-0.5 before:bg-border-medium">
             <div className="space-y-1">
-              {serverInfo.tools?.map((subTool) => (
-                <label
-                  key={subTool.tool_id}
-                  htmlFor={subTool.tool_id}
-                  className={cn(
-                    'group/item border-token-border-light hover:bg-token-surface-secondary flex cursor-pointer items-center rounded-lg border p-2',
-                    'ml-2 mr-1 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
-                  )}
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => {
-                    e.stopPropagation();
-                  }}
-                >
-                  <Checkbox
-                    id={subTool.tool_id}
-                    checked={selectedTools.includes(subTool.tool_id)}
-                    onCheckedChange={(_checked) => {
-                      const newSelectedTools = selectedTools.includes(subTool.tool_id)
-                        ? selectedTools.filter((t) => t !== subTool.tool_id)
-                        : [...selectedTools, subTool.tool_id];
-                      updateFormTools(newSelectedTools);
-                    }}
+              {serverInfo.tools?.map((subTool) => {
+                const isDeferred = isToolDeferred(subTool.tool_id);
+                return (
+                  <label
+                    key={subTool.tool_id}
+                    htmlFor={subTool.tool_id}
+                    className={cn(
+                      'group/item flex cursor-pointer items-center rounded-lg border p-2',
+                      'ml-2 mr-1 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
+                      isDeferred
+                        ? 'border-amber-500/50 bg-amber-500/5 hover:bg-amber-500/10'
+                        : 'border-token-border-light hover:bg-token-surface-secondary',
+                    )}
+                    onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => {
                       e.stopPropagation();
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        const checkbox = e.currentTarget as HTMLButtonElement;
-                        checkbox.click();
-                      }
                     }}
-                    onClick={(e) => e.stopPropagation()}
-                    className={cn(
-                      'relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-border-medium transition-[border-color] duration-200 hover:border-border-heavy focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
-                    )}
-                    aria-label={subTool.metadata.name}
-                  />
-                  <span className="text-token-text-primary select-none">
-                    {subTool.metadata.name}
-                  </span>
-                  {subTool.metadata.description && (
-                    <div className="ml-auto flex items-center opacity-0 transition-opacity duration-200 group-focus-within/item:opacity-100 group-hover/item:opacity-100">
-                      <InfoHoverCard side={ESide.Left} text={subTool.metadata.description} />
+                  >
+                    <Checkbox
+                      id={subTool.tool_id}
+                      checked={selectedTools.includes(subTool.tool_id)}
+                      onCheckedChange={(_checked) => {
+                        const newSelectedTools = selectedTools.includes(subTool.tool_id)
+                          ? selectedTools.filter((t) => t !== subTool.tool_id)
+                          : [...selectedTools, subTool.tool_id];
+                        updateFormTools(newSelectedTools);
+                      }}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          const checkbox = e.currentTarget as HTMLButtonElement;
+                          checkbox.click();
+                        }
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className={cn(
+                        'relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer rounded border border-border-medium transition-[border-color] duration-200 hover:border-border-heavy focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
+                      )}
+                      aria-label={subTool.metadata.name}
+                    />
+                    <span className="text-token-text-primary flex-1 select-none">
+                      {subTool.metadata.name}
+                    </span>
+                    <div className="ml-auto flex items-center gap-1">
+                      {/* Per-tool defer toggle - icon only */}
+                      <TooltipAnchor
+                        description={
+                          isDeferred
+                            ? localize('com_ui_mcp_click_to_undefer')
+                            : localize('com_ui_mcp_click_to_defer')
+                        }
+                        side="top"
+                        role="button"
+                        aria-label={
+                          isDeferred
+                            ? localize('com_ui_mcp_undefer')
+                            : localize('com_ui_mcp_defer_loading')
+                        }
+                        aria-pressed={isDeferred}
+                        className={cn(
+                          'flex h-6 w-6 items-center justify-center rounded transition-all duration-200',
+                          'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                          isDeferred
+                            ? 'bg-amber-500/20 text-amber-500 hover:bg-amber-500/30'
+                            : 'text-text-tertiary opacity-0 hover:bg-surface-hover hover:text-text-primary group-focus-within/item:opacity-100 group-hover/item:opacity-100',
+                        )}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          toggleToolDefer(subTool.tool_id);
+                        }}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleToolDefer(subTool.tool_id);
+                          }
+                        }}
+                      >
+                        <Clock className={cn('h-3.5 w-3.5', isDeferred && 'fill-amber-500/30')} />
+                      </TooltipAnchor>
+                      {subTool.metadata.description && (
+                        <InfoHoverCard side={ESide.Left} text={subTool.metadata.description} />
+                      )}
                     </div>
-                  )}
-                </label>
-              ))}
+                  </label>
+                );
+              })}
             </div>
           </AccordionContent>
         </AccordionItem>

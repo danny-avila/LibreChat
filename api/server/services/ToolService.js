@@ -522,6 +522,7 @@ async function loadAgentTools({
     loadedTools,
     userId: req.user.id,
     agentId: agent.id,
+    agentToolOptions: agent.tool_options,
     loadAuthValues,
   });
   agentTools.push(...additionalTools);

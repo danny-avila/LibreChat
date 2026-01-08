@@ -27,6 +27,7 @@
 import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
 import { EnvVar, createProgrammaticToolCallingTool, createToolSearch } from '@librechat/agents';
+import type { AgentToolOptions } from 'librechat-data-provider';
 import type {
   LCToolRegistry,
   JsonSchemaType,
@@ -181,6 +182,64 @@ export function buildToolRegistryFromEnv(tools: ToolDefinition[]): LCToolRegistr
 }
 
 /**
+ * Builds a tool registry from agent-level tool_options.
+ * This takes precedence over environment variable configuration when provided.
+ *
+ * @param tools - Array of tool definitions
+ * @param agentToolOptions - Per-tool configuration from the agent
+ * @returns Map of tool name to tool definition with classification
+ */
+export function buildToolRegistryFromAgentOptions(
+  tools: ToolDefinition[],
+  agentToolOptions: AgentToolOptions,
+): LCToolRegistry {
+  /** Fall back to env vars for tools not configured at agent level */
+  const programmaticOnly = parseToolList(process.env.TOOL_PROGRAMMATIC_ONLY);
+  const programmaticOnlyExclude = parseToolList(process.env.TOOL_PROGRAMMATIC_ONLY_EXCLUDE);
+  const dualContext = parseToolList(process.env.TOOL_DUAL_CONTEXT);
+  const dualContextExclude = parseToolList(process.env.TOOL_DUAL_CONTEXT_EXCLUDE);
+
+  const registry: LCToolRegistry = new Map();
+
+  for (const tool of tools) {
+    const { name, description, parameters } = tool;
+    const agentOptions = agentToolOptions[name];
+
+    /** Determine allowed_callers: agent options take precedence, then env vars, then default */
+    let allowed_callers: AllowedCaller[];
+    if (agentOptions?.allowed_callers && agentOptions.allowed_callers.length > 0) {
+      allowed_callers = agentOptions.allowed_callers;
+    } else if (toolMatchesPatterns(name, programmaticOnly, programmaticOnlyExclude)) {
+      allowed_callers = ['code_execution'];
+    } else if (toolMatchesPatterns(name, dualContext, dualContextExclude)) {
+      allowed_callers = ['direct', 'code_execution'];
+    } else {
+      allowed_callers = ['direct'];
+    }
+
+    /** Determine defer_loading: agent options take precedence (explicit true/false) */
+    const defer_loading = agentOptions?.defer_loading === true;
+
+    const toolDef: LCTool = {
+      name,
+      allowed_callers,
+      defer_loading,
+    };
+
+    if (description) {
+      toolDef.description = description;
+    }
+    if (parameters) {
+      toolDef.parameters = parameters;
+    }
+
+    registry.set(name, toolDef);
+  }
+
+  return registry;
+}
+
+/**
  * Checks if PTC (Programmatic Tool Calling) should be enabled based on environment configuration.
  * PTC is enabled if any tools or server patterns are configured for programmatic calling.
  * @returns Whether PTC should be enabled
@@ -261,6 +320,8 @@ export interface BuildToolClassificationParams {
   userId: string;
   /** Agent ID (used to check if this agent should have classification features) */
   agentId?: string;
+  /** Per-tool configuration from the agent (takes precedence over env vars) */
+  agentToolOptions?: AgentToolOptions;
   /** Function to load auth values (dependency injection) */
   loadAuthValues: (params: {
     userId: string;
@@ -328,18 +389,20 @@ export function agentHasDeferredTools(toolRegistry: LCToolRegistry): boolean {
  * This function:
  * 1. Checks if the agent is allowed for classification features (via TOOL_CLASSIFICATION_AGENT_IDS)
  * 2. Filters loaded tools for MCP tools
- * 3. Extracts tool definitions and builds the registry from env vars
+ * 3. Extracts tool definitions and builds the registry
+ *    - Uses agent's tool_options if provided (UI-based configuration)
+ *    - Falls back to env vars for tools not configured at agent level
  * 4. Cleans up temporary mcpJsonSchema properties
  * 5. Creates PTC tool only if agent has tools configured for programmatic calling
  * 6. Creates tool search tool only if agent has deferred tools
  *
- * @param params - Parameters including loaded tools, userId, agentId, and dependencies
+ * @param params - Parameters including loaded tools, userId, agentId, agentToolOptions, and dependencies
  * @returns Tool registry and any additional tools created
  */
 export async function buildToolClassification(
   params: BuildToolClassificationParams,
 ): Promise<BuildToolClassificationResult> {
-  const { loadedTools, userId, agentId, loadAuthValues } = params;
+  const { loadedTools, userId, agentId, agentToolOptions, loadAuthValues } = params;
   const additionalTools: GenericTool[] = [];
 
   /** Check if this agent is allowed to have classification features (requires agentId) */
@@ -356,7 +419,22 @@ export async function buildToolClassification(
   }
 
   const mcpToolDefs = mcpTools.map(extractMCPToolDefinition);
-  const toolRegistry = buildToolRegistryFromEnv(mcpToolDefs);
+
+  /**
+   * Build registry from agent's tool_options if provided (UI config).
+   * Environment variable-based classification is only used as fallback
+   * when TOOL_CLASSIFICATION_FROM_ENV=true is explicitly set.
+   */
+  let toolRegistry: LCToolRegistry | undefined;
+
+  if (agentToolOptions && Object.keys(agentToolOptions).length > 0) {
+    toolRegistry = buildToolRegistryFromAgentOptions(mcpToolDefs, agentToolOptions);
+  } else if (process.env.TOOL_CLASSIFICATION_FROM_ENV === 'true') {
+    toolRegistry = buildToolRegistryFromEnv(mcpToolDefs);
+  } else {
+    /** No agent-level config and env-based classification not enabled */
+    return { toolRegistry: undefined, additionalTools };
+  }
 
   /** Clean up temporary mcpJsonSchema property from tools now that registry is populated */
   cleanupMCPToolSchemas(mcpTools);
