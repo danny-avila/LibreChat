@@ -781,5 +781,17 @@ describe('S3 CRUD Operations', () => {
       const result = extractKeyFromS3Url(url);
       expect(result).toBe('dogs/puppy.png');
     });
+
+    it('should handle malformed URL and log error', () => {
+      const malformedUrl = 'ht!tp://invalid url with spaces.com/key';
+      const result = extractKeyFromS3Url(malformedUrl);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('[extractKeyFromS3Url] Error parsing URL:'),
+      );
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining(malformedUrl));
+
+      expect(result).toBe(malformedUrl);
+    });
   });
 });
