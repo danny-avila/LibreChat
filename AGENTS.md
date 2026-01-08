@@ -27,3 +27,6 @@
 - Follow conventional, descriptive commit subjects (e.g., `fix: restore left nav toggle visibility`), grouping related changes.
 - Pull requests should describe the problem, summarize changes, list testing steps/commands, and attach screenshots or logs when UI or config changes are involved.
 - Link relevant issues using `Fixes #123` and ensure CI build/test commands pass before requesting review.
+
+## Persistent Codex Context
+- Always read `docs/codex/ONTARIO_DIRECT_CONTEXT.md` at the start of a session to load OntarioDirect decisions, fixes, and constraints.

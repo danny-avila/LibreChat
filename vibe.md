@@ -1,18 +1,24 @@
 Next Pieces
 
-- Determine why the messages are not being saved on production
+
 - Social Sign In/up
-- Check all features like file search and code interpreter
 - Check all settings and disable any that are not needed
 - After signup, redirect to chat page
 - Update GPT-Icon to new icon
 - Update prompt to handle Ontario Building Code context
 - Create iOS app version
-- Find out speed issue
 - Implement in-app billing for paid plans
+    - Revenue Cat Integration
 - Help and FAQ
+    - Change Help to contact email
+- Website
+    - Terms and Privacy Policy pages
 
 
+DONE
+- Check all features like file search and code interpreter
+- Determine why the messages are not being saved on production
+- Find out speed issue
 
 
 
