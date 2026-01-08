@@ -617,4 +617,223 @@ describe('UserGroup Methods - Detailed Tests', () => {
       expect(sorted).toHaveLength(3);
     });
   });
+
+  describe('isUserMemberOfGroup', () => {
+    let user: mongoose.HydratedDocument<t.IUser>;
+    let userWithExternal: mongoose.HydratedDocument<t.IUser>;
+    let group: mongoose.HydratedDocument<t.IGroup>;
+
+    beforeEach(async () => {
+      user = await User.create({
+        name: 'Test User',
+        email: 'user@test.com',
+        provider: 'local',
+      });
+
+      userWithExternal = await User.create({
+        name: 'External User',
+        email: 'external@test.com',
+        provider: 'openid',
+        idOnTheSource: 'external-user-123',
+      });
+
+      group = await Group.create({
+        name: 'Test Group',
+        source: 'local',
+        memberIds: [(user._id as mongoose.Types.ObjectId).toString()],
+      });
+    });
+
+    test('should return true when user is member by MongoDB _id', async () => {
+      const isMember = await methods.isUserMemberOfGroup(
+        user._id as mongoose.Types.ObjectId,
+        group._id as mongoose.Types.ObjectId,
+      );
+
+      expect(isMember).toBe(true);
+    });
+
+    test('should return false when user is not a member', async () => {
+      const nonMemberUser = await User.create({
+        name: 'Non Member',
+        email: 'nonmember@test.com',
+        provider: 'local',
+      });
+
+      const isMember = await methods.isUserMemberOfGroup(
+        nonMemberUser._id as mongoose.Types.ObjectId,
+        group._id as mongoose.Types.ObjectId,
+      );
+
+      expect(isMember).toBe(false);
+    });
+
+    test('should return true when user is member by idOnTheSource', async () => {
+      // Create group with external user's idOnTheSource
+      const externalGroup = await Group.create({
+        name: 'External Group',
+        source: 'entra',
+        idOnTheSource: 'external-group-entra',
+        memberIds: ['external-user-123'],
+      });
+
+      const isMember = await methods.isUserMemberOfGroup(
+        userWithExternal._id as mongoose.Types.ObjectId,
+        externalGroup._id as mongoose.Types.ObjectId,
+      );
+
+      expect(isMember).toBe(true);
+    });
+
+    test('should return false for group with no members', async () => {
+      const emptyGroup = await Group.create({
+        name: 'Empty Group',
+        source: 'local',
+        memberIds: [],
+      });
+
+      const isMember = await methods.isUserMemberOfGroup(
+        user._id as mongoose.Types.ObjectId,
+        emptyGroup._id as mongoose.Types.ObjectId,
+      );
+
+      expect(isMember).toBe(false);
+    });
+
+    test('should return false for non-existent group', async () => {
+      const fakeGroupId = new mongoose.Types.ObjectId();
+
+      const isMember = await methods.isUserMemberOfGroup(
+        user._id as mongoose.Types.ObjectId,
+        fakeGroupId,
+      );
+
+      expect(isMember).toBe(false);
+    });
+
+    test('should handle string userId', async () => {
+      const isMember = await methods.isUserMemberOfGroup(
+        (user._id as mongoose.Types.ObjectId).toString(),
+        group._id as mongoose.Types.ObjectId,
+      );
+
+      expect(isMember).toBe(true);
+    });
+  });
+
+  describe('searchPrincipals with userId filtering', () => {
+    let user1: mongoose.HydratedDocument<t.IUser>;
+    let user2: mongoose.HydratedDocument<t.IUser>;
+
+    beforeEach(async () => {
+      // Create users
+      user1 = await User.create({
+        name: 'Alice Smith',
+        email: 'alice@test.com',
+        provider: 'entra',
+        idOnTheSource: 'alice-entra-123',
+      });
+
+      user2 = await User.create({
+        name: 'Bob Jones',
+        email: 'bob@test.com',
+        provider: 'local',
+      });
+
+      // Create groups - user1 is member of group1 and group2, user2 is member of group3
+      await Group.create({
+        name: 'Engineering Team',
+        source: 'entra',
+        idOnTheSource: 'engineering-team-entra',
+        memberIds: ['alice-entra-123'],
+      });
+
+      await Group.create({
+        name: 'Marketing Team',
+        source: 'entra',
+        idOnTheSource: 'marketing-team-entra',
+        memberIds: ['alice-entra-123', (user2._id as mongoose.Types.ObjectId).toString()],
+      });
+
+      await Group.create({
+        name: 'Sales Team',
+        source: 'local',
+        memberIds: [(user2._id as mongoose.Types.ObjectId).toString()],
+      });
+    });
+
+    test('should return all matching groups when userId is not provided', async () => {
+      const results = await methods.searchPrincipals('Team', 10, null, undefined, undefined);
+
+      // Should include all users and groups matching "Team"
+      const groupResults = results.filter((r) => r.type === 'group');
+      expect(groupResults).toHaveLength(3); // All three groups match "Team"
+    });
+
+    test('should filter groups by membership when userId is provided', async () => {
+      const results = await methods.searchPrincipals(
+        'Team',
+        10,
+        null,
+        undefined,
+        user1._id as mongoose.Types.ObjectId,
+      );
+
+      const groupResults = results.filter((r) => r.type === 'group');
+      // User1 (Alice) is member of Engineering Team and Marketing Team
+      expect(groupResults).toHaveLength(2);
+      expect(groupResults.map((g) => g.name)).toContain('Engineering Team');
+      expect(groupResults.map((g) => g.name)).toContain('Marketing Team');
+      expect(groupResults.map((g) => g.name)).not.toContain('Sales Team');
+    });
+
+    test('should not filter users when userId is provided', async () => {
+      const results = await methods.searchPrincipals(
+        'Alice',
+        10,
+        null,
+        undefined,
+        user2._id as mongoose.Types.ObjectId,
+      );
+
+      const userResults = results.filter((r) => r.type === 'user');
+      // User2 should still see Alice in search results (users are not filtered)
+      expect(userResults).toHaveLength(1);
+      expect(userResults[0].name).toBe('Alice Smith');
+    });
+
+    test('should return empty groups for user with no group memberships', async () => {
+      // Create a user with no group memberships
+      const lonelyUser = await User.create({
+        name: 'Lonely User',
+        email: 'lonely@test.com',
+        provider: 'local',
+      });
+
+      const results = await methods.searchPrincipals(
+        'Team',
+        10,
+        null,
+        undefined,
+        lonelyUser._id as mongoose.Types.ObjectId,
+      );
+
+      const groupResults = results.filter((r) => r.type === 'group');
+      // Lonely user is not a member of any group
+      expect(groupResults).toHaveLength(0);
+    });
+
+    test('should filter groups by membership using string userId', async () => {
+      const results = await methods.searchPrincipals(
+        'Team',
+        10,
+        null,
+        undefined,
+        (user1._id as mongoose.Types.ObjectId).toString(),
+      );
+
+      const groupResults = results.filter((r) => r.type === 'group');
+      expect(groupResults).toHaveLength(2);
+    });
+  });
 });
