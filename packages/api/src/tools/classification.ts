@@ -376,36 +376,35 @@ export async function buildToolClassification(
     return { toolRegistry, additionalTools };
   }
 
-  try {
-    const authValues = await loadAuthValues({
-      userId,
-      authFields: [EnvVar.CODE_API_KEY],
+  /** Tool search uses local mode (no API key needed) */
+  if (hasDeferredTools) {
+    const toolSearchTool = createToolSearch({
+      mode: 'local',
+      toolRegistry,
     });
-    const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+    additionalTools.push(toolSearchTool);
+    logger.debug(`[buildToolClassification] Tool Search enabled for agent ${agentId}`);
+  }
 
-    if (!codeApiKey) {
-      logger.warn(
-        '[buildToolClassification] PTC/ToolSearch configured but CODE_API_KEY not available',
-      );
-      return { toolRegistry, additionalTools };
-    }
-
-    if (hasProgrammaticTools) {
-      const ptcTool = createProgrammaticToolCallingTool({ apiKey: codeApiKey });
-      additionalTools.push(ptcTool);
-      logger.debug(`[buildToolClassification] PTC tool enabled for agent ${agentId}`);
-    }
-
-    if (hasDeferredTools) {
-      const toolSearchTool = createToolSearch({
-        apiKey: codeApiKey,
-        toolRegistry,
+  /** PTC requires CODE_API_KEY for sandbox execution */
+  if (hasProgrammaticTools) {
+    try {
+      const authValues = await loadAuthValues({
+        userId,
+        authFields: [EnvVar.CODE_API_KEY],
       });
-      additionalTools.push(toolSearchTool);
-      logger.debug(`[buildToolClassification] Tool Search enabled for agent ${agentId}`);
+      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
+
+      if (!codeApiKey) {
+        logger.warn('[buildToolClassification] PTC configured but CODE_API_KEY not available');
+      } else {
+        const ptcTool = createProgrammaticToolCallingTool({ apiKey: codeApiKey });
+        additionalTools.push(ptcTool);
+        logger.debug(`[buildToolClassification] PTC tool enabled for agent ${agentId}`);
+      }
+    } catch (error) {
+      logger.error('[buildToolClassification] Error creating PTC tool:', error);
     }
-  } catch (error) {
-    logger.error('[buildToolClassification] Error creating PTC/ToolSearch tools:', error);
   }
 
   return { toolRegistry, additionalTools };
