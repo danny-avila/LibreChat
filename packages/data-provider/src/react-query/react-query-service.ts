@@ -184,6 +184,7 @@ export const useGetModelsQuery = (
   config?: UseQueryOptions<t.TModelsConfig>,
 ): QueryObserverResult<t.TModelsConfig> => {
   return useQuery<t.TModelsConfig>([QueryKeys.models], () => dataService.getModels(), {
+    initialData: initialModelsConfig,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,

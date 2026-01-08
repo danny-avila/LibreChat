@@ -217,7 +217,7 @@ export default function AgentPanel() {
 
   const { onSelect: onSelectAgent } = useSelectAgent();
 
-  const modelsQuery = useGetModelsQuery();
+  const modelsQuery = useGetModelsQuery({ refetchOnMount: 'always' });
   const basicAgentQuery = useGetAgentByIdQuery(current_agent_id);
 
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
