@@ -1,0 +1,130 @@
+
+name: Build Container Image, Deploy to Production
+on:
+  workflow_dispatch:    
+    inputs:
+      should_build:
+        description: "Build and Push"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      should_deploy:
+        description: "Deploy"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  DOCKER_IMAGE: sakha-client
+  INFISICAL_ENVIRONMENT: prod
+  INFISICAL_SECRET_PATH: /vicharanashala-sakha/LibreChat
+
+
+jobs:
+  build:
+    if: github.event.inputs.should_build == 'true'
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & Push Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+  deploy:
+    needs: [build]
+    if: |
+      always() &&
+      github.event.inputs.should_deploy == 'true' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped')
+    name: Deploy to GCP VM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TS_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_CLIENT_SECRET }}
+          tags: tag:ci-cd
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+                ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+      - name: Deploy ajrasakha-client on VM
+        run: |
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+            set -e
+        
+            IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
+            CONTAINER=ajrasakha-client
+            ENV_FILE=/tmp/ajrasakha.env
+        
+            echo "Pulling image: $IMAGE"
+            docker pull $IMAGE
+        
+            echo "Authenticating with Infisical"
+            export INFISICAL_TOKEN=$(
+              npx @infisical/cli@0.43.40 login \
+                --method=universal-auth \
+                --client-id='${{ secrets.INFISICAL_CLIENT_ID }}' \
+                --client-secret='${{ secrets.INFISICAL_CLIENT_SECRET }}' \
+                --silent \
+                --plain
+            )
+        
+            if [ -z "$INFISICAL_TOKEN" ]; then
+              echo "✗ Infisical authentication failed"
+              exit 1
+            fi
+      
+            echo "Stopping old container (if any)"
+            docker stop $CONTAINER || true
+            docker rm $CONTAINER || true
+        
+            echo "Starting new container (port 3082 → 3080)"
+            docker run -d \
+              --name $CONTAINER \
+              --restart unless-stopped \
+              -p 3082:3080 \
+              -e INFISICAL_ENVIRONMENT='${{ env.INFISICAL_ENVIRONMENT }}' \
+              -e INFISICAL_PROJECT_ID='${{ secrets.INFISICAL_PROJECT_ID }}' \
+              -e INFISICAL_SECRET_PATH='${{ env.INFISICAL_SECRET_PATH }}' \
+              -e INFISICAL_TOKEN="$INFISICAL_TOKEN" \
+              $IMAGE
+        
+            echo "Deployment complete"
+          EOF
