@@ -90,8 +90,7 @@ jobs:
             set -e
         
             IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
-            CONTAINER=ajrasakha-client
-            ENV_FILE=/tmp/ajrasakha.env
+            CONTAINER=${{ env.DOCKER_IMAGE }}
         
             echo "Pulling image: $IMAGE"
             docker pull $IMAGE
