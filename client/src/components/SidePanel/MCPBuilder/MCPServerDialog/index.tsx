@@ -116,7 +116,7 @@ export default function MCPServerDialog({
           className="w-11/12 max-w-md"
           description={localize('com_ui_mcp_server_delete_confirm', { 0: server?.serverName })}
           selection={
-            <Button onClick={handleDelete} variant="destructive" size="sm">
+            <Button onClick={handleDelete} variant="destructive">
               {isDeleting ? <Spinner /> : localize('com_ui_delete')}
             </Button>
           }

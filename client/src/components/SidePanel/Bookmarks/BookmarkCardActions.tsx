@@ -1,14 +1,15 @@
 import { useState, useRef, useCallback } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
-import type { TConversationTag } from 'librechat-data-provider';
 import {
   Button,
+  Spinner,
   OGDialog,
+  TooltipAnchor,
   OGDialogTrigger,
   OGDialogTemplate,
-  TooltipAnchor,
   useToastContext,
 } from '@librechat/client';
+import type { TConversationTag } from 'librechat-data-provider';
 import { useDeleteConversationTagMutation } from '~/data-provider';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import { NotificationSeverity } from '~/common';
@@ -42,7 +43,9 @@ export default function BookmarkCardActions({ bookmark }: BookmarkCardActionsPro
     },
   });
 
-  const confirmDelete = useCallback(async () => {
+  const isDeleting = deleteBookmarkMutation.isLoading;
+
+  const handleDelete = useCallback(async () => {
     await deleteBookmarkMutation.mutateAsync(bookmark.tag);
   }, [bookmark.tag, deleteBookmarkMutation]);
 
@@ -97,20 +100,14 @@ export default function BookmarkCardActions({ bookmark }: BookmarkCardActionsPro
           />
         </OGDialogTrigger>
         <OGDialogTemplate
-          showCloseButton={false}
           title={localize('com_ui_bookmarks_delete')}
-          className="max-w-[450px]"
-          main={
-            <p className="text-left text-sm text-text-secondary">
-              {localize('com_ui_bookmark_delete_confirm')} <strong>{bookmark.tag}</strong>
-            </p>
+          className="w-11/12 max-w-md"
+          description={localize('com_ui_bookmark_delete_confirm', { 0: bookmark.tag })}
+          selection={
+            <Button onClick={handleDelete} variant="destructive">
+              {isDeleting ? <Spinner /> : localize('com_ui_delete')}
+            </Button>
           }
-          selection={{
-            selectHandler: confirmDelete,
-            selectClasses:
-              'bg-destructive text-white transition-all duration-200 hover:bg-destructive/80',
-            selectText: localize('com_ui_delete'),
-          }}
         />
       </OGDialog>
     </div>
