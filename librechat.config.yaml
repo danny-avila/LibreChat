@@ -90,31 +90,9 @@ registration:
   - "gmail.com"
 
 mcpServers:
-  golden:
-    type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.13:9001/mcp
-    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-    initTimeout: 120000
-  pop:
-    type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.13:9002/mcp
-    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-    initTimeout: 120000
-  market:
-    type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.13:9003/mcp
-    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-    initTimeout: 120000
-  weather:
-    type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.13:9004/mcp
-    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-    initTimeout: 120000
-  faq-videos:
-    type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.13:9005/mcp
-    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-    initTimeout: 120000
+  faq-server:
+    url: http://100.100.108.42:9010/mcp
+    type: streamable-http
 
 
 speech:
@@ -139,9 +117,9 @@ endpoints:
   custom:
     - name: "vLLM"
       apiKey: "vllm"
-      baseURL: "http://iitrpr-vm03:8001/v1"
+      baseURL: "http://100.100.108.100:8080/v1"
       models:
-        default: ['Qwen/Qwen2.5-3B-Instruct']
+        default: ['Qwen/Qwen3-30B-A3B']
         fetch: true
       titleConvo: true
       titleModel: "current_model"
@@ -163,7 +141,7 @@ modelSpecs:
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-vled.png"
       preset:
         endpoint: "vLLM"
-        model: "Qwen/Qwen2.5-3B-Instruct"
+        model: "Qwen/Qwen3-30B-A3B"
         modelLabel: "Sakha"
         promptPrefix: |
           You are Sakha, an AI expert helping people know about VicharanaShala Organization.
