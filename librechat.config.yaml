@@ -64,8 +64,8 @@ interface:
       By using the Website, you acknowledge that you have read these Terms of Service and understand that Sakha / vicharanashala.ai is a **development beta** platform with data collected for **research purposes**.
 
 
-  endpointsMenu: false
-  modelSelect: false
+  endpointsMenu: true
+  modelSelect: true
   parameters: false
   sidePanel: false
   presets: false
