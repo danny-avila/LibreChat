@@ -12,6 +12,7 @@ export interface RenderMCPIconOptions {
   alt?: string;
   fallbackIcon?: ReactNode;
   wrapDefault?: boolean;
+  iconSize?: 'sm' | 'md' | 'lg';
 }
 
 export function renderMCPIcon({
@@ -23,6 +24,7 @@ export function renderMCPIcon({
   alt,
   fallbackIcon,
   wrapDefault = false,
+  iconSize = 'md',
 }: RenderMCPIconOptions): ReactNode {
   const altText = alt || displayName || name || serverName || '';
   const isClickHouse = serverName?.toLowerCase().includes('clickhouse') ?? false;
@@ -42,16 +44,17 @@ export function renderMCPIcon({
   const defaultIcon = <MCPIcon className={cn('text-text-secondary', className)} />;
 
   if (wrapDefault) {
+    const iconSizeClasses = {
+      sm: 'h-4 w-4',
+      md: 'h-5 w-5',
+      lg: 'h-6 w-6',
+    };
+
     return (
       <div
         className={cn('flex items-center justify-center rounded-lg bg-surface-tertiary', className)}
       >
-        <MCPIcon
-          className={cn(
-            'h-5 w-5 text-text-secondary',
-            className.includes('size-8') ? 'size-5' : '',
-          )}
-        />
+        <MCPIcon className={cn('text-text-secondary', iconSizeClasses[iconSize])} />
       </div>
     );
   }

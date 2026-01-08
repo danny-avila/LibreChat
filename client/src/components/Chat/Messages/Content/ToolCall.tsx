@@ -228,24 +228,26 @@ export default function ToolCall({
         >
           <div ref={contentRef}>
             {showInfo && hasInfo && (
-              <ToolCallInfo
-                key="tool-call-info"
-                input={args ?? ''}
-                output={output}
-                domain={authDomain || (domain ?? '')}
-                function_name={function_name}
-                pendingAuth={authDomain.length > 0 && !cancelled && progress < 1}
-                attachments={attachments}
-              />
+              <>
+                {parsedQuery && (
+                  <div className="clickhouse-codeblock my-2">
+                    <CodeBlock language="sql">{parsedQuery}</CodeBlock>
+                  </div>
+                )}
+                <ToolCallInfo
+                  key="tool-call-info"
+                  input={args ?? ''}
+                  output={output}
+                  domain={authDomain || (domain ?? '')}
+                  function_name={function_name}
+                  pendingAuth={authDomain.length > 0 && !cancelled && progress < 1}
+                  attachments={attachments}
+                />
+              </>
             )}
           </div>
         </div>
       </div>
-      {parsedQuery && (
-        <div className="clickhouse-codeblock my-2">
-          <CodeBlock language="sql">{parsedQuery}</CodeBlock>
-        </div>
-      )}
       {auth != null && auth && progress < 1 && !cancelled && (
         <div className="flex w-full flex-col gap-2.5">
           <div className="mb-1 mt-2">

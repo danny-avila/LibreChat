@@ -65,6 +65,7 @@ export default function StackedMCPIcons({
         <div
           key={icon.key}
           title={icon.displayName}
+          aria-hidden="true"
           className={cn(
             'relative flex items-center justify-center rounded-full border',
             colors.border,
@@ -84,6 +85,7 @@ export default function StackedMCPIcons({
       ))}
       {overflowCount > 0 && (
         <div
+          aria-hidden="true"
           className={cn(
             'relative flex items-center justify-center rounded-full border border-surface-primary bg-surface-tertiary text-xs font-medium text-text-secondary',
             sizes.container,
