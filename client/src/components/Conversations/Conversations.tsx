@@ -3,7 +3,6 @@ import throttle from 'lodash/throttle';
 import { ChevronDown } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
-import { isAssistantsEndpoint } from 'librechat-data-provider';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useFavorites, useShowMarketplace } from '~/hooks';
@@ -161,18 +160,13 @@ const Conversations: FC<ConversationsProps> = ({
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
-  const currentConversation = useRecoilValue(store.conversationByIndex(0));
-  const endpoint = currentConversation?.endpoint;
-  const endpointType = currentConversation?.endpointType;
-  const actualEndpoint = endpointType ?? endpoint;
-  const resumableEnabled = !isAssistantsEndpoint(actualEndpoint);
   const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
   const showAgentMarketplace = useShowMarketplace();
 
   // Fetch active job IDs for showing generation indicators
-  const { data: activeJobsData } = useActiveJobs(resumableEnabled);
+  const { data: activeJobsData } = useActiveJobs();
   const activeJobIds = useMemo(
     () => new Set(activeJobsData?.activeJobIds ?? []),
     [activeJobsData?.activeJobIds],
