@@ -18,17 +18,18 @@
   --gray-800: #212121;
   --gray-850: #171717;
   --gray-900: #0d0d0d;
-  --green-50: #ecfdf5;
-  --green-100: #d1fae5;
-  --green-200: #a7f3d0;
-  --green-300: #6ee7b7;
-  --green-400: #34d399;
-  --green-500: #10b981;
-  --green-600: #059669;
-  --green-700: #047857;
-  --green-800: #065f46;
-  --green-900: #064e3b;
-  --green-950: #022c22;
+  /* Material Cyan */
+  --green-50:  #E0F7FA;
+  --green-100: #B2EBF2;
+  --green-200: #80DEEA;
+  --green-300: #4DD0E1;
+  --green-400: #26C6DA;
+  --green-500: #00BCD4;
+  --green-600: #00ACC1;
+  --green-700: #0097A7;
+  --green-800: #00838F;
+  --green-900: #006064;
+  --green-950: #00363A; /* extrapolated dark */
   --red-50: #fef2f2;
   --red-100: #fee2e2;
   --red-200: #fecaca;
