@@ -79,7 +79,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
+        [Permissions.SHARE]: false,
       },
     };
 
@@ -200,7 +200,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
+        [Permissions.SHARE]: false,
       },
     };
 
@@ -321,7 +321,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
+        [Permissions.SHARE]: false,
       },
     };
 
@@ -455,7 +455,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
+        [Permissions.SHARE]: false,
       },
     };
 
@@ -576,7 +576,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
+        [Permissions.SHARE]: false,
       },
     };
 
@@ -700,7 +700,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
+        [Permissions.SHARE]: false,
       },
     };
 
@@ -834,7 +834,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
+        [Permissions.SHARE]: false,
       },
     };
 

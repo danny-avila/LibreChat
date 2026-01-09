@@ -80,7 +80,7 @@ export enum Permissions {
 export const promptPermissionsSchema = z.object({
   [Permissions.USE]: z.boolean().default(true),
   [Permissions.CREATE]: z.boolean().default(true),
-  [Permissions.SHARE]: z.boolean().default(true),
+  [Permissions.SHARE]: z.boolean().default(false),
 });
 export type TPromptPermissions = z.infer<typeof promptPermissionsSchema>;
 
@@ -101,7 +101,7 @@ export type TMemoryPermissions = z.infer<typeof memoryPermissionsSchema>;
 export const agentPermissionsSchema = z.object({
   [Permissions.USE]: z.boolean().default(true),
   [Permissions.CREATE]: z.boolean().default(true),
-  [Permissions.SHARE]: z.boolean().default(true),
+  [Permissions.SHARE]: z.boolean().default(false),
 });
 export type TAgentPermissions = z.infer<typeof agentPermissionsSchema>;
 
@@ -151,7 +151,7 @@ export type TFileCitationsPermissions = z.infer<typeof fileCitationsPermissionsS
 export const mcpServersPermissionsSchema = z.object({
   [Permissions.USE]: z.boolean().default(true),
   [Permissions.CREATE]: z.boolean().default(true),
-  [Permissions.SHARE]: z.boolean().default(true),
+  [Permissions.SHARE]: z.boolean().default(false),
 });
 export type TMcpServersPermissions = z.infer<typeof mcpServersPermissionsSchema>;
 
