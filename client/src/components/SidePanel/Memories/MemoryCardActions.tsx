@@ -1,11 +1,10 @@
 import { useState, useRef } from 'react';
-import { Pencil } from 'lucide-react';
-import { Trans } from 'react-i18next';
+import { Pencil, Trash2 } from 'lucide-react';
 import {
   Label,
+  Button,
   Spinner,
   OGDialog,
-  TrashIcon,
   TooltipAnchor,
   OGDialogTrigger,
   OGDialogTemplate,
@@ -30,15 +29,7 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
 
   const { mutate: deleteMemory, isLoading: isDeleting } = useDeleteMemoryMutation();
 
-  const buttonBaseClass = cn(
-    'flex size-7 items-center justify-center rounded-md',
-    'transition-colors duration-150',
-    'text-text-secondary hover:text-text-primary',
-    'hover:bg-surface-tertiary',
-    'focus:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-  );
-
-  const confirmDelete = () => {
+  const handleDelete = () => {
     deleteMemory(memory.key, {
       onSuccess: () => {
         showToast({ message: localize('com_ui_deleted'), status: 'success' });
@@ -61,62 +52,52 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
       >
         <OGDialogTrigger asChild>
           <TooltipAnchor
-            description={localize('com_ui_edit_memory')}
+            description={localize('com_ui_edit')}
             side="top"
             render={
-              <button
+              <Button
                 ref={triggerRef}
-                className={buttonBaseClass}
+                variant="ghost"
+                size="icon"
+                className="size-7"
                 aria-label={localize('com_ui_edit')}
                 onClick={() => setEditOpen(true)}
               >
-                <Pencil className="size-3.5" aria-hidden="true" />
-              </button>
+                <Pencil className="size-4" aria-hidden="true" />
+              </Button>
             }
           />
         </OGDialogTrigger>
       </MemoryEditDialog>
 
-      {/* Delete Button */}
-      <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen} triggerRef={triggerRef}>
         <OGDialogTrigger asChild>
           <TooltipAnchor
-            description={localize('com_ui_delete_memory')}
+            description={localize('com_ui_delete')}
             side="top"
             render={
-              <button
-                className={buttonBaseClass}
+              <Button
+                ref={triggerRef}
+                variant="ghost"
+                size="icon"
+                className="size-7"
                 aria-label={localize('com_ui_delete')}
                 onClick={() => setDeleteOpen(true)}
               >
-                {isDeleting ? (
-                  <Spinner className="size-3.5" />
-                ) : (
-                  <TrashIcon className="size-3.5" aria-hidden="true" />
-                )}
-              </button>
+                <Trash2 className="size-4" aria-hidden="true" />
+              </Button>
             }
           />
         </OGDialogTrigger>
         <OGDialogTemplate
-          showCloseButton={false}
           title={localize('com_ui_delete_memory')}
-          className="w-11/12 max-w-lg"
-          main={
-            <Label className="text-left text-sm font-medium">
-              <Trans
-                i18nKey="com_ui_delete_confirm_strong"
-                values={{ title: memory.key }}
-                components={{ strong: <strong /> }}
-              />
-            </Label>
+          className="w-11/12 max-w-md"
+          main={<Label>{localize('com_ui_memory_delete_confirm', { 0: memory.key })}</Label>}
+          selection={
+            <Button onClick={handleDelete} variant="destructive">
+              {isDeleting ? <Spinner /> : localize('com_ui_delete')}
+            </Button>
           }
-          selection={{
-            selectHandler: confirmDelete,
-            selectClasses:
-              'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
-            selectText: localize('com_ui_delete'),
-          }}
         />
       </OGDialog>
     </div>

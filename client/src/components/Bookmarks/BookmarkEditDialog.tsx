@@ -85,6 +85,14 @@ const BookmarkEditDialog = ({
     }
   };
 
+  const getButtonLabel = () => {
+    if (mutation.isLoading) {
+      return <Spinner />;
+    }
+
+    return bookmark ? localize('com_ui_update') : localize('com_ui_create');
+  };
+
   return (
     <OGDialog open={open} onOpenChange={setOpen} triggerRef={triggerRef}>
       {children}
@@ -110,7 +118,7 @@ const BookmarkEditDialog = ({
             onClick={handleSubmitForm}
             className="text-white"
           >
-            {mutation.isLoading ? <Spinner /> : localize('com_ui_save')}
+            {getButtonLabel()}
           </Button>
         }
       />
