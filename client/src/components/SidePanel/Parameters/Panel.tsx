@@ -1,6 +1,7 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useEffect, useCallback, useState } from 'react';
 import keyBy from 'lodash/keyBy';
-import { RotateCcw } from 'lucide-react';
+import { Button } from '@librechat/client';
+import { RotateCcw, BookPlus } from 'lucide-react';
 import {
   excludedKeys,
   paramSettings,
@@ -10,9 +11,9 @@ import {
   tConvoUpdateSchema,
 } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
-import { SaveAsPresetDialog } from '~/components/Endpoints';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
+import SaveAsPresetDialog from './SaveAsPresetDialog';
 import { componentMapping } from './components';
 import { useChatContext } from '~/Providers';
 import { logger } from '~/utils';
@@ -22,12 +23,13 @@ export default function Parameters() {
   const { conversation, setConversation } = useChatContext();
   const { setOption } = useSetIndexOptions();
 
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [preset, setPreset] = useState<TPreset | null>(null);
-
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
   const provider = conversation?.endpoint ?? '';
   const model = conversation?.model ?? '';
+
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [preset, setPreset] = useState<TPreset | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
 
   const bedrockRegions = useMemo(() => {
     return endpointsConfig?.[conversation?.endpoint ?? '']?.availableRegions ?? [];
@@ -105,6 +107,13 @@ export default function Parameters() {
   }, [parameters, setConversation]);
 
   const resetParameters = useCallback(() => {
+    if (isResetting) {
+      return;
+    }
+
+    setIsResetting(true);
+    setTimeout(() => setIsResetting(false), 500);
+
     setConversation((prev) => {
       if (!prev) {
         return prev;
@@ -127,9 +136,9 @@ export default function Parameters() {
       logger.log('parameters', 'parameters reset, affected keys:', resetKeys);
       return updatedConversation;
     });
-  }, [setConversation]);
+  }, [isResetting, setConversation]);
 
-  const openDialog = useCallback(() => {
+  const saveAsPreset = useCallback(() => {
     const newPreset = tConvoUpdateSchema.parse({
       ...conversation,
     }) as TPreset;
@@ -171,23 +180,24 @@ export default function Parameters() {
         })}
       </div>
       <div className="mt-4 flex justify-center">
-        <button
-          type="button"
+        <Button
+          className="w-full"
+          variant="outline"
           onClick={resetParameters}
-          className="btn btn-neutral flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
+          disabled={isResetting}
         >
-          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+          <RotateCcw
+            className={`h-4 w-4 ${isResetting ? 'animate-spin-reset' : ''}`}
+            aria-hidden="true"
+          />
           {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
-        </button>
+        </Button>
       </div>
       <div className="mt-2 flex justify-center">
-        <button
-          onClick={openDialog}
-          className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
-          type="button"
-        >
+        <Button className="w-full" variant="default" onClick={saveAsPreset} type="button">
+          <BookPlus className="h-4 w-4" aria-hidden="true" />
           {localize('com_endpoint_save_as_preset')}
-        </button>
+        </Button>
       </div>
       {preset && (
         <SaveAsPresetDialog open={isDialogOpen} onOpenChange={setIsDialogOpen} preset={preset} />
