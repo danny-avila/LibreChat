@@ -36,11 +36,11 @@ export default function BasicInfoSection() {
           <MCPIcon icon={iconValue} onIconChange={handleIconChange} />
         </div>
         <div className="w-full space-y-1.5 sm:flex-1">
-          <Label htmlFor="title" className="text-sm font-medium">
+          <Label htmlFor="mcp-title" className="text-sm font-medium">
             {localize('com_ui_name')} <span className="text-text-secondary">*</span>
           </Label>
           <Input
-            id="title"
+            id="mcp-title"
             autoComplete="off"
             placeholder={localize('com_agents_mcp_name_placeholder')}
             {...register('title', {
@@ -52,18 +52,18 @@ export default function BasicInfoSection() {
             })}
             className={cn(errors.title && 'border-text-destructive')}
           />
-          {errors.title && <p className="text-text-destructive text-xs">{errors.title.message}</p>}
+          {errors.title && <p className="text-xs text-text-destructive">{errors.title.message}</p>}
         </div>
       </div>
 
       {/* Description */}
       <div className="space-y-1.5">
-        <Label htmlFor="description" className="text-sm font-medium">
+        <Label htmlFor="mcp-description" className="text-sm font-medium">
           {localize('com_ui_description')}{' '}
           <span className="text-xs text-text-secondary">{localize('com_ui_optional')}</span>
         </Label>
         <Textarea
-          id="description"
+          id="mcp-description"
           aria-label={localize('com_ui_description')}
           placeholder={localize('com_agents_mcp_description_placeholder')}
           {...register('description')}
