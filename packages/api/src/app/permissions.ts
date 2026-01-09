@@ -148,7 +148,16 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.USE],
           defaults.prompts,
         ),
-        [Permissions.SHARE]: defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE],
+        [Permissions.CREATE]: getPermissionValue(
+          undefined,
+          defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.CREATE],
+          true,
+        ),
+        [Permissions.SHARE]: getPermissionValue(
+          undefined,
+          defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE],
+          false,
+        ),
       },
       [PermissionTypes.BOOKMARKS]: {
         [Permissions.USE]: getPermissionValue(
@@ -199,7 +208,16 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.AGENTS]?.[Permissions.USE],
           defaults.agents,
         ),
-        [Permissions.SHARE]: defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE],
+        [Permissions.CREATE]: getPermissionValue(
+          undefined,
+          defaultPerms[PermissionTypes.AGENTS]?.[Permissions.CREATE],
+          true,
+        ),
+        [Permissions.SHARE]: getPermissionValue(
+          undefined,
+          defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE],
+          false,
+        ),
       },
       [PermissionTypes.TEMPORARY_CHAT]: {
         [Permissions.USE]: getPermissionValue(
