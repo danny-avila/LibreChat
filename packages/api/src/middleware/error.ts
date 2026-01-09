@@ -52,6 +52,14 @@ export const ErrorController = (
     }
     const error = err as CustomError;
 
+    if (req.originalUrl && req.originalUrl.includes('/admin/oauth/')) {
+      return res.redirect(
+        (process.env.ADMIN_PANEL_URL || 'http://localhost:3000') +
+          '/login?error=' +
+          ErrorTypes.AUTH_FAILED,
+      );
+    }
+
     if (
       (error.message === ErrorTypes.AUTH_FAILED || error.code === ErrorTypes.AUTH_FAILED) &&
       req.originalUrl &&

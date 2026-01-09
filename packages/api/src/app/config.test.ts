@@ -1,14 +1,16 @@
-import { getTransactionsConfig, getBalanceConfig } from './config';
 import { logger } from '@librechat/data-schemas';
-import { FileSources } from 'librechat-data-provider';
+import { EImageOutputType, FileSources } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import { getTransactionsConfig, getBalanceConfig } from './config';
 
 // Helper function to create a minimal AppConfig for testing
 const createTestAppConfig = (overrides: Partial<AppConfig> = {}): AppConfig => {
   const minimalConfig: TCustomConfig = {
     version: '1.0.0',
     cache: true,
+    imageOutputType: EImageOutputType.PNG,
+    fileStrategy: FileSources.local,
     interface: {
       endpointsMenu: true,
     },
@@ -60,7 +62,14 @@ describe('getTransactionsConfig', () => {
     it('should return transactions config when explicitly set to false', () => {
       const appConfig = createTestAppConfig({
         transactions: { enabled: false },
-        balance: { enabled: false },
+        balance: {
+          enabled: false,
+          startBalance: 0,
+          autoRefillEnabled: false,
+          refillIntervalValue: 0,
+          refillIntervalUnit: 'seconds',
+          refillAmount: 0,
+        },
       });
       const result = getTransactionsConfig(appConfig);
       expect(result).toEqual({ enabled: false });
@@ -70,7 +79,14 @@ describe('getTransactionsConfig', () => {
     it('should return transactions config when explicitly set to true', () => {
       const appConfig = createTestAppConfig({
         transactions: { enabled: true },
-        balance: { enabled: false },
+        balance: {
+          enabled: false,
+          startBalance: 0,
+          autoRefillEnabled: false,
+          refillIntervalValue: 0,
+          refillIntervalUnit: 'seconds',
+          refillAmount: 0,
+        },
       });
       const result = getTransactionsConfig(appConfig);
       expect(result).toEqual({ enabled: true });
@@ -79,7 +95,14 @@ describe('getTransactionsConfig', () => {
 
     it('should return default config when transactions is not defined', () => {
       const appConfig = createTestAppConfig({
-        balance: { enabled: false },
+        balance: {
+          enabled: false,
+          startBalance: 0,
+          autoRefillEnabled: false,
+          refillIntervalValue: 0,
+          refillIntervalUnit: 'seconds',
+          refillAmount: 0,
+        },
       });
       const result = getTransactionsConfig(appConfig);
       expect(result).toEqual({ enabled: true });
@@ -90,7 +113,14 @@ describe('getTransactionsConfig', () => {
       it('should force transactions to be enabled when balance is enabled but transactions is disabled', () => {
         const appConfig = createTestAppConfig({
           transactions: { enabled: false },
-          balance: { enabled: true },
+          balance: {
+            enabled: true,
+            startBalance: 0,
+            autoRefillEnabled: false,
+            refillIntervalValue: 0,
+            refillIntervalUnit: 'seconds',
+            refillAmount: 0,
+          },
         });
         const result = getTransactionsConfig(appConfig);
         expect(result).toEqual({ enabled: true });
@@ -103,7 +133,14 @@ describe('getTransactionsConfig', () => {
       it('should not override transactions when balance is enabled and transactions is enabled', () => {
         const appConfig = createTestAppConfig({
           transactions: { enabled: true },
-          balance: { enabled: true },
+          balance: {
+            enabled: true,
+            startBalance: 0,
+            autoRefillEnabled: false,
+            refillIntervalValue: 0,
+            refillIntervalUnit: 'seconds',
+            refillAmount: 0,
+          },
         });
         const result = getTransactionsConfig(appConfig);
         expect(result).toEqual({ enabled: true });
@@ -113,7 +150,14 @@ describe('getTransactionsConfig', () => {
       it('should allow transactions to be disabled when balance is disabled', () => {
         const appConfig = createTestAppConfig({
           transactions: { enabled: false },
-          balance: { enabled: false },
+          balance: {
+            enabled: false,
+            startBalance: 0,
+            autoRefillEnabled: false,
+            refillIntervalValue: 0,
+            refillIntervalUnit: 'seconds',
+            refillAmount: 0,
+          },
         });
         const result = getTransactionsConfig(appConfig);
         expect(result).toEqual({ enabled: false });
@@ -122,7 +166,14 @@ describe('getTransactionsConfig', () => {
 
       it('should use default when balance is enabled but transactions is not defined', () => {
         const appConfig = createTestAppConfig({
-          balance: { enabled: true },
+          balance: {
+            enabled: true,
+            startBalance: 0,
+            autoRefillEnabled: false,
+            refillIntervalValue: 0,
+            refillIntervalUnit: 'seconds',
+            refillAmount: 0,
+          },
         });
         const result = getTransactionsConfig(appConfig);
         expect(result).toEqual({ enabled: true });
@@ -187,8 +238,14 @@ describe('getTransactionsConfig', () => {
       it('should handle appConfig with balance enabled undefined', () => {
         const appConfig = createTestAppConfig({
           transactions: { enabled: false },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          balance: { enabled: undefined as any },
+          balance: {
+            enabled: undefined,
+            startBalance: 0,
+            autoRefillEnabled: false,
+            refillIntervalValue: 0,
+            refillIntervalUnit: 'seconds',
+            refillAmount: 0,
+          },
         });
         const result = getTransactionsConfig(appConfig);
         expect(result).toEqual({ enabled: false });
@@ -248,6 +305,9 @@ describe('getBalanceConfig', () => {
           enabled: false,
           startBalance: 2000,
           autoRefillEnabled: true,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          refillAmount: 1000,
         },
       });
       const result = getBalanceConfig(appConfig);
@@ -255,6 +315,9 @@ describe('getBalanceConfig', () => {
         enabled: false,
         startBalance: 2000,
         autoRefillEnabled: true,
+        refillIntervalValue: 30,
+        refillIntervalUnit: 'days',
+        refillAmount: 1000,
       });
     });
 
