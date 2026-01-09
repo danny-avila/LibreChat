@@ -100,7 +100,13 @@ mcpServers:
     headers:
       X-User-Name: "{{LIBRECHAT_USER_NAME}}"
       X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
-      X-User-Id: "{{LIBRECHAT_USER_ID}}" 
+      X-User-Id: "{{LIBRECHAT_USER_ID}}"
+      X-User-Password: "{{ADMIN_PASSWORD}}"
+    customUserVars:
+      ADMIN_PASSWORD:
+        title: "Admin Password"
+        description: "Enter the admin password to authorize access to this MCP server."
+
 
 
 speech:
