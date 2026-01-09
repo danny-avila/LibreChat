@@ -44,13 +44,23 @@ function createToolLoader(signal, streamId = null) {
    * @param {string} params.model
    * @param {AgentToolResources} params.tool_resources
    * @returns {Promise<{
-   * tools: StructuredTool[],
-   * toolContextMap: Record<string, unknown>,
-   * userMCPAuthMap?: Record<string, Record<string, string>>
+   *   tools: StructuredTool[],
+   *   toolContextMap: Record<string, unknown>,
+   *   userMCPAuthMap?: Record<string, Record<string, string>>,
+   *   toolRegistry?: import('@librechat/agents').LCToolRegistry
    * } | undefined>}
    */
-  return async function loadTools({ req, res, agentId, tools, provider, model, tool_resources }) {
-    const agent = { id: agentId, tools, provider, model };
+  return async function loadTools({
+    req,
+    res,
+    tools,
+    model,
+    agentId,
+    provider,
+    tool_options,
+    tool_resources,
+  }) {
+    const agent = { id: agentId, tools, provider, model, tool_options };
     try {
       return await loadAgentTools({
         req,
