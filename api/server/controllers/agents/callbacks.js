@@ -1,6 +1,7 @@
 const { nanoid } = require('nanoid');
-const { sendEvent, GenerationJobManager } = require('@librechat/api');
+const { Constants } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
+const { sendEvent, GenerationJobManager } = require('@librechat/api');
 const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
 const {
   EnvVar,
@@ -441,10 +442,10 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       return;
     }
 
-    {
-      if (output.name !== Tools.execute_code) {
-        return;
-      }
+    const isCodeTool =
+      output.name === Tools.execute_code || output.name === Constants.PROGRAMMATIC_TOOL_CALLING;
+    if (!isCodeTool) {
+      return;
     }
 
     if (!output.artifact.files) {

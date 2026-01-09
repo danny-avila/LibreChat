@@ -225,6 +225,7 @@ export const defaultAgentFormValues = {
   model: '',
   model_parameters: {},
   tools: [],
+  tool_options: {},
   provider: {},
   projectIds: [],
   edges: [],
