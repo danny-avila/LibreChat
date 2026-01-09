@@ -1,9 +1,8 @@
 import React, { useMemo, useEffect } from 'react';
 import keyBy from 'lodash/keyBy';
-import { ControlCombobox } from '@librechat/client';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
+import { ControlCombobox, Button } from '@librechat/client';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
-import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import {
   alternateName,
   getSettingsKeys,
@@ -13,6 +12,7 @@ import {
   agentParamSettings,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
+import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
@@ -245,14 +245,10 @@ export default function ModelPanel({
         </div>
       )}
       {/* Reset Parameters Button */}
-      <button
-        type="button"
-        onClick={handleResetParameters}
-        className="btn btn-neutral my-1 flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
-      >
+      <Button variant="outline" onClick={handleResetParameters}>
         <RotateCcw className="h-4 w-4" aria-hidden="true" />
         {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
-      </button>
+      </Button>
     </div>
   );
 }
