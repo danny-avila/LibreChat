@@ -1,25 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { Pencil } from 'lucide-react';
 import {
   OGDialog,
+  OGDialogTrigger,
   OGDialogTemplate,
   Button,
   Label,
   Input,
   Spinner,
+  Textarea,
+  TooltipAnchor,
   useToastContext,
 } from '@librechat/client';
 import type { TUserMemory } from 'librechat-data-provider';
 import { useUpdateMemoryMutation, useMemoriesQuery } from '~/data-provider';
-import { useLocalize, useHasAccess } from '~/hooks';
-import MemoryUsageBadge from './MemoryUsageBadge';
+import MemoryUsageBadge from '../MemoryUsageBadge';
+import { useLocalize } from '~/hooks';
 
 interface MemoryEditDialogProps {
   memory: TUserMemory | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  children: React.ReactNode;
-  triggerRef?: React.MutableRefObject<HTMLButtonElement | null>;
 }
 
 const formatDateTime = (dateString: string): string => {
@@ -32,32 +31,15 @@ const formatDateTime = (dateString: string): string => {
   });
 };
 
-export default function MemoryEditDialog({
-  memory,
-  open,
-  onOpenChange,
-  children,
-  triggerRef,
-}: MemoryEditDialogProps) {
+export default function MemoryEditDialog({ memory }: MemoryEditDialogProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { data: memData } = useMemoriesQuery();
 
-  const hasUpdateAccess = useHasAccess({
-    permissionType: PermissionTypes.MEMORIES,
-    permission: Permissions.UPDATE,
-  });
-
   const { mutate: updateMemory, isLoading } = useUpdateMemoryMutation({
-    onMutate: () => {
-      onOpenChange(false);
-      setTimeout(() => {
-        triggerRef?.current?.focus();
-      }, 0);
-    },
     onSuccess: () => {
       showToast({
-        message: localize('com_ui_saved'),
+        message: localize('com_ui_memory_updated'),
         status: 'success',
       });
     },
@@ -92,6 +74,7 @@ export default function MemoryEditDialog({
   const [key, setKey] = useState('');
   const [value, setValue] = useState('');
   const [originalKey, setOriginalKey] = useState('');
+  const [editOpen, setEditOpen] = useState(false);
 
   useEffect(() => {
     if (memory) {
@@ -102,7 +85,7 @@ export default function MemoryEditDialog({
   }, [memory]);
 
   const handleSave = () => {
-    if (!hasUpdateAccess || !memory) {
+    if (!memory) {
       return;
     }
 
@@ -122,7 +105,7 @@ export default function MemoryEditDialog({
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && e.ctrlKey && hasUpdateAccess) {
+    if (e.key === 'Enter' && e.ctrlKey) {
       handleSave();
     }
   };
@@ -138,10 +121,26 @@ export default function MemoryEditDialog({
   }, [memory?.tokenCount, memData?.tokenLimit, memData?.totalTokens]);
 
   return (
-    <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
-      {children}
+    <OGDialog open={editOpen} onOpenChange={setEditOpen}>
+      <OGDialogTrigger asChild>
+        <TooltipAnchor
+          description={localize('com_ui_edit')}
+          side="top"
+          render={
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              aria-label={localize('com_ui_edit')}
+              onClick={() => setEditOpen(true)}
+            >
+              <Pencil className="size-4" aria-hidden="true" />
+            </Button>
+          }
+        />
+      </OGDialogTrigger>
       <OGDialogTemplate
-        title={hasUpdateAccess ? localize('com_ui_edit_memory') : localize('com_ui_view_memory')}
+        title={localize('com_ui_edit_memory')}
         showCloseButton={false}
         className="w-11/12 md:max-w-lg"
         main={
@@ -186,11 +185,10 @@ export default function MemoryEditDialog({
               <Input
                 id="memory-key"
                 value={key}
-                onChange={(e) => hasUpdateAccess && setKey(e.target.value)}
+                onChange={(e) => setKey(e.target.value)}
                 onKeyDown={handleKeyPress}
                 placeholder={localize('com_ui_enter_key')}
                 className="w-full"
-                disabled={!hasUpdateAccess}
               />
             </div>
 
@@ -199,31 +197,28 @@ export default function MemoryEditDialog({
               <Label htmlFor="memory-value" className="text-sm font-medium text-text-primary">
                 {localize('com_ui_value')}
               </Label>
-              <textarea
+              <Textarea
                 id="memory-value"
                 value={value}
-                onChange={(e) => hasUpdateAccess && setValue(e.target.value)}
+                onChange={(e) => setValue(e.target.value)}
                 onKeyDown={handleKeyPress}
                 placeholder={localize('com_ui_enter_value')}
-                className="min-h-[100px] w-full resize-none rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-heavy disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-[100px]"
                 rows={4}
-                disabled={!hasUpdateAccess}
               />
             </div>
           </div>
         }
         buttons={
-          hasUpdateAccess ? (
-            <Button
-              type="button"
-              variant="submit"
-              onClick={handleSave}
-              aria-label={localize('com_ui_save')}
-              disabled={isLoading || !key.trim() || !value.trim()}
-            >
-              {isLoading ? <Spinner className="size-4" /> : localize('com_ui_save')}
-            </Button>
-          ) : null
+          <Button
+            type="button"
+            variant="submit"
+            onClick={handleSave}
+            aria-label={localize('com_ui_update')}
+            disabled={isLoading || !key.trim() || !value.trim()}
+          >
+            {isLoading ? <Spinner className="size-4" /> : localize('com_ui_update')}
+          </Button>
         }
       />
     </OGDialog>

@@ -18,7 +18,7 @@ import {
   useGetUserQuery,
 } from '~/data-provider';
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
-import MemoryCreateDialog from './MemoryCreateDialog';
+import MemoryCreateDialog from './Dialogs/MemoryCreateDialog';
 import MemoryUsageBadge from './MemoryUsageBadge';
 import AdminSettings from './AdminSettings';
 import MemoryList from './MemoryList';

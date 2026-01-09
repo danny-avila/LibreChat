@@ -36,11 +36,10 @@ export default function MemoryCard({ memory, hasUpdateAccess }: MemoryCardProps)
             {localize(memory.tokenCount === 1 ? 'com_ui_token' : 'com_ui_tokens')}
           </span>
         )}
-        {hasUpdateAccess && (
-          <div className="ml-auto shrink-0">
-            <MemoryCardActions memory={memory} />
-          </div>
-        )}
+
+        <div className="ml-auto shrink-0">
+          <MemoryCardActions memory={memory} hasUpdateAccess={hasUpdateAccess} />
+        </div>
       </div>
 
       {/* Row 2: Value + Date */}
