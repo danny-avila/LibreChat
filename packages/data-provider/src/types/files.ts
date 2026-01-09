@@ -37,6 +37,8 @@ export enum FileContext {
 
 export type EndpointFileConfig = {
   disabled?: boolean;
+  disableProviderUpload?: boolean;
+  disableTextUpload?: boolean;
   fileLimit?: number;
   fileSizeLimit?: number;
   totalSizeLimit?: number;

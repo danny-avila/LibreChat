@@ -235,11 +235,26 @@ export const validateFiles = ({
   toolResource?: string;
   fileConfig: FileConfig | null;
 }) => {
-  const { fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes, disabled } =
-    endpointFileConfig;
+  const {
+    fileLimit,
+    fileSizeLimit,
+    totalSizeLimit,
+    supportedMimeTypes,
+    disabled,
+    disableProviderUpload,
+    disableTextUpload,
+  } = endpointFileConfig;
   /** Block all uploads if the endpoint is explicitly disabled */
   if (disabled === true) {
     setError('com_ui_attach_error_disabled');
+    return false;
+  }
+  if (disableProviderUpload === true && (toolResource == null || toolResource === '')) {
+    setError('com_ui_attach_error_provider_disabled');
+    return false;
+  }
+  if (disableTextUpload === true && toolResource === EToolResources.context) {
+    setError('com_ui_attach_error_text_disabled');
     return false;
   }
   const existingFiles = Array.from(files.values());
