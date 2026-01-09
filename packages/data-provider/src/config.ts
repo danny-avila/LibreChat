@@ -628,6 +628,7 @@ export const interfaceSchema = z
         users: z.boolean().optional(),
         groups: z.boolean().optional(),
         roles: z.boolean().optional(),
+        public: z.boolean().optional(),
       })
       .optional(),
     marketplace: z
@@ -656,6 +657,7 @@ export const interfaceSchema = z
       users: true,
       groups: true,
       roles: true,
+      public: false,
     },
     marketplace: {
       use: false,

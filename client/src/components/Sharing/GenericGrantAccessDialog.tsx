@@ -45,11 +45,11 @@ export default function GenericGrantAccessDialog({
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const { canSharePublic, hasPeoplePickerAccess, peoplePickerTypeFilter } =
+    usePeoplePickerPermissions();
 
-  // Use shared hooks
-  const { hasPeoplePickerAccess, peoplePickerTypeFilter } = usePeoplePickerPermissions();
   const {
     config,
     permissionsData,
@@ -332,16 +332,20 @@ export default function GenericGrantAccessDialog({
             )}
           </div>
 
-          <div className="flex border-t border-border-light" />
+          {canSharePublic && (
+            <>
+              <div className="flex border-t border-border-light" />
 
-          {/* Public Access Section */}
-          <PublicSharingToggle
-            isPublic={isPublic}
-            publicRole={publicRole}
-            onPublicToggle={handlePublicToggle}
-            onPublicRoleChange={handlePublicRoleChange}
-            resourceType={resourceType}
-          />
+              {/* Public Access Section */}
+              <PublicSharingToggle
+                isPublic={isPublic}
+                publicRole={publicRole}
+                onPublicToggle={handlePublicToggle}
+                onPublicRoleChange={handlePublicRoleChange}
+                resourceType={resourceType}
+              />
+            </>
+          )}
 
           {/* Footer Actions */}
           <div className="flex justify-between pt-4">

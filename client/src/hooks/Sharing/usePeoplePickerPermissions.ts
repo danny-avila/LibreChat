@@ -22,6 +22,11 @@ export const usePeoplePickerPermissions = () => {
     permission: Permissions.VIEW_ROLES,
   });
 
+  const canSharePublic = useHasAccess({
+    permissionType: PermissionTypes.PEOPLE_PICKER,
+    permission: Permissions.SHARE_PUBLIC,
+  });
+
   const hasPeoplePickerAccess = canViewUsers || canViewGroups || canViewRoles;
 
   const peoplePickerTypeFilter: Array<
@@ -52,6 +57,7 @@ export const usePeoplePickerPermissions = () => {
     canViewUsers,
     canViewRoles,
     canViewGroups,
+    canSharePublic,
     hasPeoplePickerAccess,
     peoplePickerTypeFilter,
   };

@@ -236,6 +236,11 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.PEOPLE_PICKER]?.[Permissions.VIEW_ROLES],
           defaults.peoplePicker?.roles,
         ),
+        [Permissions.SHARE_PUBLIC]: getPermissionValue(
+          loadedInterface.peoplePicker?.public,
+          defaultPerms[PermissionTypes.PEOPLE_PICKER]?.[Permissions.SHARE_PUBLIC],
+          defaults.peoplePicker?.public,
+        ),
       },
       [PermissionTypes.MARKETPLACE]: {
         [Permissions.USE]: getPermissionValue(

@@ -10,9 +10,9 @@ export interface IRole extends Document {
       [Permissions.USE]?: boolean;
     };
     [PermissionTypes.PROMPTS]?: {
-      [Permissions.SHARED_GLOBAL]?: boolean;
       [Permissions.USE]?: boolean;
       [Permissions.CREATE]?: boolean;
+      [Permissions.SHARE]?: boolean;
     };
     [PermissionTypes.MEMORIES]?: {
       [Permissions.USE]?: boolean;
@@ -21,9 +21,9 @@ export interface IRole extends Document {
       [Permissions.READ]?: boolean;
     };
     [PermissionTypes.AGENTS]?: {
-      [Permissions.SHARED_GLOBAL]?: boolean;
       [Permissions.USE]?: boolean;
       [Permissions.CREATE]?: boolean;
+      [Permissions.SHARE]?: boolean;
     };
     [PermissionTypes.MULTI_CONVO]?: {
       [Permissions.USE]?: boolean;
@@ -41,6 +41,7 @@ export interface IRole extends Document {
       [Permissions.VIEW_USERS]?: boolean;
       [Permissions.VIEW_GROUPS]?: boolean;
       [Permissions.VIEW_ROLES]?: boolean;
+      [Permissions.SHARE_PUBLIC]?: boolean;
     };
     [PermissionTypes.MARKETPLACE]?: {
       [Permissions.USE]?: boolean;
@@ -56,6 +57,7 @@ export interface IRole extends Document {
       [Permissions.CREATE]?: boolean;
       [Permissions.SHARE]?: boolean;
     };
+    // Note: SHARE_PUBLIC for public sharing is under PEOPLE_PICKER
   };
 }
 

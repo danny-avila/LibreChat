@@ -93,6 +93,7 @@ interface:
     users: true
     groups: true
     roles: true
+    public: false
   marketplace:
     use: false
   fileCitations: true
