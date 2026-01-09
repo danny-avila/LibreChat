@@ -94,7 +94,7 @@ const AgentConversationStarters: React.FC<AgentConversationStartersProps> = ({
           <input
             ref={(el) => (inputRefs.current[0] = el)}
             value={newStarter}
-            maxLength={64}
+            maxLength={100}
             className={`${inputClass} pr-10`}
             type="text"
             placeholder={
@@ -157,7 +157,7 @@ const AgentConversationStarters: React.FC<AgentConversationStartersProps> = ({
                 }}
                 className={`${inputClass} pr-10`}
                 type="text"
-                maxLength={64}
+                maxLength={100}
               />
               <TooltipAnchor
                 side="top"
