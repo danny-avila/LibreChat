@@ -51,6 +51,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: false,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
@@ -63,6 +64,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: false,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -86,6 +88,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
@@ -98,6 +101,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -172,6 +176,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: false,
+        [Permissions.SHARE]: false,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
@@ -184,6 +189,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: false,
+        [Permissions.SHARE]: false,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: false },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -207,6 +213,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: false,
+        [Permissions.SHARE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
@@ -219,6 +226,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: false },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: false,
+        [Permissions.SHARE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: false },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -293,6 +301,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: false,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
@@ -305,6 +314,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: false,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -328,6 +338,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
@@ -340,6 +351,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -427,6 +439,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: false,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
@@ -439,6 +452,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: false,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -462,6 +476,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
@@ -474,6 +489,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -548,6 +564,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: false,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
@@ -560,6 +577,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: false,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -583,6 +601,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
@@ -595,6 +614,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -809,6 +829,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: false,
       }, // Explicitly configured
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
@@ -841,6 +862,7 @@ describe('updateInterfacePermissions - permissions', () => {
     const expectedPermissionsForAdmin = {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
+        [Permissions.SHARE]: true,
       }, // Explicitly configured
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
@@ -1040,19 +1062,23 @@ describe('updateInterfacePermissions - permissions', () => {
     // Check PROMPTS permissions use role defaults
     expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
+      [Permissions.SHARE]: false,
     });
 
     expect(adminCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
+      [Permissions.SHARE]: true,
     });
 
     // Check AGENTS permissions use role defaults
     expect(userCall[1][PermissionTypes.AGENTS]).toEqual({
       [Permissions.USE]: true,
+      [Permissions.SHARE]: false,
     });
 
     expect(adminCall[1][PermissionTypes.AGENTS]).toEqual({
       [Permissions.USE]: true,
+      [Permissions.SHARE]: true,
     });
 
     // Check MEMORIES permissions use role defaults
@@ -1293,6 +1319,7 @@ describe('updateInterfacePermissions - permissions', () => {
     // Explicitly configured permissions should be updated
     expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
+      [Permissions.SHARE]: false,
     });
     expect(userCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
     expect(userCall[1][PermissionTypes.MARKETPLACE]).toEqual({ [Permissions.USE]: true });
@@ -1614,7 +1641,10 @@ describe('updateInterfacePermissions - permissions', () => {
     // Memory permissions should be updated even though they already exist
     expect(userCall[1][PermissionTypes.MEMORIES]).toEqual(expectedMemoryPermissions);
     // Prompts should be updated (explicitly configured)
-    expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({ [Permissions.USE]: true });
+    expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.SHARE]: false,
+    });
     // Bookmarks should be updated (explicitly configured)
     expect(userCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
 
@@ -1624,7 +1654,10 @@ describe('updateInterfacePermissions - permissions', () => {
     );
     // Memory permissions should be updated even though they already exist
     expect(adminCall[1][PermissionTypes.MEMORIES]).toEqual(expectedMemoryPermissions);
-    expect(adminCall[1][PermissionTypes.PROMPTS]).toEqual({ [Permissions.USE]: true });
+    expect(adminCall[1][PermissionTypes.PROMPTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.SHARE]: true,
+    });
     expect(adminCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
 
     // Verify the existing role data was passed to updateAccessPermissions

@@ -148,6 +148,7 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.USE],
           defaults.prompts,
         ),
+        [Permissions.SHARE]: defaultPerms[PermissionTypes.PROMPTS]?.[Permissions.SHARE],
       },
       [PermissionTypes.BOOKMARKS]: {
         [Permissions.USE]: getPermissionValue(
@@ -198,6 +199,7 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.AGENTS]?.[Permissions.USE],
           defaults.agents,
         ),
+        [Permissions.SHARE]: defaultPerms[PermissionTypes.AGENTS]?.[Permissions.SHARE],
       },
       [PermissionTypes.TEMPORARY_CHAT]: {
         [Permissions.USE]: getPermissionValue(
