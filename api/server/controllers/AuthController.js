@@ -224,7 +224,12 @@ const graphTokenController = async (req, res) => {
 
     res.json(tokenResponse);
   } catch (error) {
-    logger.error('[graphTokenController] Failed to obtain Graph API token:', error);
+    logger.error('[graphTokenController] Failed to obtain Graph API token:', {
+      message: error?.message,
+      details: error?.details,
+      originalMessage: error?.originalError?.message,
+      stack: error?.stack,
+    });
     res.status(500).json({
       message: 'Failed to obtain Microsoft Graph token',
     });
