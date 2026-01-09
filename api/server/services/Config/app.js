@@ -1,12 +1,8 @@
 const { buildUserConfig } = require('@librechat/api');
+const { logger, AppService } = require('@librechat/data-schemas');
 const { CacheKeys, PrincipalType } = require('librechat-data-provider');
-const {
-  logger,
-  AppService,
-  getUserPrincipals,
-  getApplicableConfigs,
-} = require('@librechat/data-schemas');
 const { loadAndFormatTools } = require('~/server/services/start/tools');
+const { getUserPrincipals, getApplicableConfigs } = require('~/models');
 const loadCustomConfig = require('./loadCustomConfig');
 const { setCachedTools } = require('./getCachedTools');
 const getLogStores = require('~/cache/getLogStores');
