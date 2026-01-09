@@ -93,6 +93,14 @@ mcpServers:
   faq-server:
     url: http://100.100.108.42:9010/mcp
     type: streamable-http
+  
+  admin-server:
+    url: http://100.100.108.28:9011/mcp
+    type: streamable-http
+    headers:
+      X-User-Name: "{{LIBRECHAT_USER_NAME}}"
+      X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
+      X-User-Id: "{{LIBRECHAT_USER_ID}}" 
 
 
 speech:
