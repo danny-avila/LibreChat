@@ -51,6 +51,15 @@ export const graphEdgeSchema = z.object({
   promptKey: z.string().optional(),
 });
 
+/** Per-tool options schema (defer_loading, allowed_callers) */
+export const toolOptionsSchema = z.object({
+  defer_loading: z.boolean().optional(),
+  allowed_callers: z.array(z.enum(['direct', 'code_execution'])).optional(),
+});
+
+/** Agent tool options - map of tool_id to tool options */
+export const agentToolOptionsSchema = z.record(z.string(), toolOptionsSchema).optional();
+
 /** Base agent schema with all common fields */
 export const agentBaseSchema = z.object({
   name: z.string().nullable().optional(),
@@ -68,6 +77,7 @@ export const agentBaseSchema = z.object({
   recursion_limit: z.number().optional(),
   conversation_starters: z.array(z.string()).optional(),
   tool_resources: agentToolResourcesSchema,
+  tool_options: agentToolOptionsSchema,
   support_contact: agentSupportContactSchema,
   category: z.string().optional(),
 });

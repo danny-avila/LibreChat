@@ -10,14 +10,15 @@ import {
 } from 'librechat-data-provider';
 import type {
   AgentToolResources,
+  AgentToolOptions,
   TEndpointOption,
   TFile,
   Agent,
   TUser,
 } from 'librechat-data-provider';
+import type { GenericTool, LCToolRegistry, ToolMap } from '@librechat/agents';
 import type { Response as ServerResponse } from 'express';
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { GenericTool } from '@librechat/agents';
 import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/types';
 import { getModelMaxTokens, extractLibreChatParams, optionalChainWithEmptyCheck } from '~/utils';
 import { filterFilesByEndpointConfig } from '~/files';
@@ -36,6 +37,12 @@ export type InitializedAgent = Agent & {
   useLegacyContent: boolean;
   resendFiles: boolean;
   userMCPAuthMap?: Record<string, Record<string, string>>;
+  /** Tool map for ToolNode to use when executing tools (required for PTC) */
+  toolMap?: ToolMap;
+  /** Tool registry for PTC and tool search (only present when MCP tools with env classification exist) */
+  toolRegistry?: LCToolRegistry;
+  /** Precomputed flag indicating if any tools have defer_loading enabled (for efficient runtime checks) */
+  hasDeferredTools?: boolean;
 };
 
 /**
@@ -61,11 +68,14 @@ export interface InitializeAgentParams {
     agentId: string;
     tools: string[];
     model: string | null;
+    tool_options: AgentToolOptions | undefined;
     tool_resources: AgentToolResources | undefined;
   }) => Promise<{
     tools: GenericTool[];
     toolContextMap: Record<string, unknown>;
     userMCPAuthMap?: Record<string, Record<string, string>>;
+    toolRegistry?: LCToolRegistry;
+    hasDeferredTools?: boolean;
   } | null>;
   /** Endpoint option (contains model_parameters and endpoint info) */
   endpointOption?: Partial<TEndpointOption>;
@@ -201,6 +211,8 @@ export async function initializeAgent(
     tools: structuredTools,
     toolContextMap,
     userMCPAuthMap,
+    toolRegistry,
+    hasDeferredTools,
   } = (await loadTools?.({
     req,
     res,
@@ -208,8 +220,15 @@ export async function initializeAgent(
     agentId: agent.id,
     tools: agent.tools ?? [],
     model: agent.model,
+    tool_options: agent.tool_options,
     tool_resources,
-  })) ?? { tools: [], toolContextMap: {}, userMCPAuthMap: undefined };
+  })) ?? {
+    tools: [],
+    toolContextMap: {},
+    userMCPAuthMap: undefined,
+    toolRegistry: undefined,
+    hasDeferredTools: false,
+  };
 
   const { getOptions, overrideProvider } = getProviderConfig({
     provider,
@@ -312,6 +331,8 @@ export async function initializeAgent(
     attachments: finalAttachments,
     resendFiles,
     userMCPAuthMap,
+    toolRegistry,
+    hasDeferredTools,
     toolContextMap: toolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,
     maxContextTokens: Math.round((agentMaxContextNum - maxOutputTokensNum) * 0.9),
