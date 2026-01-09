@@ -29,6 +29,9 @@ export const usePeoplePickerPermissions = () => {
 
   const hasPeoplePickerAccess = canViewUsers || canViewGroups || canViewRoles;
 
+  /** Whether the user can meaningfully use the share dialog (has at least one useful permission) */
+  const canUseShareDialog = hasPeoplePickerAccess || canSharePublic;
+
   const peoplePickerTypeFilter: Array<
     PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE
   > | null = useMemo(() => {
@@ -58,6 +61,7 @@ export const usePeoplePickerPermissions = () => {
     canViewRoles,
     canViewGroups,
     canSharePublic,
+    canUseShareDialog,
     hasPeoplePickerAccess,
     peoplePickerTypeFilter,
   };

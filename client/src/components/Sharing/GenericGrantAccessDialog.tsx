@@ -47,7 +47,7 @@ export default function GenericGrantAccessDialog({
   const { showToast } = useToastContext();
   const [isCopying, setIsCopying] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { canSharePublic, hasPeoplePickerAccess, peoplePickerTypeFilter } =
+  const { canSharePublic, canUseShareDialog, hasPeoplePickerAccess, peoplePickerTypeFilter } =
     usePeoplePickerPermissions();
 
   const {
@@ -85,6 +85,11 @@ export default function GenericGrantAccessDialog({
   const copyResourceUrl = useCopyToClipboard({ text: resourceUrl });
 
   if (!resourceDbId) {
+    return null;
+  }
+
+  // Don't render if user has no useful sharing permissions
+  if (!canUseShareDialog) {
     return null;
   }
 
@@ -238,12 +243,9 @@ export default function GenericGrantAccessDialog({
       })}
       type="button"
       disabled={disabled}
-      className="h-full"
     >
-      <div className="flex min-w-[32px] items-center justify-center gap-2 text-blue-500">
-        <span className="flex h-6 w-6 items-center justify-center">
-          <Share2Icon className="icon-md h-4 w-4" aria-hidden="true" />
-        </span>
+      <div className="flex w-full items-center justify-center gap-2 text-blue-500">
+        <Share2Icon className="h-4 w-4" aria-hidden="true" />
         {totalCurrentShares > 0 && (
           <Label className="cursor-pointer text-sm font-medium text-text-secondary">
             {totalCurrentShares}
