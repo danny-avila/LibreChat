@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { Controller, useForm } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
-import { Checkbox, Label, TextareaAutosize, Input, useToastContext } from '@librechat/client';
+import { Switch, Label, Input, useToastContext, Textarea } from '@librechat/client';
 import type { TConversationTag, TConversationTagRequest } from 'librechat-data-provider';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { useConversationTagMutation } from '~/data-provider';
@@ -34,7 +34,6 @@ const BookmarkForm = ({
     register,
     handleSubmit,
     setValue,
-    getValues,
     control,
     formState: { errors },
   } = useForm<TConversationTagRequest>({
@@ -89,8 +88,8 @@ const BookmarkForm = ({
       <div className="space-y-4">
         {/* Tag name input */}
         <div className="space-y-2">
-          <Label htmlFor="bookmark-tag" className="text-sm font-medium text-text-primary">
-            {localize('com_ui_bookmarks_title')}
+          <Label htmlFor="bookmark-tag" className="text-sm font-medium">
+            {localize('com_ui_bookmarks_title')} <span className="text-text-secondary">*</span>
           </Label>
           <Input
             type="text"
@@ -113,15 +112,14 @@ const BookmarkForm = ({
                 );
               },
             })}
-            className="w-full"
             aria-invalid={!!errors.tag}
             placeholder={localize('com_ui_enter_name')}
             aria-describedby={errors.tag ? 'bookmark-tag-error' : undefined}
           />
           {errors.tag && (
-            <span id="bookmark-tag-error" role="alert" className="text-sm text-red-500">
+            <Label id="bookmark-tag-error" role="alert" className="text-sm text-text-destructive">
               {errors.tag.message}
-            </span>
+            </Label>
           )}
         </div>
 
@@ -130,11 +128,12 @@ const BookmarkForm = ({
           <Label
             id="bookmark-description-label"
             htmlFor="bookmark-description"
-            className="text-sm font-medium text-text-primary"
+            className="text-sm font-medium"
           >
-            {localize('com_ui_bookmarks_description')}
+            {localize('com_ui_description')}{' '}
+            <span className="text-xs text-text-secondary">{localize('com_ui_optional')}</span>
           </Label>
-          <TextareaAutosize
+          <Textarea
             {...register('description', {
               maxLength: {
                 value: 1048,
@@ -147,45 +146,33 @@ const BookmarkForm = ({
             id="bookmark-description"
             disabled={false}
             placeholder={localize('com_ui_enter_description')}
-            className={cn(
-              'min-h-[100px] w-full resize-none rounded-lg border border-border-light',
-              'bg-transparent px-3 py-2 text-sm text-text-primary',
-              'placeholder:text-text-tertiary',
-              'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-heavy',
-            )}
+            className="min-h-[100px]"
             aria-labelledby="bookmark-description-label"
           />
         </div>
 
-        {/* Add to conversation checkbox */}
+        {/* Add to conversation toggle */}
         {conversationId != null && conversationId && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between rounded-lg border border-border-light p-3">
+            <Label
+              id="add-to-conversation-label-bookmark"
+              htmlFor="add-to-conversation-label-bookmark"
+              className="cursor-pointer text-sm font-medium"
+            >
+              {localize('com_ui_bookmarks_add_to_conversation')}
+            </Label>
             <Controller
               name="addToConversation"
               control={control}
               render={({ field }) => (
-                <Checkbox
-                  {...field}
+                <Switch
+                  id="add-to-conversation-label-bookmark"
                   checked={field.value}
                   onCheckedChange={field.onChange}
-                  className="size-4 cursor-pointer"
-                  value={field.value?.toString()}
-                  aria-label={localize('com_ui_bookmarks_add_to_conversation')}
+                  aria-labelledby="add-to-conversation-label-bookmark"
                 />
               )}
             />
-            <button
-              type="button"
-              aria-label={localize('com_ui_bookmarks_add_to_conversation')}
-              className="cursor-pointer text-sm text-text-primary"
-              onClick={() =>
-                setValue('addToConversation', !(getValues('addToConversation') ?? false), {
-                  shouldDirty: true,
-                })
-              }
-            >
-              {localize('com_ui_bookmarks_add_to_conversation')}
-            </button>
           </div>
         )}
       </div>

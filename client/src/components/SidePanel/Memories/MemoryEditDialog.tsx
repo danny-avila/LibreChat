@@ -220,7 +220,6 @@ export default function MemoryEditDialog({
               onClick={handleSave}
               aria-label={localize('com_ui_save')}
               disabled={isLoading || !key.trim() || !value.trim()}
-              className="text-white"
             >
               {isLoading ? <Spinner className="size-4" /> : localize('com_ui_save')}
             </Button>
