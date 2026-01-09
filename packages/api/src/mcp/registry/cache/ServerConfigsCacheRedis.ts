@@ -1,15 +1,74 @@
 import type Keyv from 'keyv';
 import { fromPairs } from 'lodash';
-import { standardCache, keyvRedisClient, cacheConfig } from '~/cache';
+import { standardCache, keyvRedisClient, ioredisClient, cacheConfig } from '~/cache';
 import { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { BaseRegistryCache } from './BaseRegistryCache';
 import { IServerConfigsRepositoryInterface } from '../ServerConfigsRepositoryInterface';
 
 /**
- * Special key suffix for storing the index of all server names.
- * Used to avoid SCAN operations on sharded backends like ElastiCache Serverless.
+ * Lua script for atomic add-to-index operation.
+ * Preserves Keyv's JSON wrapper format: {"value": [...], "expires": null}
+ *
+ * KEYS[1] = index key
+ * ARGV[1] = server name to add
+ *
+ * Returns 1 if added, 0 if already exists
  */
-const INDEX_KEY = '__server_index__';
+const LUA_ADD_TO_INDEX = `
+local raw = redis.call('GET', KEYS[1])
+local index = {}
+if raw then
+  local data = cjson.decode(raw)
+  if data and data.value then
+    index = data.value
+  end
+end
+for i, name in ipairs(index) do
+  if name == ARGV[1] then
+    return 0
+  end
+end
+table.insert(index, ARGV[1])
+local wrapped = cjson.encode({value = index, expires = cjson.null})
+redis.call('SET', KEYS[1], wrapped)
+return 1
+`;
+
+/**
+ * Lua script for atomic remove-from-index operation.
+ * Preserves Keyv's JSON wrapper format: {"value": [...], "expires": null}
+ *
+ * KEYS[1] = index key
+ * ARGV[1] = server name to remove
+ *
+ * Returns 1 if removed, 0 if not found
+ */
+const LUA_REMOVE_FROM_INDEX = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then
+  return 0
+end
+local data = cjson.decode(raw)
+if not data or not data.value then
+  return 0
+end
+local index = data.value
+local newIndex = {}
+local found = false
+for i, name in ipairs(index) do
+  if name == ARGV[1] then
+    found = true
+  else
+    table.insert(newIndex, name)
+  end
+end
+if not found then
+  return 0
+end
+local wrapped = cjson.encode({value = newIndex, expires = cjson.null})
+redis.call('SET', KEYS[1], wrapped)
+return 1
+`;
 
 /**
  * Redis-backed implementation of MCP server configurations cache for distributed deployments.
@@ -46,31 +105,47 @@ export class ServerConfigsCacheRedis
    * Returns empty array if index doesn't exist.
    */
   private async getIndex(): Promise<string[]> {
-    const index = await this.cache.get(INDEX_KEY);
+    const index = await this.cache.get(cacheConfig.MCP_SERVER_INDEX_KEY);
     return Array.isArray(index) ? index : [];
   }
 
   /**
    * Adds a server name to the index if not already present.
-   * Used in index mode to track all server names without SCAN.
+   * Uses atomic Lua script to prevent race conditions during parallel initialization.
    */
   private async addToIndex(serverName: string): Promise<void> {
+    // Use atomic Lua script via ioredis to prevent race conditions
+    // ioredis auto-prepends keyPrefix, so we only need namespace:key
+    if (ioredisClient) {
+      const fullKey = `${this.cache.namespace}:${cacheConfig.MCP_SERVER_INDEX_KEY}`;
+      await ioredisClient.call('EVAL', LUA_ADD_TO_INDEX, 1, fullKey, serverName);
+      return;
+    }
+    // Fallback: non-atomic operation (only used if ioredis unavailable)
     const index = await this.getIndex();
     if (!index.includes(serverName)) {
       index.push(serverName);
-      await this.cache.set(INDEX_KEY, index);
+      await this.cache.set(cacheConfig.MCP_SERVER_INDEX_KEY, index);
     }
   }
 
   /**
    * Removes a server name from the index.
-   * Used in index mode to keep index in sync with actual servers.
+   * Uses atomic Lua script to prevent race conditions.
    */
   private async removeFromIndex(serverName: string): Promise<void> {
+    // Use atomic Lua script via ioredis to prevent race conditions
+    // ioredis auto-prepends keyPrefix, so we only need namespace:key
+    if (ioredisClient) {
+      const fullKey = `${this.cache.namespace}:${cacheConfig.MCP_SERVER_INDEX_KEY}`;
+      await ioredisClient.call('EVAL', LUA_REMOVE_FROM_INDEX, 1, fullKey, serverName);
+      return;
+    }
+    // Fallback: non-atomic operation (only used if ioredis unavailable)
     const index = await this.getIndex();
     const newIndex = index.filter((name) => name !== serverName);
     if (newIndex.length !== index.length) {
-      await this.cache.set(INDEX_KEY, newIndex);
+      await this.cache.set(cacheConfig.MCP_SERVER_INDEX_KEY, newIndex);
     }
   }
 

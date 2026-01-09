@@ -139,6 +139,14 @@ const cacheConfig = {
    * @default 5000 (5 seconds)
    */
   MCP_REGISTRY_CACHE_TTL: math(process.env.MCP_REGISTRY_CACHE_TTL, 5000),
+
+  /**
+   * Key name used to store the index of MCP server names in Redis.
+   * Required for sharded backends (ElastiCache Serverless) where SCAN
+   * only hits one shard. Set to customize the index key name.
+   * @default '__server_index__'
+   */
+  MCP_SERVER_INDEX_KEY: process.env.MCP_SERVER_INDEX_KEY || '__server_index__',
 };
 
 export { cacheConfig };
