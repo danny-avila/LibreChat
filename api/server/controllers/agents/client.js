@@ -1019,6 +1019,7 @@ class AgentClient extends BaseClient {
 
         run = await createRun({
           agents,
+          messages,
           indexTokenCountMap,
           runId: this.responseMessageId,
           signal: abortController.signal,
