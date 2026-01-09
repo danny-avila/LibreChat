@@ -71,7 +71,8 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
         main={
           <div className="flex w-full flex-col items-center gap-2">
             <Label htmlFor="preset-custom-name" className="text-sm font-medium">
-              {localize('com_endpoint_preset_name')}
+              {localize('com_endpoint_preset_name')}{' '}
+              <span className="text-xs text-text-secondary">{localize('com_ui_optional')}</span>
             </Label>
             <Input
               id="preset-custom-name"

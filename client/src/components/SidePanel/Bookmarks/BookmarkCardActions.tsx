@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import {
+  Label,
   Button,
   Spinner,
   OGDialog,
@@ -102,7 +103,7 @@ export default function BookmarkCardActions({ bookmark }: BookmarkCardActionsPro
         <OGDialogTemplate
           title={localize('com_ui_bookmarks_delete')}
           className="w-11/12 max-w-md"
-          description={localize('com_ui_bookmark_delete_confirm', { 0: bookmark.tag })}
+          main={<Label>{localize('com_ui_bookmark_delete_confirm', { 0: bookmark.tag })}</Label>}
           selection={
             <Button onClick={handleDelete} variant="destructive">
               {isDeleting ? <Spinner /> : localize('com_ui_delete')}

@@ -138,7 +138,7 @@ const BookmarkForm = ({
               maxLength: {
                 value: 1048,
                 message: localize('com_ui_field_max_length', {
-                  field: localize('com_ui_bookmarks_description'),
+                  field: localize('com_ui_description'),
                   length: 1048,
                 }),
               },
