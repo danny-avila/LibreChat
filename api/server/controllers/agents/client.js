@@ -1122,7 +1122,9 @@ class AgentClient extends BaseClient {
     const { req, agent } = this.options;
 
     if (req?.body?.isTemporary) {
-      logger.debug(`[api/server/controllers/agents/client.js #titleConvo] Skipping title generation for temporary conversation`);
+      logger.debug(
+        `[api/server/controllers/agents/client.js #titleConvo] Skipping title generation for temporary conversation`,
+      );
       return;
     }
 
