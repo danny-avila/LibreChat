@@ -62,7 +62,6 @@ export enum PermissionTypes {
  * Enum for Role-Based Access Control Constants
  */
 export enum Permissions {
-  SHARED_GLOBAL = 'SHARED_GLOBAL',
   USE = 'USE',
   CREATE = 'CREATE',
   UPDATE = 'UPDATE',
@@ -74,13 +73,15 @@ export enum Permissions {
   VIEW_USERS = 'VIEW_USERS',
   VIEW_GROUPS = 'VIEW_GROUPS',
   VIEW_ROLES = 'VIEW_ROLES',
+  /** Can share resources publicly (with everyone) */
+  SHARE_PUBLIC = 'SHARE_PUBLIC',
 }
 
 export const promptPermissionsSchema = z.object({
-  [Permissions.SHARED_GLOBAL]: z.boolean().default(false),
   [Permissions.USE]: z.boolean().default(true),
   [Permissions.CREATE]: z.boolean().default(true),
-  // [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
 });
 export type TPromptPermissions = z.infer<typeof promptPermissionsSchema>;
 
@@ -99,10 +100,10 @@ export const memoryPermissionsSchema = z.object({
 export type TMemoryPermissions = z.infer<typeof memoryPermissionsSchema>;
 
 export const agentPermissionsSchema = z.object({
-  [Permissions.SHARED_GLOBAL]: z.boolean().default(false),
   [Permissions.USE]: z.boolean().default(true),
   [Permissions.CREATE]: z.boolean().default(true),
-  // [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
 });
 export type TAgentPermissions = z.infer<typeof agentPermissionsSchema>;
 
@@ -152,6 +153,7 @@ export const mcpServersPermissionsSchema = z.object({
   [Permissions.USE]: z.boolean().default(true),
   [Permissions.CREATE]: z.boolean().default(true),
   [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
 });
 export type TMcpServersPermissions = z.infer<typeof mcpServersPermissionsSchema>;
 
