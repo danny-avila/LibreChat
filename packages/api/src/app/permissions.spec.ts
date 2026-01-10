@@ -344,6 +344,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
@@ -358,6 +359,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -374,6 +376,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
     };
 
@@ -382,6 +385,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
@@ -396,6 +400,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -412,6 +417,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
     };
 
@@ -483,6 +489,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
@@ -497,6 +504,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -513,6 +521,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
     };
 
@@ -521,6 +530,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
@@ -535,6 +545,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -551,6 +562,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
     };
 
@@ -609,6 +621,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
@@ -623,6 +636,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -639,6 +653,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
     };
 
@@ -647,6 +662,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
@@ -661,6 +677,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -677,6 +694,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
     };
 
@@ -764,6 +782,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
     };
 
@@ -792,6 +811,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
     };
 
@@ -872,6 +892,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       }, // Explicitly configured
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
@@ -897,6 +918,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
     };
 
@@ -905,6 +927,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       }, // Explicitly configured
       // All other permissions that don't exist in the database
       [PermissionTypes.MEMORIES]: {
@@ -930,6 +953,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
     };
 
@@ -1102,12 +1126,14 @@ describe('updateInterfacePermissions - permissions', () => {
       [Permissions.USE]: true,
       [Permissions.CREATE]: true,
       [Permissions.SHARE]: false,
+      [Permissions.SHARE_PUBLIC]: false,
     });
 
     expect(adminCall[1][PermissionTypes.PROMPTS]).toEqual({
       [Permissions.USE]: true,
       [Permissions.CREATE]: true,
       [Permissions.SHARE]: true,
+      [Permissions.SHARE_PUBLIC]: true,
     });
 
     // Check AGENTS permissions use role defaults
@@ -1115,12 +1141,14 @@ describe('updateInterfacePermissions - permissions', () => {
       [Permissions.USE]: true,
       [Permissions.CREATE]: true,
       [Permissions.SHARE]: false,
+      [Permissions.SHARE_PUBLIC]: false,
     });
 
     expect(adminCall[1][PermissionTypes.AGENTS]).toEqual({
       [Permissions.USE]: true,
       [Permissions.CREATE]: true,
       [Permissions.SHARE]: true,
+      [Permissions.SHARE_PUBLIC]: true,
     });
 
     // Check MEMORIES permissions use role defaults
@@ -1352,6 +1380,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [Permissions.USE]: true,
       [Permissions.CREATE]: true,
       [Permissions.SHARE]: false,
+      [Permissions.SHARE_PUBLIC]: false,
     });
     expect(userCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
     expect(userCall[1][PermissionTypes.MARKETPLACE]).toEqual({ [Permissions.USE]: true });
@@ -1677,6 +1706,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [Permissions.USE]: true,
       [Permissions.CREATE]: true,
       [Permissions.SHARE]: false,
+      [Permissions.SHARE_PUBLIC]: false,
     });
     // Bookmarks should be updated (explicitly configured)
     expect(userCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
@@ -1691,6 +1721,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [Permissions.USE]: true,
       [Permissions.CREATE]: true,
       [Permissions.SHARE]: true,
+      [Permissions.SHARE_PUBLIC]: true,
     });
     expect(adminCall[1][PermissionTypes.BOOKMARKS]).toEqual({ [Permissions.USE]: true });
 
