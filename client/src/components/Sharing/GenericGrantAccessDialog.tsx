@@ -253,7 +253,7 @@ export default function GenericGrantAccessDialog({
     >
       <div className="flex min-w-[32px] items-center justify-center gap-2 text-blue-500">
         <span className="flex h-6 w-6 items-center justify-center">
-          <Share2Icon />
+          <Share2Icon className="icon-md h-4 w-4" />
         </span>
         {totalCurrentShares > 0 && (
           <Label className="cursor-pointer text-sm font-medium text-text-secondary">
