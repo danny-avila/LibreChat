@@ -252,7 +252,7 @@ export default function GenericGrantAccessDialog({
       className={buttonClassName}
     >
       <div className="flex w-full items-center justify-center gap-2 text-blue-500">
-        <Share2Icon aria-hidden="true" />
+        <Share2Icon className="icon-md h-4 w-4" aria-hidden="true" />
         {totalCurrentShares > 0 && (
           <Label className="cursor-pointer text-sm font-medium text-text-secondary">
             {totalCurrentShares}
