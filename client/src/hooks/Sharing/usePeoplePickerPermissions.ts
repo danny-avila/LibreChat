@@ -4,6 +4,7 @@ import { useHasAccess } from '~/hooks';
 
 /**
  * Hook to check people picker permissions and return the appropriate type filter
+ * Note: SHARE_PUBLIC is now per-resource type (AGENTS, PROMPTS, MCP_SERVERS), not on PEOPLE_PICKER
  * @returns Object with permission states and type filter
  */
 export const usePeoplePickerPermissions = () => {
@@ -22,15 +23,7 @@ export const usePeoplePickerPermissions = () => {
     permission: Permissions.VIEW_ROLES,
   });
 
-  const canSharePublic = useHasAccess({
-    permissionType: PermissionTypes.PEOPLE_PICKER,
-    permission: Permissions.SHARE_PUBLIC,
-  });
-
   const hasPeoplePickerAccess = canViewUsers || canViewGroups || canViewRoles;
-
-  /** Whether the user can meaningfully use the share dialog (has at least one useful permission) */
-  const canUseShareDialog = hasPeoplePickerAccess || canSharePublic;
 
   const peoplePickerTypeFilter: Array<
     PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE
@@ -60,8 +53,6 @@ export const usePeoplePickerPermissions = () => {
     canViewUsers,
     canViewRoles,
     canViewGroups,
-    canSharePublic,
-    canUseShareDialog,
     hasPeoplePickerAccess,
     peoplePickerTypeFilter,
   };

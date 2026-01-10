@@ -17,11 +17,19 @@ describe('updateInterfacePermissions - permissions', () => {
   it('should call updateAccessPermissions with the correct parameters when permission types are true', async () => {
     const config = {
       interface: {
-        prompts: true,
+        prompts: {
+          use: true,
+          share: false,
+          public: false,
+        },
         bookmarks: true,
         memories: true,
         multiConvo: true,
-        agents: true,
+        agents: {
+          use: true,
+          share: false,
+          public: false,
+        },
         temporaryChat: true,
         runCode: true,
         webSearch: true,
@@ -31,10 +39,15 @@ describe('updateInterfacePermissions - permissions', () => {
           users: true,
           groups: true,
           roles: true,
-          public: true,
         },
         marketplace: {
           use: true,
+        },
+        mcpServers: {
+          use: true,
+          create: true,
+          share: false,
+          public: false,
         },
       },
     };
@@ -53,6 +66,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
@@ -67,6 +81,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -76,7 +91,6 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: true,
         [Permissions.VIEW_GROUPS]: true,
         [Permissions.VIEW_ROLES]: true,
-        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
@@ -84,6 +98,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
     };
 
@@ -91,7 +106,8 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
       [PermissionTypes.MEMORIES]: {
@@ -105,7 +121,8 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
@@ -115,14 +132,14 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: true,
         [Permissions.VIEW_GROUPS]: true,
         [Permissions.VIEW_ROLES]: true,
-        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
     };
 
@@ -146,11 +163,19 @@ describe('updateInterfacePermissions - permissions', () => {
   it('should call updateAccessPermissions with false when permission types are false', async () => {
     const config = {
       interface: {
-        prompts: false,
+        prompts: {
+          use: false,
+          share: false,
+          public: false,
+        },
         bookmarks: false,
         memories: false,
         multiConvo: false,
-        agents: false,
+        agents: {
+          use: false,
+          share: false,
+          public: false,
+        },
         temporaryChat: false,
         runCode: false,
         webSearch: false,
@@ -160,10 +185,15 @@ describe('updateInterfacePermissions - permissions', () => {
           users: false,
           groups: false,
           roles: false,
-          public: false,
         },
         marketplace: {
           use: false,
+        },
+        mcpServers: {
+          use: true,
+          create: true,
+          share: false,
+          public: false,
         },
       },
     };
@@ -182,6 +212,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: false,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
@@ -196,6 +227,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: false,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: false },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -205,7 +237,6 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: false,
         [Permissions.VIEW_GROUPS]: false,
         [Permissions.VIEW_ROLES]: false,
-        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: false },
@@ -213,6 +244,7 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
     };
 
@@ -220,7 +252,8 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.PROMPTS]: {
         [Permissions.USE]: false,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       [PermissionTypes.MEMORIES]: {
@@ -234,7 +267,8 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.AGENTS]: {
         [Permissions.USE]: false,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: false },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false },
@@ -244,14 +278,14 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: false,
         [Permissions.VIEW_GROUPS]: false,
         [Permissions.VIEW_ROLES]: false,
-        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: false },
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
-        [Permissions.SHARE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
       },
     };
 
@@ -290,7 +324,6 @@ describe('updateInterfacePermissions - permissions', () => {
           users: true,
           groups: true,
           roles: true,
-          public: true,
         },
         marketplace: {
           use: false,
@@ -334,7 +367,6 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: false,
         [Permissions.VIEW_GROUPS]: false,
         [Permissions.VIEW_ROLES]: false,
-        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
@@ -373,7 +405,6 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: true,
         [Permissions.VIEW_GROUPS]: true,
         [Permissions.VIEW_ROLES]: true,
-        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
@@ -432,7 +463,6 @@ describe('updateInterfacePermissions - permissions', () => {
           users: true,
           groups: true,
           roles: true,
-          public: true,
         },
         marketplace: {
           use: false,
@@ -476,7 +506,6 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: false,
         [Permissions.VIEW_GROUPS]: false,
         [Permissions.VIEW_ROLES]: false,
-        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
@@ -515,7 +544,6 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: true,
         [Permissions.VIEW_GROUPS]: true,
         [Permissions.VIEW_ROLES]: true,
-        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
@@ -561,7 +589,6 @@ describe('updateInterfacePermissions - permissions', () => {
           users: true,
           groups: true,
           roles: true,
-          public: true,
         },
         marketplace: {
           use: false,
@@ -605,7 +632,6 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: false,
         [Permissions.VIEW_GROUPS]: false,
         [Permissions.VIEW_ROLES]: false,
-        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
@@ -644,7 +670,6 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: true,
         [Permissions.VIEW_GROUPS]: true,
         [Permissions.VIEW_ROLES]: true,
-        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
@@ -698,7 +723,6 @@ describe('updateInterfacePermissions - permissions', () => {
           users: true,
           groups: true,
           roles: true,
-          public: true,
         },
         marketplace: {
           use: false,
@@ -733,7 +757,6 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: false,
         [Permissions.VIEW_GROUPS]: false,
         [Permissions.VIEW_ROLES]: false,
-        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
@@ -762,7 +785,6 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: true,
         [Permissions.VIEW_GROUPS]: true,
         [Permissions.VIEW_ROLES]: true,
-        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
@@ -829,7 +851,6 @@ describe('updateInterfacePermissions - permissions', () => {
           users: true,
           groups: true,
           roles: true,
-          public: true,
         },
         marketplace: {
           use: false,
@@ -869,7 +890,6 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: false,
         [Permissions.VIEW_GROUPS]: false,
         [Permissions.VIEW_ROLES]: false,
-        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
@@ -903,7 +923,6 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.VIEW_USERS]: true,
         [Permissions.VIEW_GROUPS]: true,
         [Permissions.VIEW_ROLES]: true,
-        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
@@ -999,7 +1018,6 @@ describe('updateInterfacePermissions - permissions', () => {
       [Permissions.VIEW_USERS]: false,
       [Permissions.VIEW_GROUPS]: false,
       [Permissions.VIEW_ROLES]: false,
-      [Permissions.SHARE_PUBLIC]: false,
     });
 
     // For ADMIN role, PEOPLE_PICKER should use ADMIN defaults (true)
@@ -1007,7 +1025,6 @@ describe('updateInterfacePermissions - permissions', () => {
       [Permissions.VIEW_USERS]: true,
       [Permissions.VIEW_GROUPS]: true,
       [Permissions.VIEW_ROLES]: true,
-      [Permissions.SHARE_PUBLIC]: true,
     });
   });
 
@@ -1058,7 +1075,6 @@ describe('updateInterfacePermissions - permissions', () => {
           users: true,
           groups: true,
           roles: true,
-          public: true,
         },
         marketplace: {
           use: false,
@@ -1149,7 +1165,6 @@ describe('updateInterfacePermissions - permissions', () => {
           users: true,
           groups: true,
           roles: true,
-          public: true,
         },
         marketplace: {
           use: false,
@@ -1186,10 +1201,6 @@ describe('updateInterfacePermissions - permissions', () => {
         roleDefaults[SystemRoles.USER].permissions[PermissionTypes.PEOPLE_PICKER][
           Permissions.VIEW_ROLES
         ],
-      [Permissions.SHARE_PUBLIC]:
-        roleDefaults[SystemRoles.USER].permissions[PermissionTypes.PEOPLE_PICKER][
-          Permissions.SHARE_PUBLIC
-        ],
     });
 
     expect(adminCall[1][PermissionTypes.PEOPLE_PICKER]).toEqual({
@@ -1204,10 +1215,6 @@ describe('updateInterfacePermissions - permissions', () => {
       [Permissions.VIEW_ROLES]:
         roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.PEOPLE_PICKER][
           Permissions.VIEW_ROLES
-        ],
-      [Permissions.SHARE_PUBLIC]:
-        roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.PEOPLE_PICKER][
-          Permissions.SHARE_PUBLIC
         ],
     });
 
@@ -1252,7 +1259,6 @@ describe('updateInterfacePermissions - permissions', () => {
           users: true,
           groups: true,
           roles: true,
-          public: true,
         },
         marketplace: {
           use: false,
@@ -1322,7 +1328,6 @@ describe('updateInterfacePermissions - permissions', () => {
           users: true,
           groups: true,
           roles: true,
-          public: true,
         },
         marketplace: {
           use: false,

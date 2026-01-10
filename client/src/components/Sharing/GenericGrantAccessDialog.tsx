@@ -18,6 +18,7 @@ import {
   usePeoplePickerPermissions,
   useResourcePermissionState,
   useCopyToClipboard,
+  useCanSharePublic,
   useLocalize,
 } from '~/hooks';
 import UnifiedPeopleSearch from './PeoplePicker/UnifiedPeopleSearch';
@@ -33,6 +34,7 @@ export default function GenericGrantAccessDialog({
   resourceType,
   onGrantAccess,
   disabled = false,
+  buttonClassName,
   children,
 }: {
   resourceDbId?: string | null;
@@ -41,14 +43,18 @@ export default function GenericGrantAccessDialog({
   resourceType: ResourceType;
   onGrantAccess?: (shares: TPrincipal[], isPublic: boolean, publicRole?: AccessRoleIds) => void;
   disabled?: boolean;
+  buttonClassName?: string;
   children?: React.ReactNode;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const [isCopying, setIsCopying] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { canSharePublic, canUseShareDialog, hasPeoplePickerAccess, peoplePickerTypeFilter } =
-    usePeoplePickerPermissions();
+  const canSharePublic = useCanSharePublic(resourceType);
+  const { hasPeoplePickerAccess, peoplePickerTypeFilter } = usePeoplePickerPermissions();
+
+  /** User can use the share dialog if they have people picker access OR can share publicly */
+  const canUseShareDialog = hasPeoplePickerAccess || canSharePublic;
 
   const {
     config,
@@ -65,7 +71,7 @@ export default function GenericGrantAccessDialog({
     setPublicRole,
   } = useResourcePermissionState(resourceType, resourceDbId, isModalOpen);
 
-  // State for unified list of all shares (existing + newly added)
+  /** State for unified list of all shares (existing + newly added) */
   const [allShares, setAllShares] = useState<TPrincipal[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
   const [defaultPermissionId, setDefaultPermissionId] = useState<AccessRoleIds | undefined>(
@@ -243,9 +249,10 @@ export default function GenericGrantAccessDialog({
       })}
       type="button"
       disabled={disabled}
+      className={buttonClassName}
     >
       <div className="flex w-full items-center justify-center gap-2 text-blue-500">
-        <Share2Icon className="h-4 w-4" aria-hidden="true" />
+        <Share2Icon aria-hidden="true" />
         {totalCurrentShares > 0 && (
           <Label className="cursor-pointer text-sm font-medium text-text-secondary">
             {totalCurrentShares}

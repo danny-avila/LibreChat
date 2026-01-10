@@ -21,16 +21,11 @@ type FormValues = {
   [Permissions.VIEW_USERS]: boolean;
   [Permissions.VIEW_GROUPS]: boolean;
   [Permissions.VIEW_ROLES]: boolean;
-  [Permissions.SHARE_PUBLIC]: boolean;
 };
 
 type LabelControllerProps = {
   label: string;
-  peoplePickerPerm:
-    | Permissions.VIEW_USERS
-    | Permissions.VIEW_GROUPS
-    | Permissions.VIEW_ROLES
-    | Permissions.SHARE_PUBLIC;
+  peoplePickerPerm: Permissions.VIEW_USERS | Permissions.VIEW_GROUPS | Permissions.VIEW_ROLES;
   control: Control<FormValues, unknown, FormValues>;
   setValue: UseFormSetValue<FormValues>;
   getValues: UseFormGetValues<FormValues>;
@@ -122,11 +117,7 @@ const PeoplePickerAdminSettings = () => {
   }
 
   const labelControllerData: {
-    peoplePickerPerm:
-      | Permissions.VIEW_USERS
-      | Permissions.VIEW_GROUPS
-      | Permissions.VIEW_ROLES
-      | Permissions.SHARE_PUBLIC;
+    peoplePickerPerm: Permissions.VIEW_USERS | Permissions.VIEW_GROUPS | Permissions.VIEW_ROLES;
     label: string;
   }[] = [
     {
@@ -140,10 +131,6 @@ const PeoplePickerAdminSettings = () => {
     {
       peoplePickerPerm: Permissions.VIEW_ROLES,
       label: localize('com_ui_people_picker_allow_view_roles'),
-    },
-    {
-      peoplePickerPerm: Permissions.SHARE_PUBLIC,
-      label: localize('com_ui_people_picker_allow_share_public'),
     },
   ];
 

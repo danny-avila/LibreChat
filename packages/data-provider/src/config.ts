@@ -587,6 +587,7 @@ const mcpServersSchema = z
     use: z.boolean().optional(),
     create: z.boolean().optional(),
     share: z.boolean().optional(),
+    public: z.boolean().optional(),
     trustCheckbox: z
       .object({
         label: localizedStringSchema.optional(),
@@ -617,8 +618,26 @@ export const interfaceSchema = z
     bookmarks: z.boolean().optional(),
     memories: z.boolean().optional(),
     presets: z.boolean().optional(),
-    prompts: z.boolean().optional(),
-    agents: z.boolean().optional(),
+    prompts: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
+    agents: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
     temporaryChat: z.boolean().optional(),
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
     runCode: z.boolean().optional(),
@@ -628,7 +647,6 @@ export const interfaceSchema = z
         users: z.boolean().optional(),
         groups: z.boolean().optional(),
         roles: z.boolean().optional(),
-        public: z.boolean().optional(),
       })
       .optional(),
     marketplace: z
@@ -648,8 +666,16 @@ export const interfaceSchema = z
     multiConvo: true,
     bookmarks: true,
     memories: true,
-    prompts: true,
-    agents: true,
+    prompts: {
+      use: true,
+      share: false,
+      public: false,
+    },
+    agents: {
+      use: true,
+      share: false,
+      public: false,
+    },
     temporaryChat: true,
     runCode: true,
     webSearch: true,
@@ -657,7 +683,6 @@ export const interfaceSchema = z
       users: true,
       groups: true,
       roles: true,
-      public: false,
     },
     marketplace: {
       use: false,
@@ -666,6 +691,7 @@ export const interfaceSchema = z
       use: true,
       create: true,
       share: false,
+      public: false,
     },
     fileSearch: true,
     fileCitations: true,

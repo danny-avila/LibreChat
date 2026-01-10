@@ -81,6 +81,7 @@ export const promptPermissionsSchema = z.object({
   [Permissions.USE]: z.boolean().default(true),
   [Permissions.CREATE]: z.boolean().default(true),
   [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
 });
 export type TPromptPermissions = z.infer<typeof promptPermissionsSchema>;
 
@@ -102,6 +103,7 @@ export const agentPermissionsSchema = z.object({
   [Permissions.USE]: z.boolean().default(true),
   [Permissions.CREATE]: z.boolean().default(true),
   [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
 });
 export type TAgentPermissions = z.infer<typeof agentPermissionsSchema>;
 
@@ -129,7 +131,6 @@ export const peoplePickerPermissionsSchema = z.object({
   [Permissions.VIEW_USERS]: z.boolean().default(true),
   [Permissions.VIEW_GROUPS]: z.boolean().default(true),
   [Permissions.VIEW_ROLES]: z.boolean().default(true),
-  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
 });
 export type TPeoplePickerPermissions = z.infer<typeof peoplePickerPermissionsSchema>;
 
@@ -152,6 +153,7 @@ export const mcpServersPermissionsSchema = z.object({
   [Permissions.USE]: z.boolean().default(true),
   [Permissions.CREATE]: z.boolean().default(true),
   [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
 });
 export type TMcpServersPermissions = z.infer<typeof mcpServersPermissionsSchema>;
 

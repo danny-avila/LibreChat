@@ -14,6 +14,7 @@ const rolePermissionsSchema = new Schema(
       [Permissions.USE]: { type: Boolean },
       [Permissions.CREATE]: { type: Boolean },
       [Permissions.SHARE]: { type: Boolean },
+      [Permissions.SHARE_PUBLIC]: { type: Boolean },
     },
     [PermissionTypes.MEMORIES]: {
       [Permissions.USE]: { type: Boolean },
@@ -26,6 +27,7 @@ const rolePermissionsSchema = new Schema(
       [Permissions.USE]: { type: Boolean },
       [Permissions.CREATE]: { type: Boolean },
       [Permissions.SHARE]: { type: Boolean },
+      [Permissions.SHARE_PUBLIC]: { type: Boolean },
     },
     [PermissionTypes.MULTI_CONVO]: {
       [Permissions.USE]: { type: Boolean },
@@ -43,7 +45,6 @@ const rolePermissionsSchema = new Schema(
       [Permissions.VIEW_USERS]: { type: Boolean },
       [Permissions.VIEW_GROUPS]: { type: Boolean },
       [Permissions.VIEW_ROLES]: { type: Boolean },
-      [Permissions.SHARE_PUBLIC]: { type: Boolean },
     },
     [PermissionTypes.MARKETPLACE]: {
       [Permissions.USE]: { type: Boolean },
@@ -58,6 +59,7 @@ const rolePermissionsSchema = new Schema(
       [Permissions.USE]: { type: Boolean },
       [Permissions.CREATE]: { type: Boolean },
       [Permissions.SHARE]: { type: Boolean },
+      [Permissions.SHARE_PUBLIC]: { type: Boolean },
     },
   },
   { _id: false },

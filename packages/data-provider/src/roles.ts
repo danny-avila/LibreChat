@@ -46,6 +46,7 @@ const defaultRolesSchema = z.object({
         [Permissions.USE]: z.boolean().default(true),
         [Permissions.CREATE]: z.boolean().default(true),
         [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
       }),
       [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema.extend({
         [Permissions.USE]: z.boolean().default(true),
@@ -61,6 +62,7 @@ const defaultRolesSchema = z.object({
         [Permissions.USE]: z.boolean().default(true),
         [Permissions.CREATE]: z.boolean().default(true),
         [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
       }),
       [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema.extend({
         [Permissions.USE]: z.boolean().default(true),
@@ -78,7 +80,6 @@ const defaultRolesSchema = z.object({
         [Permissions.VIEW_USERS]: z.boolean().default(true),
         [Permissions.VIEW_GROUPS]: z.boolean().default(true),
         [Permissions.VIEW_ROLES]: z.boolean().default(true),
-        [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
       }),
       [PermissionTypes.MARKETPLACE]: z.object({
         [Permissions.USE]: z.boolean().default(false),
@@ -93,6 +94,7 @@ const defaultRolesSchema = z.object({
         [Permissions.USE]: z.boolean().default(true),
         [Permissions.CREATE]: z.boolean().default(true),
         [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
       }),
     }),
   }),
@@ -110,6 +112,7 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.BOOKMARKS]: {
         [Permissions.USE]: true,
@@ -125,6 +128,7 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.MULTI_CONVO]: {
         [Permissions.USE]: true,
@@ -142,7 +146,6 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.VIEW_USERS]: true,
         [Permissions.VIEW_GROUPS]: true,
         [Permissions.VIEW_ROLES]: true,
-        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.MARKETPLACE]: {
         [Permissions.USE]: true,
@@ -157,6 +160,7 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
     },
   },
@@ -175,7 +179,6 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.VIEW_USERS]: false,
         [Permissions.VIEW_GROUPS]: false,
         [Permissions.VIEW_ROLES]: false,
-        [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.MARKETPLACE]: {
         [Permissions.USE]: false,
