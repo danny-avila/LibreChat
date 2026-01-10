@@ -137,7 +137,6 @@ export const bedrockInputParser = s.tConversationSchema
       if (additionalFields.thinking === true && additionalFields.thinkingBudget === undefined) {
         additionalFields.thinkingBudget = 2000;
       }
-      // Only add anthropic_beta for Anthropic models
       if (typedData.model.includes('anthropic.')) {
         additionalFields.anthropic_beta = ['output-128k-2025-02-19'];
       }
