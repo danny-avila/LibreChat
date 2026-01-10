@@ -96,6 +96,7 @@ export enum BedrockProviders {
   Cohere = 'cohere',
   Meta = 'meta',
   MistralAI = 'mistral',
+  Moonshot = 'moonshot',
   StabilityAI = 'stability',
   DeepSeek = 'deepseek',
 }
