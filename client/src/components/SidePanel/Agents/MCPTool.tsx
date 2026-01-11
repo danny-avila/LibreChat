@@ -1,9 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import { ChevronDown, Clock } from 'lucide-react';
-import { useFormContext, useWatch } from 'react-hook-form';
 import { Constants } from 'librechat-data-provider';
+import { useFormContext, useWatch } from 'react-hook-form';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
-import type { AgentToolOptions } from 'librechat-data-provider';
 import {
   Label,
   ESide,
@@ -18,8 +17,15 @@ import {
   AccordionContent,
   OGDialogTemplate,
 } from '@librechat/client';
+import type { AgentToolOptions } from 'librechat-data-provider';
 import type { AgentForm, MCPServerInfo } from '~/common';
-import { useLocalize, useMCPServerManager, useRemoveMCPTool } from '~/hooks';
+import {
+  useAgentCapabilities,
+  useMCPServerManager,
+  useGetAgentsConfig,
+  useRemoveMCPTool,
+  useLocalize,
+} from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { cn } from '~/utils';
@@ -29,6 +35,8 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
   const { removeTool } = useRemoveMCPTool();
   const { getValues, setValue, control } = useFormContext<AgentForm>();
   const { getServerStatusIconProps, getConfigDialogProps } = useMCPServerManager();
+  const { agentsConfig } = useGetAgentsConfig();
+  const { deferredToolsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
 
   const [isFocused, setIsFocused] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
@@ -242,45 +250,47 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                         </div>
 
                         {/* Defer All toggle - icon only with tooltip */}
-                        <TooltipAnchor
-                          description={
-                            areAllToolsDeferred
-                              ? localize('com_ui_mcp_undefer_all')
-                              : localize('com_ui_mcp_defer_all')
-                          }
-                          side="top"
-                          role="button"
-                          tabIndex={isExpanded ? 0 : -1}
-                          aria-label={
-                            areAllToolsDeferred
-                              ? localize('com_ui_mcp_undefer_all')
-                              : localize('com_ui_mcp_defer_all')
-                          }
-                          aria-pressed={areAllToolsDeferred}
-                          className={cn(
-                            'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
-                            'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-                            isExpanded ? 'visible' : 'pointer-events-none invisible',
-                            areAllToolsDeferred
-                              ? 'bg-amber-500/20 text-amber-500 hover:bg-amber-500/30'
-                              : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary',
-                          )}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleDeferAll();
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
+                        {deferredToolsEnabled && (
+                          <TooltipAnchor
+                            description={
+                              areAllToolsDeferred
+                                ? localize('com_ui_mcp_undefer_all')
+                                : localize('com_ui_mcp_defer_all')
+                            }
+                            side="top"
+                            role="button"
+                            tabIndex={isExpanded ? 0 : -1}
+                            aria-label={
+                              areAllToolsDeferred
+                                ? localize('com_ui_mcp_undefer_all')
+                                : localize('com_ui_mcp_defer_all')
+                            }
+                            aria-pressed={areAllToolsDeferred}
+                            className={cn(
+                              'flex h-7 w-7 items-center justify-center rounded transition-colors duration-200',
+                              'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                              isExpanded ? 'visible' : 'pointer-events-none invisible',
+                              areAllToolsDeferred
+                                ? 'bg-amber-500/20 text-amber-500 hover:bg-amber-500/30'
+                                : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary',
+                            )}
+                            onClick={(e) => {
                               e.stopPropagation();
                               toggleDeferAll();
-                            }
-                          }}
-                        >
-                          <Clock
-                            className={cn('h-4 w-4', areAllToolsDeferred && 'fill-amber-500/30')}
-                          />
-                        </TooltipAnchor>
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                toggleDeferAll();
+                              }
+                            }}
+                          >
+                            <Clock
+                              className={cn('h-4 w-4', areAllToolsDeferred && 'fill-amber-500/30')}
+                            />
+                          </TooltipAnchor>
+                        )}
 
                         <div className="flex items-center gap-1">
                           {/* Caret button for accordion */}
@@ -343,7 +353,7 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
           <AccordionContent className="relative ml-1 pt-1 before:absolute before:bottom-2 before:left-0 before:top-0 before:w-0.5 before:bg-border-medium">
             <div className="space-y-1">
               {serverInfo.tools?.map((subTool) => {
-                const isDeferred = isToolDeferred(subTool.tool_id);
+                const isDeferred = deferredToolsEnabled && isToolDeferred(subTool.tool_id);
                 return (
                   <label
                     key={subTool.tool_id}
@@ -388,42 +398,44 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                     </span>
                     <div className="ml-auto flex items-center gap-1">
                       {/* Per-tool defer toggle - icon only */}
-                      <TooltipAnchor
-                        description={
-                          isDeferred
-                            ? localize('com_ui_mcp_click_to_undefer')
-                            : localize('com_ui_mcp_click_to_defer')
-                        }
-                        side="top"
-                        role="button"
-                        aria-label={
-                          isDeferred
-                            ? localize('com_ui_mcp_undefer')
-                            : localize('com_ui_mcp_defer_loading')
-                        }
-                        aria-pressed={isDeferred}
-                        className={cn(
-                          'flex h-6 w-6 items-center justify-center rounded transition-all duration-200',
-                          'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
-                          isDeferred
-                            ? 'bg-amber-500/20 text-amber-500 hover:bg-amber-500/30'
-                            : 'text-text-tertiary opacity-0 hover:bg-surface-hover hover:text-text-primary group-focus-within/item:opacity-100 group-hover/item:opacity-100',
-                        )}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          toggleToolDefer(subTool.tool_id);
-                        }}
-                        onKeyDown={(e) => {
-                          e.stopPropagation();
-                          if (e.key === 'Enter' || e.key === ' ') {
+                      {deferredToolsEnabled && (
+                        <TooltipAnchor
+                          description={
+                            isDeferred
+                              ? localize('com_ui_mcp_click_to_undefer')
+                              : localize('com_ui_mcp_click_to_defer')
+                          }
+                          side="top"
+                          role="button"
+                          aria-label={
+                            isDeferred
+                              ? localize('com_ui_mcp_undefer')
+                              : localize('com_ui_mcp_defer_loading')
+                          }
+                          aria-pressed={isDeferred}
+                          className={cn(
+                            'flex h-6 w-6 items-center justify-center rounded transition-all duration-200',
+                            'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
+                            isDeferred
+                              ? 'bg-amber-500/20 text-amber-500 hover:bg-amber-500/30'
+                              : 'text-text-tertiary opacity-0 hover:bg-surface-hover hover:text-text-primary group-focus-within/item:opacity-100 group-hover/item:opacity-100',
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation();
                             e.preventDefault();
                             toggleToolDefer(subTool.tool_id);
-                          }
-                        }}
-                      >
-                        <Clock className={cn('h-3.5 w-3.5', isDeferred && 'fill-amber-500/30')} />
-                      </TooltipAnchor>
+                          }}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              toggleToolDefer(subTool.tool_id);
+                            }
+                          }}
+                        >
+                          <Clock className={cn('h-3.5 w-3.5', isDeferred && 'fill-amber-500/30')} />
+                        </TooltipAnchor>
+                      )}
                       {subTool.metadata.description && (
                         <InfoHoverCard side={ESide.Left} text={subTool.metadata.description} />
                       )}
