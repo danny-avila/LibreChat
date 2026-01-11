@@ -3,7 +3,12 @@ const passport = require('passport');
 const { randomState } = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
-const { createSetBalanceConfig, exchangeAdminCode, getAdminPanelUrl } = require('@librechat/api');
+const {
+  requireAdmin,
+  getAdminPanelUrl,
+  exchangeAdminCode,
+  createSetBalanceConfig,
+} = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
 const { getAppConfig } = require('~/server/services/Config');
@@ -25,12 +30,12 @@ router.post(
   middleware.loginLimiter,
   middleware.checkBan,
   middleware.requireLocalAuth,
-  middleware.requireAdmin,
+  requireAdmin,
   setBalanceConfig,
   loginController,
 );
 
-router.get('/verify', middleware.requireJwtAuth, middleware.requireAdmin, (req, res) => {
+router.get('/verify', middleware.requireJwtAuth, requireAdmin, (req, res) => {
   const { password: _p, totpSecret: _t, __v, ...user } = req.user;
   user.id = user._id.toString();
   res.status(200).json({ user });
@@ -39,7 +44,10 @@ router.get('/verify', middleware.requireJwtAuth, middleware.requireAdmin, (req, 
 router.get('/oauth/openid/check', (req, res) => {
   const openidConfig = getOpenIdConfig();
   if (!openidConfig) {
-    return res.status(404).json({ message: 'OpenID configuration not found' });
+    return res.status(404).json({
+      error: 'OpenID configuration not found',
+      error_code: 'OPENID_NOT_CONFIGURED',
+    });
   }
   res.status(200).json({ message: 'OpenID check successful' });
 });
@@ -58,7 +66,7 @@ router.get(
     failureMessage: true,
     session: false,
   }),
-  middleware.requireAdmin,
+  requireAdmin,
   setBalanceConfig,
   middleware.checkDomainAllowed,
   createOAuthHandler(`${getAdminPanelUrl()}/auth/openid/callback`),
@@ -82,25 +90,37 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
 
     if (!code) {
       logger.warn('[admin/oauth/exchange] Missing authorization code');
-      return res.status(400).json({ error: 'Missing authorization code' });
+      return res.status(400).json({
+        error: 'Missing authorization code',
+        error_code: 'MISSING_CODE',
+      });
     }
 
     if (typeof code !== 'string' || !EXCHANGE_CODE_PATTERN.test(code)) {
       logger.warn('[admin/oauth/exchange] Invalid authorization code format');
-      return res.status(400).json({ error: 'Invalid authorization code format' });
+      return res.status(400).json({
+        error: 'Invalid authorization code format',
+        error_code: 'INVALID_CODE_FORMAT',
+      });
     }
 
     const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
     const result = await exchangeAdminCode(cache, code);
 
     if (!result) {
-      return res.status(401).json({ error: 'Invalid or expired authorization code' });
+      return res.status(401).json({
+        error: 'Invalid or expired authorization code',
+        error_code: 'INVALID_OR_EXPIRED_CODE',
+      });
     }
 
     res.json(result);
   } catch (error) {
     logger.error('[admin/oauth/exchange] Error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({
+      error: 'Internal server error',
+      error_code: 'INTERNAL_ERROR',
+    });
   }
 });
 
