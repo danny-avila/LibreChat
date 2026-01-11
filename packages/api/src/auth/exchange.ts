@@ -3,6 +3,17 @@ import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
 import type { IUser } from '@librechat/data-schemas';
 
+/** Default admin panel URL for local development */
+const DEFAULT_ADMIN_PANEL_URL = 'http://localhost:3000';
+
+/**
+ * Gets the admin panel URL from environment or falls back to default.
+ * @returns The admin panel URL
+ */
+export function getAdminPanelUrl(): string {
+  return process.env.ADMIN_PANEL_URL || DEFAULT_ADMIN_PANEL_URL;
+}
+
 /**
  * User data stored in the exchange cache
  */
@@ -119,15 +130,28 @@ export async function exchangeAdminCode(
 
 /**
  * Checks if the redirect URI is for the admin panel (cross-origin).
+ * Uses proper URL parsing to compare origins, handling edge cases where
+ * both URLs might share the same prefix (e.g., localhost:3000 vs localhost:3001).
+ *
  * @param redirectUri - The redirect URI to check.
  * @param adminPanelUrl - The admin panel URL (defaults to ADMIN_PANEL_URL env var)
  * @param domainClient - The main client domain
- * @returns True if redirecting to admin panel.
+ * @returns True if redirecting to admin panel (different origin from main client).
  */
 export function isAdminPanelRedirect(
   redirectUri: string,
   adminPanelUrl: string,
   domainClient: string,
 ): boolean {
-  return redirectUri.startsWith(adminPanelUrl) && !redirectUri.startsWith(domainClient);
+  try {
+    const redirectOrigin = new URL(redirectUri).origin;
+    const adminOrigin = new URL(adminPanelUrl).origin;
+    const clientOrigin = new URL(domainClient).origin;
+
+    /** Redirect is for admin panel if it matches admin origin but not main client origin */
+    return redirectOrigin === adminOrigin && redirectOrigin !== clientOrigin;
+  } catch {
+    /** If URL parsing fails, fall back to simple string comparison */
+    return redirectUri.startsWith(adminPanelUrl) && !redirectUri.startsWith(domainClient);
+  }
 }

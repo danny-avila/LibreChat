@@ -1,6 +1,11 @@
 const { CacheKeys } = require('librechat-data-provider');
 const { logger, DEFAULT_SESSION_EXPIRY } = require('@librechat/data-schemas');
-const { isEnabled, isAdminPanelRedirect, generateAdminExchangeCode } = require('@librechat/api');
+const {
+  isEnabled,
+  getAdminPanelUrl,
+  isAdminPanelRedirect,
+  generateAdminExchangeCode,
+} = require('@librechat/api');
 const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
 const getLogStores = require('~/cache/getLogStores');
@@ -11,8 +16,6 @@ const domains = {
   client: process.env.DOMAIN_CLIENT,
   server: process.env.DOMAIN_SERVER,
 };
-
-const getAdminPanelUrl = () => process.env.ADMIN_PANEL_URL || 'http://localhost:3000';
 
 function createOAuthHandler(redirectUri = domains.client) {
   /**

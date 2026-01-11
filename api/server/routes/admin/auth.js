@@ -3,7 +3,7 @@ const passport = require('passport');
 const { randomState } = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
-const { createSetBalanceConfig, exchangeAdminCode } = require('@librechat/api');
+const { createSetBalanceConfig, exchangeAdminCode, getAdminPanelUrl } = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
 const { getAppConfig } = require('~/server/services/Config');
@@ -18,8 +18,6 @@ const setBalanceConfig = createSetBalanceConfig({
 });
 
 const router = express.Router();
-
-const getAdminPanelUrl = () => process.env.ADMIN_PANEL_URL || 'http://localhost:3000';
 
 router.post(
   '/login/local',
@@ -66,6 +64,9 @@ router.get(
   createOAuthHandler(`${getAdminPanelUrl()}/auth/openid/callback`),
 );
 
+/** Regex pattern for valid exchange codes: 64 hex characters */
+const EXCHANGE_CODE_PATTERN = /^[a-f0-9]{64}$/i;
+
 /**
  * Exchange OAuth authorization code for tokens.
  * This endpoint is called server-to-server by the admin panel.
@@ -75,13 +76,18 @@ router.get(
  * Body: { code: string }
  * Response: { token: string, refreshToken: string, user: object }
  */
-router.post('/oauth/exchange', async (req, res) => {
+router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
   try {
     const { code } = req.body;
 
     if (!code) {
       logger.warn('[admin/oauth/exchange] Missing authorization code');
       return res.status(400).json({ error: 'Missing authorization code' });
+    }
+
+    if (typeof code !== 'string' || !EXCHANGE_CODE_PATTERN.test(code)) {
+      logger.warn('[admin/oauth/exchange] Invalid authorization code format');
+      return res.status(400).json({ error: 'Invalid authorization code format' });
     }
 
     const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
