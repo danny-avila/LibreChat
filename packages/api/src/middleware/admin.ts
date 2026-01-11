@@ -1,21 +1,13 @@
 import { logger } from '@librechat/data-schemas';
 import { SystemRoles } from 'librechat-data-provider';
-import type { NextFunction, Request as ServerRequest, Response as ServerResponse } from 'express';
-
-interface UserWithRole {
-  role?: string;
-  email?: string;
-}
-
-interface RequestWithUser extends ServerRequest {
-  user?: UserWithRole;
-}
+import type { NextFunction, Response } from 'express';
+import type { ServerRequest } from '~/types/http';
 
 /**
  * Middleware to check if authenticated user has admin role.
  * Should be used AFTER authentication middleware (requireJwtAuth, requireLocalAuth, etc.)
  */
-export const requireAdmin = (req: RequestWithUser, res: ServerResponse, next: NextFunction) => {
+export const requireAdmin = (req: ServerRequest, res: Response, next: NextFunction) => {
   if (!req.user) {
     logger.warn('[requireAdmin] No user found in request');
     return res.status(401).json({
