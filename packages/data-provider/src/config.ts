@@ -1436,6 +1436,10 @@ export enum CacheKeys {
    * Key for SAML session.
    */
   SAML_SESSION = 'SAML_SESSION',
+  /**
+   * Key for admin panel OAuth exchange codes (one-time-use, short TTL).
+   */
+  ADMIN_OAUTH_EXCHANGE = 'ADMIN_OAUTH_EXCHANGE',
 }
 
 /**
