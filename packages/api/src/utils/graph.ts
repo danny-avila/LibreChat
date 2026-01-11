@@ -172,12 +172,7 @@ export async function resolveGraphTokensInRecord(
 
   const resolved: Record<string, string> = {};
   for (const [key, value] of Object.entries(record)) {
-    if (typeof value === 'string') {
-      resolved[key] = await resolveGraphTokenPlaceholder(value, options);
-    } else {
-      // Preserve non-string values without attempting placeholder resolution
-      resolved[key] = value as unknown as string;
-    }
+    resolved[key] = await resolveGraphTokenPlaceholder(value, options);
   }
   return resolved;
 }
