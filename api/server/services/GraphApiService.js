@@ -5,6 +5,8 @@ const { CacheKeys } = require('librechat-data-provider');
 const { Client } = require('@microsoft/microsoft-graph-client');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const getLogStores = require('~/cache/getLogStores');
+const nodeFetch = require('node-fetch');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 /**
  * @import { TPrincipalSearchResult, TGraphPerson, TGraphUser, TGraphGroup, TGraphPeopleResponse, TGraphUsersResponse, TGraphGroupsResponse } from 'librechat-data-provider'
@@ -75,6 +77,14 @@ const exchangeTokenForGraphAccess = async (config, accessToken, sub) => {
       .map((scope) => `https://graph.microsoft.com/${scope}`)
       .join(' ');
 
+    const clientOptions = {};
+    if (process.env.PROXY) {
+      let httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+      clientOptions[Symbol.for('openid-client.custom.fetch')] = (url, options = {}) => {
+          return nodeFetch(url, { ...options, agent: httpsAgent });
+      };
+    }      
+
     const grantResponse = await client.genericGrantRequest(
       config,
       'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -83,6 +93,7 @@ const exchangeTokenForGraphAccess = async (config, accessToken, sub) => {
         assertion: accessToken,
         requested_token_use: 'on_behalf_of',
       },
+      clientOptions,
     );
 
     await tokensCache.set(
