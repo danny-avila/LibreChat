@@ -3,8 +3,8 @@ const { logger, DEFAULT_SESSION_EXPIRY } = require('@librechat/data-schemas');
 const { isEnabled, isAdminPanelRedirect, generateAdminExchangeCode } = require('@librechat/api');
 const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
-const { checkBan } = require('~/server/middleware');
 const getLogStores = require('~/cache/getLogStores');
+const { checkBan } = require('~/server/middleware');
 const { generateToken } = require('~/models');
 
 const domains = {
