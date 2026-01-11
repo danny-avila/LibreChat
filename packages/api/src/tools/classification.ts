@@ -322,6 +322,8 @@ export interface BuildToolClassificationParams {
   agentId?: string;
   /** Per-tool configuration from the agent (takes precedence over env vars) */
   agentToolOptions?: AgentToolOptions;
+  /** Whether the deferred_tools capability is enabled (from agent config) */
+  deferredToolsEnabled?: boolean;
   /** Function to load auth values (dependency injection) */
   loadAuthValues: (params: {
     userId: string;
@@ -404,7 +406,14 @@ export function agentHasDeferredTools(toolRegistry: LCToolRegistry): boolean {
 export async function buildToolClassification(
   params: BuildToolClassificationParams,
 ): Promise<BuildToolClassificationResult> {
-  const { loadedTools, userId, agentId, agentToolOptions, loadAuthValues } = params;
+  const {
+    loadedTools,
+    userId,
+    agentId,
+    agentToolOptions,
+    deferredToolsEnabled = true,
+    loadAuthValues,
+  } = params;
   const additionalTools: GenericTool[] = [];
 
   /** Check if this agent is allowed to have classification features (requires agentId) */
@@ -444,10 +453,22 @@ export async function buildToolClassification(
   /**
    * Check if this agent actually has tools that match the patterns.
    * Only enable PTC if the agent has programmatic tools.
-   * Only enable tool search if the agent has deferred tools.
+   * Only enable tool search if the agent has deferred tools AND the capability is enabled.
    */
   const hasProgrammaticTools = agentHasProgrammaticTools(toolRegistry);
-  const hasDeferredTools = agentHasDeferredTools(toolRegistry);
+  const hasDeferredTools = deferredToolsEnabled && agentHasDeferredTools(toolRegistry);
+
+  /**
+   * If deferred tools capability is disabled, clear defer_loading from all tools
+   * to ensure no tools are treated as deferred at runtime.
+   */
+  if (!deferredToolsEnabled) {
+    for (const toolDef of toolRegistry.values()) {
+      if (toolDef.defer_loading === true) {
+        toolDef.defer_loading = false;
+      }
+    }
+  }
 
   if (!hasProgrammaticTools && !hasDeferredTools) {
     logger.debug(

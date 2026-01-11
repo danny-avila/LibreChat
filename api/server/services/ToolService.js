@@ -409,8 +409,14 @@ async function loadAgentTools({
   const checkCapability = (capability) => {
     const enabled = enabledCapabilities.has(capability);
     if (!enabled) {
+      const isToolCapability = [
+        AgentCapabilities.file_search,
+        AgentCapabilities.execute_code,
+        AgentCapabilities.web_search,
+      ].includes(capability);
+      const suffix = isToolCapability ? ' despite configured tool.' : '.';
       logger.warn(
-        `Capability "${capability}" disabled${capability === AgentCapabilities.tools ? '.' : ' despite configured tool.'} User: ${req.user.id} | Agent: ${agent.id}`,
+        `Capability "${capability}" disabled${suffix} User: ${req.user.id} | Agent: ${agent.id}`,
       );
     }
     return enabled;
@@ -519,11 +525,13 @@ async function loadAgentTools({
   }, {});
 
   /** Build tool registry from MCP tools and create PTC/tool search tools if configured */
+  const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
   const { toolRegistry, additionalTools, hasDeferredTools } = await buildToolClassification({
     loadedTools,
     userId: req.user.id,
     agentId: agent.id,
     agentToolOptions: agent.tool_options,
+    deferredToolsEnabled,
     loadAuthValues,
   });
   agentTools.push(...additionalTools);
