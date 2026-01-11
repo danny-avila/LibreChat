@@ -10,6 +10,7 @@ interface AgentCapabilitiesResult {
   fileSearchEnabled: boolean;
   webSearchEnabled: boolean;
   codeEnabled: boolean;
+  deferredToolsEnabled: boolean;
 }
 
 export default function useAgentCapabilities(
@@ -55,6 +56,11 @@ export default function useAgentCapabilities(
     [capabilities],
   );
 
+  const deferredToolsEnabled = useMemo(
+    () => capabilities?.includes(AgentCapabilities.deferred_tools) ?? false,
+    [capabilities],
+  );
+
   return {
     ocrEnabled,
     codeEnabled,
@@ -64,5 +70,6 @@ export default function useAgentCapabilities(
     artifactsEnabled,
     webSearchEnabled,
     fileSearchEnabled,
+    deferredToolsEnabled,
   };
 }
