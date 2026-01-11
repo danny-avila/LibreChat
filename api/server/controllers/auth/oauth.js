@@ -1,13 +1,18 @@
-const { isEnabled } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { CacheKeys } = require('librechat-data-provider');
+const { logger, DEFAULT_SESSION_EXPIRY } = require('@librechat/data-schemas');
+const { isEnabled, isAdminPanelRedirect, generateAdminExchangeCode } = require('@librechat/api');
 const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
 const { checkBan } = require('~/server/middleware');
+const getLogStores = require('~/cache/getLogStores');
+const { generateToken } = require('~/models');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,
   server: process.env.DOMAIN_SERVER,
 };
+
+const getAdminPanelUrl = () => process.env.ADMIN_PANEL_URL || 'http://localhost:3000';
 
 function createOAuthHandler(redirectUri = domains.client) {
   /**
@@ -27,6 +32,27 @@ function createOAuthHandler(redirectUri = domains.client) {
       if (req.banned) {
         return;
       }
+
+      /** Check if this is an admin panel redirect (cross-origin) */
+      if (isAdminPanelRedirect(redirectUri, getAdminPanelUrl(), domains.client)) {
+        /** For admin panel, generate exchange code instead of setting cookies */
+        const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+        const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
+        const token = await generateToken(req.user, sessionExpiry);
+
+        /** Get refresh token from tokenset for OpenID users */
+        const refreshToken =
+          req.user.tokenset?.refresh_token || req.user.federatedTokens?.refresh_token;
+
+        const exchangeCode = await generateAdminExchangeCode(cache, req.user, token, refreshToken);
+
+        const callbackUrl = new URL(redirectUri);
+        callbackUrl.searchParams.set('code', exchangeCode);
+        logger.info(`[OAuth] Admin panel redirect with exchange code for user: ${req.user.email}`);
+        return res.redirect(callbackUrl.toString());
+      }
+
+      /** Standard OAuth flow - set cookies and redirect */
       if (
         req.user &&
         req.user.provider == 'openid' &&
