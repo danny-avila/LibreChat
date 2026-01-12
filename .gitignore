@@ -169,3 +169,11 @@ coordination/orchestration/*
 claude-flow
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
+
+# AI assistant generated files (not for version control)
+.gemini/
+GEMINI.md
+项目进度.md
+docs/完整交互流程.md
+docs/文件流逻辑.md
+docs/help_docs/
