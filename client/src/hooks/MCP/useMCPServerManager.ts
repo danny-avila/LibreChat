@@ -94,8 +94,12 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
   const cancelOAuthMutation = useCancelMCPOAuthMutation();
 
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
-    onSuccess: async () => {
-      showToast({ message: localize('com_nav_mcp_vars_updated'), status: 'success' });
+    onSuccess: async (_data, variables) => {
+      const message =
+        variables.action === 'uninstall'
+          ? localize('com_nav_mcp_access_revoked')
+          : localize('com_nav_mcp_vars_updated');
+      showToast({ message, status: 'success' });
 
       await Promise.all([
         queryClient.invalidateQueries([QueryKeys.mcpServers]),

@@ -152,20 +152,6 @@ export default function MCPCardActions({
         </TooltipAnchor>
       )}
 
-      {/* Revoke button - for OAuth servers (available regardless of connection state) */}
-      {serverStatus?.requiresOAuth && onRevoke && (
-        <TooltipAnchor
-          description={localize('com_ui_revoke')}
-          side="top"
-          className={cn(buttonBaseClass, 'text-red-500 hover:text-red-600')}
-          aria-label={localize('com_ui_revoke')}
-          role="button"
-          onClick={onRevoke}
-        >
-          <Trash2 className="size-3.5" aria-hidden="true" />
-        </TooltipAnchor>
-      )}
-
       {/* Refresh button - for connected servers (allows reconnection) */}
       {isConnected && (
         <TooltipAnchor
@@ -177,6 +163,20 @@ export default function MCPCardActions({
           onClick={() => onInitialize()}
         >
           <RefreshCw className="size-3.5" aria-hidden="true" />
+        </TooltipAnchor>
+      )}
+
+      {/* Revoke button - for OAuth servers (available regardless of connection state) */}
+      {serverStatus?.requiresOAuth && onRevoke && (
+        <TooltipAnchor
+          description={localize('com_ui_revoke')}
+          side="top"
+          className={cn(buttonBaseClass, 'text-red-500 hover:text-red-600')}
+          aria-label={localize('com_ui_revoke')}
+          role="button"
+          onClick={onRevoke}
+        >
+          <Trash2 className="size-3.5" aria-hidden="true" />
         </TooltipAnchor>
       )}
     </div>
