@@ -33,7 +33,6 @@ if (process.env.PROXY) {
 
   globalThis.fetch = function (url, options = {}) {
     const urlString = url.toString();
-    // Only add proxy dispatcher for Google API calls
     if (urlString.includes('googleapis.com')) {
       options = { ...options, dispatcher: proxyAgent };
     }
