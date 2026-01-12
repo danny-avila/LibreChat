@@ -3,10 +3,10 @@ const { createContentAggregator } = require('@librechat/agents');
 const {
   initializeAgent,
   validateAgentModel,
-  getCustomEndpointConfig,
-  createSequentialChainEdges,
   createEdgeCollector,
   filterOrphanedEdges,
+  getCustomEndpointConfig,
+  createSequentialChainEdges,
 } = require('@librechat/api');
 const {
   EModelEndpoint,
@@ -260,18 +260,18 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const { userMCPAuthMap: updatedMCPAuthMap } = await processAddedConvo({
     req,
     res,
-    endpointOption,
-    modelsConfig,
-    logViolation,
     loadTools,
+    logViolation,
+    modelsConfig,
     requestFiles,
+    agentConfigs,
+    primaryAgent,
+    endpointOption,
+    userMCPAuthMap,
     conversationId,
     parentMessageId,
     allowedProviders,
-    agentConfigs,
     primaryAgentId: primaryConfig.id,
-    primaryAgent,
-    userMCPAuthMap,
   });
 
   if (updatedMCPAuthMap) {
