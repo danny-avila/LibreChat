@@ -149,6 +149,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       updateFilesUsage: db.updateFilesUsage,
       getUserKeyValues: db.getUserKeyValues,
       getToolFilesByIds: db.getToolFilesByIds,
+      getCodeGeneratedFiles: db.getCodeGeneratedFiles,
     },
   );
 
@@ -198,6 +199,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
+        getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       },
     );
     if (userMCPAuthMap != null) {

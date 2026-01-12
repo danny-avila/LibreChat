@@ -6,27 +6,58 @@ const { getCodeBaseURL } = require('@librechat/agents');
 const { logAxiosError, getBasePath } = require('@librechat/api');
 const {
   Tools,
+  megabyte,
+  fileConfig,
   FileContext,
   FileSources,
   imageExtRegex,
+  inferMimeType,
   EToolResources,
+  EModelEndpoint,
+  mergeFileConfig,
+  getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { createFile, getFiles, updateFile } = require('~/models');
+const { determineFileType } = require('~/server/utils');
 
 /**
- * Process OpenAI image files, convert to target format, save and return file metadata.
+ * Find an existing code-generated file by filename in the conversation.
+ * Used to update existing files instead of creating duplicates.
+ * @param {string} filename - The filename to search for.
+ * @param {string} conversationId - The conversation ID.
+ * @returns {Promise<MongoFile | null>} The existing file or null.
+ */
+const findExistingCodeFile = async (filename, conversationId) => {
+  if (!filename || !conversationId) {
+    return null;
+  }
+  const files = await getFiles(
+    {
+      filename,
+      conversationId,
+      context: FileContext.execute_code,
+    },
+    { createdAt: -1 },
+    { text: 0 },
+  );
+  return files?.[0] ?? null;
+};
+
+/**
+ * Process code execution output files - downloads and saves both images and non-image files.
+ * All files are saved to local storage with fileIdentifier metadata for code env re-upload.
  * @param {ServerRequest} params.req - The Express request object.
- * @param {string} params.id - The file ID.
+ * @param {string} params.id - The file ID from the code environment.
  * @param {string} params.name - The filename.
  * @param {string} params.apiKey - The code execution API key.
  * @param {string} params.toolCallId - The tool call ID that generated the file.
  * @param {string} params.session_id - The code execution session ID.
  * @param {string} params.conversationId - The current conversation ID.
  * @param {string} params.messageId - The current message ID.
- * @returns {Promise<MongoFile & { messageId: string, toolCallId: string } | { filename: string; filepath: string; expiresAt: number; conversationId: string; toolCallId: string; messageId: string } | undefined>} The file metadata or undefined if an error occurs.
+ * @returns {Promise<MongoFile & { messageId: string, toolCallId: string } | undefined>} The file metadata or undefined if an error occurs.
  */
 const processCodeOutput = async ({
   req,
@@ -41,19 +72,15 @@ const processCodeOutput = async ({
   const appConfig = req.config;
   const currentDate = new Date();
   const baseURL = getCodeBaseURL();
-  const basePath = getBasePath();
-  const fileExt = path.extname(name);
-  if (!fileExt || !imageExtRegex.test(name)) {
-    return {
-      filename: name,
-      filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
-      /** Note: expires 24 hours after creation */
-      expiresAt: currentDate.getTime() + 86400000,
-      conversationId,
-      toolCallId,
-      messageId,
-    };
-  }
+  const fileExt = path.extname(name).toLowerCase();
+  const isImage = fileExt && imageExtRegex.test(name);
+
+  const mergedFileConfig = mergeFileConfig(appConfig.fileConfig);
+  const endpointFileConfig = getEndpointFileConfig({
+    fileConfig: mergedFileConfig,
+    endpoint: EModelEndpoint.agents,
+  });
+  const fileSizeLimit = endpointFileConfig.fileSizeLimit ?? mergedFileConfig.serverFileSizeLimit;
 
   try {
     const formattedDate = currentDate.toISOString();
@@ -70,29 +97,135 @@ const processCodeOutput = async ({
 
     const buffer = Buffer.from(response.data, 'binary');
 
-    const file_id = v4();
-    const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
+    // Enforce file size limit
+    if (buffer.length > fileSizeLimit) {
+      logger.warn(
+        `[processCodeOutput] File "${name}" (${(buffer.length / megabyte).toFixed(2)} MB) exceeds size limit of ${(fileSizeLimit / megabyte).toFixed(2)} MB, falling back to download URL`,
+      );
+      const basePath = getBasePath();
+      return {
+        filename: name,
+        filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
+        expiresAt: currentDate.getTime() + 86400000,
+        conversationId,
+        toolCallId,
+        messageId,
+      };
+    }
+
+    const fileIdentifier = `${session_id}/${id}`;
+
+    /**
+     * Check for existing file with same filename in this conversation.
+     * If found, we'll update it instead of creating a duplicate.
+     */
+    const existingFile = await findExistingCodeFile(name, conversationId);
+    const file_id = existingFile?.file_id ?? v4();
+    const isUpdate = !!existingFile;
+
+    if (isUpdate) {
+      logger.debug(
+        `[processCodeOutput] Updating existing file "${name}" (${file_id}) instead of creating duplicate`,
+      );
+    }
+
+    if (isImage) {
+      const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
+      const file = {
+        ..._file,
+        file_id,
+        usage: isUpdate ? (existingFile.usage ?? 1) : 1,
+        filename: name,
+        conversationId,
+        message: messageId,
+        user: req.user.id,
+        type: `image/${appConfig.imageOutputType}`,
+        createdAt: isUpdate ? existingFile.createdAt : formattedDate,
+        updatedAt: formattedDate,
+        source: appConfig.fileStrategy,
+        context: FileContext.execute_code,
+        metadata: { fileIdentifier },
+      };
+      createFile(file, true);
+      return Object.assign(file, { messageId, toolCallId });
+    }
+
+    // For non-image files, save to configured storage strategy
+    const { saveBuffer } = getStrategyFunctions(appConfig.fileStrategy);
+    if (!saveBuffer) {
+      logger.warn(
+        `[processCodeOutput] saveBuffer not available for strategy ${appConfig.fileStrategy}, falling back to download URL`,
+      );
+      const basePath = getBasePath();
+      return {
+        filename: name,
+        filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
+        expiresAt: currentDate.getTime() + 86400000,
+        conversationId,
+        toolCallId,
+        messageId,
+      };
+    }
+
+    // Determine MIME type from buffer or extension
+    const detectedType = await determineFileType(buffer, true);
+    const mimeType = detectedType?.mime || inferMimeType(name, '') || 'application/octet-stream';
+
+    /** Check MIME type support - for code-generated files, we're lenient but log unsupported types */
+    const isSupportedMimeType = fileConfig.checkType(
+      mimeType,
+      endpointFileConfig.supportedMimeTypes,
+    );
+    if (!isSupportedMimeType) {
+      logger.warn(
+        `[processCodeOutput] File "${name}" has unsupported MIME type "${mimeType}", proceeding with storage but may not be usable as tool resource`,
+      );
+    }
+
+    const fileName = `${file_id}__${name}`;
+    const filepath = await saveBuffer({
+      userId: req.user.id,
+      buffer,
+      fileName,
+      basePath: 'uploads',
+    });
+
     const file = {
-      ..._file,
       file_id,
-      usage: 1,
+      usage: isUpdate ? (existingFile.usage ?? 1) : 1,
       filename: name,
+      filepath,
       conversationId,
+      message: messageId,
       user: req.user.id,
-      type: `image/${appConfig.imageOutputType}`,
-      createdAt: formattedDate,
+      type: mimeType,
+      bytes: buffer.length,
+      createdAt: isUpdate ? existingFile.createdAt : formattedDate,
       updatedAt: formattedDate,
       source: appConfig.fileStrategy,
       context: FileContext.execute_code,
+      object: 'file',
+      metadata: { fileIdentifier },
     };
+
     createFile(file, true);
-    /** Note: `messageId` & `toolCallId` are not part of file DB schema; message object records associated file ID */
     return Object.assign(file, { messageId, toolCallId });
   } catch (error) {
     logAxiosError({
-      message: 'Error downloading code environment file',
+      message: 'Error downloading/processing code environment file',
       error,
     });
+
+    // Fallback for download errors - return download URL so user can still manually download
+    const basePath = getBasePath();
+    return {
+      filename: name,
+      filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
+      expiresAt: currentDate.getTime() + 86400000,
+      conversationId,
+      toolCallId,
+      messageId,
+    };
   }
 };
 

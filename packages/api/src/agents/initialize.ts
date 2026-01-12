@@ -99,6 +99,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   getToolFilesByIds: (fileIds: string[], toolSet: Set<EToolResources>) => Promise<unknown[]>;
   /** Get conversation file IDs */
   getConvoFiles: (conversationId: string) => Promise<string[] | null>;
+  /** Get code-generated files by conversation ID */
+  getCodeGeneratedFiles: (conversationId: string) => Promise<unknown[]>;
 }
 
 /**
@@ -175,8 +177,17 @@ export async function initializeAgent(
       }
     }
     const toolFiles = (await db.getToolFilesByIds(fileIds, toolResourceSet)) as IMongoFile[];
-    if (requestFiles.length || toolFiles.length) {
-      currentFiles = (await db.updateFilesUsage(requestFiles.concat(toolFiles))) as IMongoFile[];
+
+    // Also retrieve code-generated files from the conversation
+    // These are files created by the execute_code tool that are stored locally
+    let codeGeneratedFiles: IMongoFile[] = [];
+    if (toolResourceSet.has(EToolResources.execute_code) && db.getCodeGeneratedFiles) {
+      codeGeneratedFiles = (await db.getCodeGeneratedFiles(conversationId)) as IMongoFile[];
+    }
+
+    const allToolFiles = toolFiles.concat(codeGeneratedFiles);
+    if (requestFiles.length || allToolFiles.length) {
+      currentFiles = (await db.updateFilesUsage(requestFiles.concat(allToolFiles))) as IMongoFile[];
     }
   } else if (requestFiles.length) {
     currentFiles = (await db.updateFilesUsage(requestFiles)) as IMongoFile[];
