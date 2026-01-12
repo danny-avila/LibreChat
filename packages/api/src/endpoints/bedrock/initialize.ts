@@ -116,22 +116,17 @@ export async function initializeBedrock({
     credentials?: BedrockCredentials;
     endpointHost?: string;
     guardrailConfig?: GuardrailConfiguration;
-    inferenceProfileArn?: string;
+    applicationInferenceProfile?: string;
   };
 
   if (bedrockConfig?.guardrailConfig) {
     llmConfig.guardrailConfig = bedrockConfig.guardrailConfig;
   }
 
-  /**
-   * Map model to inference profile ARN if configured.
-   * When using inference profiles, the ARN becomes the model identifier
-   **/
   const model = model_parameters?.model as string | undefined;
   if (model && bedrockConfig?.inferenceProfiles?.[model]) {
-    const inferenceProfileArn = extractEnvVariable(bedrockConfig.inferenceProfiles[model]);
-    llmConfig.inferenceProfileArn = inferenceProfileArn;
-    llmConfig.model = inferenceProfileArn;
+    const applicationInferenceProfile = extractEnvVariable(bedrockConfig.inferenceProfiles[model]);
+    llmConfig.applicationInferenceProfile = applicationInferenceProfile;
   }
 
   /** Only include credentials if they're complete (accessKeyId and secretAccessKey are both set) */
