@@ -446,18 +446,35 @@ endpoints:
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
   # bedrock:
+  #   # Models Configuration
+  #   # Specify which models are available (equivalent to BEDROCK_AWS_MODELS env variable)
+  #   # You can use simplified friendly names or full model IDs
+  #   models:
+  #     - "claude-sonnet-4-5"  # Friendly name (maps to inference profile below)
+  #     - "anthropic.claude-3-7-sonnet-20250219-v1:0"
+  #     - "anthropic.claude-3-5-sonnet-20241022-v2:0"
+  #
+  #   # Inference Profiles Configuration
+  #   # Maps model IDs to their inference profile ARNs for cross-region inference
+  #   # The model ID (key) is what displays in the UI, the ARN (value) is used for the actual request
+  #   # This allows users to see friendly names while the backend uses the actual ARN
+  #   inferenceProfiles:
+  #     # Simplified friendly name approach
+  #     "claude-sonnet-4-5": "${BEDROCK_INFERENCE_PROFILE_CLAUDE_SONNET}"
+  #     # Or use full model IDs
+  #     "anthropic.claude-3-7-sonnet-20250219-v1:0": "arn:aws:bedrock:us-west-2:990150663519:application-inference-profile/xyz789"
+  #
   #   # Guardrail Configuration
   #   guardrailConfig:
   #     guardrailIdentifier: "your-guardrail-id"
   #     guardrailVersion: "1"
-  #     
+  #
   #     # Trace behavior for debugging (optional)
   #     # - "enabled": Include basic trace information about guardrail assessments
   #     # - "enabled_full": Include comprehensive trace details (recommended for debugging)
   #     # - "disabled": No trace information (default)
   #     # Trace output is logged to application log files for compliance auditing
   #     trace: "enabled"
-
 # Example modelSpecs configuration showing grouping options
 # The 'group' field organizes model specs in the UI selector:
 # - If 'group' matches an endpoint name (e.g., "openAI", "groq"), the spec appears nested under that endpoint
