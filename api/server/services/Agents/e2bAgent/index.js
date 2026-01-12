@@ -200,43 +200,48 @@ class E2BDataAnalystAgent {
       ];
 
       let iteration = 0;
-      let finalContent = '';
-      let accumulatedContent = ''; // Track accumulated content in streaming mode
+      let finalContent = ''; // Will accumulate all assistant content
       const intermediateSteps = [];
+      let shouldExitMainLoop = false; // Flag to exit both loops
 
-      while (iteration < this.maxIterations) {
+      while (iteration < this.maxIterations && !shouldExitMainLoop) {
         iteration++;
         logger.debug(`[E2BAgent] Loop iteration ${iteration}`);
 
-        // 4. 调用 LLM
+        // 4. 调用 LLM with retry logic for rate limits
         const model = this.assistant.model || 'gpt-4o';
         const streamingEnabled = !!onToken;
         
         logger.info(`[E2BAgent] LLM call - streaming: ${streamingEnabled}, iteration: ${iteration}`);
         
-        try {
-          const response = await this.openai.chat.completions.create({
-            model,
-            messages,
-            tools: getToolsDefinitions(),
-            tool_choice: 'auto',
-            temperature: this.assistant.model_parameters?.temperature ?? 0,
-            stream: streamingEnabled, // Enable streaming if callback provided
-          });
+        let message;
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        // Retry loop wraps entire LLM call + processing
+        while (retryCount <= maxRetries) {
+          try {
+            const response = await this.openai.chat.completions.create({
+              model,
+              messages,
+              tools: getToolsDefinitions(),
+              tool_choice: 'auto',
+              temperature: this.assistant.model_parameters?.temperature ?? 0,
+              stream: streamingEnabled, // Enable streaming if callback provided
+            });
 
-          // Handle streaming response
-          if (streamingEnabled) {
-            logger.info(`[E2BAgent] ✓ Processing streaming response`);
-            let message = { role: 'assistant', content: '', tool_calls: [] };
-            let currentToolCall = null;
-            let tokenCount = 0;
-            
-            for await (const chunk of response) {
-              const delta = chunk.choices[0]?.delta;
+            // Handle streaming response
+            if (streamingEnabled) {
+              logger.info(`[E2BAgent] ✓ Processing streaming response`);
+              message = { role: 'assistant', content: '' };
+              // Don't initialize tool_calls as empty array - only add it if needed
+              let tokenCount = 0;
+              
+              for await (const chunk of response) {
+                const delta = chunk.choices[0]?.delta;
               
               if (delta?.content) {
                 message.content += delta.content;
-                accumulatedContent += delta.content; // Also accumulate for final processing
                 tokenCount++;
                 
                 // ✅ 添加调试：确认正在调用 onToken
@@ -248,6 +253,11 @@ class E2BDataAnalystAgent {
               }
               
               if (delta?.tool_calls) {
+                // Initialize tool_calls array only when we have actual tool calls
+                if (!message.tool_calls) {
+                  message.tool_calls = [];
+                }
+                
                 for (const toolCallDelta of delta.tool_calls) {
                   const index = toolCallDelta.index;
                   
@@ -277,11 +287,22 @@ class E2BDataAnalystAgent {
             }
             
             messages.push(message);
+            
+            // Accumulate all assistant content (build complete response across iterations)
+            if (message.content) {
+              finalContent += message.content;
+            }
 
             // 如果没有工具调用，说明已得到最终答案
             if (!message.tool_calls || message.tool_calls.length === 0) {
-              finalContent = message.content;
-              break;
+              logger.info(`[E2BAgent] Final answer received. Total accumulated content: ${finalContent.length} chars`);
+              
+              // Clean up error descriptions from accumulated content
+              finalContent = this._cleanErrorDescriptions(finalContent);
+              logger.info(`[E2BAgent] After cleanup: ${finalContent.length} chars`);
+              
+              shouldExitMainLoop = true; // Exit both loops
+              break; // Exit retry loop
             }
 
             // 5. 执行工具调用 (ReAct 模式)
@@ -293,10 +314,8 @@ class E2BDataAnalystAgent {
               logger.info(`[E2BAgent] Calling tool: ${name}`);
               logger.debug(`[E2BAgent] Tool arguments:`, JSON.stringify(args, null, 2));
               
-              // Send tool call indicator to client
-              const toolIndicator = `\n\n[执行工具: ${name}]\n`;
-              accumulatedContent += toolIndicator;
-              onToken(toolIndicator);
+              // 不发送工具标记到前端（保持流式和最终内容一致）
+              // 用户只看到清理后的分析内容，不看到技术细节
               
               let result;
               try {
@@ -315,18 +334,10 @@ class E2BDataAnalystAgent {
                 result = { success: false, error: err.message };
               }
 
-              logger.debug(`[E2BAgent] Streaming tool result:`, JSON.stringify(result, null, 2));
+              logger.debug(`[E2BAgent] Tool result:`, JSON.stringify(result, null, 2));
               
-              // Send tool completion indicator to client (optional, for better UX)
-              if (result.success) {
-                const completionIndicator = `[✓ 完成]\n`;
-                accumulatedContent += completionIndicator;
-                onToken(completionIndicator);
-              } else if (result.error) {
-                const errorIndicator = `[✗ 错误: ${result.error}]\n`;
-                accumulatedContent += errorIndicator;
-                onToken(errorIndicator);
-              }
+              // 不发送工具完成标记到前端（保持简洁的用户体验）
+              // 工具执行状态通过日志记录，用户只看到分析结果
 
               // 记录中间步骤
               intermediateSteps.push({
@@ -351,13 +362,24 @@ class E2BDataAnalystAgent {
             }
           } else {
             // Non-streaming mode (original behavior)
-            const message = response.choices[0].message;
+            message = response.choices[0].message;
             messages.push(message);
+            
+            // Accumulate all assistant content
+            if (message.content) {
+              finalContent += message.content;
+            }
 
             // 如果没有工具调用，说明已得到最终答案
             if (!message.tool_calls || message.tool_calls.length === 0) {
-              finalContent = message.content;
-              break;
+              logger.info(`[E2BAgent] Final answer received. Total accumulated content: ${finalContent.length} chars`);
+              
+              // Clean up error descriptions from accumulated content
+              finalContent = this._cleanErrorDescriptions(finalContent);
+              logger.info(`[E2BAgent] After cleanup: ${finalContent.length} chars`);
+              
+              shouldExitMainLoop = true; // Exit both loops
+              break; // Exit retry loop
             }
 
             // 5. 执行工具调用 (ReAct 模式)
@@ -405,23 +427,38 @@ class E2BDataAnalystAgent {
               });
             }
           }
+          
+          // Success - exit retry loop
+          break;
+          
         } catch (llmError) {
-           logger.error(`[E2BAgent] OpenAI call failed. Model: ${model}. Error:`, llmError);
-           throw llmError;
+          // Check if it's a rate limit error (429) and we can still retry
+          if (llmError.status === 429 && retryCount < maxRetries) {
+            const waitTime = Math.pow(2, retryCount) * 1000; // Exponential backoff: 1s, 2s, 4s
+            logger.warn(`[E2BAgent] Rate limit hit (429). Waiting ${waitTime}ms before retry ${retryCount + 1}/${maxRetries}`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            retryCount++;
+            continue; // Retry the entire LLM call + processing
+          } else {
+            // Not a rate limit error, or max retries reached
+            logger.error(`[E2BAgent] OpenAI call failed. Model: ${model}. Error:`, llmError.message || llmError);
+            throw llmError;
+          }
         }
-      }
+      } // end of retry while loop
+      } // end of main iteration loop
 
       if (iteration >= this.maxIterations) {
         logger.warn(`[E2BAgent] Reached max iterations (${this.maxIterations})`);
       }
 
       // Log the raw final content for debugging
-      logger.info(`[E2BAgent] Raw final content length: ${finalContent?.length}, accumulated: ${accumulatedContent?.length}`);
+      logger.info(`[E2BAgent] Raw final content length: ${finalContent?.length} chars`);
       
-      // In streaming mode, use accumulated content if finalContent is empty
-      if (!finalContent && accumulatedContent) {
-        logger.info(`[E2BAgent] Using accumulated content from streaming (${accumulatedContent.length} chars)`);
-        finalContent = accumulatedContent;
+      // Ensure we have content
+      if (!finalContent) {
+        logger.warn(`[E2BAgent] No final content generated after ${iteration} iterations`);
+        finalContent = 'No response generated.';
       }
 
       // No path replacement needed - LLM uses paths from observation.image_paths and observation.images_markdown
@@ -450,6 +487,39 @@ class E2BDataAnalystAgent {
       logger.error(`[E2BAgent] Critical error in processMessage:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Clean up error descriptions from accumulated content.
+   * Removes sentences/paragraphs that describe execution errors or issues.
+   * @private
+   */
+  _cleanErrorDescriptions(content) {
+    if (!content) return content;
+    
+    // Patterns that indicate error descriptions (case-insensitive)
+    const errorPatterns = [
+      /It seems there (?:was|is) (?:an? )?(?:issue|error|problem)[^.!?]*[.!?]/gi,
+      /Let me try (?:again|a different approach)[^.!?]*[.!?]/gi,
+      /(?:I'll|I will) (?:attempt|try) (?:again|once more|a different)[^.!?]*[.!?]/gi,
+      /(?:Unfortunately|Apologies),? (?:the|there|I)[^.!?]*(?:error|issue|problem|failed)[^.!?]*[.!?]/gi,
+      /There (?:was|is) (?:an? )?(?:error|issue|problem) (?:with|in|during)[^.!?]*[.!?]/gi,
+      /The (?:code|execution|output) (?:failed|did not work|returned no)[^.!?]*[.!?]/gi,
+      /No output was returned[^.!?]*[.!?]/gi,
+    ];
+    
+    let cleaned = content;
+    errorPatterns.forEach(pattern => {
+      cleaned = cleaned.replace(pattern, '');
+    });
+    
+    // Remove excessive line breaks (more than 2 consecutive)
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+    
+    // Trim leading/trailing whitespace
+    cleaned = cleaned.trim();
+    
+    return cleaned;
   }
 
   /**

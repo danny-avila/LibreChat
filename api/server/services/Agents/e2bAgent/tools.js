@@ -30,6 +30,17 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
           has_plots: result.hasVisualization,
         };
         
+        // Log execution results for debugging
+        if (!result.success) {
+          logger.error(`[E2BAgent Tools] Code execution FAILED:`);
+          logger.error(`[E2BAgent Tools]   Error: ${result.error}`);
+          logger.error(`[E2BAgent Tools]   Stderr: ${result.stderr}`);
+        } else if (!result.stdout && !result.hasVisualization) {
+          logger.info(`[E2BAgent Tools] Code executed successfully (empty stdout - likely assignment statement)`);
+        } else {
+          logger.info(`[E2BAgent Tools] Code executed successfully with ${result.stdout ? result.stdout.length : 0} chars output, ${result.hasVisualization ? result.images.length : 0} plots`);
+        }
+        
         // Use Context Manager for error recovery guidance
         if (!result.success && result.error) {
           const recoveryGuidance = contextManager.generateErrorRecoveryContext(result.error);
@@ -225,6 +236,11 @@ const getToolFunctions = (userId, conversationId, req, contextManager) => {
           stderr: error.message || 'Unknown error occurred',
           has_plots: false,
           plot_count: 0,
+          image_paths: [],
+          images_markdown: '',
+          plot_info: '',
+          // 明确指导：不要重试相同代码
+          recovery_hint: '❌ Code execution failed. DO NOT retry the same code. Analyze the error and try a DIFFERENT approach or ask the user for clarification.'
         };
         logger.debug(`[E2BAgent Tools] Error observation:`, JSON.stringify(errorObservation, null, 2));
         return errorObservation;
