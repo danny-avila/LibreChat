@@ -47,7 +47,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
-   * Retrieves tool files (files that are embedded or have a fileIdentifier) from an array of file IDs
+   * Retrieves tool files (files that are embedded or have a fileIdentifier) from an array of file IDs.
+   * Note: execute_code files are handled separately by getCodeGeneratedFiles.
    * @param fileIds - Array of file_id strings to search for
    * @param toolResourceSet - Optional filter for tool resources
    * @returns Files that match the criteria
@@ -61,20 +62,25 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     }
 
     try {
-      const filter: FilterQuery<IMongoFile> = {
-        file_id: { $in: fileIds },
-        $or: [],
-      };
+      const orConditions: FilterQuery<IMongoFile>[] = [];
 
       if (toolResourceSet.has(EToolResources.context)) {
-        filter.$or?.push({ text: { $exists: true, $ne: null }, context: FileContext.agents });
+        orConditions.push({ text: { $exists: true, $ne: null }, context: FileContext.agents });
       }
       if (toolResourceSet.has(EToolResources.file_search)) {
-        filter.$or?.push({ embedded: true });
+        orConditions.push({ embedded: true });
       }
-      if (toolResourceSet.has(EToolResources.execute_code)) {
-        filter.$or?.push({ 'metadata.fileIdentifier': { $exists: true } });
+
+      // If no conditions to match, return empty
+      if (orConditions.length === 0) {
+        return [];
       }
+
+      const filter: FilterQuery<IMongoFile> = {
+        file_id: { $in: fileIds },
+        context: { $ne: FileContext.execute_code },
+        $or: orConditions,
+      };
 
       const selectFields: SelectProjection = { text: 0 };
       const sortOptions = { updatedAt: -1 as SortOrder };
@@ -102,17 +108,18 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
       return [];
     }
 
+    /** messageIds are required for proper thread filtering of code-generated files */
+    if (!messageIds || messageIds.length === 0) {
+      return [];
+    }
+
     try {
       const filter: FilterQuery<IMongoFile> = {
         conversationId,
         context: FileContext.execute_code,
+        messageId: { $exists: true, $in: messageIds },
         'metadata.fileIdentifier': { $exists: true },
       };
-
-      /** Filter by messageIds if provided (linear thread filtering) */
-      if (messageIds && messageIds.length > 0) {
-        filter.messageId = { $in: messageIds };
-      }
 
       const selectFields: SelectProjection = { text: 0 };
       const sortOptions = { createdAt: 1 as SortOrder };
@@ -121,6 +128,36 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
       return results ?? [];
     } catch (error) {
       logger.error('[getCodeGeneratedFiles] Error retrieving code generated files:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Retrieves user-uploaded execute_code files (not code-generated) by their file IDs.
+   * These are files with fileIdentifier metadata but context is NOT execute_code (e.g., agents or message_attachment).
+   * File IDs should be collected from message.files arrays in the current thread.
+   * @param fileIds - Array of file IDs to fetch (from message.files in the thread)
+   * @returns User-uploaded execute_code files
+   */
+  async function getUserCodeFiles(fileIds?: string[]): Promise<IMongoFile[]> {
+    if (!fileIds || fileIds.length === 0) {
+      return [];
+    }
+
+    try {
+      const filter: FilterQuery<IMongoFile> = {
+        file_id: { $in: fileIds },
+        context: { $ne: FileContext.execute_code },
+        'metadata.fileIdentifier': { $exists: true },
+      };
+
+      const selectFields: SelectProjection = { text: 0 };
+      const sortOptions = { createdAt: 1 as SortOrder };
+
+      const results = await getFiles(filter, sortOptions, selectFields);
+      return results ?? [];
+    } catch (error) {
+      logger.error('[getUserCodeFiles] Error retrieving user code files:', error);
       return [];
     }
   }
@@ -297,6 +334,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     getFiles,
     getToolFilesByIds,
     getCodeGeneratedFiles,
+    getUserCodeFiles,
     createFile,
     updateFile,
     updateFileUsage,

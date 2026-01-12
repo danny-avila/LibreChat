@@ -68,42 +68,73 @@ export function sanitizeMessageForTransmit<T extends Partial<TMessage>>(
   return sanitized;
 }
 
+/** Minimal message shape for thread traversal */
+type ThreadMessage = {
+  messageId: string;
+  parentMessageId?: string | null;
+  files?: Array<{ file_id?: string }>;
+};
+
+/** Result of thread data extraction */
+export type ThreadData = {
+  messageIds: string[];
+  fileIds: string[];
+};
+
 /**
- * Gets the message IDs for a linear thread, traversing from parentMessageId to the root.
- * Uses the same logic as BaseClient.getMessagesForConversation.
+ * Extracts thread message IDs and file IDs in a single O(n) pass.
+ * Builds a Map for O(1) lookups, then traverses the thread collecting both IDs.
  *
- * @param messages - All messages in the conversation
+ * @param messages - All messages in the conversation (should be queried with select for efficiency)
  * @param parentMessageId - The ID of the parent message to start traversal from
- * @returns Array of message IDs in the current thread
+ * @returns Object containing messageIds and fileIds arrays
  */
-export function getThreadMessageIds(
-  messages: Array<{ messageId: string; parentMessageId?: string | null }>,
+export function getThreadData(
+  messages: ThreadMessage[],
   parentMessageId: string | null | undefined,
-): string[] {
+): ThreadData {
+  const result: ThreadData = { messageIds: [], fileIds: [] };
+
   if (!messages || messages.length === 0 || !parentMessageId) {
-    return [];
+    return result;
   }
 
-  const messageIds: string[] = [];
-  let currentMessageId: string | null | undefined = parentMessageId;
-  const visitedMessageIds = new Set<string>();
+  /** Build Map for O(1) lookups instead of O(n) .find() calls */
+  const messageMap = new Map<string, ThreadMessage>();
+  for (const msg of messages) {
+    messageMap.set(msg.messageId, msg);
+  }
 
-  while (currentMessageId) {
-    if (visitedMessageIds.has(currentMessageId)) {
+  const fileIdSet = new Set<string>();
+  const visitedIds = new Set<string>();
+  let currentId: string | null | undefined = parentMessageId;
+
+  /** Single traversal: collect message IDs and file IDs together */
+  while (currentId) {
+    if (visitedIds.has(currentId)) {
       break;
     }
+    visitedIds.add(currentId);
 
-    const message = messages.find((msg) => msg.messageId === currentMessageId);
-    visitedMessageIds.add(currentMessageId);
-
+    const message = messageMap.get(currentId);
     if (!message) {
       break;
     }
 
-    messageIds.push(message.messageId);
-    currentMessageId =
-      message.parentMessageId === Constants.NO_PARENT ? null : message.parentMessageId;
+    result.messageIds.push(message.messageId);
+
+    /** Collect file IDs from this message */
+    if (message.files) {
+      for (const file of message.files) {
+        if (file.file_id) {
+          fileIdSet.add(file.file_id);
+        }
+      }
+    }
+
+    currentId = message.parentMessageId === Constants.NO_PARENT ? null : message.parentMessageId;
   }
 
-  return messageIds;
+  result.fileIds = Array.from(fileIdSet);
+  return result;
 }

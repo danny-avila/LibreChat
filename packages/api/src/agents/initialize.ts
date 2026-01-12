@@ -1,5 +1,6 @@
 import { Providers } from '@librechat/agents';
 import {
+  Constants,
   ErrorTypes,
   EModelEndpoint,
   EToolResources,
@@ -23,8 +24,8 @@ import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/t
 import {
   optionalChainWithEmptyCheck,
   extractLibreChatParams,
-  getThreadMessageIds,
   getModelMaxTokens,
+  getThreadData,
 } from '~/utils';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
@@ -102,16 +103,23 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   updateFilesUsage: (files: Array<{ file_id: string }>, fileIds?: string[]) => Promise<unknown[]>;
   /** Get files from database */
   getFiles: (filter: unknown, sort: unknown, select: unknown, opts?: unknown) => Promise<unknown[]>;
-  /** Get tool files by IDs */
+  /** Get tool files by IDs (user-uploaded files only, code files handled separately) */
   getToolFilesByIds: (fileIds: string[], toolSet: Set<EToolResources>) => Promise<unknown[]>;
   /** Get conversation file IDs */
   getConvoFiles: (conversationId: string) => Promise<string[] | null>;
   /** Get code-generated files by conversation ID and optional message IDs */
   getCodeGeneratedFiles?: (conversationId: string, messageIds?: string[]) => Promise<unknown[]>;
-  /** Get messages for a conversation */
-  getMessages?: (filter: {
-    conversationId: string;
-  }) => Promise<Array<{ messageId: string; parentMessageId?: string }> | null>;
+  /** Get user-uploaded execute_code files by file IDs (from message.files in thread) */
+  getUserCodeFiles?: (fileIds: string[]) => Promise<unknown[]>;
+  /** Get messages for a conversation (supports select for field projection) */
+  getMessages?: (
+    filter: { conversationId: string },
+    select?: string,
+  ) => Promise<Array<{
+    messageId: string;
+    parentMessageId?: string;
+    files?: Array<{ file_id: string }>;
+  }> | null>;
 }
 
 /**
@@ -188,30 +196,49 @@ export async function initializeAgent(
         toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
       }
     }
+
     const toolFiles = (await db.getToolFilesByIds(fileIds, toolResourceSet)) as IMongoFile[];
 
     /**
-     * Retrieve code-generated files from the conversation, filtered to the current thread.
-     * This ensures only files from the current linear thread are included, not files from other branches.
+     * Retrieve execute_code files filtered to the current thread.
+     * This includes both code-generated files and user-uploaded execute_code files.
      */
     let codeGeneratedFiles: IMongoFile[] = [];
-    if (toolResourceSet.has(EToolResources.execute_code) && db.getCodeGeneratedFiles) {
-      let threadMessageIds: string[] | undefined;
+    let userCodeFiles: IMongoFile[] = [];
 
-      if (parentMessageId && db.getMessages) {
-        const messages = await db.getMessages({ conversationId });
+    if (toolResourceSet.has(EToolResources.execute_code)) {
+      let threadMessageIds: string[] | undefined;
+      let threadFileIds: string[] | undefined;
+
+      if (parentMessageId && parentMessageId !== Constants.NO_PARENT && db.getMessages) {
+        /** Only select fields needed for thread traversal */
+        const messages = await db.getMessages(
+          { conversationId },
+          'messageId parentMessageId files',
+        );
         if (messages && messages.length > 0) {
-          threadMessageIds = getThreadMessageIds(messages, parentMessageId);
+          /** Single O(n) pass: build Map, traverse thread, collect both IDs */
+          const threadData = getThreadData(messages, parentMessageId);
+          threadMessageIds = threadData.messageIds;
+          threadFileIds = threadData.fileIds;
         }
       }
 
-      codeGeneratedFiles = (await db.getCodeGeneratedFiles(
-        conversationId,
-        threadMessageIds,
-      )) as IMongoFile[];
+      /** Code-generated files (context: execute_code) filtered by messageId */
+      if (db.getCodeGeneratedFiles) {
+        codeGeneratedFiles = (await db.getCodeGeneratedFiles(
+          conversationId,
+          threadMessageIds,
+        )) as IMongoFile[];
+      }
+
+      /** User-uploaded execute_code files (context: agents/message_attachment) from thread messages */
+      if (db.getUserCodeFiles && threadFileIds && threadFileIds.length > 0) {
+        userCodeFiles = (await db.getUserCodeFiles(threadFileIds)) as IMongoFile[];
+      }
     }
 
-    const allToolFiles = toolFiles.concat(codeGeneratedFiles);
+    const allToolFiles = toolFiles.concat(codeGeneratedFiles, userCodeFiles);
     if (requestFiles.length || allToolFiles.length) {
       currentFiles = (await db.updateFilesUsage(requestFiles.concat(allToolFiles))) as IMongoFile[];
     }

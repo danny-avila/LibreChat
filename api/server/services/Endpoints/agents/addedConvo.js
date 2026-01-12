@@ -104,6 +104,7 @@ const processAddedConvo = async ({
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
         updateFilesUsage: db.updateFilesUsage,
+        getUserCodeFiles: db.getUserCodeFiles,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,

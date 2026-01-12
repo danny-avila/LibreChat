@@ -337,9 +337,16 @@ const primeFiles = async (options, apiKey) => {
         if (!toolContext) {
           toolContext = `- Note: The following files are available in the "${Tools.execute_code}" tool environment:`;
         }
-        toolContext += `\n\t- /mnt/data/${file.filename}${
-          agentResourceIds.has(file.file_id) ? '' : ' (just attached by user)'
-        }`;
+
+        let fileSuffix = '';
+        if (!agentResourceIds.has(file.file_id)) {
+          fileSuffix =
+            file.context === FileContext.execute_code
+              ? ' (from previous code execution)'
+              : ' (attached by user)';
+        }
+
+        toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}`;
         files.push({
           id,
           session_id,
