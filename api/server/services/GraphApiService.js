@@ -86,7 +86,7 @@ const exchangeTokenForGraphAccess = async (config, accessToken, sub) => {
 
     const clientOptions = {};
     if (process.env.PROXY) {
-      let httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+      const httpsAgent = new HttpsProxyAgent(process.env.PROXY);
       clientOptions[Symbol.for('openid-client.custom.fetch')] = (url, options = {}) => {
           return nodeFetch(url, { ...options, agent: httpsAgent });
       };
