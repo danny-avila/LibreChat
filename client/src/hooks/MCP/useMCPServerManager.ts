@@ -95,11 +95,19 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
 
   const updateUserPluginsMutation = useUpdateUserPluginsMutation({
     onSuccess: async (_data, variables) => {
-      const message =
-        variables.action === 'uninstall'
-          ? localize('com_nav_mcp_access_revoked')
-          : localize('com_nav_mcp_vars_updated');
+      const isRevoke = variables.action === 'uninstall';
+      const message = isRevoke
+        ? localize('com_nav_mcp_access_revoked')
+        : localize('com_nav_mcp_vars_updated');
       showToast({ message, status: 'success' });
+
+      /** Deselect server from mcpValues when revoking access */
+      if (isRevoke && variables.pluginKey?.startsWith(Constants.mcp_prefix)) {
+        const serverName = variables.pluginKey.replace(Constants.mcp_prefix, '');
+        const currentValues = mcpValuesRef.current ?? [];
+        const filteredValues = currentValues.filter((name) => name !== serverName);
+        setMCPValues(filteredValues);
+      }
 
       await Promise.all([
         queryClient.invalidateQueries([QueryKeys.mcpServers]),
@@ -495,13 +503,10 @@ export function useMCPServerManager({ conversationId }: { conversationId?: strin
           auth: {},
         };
         updateUserPluginsMutation.mutate(payload);
-
-        const currentValues = mcpValues ?? [];
-        const filteredValues = currentValues.filter((name) => name !== targetName);
-        setMCPValues(filteredValues);
+        /** Deselection is now handled centrally in updateUserPluginsMutation.onSuccess */
       }
     },
-    [selectedToolForConfig, updateUserPluginsMutation, mcpValues, setMCPValues],
+    [selectedToolForConfig, updateUserPluginsMutation],
   );
 
   /** Standalone revoke function for OAuth servers - doesn't require selectedToolForConfig */
