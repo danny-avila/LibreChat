@@ -547,7 +547,6 @@
   "com_ui_bookmarks": "Bogmærker",
   "com_ui_bookmarks_add": "Tilføj bogmærker",
   "com_ui_bookmarks_add_to_conversation": "Tilføj til aktuel samtale",
-  "com_ui_bookmarks_count": "Antal",
   "com_ui_bookmarks_create_error": "Der opstod en fejl ved oprettelsen af bogmærket",
   "com_ui_bookmarks_create_exists": "Dette bogmærke findes allerede",
   "com_ui_bookmarks_create_success": "Bogmærke oprettet",

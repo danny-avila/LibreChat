@@ -105,10 +105,10 @@ export const useAutoSave = ({
       return;
     }
 
-    /** Use shorter debounce for saving text (65ms) to capture rapid typing */
+    /** Use shorter debounce for saving text (25ms) to capture rapid typing */
     const handleInputFast = debounce(
       (value: string) => setDraft({ id: conversationId, value }),
-      65,
+      25,
     );
 
     /** Use longer debounce for clearing empty values (850ms) to prevent accidental draft loss */

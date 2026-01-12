@@ -1,4 +1,4 @@
-/** v0.8.2-rc1 */
+/** v0.8.2-rc2 */
 module.exports = {
   roots: ['<rootDir>/src'],
   testEnvironment: 'jsdom',

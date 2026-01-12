@@ -107,7 +107,7 @@ function Artifacts() {
           <Ariakit.Menu
             gutter={4}
             className={cn(
-              'animate-popover-top-left z-50 flex min-w-[250px] flex-col rounded-xl',
+              'animate-popover-top-left z-40 flex min-w-[250px] flex-col rounded-xl',
               'border border-border-light bg-surface-secondary shadow-lg',
             )}
             portal={true}

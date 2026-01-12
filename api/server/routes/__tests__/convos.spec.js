@@ -59,6 +59,7 @@ jest.mock('~/server/middleware', () => ({
     forkUserLimiter: (req, res, next) => next(),
   })),
   configMiddleware: (req, res, next) => next(),
+  validateConvoAccess: (req, res, next) => next(),
 }));
 
 jest.mock('~/server/utils/import/fork', () => ({
@@ -108,7 +109,7 @@ describe('Convos Routes', () => {
   let app;
   let convosRouter;
   const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
-  const { deleteConvos } = require('~/models/Conversation');
+  const { deleteConvos, saveConvo } = require('~/models/Conversation');
   const { deleteToolCalls } = require('~/models/ToolCall');
 
   beforeAll(() => {
@@ -458,6 +459,138 @@ describe('Convos Routes', () => {
 
       /** Verify it was called after the conversation was deleted */
       expect(deleteConvoSharedLink).toHaveBeenCalledAfter(deleteConvos);
+    });
+  });
+
+  describe('POST /archive', () => {
+    it('should archive a conversation successfully', async () => {
+      const mockConversationId = 'conv-123';
+      const mockArchivedConvo = {
+        conversationId: mockConversationId,
+        title: 'Test Conversation',
+        isArchived: true,
+        user: 'test-user-123',
+      };
+
+      saveConvo.mockResolvedValue(mockArchivedConvo);
+
+      const response = await request(app)
+        .post('/api/convos/archive')
+        .send({
+          arg: {
+            conversationId: mockConversationId,
+            isArchived: true,
+          },
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(mockArchivedConvo);
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.objectContaining({ user: { id: 'test-user-123' } }),
+        { conversationId: mockConversationId, isArchived: true },
+        { context: `POST /api/convos/archive ${mockConversationId}` },
+      );
+    });
+
+    it('should unarchive a conversation successfully', async () => {
+      const mockConversationId = 'conv-456';
+      const mockUnarchivedConvo = {
+        conversationId: mockConversationId,
+        title: 'Unarchived Conversation',
+        isArchived: false,
+        user: 'test-user-123',
+      };
+
+      saveConvo.mockResolvedValue(mockUnarchivedConvo);
+
+      const response = await request(app)
+        .post('/api/convos/archive')
+        .send({
+          arg: {
+            conversationId: mockConversationId,
+            isArchived: false,
+          },
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(mockUnarchivedConvo);
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.objectContaining({ user: { id: 'test-user-123' } }),
+        { conversationId: mockConversationId, isArchived: false },
+        { context: `POST /api/convos/archive ${mockConversationId}` },
+      );
+    });
+
+    it('should return 400 when conversationId is missing', async () => {
+      const response = await request(app)
+        .post('/api/convos/archive')
+        .send({
+          arg: {
+            isArchived: true,
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'conversationId is required' });
+      expect(saveConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when isArchived is not a boolean', async () => {
+      const response = await request(app)
+        .post('/api/convos/archive')
+        .send({
+          arg: {
+            conversationId: 'conv-123',
+            isArchived: 'true',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'isArchived must be a boolean' });
+      expect(saveConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when isArchived is undefined', async () => {
+      const response = await request(app)
+        .post('/api/convos/archive')
+        .send({
+          arg: {
+            conversationId: 'conv-123',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'isArchived must be a boolean' });
+      expect(saveConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 500 when saveConvo fails', async () => {
+      const mockConversationId = 'conv-error';
+      saveConvo.mockRejectedValue(new Error('Database error'));
+
+      const response = await request(app)
+        .post('/api/convos/archive')
+        .send({
+          arg: {
+            conversationId: mockConversationId,
+            isArchived: true,
+          },
+        });
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error archiving conversation');
+
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).toHaveBeenCalledWith('Error archiving conversation', expect.any(Error));
+    });
+
+    it('should handle empty arg object', async () => {
+      const response = await request(app).post('/api/convos/archive').send({
+        arg: {},
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'conversationId is required' });
     });
   });
 });

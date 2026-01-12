@@ -2,7 +2,9 @@ import { Constants } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
+import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isEnabled } from '~/utils';
 
@@ -24,13 +26,22 @@ export class MCPServerInspector {
    * @param serverName - The name of the server (used for tool function naming)
    * @param rawConfig - The raw server configuration
    * @param connection - The MCP connection
+   * @param allowedDomains - Optional list of allowed domains for remote transports
    * @returns A fully processed and enriched configuration with server metadata
    */
   public static async inspect(
     serverName: string,
     rawConfig: t.MCPOptions,
     connection?: MCPConnection,
+    allowedDomains?: string[] | null,
   ): Promise<t.ParsedServerConfig> {
+    // Validate domain against allowlist BEFORE attempting connection
+    const isDomainAllowed = await isMCPDomainAllowed(rawConfig, allowedDomains);
+    if (!isDomainAllowed) {
+      const domain = extractMCPServerDomain(rawConfig);
+      throw new MCPDomainNotAllowedError(domain ?? 'unknown');
+    }
+
     const start = Date.now();
     const inspector = new MCPServerInspector(serverName, rawConfig, connection);
     await inspector.inspectServer();

@@ -14,9 +14,11 @@ import type {
   LLMConfig,
 } from '@librechat/agents';
 import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
-import type { ObjectId, MemoryMethods } from '@librechat/data-schemas';
+import type { ObjectId, MemoryMethods, IUser } from '@librechat/data-schemas';
 import type { BaseMessage, ToolMessage } from '@langchain/core/messages';
 import type { Response as ServerResponse } from 'express';
+import { GenerationJobManager } from '~/stream/GenerationJobManager';
+import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { Tokenizer } from '~/utils';
 
 type RequiredMemoryMethods = Pick<
@@ -283,6 +285,8 @@ export async function processMemory({
   llmConfig,
   tokenLimit,
   totalTokens = 0,
+  streamId = null,
+  user,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -297,6 +301,8 @@ export async function processMemory({
   tokenLimit?: number;
   totalTokens?: number;
   llmConfig?: Partial<LLMConfig>;
+  streamId?: string | null;
+  user?: IUser;
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({
@@ -363,8 +369,16 @@ ${memory ?? 'No existing memories'}`;
       }
     }
 
+    const llmConfigWithHeaders = finalLLMConfig as OpenAIClientOptions;
+    if (llmConfigWithHeaders?.configuration?.defaultHeaders != null) {
+      llmConfigWithHeaders.configuration.defaultHeaders = resolveHeaders({
+        headers: llmConfigWithHeaders.configuration.defaultHeaders as Record<string, string>,
+        user: user ? createSafeUser(user) : undefined,
+      });
+    }
+
     const artifactPromises: Promise<TAttachment | null>[] = [];
-    const memoryCallback = createMemoryCallback({ res, artifactPromises });
+    const memoryCallback = createMemoryCallback({ res, artifactPromises, streamId });
     const customHandlers = {
       [GraphEvents.TOOL_END]: new BasicToolEndHandler(memoryCallback),
     };
@@ -417,6 +431,8 @@ export async function createMemoryProcessor({
   memoryMethods,
   conversationId,
   config = {},
+  streamId = null,
+  user,
 }: {
   res: ServerResponse;
   messageId: string;
@@ -424,6 +440,8 @@ export async function createMemoryProcessor({
   userId: string | ObjectId;
   memoryMethods: RequiredMemoryMethods;
   config?: MemoryConfig;
+  streamId?: string | null;
+  user?: IUser;
 }): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
@@ -444,12 +462,14 @@ export async function createMemoryProcessor({
           llmConfig,
           messageId,
           tokenLimit,
+          streamId,
           conversationId,
           memory: withKeys,
           totalTokens: totalTokens || 0,
           instructions: finalInstructions,
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,
+          user,
         });
       } catch (error) {
         logger.error('Memory Agent failed to process memory', error);
@@ -462,10 +482,12 @@ async function handleMemoryArtifact({
   res,
   data,
   metadata,
+  streamId = null,
 }: {
   res: ServerResponse;
   data: ToolEndData;
   metadata?: ToolEndMetadata;
+  streamId?: string | null;
 }) {
   const output = data?.output as ToolMessage | undefined;
   if (!output) {
@@ -491,7 +513,11 @@ async function handleMemoryArtifact({
   if (!res.headersSent) {
     return attachment;
   }
-  res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
+  if (streamId) {
+    GenerationJobManager.emitChunk(streamId, { event: 'attachment', data: attachment });
+  } else {
+    res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
+  }
   return attachment;
 }
 
@@ -500,14 +526,17 @@ async function handleMemoryArtifact({
  * @param params - The parameters object
  * @param params.res - The server response object
  * @param params.artifactPromises - Array to collect artifact promises
+ * @param params.streamId - The stream ID for resumable mode, or null for standard mode
  * @returns The memory callback function
  */
 export function createMemoryCallback({
   res,
   artifactPromises,
+  streamId = null,
 }: {
   res: ServerResponse;
   artifactPromises: Promise<Partial<TAttachment> | null>[];
+  streamId?: string | null;
 }): ToolEndCallback {
   return async (data: ToolEndData, metadata?: Record<string, unknown>) => {
     const output = data?.output as ToolMessage | undefined;
@@ -516,7 +545,7 @@ export function createMemoryCallback({
       return;
     }
     artifactPromises.push(
-      handleMemoryArtifact({ res, data, metadata }).catch((error) => {
+      handleMemoryArtifact({ res, data, metadata, streamId }).catch((error) => {
         logger.error('Error processing memory artifact content:', error);
         return null;
       }),
