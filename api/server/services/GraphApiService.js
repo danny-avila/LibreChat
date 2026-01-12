@@ -45,12 +45,12 @@ const createGraphClient = async (accessToken, sub) => {
     // Add proxy support if configured
     if (process.env.PROXY) {
       fetchOptions.dispatcher = new ProxyAgent(process.env.PROXY);
-    }    
+    }
     const graphClient = Client.init({
       authProvider: (done) => {
         done(null, exchangedToken);
       },
-      fetchOptions,      
+      fetchOptions,
     });
 
     return graphClient;
