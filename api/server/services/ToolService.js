@@ -79,7 +79,7 @@ async function processRequiredActions(client, requiredActions) {
     requiredActions,
   );
   const appConfig = client.req.config;
-  const toolDefinitions = await getCachedTools();
+  const toolDefinitions = (await getCachedTools()) ?? {};
   const seenToolkits = new Set();
   const tools = requiredActions
     .map((action) => {
